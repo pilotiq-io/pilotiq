@@ -204,6 +204,17 @@ export { TableRegistry } from './registries/TableRegistry.js'
 export { StatsRegistry } from './registries/StatsRegistry.js'
 export { TabsRegistry } from './registries/TabsRegistry.js'
 export { CollabSupportRegistry } from './registries/CollabSupportRegistry.js'
+export { ClientToolRegistry } from './registries/ClientToolRegistry.js'
+export type { ClientToolHandler } from './registries/ClientToolRegistry.js'
+
+// ─── AI UI seam ─────────────────────────────────────────────
+//
+// Phase 4.1 open-core seams for AI UI. `AiUiContext` is the React-side
+// slot bag that `@pilotiq-pro/ai`'s `<AiUiProvider>` populates; free
+// pages read it via `useAiUi()`. See `docs/plans/phase-4-ai-extraction.md`.
+
+export { AiUiContext, useAiUi } from './ui/AiUiRegistry.js'
+export type { AiUi } from './ui/AiUiRegistry.js'
 
 // ─── Provider ──────────────────────────────────────────────
 
