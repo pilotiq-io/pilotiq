@@ -203,6 +203,7 @@ export { FormRegistry } from './registries/FormRegistry.js'
 export { TableRegistry } from './registries/TableRegistry.js'
 export { StatsRegistry } from './registries/StatsRegistry.js'
 export { TabsRegistry } from './registries/TabsRegistry.js'
+export { CollabSupportRegistry } from './registries/CollabSupportRegistry.js'
 
 // ─── Provider ──────────────────────────────────────────────
 

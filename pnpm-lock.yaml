@@ -54,9 +54,6 @@ importers:
       react-dom:
         specifier: '>=18'
         version: 19.2.5(react@19.2.5)
-      y-indexeddb:
-        specifier: '>=9'
-        version: 9.0.12(yjs@13.6.30)
     devDependencies:
       '@floating-ui/dom':
         specifier: ^1.6.0
@@ -100,12 +97,6 @@ importers:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
-      y-websocket:
-        specifier: ^2.1.0
-        version: 2.1.0(yjs@13.6.30)
-      yjs:
-        specifier: ^13.6.29
-        version: 13.6.30
 
   packages/media:
     dependencies:

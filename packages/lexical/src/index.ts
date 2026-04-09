@@ -13,7 +13,7 @@ export { FloatingLinkEditorPlugin } from './lexical/FloatingLinkEditorPlugin.js'
 export { resolveToolbar, hasTool, hasHeadingTool } from './toolbar.js'
 export type { ToolbarTool, ToolbarProfile, ToolbarConfig } from './toolbar.js'
 
-export { useYjsCollab } from './hooks/useYjsCollab.js'
+export { useYjsCollab, CollabHookContext } from './hooks/useYjsCollab.js'
 export type { UseYjsCollabOptions, UseYjsCollabReturn, YjsProvider, YjsCollabRef } from './hooks/useYjsCollab.js'
 
 export { RichContentField } from './RichContentField.js'

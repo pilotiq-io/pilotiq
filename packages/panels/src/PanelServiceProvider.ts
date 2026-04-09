@@ -5,7 +5,6 @@ import { PanelRegistry } from './registries/PanelRegistry.js'
 import { registerResolver } from './registries/ResolverRegistry.js'
 import { DashboardRegistry } from './registries/DashboardRegistry.js'
 import { BuiltInAiActionRegistry, builtInActions } from './ai-actions/index.js'
-import { CollabSupportRegistry } from './registries/CollabSupportRegistry.js'
 import {
   buildPanelMiddleware,
   mountMetaRoutes,
@@ -71,15 +70,13 @@ export class PanelServiceProvider extends ServiceProvider {
     }
 
     // Collab persist providers — `Field.persist(['websocket', 'indexeddb'])`
-    // needs the Yjs runtime + server-side persistence wiring, both of which
-    // belong in `@pilotiq-pro/collab`. The registry lets `Field.persist()`
-    // throw a helpful build-time error when the requested provider isn't
-    // available.
+    // is gated by `CollabSupportRegistry`. Free panels deliberately does NOT
+    // seed it — that's `@pilotiq-pro/collab`'s `CollabServiceProvider`'s job
+    // (Phase 5, shipped 2026-04-10). Apps without pro get a helpful
+    // build-time error from `Field.persist()` pointing them to install pro.
     //
-    // Phase 3 seam: this seeding moves to `@pilotiq-pro/collab`'s provider
-    // in Phase 5. Until then, free panels seeds both providers so existing
-    // apps keep working unchanged.
-    CollabSupportRegistry.enable(['websocket', 'indexeddb'])
+    // Tests that need collab behavior seed the registry themselves (see
+    // `src/__tests__/field.test.ts`).
 
     // Panel schema (ORM + driver-specific)
     const schemaDir = new URL(/* @vite-ignore */ '../schema', import.meta.url).pathname
@@ -222,8 +219,8 @@ export function panels(
       }
 
       // Collab persist providers — see PanelServiceProvider.register() above.
-      // Same Phase 3 seam, same temporary seed until @pilotiq-pro/collab.
-      CollabSupportRegistry.enable(['websocket', 'indexeddb'])
+      // Seeding moved to `@pilotiq-pro/collab`'s CollabServiceProvider in
+      // Phase 5 (2026-04-10). Free panels no longer seeds it.
 
       const publishedSchemas = new Set<string>()
 

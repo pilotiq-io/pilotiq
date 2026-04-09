@@ -86,24 +86,32 @@ The rich-text editor includes a slash command menu for inserting blocks. Type `/
 
 Selecting text reveals a floating toolbar with formatting options and an "Ask AI" button. The AI button opens the panels chat sidebar with the selected text as context, constrained to that specific field.
 
-### useYjsCollab Hook
+### useYjsCollab Hook (open-core seam)
 
-For custom components that need Yjs collaboration:
+`useYjsCollab` is exported from `@pilotiq/lexical` but ships as a **stub** by default. The free package has zero Yjs runtime — `yjs`, `y-websocket`, and `y-indexeddb` are not dependencies, and calling `useYjsCollab(...)` in the default build returns a local-only state shape (`collabReady: false`, no provider).
+
+Real collaboration is delivered by **[`@pilotiq-pro/collab`](https://pilotiq.io)** (commercial). Installing and registering it does two things:
+
+1. `CollabServiceProvider` enables the `websocket` + `indexeddb` entries in `CollabSupportRegistry`, so `Field.persist(['websocket'])` schema calls stop throwing.
+2. `<CollabProvider>` overrides `CollabHookContext` (also exported from `@pilotiq/lexical`) with the real `useYjsCollabImpl`, which spins up a per-editor `Y.Doc` + `WebsocketProvider` + `IndexeddbPersistence` on mount.
+
+The `@pilotiq/panels` layout auto-wraps the panel tree in `<CollabProvider>` via dynamic import when `@pilotiq-pro/collab` is installed, so the only step apps take is registering `CollabServiceProvider` in their bootstrap:
 
 ```ts
-import { useYjsCollab } from '@pilotiq/lexical'
+// bootstrap/providers.ts
+import { CollabServiceProvider } from '@pilotiq-pro/collab'
 
-function MyEditor({ docName }: { docName: string }) {
-  const { provider, doc } = useYjsCollab(docName, {
-    providers: ['websocket', 'indexeddb'],
-  })
-
-  // provider: WebsocketProvider instance
-  // doc: Y.Doc instance
-}
+export default [
+  // ...
+  CollabServiceProvider,
+]
 ```
 
-The hook creates the IndexedDB provider before the WebSocket provider to ensure local content loads first.
+Without `@pilotiq-pro/collab` installed: `LexicalEditor` renders in local-only mode (no `CollaborationPlugin`), and `CollaborativePlainText` shows its read-only fallback. `Field.persist(['websocket'])` throws a helpful build-time error pointing apps here.
+
+Rationale: the free package guarantees a zero-Yjs dependency surface and a fully-functional local-only Lexical editor. Multi-user collab is the paid upgrade.
+
+See `pilotiq/docs/plans/phase-5-collab-extraction.md` for the open-core split rationale and the five mechanism options that were evaluated.
 
 ### SelectionAiPlugin
 
@@ -120,6 +128,7 @@ Selected text is sent to the AI chat sidebar with field context, enabling field-
 
 - `@pilotiq/panels` must NOT depend on `@pilotiq/lexical` -- the plugin is loaded client-side via dynamic import to avoid circular dependencies.
 - Registration keys use the `_lexical:` prefix to separate from the core field registry.
-- IndexedDB provider must be created before WebSocket provider to prevent server rooms from overwriting local content.
+- IndexedDB provider must be created before WebSocket provider to prevent server rooms from overwriting local content (enforced inside `@pilotiq-pro/collab`'s `useYjsCollabImpl`).
 - Imperative editor refs (`EditorRefPlugin.setContent()`) are used for version restore -- writes propagate through the Yjs binding to all connected users.
+- The free package has no `yjs` / `y-websocket` / `y-indexeddb` runtime. `YjsCollabRef.doc` and `YjsCollabRef.Y` are typed as `unknown` and cast at the use site (see `SeedPlugin` in `LexicalEditor.tsx` / `CollaborativePlainText.tsx`).
 - Collaborative fields each get their own Y.Doc and WebSocket room, named `panel:{resource}:{recordId}:{type}:{fieldName}`.
