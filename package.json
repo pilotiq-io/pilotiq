@@ -1,14 +1,14 @@
 {
-  "name": "pilotic",
+  "name": "pilotiq",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.29.3",
-  "description": "Pilotic — open-source admin and CMS for RudderJS, with a built-in agent",
+  "description": "Pilotiq — open-source admin and CMS for RudderJS, with a built-in agent",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pilotic/pilotic"
+    "url": "https://github.com/pilotiq-io/pilotiq"
   },
-  "homepage": "https://pilotic.io",
+  "homepage": "https://pilotiq.io",
   "license": "MIT",
   "author": "Suleiman Shahbari",
   "scripts": {

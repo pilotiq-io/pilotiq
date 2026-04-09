@@ -1,16 +1,16 @@
 # Development
 
-Working on Pilotic locally — including the cross-repo dev loop with `rudderjs/rudder`.
+Working on Pilotiq locally — including the cross-repo dev loop with `rudderjs/rudder`.
 
 ## Repo layout
 
-Pilotic depends on `@rudderjs/*` framework packages from npm. For most contributors that's all you need. But for active development that touches both Pilotic and the underlying framework simultaneously, you'll want all three repos as siblings:
+Pilotiq depends on `@rudderjs/*` framework packages from npm. For most contributors that's all you need. But for active development that touches both Pilotiq and the underlying framework simultaneously, you'll want all three repos as siblings:
 
 ```
 ~/Projects/
 ├── rudderjs/         # the framework (github.com/rudderjs/rudder)
-├── pilotic/          # this repo (github.com/pilotic/pilotic)
-└── pilotic-pro/      # private pro packages (github.com/pilotic/pilotic-pro)
+├── pilotiq/          # this repo (github.com/pilotiq-io/pilotiq)
+└── pilotiq-pro/      # private pro packages (github.com/pilotiq-io/pilotiq-pro)
 ```
 
 The sibling layout is what makes the `pnpm.overrides` recipe below work — relative paths are short and stable.
@@ -20,7 +20,7 @@ The sibling layout is what makes the `pnpm.overrides` recipe below work — rela
 ## Standard workflow (no framework changes)
 
 ```bash
-cd ~/Projects/pilotic
+cd ~/Projects/pilotiq
 pnpm install
 pnpm build
 pnpm test
@@ -33,7 +33,7 @@ pnpm dev
 
 ## Cross-repo workflow (active framework dev)
 
-When you're iterating on `@rudderjs/core` (or any other framework package) AND need Pilotic to pick up the changes immediately — without publishing to npm — use `pnpm.overrides` to point at a local clone.
+When you're iterating on `@rudderjs/core` (or any other framework package) AND need Pilotiq to pick up the changes immediately — without publishing to npm — use `pnpm.overrides` to point at a local clone.
 
 ### Setup
 
@@ -66,7 +66,7 @@ When you're iterating on `@rudderjs/core` (or any other framework package) AND n
    pnpm install
    ```
 
-4. Iterate. Edit framework code in `~/Projects/rudderjs/packages/core/src/...`, run `pnpm build` in that package, then re-run whatever Pilotic command picks up the change. Vite HMR works through the link for frontend changes.
+4. Iterate. Edit framework code in `~/Projects/rudderjs/packages/core/src/...`, run `pnpm build` in that package, then re-run whatever Pilotiq command picks up the change. Vite HMR works through the link for frontend changes.
 
 ### Tear down before committing
 
@@ -83,12 +83,12 @@ When you're iterating on `@rudderjs/core` (or any other framework package) AND n
 
 ## TypeScript strict mode notes
 
-Pilotic and RudderJS both use:
+Pilotiq and RudderJS both use:
 - `"strict": true`
 - `"exactOptionalPropertyTypes": true`
 - `"noUncheckedIndexedAccess": true`
 
-These must match across both repos for cross-repo `pnpm.overrides` to typecheck cleanly. If you see strange "type ... is not assignable" errors at the boundary, check that `tsconfig.base.json` is in sync between `~/Projects/rudderjs/` and `~/Projects/pilotic/`.
+These must match across both repos for cross-repo `pnpm.overrides` to typecheck cleanly. If you see strange "type ... is not assignable" errors at the boundary, check that `tsconfig.base.json` is in sync between `~/Projects/rudderjs/` and `~/Projects/pilotiq/`.
 
 See [`feedback_exactoptional.md`](https://github.com/rudderjs/rudder) (memory note) for the canonical example of how `exactOptionalPropertyTypes` interacts with `undefined` in optional props.
 
@@ -106,20 +106,20 @@ These apply to both repos:
 
 ## Vendor publish flow (`pnpm rudder vendor:publish`)
 
-Pilotic packages publish files (schemas, pages, translations) into the consuming app's tree via the `@rudderjs/cli` `vendor:publish` command. Tags used by this repo:
+Pilotiq packages publish files (schemas, pages, translations) into the consuming app's tree via the `@rudderjs/cli` `vendor:publish` command. Tags used by this repo:
 
 | Tag | Purpose | Owner |
 |---|---|---|
-| `pilotic-schema` | Prisma/Drizzle schema files | `@pilotic/panels` |
-| `pilotic-pages` | Vike pages + components for the panel UI | `@pilotic/panels` |
-| `pilotic-translations` | Starter `lang/<locale>/pilotic.json` for i18n overrides | `@pilotic/panels` |
-| `pilotic-ai-pages` | Chat UI components (sidebar, dropdown, agent renderer) | `@pilotic-pro/ai` |
+| `pilotiq-schema` | Prisma/Drizzle schema files | `@pilotiq/panels` |
+| `pilotiq-pages` | Vike pages + components for the panel UI | `@pilotiq/panels` |
+| `pilotiq-translations` | Starter `lang/<locale>/pilotiq.json` for i18n overrides | `@pilotiq/panels` |
+| `pilotiq-ai-pages` | Chat UI components (sidebar, dropdown, agent renderer) | `@pilotiq-pro/ai` |
 
 After editing any file under `packages/panels/pages/`, re-run the publish command from the consuming app:
 
 ```bash
 cd path/to/your-app
-pnpm rudder vendor:publish --tag=pilotic-pages --force
+pnpm rudder vendor:publish --tag=pilotiq-pages --force
 ```
 
 **Important**: edits to `packages/panels/pages/` aren't HMR'd in the consuming app — they're vendored copies. The `--force` flag is required to overwrite the existing copies.
