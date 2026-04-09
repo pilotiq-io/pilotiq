@@ -1,5 +1,9 @@
-import type { PanelAgentMeta } from './types.js'
+import type { PanelAgentMeta, PanelAgentFieldType, PanelAgentInterface } from './types.js'
 import { buildSelectionInstructions } from '../handlers/chat/selectionInstructions.js'
+
+// Re-export the moved types so existing `from './PanelAgent.js'` imports
+// keep working without churn. The canonical home is now `./types.js`.
+export type { PanelAgentFieldType } from './types.js'
 
 // ─── Lazy imports (optional peer deps) ─────────────────────
 
@@ -105,17 +109,7 @@ export interface PanelAgentContext {
  * }
  * ```
  */
-/**
- * Field types a `PanelAgent` is allowed to operate on. Validated at field
- * registration time when the agent is referenced from `Field.ai([...])` —
- * see `D10` in `docs/plans/standalone-client-tools-plan.md`.
- *
- * Use `'*'` to mean "any field type" (default for agents that don't call
- * `.appliesTo([...])` explicitly).
- */
-export type PanelAgentFieldType = '*' | string
-
-export class PanelAgent {
+export class PanelAgent implements PanelAgentInterface {
   protected _slug:  string
   protected _label: string
   protected _icon?: string

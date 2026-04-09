@@ -1,6 +1,7 @@
 import { toTitleCase } from './utils.js'
-import type { PanelAgent } from '../agents/PanelAgent.js'
+import type { PanelAgentInterface as PanelAgent } from '../agents/types.js'
 import { BuiltInAiActionRegistry } from '../ai-actions/registry.js'
+import { CollabSupportRegistry } from '../registries/CollabSupportRegistry.js'
 
 // ─── Field visibility ──────────────────────────────────────
 
@@ -412,10 +413,20 @@ export abstract class Field {
     } else {
       this._persist = [mode]
     }
-    // Any Yjs-based persist needs the Yjs infrastructure (Y.Doc)
+    // Any Yjs-based persist needs the Yjs infrastructure (Y.Doc) — and the
+    // collaborative runtime, which lives in @pilotiq-pro/collab. Validate at
+    // form-build time so an app that asks for `.persist(['websocket'])` without
+    // pro installed gets a helpful error instead of a silently-broken field.
     if (Array.isArray(this._persist)) {
       this._yjs = true
       for (const p of this._persist) {
+        if (!CollabSupportRegistry.has(p)) {
+          throw new Error(
+            `Field "${this._name}": collab persist mode "${p}" requires @pilotiq-pro/collab. ` +
+            `Free pilotiq supports localStorage / url / session only. ` +
+            `Install @pilotiq-pro/collab to enable real-time and offline persistence.`,
+          )
+        }
         if (!this._yjsProviders.includes(p)) this._yjsProviders.push(p)
       }
     }
@@ -593,7 +604,8 @@ function resolveAiActions(
       if (!agent) {
         throw new Error(
           `Field "${fieldName}": unknown AI action "${ref}". ` +
-          `Built-in slugs: rewrite, shorten, expand, fix-grammar, translate, summarize, make-formal, simplify. ` +
+          `Built-in slugs (rewrite, shorten, expand, fix-grammar, translate, summarize, make-formal, simplify) ` +
+          `ship via @pilotiq-pro/ai — install it for the built-in catalogue. ` +
           `For custom actions, pass a PanelAgent instance instead of a slug. ` +
           `If this is an app-defined action, ensure the registering provider runs before the panel mounts.`,
         )

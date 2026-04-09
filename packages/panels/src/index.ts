@@ -229,8 +229,8 @@ export type {
 // ─── Agents ────────────────────────────────────────────────
 
 export { PanelAgent } from './agents/PanelAgent.js'
-export type { PanelAgentContext, PanelAgentFieldType } from './agents/PanelAgent.js'
-export type { PanelAgentMeta } from './agents/types.js'
+export type { PanelAgentContext } from './agents/PanelAgent.js'
+export type { PanelAgentMeta, PanelAgentFieldType, PanelAgentInterface } from './agents/types.js'
 export { BuiltInAiActionRegistry, builtInActions } from './ai-actions/index.js'
 
 // ─── Data helpers ───────────────────────────────────────────

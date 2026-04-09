@@ -1,11 +1,20 @@
 
-import { describe, it } from 'node:test'
+import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { TextField }    from '../schema/fields/TextField.js'
 import { EmailField }   from '../schema/fields/EmailField.js'
 import { NumberField }  from '../schema/fields/NumberField.js'
 import { BooleanField } from '../schema/fields/BooleanField.js'
+import { CollabSupportRegistry } from '../registries/CollabSupportRegistry.js'
+
+// `Field.persist(['websocket'|'indexeddb'])` checks `CollabSupportRegistry`
+// so apps without `@pilotiq-pro/collab` get a build-time error rather than
+// silently broken collab. The PanelServiceProvider seeds the registry at
+// runtime; tests construct fields directly so we seed once at suite start.
+before(() => {
+  CollabSupportRegistry.enable(['websocket', 'indexeddb'])
+})
 
 // ─── Field ──────────────────────────────────────────────────
 

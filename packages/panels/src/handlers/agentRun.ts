@@ -281,9 +281,15 @@ async function loadAgentRunContext(
   // Resource agents take precedence so an app can override a built-in slug
   // with a record-aware version if needed.
   const resourceAgents = resource.agents()
-  const agentDef =
+  // Registry is typed against `PanelAgentInterface` for the schema-layer
+  // seam (Field.ai / Field.toMeta), but the runtime call sites here need
+  // the concrete `PanelAgent` class to invoke `.run()` / `.stream()`.
+  // Built-in actions are always seeded as concrete instances, so the cast
+  // is sound. When this handler moves to `@pilotiq-pro/ai` in Phase 4 it
+  // will import the concrete class directly and the cast goes away.
+  const agentDef: PanelAgent | undefined =
     resourceAgents.find(a => a.getSlug() === agentSlug) ??
-    BuiltInAiActionRegistry.get(agentSlug)
+    (BuiltInAiActionRegistry.get(agentSlug) as PanelAgent | undefined)
   if (!agentDef) {
     return { errorResponse: res.status(404).json({ message: `Agent "${agentSlug}" not found.` }) }
   }

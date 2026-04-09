@@ -24,7 +24,7 @@
  * `docs/plans/standalone-client-tools-plan.md`.
  */
 
-import type { PanelAgent } from '../agents/PanelAgent.js'
+import type { PanelAgentInterface as PanelAgent } from '../agents/types.js'
 
 const actions = new Map<string, PanelAgent>()
 

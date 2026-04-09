@@ -5,6 +5,7 @@ import { PanelRegistry } from './registries/PanelRegistry.js'
 import { registerResolver } from './registries/ResolverRegistry.js'
 import { DashboardRegistry } from './registries/DashboardRegistry.js'
 import { BuiltInAiActionRegistry, builtInActions } from './ai-actions/index.js'
+import { CollabSupportRegistry } from './registries/CollabSupportRegistry.js'
 import {
   buildPanelMiddleware,
   mountMetaRoutes,
@@ -61,9 +62,24 @@ export class PanelServiceProvider extends ServiceProvider {
     // `docs/plans/standalone-client-tools-plan.md`). App code can override
     // built-ins by registering its own with the same slug from a downstream
     // provider's register() — later wins.
+    //
+    // Phase 3 seam: this registration moves to `@pilotiq-pro/ai`'s provider
+    // in Phase 4. Until then, free panels seeds the catalogue itself so
+    // existing apps keep working.
     for (const action of builtInActions) {
       BuiltInAiActionRegistry.register(action)
     }
+
+    // Collab persist providers — `Field.persist(['websocket', 'indexeddb'])`
+    // needs the Yjs runtime + server-side persistence wiring, both of which
+    // belong in `@pilotiq-pro/collab`. The registry lets `Field.persist()`
+    // throw a helpful build-time error when the requested provider isn't
+    // available.
+    //
+    // Phase 3 seam: this seeding moves to `@pilotiq-pro/collab`'s provider
+    // in Phase 5. Until then, free panels seeds both providers so existing
+    // apps keep working unchanged.
+    CollabSupportRegistry.enable(['websocket', 'indexeddb'])
 
     // Panel schema (ORM + driver-specific)
     const schemaDir = new URL(/* @vite-ignore */ '../schema', import.meta.url).pathname
@@ -204,6 +220,10 @@ export function panels(
       for (const action of builtInActions) {
         BuiltInAiActionRegistry.register(action)
       }
+
+      // Collab persist providers — see PanelServiceProvider.register() above.
+      // Same Phase 3 seam, same temporary seed until @pilotiq-pro/collab.
+      CollabSupportRegistry.enable(['websocket', 'indexeddb'])
 
       const publishedSchemas = new Set<string>()
 
