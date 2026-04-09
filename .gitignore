@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-test/
+.turbo/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+.worktrees/

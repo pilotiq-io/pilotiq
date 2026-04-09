@@ -1,0 +1,40 @@
+{
+  "name": "pilotic",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.29.3",
+  "description": "Pilotic — open-source admin and CMS for RudderJS, with a built-in agent",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pilotic/pilotic"
+  },
+  "homepage": "https://pilotic.io",
+  "license": "MIT",
+  "author": "Suleiman Shahbari",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean",
+    "test": "turbo run test",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "release": "pnpm build && pnpm -r publish --access public --no-git-checks"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp"
+    ]
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.0.3",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "tsx": "^4.21.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.57.1"
+  }
+}
