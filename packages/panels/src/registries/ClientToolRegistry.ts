@@ -33,9 +33,17 @@ export class ClientToolRegistry {
    * Register a client tool handler under `name`. Subsequent calls with
    * the same name overwrite the previous handler — matches the HMR-safe
    * semantics of the old `registerClientTool()` helper.
+   *
+   * Returns an unregister function that only removes the handler if it
+   * is still the one currently registered under `name`. This guards
+   * against HMR churn where a newer handler replaced ours before the
+   * cleanup ran.
    */
-  static register(name: string, handler: ClientToolHandler): void {
+  static register(name: string, handler: ClientToolHandler): () => void {
     handlers.set(name, handler)
+    return () => {
+      if (handlers.get(name) === handler) handlers.delete(name)
+    }
   }
 
   /** Look up a registered handler by name, or `undefined` if missing. */

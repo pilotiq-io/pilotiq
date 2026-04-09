@@ -4,7 +4,6 @@ import { Component, useEffect, useState, type ComponentType, type ReactNode } fr
 import { usePageContext } from 'vike-react/usePageContext'
 import { AdminLayout }    from '../_components/AdminLayout.js'
 import { I18nProvider }   from '../_hooks/useI18n.js'
-import { AiChatProvider } from '../_components/agents/AiChatContext.js'
 import { generateThemeCSS } from '@pilotiq/panels'
 import type { PanelNavigationMeta } from '@pilotiq/panels'
 // Auto-discover plugin registrations (fields, lazy elements, etc.)
@@ -45,6 +44,30 @@ function useCollabProvider(): ComponentType<{ children: ReactNode }> | null {
     import(/* @vite-ignore */ pkg)
       .then((mod: any) => { if (!cancelled && mod?.CollabProvider) setProvider(() => mod.CollabProvider) })
       .catch(() => { /* pro not installed — stay in local-only mode */ })
+    return () => { cancelled = true }
+  }, [])
+  return Provider
+}
+
+// ── AI UI provider (open-core seam) ─────────────────────────────────────────
+// Mirrors `useCollabProvider` above. If `@pilotiq-pro/ai` is installed, its
+// `<AiUiProvider>` overrides the empty `AiUiContext` slot bag shipped in free
+// `@pilotiq/panels` with concrete AI components/hooks (`AiChatPanel`,
+// `AiDropdown`, `useAgentRun`, `useAiChat`, …). Free pages read those slots
+// via `useAiUi()` and render them conditionally.
+//
+// Same Vite 7 import-analysis workaround as collab: non-literal specifier so
+// static resolution can't touch it. See phase-5-collab-extraction.md R5/R6
+// and phase-4-ai-extraction.md D1.
+function useAiUiProvider(): ComponentType<{ children: ReactNode }> | null {
+  const [Provider, setProvider] = useState<ComponentType<{ children: ReactNode }> | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    const pkg = '@pilotiq-pro' + '/ai'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- optional dep surface
+    import(/* @vite-ignore */ pkg)
+      .then((mod: any) => { if (!cancelled && mod?.AiUiProvider) setProvider(() => mod.AiUiProvider) })
+      .catch(() => { /* pro not installed — AI affordances stay hidden */ })
     return () => { cancelled = true }
   }, [])
   return Provider
@@ -144,20 +167,26 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
   const themeCss = data.panelMeta.theme ? generateThemeCSS(data.panelMeta.theme) : null
 
   const CollabProvider = useCollabProvider()
+  const AiUiProvider   = useAiUiProvider()
   const tree = (
-    <AiChatProvider panelPath={data.panelMeta.path}>
-      <I18nProvider i18n={data.panelMeta.i18n} locale={data.panelMeta.locale}>
-        <AdminLayout panelMeta={data.panelMeta} currentSlug={data.slug ?? ''} {...(data.sessionUser !== undefined ? { initialUser: data.sessionUser } : {})}>
-          {children}
-        </AdminLayout>
-      </I18nProvider>
-    </AiChatProvider>
+    <I18nProvider i18n={data.panelMeta.i18n} locale={data.panelMeta.locale}>
+      <AdminLayout panelMeta={data.panelMeta} currentSlug={data.slug ?? ''} {...(data.sessionUser !== undefined ? { initialUser: data.sessionUser } : {})}>
+        {children}
+      </AdminLayout>
+    </I18nProvider>
   )
+
+  // Nest the two optional pro providers. Order: AiUi (outer) → Collab (inner).
+  // Neither provider observes the other at runtime, so the order is cosmetic,
+  // but keeping AiUi outer matches the conceptual layering (chat lives at the
+  // admin shell level; collab is a per-editor concern).
+  const withCollab = CollabProvider ? <CollabProvider>{tree}</CollabProvider> : tree
+  const wrapped    = AiUiProvider   ? <AiUiProvider>{withCollab}</AiUiProvider> : withCollab
 
   return (
     <PanelErrorBoundary>
       {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
-      {CollabProvider ? <CollabProvider>{tree}</CollabProvider> : tree}
+      {wrapped}
     </PanelErrorBoundary>
   )
 }
