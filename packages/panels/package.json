@@ -1,0 +1,111 @@
+{
+  "name": "@pilotiq/panels",
+  "version": "0.0.3",
+  "description": "Pilotiq — open-source admin and CMS for RudderJS, with a built-in agent",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pilotiq-io/pilotiq",
+    "directory": "packages/panels"
+  },
+  "homepage": "https://pilotiq.io",
+  "type": "module",
+  "files": [
+    "dist",
+    "lang",
+    "pages",
+    "schema"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src pages",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/__tests__/*.test.js; EXIT=$?; rm -rf dist-test; exit $EXIT",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@rudderjs/core": "^0.0.8",
+    "@rudderjs/router": "^0.0.3",
+    "@rudderjs/support": "^0.0.3",
+    "dnd-kit-sortable-tree": "^0.1.73",
+    "quill-delta": "^5.1.0"
+  },
+  "peerDependencies": {
+    "@rudderjs/ai": "^0.0.1",
+    "@rudderjs/broadcast": "^0.0.1",
+    "@rudderjs/cache": "^0.0.6",
+    "@rudderjs/image": "^0.0.1",
+    "@rudderjs/live": "^0.0.1",
+    "@rudderjs/localization": "^0.0.1",
+    "@rudderjs/storage": "^0.0.6",
+    "recharts": ">=2.0.0",
+    "@tabler/icons-react": ">=3.0.0",
+    "@phosphor-icons/react": ">=2.0.0",
+    "@remixicon/react": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@rudderjs/ai": {
+      "optional": true
+    },
+    "@rudderjs/cache": {
+      "optional": true
+    },
+    "@rudderjs/storage": {
+      "optional": true
+    },
+    "@rudderjs/image": {
+      "optional": true
+    },
+    "@rudderjs/broadcast": {
+      "optional": true
+    },
+    "@rudderjs/live": {
+      "optional": true
+    },
+    "@rudderjs/localization": {
+      "optional": true
+    },
+    "recharts": {
+      "optional": true
+    },
+    "@tabler/icons-react": {
+      "optional": true
+    },
+    "@phosphor-icons/react": {
+      "optional": true
+    },
+    "@remixicon/react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@base-ui-components/react": "1.0.0-rc.0",
+    "@rudderjs/ai": "^0.0.1",
+    "@rudderjs/broadcast": "^0.0.1",
+    "@rudderjs/cache": "^0.0.6",
+    "@rudderjs/live": "^0.0.1",
+    "@rudderjs/localization": "^0.0.1",
+    "@rudderjs/storage": "^0.0.6",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.2.14",
+    "lucide-react": "^0.575.0",
+    "sonner": "^2.0.7",
+    "typescript": "^5.4.0",
+    "vike": "^0.4.239",
+    "vike-react": "^0.6.20",
+    "zod": "^4.0.0"
+  },
+  "author": "Suleiman Shahbari"
+}

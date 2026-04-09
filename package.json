@@ -25,7 +25,20 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "sharp"
-    ]
+    ],
+    "overrides": {
+      "@rudderjs/core": "link:../rudderjs/packages/core",
+      "@rudderjs/router": "link:../rudderjs/packages/router",
+      "@rudderjs/support": "link:../rudderjs/packages/support",
+      "@rudderjs/ai": "link:../rudderjs/packages/ai",
+      "@rudderjs/orm": "link:../rudderjs/packages/orm",
+      "@rudderjs/cache": "link:../rudderjs/packages/cache",
+      "@rudderjs/storage": "link:../rudderjs/packages/storage",
+      "@rudderjs/image": "link:../rudderjs/packages/image",
+      "@rudderjs/broadcast": "link:../rudderjs/packages/broadcast",
+      "@rudderjs/live": "link:../rudderjs/packages/live",
+      "@rudderjs/localization": "link:../rudderjs/packages/localization"
+    }
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.0",
