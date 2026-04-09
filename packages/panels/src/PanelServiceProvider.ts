@@ -4,14 +4,12 @@ import { debugWarn } from './debug.js'
 import { PanelRegistry } from './registries/PanelRegistry.js'
 import { registerResolver } from './registries/ResolverRegistry.js'
 import { DashboardRegistry } from './registries/DashboardRegistry.js'
-import { BuiltInAiActionRegistry, builtInActions } from './ai-actions/index.js'
 import {
   buildPanelMiddleware,
   mountMetaRoutes,
   mountResourceRoutes,
   mountGlobalRoutes,
   mountDashboardRoutes,
-  mountPanelChat,
 } from './handlers/index.js'
 import { mountThemeRoutes, loadThemeOverrides } from './handlers/themeRoutes.js'
 import { mountNotificationRoutes } from './handlers/notificationRoutes.js'
@@ -56,18 +54,12 @@ export { buildDefaultLayout } from './handlers/index.js'
 
 export class PanelServiceProvider extends ServiceProvider {
   register(): void {
-    // Built-in AI quick actions — registered in the sync `register()` phase
-    // so they're available before any field meta serialises (per Q1 in
-    // `docs/plans/standalone-client-tools-plan.md`). App code can override
-    // built-ins by registering its own with the same slug from a downstream
-    // provider's register() — later wins.
-    //
-    // Phase 3 seam: this registration moves to `@pilotiq-pro/ai`'s provider
-    // in Phase 4. Until then, free panels seeds the catalogue itself so
-    // existing apps keep working.
-    for (const action of builtInActions) {
-      BuiltInAiActionRegistry.register(action)
-    }
+    // Built-in AI quick actions — the `BuiltInAiActionRegistry` seam lives
+    // in `src/ai-actions/registry.ts` (Phase 3), but the catalogue and its
+    // seeding moved to `@pilotiq-pro/ai`'s `AiServiceProvider.register()`
+    // in Phase 4.3. Free panels deliberately does NOT seed the registry —
+    // apps without pro get a helpful build-time error from `Field.ai([...])`
+    // pointing them to install pro.
 
     // Collab persist providers — `Field.persist(['websocket', 'indexeddb'])`
     // is gated by `CollabSupportRegistry`. Free panels deliberately does NOT
@@ -110,14 +102,10 @@ export class PanelServiceProvider extends ServiceProvider {
     // request is served. Silently no-ops if localization isn't present.
     await preloadPanelTranslations()
 
-    // Register conversation store if Prisma is available
-    try {
-      const prisma = this.app.make('prisma')
-      if (prisma) {
-        const { PrismaConversationStore } = await import('./conversation/PrismaConversationStore.js')
-        this.app.instance('ai.conversations', new PrismaConversationStore())
-      }
-    } catch { /* no prisma — conversation persistence unavailable */ }
+    // Conversation store binding moved to `@pilotiq-pro/ai`'s
+    // `AiServiceProvider.boot()` in Phase 4.3. Free no longer knows about
+    // `PrismaConversationStore` — pro binds `ai.conversations` into the
+    // container itself when it's installed.
 
     const { router } = await import('@rudderjs/router') as {
       router: {
@@ -142,7 +130,8 @@ export class PanelServiceProvider extends ServiceProvider {
       ]
 
       mountMetaRoutes(router, panel, mw)
-      mountPanelChat(router, panel, mw)
+      // Chat routes (`/api/_chat/*`) are mounted by
+      // `@pilotiq-pro/ai`'s `AiServiceProvider.boot()` since Phase 4.3.
 
       // Theme: load saved overrides from DB and mount editor routes
       if (panel.getTheme()) {
@@ -211,12 +200,9 @@ export function panels(
       PanelRegistry.reset()
       DashboardRegistry.reset()
 
-      // Built-in AI quick actions — see PanelServiceProvider.register() above
-      // for the rationale. The factory overrides register() without calling
-      // super, so we register here too. Idempotent (later registrations win).
-      for (const action of builtInActions) {
-        BuiltInAiActionRegistry.register(action)
-      }
+      // Built-in AI quick actions — seeded by `@pilotiq-pro/ai`'s
+      // `AiServiceProvider.register()` since Phase 4.3. The factory
+      // override no longer has anything to seed itself.
 
       // Collab persist providers — see PanelServiceProvider.register() above.
       // Seeding moved to `@pilotiq-pro/collab`'s CollabServiceProvider in

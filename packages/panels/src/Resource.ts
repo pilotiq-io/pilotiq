@@ -2,8 +2,10 @@ import type { Field, FieldMeta } from './schema/Field.js'
 import type { Section, SectionMeta } from './schema/Section.js'
 import type { Tabs, TabsMeta } from './schema/Tabs.js'
 import type { PolicyAction, PanelContext, ModelClass } from './types.js'
-import type { PanelAgent } from './agents/PanelAgent.js'
-import type { PanelAgentMeta } from './agents/types.js'
+// Phase 3 seam — `PanelAgentInterface` is the free-side contract; the
+// concrete `PanelAgent` class lives in `@pilotiq-pro/ai` since Phase 4.3.
+// The alias keeps the existing `PanelAgent[]` call sites readable.
+import type { PanelAgentInterface as PanelAgent, PanelAgentMeta } from './agents/types.js'
 import type { RelationManager } from './schema/RelationManager.js'
 import type { RelationManagerMeta } from './schema/RelationManager.js'
 import { Table } from './schema/Table.js'

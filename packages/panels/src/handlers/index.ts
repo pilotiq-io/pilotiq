@@ -7,5 +7,5 @@ export { mountResourceRoutes } from './resource/index.js'
 export { mountGlobalRoutes } from './globalRoutes.js'
 export { mountVersionRoutes } from './versionRoutes.js'
 export { mountDashboardRoutes, buildDefaultLayout } from './dashboardRoutes.js'
-export { mountPanelChat } from './chat/index.js'
+// `mountPanelChat` moved to `@pilotiq-pro/ai` in Phase 4.3.
 export { mountThemeRoutes, loadThemeOverrides } from './themeRoutes.js'

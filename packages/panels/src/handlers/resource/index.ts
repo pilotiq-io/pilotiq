@@ -15,7 +15,6 @@ import {
 } from './softDeleteHandler.js'
 import { mountVersionRoutes } from '../versionRoutes.js'
 import { mountImportRoutes } from '../meta/importRoutes.js'
-import { handleAgentRun, handleAgentRunContinuation } from '../agentRun.js'
 
 export function mountResourceRoutes(
   router: RouterLike,
@@ -82,17 +81,12 @@ export function mountResourceRoutes(
   }
 
   // ── Agent routes ─────────────────────────────────────────
-  if (mountResource.agents().length > 0) {
-    router.post(`${base}/:id/_agents/:agentSlug`, async (req, res) => {
-      return handleAgentRun(req, res, ResourceClass, panel.getName())
-    }, mw)
-    // Continuation endpoint for client-tool round-trips and approval gates.
-    // The browser POSTs here after executing client tools (or approving)
-    // with the runId from the initial run_started SSE event.
-    router.post(`${base}/:id/_agents/:agentSlug/continue`, async (req, res) => {
-      return handleAgentRunContinuation(req, res, ResourceClass, panel.getName())
-    }, mw)
-  }
+  // Moved to `@pilotiq-pro/ai`'s `AiServiceProvider.boot()` in Phase 4.3.
+  // Pro iterates `PanelRegistry.all()` and mounts `/_agents/:slug` +
+  // `/_agents/:slug/continue` via `handleAgentRun` + `handleAgentRunContinuation`.
+  // Free no longer knows how to run an agent — the routes simply don't
+  // exist when pro is not installed, and any `Field.ai([...])` usage is
+  // gated by `BuiltInAiActionRegistry` which pro also seeds.
 
   // ── Version routes ───────────────────────────────────────
   const versionResource = new ResourceClass()

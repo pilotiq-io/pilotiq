@@ -194,6 +194,10 @@ export { resolveTabs }  from './resolvers/resolveTabs.js'
 export { resolveActiveTabIndex } from './resolvers/helpers.js'
 export { resolveForm }  from './resolvers/resolveForm.js'
 export { flattenFields } from './handlers/shared/fields.js'
+// Helper for building a `PanelContext` from an AppRequest. Exported for
+// pro packages (`@pilotiq-pro/ai`) that mount their own handlers and
+// need the same request → context shape as built-in resource/meta routes.
+export { buildContext } from './handlers/shared/context.js'
 
 // ─── Registries ─────────────────────────────────────────────
 
@@ -238,12 +242,18 @@ export type {
   SchemaElementLike,
 } from './types.js'
 
-// ─── Agents ────────────────────────────────────────────────
+// ─── Agents (open-core seam) ───────────────────────────────
+//
+// Free `@pilotiq/panels` only exports the contract — the `PanelAgentInterface`
+// type plus the `BuiltInAiActionRegistry` that pro populates. The concrete
+// `PanelAgent` class, its runtime context, built-in action catalogue, chat
+// handlers, conversation store, and streaming runner all live in
+// `@pilotiq-pro/ai` since Phase 4.3. Apps that want AI affordances install
+// pro — free schemas keep working untouched, `Field.ai([...])` throws a
+// helpful "install @pilotiq-pro/ai" error at build time when pro is absent.
 
-export { PanelAgent } from './agents/PanelAgent.js'
-export type { PanelAgentContext } from './agents/PanelAgent.js'
 export type { PanelAgentMeta, PanelAgentFieldType, PanelAgentInterface } from './agents/types.js'
-export { BuiltInAiActionRegistry, builtInActions } from './ai-actions/index.js'
+export { BuiltInAiActionRegistry } from './ai-actions/registry.js'
 
 // ─── Data helpers ───────────────────────────────────────────
 
