@@ -22,10 +22,10 @@ registerLexical()
 For Tailwind CSS to scan the component classes, add to your CSS:
 
 ```css
-@source "../../packages/panels-lexical/src";
+@source "../../node_modules/@pilotiq/lexical/dist";
 ```
 
-(Adjust the path based on your project structure)
+(Adjust the path based on your project structure.)
 
 ## Components
 

@@ -4,7 +4,7 @@
 
 Pilotiq is the Filament-meets-VS-Code admin builder for the Node.js ecosystem. Define resources, fields, and forms with a Laravel-style API, then let the built-in agent help you write and edit content alongside the user.
 
-**Status:** Early development. Extraction from [`rudderjs/rudder`](https://github.com/rudderjs/rudder) in progress — see [`docs/plans/pilotiq-extraction-plan.md`](./docs/plans/pilotiq-extraction-plan.md).
+**Status:** Early development.
 
 ```ts
 import { Panel } from '@pilotiq/panels'
@@ -15,19 +15,18 @@ export const adminPanel = Panel.make('admin')
   .resources([ArticleResource])
 ```
 
+See [`Architecture.md`](./Architecture.md) for the design and dependency flow, and [`docs/`](./docs) for guides.
+
 ---
 
 ## What's in this repo
 
 | Package | Description |
 |---|---|
-| [`@pilotiq/panels`](./packages/panels) | Resource builder, forms, fields, schema, registries, theming, i18n, server-side handlers |
+| [`@pilotiq/panels`](./packages/panels) | Resource builder, forms, fields (20+ types), schema, registries, theming, i18n, server-side handlers |
 | [`@pilotiq/lexical`](./packages/lexical) | Lexical rich-text editor adapter — works in local-only mode by default |
-| [`@pilotiq/media`](./packages/media) | Media library + media picker field |
-| [`@pilotiq/workspaces`](./packages/workspaces) | Workspaces resource + canvas/chat field types |
-| [`playground/`](./playground) | Free pilotiq dev fixture — panels + lexical (local-only) + media + workspaces on port 3001. No pro deps. |
-
-These packages are extracted from `rudderjs/rudder`'s `packages/panels`, `packages/panels-lexical`, `packages/media`, and `packages/workspaces`. The extraction is complete (Phase 2–5 DONE). See `docs/plans/phase-6-playground-extraction.md` for the three-playground split.
+| [`@pilotiq/media`](./packages/media) | Media library + `MediaPickerField` |
+| [`playground/`](./playground) | Free pilotiq dev fixture — panels + lexical + media on port 3001. No pro deps. |
 
 ---
 
@@ -75,4 +74,4 @@ For active framework development across both repos (`rudderjs/rudder` + `pilotiq
 
 ## License
 
-MIT © Suleiman Shahbari
+[MIT](./LICENSE)
