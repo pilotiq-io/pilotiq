@@ -2,16 +2,23 @@
 
 Resource agents bring AI capabilities directly into your admin panel. Define agents on resources that can read record data, update fields in real-time, and stream progress to an integrated chat sidebar.
 
-Requires `@rudderjs/ai` as a peer dependency.
+> **Open core:** the AI runtime ships in the commercial [`@pilotiq-pro/ai`](https://github.com/pilotiq-io/pilotiq-pro) package. Free `@pilotiq/panels` ships only the contracts (`PanelAgentInterface`, `BuiltInAiActionRegistry`, `AiUiContext`, `ClientToolRegistry`). To enable agents, install `@pilotiq-pro/ai` and register its `AiServiceProvider` in your `bootstrap/providers.ts` — see the [pro README](https://github.com/pilotiq-io/pilotiq-pro/tree/main/packages/ai) for the full setup recipe.
+>
+> Without `@pilotiq-pro/ai` installed:
+> - `Field.ai(['rewrite'])` throws a helpful build-time error pointing here
+> - The chat sidebar slot is empty (no trigger button rendered)
+> - The `✦` field-action dropdowns silently no-op
+> - Free `@pilotiq/panels` works otherwise unchanged — there is no AI runtime to fail
 
 ---
 
 ## Defining Agents
 
-Override the `agents()` method on a resource to define available agents:
+Override the `agents()` method on a resource to define available agents. The `PanelAgent` class itself ships in `@pilotiq-pro/ai`:
 
 ```ts
-import { Resource, PanelAgent, TextField, TextareaField, Form } from '@pilotiq/panels'
+import { Resource, TextField, TextareaField, Form } from '@pilotiq/panels'
+import { PanelAgent } from '@pilotiq-pro/ai'
 
 export class ArticleResource extends Resource {
   static model = Article
@@ -55,12 +62,17 @@ export class ArticleResource extends Resource {
 | `.model(string)` | Override the AI model (e.g. `'anthropic/claude-sonnet-4-5'`) |
 | `.tools(Tool[])` | Additional custom tools beyond the auto-generated ones |
 
-### Auto-Generated Tools
+### Default toolkit
 
-Every agent automatically gets:
+Every `PanelAgent` ships with five tools out of the box:
 
-- **`update_field`** — Updates a field on the current record via Yjs. The field value propagates to all connected clients in real-time.
-- **`read_record`** — Returns the current record data as JSON.
+- **`update_field`** *(server)* — Direct field write via `@rudderjs/live` (Yjs). Headless-only — for cron jobs and background runs.
+- **`read_record`** *(server)* — Returns the current record as JSON.
+- **`edit_text`** *(server)* — Direct rope edit on a field's persisted value. Headless-only.
+- **`update_form_state`** *(client)* — Dispatches form-state ops to the live `<SchemaForm>` in the user's browser. **Use this when a browser is open** — it preserves unsaved local edits and works for non-collaborative fields.
+- **`read_form_state`** *(client)* — Reads field values from the live form state, including unsaved edits.
+
+The client tools round-trip through the server: the agent loop pauses with `pending_client_tools`, the browser executes the registered handler from `ClientToolRegistry`, and POSTs the result back to continue the loop.
 
 ---
 
@@ -69,7 +81,7 @@ Every agent automatically gets:
 For complex agents with custom tools or dynamic instructions:
 
 ```ts
-import { PanelAgent } from '@pilotiq/panels'
+import { PanelAgent } from '@pilotiq-pro/ai'
 import { toolDefinition } from '@rudderjs/ai'
 import { z } from 'zod'
 
@@ -195,4 +207,93 @@ The per-agent endpoint is still available for programmatic access:
 { "input": "optional user instruction" }
 ```
 
-Returns SSE with events: `text`, `tool_call`, `complete`, `error`.
+Returns SSE with events: `text`, `tool_call`, `complete`, `error`. For client tool round-trips (e.g. an action that calls `update_form_state`), the loop pauses with `pending_client_tools` and the browser POSTs the result to `/_agents/:agentSlug/continue` with the `runId` from the initial `run_started` event.
+
+---
+
+## Open-core seams (advanced)
+
+`@pilotiq/panels` ships four open-core seams that `@pilotiq-pro/ai` fills in. Apps that want to build their own AI runtime — or replace pieces of pro's — can read and write these seams directly.
+
+### `BuiltInAiActionRegistry`
+
+The catalogue of built-in AI field actions (`rewrite`, `shorten`, `expand`, etc.) `Field.ai([...])` resolves slugs through. Free panels ships an empty registry; `@pilotiq-pro/ai`'s `AiServiceProvider.register()` seeds it with the 8 built-in actions at app boot.
+
+```ts
+import { BuiltInAiActionRegistry } from '@pilotiq/panels'
+
+// Register a custom built-in action (must implement PanelAgentInterface):
+BuiltInAiActionRegistry.register(myCustomAction)
+
+// Look up an action by slug:
+const agent = BuiltInAiActionRegistry.get('rewrite')
+```
+
+If `Field.ai(['unknown-slug'])` finds no matching agent at form-build time, it throws a helpful error pointing at `@pilotiq-pro/ai`.
+
+### `AiUiContext` + `useAiUi()`
+
+The React-side slot bag for AI UI components contributed by pro. Free panels ships the contract (an interface + an empty default context); pro's `<AiUiProvider>` populates the slots with concrete components and hooks.
+
+```tsx
+import { useAiUi } from '@pilotiq/panels'
+
+function MyTopbar() {
+  const { AiChatPanel, AiChatTrigger, AiDropdown, useAgentRun, useAiChat } = useAiUi()
+
+  // Optional chaining: when pro is not installed, every slot is undefined.
+  return (
+    <header>
+      {AiChatTrigger && <AiChatTrigger />}
+      {/* … */}
+    </header>
+  )
+}
+```
+
+The slot interface intentionally types every slot as optional with loose component shapes — tightening them here would force free to re-declare pro's full type surface, defeating the seam. Apps that vendor `+Layout.tsx` and statically wrap with `<AiUiProvider panelPath={...}>` get fully-typed access through pro's exports.
+
+### `ClientToolRegistry`
+
+Browser-side singleton that maps client-tool names to handler functions. Used by:
+
+- `<SchemaForm>` registers `update_form_state` and `read_form_state` from a `useEffect` on mount
+- `@pilotiq-pro/ai`'s chat dispatcher and `useAgentRun` look up handlers via `ClientToolRegistry.get(name)` when the agent loop pauses with a client tool call
+
+There is exactly **one** `ClientToolRegistry` singleton per app — it lives in `@pilotiq/panels` and pro reads from the same module instance. This requires `@pilotiq/panels` to be deduped in your Vite config when you install pro (see the [pro README](https://github.com/pilotiq-io/pilotiq-pro/tree/main/packages/ai#3-configure-vite-load-bearing) for the recipe).
+
+```ts
+import { ClientToolRegistry } from '@pilotiq/panels'
+
+useEffect(() => {
+  return ClientToolRegistry.register('open_modal', async (args: { modalId: string }) => {
+    showModal(args.modalId)
+    return { opened: true }
+  })
+}, [])
+```
+
+`register()` returns an unregister function for `useEffect` cleanup. To make a registered tool callable by an agent, declare it server-side as a `toolDefinition` with no `.server(...)` execute function — that's what makes it a "client tool" the agent loop yields control on.
+
+### `buildPanelMiddleware`
+
+Helper that builds the panel guard middleware used by built-in CRUD route mounting. Exported so pro packages (or app code) can mount their own routes with the same auth posture:
+
+```ts
+import { buildPanelMiddleware, PanelRegistry } from '@pilotiq/panels'
+
+for (const panel of PanelRegistry.all()) {
+  const mw = [
+    sessionMw,
+    ...panel.getMiddleware(),
+    ...buildPanelMiddleware(panel),
+  ]
+  // mount your own routes with `mw`
+}
+```
+
+This is exactly how `@pilotiq-pro/ai`'s `AiServiceProvider.boot()` mounts its chat + standalone agent routes per panel.
+
+### Why these seams?
+
+The four together let `@pilotiq/panels` ship a fully-functional admin/CMS with zero AI runtime, while `@pilotiq-pro/ai` plugs in via the seams without any free-side knowledge of pro's internals. Apps that don't install pro get a clean baseline; apps that do install pro get the full agent runtime for one provider registration plus a Vite config edit. See [`docs/plans/phase-4-ai-extraction.md`](../../plans/phase-4-ai-extraction.md) for the full design rationale.
