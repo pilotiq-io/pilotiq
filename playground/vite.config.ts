@@ -41,7 +41,6 @@ export default defineConfig({
       '@formkit/auto-animate',
 
       // Common
-      '@clack/prompts',
       'reflect-metadata',
       'zod',
       'lucide-react',
@@ -96,6 +95,9 @@ export default defineConfig({
       // with the playground's own imports.
       '@pilotiq/panels',
       '@pilotiq/lexical',
+      // CLI-only — server-side, must not be pre-bundled
+      '@clack/prompts',
+      '@clack/core',
     ],
   },
 })
