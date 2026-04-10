@@ -25,8 +25,9 @@ export const adminPanel = Panel.make('admin')
 | [`@pilotiq/lexical`](./packages/lexical) | Lexical rich-text editor adapter — works in local-only mode by default |
 | [`@pilotiq/media`](./packages/media) | Media library + media picker field |
 | [`@pilotiq/workspaces`](./packages/workspaces) | Workspaces resource + canvas/chat field types |
+| [`playground/`](./playground) | Free pilotiq dev fixture — panels + lexical (local-only) + media + workspaces on port 3001. No pro deps. |
 
-These packages are extracted from `rudderjs/rudder`'s `packages/panels`, `packages/panels-lexical`, `packages/media`, and `packages/workspaces`. The extraction is happening in phases — see the plan doc for the file-level migration map.
+These packages are extracted from `rudderjs/rudder`'s `packages/panels`, `packages/panels-lexical`, `packages/media`, and `packages/workspaces`. The extraction is complete (Phase 2–5 DONE). See `docs/plans/phase-6-playground-extraction.md` for the three-playground split.
 
 ---
 

@@ -2,7 +2,7 @@
 
 Split the single oversized `rudderjs/playground` into **three** focused playgrounds — one per repo — so each monorepo can dogfood its own surface area without dragging in the others.
 
-**Status:** DRAFT 2026-04-10.
+**Status:** Phases 6.0–6.3 DONE 2026-04-10. 6.4 (cross-repo HMR check), 6.5 (docs — in progress), 6.6 (memory cwd cutover) pending.
 
 **Repos affected:**
 - `rudderjs` — playground slimmed to a pure framework demo (no panels, no pilotiq-pro)
@@ -227,7 +227,7 @@ The cutover order is **add new, verify, then subtract** — never leave a broken
 | `pilotiq/playground` | 3001 | 24679 |
 | `pilotiq-pro/playground` | 3002 | 24680 |
 
-### Phase 6.1 — Bootstrap `pilotiq-pro/playground` (the easy one)
+### Phase 6.1 — Bootstrap `pilotiq-pro/playground` (the easy one) ✅ DONE 2026-04-10
 
 Do pilotiq-pro **first** because it's the closest sibling of today's playground — least transformation, highest confidence. If something goes wrong here, the cause is cross-repo wiring, not refactoring noise.
 
@@ -246,7 +246,7 @@ Do pilotiq-pro **first** because it's the closest sibling of today's playground 
 
 **Deliverable:** `pilotiq-pro/playground` is a working full-stack demo. Commit + push pilotiq-pro.
 
-### Phase 6.2 — Bootstrap `pilotiq/playground` (the slimmed pro-free copy)
+### Phase 6.2 — Bootstrap `pilotiq/playground` (the slimmed pro-free copy) ✅ DONE 2026-04-10
 
 1. `mkdir ~/Projects/pilotiq/playground`
 2. Copy the relevant subset of `pilotiq-pro/playground/` (now the canonical pre-trim version) into `pilotiq/playground/`:
@@ -270,7 +270,7 @@ Do pilotiq-pro **first** because it's the closest sibling of today's playground 
 
 **Deliverable:** `pilotiq/playground` is a working free-pilotiq demo. Commit + push pilotiq.
 
-### Phase 6.3 — Slim down `rudderjs/playground`
+### Phase 6.3 — Slim down `rudderjs/playground` ✅ DONE 2026-04-10
 
 Now that the other two playgrounds exist and are verified, strip rudderjs/playground.
 
