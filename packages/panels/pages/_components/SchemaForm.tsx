@@ -162,7 +162,10 @@ export function SchemaForm({ form, panelPath, i18n, onSuccess, submitUrl, submit
     let destroyed = false
 
     ;(async () => {
-      const Y = await import('yjs')
+      // Variable import breaks Vite static analysis — yjs is optional
+      // (only installed in pro playgrounds with @pilotiq-pro/collab).
+      const yjsMod = 'yjs'
+      const Y = await import(/* @vite-ignore */ yjsMod)
       if (destroyed) return
 
       const doc = new Y.Doc()
@@ -196,13 +199,15 @@ export function SchemaForm({ form, panelPath, i18n, onSuccess, submitUrl, submit
       }
 
       if (needsIndexeddb) {
-        const { IndexeddbPersistence } = await import('y-indexeddb')
+        const idbMod = 'y-indexeddb'
+        const { IndexeddbPersistence } = await import(/* @vite-ignore */ idbMod)
         if (destroyed) return
         idbProvider = new IndexeddbPersistence(formYjs.docName!, doc)
       }
 
       if (needsWebsocket && formYjs.wsLivePath) {
-        const { WebsocketProvider } = await import('y-websocket')
+        const wsMod = 'y-websocket'
+        const { WebsocketProvider } = await import(/* @vite-ignore */ wsMod)
         if (destroyed) return
         const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws'
         const wsUrl = `${wsProto}://${window.location.host}${formYjs.wsLivePath}`

@@ -23,10 +23,6 @@ export default defineConfig({
     // dedupe, Vite's optimizeDeps would pre-bundle them with their own React
     // copies, breaking context lookups across the boundary.
     //
-    // No yjs dedupe block — this playground does not install
-    // `@pilotiq-pro/collab`, so there is only one yjs instance (the one
-    // pulled in transitively by `@pilotiq/lexical`) and the "Yjs was already
-    // imported" warning never fires.
     dedupe: [
       'react', 'react-dom',
       '@pilotiq/panels', '@pilotiq/lexical',
@@ -90,10 +86,5 @@ export default defineConfig({
       '@pilotiq/panels',
       '@pilotiq/lexical',
     ],
-  },
-  ssr: {
-    // Framework `@rudderjs/ai` may import these on the server side; keep
-    // them external so Vite doesn't try to bundle them.
-    external: ['@anthropic-ai/sdk', 'openai', '@google/generative-ai'],
   },
 })

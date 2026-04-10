@@ -1,13 +1,10 @@
-import { resolve, app } from '@rudderjs/core'
+import { app } from '@rudderjs/core'
 import { AuthManager, Auth, runWithAuth } from '@rudderjs/auth'
-import { trans } from '@rudderjs/localization'
-import { GreetingService } from '../../app/Services/GreetingService.js'
 import type { PageContextServer } from 'vike/types'
 
 export type Data = Awaited<ReturnType<typeof data>>
 
 export async function data(pageContext: PageContextServer) {
-  const greeter = resolve<GreetingService>(GreetingService)
   const manager = app().make<AuthManager>('auth.manager')
 
   let user: Record<string, unknown> | null = null
@@ -24,8 +21,7 @@ export async function data(pageContext: PageContextServer) {
   })
 
   return {
-    title:   await trans('messages.welcome'),
-    message: greeter.greet('World'),
+    title: 'Pilotiq',
     user,
   }
 }

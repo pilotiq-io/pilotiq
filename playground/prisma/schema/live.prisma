@@ -1,8 +1,0 @@
-model LiveDocument {
-  id        String   @id @default(cuid())
-  docName   String
-  update    Bytes
-  createdAt DateTime @default(now())
-
-  @@index([docName])
-}

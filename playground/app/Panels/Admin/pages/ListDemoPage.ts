@@ -1,7 +1,6 @@
 import { Page, Heading, Text, List, ViewMode, Column, DataField, SelectField, SelectFilter } from '@pilotiq/panels'
 import { Category } from '../../../Models/Category.js'
 import { Article } from '../../../Models/Article.js'
-import { Todo } from '../../../Models/Todo.js'
 import { User } from '../../../Models/User.js'
 
 export class ListDemoPage extends Page {
@@ -102,33 +101,7 @@ export class ListDemoPage extends Page {
         .remember('session')
         .onRecordClick('edit'),
 
-      // ─── 3. Todos — computed field + display transform ─────────
-      Heading.make('Todos — Computed + Display').level(2),
-      List.make('Todos')
-        .id('list-demo-todos')
-        .fromModel(Todo)
-        .titleField('title')
-        .sortBy('createdAt', 'DESC')
-        .searchable(['title'])
-        .sortable([
-          'title',
-          { field: 'createdAt', label: 'Date Created' },
-        ])
-        .paginated('loadMore', 5)
-        .views([
-          ViewMode.list([
-            DataField.make('title'),
-            DataField.make('completed').boolean(),
-            DataField.make('createdAt').date(),
-          ]),
-          ViewMode.grid([
-            DataField.make('title'),
-            DataField.make('completed').badge(),
-          ]),
-        ])
-        .defaultView({ sm: 'list', lg: 'list' }),
-
-      // ─── 4. Users — simple list with custom labels ─────────────
+      // ─── 3. Users — simple list with custom labels ─────────────
       Heading.make('Users — Sortable with Custom Labels').level(2),
       List.make('Users')
         .id('list-demo-users')

@@ -1,10 +1,9 @@
 import { Panel, Heading, Text, Stats, Stat, Chart, List, Table, Column, Tabs, Tab, Dashboard, Widget } from '@pilotiq/panels'
 import { panelsLexical } from '@pilotiq/lexical/server'
 import { media } from '@pilotiq/media/server'
-import { workspaces } from '@pilotiq/workspaces'
 
 import configs from '../../../config/index.js'
-import { TodoResource }         from './resources/TodoResource.js'
+
 import { UserResource }         from './resources/UserResource.js'
 import { ArticleResource }      from './resources/ArticleResource.js'
 import { CategoryResource }     from './resources/CategoryResource.js'
@@ -22,7 +21,6 @@ import { ElementsDemo }     from './pages/ElementsDemo.js'
 
 import { Article }    from 'App/Models/Article.js'
 import { Category }   from 'App/Models/Category.js'
-import { Todo }       from 'App/Models/Todo.js'
 import { User }       from 'App/Models/User.js'
 import { SimplePage } from './pages/SimplePage.js'
 import { ListDemoPage } from './pages/ListDemoPage.js'
@@ -31,7 +29,6 @@ export const adminPanel = Panel.make('admin')
   .path('/admin')
   .use(panelsLexical())
   .use(media(configs.media))
-  .use(workspaces())
   .branding({
     title: 'Pilotiq',
     logo: '/logo.svg',
@@ -54,7 +51,6 @@ export const adminPanel = Panel.make('admin')
   .resources([
     ArticleResource,
     CategoryResource,
-    TodoResource,
     UserResource,
   ])
   .globals([
@@ -67,7 +63,6 @@ export const adminPanel = Panel.make('admin')
     Stats.make([
       Stat.make('Total Articles').value(await Article.query().count()),
       Stat.make('Total Categories').value(await Category.query().count()),
-      Stat.make('Total Todos').value(await Todo.query().count()),
       Stat.make('Total Users').value(await User.query().count()),
     ]),
 
@@ -93,20 +88,6 @@ export const adminPanel = Panel.make('admin')
               Stat.make('Total Categories').value(await Category.query().count()),
             ]),
           ]),
-
-        Widget.make('total-todos')
-          .label('Total Todos')
-          .small()
-          .icon('check-circle')
-          .schema(async () => {
-            const completed = await Todo.query().where('completed', true).count()
-            const total = await Todo.query().count()
-            return [
-              Stats.make([
-                Stat.make('Completed').value(completed).description(`of ${total} todos`),
-              ]),
-            ]
-          }),
 
         Widget.make('total-users')
           .label('Total Users')

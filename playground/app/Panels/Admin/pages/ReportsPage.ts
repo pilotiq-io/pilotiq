@@ -2,7 +2,6 @@ import { Page, Heading, Text, Stats, Stat, Chart, List, Tabs, Table, Column, For
 import type { PanelContext } from '@pilotiq/panels'
 import { Article } from '../../../Models/Article.js'
 import { User }    from '../../../Models/User.js'
-import { Todo }    from '../../../Models/Todo.js'
 import { Category } from '../../../Models/Category.js'
 
 export class ReportsPage extends Page {
@@ -21,7 +20,6 @@ export class ReportsPage extends Page {
         .data(async () => [
           { label: 'Total Articles', value: await Article.query().count(), trend: 12 },
           { label: 'Total Users', value: await User.query().count() },
-          { label: 'Total Todos', value: await Todo.query().count(), description: 'Including completed' },
           { label: 'Categories', value: await Category.query().count() },
         ])
         .poll(60000),
