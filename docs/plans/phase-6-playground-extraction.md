@@ -2,7 +2,7 @@
 
 Split the single oversized `rudderjs/playground` into **three** focused playgrounds — one per repo — so each monorepo can dogfood its own surface area without dragging in the others.
 
-**Status:** Phases 6.0–6.3 DONE 2026-04-10. 6.4 (cross-repo HMR check), 6.5 (docs — in progress), 6.6 (memory cwd cutover) pending.
+**Status:** Phases 6.0–6.3, 6.5, 6.6 all DONE 2026-04-10. 6.4 (cross-repo HMR check) is optional — manual smoke test.
 
 **Repos affected:**
 - `rudderjs` — playground slimmed to a pure framework demo (no panels, no pilotiq-pro)
