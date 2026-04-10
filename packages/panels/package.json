@@ -41,7 +41,6 @@
   },
   "peerDependencies": {
     "react": ">=18",
-    "@rudderjs/ai": "^0.0.1",
     "@rudderjs/broadcast": "^0.0.1",
     "@rudderjs/cache": "^0.0.6",
     "@rudderjs/image": "^0.0.1",
@@ -54,9 +53,6 @@
     "@remixicon/react": ">=4.0.0"
   },
   "peerDependenciesMeta": {
-    "@rudderjs/ai": {
-      "optional": true
-    },
     "@rudderjs/cache": {
       "optional": true
     },
@@ -90,7 +86,6 @@
   },
   "devDependencies": {
     "@base-ui-components/react": "1.0.0-rc.0",
-    "@rudderjs/ai": "^0.0.1",
     "@rudderjs/broadcast": "^0.0.1",
     "@rudderjs/cache": "^0.0.6",
     "@rudderjs/live": "^0.0.1",

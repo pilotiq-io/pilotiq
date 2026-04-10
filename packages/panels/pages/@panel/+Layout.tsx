@@ -1,6 +1,6 @@
 'use client'
 
-import { Component, useEffect, useState, type ComponentType, type ReactNode } from 'react'
+import { Component, type ReactNode } from 'react'
 import { usePageContext } from 'vike-react/usePageContext'
 import { AdminLayout }    from '../_components/AdminLayout.js'
 import { I18nProvider }   from '../_hooks/useI18n.js'
@@ -14,64 +14,51 @@ if (typeof window !== 'undefined') {
   import('@pilotiq/lexical').then(({ registerLexical }) => registerLexical()).catch(() => {})
 }
 
-// ── Collab provider (open-core seam) ────────────────────────────────────────
-// If @pilotiq-pro/collab is installed, dynamically load its <CollabProvider>
-// and wrap the panel tree in it. This activates real Yjs-backed collaboration
-// for LexicalEditor / CollaborativePlainText by overriding the CollabHookContext
-// that @pilotiq/lexical ships with a stub default.
+// ── Optional pro providers — app responsibility ─────────────────────────────
 //
-// Without pro installed: the import fails, the state stays null, and the
-// tree renders with the stub hook (local-only mode).
+// Earlier iterations of this Layout tried to dynamic-import `@pilotiq-pro/
+// collab` and `@pilotiq-pro/ai` from a `useEffect` so apps without the pro
+// packages installed would not crash at dev startup. Phase 4.8 browser smoke
+// (2026-04-10) proved that pattern only works on the SSR/Node side: Vite's
+// runtime dynamic-import helper does NOT resolve bare specifiers, only its
+// static analyzer does. So in the browser the import always failed silently
+// and pro's `<AiUiProvider>` / `<CollabProvider>` never mounted regardless of
+// whether the package was installed.
 //
-// SSR note: the stub and the real impl both return collabReady=false on first
-// render (real impl's collab wiring runs inside useEffect, client-only), so
-// hydration matches regardless of whether the Provider is present.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-import type surface
-function useCollabProvider(): ComponentType<{ children: ReactNode }> | null {
-  const [Provider, setProvider] = useState<ComponentType<{ children: ReactNode }> | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    // Optional runtime dep — Vite must NOT statically resolve this specifier,
-    // otherwise dev crashes with "Failed to resolve import" when pro isn't
-    // installed (see pilotiq/docs/plans/phase-5-collab-extraction.md R5/R6).
-    // Literal string + /* @vite-ignore */ is not enough in Vite 7 — the
-    // import-analysis plugin still inspects the literal. The workaround is
-    // a non-literal specifier (string concatenation) so static analysis
-    // can't see the target at all; the import falls through to runtime
-    // where .catch() handles "not installed" gracefully.
-    const pkg = '@pilotiq-pro' + '/collab'
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- optional dep surface
-    import(/* @vite-ignore */ pkg)
-      .then((mod: any) => { if (!cancelled && mod?.CollabProvider) setProvider(() => mod.CollabProvider) })
-      .catch(() => { /* pro not installed — stay in local-only mode */ })
-    return () => { cancelled = true }
-  }, [])
-  return Provider
-}
-
-// ── AI UI provider (open-core seam) ─────────────────────────────────────────
-// Mirrors `useCollabProvider` above. If `@pilotiq-pro/ai` is installed, its
-// `<AiUiProvider>` overrides the empty `AiUiContext` slot bag shipped in free
-// `@pilotiq/panels` with concrete AI components/hooks (`AiChatPanel`,
-// `AiDropdown`, `useAgentRun`, `useAiChat`, …). Free pages read those slots
-// via `useAiUi()` and render them conditionally.
+// The supported integration pattern is now **app-side static imports**:
 //
-// Same Vite 7 import-analysis workaround as collab: non-literal specifier so
-// static resolution can't touch it. See phase-5-collab-extraction.md R5/R6
-// and phase-4-ai-extraction.md D1.
-function useAiUiProvider(): ComponentType<{ children: ReactNode }> | null {
-  const [Provider, setProvider] = useState<ComponentType<{ children: ReactNode }> | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    const pkg = '@pilotiq-pro' + '/ai'
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- optional dep surface
-    import(/* @vite-ignore */ pkg)
-      .then((mod: any) => { if (!cancelled && mod?.AiUiProvider) setProvider(() => mod.AiUiProvider) })
-      .catch(() => { /* pro not installed — AI affordances stay hidden */ })
-    return () => { cancelled = true }
-  }, [])
-  return Provider
-}
+//   1. App installs `@pilotiq-pro/ai` (and/or `@pilotiq-pro/collab`).
+//   2. App's `vite.config.ts` adds:
+//        resolve.dedupe:        ['react', 'react-dom', '@pilotiq/panels',
+//                                '@pilotiq/lexical']
+//        optimizeDeps.include:  ['@pilotiq-pro/ai', '@pilotiq-pro/collab']
+//        optimizeDeps.exclude:  ['@pilotiq/panels', '@pilotiq/lexical']
+//      The dedupe + exclude entries are load-bearing — without them Vite
+//      pre-bundles pro with its own copies of `@pilotiq/panels` and React,
+//      which creates duplicate `AiUiContext` / React instances and silently
+//      breaks every context lookup at hydration time.
+//   3. App vendors this file (`pnpm rudder vendor:publish --tag=pilotiq-pages
+//      --force`) and replaces the rendered tree below with a static import of
+//      whichever pro providers it wants:
+//
+//        import { AiUiProvider } from '@pilotiq-pro/ai'
+//        import { CollabProvider } from '@pilotiq-pro/collab'
+//
+//        return (
+//          <AiUiProvider panelPath={data.panelMeta.path}>
+//            <CollabProvider>
+//              <I18nProvider …>…</I18nProvider>
+//            </CollabProvider>
+//          </AiUiProvider>
+//        )
+//
+// Apps that do NOT install pro can vendor this file unchanged — the panel
+// tree renders without the chat sidebar / `✦` field actions / Yjs collab,
+// and the open-core `useAiUi()` slot bag returns its empty default.
+//
+// See `~/Projects/rudderjs/playground/pages/(panels)/@panel/+Layout.tsx` for
+// the canonical "app installs pro" reference and `playground/vite.config.ts`
+// for the Vite config it depends on.
 
 // ── Error Boundary ──────────────────────────────────────────────────────────
 
@@ -166,27 +153,18 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
   // SSR: inject theme CSS inline to prevent FOUC
   const themeCss = data.panelMeta.theme ? generateThemeCSS(data.panelMeta.theme) : null
 
-  const CollabProvider = useCollabProvider()
-  const AiUiProvider   = useAiUiProvider()
-  const tree = (
-    <I18nProvider i18n={data.panelMeta.i18n} locale={data.panelMeta.locale}>
-      <AdminLayout panelMeta={data.panelMeta} currentSlug={data.slug ?? ''} {...(data.sessionUser !== undefined ? { initialUser: data.sessionUser } : {})}>
-        {children}
-      </AdminLayout>
-    </I18nProvider>
-  )
-
-  // Nest the two optional pro providers. Order: AiUi (outer) → Collab (inner).
-  // Neither provider observes the other at runtime, so the order is cosmetic,
-  // but keeping AiUi outer matches the conceptual layering (chat lives at the
-  // admin shell level; collab is a per-editor concern).
-  const withCollab = CollabProvider ? <CollabProvider>{tree}</CollabProvider> : tree
-  const wrapped    = AiUiProvider   ? <AiUiProvider>{withCollab}</AiUiProvider> : withCollab
-
+  // Apps that install pro packages should vendor this file and statically
+  // wrap the tree below in `<AiUiProvider panelPath={data.panelMeta.path}>`
+  // and/or `<CollabProvider>`. See the long comment block at the top of this
+  // file for the integration recipe + Vite config requirements.
   return (
     <PanelErrorBoundary>
       {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
-      {wrapped}
+      <I18nProvider i18n={data.panelMeta.i18n} locale={data.panelMeta.locale}>
+        <AdminLayout panelMeta={data.panelMeta} currentSlug={data.slug ?? ''} {...(data.sessionUser !== undefined ? { initialUser: data.sessionUser } : {})}>
+          {children}
+        </AdminLayout>
+      </I18nProvider>
     </PanelErrorBoundary>
   )
 }

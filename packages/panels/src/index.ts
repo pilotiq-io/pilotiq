@@ -198,6 +198,11 @@ export { flattenFields } from './handlers/shared/fields.js'
 // pro packages (`@pilotiq-pro/ai`) that mount their own handlers and
 // need the same request → context shape as built-in resource/meta routes.
 export { buildContext } from './handlers/shared/context.js'
+// `buildPanelMiddleware` exposes the panel guard middleware so the
+// commercial `@pilotiq-pro/ai` package can mount its chat + standalone
+// agent routes from `AiServiceProvider.boot()` with the same auth posture
+// `mountResourceRoutes` uses for built-in routes.
+export { buildPanelMiddleware } from './handlers/panelMiddleware.js'
 
 // ─── Registries ─────────────────────────────────────────────
 

@@ -143,9 +143,6 @@ importers:
       '@remixicon/react':
         specifier: '>=4.0.0'
         version: 4.9.0(react@19.2.5)
-      '@rudderjs/ai':
-        specifier: link:../../../rudderjs/packages/ai
-        version: link:../../../rudderjs/packages/ai
       '@rudderjs/broadcast':
         specifier: link:../../../rudderjs/packages/broadcast
         version: link:../../../rudderjs/packages/broadcast
