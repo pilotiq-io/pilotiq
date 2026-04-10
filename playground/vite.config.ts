@@ -40,7 +40,15 @@ export default defineConfig({
       'motion/react',
       '@formkit/auto-animate',
 
+      // Common
+      '@clack/prompts',
+      'reflect-metadata',
+      'zod',
+      'lucide-react',
+      'radix-ui',
+
       // Base UI
+      '@base-ui/react/input',
       '@base-ui/react/collapsible',
       '@base-ui/react/separator',
       '@base-ui/react/merge-props',
@@ -57,6 +65,7 @@ export default defineConfig({
       '@base-ui-components/react/dialog',
 
       // Vike
+      'vike/abort',
       'vike-react/useConfig',
 
       // Lexical (local-only, no @lexical/yjs)
@@ -73,6 +82,8 @@ export default defineConfig({
       '@lexical/react/LexicalLinkPlugin',
       '@lexical/react/LexicalDraggableBlockPlugin',
       '@lexical/react/LexicalHorizontalRuleNode',
+      '@lexical/react/LexicalCollaborationPlugin',
+      '@lexical/react/LexicalCollaborationContext',
       '@lexical/link',
       '@lexical/utils',
       '@lexical/rich-text',
