@@ -24,6 +24,11 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@prisma/engines",
+      "prisma",
+      "msgpackr-extract",
+      "protobufjs",
+      "better-sqlite3",
       "sharp"
     ],
     "overrides": {
@@ -32,12 +37,32 @@
       "@rudderjs/support": "link:../rudderjs/packages/support",
       "@rudderjs/ai": "link:../rudderjs/packages/ai",
       "@rudderjs/orm": "link:../rudderjs/packages/orm",
+      "@rudderjs/orm-prisma": "link:../rudderjs/packages/orm-prisma",
       "@rudderjs/cache": "link:../rudderjs/packages/cache",
       "@rudderjs/storage": "link:../rudderjs/packages/storage",
       "@rudderjs/image": "link:../rudderjs/packages/image",
       "@rudderjs/broadcast": "link:../rudderjs/packages/broadcast",
       "@rudderjs/live": "link:../rudderjs/packages/live",
-      "@rudderjs/localization": "link:../rudderjs/packages/localization"
+      "@rudderjs/localization": "link:../rudderjs/packages/localization",
+      "@rudderjs/auth": "link:../rudderjs/packages/auth",
+      "@rudderjs/hash": "link:../rudderjs/packages/hash",
+      "@rudderjs/boost": "link:../rudderjs/packages/boost",
+      "@rudderjs/contracts": "link:../rudderjs/packages/contracts",
+      "@rudderjs/log": "link:../rudderjs/packages/log",
+      "@rudderjs/mail": "link:../rudderjs/packages/mail",
+      "@rudderjs/middleware": "link:../rudderjs/packages/middleware",
+      "@rudderjs/notification": "link:../rudderjs/packages/notification",
+      "@rudderjs/queue": "link:../rudderjs/packages/queue",
+      "@rudderjs/queue-bullmq": "link:../rudderjs/packages/queue-bullmq",
+      "@rudderjs/schedule": "link:../rudderjs/packages/schedule",
+      "@rudderjs/server-hono": "link:../rudderjs/packages/server-hono",
+      "@rudderjs/session": "link:../rudderjs/packages/session",
+      "@rudderjs/vite": "link:../rudderjs/packages/vite",
+      "@rudderjs/telescope": "link:../rudderjs/packages/telescope",
+      "@rudderjs/pulse": "link:../rudderjs/packages/pulse",
+      "@rudderjs/horizon": "link:../rudderjs/packages/horizon",
+      "@rudderjs/rudder": "link:../rudderjs/packages/rudder",
+      "@rudderjs/cli": "link:../rudderjs/packages/cli"
     }
   },
   "devDependencies": {

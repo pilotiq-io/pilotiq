@@ -1,0 +1,70 @@
+import { resolve } from 'node:path'
+import type { Application, ServiceProvider } from '@rudderjs/core'
+import { events } from '@rudderjs/core'
+import { auth } from '@rudderjs/auth'
+import { hash } from '@rudderjs/hash'
+import { queue } from '@rudderjs/queue'
+import { mail } from '@rudderjs/mail'
+import { cache } from '@rudderjs/cache'
+import { storage } from '@rudderjs/storage'
+import { scheduler } from '@rudderjs/schedule'
+import { notifications } from '@rudderjs/notification'
+import { session } from '@rudderjs/session'
+import { localization } from '@rudderjs/localization'
+import { database } from '@rudderjs/orm-prisma'
+import { broadcasting } from '@rudderjs/broadcast'
+import { live }   from '@rudderjs/live'
+import { ai }        from '@rudderjs/ai'
+import { panels } from '@pilotiq/panels'
+import { adminPanel } from '../app/Panels/Admin/AdminPanel.js'
+import { boost }     from '@rudderjs/boost'
+import { log }       from '@rudderjs/log'
+import { telescope } from '@rudderjs/telescope'
+import { pulse }     from '@rudderjs/pulse'
+import { horizon }   from '@rudderjs/horizon'
+import { AppServiceProvider } from '../app/Providers/AppServiceProvider.js'
+import { UserRegistered } from '../app/Events/UserRegistered.js'
+import { SendWelcomeEmailListener } from '../app/Listeners/SendWelcomeEmailListener.js'
+import configs from '../config/index.js'
+
+export default [
+  // ── Infrastructure (order matters) ──────────────────────
+  log(configs.log),           // boots first — available to all other providers
+  database(configs.database), // binds PrismaClient to DI as 'prisma'
+  session(configs.session),
+  hash(configs.hash),
+  cache(configs.cache),
+  auth(configs.auth),         // requires session + hash
+
+  // ── Features ────────────────────────────────────────────
+  queue(configs.queue),
+  events({ [UserRegistered.name]: [SendWelcomeEmailListener] }),
+  mail(configs.mail),
+  storage(configs.storage),
+  localization({
+    locale:   configs.app.locale,
+    fallback: configs.app.fallback,
+    path:     resolve(process.cwd(), 'lang'),
+  }),
+  scheduler(),
+  notifications(),
+  broadcasting(),
+  live(configs.live),
+  ai(configs.ai),
+  boost(),
+
+  // ── Monitoring ──────────────────────────────────────────
+  telescope(configs.telescope),
+  pulse(configs.pulse),
+  horizon(configs.horizon),
+
+  // ── Panels (open-core, free pilotiq) ───────────────────
+  // No AiServiceProvider / CollabServiceProvider — this playground
+  // dogfoods free @pilotiq/* without any pro packages installed.
+  // RichContentField runs in local-only mode (useYjsCollab stub),
+  // Field.ai([...]) and Field.persist(['websocket']) are NOT used.
+  panels([adminPanel]),
+
+  // ── Application ─────────────────────────────────────────
+  AppServiceProvider,
+] satisfies (new (app: Application) => ServiceProvider)[]
