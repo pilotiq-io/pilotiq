@@ -2,6 +2,8 @@ import type { AppRequest } from '@rudderjs/core'
 import type { Panel } from '../../Panel.js'
 import { buildContext } from '../shared/context.js'
 import { debugWarn } from '../../debug.js'
+import { loadOptional } from '../../utils/loadOptional.js'
+import type { ImageModule } from '../../utils/optionalPeers.js'
 
 /**
  * Warm up all registries by resolving the panel schema AND all page schemas.
@@ -41,13 +43,11 @@ export async function warmUpRegistries(panel: Panel, req: AppRequest): Promise<v
 }
 
 /**
- * Lazy-load @rudderjs/image (optional peer — not a dependency of panels)
+ * Lazy-load @rudderjs/image (optional peer — not a dependency of panels).
+ * Returns `undefined` when the package isn't installed.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function importImage(): Promise<{ image: (input: Buffer) => any }> {
-  const pkg = '@rudderjs/image'
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return import(/* @vite-ignore */ pkg) as any
+export async function importImage(): Promise<ImageModule | undefined> {
+  return loadOptional<ImageModule>('@rudderjs/image')
 }
 
 export { debugWarn, buildContext }

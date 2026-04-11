@@ -6,6 +6,8 @@ import type { FormElement } from './types.js'
 import { FormRegistry } from '../registries/FormRegistry.js'
 import { ComputeRegistry } from '../registries/ComputeRegistry.js'
 import { debugWarn } from '../debug.js'
+import { loadOptional } from '../utils/loadOptional.js'
+import type { LiveModule } from '../utils/optionalPeers.js'
 
 export async function resolveForm(
   el: SchemaElementLike,
@@ -139,14 +141,10 @@ export async function resolveForm(
 
     // Seed Y.Doc with initial values (server-side)
     if (needsWebsocket && Object.keys(initialValues).length > 0) {
-      try {
-        const livePkg = '@rudderjs/live'
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { Live } = await import(/* @vite-ignore */ livePkg) as any
-        if (Live?.seed) {
-          await Live.seed(docName, initialValues)
-        }
-      } catch { /* @rudderjs/live not available */ }
+      const mod = await loadOptional<LiveModule>('@rudderjs/live')
+      if (mod?.Live?.seed) {
+        await mod.Live.seed(docName, initialValues)
+      }
     }
   }
 

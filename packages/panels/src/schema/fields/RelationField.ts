@@ -2,9 +2,7 @@ import { Field } from '../Field.js'
 import { FieldType } from '../FieldType.js'
 
 export class RelationField extends Field {
-  protected _resourceSlug?: string
-  protected _displayField  = 'name'
-  protected _multiple      = false
+  protected _multiple = false
 
   static make(name: string): RelationField {
     return new RelationField(name)
@@ -14,14 +12,12 @@ export class RelationField extends Field {
 
   /** Slug of the target resource (e.g. 'categories'). */
   resource(resourceSlug: string): this {
-    this._resourceSlug = resourceSlug
     this._extra['resource'] = resourceSlug
     return this
   }
 
   /** Which field to display as the option label in the select (default: 'name'). */
   displayField(field: string): this {
-    this._displayField = field
     this._extra['displayField'] = field
     return this
   }

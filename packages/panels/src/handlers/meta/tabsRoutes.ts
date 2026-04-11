@@ -3,6 +3,7 @@ import type { RouterLike } from '../types.js'
 import type { Panel } from '../../Panel.js'
 import { TabsRegistry } from '../../registries/TabsRegistry.js'
 import { warmUpRegistries, debugWarn, buildContext } from './shared.js'
+import { asAuth } from '../types.js'
 
 export function mountTabsRoutes(
   router: RouterLike,
@@ -20,8 +21,7 @@ export function mountTabsRoutes(
     if (tab === undefined) return res.status(400).json({ message: 'Missing tab value.' })
 
     // Use req.session directly (set by SessionMiddleware in the middleware chain)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const session = (req as any).session as { put(key: string, value: unknown): void } | undefined
+    const session = asAuth(req).session
     if (session) {
       session.put(`tabs:${tabsId}`, tab)
     }
@@ -97,7 +97,7 @@ export function mountTabsRoutes(
 
     // ?tab=<recordId> — resolve a specific tab's content on demand
     if (tabRecordId && tabs.getContentFn()) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       let record: Record<string, unknown> | null = null
       try { record = await (Model.query() as any).find(tabRecordId) } catch { /* not found */ }
       if (!record) return res.status(404).json({ message: `Record "${tabRecordId}" not found.` })
@@ -122,7 +122,7 @@ export function mountTabsRoutes(
     }
 
     // No ?tab param — return all tab labels (no content, client fetches per-tab)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     let q: any = Model.query()
     const scopeFn = tabs.getScope()
     if (scopeFn) q = scopeFn(q)
@@ -169,7 +169,7 @@ export function mountTabsRoutes(
       } else if (tabs.isModelBacked()) {
         // Default: create a new model record
         const Model = tabs.getModel()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         if (Model) await (Model.query() as any).create(data)
       }
       return res.json({ success: true })

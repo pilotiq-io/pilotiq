@@ -11,9 +11,6 @@ import { Filter } from '../Filter.js'
  */
 export class NumberFilter extends Filter {
   protected _column?: string
-  protected _min?: number
-  protected _max?: number
-  protected _step?: number
 
   static make(name: string): NumberFilter {
     return new NumberFilter(name)
@@ -29,21 +26,18 @@ export class NumberFilter extends Filter {
 
   /** Minimum allowed value (UI hint). */
   min(n: number): this {
-    this._min = n
     this._extra['min'] = n
     return this
   }
 
   /** Maximum allowed value (UI hint). */
   max(n: number): this {
-    this._max = n
     this._extra['max'] = n
     return this
   }
 
   /** Step increment (UI hint). */
   step(n: number): this {
-    this._step = n
     this._extra['step'] = n
     return this
   }
@@ -66,7 +60,7 @@ export class NumberFilter extends Filter {
     return query
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   applyToQuery(q: any, value: unknown): any {
     if (this._queryFn) return this._queryFn(q, value)
 

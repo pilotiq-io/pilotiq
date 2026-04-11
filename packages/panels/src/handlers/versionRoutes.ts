@@ -6,6 +6,8 @@ import type { ModelClass, RecordRow } from '../types.js'
 import { flattenFields } from './shared/fields.js'
 import { buildContext, liveBroadcast } from './shared/context.js'
 import { coercePayload } from './shared/coercion.js'
+import { loadOptional } from '../utils/loadOptional.js'
+import type { YjsModule } from '../utils/optionalPeers.js'
 
 /** Extract a named route parameter — always returns a string (empty if somehow absent). */
 function param(req: AppRequest, name: string): string {
@@ -103,7 +105,7 @@ export function mountVersionRoutes(
           docName,
           snapshot: Buffer.from(JSON.stringify(fieldValues)),
           label:    body.label ?? null,
-           
+
           userId:   ctx.user?.id ?? null,
         },
       })
@@ -205,10 +207,10 @@ export function mountVersionRoutes(
         data = JSON.parse(Buffer.from(version['snapshot'] as Buffer).toString('utf8'))
       } catch {
         // Fall back to Y.Doc binary (collaborative snapshots)
-        // yjs is an optional peer dep (not installed in panels); resolve via string variable
-        const yjsId = 'yjs'
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const Y = await import(/* @vite-ignore */ yjsId) as any
+        const Y = await loadOptional<YjsModule>('yjs')
+        if (!Y) {
+          return res.status(500).json({ message: 'yjs is required to read collaborative version snapshots.' })
+        }
         const doc = new Y.Doc()
         Y.applyUpdate(doc, new Uint8Array(version['snapshot'] as Buffer))
         const fields = doc.getMap('fields')

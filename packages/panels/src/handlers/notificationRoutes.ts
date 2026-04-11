@@ -1,8 +1,9 @@
 import type { AppRequest, AppResponse, MiddlewareHandler } from '@rudderjs/core'
 import type { RouterLike } from './types.js'
 import type { Panel } from '../Panel.js'
+import { asAuth } from './types.js'
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+
 
 interface NotificationRecord {
   id: string
@@ -20,8 +21,11 @@ interface NotificationStoreLike {
 }
 
 function extractUserId(req: AppRequest): string | undefined {
-  const r = req as any
-  return r.user?.id ?? r.session?.get?.('userId') ?? undefined
+  const r = asAuth(req)
+  const fromUser = r.user?.id
+  if (fromUser !== undefined) return String(fromUser)
+  const fromSession = r.session?.get?.('userId')
+  return fromSession === undefined ? undefined : String(fromSession)
 }
 
 async function resolveNotificationStore(): Promise<NotificationStoreLike | null> {
@@ -91,4 +95,4 @@ export function mountNotificationRoutes(
   }, mw)
 }
 
-/* eslint-enable @typescript-eslint/no-explicit-any */
+

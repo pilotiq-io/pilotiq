@@ -22,7 +22,7 @@ export function mountUploadRoutes(
       const optimize  = body['optimize'] === 'true' || body['optimize'] === true
       const rawConversions = body['conversions'] as string | undefined
 
-      let buffer = Buffer.from(await file.arrayBuffer())
+      let buffer: Buffer = Buffer.from(await file.arrayBuffer())
       const isImage = file.type.startsWith('image/') && !file.type.includes('svg')
 
       // Determine output extension
@@ -31,9 +31,11 @@ export function mountUploadRoutes(
       // Optimize image (strip metadata, convert to webp, good quality)
       if (isImage && optimize) {
         try {
-          const { image } = await importImage()
-          buffer = await image(buffer).optimize().format('webp').quality(85).toBuffer()
-          ext = 'webp'
+          const mod = await importImage()
+          if (mod) {
+            buffer = await mod.image(buffer).optimize().format('webp').quality(85).toBuffer()
+            ext = 'webp'
+          }
         } catch { /* @rudderjs/image not installed — skip */ }
       }
 
@@ -50,7 +52,9 @@ export function mountUploadRoutes(
         try {
           const specs = JSON.parse(rawConversions) as Array<{ name: string; width: number; height?: number; crop?: boolean; format?: string; quality?: number }>
           if (specs.length > 0) {
-            const { image } = await importImage()
+            const mod = await importImage()
+            if (!mod) throw new Error('@rudderjs/image not installed')
+            const image = mod.image
             for (const spec of specs) {
               const convFormat = spec.format ?? 'webp'
               const convFilename = `${baseName}-${spec.name}.${convFormat}`

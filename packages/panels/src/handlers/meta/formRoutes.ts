@@ -7,6 +7,9 @@ import { warmUpRegistries, debugWarn, buildContext } from './shared.js'
 import { flattenFields } from '../shared/fields.js'
 import { coerceFormPayload } from '../shared/coercion.js'
 import { validateFormPayload } from '../shared/validation.js'
+import { loadOptional } from '../../utils/loadOptional.js'
+import type { BroadcastModule } from '../../utils/optionalPeers.js'
+import { asAuth } from '../types.js'
 
 export function mountFormRoutes(
   router: RouterLike,
@@ -45,8 +48,8 @@ export function mountFormRoutes(
     const { field, value } = (req.body as { field?: string; value?: unknown }) ?? {}
     if (!field) return res.status(400).json({ message: 'Missing field name.' })
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const session = (req as any).session as { put(key: string, value: unknown): void } | undefined
+
+    const session = asAuth(req).session
     if (session) {
       session.put(`form:${formId}:${field}`, value)
     }
@@ -98,15 +101,13 @@ export function mountFormRoutes(
 
       // Broadcast live refresh to linked tables
       if (entry.refreshes && entry.refreshes.length > 0) {
-        try {
-          const broadcastPkg = '@rudderjs/broadcast'
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { broadcast } = await import(/* @vite-ignore */ broadcastPkg) as any
+        const mod = await loadOptional<BroadcastModule>('@rudderjs/broadcast')
+        if (mod) {
           for (const tableId of entry.refreshes) {
             const slug = tableId.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-            broadcast(`live:table:${slug}`, 'refresh', { source: 'form', formId })
+            mod.broadcast(`live:table:${slug}`, 'refresh', { source: 'form', formId })
           }
-        } catch { /* @rudderjs/broadcast not available */ }
+        }
       }
 
       return res.json({ success: true, ...responseData })

@@ -11,14 +11,17 @@ import {
   extractSearchColumns, parseUrlFilters, buildBreadcrumbs,
   applyColumnTransforms, countFiltered,
 } from '../../utils/queryHelpers.js'
+import { loadOptional } from '../../utils/loadOptional.js'
+import type { BroadcastModule } from '../../utils/optionalPeers.js'
+import { asAuth } from '../types.js'
 
 /** Extended config shape — covers both Table and List properties used by handlers. */
 interface DataViewConfig {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   model?: any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   rows?: any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   scope?: (q: any) => any
   columns: unknown[]
   limit: number
@@ -28,21 +31,21 @@ interface DataViewConfig {
   searchColumns?: string[] | undefined
   paginationType?: 'pages' | 'loadMore' | undefined
   perPage: number
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   filters: Array<{ getName(): string; applyToQuery(q: any, value: string): any }>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   actions: Array<{ getName(): string; execute(records: unknown[]): Promise<void> }>
   lazy?: boolean | undefined
   softDeletes: boolean
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   onSave?: ((...args: any[]) => any) | undefined
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   resourceClass?: { getSlug?(): string }
   folderField?: string | undefined
   titleField?: string | undefined
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   scopes?: Array<{ scope?: (q: any) => any }> | undefined
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   views?: Array<{ getFields?(): any[] }> | undefined
 }
 
@@ -106,8 +109,8 @@ export function mountTableRoutes(
     if (!tableId) return res.status(400).json({ message: 'Missing tableId.' })
 
     const state = (req.body as Record<string, unknown> | undefined) ?? {}
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const session = (req as any).session as { put(key: string, value: unknown): void } | undefined
+
+    const session = asAuth(req).session
     if (session) session.put(`table:${tableId}`, state)
 
     return res.json({ success: true })
@@ -241,9 +244,9 @@ export function mountTableRoutes(
 
     // Breadcrumbs
     let breadcrumbs: { id: string; label: string }[] | undefined
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     if (folderField && folderParam) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       breadcrumbs = await buildBreadcrumbs(Model, folderParam, folderField, config.titleField ?? 'name')
     }
 
@@ -269,7 +272,7 @@ export function mountTableRoutes(
     const ctx = buildContext(req)
 
     // Find editable Column/DataField by name
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     type EditableField = { getName(): string; isEditable(): boolean; getOnSaveFn?(): ((record: Record<string, unknown>, value: unknown, ctx: any) => Promise<void> | void) | undefined }
     let column: EditableField | undefined
 
@@ -279,7 +282,7 @@ export function mountTableRoutes(
     }
 
     // Fallback: check view fields (List with ViewMode)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     if (!column && config.views) {
       const views = config.views
       for (const v of views) {
@@ -311,20 +314,18 @@ export function mountTableRoutes(
       }
 
       if (table.isLive()) {
-        try {
-          const broadcastPkg = '@rudderjs/broadcast'
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { broadcast } = await import(/* @vite-ignore */ broadcastPkg) as any
-          broadcast(`live:table:${tableId}`, 'refresh', { field, recordId })
+        const mod = await loadOptional<BroadcastModule>('@rudderjs/broadcast')
+        if (mod) {
+          mod.broadcast(`live:table:${tableId}`, 'refresh', { field, recordId })
           const resourceSlug = config.resourceClass?.getSlug?.() as string | undefined
           if (resourceSlug) {
-            broadcast(`panel:${resourceSlug}`, 'record.updated', { id: recordId })
+            mod.broadcast(`panel:${resourceSlug}`, 'record.updated', { id: recordId })
           } else {
             const slugFromId = tableId.replace(/-[^-]+$/, '')
             const matchingResource = panel.getResources().find(R => R.getSlug() === slugFromId)
-            if (matchingResource) broadcast(`panel:${slugFromId}`, 'record.updated', { id: recordId })
+            if (matchingResource) mod.broadcast(`panel:${slugFromId}`, 'record.updated', { id: recordId })
           }
-        } catch { /* @rudderjs/broadcast not available */ }
+        }
       }
 
       return res.json({ success: true })
@@ -366,12 +367,8 @@ export function mountTableRoutes(
     try {
       await action.execute(records)
       if (table.isLive()) {
-        try {
-          const broadcastPkg = '@rudderjs/broadcast'
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { broadcast } = await import(/* @vite-ignore */ broadcastPkg) as any
-          broadcast(`live:table:${tableId}`, 'refresh', { action: actionName })
-        } catch { /* @rudderjs/broadcast not available */ }
+        const mod = await loadOptional<BroadcastModule>('@rudderjs/broadcast')
+        mod?.broadcast(`live:table:${tableId}`, 'refresh', { action: actionName })
       }
       return res.json({ success: true })
     } catch (err) {
