@@ -21,7 +21,7 @@ export class QueryFilter extends Filter {
     return _query
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   applyToQuery(q: any, value: unknown): any {
     // Only apply when toggled on
     if (value === true || value === 'true' || value === '1') {

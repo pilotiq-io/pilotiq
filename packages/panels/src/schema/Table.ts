@@ -120,7 +120,7 @@ export class Table extends List {
   /**
    * @internal — Create a copy with a different scope and ID.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   _cloneWithScope(id: string, scopeFn?: (query: any) => any): Table {
     const clone = Table.make(this._title)
     this._cloneBase(clone)

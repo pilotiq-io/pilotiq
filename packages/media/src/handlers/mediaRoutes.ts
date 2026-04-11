@@ -238,7 +238,7 @@ export function mountMediaRoutes(
               return spec
             })
             const convResults = await image(buffer)
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+               
               .conversions(specs as any)
               .generateToStorage(disk, dir)
 

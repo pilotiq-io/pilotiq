@@ -21,7 +21,7 @@ import type { PanelContext } from '../types.js'
 
 export type EachLayout = 'grid' | 'flex' | 'list'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type ModelClass = { new(): any; query(): any }
 type ContentFn = (item: Record<string, unknown>) => { getType(): string; toMeta(): unknown }[]
 
@@ -35,9 +35,9 @@ export interface EachElementMeta {
 export class Each {
   private _columns: number = 3
   private _layout:  EachLayout = 'grid'
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private _model?:  ModelClass
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private _scope?:  (q: any) => any
   private _data?:   DataSource
   private _contentFn?: ContentFn
@@ -56,7 +56,7 @@ export class Each {
   }
 
   /** Filter model query. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   scope(fn: (q: any) => any): this {
     this._scope = fn
     return this
@@ -94,7 +94,7 @@ export class Each {
 
   getType(): 'each' { return 'each' }
   getModel(): ModelClass | undefined { return this._model }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   getScope(): ((q: any) => any) | undefined { return this._scope }
   getDataSource(): DataSource | undefined { return this._data }
   getContentFn(): ContentFn | undefined { return this._contentFn }

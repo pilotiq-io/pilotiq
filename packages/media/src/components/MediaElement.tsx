@@ -140,7 +140,7 @@ export function MediaElement({ element, panelPath }: Props) {
   // Fetch on mount — skip if SSR already loaded items
   useEffect(() => {
     if (element.items.length === 0) fetchItems(null)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])  
 
   // Persist state on change
   useEffect(() => {

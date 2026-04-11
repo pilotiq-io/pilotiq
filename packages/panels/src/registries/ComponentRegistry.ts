@@ -1,12 +1,12 @@
 import type { ComponentType } from 'react'
 import { createMapRegistry } from './BaseRegistry.js'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 const fields   = createMapRegistry<ComponentType<any>>('fields')
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 const elements = createMapRegistry<ComponentType<any>>('elements')
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type LazyFactory = () => Promise<{ default: ComponentType<any> }>
 const lazyFactories = createMapRegistry<LazyFactory>('lazy_elements')
 

@@ -34,7 +34,7 @@ export function StandaloneWidget({ widget, panelPath, pathSegment, i18n }: Props
       setLoading(false)
     }
     void fetchSchema()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   // Polling
   useEffect(() => {
@@ -49,7 +49,7 @@ export function StandaloneWidget({ widget, panelPath, pathSegment, i18n }: Props
       } catch { /* failed */ }
     }, widget.pollInterval)
     return () => clearInterval(timer)
-  }, [widget.id, widget.pollInterval]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [widget.id, widget.pollInterval])
 
   if (loading) {
     return (

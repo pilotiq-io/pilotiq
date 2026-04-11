@@ -34,7 +34,7 @@ export interface EditorHandle {
  */
 export function applyTextOp(
   op: Extract<EditOperation, { type: 'replace' | 'insert_after' | 'delete' }>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   editor: any,
   highlightMs = 1500,
 ) {
@@ -155,7 +155,7 @@ export function CollaborativePlainText({
           root.append(p)
         } } : {}),
     onError: (error: Error) => console.error('[CollaborativePlainText]', error),
-  }), [fragmentName, disabled, collabReady]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [fragmentName, disabled, collabReady])  
 
   if (!collabReady) {
     if (multiline) {
@@ -253,7 +253,7 @@ function BlockEnterPlugin() {
 // Seeds the editor from DB value ONLY when the Y.Doc is empty after sync.
 // Checks Y.Doc state vector directly (synchronous, no race with CollaborationPlugin).
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function SeedPlugin({ value, yjsRef }: { value: string; yjsRef: React.RefObject<{ doc: any; Y: any } | null> }) {
   const [editor] = useLexicalComposerContext()
   const seeded = useRef(false)

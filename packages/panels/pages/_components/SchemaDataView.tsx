@@ -277,7 +277,7 @@ export function SchemaDataView({ element, panelPath, i18n, resource }: Props) {
     if (element.lazy && records.length === 0) {
       void fetchData({ page: 1 })
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [])
 
   // ── Live updates + polling ──
@@ -304,7 +304,7 @@ export function SchemaDataView({ element, panelPath, i18n, resource }: Props) {
 
   // ── Reorder handler (dnd-kit — client only) ──
   const reorderEndpoint = element.reorderEndpoint ? `${panelPath}/api${element.reorderEndpoint.replace(/^.*\/api/, '')}` : undefined
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const handleReorder = useCallback((event: any) => {
     const { active, over } = event as { active: { id: string | number }; over: { id: string | number } | null }
     if (!over || active.id === over.id || !reorderEndpoint || !_dnd) return
@@ -811,9 +811,9 @@ export function SchemaDataView({ element, panelPath, i18n, resource }: Props) {
 
 // ─── ClientTreeView — lazy-loads TreeView on client only ─────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function ClientTreeView(props: any) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const [Comp, setComp] = useState<React.ComponentType<any> | null>(null)
   useEffect(() => {
     import('./TreeView.js').then(m => setComp(() => m.TreeView))
@@ -905,7 +905,7 @@ function GripPlaceholder() {
 // These wrappers render plain elements + grip placeholder during SSR,
 // then upgrade to interactive dnd-kit components on the client.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let _dnd: typeof import('./SortableList.js') | null = null
 const _dndPromise = typeof window !== 'undefined' ? import('./SortableList.js').then(m => { _dnd = m }) : null
 
@@ -1184,7 +1184,7 @@ function TableView({ records, fields, getHref, getEditHref, sortField, sortDir, 
   i18n?:         PanelI18n
   onSaved?:      (record: Record<string, unknown>, field: string, value: unknown) => void
   reorderable?:  boolean
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   onReorder?:    (event: any) => void
   selectable?:   boolean
   selectedIds?:  Set<string>

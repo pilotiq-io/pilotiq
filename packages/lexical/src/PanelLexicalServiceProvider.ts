@@ -16,7 +16,7 @@ export class PanelLexicalServiceProvider extends ServiceProvider {
  * @deprecated Use `panelsLexical()` as a PanelPlugin with `Panel.use(panelsLexical())`.
  * Legacy factory for the `panels([...], [extensions])` pattern.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function panelsLexicalExtension(): new (...args: any[]) => PanelLexicalServiceProvider {
   return PanelLexicalServiceProvider
 }

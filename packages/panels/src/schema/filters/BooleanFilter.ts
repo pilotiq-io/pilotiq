@@ -45,7 +45,7 @@ export class BooleanFilter extends Filter {
     return query // null/empty = show all
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   applyToQuery(q: any, value: unknown): any {
     if (this._queryFn) return this._queryFn(q, value)
 

@@ -131,7 +131,7 @@ export async function resolveDataView(
 
   // ── Apply transforms (SSR) ──
   // 1. Column/DataField compute() + display() from table columns and view fields
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const columns = (config as any).columns as unknown[] | undefined
   if (columns) applyColumnTransforms(result.records, columns)
   for (const v of config.views) {

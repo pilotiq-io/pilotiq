@@ -220,7 +220,7 @@ export function DashboardGrid({
       setLoading(false)
     }
     void load()
-  }, [pathSegment, dashboardId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pathSegment, dashboardId])
 
   // ── Polling — re-fetch widgets with pollInterval ───────────────────────
   useEffect(() => {
@@ -247,7 +247,7 @@ export function DashboardGrid({
     }
 
     return () => timers.forEach(t => clearInterval(t))
-  }, [widgets.map(w => `${w.id}:${w.pollInterval}`).join(','), pathSegment, dashboardId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [widgets.map(w => `${w.id}:${w.pollInterval}`).join(','), pathSegment, dashboardId])
 
   // ── Save layout ─────────────────────────────────────────────────────────
   const saveLayout = useCallback(async (newLayout: DashboardLayoutItem[]) => {

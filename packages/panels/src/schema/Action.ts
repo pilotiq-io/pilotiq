@@ -12,16 +12,16 @@ export interface ActionMeta {
   bulk:            boolean
   row:             boolean
   url?:            string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   formFields?:     any[]
 }
 
 // ─── Action handler type ───────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export type ActionHandler = (records: any[], formData?: Record<string, unknown>) => Promise<void> | void
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type FieldLike = { getName(): string; toMeta(): any }
 
 // ─── Action class ──────────────────────────────────────────

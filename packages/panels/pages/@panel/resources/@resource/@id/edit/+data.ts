@@ -21,7 +21,7 @@ export async function data(pageContext: PageContextServer) {
   const panelMeta    = panel.toNavigationMeta()
   const { ctx, sessionUser } = await buildPanelContext(pageContext)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const Model  = ResourceClass.model as any
   const formFields = flattenFields(resource._resolveForm().getFields() as FieldOrGrouping[])
 

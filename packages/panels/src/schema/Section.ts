@@ -2,7 +2,7 @@ import type { Field } from './Field.js'
 import type { FieldMeta } from './Field.js'
 
 // ─── Generic item — any object (fields or schema elements) ──
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+
 interface SchemaItem {}
 
 // ─── Section meta (for UI / meta endpoint) ─────────────────

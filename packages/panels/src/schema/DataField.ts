@@ -17,11 +17,11 @@ export type DataFieldType = 'string' | 'number' | 'boolean' | 'date' | 'badge' |
 
 type DataFieldSaveHandler = (record: Record<string, unknown>, value: unknown, ctx: PanelContext) => Promise<void> | void
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type ComputeFn = (record: Record<string, any>) => unknown
 type DisplayFn = (value: unknown, record?: Record<string, unknown>) => unknown
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type FieldLike = { getType(): string; toMeta(): any }
 
 const INLINE_TYPES = new Set(['text', 'email', 'number', 'select', 'toggle', 'boolean', 'color', 'date', 'datetime'])

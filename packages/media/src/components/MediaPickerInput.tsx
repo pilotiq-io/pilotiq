@@ -104,7 +104,7 @@ function PickerDialog({ libraries, isMultiple, selectedIds, panelPath, onSelect,
   onSelect: (item: MediaRecord) => void
   onClose: () => void
 }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const [MediaEl, setMediaEl] = useState<React.ComponentType<any> | null>(null)
 
   // Lazy-load MediaElement to avoid circular imports

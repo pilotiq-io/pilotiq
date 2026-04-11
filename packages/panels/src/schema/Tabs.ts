@@ -8,7 +8,7 @@ import { applyLazyPollMeta } from './utils.js'
 export type TabsPersistMode = PersistMode
 
 // ─── Generic item — any object (fields, schema elements, widgets) ──────
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+
 interface MetaItem {}
 
 // ─── Tabs meta (for UI / meta endpoint) ────────────────────
@@ -54,7 +54,7 @@ export class Tab {
   private _icon?: string
   private _badge?: (() => Promise<string | number | null>) | string | number
   private _lazy = false
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private _scope?: (query: any) => any
 
   private constructor(label: string) {
@@ -96,7 +96,7 @@ export class Tab {
    * @example
    * Tab.make('Published').scope((q) => q.where('status', 'published'))
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   scope(fn: (query: any) => any): this {
     this._scope = fn
     return this
@@ -109,7 +109,7 @@ export class Tab {
   getIcon(): string | undefined { return this._icon }
   getBadge() { return this._badge }
   isLazy(): boolean { return this._lazy }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   getScope(): ((query: any) => any) | undefined { return this._scope }
 
   /** Get items as Field[] (for resource field context). */
@@ -160,24 +160,24 @@ export class Tabs {
   // ── Data sources ─────────────────────────────────────────
   private _dataSource?: DataSource
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private _model?: { new(): any; query(): any }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private _resourceClass?: { new(): any; getSlug(): string; model?: any }
   private _titleField?: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private _scope?: (query: any) => any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private _schemaFn?: (record: any) => MetaItem[]
 
   // ── Task 15: Creatable / editable ──────────────────────────
   private _creatable = false
   private _editable = false
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private _onCreateFn?: (data: Record<string, unknown>, ctx: any) => Promise<void>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private _canCreateFn?: (ctx: any) => boolean
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private _canEditFn?: (ctx: any) => boolean
 
   // ── Task 16: Lazy / poll ───────────────────────────────────
@@ -223,7 +223,7 @@ export class Tabs {
    * Generate tabs from model records. Each record becomes a tab.
    * Mutually exclusive with `.tab()`.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   fromModel(model: { new(): any; query(): any }): this {
     this._model = model
     return this
@@ -233,7 +233,7 @@ export class Tabs {
    * Generate tabs from a Resource's model. Inherits the model class.
    * Mutually exclusive with `.tab()`.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   fromResource(resourceClass: { new(): any; getSlug(): string; model?: any }): this {
     this._resourceClass = resourceClass
     this._model = resourceClass.model
@@ -269,7 +269,7 @@ export class Tabs {
   }
 
   /** Filter which model records appear as tabs. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   scope(fn: (query: any) => any): this {
     this._scope = fn
     return this
@@ -288,7 +288,7 @@ export class Tabs {
    *     Table.make('Members').fromModel(Member).scope(q => q.where('projectId', record.id)),
    *   ])
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   content(fn: (record: any) => MetaItem[]): this {
     this._schemaFn = fn
     return this
@@ -315,21 +315,21 @@ export class Tabs {
   editable(): this { this._editable = true; return this }
 
   /** Custom create handler. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   onCreate(fn: (data: Record<string, unknown>, ctx: any) => Promise<void>): this {
     this._onCreateFn = fn
     return this
   }
 
   /** Gate who can create tabs. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   canCreate(fn: (ctx: any) => boolean): this {
     this._canCreateFn = fn
     return this
   }
 
   /** Gate who can edit/rename tabs. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   canEdit(fn: (ctx: any) => boolean): this {
     this._canEditFn = fn
     return this

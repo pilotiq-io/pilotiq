@@ -43,7 +43,7 @@ export class Resource {
   // ── Static identity & navigation ──────────────────────
 
   /** The model class to bind CRUD operations to. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   static model?: ModelClass<any>
 
   /** Plural display label (e.g. 'Blog Posts'). Derived from class name if not set. */

@@ -47,7 +47,7 @@ export abstract class Filter {
   /** @internal — applied to query builder */
   abstract apply(query: Record<string, unknown>, value: unknown): Record<string, unknown>
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   protected _queryFn?: (q: any, value: unknown) => any
 
   /**
@@ -59,14 +59,14 @@ export abstract class Filter {
    *   .options([...])
    *   .query((q, value) => q.where('status', value).where('deletedAt', null))
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   query(fn: (q: any, value: unknown) => any): this {
     this._queryFn = fn
     return this
   }
 
   /** @internal — apply this filter to a query builder */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   applyToQuery(q: any, value: unknown): any {
     if (this._queryFn) return this._queryFn(q, value)
     // Default: translate apply() map → ORM where clauses

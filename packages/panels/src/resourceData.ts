@@ -35,7 +35,7 @@ export async function resourceData(ctx: ResourceDataContext): Promise<ResourceDa
   const resourceMeta = resource.toMeta()
   const panelMeta    = panel.toMeta()
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const Model  = ResourceClass.model as any
   const params = new URLSearchParams(url.split('?')[1] ?? '')
 
@@ -56,7 +56,7 @@ export async function resourceData(ctx: ResourceDataContext): Promise<ResourceDa
   let pagination: { total: number; currentPage: number; lastPage: number; perPage: number } | null = null
 
   if (Model) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     let q: any = Model.query()
 
     // Include belongsTo relations so the table can display names instead of raw IDs

@@ -50,6 +50,6 @@ export interface UseYjsCollabReturn {
    * Memoized provider factory for Lexical's CollaborationPlugin.
    * Undefined when collab is not ready.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   providerFactory: ((id: string, yjsDocMap: Map<string, any>) => any) | undefined
 }

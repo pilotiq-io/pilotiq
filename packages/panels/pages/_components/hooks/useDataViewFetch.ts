@@ -174,7 +174,7 @@ export function useDataViewFetch(
     } finally {
       setLoading(false)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [elementId, panelPath, resourceSlug, isTrashed])
 
   // ── Handlers ──

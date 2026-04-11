@@ -8,10 +8,10 @@ import type { PanelThemeConfig, PanelThemeMeta } from './theme/types.js'
 import { resolveTheme } from './theme/resolve.js'
 import { ThemeSettingsPage } from './ThemeSettingsPage.js'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type PanelMiddlewareHandler = (...args: any[]) => any
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AppLike = { make(key: string): any; register(provider: any): any }
 
 /**

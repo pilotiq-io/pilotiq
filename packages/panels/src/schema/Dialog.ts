@@ -11,7 +11,7 @@
 //       .onSubmit(async (data, ctx) => { ... }),
 //   ])
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+
 interface SchemaItem {}
 
 export interface DialogElementMeta {

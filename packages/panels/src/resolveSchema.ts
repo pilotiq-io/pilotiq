@@ -174,7 +174,7 @@ export async function resolveSchema(
       const staticItems = each.getStaticItems()
 
       if (model) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         let q: any = model.query()
         const scopeFn = each.getScope()
         if (scopeFn) q = scopeFn(q)

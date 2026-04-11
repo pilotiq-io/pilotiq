@@ -31,7 +31,7 @@ interface YjsProvider {
     on(event: string, cb: () => void): void
   }
   once(event: string, cb: () => void): void
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   on(event: string, cb: (data: any) => void): void
   destroy(): void
 }
@@ -128,8 +128,8 @@ export function useCollaborativeForm(options: CollaborativeFormOptions | null): 
     const useIndexeddb = providers.includes('indexeddb')
 
     async function connect() {
-       
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+
       const Y = await import('yjs' as any) as { Doc: new () => YDoc }
       if (destroyed) return
 
@@ -194,8 +194,8 @@ export function useCollaborativeForm(options: CollaborativeFormOptions | null): 
 
       // ── IndexedDB provider (offline persistence) ──────────
       if (useIndexeddb) {
-         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+
         import('y-indexeddb' as any).then(({ IndexeddbPersistence }: { IndexeddbPersistence: new (name: string, doc: YDoc) => IdbProvider }) => {
           if (destroyed) return
           const idb = new IndexeddbPersistence(opts.docName, doc)
@@ -220,8 +220,8 @@ export function useCollaborativeForm(options: CollaborativeFormOptions | null): 
 
       // ── WebSocket provider (real-time collaboration) ────────
       if (useWebsocket) {
-         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+
         const { WebsocketProvider } = await import('y-websocket' as any) as { WebsocketProvider: new (url: string, room: string, doc: YDoc) => YjsProvider }
         if (destroyed) return
 
@@ -276,7 +276,7 @@ export function useCollaborativeForm(options: CollaborativeFormOptions | null): 
       setAwareness(null)
       yTextMapRef.current  = new Map()
     }
-  }, [options?.docName, options?.resetKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [options?.docName, options?.resetKey])
 
   /** Write a local change to the ydoc. Handles both Y.Text and Y.Map fields. */
   const setCollaborativeValue = useCallback((name: string, value: unknown) => {

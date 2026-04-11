@@ -15,7 +15,7 @@ function isValidSortColumn(col: string, config: ListConfig): boolean {
   // Check config.sortBy (always valid — defined by the developer)
   if (col === config.sortBy) return true
   // Check columns (Table)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const columns = (config as any).columns as unknown[] | undefined
   if (columns?.length) {
     for (const c of columns) {
@@ -63,9 +63,9 @@ export interface ListQueryResult {
 export interface ListQueryOpts {
   elementId:     string
   searchColumns: string[]
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   model?:        any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   scopes?:       Array<{ scope?: (q: any) => any }> | undefined
   treeView?:     boolean
   folderView?:   boolean

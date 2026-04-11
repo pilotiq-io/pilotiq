@@ -58,7 +58,7 @@ export function usePersistence(
       setActiveView(target)
       saveRememberState({ view: target })
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [])
 
   // ── View change handler (re-fetches when view type changes) ──

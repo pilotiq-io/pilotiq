@@ -34,7 +34,7 @@ export async function data(pageContext: PageContextServer) {
   }
   const panelMeta    = panel.toNavigationMeta()
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const Model  = ResourceClass.model as any
   const formFields = flattenFields(resource._resolveForm().getFields() as FieldOrGrouping[])
 
@@ -85,7 +85,7 @@ export async function data(pageContext: PageContextServer) {
       const RelClass = panel.getResources().find((R) => R.getSlug() === relSlug)
       if (!RelClass) continue
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       const RelModel = RelClass.model as any
       if (!RelModel) continue
 

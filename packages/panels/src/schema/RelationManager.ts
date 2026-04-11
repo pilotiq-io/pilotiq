@@ -12,7 +12,7 @@ export interface RelationManagerMeta {
   label:        string
   icon:         string | undefined
   columns:      ColumnMeta[]
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   formFields:   any[]
   actions:      ActionMeta[]
   creatable:    boolean

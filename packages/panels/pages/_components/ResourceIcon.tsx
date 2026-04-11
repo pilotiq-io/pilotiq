@@ -22,7 +22,7 @@ export function ResourceIcon({ icon: rawIcon, className = 'size-4' }: ResourceIc
     return <span className={className} dangerouslySetInnerHTML={{ __html: icon }} />
   }
 
-  // eslint-disable-next-line no-control-regex
+
   if (/[^\x00-\x7F]/.test(icon)) {
     return <span className={className}>{icon}</span>
   }

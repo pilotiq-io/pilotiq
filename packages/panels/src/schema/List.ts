@@ -8,9 +8,9 @@ import { slugify, toTitleCase } from './utils.js'
 import { ViewMode } from './ViewMode.js'
 import type { ViewModeMeta } from './ViewMode.js'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type ModelClass = { new(): any; query(): any }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type ResourceClass = { new(): any; getSlug(): string; model?: ModelClass }
 type SchemaElement = { getType(): string }
 
@@ -29,7 +29,7 @@ export type SortableOption = string | { field: string; label: string }
 export interface ScopePreset {
   label:  string
   icon?:  string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   scope?: (query: any) => any
 }
 
@@ -39,15 +39,15 @@ export type ViewPreset = 'list' | 'grid'
 // ─── List config (shared by all data-view elements) ──
 export interface ListConfig {
   title:             string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   resourceClass?:    any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   model?:            any
   rows?:             DataSource | undefined
   limit:             number
   sortBy:            string | undefined
   sortDir:           'ASC' | 'DESC'
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   scope?:            ((query: any) => any) | undefined
   description?:      string | undefined
   emptyMessage?:     string | undefined
@@ -82,7 +82,7 @@ export interface ListConfig {
   scopes?:           ScopePreset[] | undefined
   reorderable:       boolean
   reorderField:      string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   onSave?:           ((record: Record<string, unknown>, field: string, value: unknown, ctx: any) => Promise<void> | void) | undefined
   autoAnimate?:      boolean | { duration?: number }
   animateScopes?:    boolean | { highlight?: boolean; content?: boolean }
@@ -108,15 +108,15 @@ export interface ListElementMeta {
 export class List {
   // ── Shared data-view fields ──
   protected _title:            string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   protected _resourceClass?:   any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   protected _model?:           any
   protected _rows?:            DataSource
   protected _limit             = 5
   protected _sortBy?:          string
   protected _sortDir:          'ASC' | 'DESC' = 'DESC'
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   protected _scope?:           (query: any) => any
   protected _description?:     string
   protected _emptyMessage?:    string
@@ -150,7 +150,7 @@ export class List {
   protected _iconField?:       string
   protected _reorderable       = false
   protected _reorderField      = 'position'
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   protected _onSaveFn?:        (record: Record<string, unknown>, field: string, value: unknown, ctx: any) => Promise<void> | void
   protected _sortableOptions?: { field: string; label: string }[]
   protected _scopes?:          ScopePreset[]
@@ -200,7 +200,7 @@ export class List {
   /**
    * Apply a custom scope to the query.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   scope(fn: (query: any) => any): this {
     this._scope = fn
     return this
@@ -437,7 +437,7 @@ export class List {
    * Called for any editable field across all views.
    * Without this, auto-updates via Model.query().update().
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   onSave(fn: (record: Record<string, unknown>, field: string, value: unknown, ctx: any) => Promise<void> | void): this {
     this._onSaveFn = fn
     return this

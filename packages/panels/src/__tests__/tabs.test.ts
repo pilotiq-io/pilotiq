@@ -319,7 +319,7 @@ describe('Tabs fromArray', () => {
 
   it('isDynamic true for model-backed', () => {
     const MockModel2 = { query: () => ({}) }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const t = Tabs.make('test').fromModel(MockModel2 as any)
     assert.equal(t.isDynamic(), true)
     assert.equal(t.isModelBacked(), true)

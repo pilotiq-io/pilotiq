@@ -1,12 +1,12 @@
 import type { QueryBuilderLike, RecordRow } from '../types.js'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type FilterLike = { getName(): string; applyToQuery(q: any, value: string): any }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type ScopeLike = { scope?: (q: any) => any }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type ModelLike = { query(): QueryBuilderLike<any>; name?: string }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type ColumnLike = { getName(): string; getComputeFn?(): ((r: any) => unknown) | undefined; getDisplayFn?(): ((v: unknown, r?: any) => unknown) | undefined }
 
 // ─── Search ────────────────────────────────────────────────
@@ -152,7 +152,7 @@ export function applyColumnTransforms(
 export async function countFiltered(
   model: ModelLike,
   opts: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     scope?: ((q: any) => any) | undefined
     softDeletes?: boolean | undefined
     folderField?: string | undefined

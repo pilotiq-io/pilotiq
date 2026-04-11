@@ -45,7 +45,7 @@ export function useLiveUpdates(
       })
     }, config.pollInterval)
     return () => clearInterval(interval)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [config.pollInterval, config.elementId])
 
   // ── Live updates via WebSocket ──
@@ -53,7 +53,7 @@ export function useLiveUpdates(
     if (!config.live || !config.liveChannel) return
     const liveChannel = config.liveChannel
     let destroyed = false
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     let socket: any = null
 
     ;(async () => {
@@ -96,6 +96,6 @@ export function useLiveUpdates(
         socket.close()
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [config.live, config.liveChannel])
 }

@@ -141,7 +141,7 @@ function HasManyTable({ field, parentId, parentSlug, pathSegment, initialData, i
         setSchema(flattenSchemaFields(d.resourceMeta.fields).filter(f => !f.hidden?.includes('table') && f.type !== 'hasMany'))
       })
       .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialData is SSR-only, intentionally excluded to prevent re-fetch loop
+
   }, [resourceSlug, pathSegment])
 
   // Load records when page changes (skip page 1 if SSR data already available)
@@ -158,7 +158,7 @@ function HasManyTable({ field, parentId, parentSlug, pathSegment, initialData, i
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialData is SSR-only, intentionally excluded to prevent re-fetch loop
+
   }, [resourceSlug, foreignKey, parentId, pathSegment, page, throughMany])
 
   if (!resourceSlug) return null

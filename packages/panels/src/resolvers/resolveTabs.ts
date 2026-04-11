@@ -82,7 +82,7 @@ export async function resolveTabs(
     let activeTabIndex = 0
 
     if (!tabs.isLazy()) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       let q: any = (Model as ModelLike).query()
       const scopeFn = tabs.getScope()
       if (scopeFn) q = scopeFn(q)

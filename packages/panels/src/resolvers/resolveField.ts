@@ -20,7 +20,7 @@ export async function resolveField(
 
   // Resolve initial value
   const initialValues: Record<string, unknown> = {}
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const f = field as any
   const def = typeof f.resolveDefault === 'function' ? f.resolveDefault(ctx) : undefined
   if (def !== undefined) initialValues[fieldName] = def

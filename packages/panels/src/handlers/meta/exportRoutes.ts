@@ -8,7 +8,7 @@ import {
   applySearch, applyFilters, extractSearchColumns, parseUrlFilters,
 } from '../../utils/queryHelpers.js'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type ModelClass<T = any> = { query(): QueryBuilderLike<T> }
 
 export function mountExportRoutes(

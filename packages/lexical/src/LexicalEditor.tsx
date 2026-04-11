@@ -195,7 +195,7 @@ export function LexicalEditor({
       if (String(error.message).includes('editor state is empty')) return
       console.error('[LexicalEditor]', error)
     },
-  }), [fragmentName, disabled, collabReady]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [fragmentName, disabled, collabReady])  
 
   // Show loading state while waiting for Y.Doc + WS setup (same pattern as CollaborativePlainText)
   if (isCollab && !collabReady) {
@@ -343,7 +343,7 @@ function OnChangePlugin({ onChange }: { onChange: (json: unknown) => void }) {
 // Seeds the editor from DB value ONLY when the Y.Doc is empty after sync.
 // Checks Y.Doc state vector directly (synchronous, no race with CollaborationPlugin).
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function SeedPlugin({ value, yjsRef }: { value: unknown; yjsRef: React.RefObject<{ doc: any; Y: any } | null> }) {
   const [editor] = useLexicalComposerContext()
   const seeded = useRef(false)
