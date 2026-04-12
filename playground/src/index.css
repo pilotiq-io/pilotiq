@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../packages/lexical/src";
 @source "../../packages/panels-lexical/src";
 @source "../../packages/media/src";
 @import "tw-animate-css";

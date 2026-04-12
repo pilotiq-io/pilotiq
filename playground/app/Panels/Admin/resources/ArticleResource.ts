@@ -161,10 +161,6 @@ export class ArticleResource extends Resource {
       //   .disk('public')
       //   .directory('articles'),
 
-      MediaPickerField.make('mediaId')
-        .label('Featured Media')
-        .library('photos'),
-
       RichContentField.make('content')
         .label('Content (Lexical)')
         .placeholder('Start writing your article…')
@@ -190,6 +186,10 @@ export class ArticleResource extends Resource {
             ]),
         ]),
         // .persist(['websocket', 'indexeddb']),
+
+      MediaPickerField.make('mediaId')
+        .label('Featured Media')
+        .library('photos'),
 
       TagsField.make('tags')
         .label('Tags')

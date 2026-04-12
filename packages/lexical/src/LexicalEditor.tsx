@@ -218,11 +218,11 @@ export function LexicalEditor({
         <RichTextPlugin
           contentEditable={
             <ContentEditable
-              className="ContentEditable__root prose prose-sm max-w-none p-3 pl-10 min-h-[200px] outline-none"
+              className="ContentEditable__root prose prose-sm max-w-none py-3 pe-3 ps-7 min-h-[200px] outline-none"
             />
           }
           placeholder={
-            <div className="absolute top-3 left-3 text-muted-foreground/50 pointer-events-none text-sm">
+            <div className="absolute top-3 start-7 text-muted-foreground/50 pointer-events-none text-sm">
               {placeholder ?? (showSlashCommand ? 'Type "/" for commands…' : 'Start writing…')}
             </div>
           }
