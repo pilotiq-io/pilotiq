@@ -16,6 +16,7 @@ export class Column {
   sortable(v = true): this { this._sortable = v; return this }
   searchable(v = true): this { this._searchable = v; return this }
 
+  getLabel(): string { return this._label ?? this.name.charAt(0).toUpperCase() + this.name.slice(1) }
   isSortable(): boolean { return this._sortable }
   isSearchable(): boolean { return this._searchable }
 }
