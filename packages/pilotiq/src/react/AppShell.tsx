@@ -8,6 +8,7 @@ export interface AppShellProps {
     branding: { title?: string; logo?: string }
     resources?: Array<{ label: string; slug: string; icon: string }>
     pages?: Array<{ label: string; slug: string; icon?: string }>
+    themeEditor?: boolean
   }
   basePath: string
   layout?: 'sidebar' | 'topbar'

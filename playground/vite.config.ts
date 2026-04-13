@@ -95,6 +95,7 @@ export default defineConfig({
     exclude: [
       // Keep as workspace-link runtime imports so a single instance is shared
       // with the playground's own imports.
+      '@pilotiq/pilotiq',
       '@pilotiq/panels',
       '@pilotiq/lexical',
       // CLI-only — server-side, must not be pre-bundled

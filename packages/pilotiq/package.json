@@ -25,6 +25,10 @@
     "./vite": {
       "import": "./dist/vite.js",
       "types": "./dist/vite.d.ts"
+    },
+    "./plugins": {
+      "import": "./dist/plugins/index.js",
+      "types": "./dist/plugins/index.d.ts"
     }
   },
   "scripts": {

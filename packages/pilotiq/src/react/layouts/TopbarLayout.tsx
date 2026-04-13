@@ -36,6 +36,12 @@ export function TopbarLayout({ panel, basePath, children }: AppShellProps) {
               {p.label}
             </a>
           ))}
+          {panel.themeEditor && (
+            <a href={`${basePath}/theme`}
+               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm whitespace-nowrap text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+              Theme
+            </a>
+          )}
         </nav>
         <ThemeToggle />
       </header>

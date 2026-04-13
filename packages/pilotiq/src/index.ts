@@ -1,4 +1,4 @@
-export { Pilotiq, type PilotiqConfig } from './Pilotiq.js'
+export { Pilotiq, type PilotiqConfig, type PilotiqPlugin } from './Pilotiq.js'
 export { PilotiqRegistry } from './PilotiqRegistry.js'
 export { pilotiq } from './PilotiqServiceProvider.js'
 export { Resource, type TableConfig, type FormConfig } from './Resource.js'

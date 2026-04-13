@@ -26,7 +26,19 @@ class PilotiqServiceProvider extends ServiceProvider {
       router: Parameters<typeof registerPilotiqRoutes>[0]
     }
 
+    // Load saved theme overrides from DB for panels with themeEditor enabled
     for (const panel of PilotiqRegistry.all()) {
+      if (panel.getConfig().themeEditor) {
+        try {
+          const prisma = this.app.make('prisma') as any
+          const slug = `${panel.getConfig().name}__theme`
+          const row = await prisma.panelGlobal.findUnique({ where: { slug } })
+          if (row?.data) {
+            const overrides = typeof row.data === 'string' ? JSON.parse(row.data as string) : row.data
+            panel.setThemeOverrides(overrides)
+          }
+        } catch { /* no DB or no table — use code defaults */ }
+      }
       registerPilotiqRoutes(router, panel)
     }
   }

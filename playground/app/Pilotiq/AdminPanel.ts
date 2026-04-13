@@ -1,4 +1,5 @@
 import { Pilotiq, Resource, TextField, Column, Heading, Text, Alert, Divider, Card } from '@pilotiq/pilotiq'
+import { themeEditor } from '@pilotiq/pilotiq/plugins'
 import { SimplePage } from './pages/SimplePage.js'
 
 class ArticleResource extends Resource {
@@ -30,6 +31,7 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .path('/new-admin')
   .branding({ title: 'Pilotiq' })
   .theme({ preset: 'nova', accentColor: 'blue', radius: 'medium' })
+  .use(themeEditor())
   .resources([new ArticleResource()])
   .pages([SimplePage])
   .schema(async () => [
