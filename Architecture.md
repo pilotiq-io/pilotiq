@@ -162,6 +162,24 @@ Uses `!important` to override Tailwind's `@layer` declarations.
 | `theme/resolve.ts` | `resolveTheme()` — layered resolution pipeline |
 | `theme/generate-css.ts` | `generateThemeCSS()` — CSS string output |
 
+### themeEditor() Plugin
+
+```ts
+import { themeEditor } from '@pilotiq/pilotiq/plugins'
+
+Pilotiq.make('Admin')
+  .theme({ preset: 'nova', accentColor: 'blue' })
+  .use(themeEditor())
+```
+
+- **Plugin system**: `PilotiqPlugin` interface + `.use()` on builder. `@pilotiq/pilotiq/plugins` export path.
+- **ThemeSettingsPage**: Controls sidebar (preset, base/accent color, chart palette, fonts, icons, radius) + live iframe preview via `srcDoc` (client-only, mounted guard for hydration).
+- **API routes**: GET/PUT/DELETE `{base}/api/_theme` — persisted to `panelGlobal` table via Prisma.
+- **Runtime merging**: Service provider loads overrides on boot. `getMergedTheme()` = code defaults + DB overrides.
+- **Instant feedback**: `applyToParent()` updates `<style id="pilotiq-theme">` on save, then `navigate()` re-fetches server data.
+- **Navigation**: Generated page passes `vike/client/router` `navigate` via `onNavigate` prop. Route functions for `resource-index` and `page` exclude `'theme'` slug to avoid catching the built-in route.
+- **Vite config**: `@pilotiq/pilotiq` must be in `optimizeDeps.exclude` to prevent Vite from pre-bundling server code into the client.
+
 ---
 
 ## @pilotiq/panels — Legacy
@@ -227,7 +245,7 @@ cd ~/Projects/pilotiq/playground && pnpm dev
 
 | Panel | Path | Layout | Theme |
 |---|---|---|---|
-| Pilotiq Admin | `/new-admin` | sidebar | nova + blue accent |
+| Pilotiq Admin | `/new-admin` | sidebar | nova + blue accent + themeEditor |
 | Pilotiq Simple | `/simple` | topbar | default |
 
 ---
@@ -238,7 +256,8 @@ cd ~/Projects/pilotiq/playground && pnpm dev
 
 | Export path | Contents |
 |---|---|
-| `@pilotiq/pilotiq` | Builder, Resource, Page, Fields, Schema, Theme engine (resolveTheme, generateThemeCSS, presets, colors) |
-| `@pilotiq/pilotiq/react` | AppShell, SchemaRenderer, ThemeProvider, ThemeToggle, useTheme |
+| `@pilotiq/pilotiq` | Builder, Resource, Page, Fields, Schema, Theme engine, PilotiqPlugin type |
+| `@pilotiq/pilotiq/react` | AppShell, SchemaRenderer, ThemeProvider, ThemeToggle, ThemeSettingsPage, useTheme, generateThemeCSS, resolveTheme |
 | `@pilotiq/pilotiq/registry` | PilotiqRegistry singleton |
 | `@pilotiq/pilotiq/vite` | `pilotiq()` Vite plugin |
+| `@pilotiq/pilotiq/plugins` | `themeEditor()` plugin |

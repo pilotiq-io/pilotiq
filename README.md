@@ -21,6 +21,7 @@ Define your admin panel in TypeScript. Pilotiq generates the API and UI automati
 
 ```ts
 import { Pilotiq, Resource, TextField, Column, Heading, Alert, Card } from '@pilotiq/pilotiq'
+import { themeEditor } from '@pilotiq/pilotiq/plugins'
 
 class ArticleResource extends Resource {
   static label         = 'Articles'
@@ -51,6 +52,7 @@ export const admin = Pilotiq.make('Admin')
   .path('/admin')
   .branding({ title: 'My App' })
   .theme({ preset: 'nova', accentColor: 'blue', radius: 'medium' })
+  .use(themeEditor())
   .resources([new ArticleResource()])
   .schema(async () => [
     Heading.make('Dashboard').description('Welcome back.'),
@@ -80,7 +82,7 @@ export const admin = Pilotiq.make('Admin')
 - **Custom pages** — `Page` class with `static schema()`, slug, label, icon
 - **Theme engine** — 4 style presets (default, nova, maia, lyra), 6 base colors, 16 accent colors, 5 chart palettes, 5 border radii, Google Fonts, icon library selection
 - **Dark mode** — light/dark/system toggle, localStorage persistence, FOUC prevention via inline script
-- **Theme editor** — `.use(themeEditor())` plugin for live preview + save/reset (coming soon)
+- **Theme editor** — `.use(themeEditor())` plugin with live preview, save/reset/shuffle, DB persistence
 - **Auto page generation** — `pilotiq()` Vite plugin writes Vike page stubs at build time
 - **Plugin system** — `.use()` for extending panels
 

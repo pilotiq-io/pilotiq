@@ -82,15 +82,24 @@ Pilotiq.make() builder → pilotiq([panels]) provider → registerPilotiqRoutes(
 - `src/react/ThemeToggle.tsx` — Sun/moon toggle button (in both layout headers)
 - `src/react/layouts/SidebarLayout.tsx` — shadcn Sidebar (collapsible, mobile-responsive)
 - `src/react/layouts/TopbarLayout.tsx` — horizontal nav variant
+- `src/react/ThemeSettingsPage.tsx` — Full theme editor: controls sidebar + live iframe preview
 - `src/react/SchemaRenderer.tsx` — Renders resolved schema elements
 - `src/react/ui/` — shadcn primitives (sidebar, button, sheet, separator, tooltip, skeleton, input)
+- `src/plugins/themeEditor.ts` — `themeEditor()` plugin
 
 **Pilotiq page generation:**
 - `pages/(pilotiq)/+Head.tsx` — FOUC prevention script (reads localStorage, sets `.dark` before hydration) + Google Fonts preload
 - `pages/(pilotiq)/+Layout.tsx` — wraps pages in ThemeProvider + AppShell, injects theme CSS inline for SSR
 - `pages/(pilotiq)/+config.ts` — `passToClient: ['viewProps']`
+- `pages/(pilotiq)/theme/` — Theme editor page (only when `.use(themeEditor())`)
 - Individual `+Page.tsx` stubs render only content (no shell wrapper)
 - Route functions check `PilotiqRegistry` on server, tentatively match on client for SPA nav
+- Route functions for `resource-index` and `page` exclude `parts[1] === 'theme'` to avoid catching the built-in theme editor route
+
+**Plugin system:**
+- `PilotiqPlugin` interface: `{ name: string, register(panel): void }`
+- `.use(plugin)` on builder — calls `plugin.register(panel)`
+- `@pilotiq/pilotiq/plugins` export path for built-in plugins
 
 **Theme system:**
 - `Pilotiq.theme({ preset, baseColor, accentColor, chartPalette, radius, fonts, iconLibrary, cssVariables })` configures theme
@@ -101,7 +110,17 @@ Pilotiq.make() builder → pilotiq([panels]) provider → registerPilotiqRoutes(
 - FOUC prevention: inline `<script>` in +Head.tsx + inline `<style>` in +Layout.tsx
 - 4 presets (default, nova, maia, lyra), 6 base colors, 16 accent colors, 5 chart palettes, 5 radii
 - All colors in OKLCH format for perceptual uniformity
-- `themeEditor()` plugin for live editing is planned (separate from core)
+
+**themeEditor() plugin:**
+- `import { themeEditor } from '@pilotiq/pilotiq/plugins'` → `.use(themeEditor())`
+- Adds "Theme" nav link in sidebar footer / topbar
+- ThemeSettingsPage: controls sidebar + live iframe preview (srcDoc, client-only via mounted guard)
+- API routes: GET/PUT/DELETE `{base}/api/_theme` persisted to `panelGlobal` table
+- `applyToParent()` updates `<style id="pilotiq-theme">` for instant visual feedback on save
+- Service provider loads saved overrides from DB on boot via `panel.setThemeOverrides()`
+- `getMergedTheme()` merges code defaults + DB overrides at runtime
+- Generated page passes `vike/client/router` `navigate` via `onNavigate` prop for server data re-fetch
+- `@pilotiq/pilotiq` must be in `optimizeDeps.exclude` in app's `vite.config.ts`
 
 ### @pilotiq/panels Architecture (Legacy)
 

@@ -249,17 +249,26 @@ ${fontTags}
 
 function PreviewIframe({ config, mode }: { config: Partial<ThemeConfig>; mode: 'light' | 'dark' }) {
   const [mounted, setMounted] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   useEffect(() => setMounted(true), [])
 
   if (!mounted) return <div className="w-full h-full rounded-lg border border-border bg-background" />
 
   const html = buildPreviewHTML(config, mode)
   return (
-    <iframe
-      srcDoc={html}
-      className="w-full h-full rounded-lg border border-border bg-background"
-      title="Theme Preview"
-    />
+    <div className="relative w-full h-full">
+      {!loaded && (
+        <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-border bg-background z-10">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+        </div>
+      )}
+      <iframe
+        srcDoc={html}
+        onLoad={() => { if (!loaded) setLoaded(true) }}
+        className={`w-full h-full rounded-lg border border-border bg-background transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        title="Theme Preview"
+      />
+    </div>
   )
 }
 
@@ -278,11 +287,13 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const { resolved: contextMode } = useTheme()
-  // On first render, useTheme defaults to 'light' before hydration.
-  // The FOUC script already set .dark on <html>, so read the DOM class directly.
-  const previewMode: 'light' | 'dark' = typeof document !== 'undefined'
-    ? (document.documentElement.classList.contains('dark') ? 'dark' : 'light')
-    : contextMode
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => setHydrated(true), [])
+  // Before hydration, useTheme defaults to 'light' — read DOM class instead (FOUC script sets it).
+  // After hydration, useTheme is reactive and tracks toggle changes.
+  const previewMode: 'light' | 'dark' = hydrated
+    ? contextMode
+    : (typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'dark' : 'light')
 
   const update = useCallback((key: string, value: unknown) => {
     setConfig(prev => ({ ...prev, [key]: value }))

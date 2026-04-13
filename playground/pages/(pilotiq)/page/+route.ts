@@ -5,7 +5,8 @@ import { PilotiqRegistry } from '@pilotiq/pilotiq/registry'
 export const route: RouteSync = (pageContext) => {
   const parts = pageContext.urlPathname.split('/').filter(Boolean)
   if (parts.length !== 2) return false
-  // Don't match resource slugs — only custom pages
+  // Don't match built-in slugs (theme editor, etc.) or resource slugs
+  if (parts[1] === 'theme') return false
   if (import.meta.env.SSR) {
     const panel = PilotiqRegistry.findByPath('/' + parts[0])
     if (!panel) return false
