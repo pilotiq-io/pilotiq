@@ -57,7 +57,8 @@ export function registerPilotiqRoutes(
     // Index
     router.get(`${base}/${slug}`, async () => {
       const tableConfig = R.table()
-      return view('pilotiq.resources.index', {
+      return view('pilotiq.slug', {
+        pageType: 'resource',
         panel:    panelInfo(pilotiq),
         resource: { label: Ctor.label, labelSingular: Ctor.labelSingular, slug, icon: Ctor.icon },
         columns:  tableConfig.columns.map(col => ({
@@ -122,7 +123,8 @@ export function registerPilotiqRoutes(
         (ctx) => PageClass.schema(ctx),
         {},
       )
-      return view('pilotiq.page', {
+      return view('pilotiq.slug', {
+        pageType:   'page',
         panel:      panelInfo(pilotiq),
         page:       PageClass.toMeta(),
         schemaData,
