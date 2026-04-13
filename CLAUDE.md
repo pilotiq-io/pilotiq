@@ -91,10 +91,12 @@ Pilotiq.make() builder → pilotiq([panels]) provider → registerPilotiqRoutes(
 - `pages/(pilotiq)/+Head.tsx` — FOUC prevention script (reads localStorage, sets `.dark` before hydration) + Google Fonts preload
 - `pages/(pilotiq)/+Layout.tsx` — wraps pages in ThemeProvider + AppShell, injects theme CSS inline for SSR
 - `pages/(pilotiq)/+config.ts` — `passToClient: ['viewProps']`
-- `pages/(pilotiq)/theme/` — Theme editor page (only when `.use(themeEditor())`)
+- `pages/(pilotiq)/dashboard/` — Dashboard (1-segment URL)
+- `pages/(pilotiq)/slug/` — **Single route** for 2-segment URLs (resource index OR custom page). Server sets `pageType: 'resource' | 'page'` in viewProps; the +Page.tsx renders accordingly. Avoids the "two routes match on client" problem that breaks SPA nav.
+- `pages/(pilotiq)/resource-create/`, `resource-edit/` — 3+ segment URLs
+- `pages/(pilotiq)/theme/` — Theme editor page (only when `.use(themeEditor())`); slug route excludes `parts[1] === 'theme'`
 - Individual `+Page.tsx` stubs render only content (no shell wrapper)
 - Route functions check `PilotiqRegistry` on server, tentatively match on client for SPA nav
-- Route functions for `resource-index` and `page` exclude `parts[1] === 'theme'` to avoid catching the built-in theme editor route
 
 **Plugin system:**
 - `PilotiqPlugin` interface: `{ name: string, register(panel): void }`

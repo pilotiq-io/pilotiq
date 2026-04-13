@@ -96,6 +96,18 @@ The `pilotiq()` Vite plugin generates Vike page stubs at construction time (befo
 - Individual `+Page.tsx` stubs render only content (no shell wrapper).
 - Route functions tentatively match on client for SPA nav, check registry on server.
 
+### Route Strategy
+
+| Page dir | URL pattern | Notes |
+|---|---|---|
+| `dashboard/` | `/{base}` | 1 segment |
+| `slug/` | `/{base}/{slug}` | 2 segments — handles BOTH resource index and custom pages. Server sets `pageType: 'resource' \| 'page'` in viewProps; one `+Page.tsx` renders accordingly. |
+| `resource-create/` | `/{base}/{slug}/create` | 3 segments |
+| `resource-edit/` | `/{base}/{slug}/{id}/edit` | 4 segments |
+| `theme/` | `/{base}/theme` | 2 segments — `slug` route excludes `parts[1] === 'theme'` to avoid conflict |
+
+**Why a single `slug` route**: Earlier we had separate `resource-index` and `page` routes that both matched 2-segment URLs. On the server, the `page` route checked the registry to skip resource slugs. But on the client (SPA nav), the registry check is skipped, so both routes matched and Vike couldn't disambiguate, breaking SPA navigation. Merging into one route avoids the ambiguity.
+
 ---
 
 ## Theme System
