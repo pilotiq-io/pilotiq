@@ -29,6 +29,7 @@ class ArticleResource extends Resource {
 export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .path('/new-admin')
   .branding({ title: 'Pilotiq' })
+  .theme({ preset: 'nova', accentColor: 'blue', radius: 'medium' })
   .resources([new ArticleResource()])
   .pages([SimplePage])
   .schema(async () => [

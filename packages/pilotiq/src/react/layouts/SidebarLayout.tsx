@@ -15,6 +15,7 @@ import {
   SidebarTrigger,
 } from '../ui/sidebar.js'
 import { Separator } from '../ui/separator.js'
+import { ThemeToggle } from '../ThemeToggle.js'
 import type { AppShellProps } from '../AppShell.js'
 
 export function SidebarLayout({ panel, basePath, children }: AppShellProps) {
@@ -83,6 +84,9 @@ export function SidebarLayout({ panel, basePath, children }: AppShellProps) {
           <div className="flex flex-1 items-center gap-2 px-3">
             <SidebarTrigger className="-ms-1" />
             <Separator orientation="vertical" className="me-2 data-[orientation=vertical]:h-4" />
+          </div>
+          <div className="flex items-center gap-1 px-3">
+            <ThemeToggle />
           </div>
         </header>
         <div className="flex flex-1 flex-col p-6">

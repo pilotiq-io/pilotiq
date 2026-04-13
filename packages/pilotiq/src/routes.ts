@@ -4,8 +4,11 @@ import type { Pilotiq } from './Pilotiq.js'
 import type { Resource } from './Resource.js'
 import type { Page } from './Page.js'
 import { resolveSchema } from './schema/resolveSchema.js'
+import { resolveTheme } from './theme/resolve.js'
+import type { ThemeMeta } from './theme/types.js'
 
 function panelInfo(cfg: ReturnType<Pilotiq['getConfig']>) {
+  const theme: ThemeMeta | undefined = cfg.theme ? resolveTheme(cfg.theme) : undefined
   return {
     name: cfg.name,
     branding: cfg.branding,
@@ -16,6 +19,7 @@ function panelInfo(cfg: ReturnType<Pilotiq['getConfig']>) {
     pages: cfg.pages.map(P => ({
       label: P.getLabel(), slug: P.getSlug(), icon: P.icon,
     })),
+    theme,
   }
 }
 

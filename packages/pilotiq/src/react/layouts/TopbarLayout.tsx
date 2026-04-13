@@ -1,5 +1,6 @@
 import React from 'react'
 import { Separator } from '../ui/separator.js'
+import { ThemeToggle } from '../ThemeToggle.js'
 import type { AppShellProps } from '../AppShell.js'
 
 export function TopbarLayout({ panel, basePath, children }: AppShellProps) {
@@ -36,6 +37,7 @@ export function TopbarLayout({ panel, basePath, children }: AppShellProps) {
             </a>
           ))}
         </nav>
+        <ThemeToggle />
       </header>
       <div className="flex flex-1 overflow-hidden">
         <main className="flex-1 overflow-y-auto p-6">

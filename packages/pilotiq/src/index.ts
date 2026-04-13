@@ -15,6 +15,15 @@ export { SlugField } from './fields/SlugField.js'
 export { Column } from './Column.js'
 export { registerPilotiqRoutes } from './routes.js'
 
+// Theme
+export { resolveTheme, generateThemeCSS, iconMap, resolveIconName } from './theme/index.js'
+export { presets, baseColors, accentColors, chartPalettes, radiusMap } from './theme/index.js'
+export type {
+  ThemeConfig, ThemeMeta,
+  StylePreset, BaseColor, AccentColor, RadiusPreset, ChartPalette,
+  IconLibrary, ThemeFonts, PresetDefinition,
+} from './theme/index.js'
+
 // Schema
 export type { SchemaElement, SchemaElementMeta } from './schema/SchemaElement.js'
 export { Text } from './schema/Text.js'

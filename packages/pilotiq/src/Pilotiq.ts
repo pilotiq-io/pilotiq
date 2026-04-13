@@ -1,6 +1,7 @@
 import type { Resource } from './Resource.js'
 import type { Page } from './Page.js'
 import type { SchemaDefinition } from './schema/resolveSchema.js'
+import type { ThemeConfig } from './theme/types.js'
 
 export type PilotiqLayout = 'sidebar' | 'topbar'
 
@@ -12,6 +13,7 @@ export interface PilotiqConfig {
   pages:      (typeof Page)[]
   branding:   { title?: string; logo?: string }
   schema?:    SchemaDefinition
+  theme?:     ThemeConfig
   guard?:     (req: unknown) => boolean | Promise<boolean>
 }
 
@@ -60,6 +62,11 @@ export class Pilotiq {
 
   layout(l: PilotiqLayout): this {
     this.config.layout = l
+    return this
+  }
+
+  theme(config: ThemeConfig): this {
+    this.config.theme = config
     return this
   }
 
