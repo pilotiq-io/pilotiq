@@ -1,4 +1,6 @@
 export { Pilotiq, type PilotiqConfig } from './Pilotiq.js'
+export { PilotiqRegistry } from './PilotiqRegistry.js'
+export { pilotiq } from './PilotiqServiceProvider.js'
 export { Resource, type TableConfig, type FormConfig } from './Resource.js'
 export { Field, type FieldType } from './fields/Field.js'
 export { TextField } from './fields/TextField.js'

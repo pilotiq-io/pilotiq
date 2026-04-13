@@ -249,6 +249,9 @@ importers:
       '@rudderjs/contracts':
         specifier: link:../../../rudderjs/packages/contracts
         version: link:../../../rudderjs/packages/contracts
+      '@rudderjs/core':
+        specifier: link:../../../rudderjs/packages/core
+        version: link:../../../rudderjs/packages/core
       '@rudderjs/router':
         specifier: link:../../../rudderjs/packages/router
         version: link:../../../rudderjs/packages/router
@@ -256,6 +259,9 @@ importers:
         specifier: link:../../../rudderjs/packages/view
         version: link:../../../rudderjs/packages/view
     devDependencies:
+      '@types/node':
+        specifier: ^20
+        version: 20.19.39
       '@types/react':
         specifier: ^19
         version: 19.2.14
@@ -265,6 +271,9 @@ importers:
       typescript:
         specifier: ^5
         version: 5.9.3
+      vite:
+        specifier: ^7
+        version: 7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)
 
   playground:
     dependencies:

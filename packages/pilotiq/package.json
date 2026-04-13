@@ -17,6 +17,14 @@
     "./react": {
       "import": "./dist/react/index.js",
       "types": "./dist/react/index.d.ts"
+    },
+    "./registry": {
+      "import": "./dist/PilotiqRegistry.js",
+      "types": "./dist/PilotiqRegistry.d.ts"
+    },
+    "./vite": {
+      "import": "./dist/vite.js",
+      "types": "./dist/vite.d.ts"
     }
   },
   "scripts": {
@@ -27,14 +35,18 @@
   },
   "peerDependencies": {
     "@rudderjs/contracts": "workspace:*",
+    "@rudderjs/core": "workspace:*",
     "@rudderjs/router": "workspace:*",
     "@rudderjs/view": "workspace:*",
     "react": "^18 || ^19"
   },
   "devDependencies": {
     "@rudderjs/contracts": "workspace:*",
+    "@rudderjs/core": "workspace:*",
     "@rudderjs/router": "workspace:*",
     "@rudderjs/view": "workspace:*",
+    "@types/node": "^20",
+    "vite": "^7",
     "@types/react": "^19",
     "react": "^19",
     "typescript": "^5"
