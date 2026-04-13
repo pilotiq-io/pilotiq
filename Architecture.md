@@ -8,9 +8,10 @@
 | Principle | Description |
 |-----------|-------------|
 | **Resource-first** | Every admin screen maps to a Model via a Resource class. |
-| **Schema-driven** | Fields, columns, filters, actions — all declared in code, rendered automatically. |
-| **Extensible** | Panel.use() plugins, custom fields, registerElement(), theme presets. |
+| **Schema-driven** | Fields, columns, schema elements — all declared in code, rendered automatically. |
+| **Extensible** | `.use()` plugins, custom pages, theme presets, component slots. |
 | **Framework-native** | Built on @rudderjs/core — uses the same DI, ORM, auth, and routing primitives. |
+| **Zero vendoring** | `@pilotiq/pilotiq` auto-generates Vike pages via Vite plugin — no manual copy step. |
 
 ---
 
@@ -19,70 +20,175 @@
 ```
 pilotiq/
 ├── packages/
-│   ├── panels/             # Resource builder, forms, fields, schema elements,
-│   │                       #   registries, theming, i18n, handlers, dashboard,
-│   │                       #   widgets, wizard, import, version history
-│   │   └── pages/          # Vendored React pages (vendor:publish source)
-│   ├── lexical/            # Lexical rich-text editor adapter — RichContentField,
-│   │                       #   block editor, local-only by default
-│   └── media/              # Media library — file browser, uploads, preview,
-│                           #   image conversions, MediaPickerField
-├── docs/                   # Documentation
-└── playground/             # Free pilotiq dev fixture (port 3001)
-                            #   Panels + Lexical + Media, no AI, no collab
+│   ├── pilotiq/               # NEW — View-based admin panel
+│   │   └── src/
+│   │       ├── Pilotiq.ts         # Builder: .path(), .branding(), .theme(), .resources(), .pages(), .schema(), .guard()
+│   │       ├── Resource.ts        # Resource base class (table + form config)
+│   │       ├── Page.ts            # Custom page class (static schema, slug, label, icon)
+│   │       ├── PilotiqRegistry.ts # globalThis-backed singleton, findByPath()
+│   │       ├── PilotiqServiceProvider.ts  # Provider + pilotiq() factory
+│   │       ├── routes.ts          # registerPilotiqRoutes() via @rudderjs/view
+│   │       ├── vite.ts            # Vite plugin — auto-generates pages/(pilotiq)/
+│   │       ├── fields/            # Field types: Text, Textarea, Email, Number, Select, Toggle, Date, Slug
+│   │       ├── schema/            # Schema elements: Text, Heading, Alert, Divider, Card + resolveSchema()
+│   │       ├── theme/             # Theme engine (see Theme System below)
+│   │       └── react/             # React components
+│   │           ├── AppShell.tsx       # Layout picker (sidebar | topbar)
+│   │           ├── SchemaRenderer.tsx # Renders resolved schema elements
+│   │           ├── ThemeProvider.tsx   # Light/dark/system context + CSS var injection
+│   │           ├── ThemeToggle.tsx     # Sun/moon toggle button
+│   │           ├── layouts/           # SidebarLayout.tsx, TopbarLayout.tsx
+│   │           └── ui/               # shadcn primitives (sidebar, button, sheet, separator, tooltip, skeleton, input)
+│   ├── panels/                # LEGACY — Resource builder with vendored pages
+│   │   └── pages/             # Vendored React pages (vendor:publish source)
+│   ├── lexical/               # Lexical rich-text editor adapter
+│   └── media/                 # Media library + MediaPickerField
+├── docs/                      # Documentation
+└── playground/                # Free pilotiq dev fixture (port 3001)
 ```
 
 ---
 
-## Package Details
+## @pilotiq/pilotiq — How It Works
 
-### @pilotiq/panels
+### Setup (two imports)
 
-The core admin panel builder. Provides:
+```ts
+// vite.config.ts
+import { pilotiq } from '@pilotiq/pilotiq/vite'
+plugins: [pilotiq(), ...]
 
-- **Resources**: CRUD views with fields, columns, filters, actions
-- **Schema elements**: Field (20+ types), Column, Section, Tabs, Form, Table, List, Stats, Chart, Dashboard, Widget, Wizard, Step, RelationManager, Import
-- **Filters**: Select, Search, Date, Boolean, Number, Query
-- **Actions**: Action (.form()), ActionGroup, headerActions, bulk actions
-- **Themes**: 4 presets, colors, fonts, icons, themeEditor()
-- **Notifications**: Panel.notifications() widget
-- **Plugins**: Panel.use() — extensible with lexical, media, etc.
-- **Vendored pages**: React UI published to apps via `pnpm rudder vendor:publish --tag=pilotiq-pages --force`
+// bootstrap/providers.ts
+import { pilotiq } from '@pilotiq/pilotiq'
+pilotiq([adminPanel, simplePanel])
+```
 
-### @pilotiq/lexical
+### Flow
 
-Lexical rich-text editor adapter for panels:
+```
+                    BUILD TIME                              REQUEST TIME
+                    ──────────                              ────────────
+pilotiq() Vite    → generates pages/(pilotiq)/         Vike routes request
+plugin              ├── +Head.tsx (FOUC script)         → route function checks PilotiqRegistry
+                    ├── +Layout.tsx (ThemeProvider       → view() returns viewProps
+                    │    + AppShell)                     → Layout wraps page with themed shell
+                    ├── +config.ts (passToClient)        → +Page.tsx renders content
+                    ├── dashboard/+Page.tsx
+                    ├── resource-index/+Page.tsx
+                    ├── resource-create/+Page.tsx
+                    ├── resource-edit/+Page.tsx
+                    └── page/+Page.tsx
 
-- RichContentField — block-aware rich text editor
-- Local-only by default (no yjs dependency)
-- Collab mode enabled by @pilotiq-pro/collab (pro tier)
-- registerLexical() — client-side field registration
+Pilotiq.make()    → PilotiqRegistry.register()
+builder             (globalThis singleton)
 
-### @pilotiq/media
+pilotiq()         → PilotiqServiceProvider
+provider            → registerPilotiqRoutes()
+                      → router.get(path, () => view('pilotiq.*', { panel, theme, schema, ... }))
+```
 
-Media library plugin for panels:
+### Page Generation
 
-- File browser, uploads, image preview
-- Image conversions (resize, crop via @rudderjs/image)
-- MediaPickerField for resource forms
-- Integrates with @rudderjs/storage
+The `pilotiq()` Vite plugin generates Vike page stubs at construction time (before Vike scans `pages/`). Stubs use route functions that check `PilotiqRegistry` at request time, so they work for any number of registered panels without regeneration.
+
+- `+Layout.tsx` — wraps all pilotiq pages with `ThemeProvider` + `AppShell`. Persists across navigations (sidebar state survives).
+- `+Head.tsx` — FOUC prevention script (reads localStorage before React hydrates) + Google Fonts preload.
+- Individual `+Page.tsx` stubs render only content (no shell wrapper).
+- Route functions tentatively match on client for SPA nav, check registry on server.
 
 ---
 
-## Dependency Flow
+## Theme System
+
+### Architecture
 
 ```
-@rudderjs/* (framework)
+ThemeConfig (user-facing)           ThemeMeta (resolved, serializable)
+───────────────────────             ────────────────────────────────
+.theme({                    →       { light: { '--bg': '...', ... },
+  preset: 'nova',           →         dark:  { '--bg': '...', ... },
+  accentColor: 'blue',      →         radius: '0.625rem',
+  radius: 'medium',         →         fonts: { heading: 'Space Grotesk' },
+  fonts: { heading: '...' } →         fontFamily: { heading: "'Space Grotesk', sans-serif" },
+})                           →         iconLibrary: 'lucide' }
+```
+
+### Layering Pipeline (resolveTheme)
+
+Each layer overrides the previous:
+
+1. **Preset** — full set of 30+ OKLCH CSS variables (default, nova, maia, lyra)
+2. **Base color** — overrides neutral/gray tones (neutral, stone, zinc, slate, olive, taupe)
+3. **Accent color** — overrides primary color (blue, red, green, amber, orange, cyan, violet, purple, pink, rose, emerald, teal, indigo, fuchsia, lime, sky)
+4. **Chart palette** — overrides chart-1 through chart-5 (default, ocean, sunset, forest, berry)
+5. **Raw CSS variables** — escape hatch, highest priority
+
+### CSS Output (generateThemeCSS)
+
+```css
+:root {
+  --background: oklch(0.99 0.002 75) !important;
+  --primary: oklch(0.488 0.243 264) !important;
+  /* ... all variables */
+  --radius: 0.625rem !important;
+}
+.dark {
+  --background: oklch(0.16 0.008 75) !important;
+  /* ... dark overrides */
+}
+```
+
+Uses `!important` to override Tailwind's `@layer` declarations.
+
+### Dark/Light/System
+
+- **ThemeProvider** — React context with `theme` (light/dark/system), `setTheme()`, `resolved`
+- **Persistence** — `localStorage['pilotiq-theme']`
+- **System detection** — `prefers-color-scheme` media query listener, updates on OS change
+- **FOUC prevention** — Inline `<script>` in `+Head.tsx` sets `.dark` class before React hydrates
+- **SSR** — Inline `<style>` with theme CSS in `+Layout.tsx` prevents flash
+
+### Theme Files
+
+| File | Purpose |
+|------|---------|
+| `theme/types.ts` | ThemeConfig, ThemeMeta, StylePreset, BaseColor, AccentColor, etc. |
+| `theme/presets.ts` | 4 style presets with full OKLCH variable sets |
+| `theme/base-colors.ts` | 6 base color scales |
+| `theme/accent-colors.ts` | 16 accent colors |
+| `theme/chart-palettes.ts` | 5 chart palettes |
+| `theme/radius.ts` | 5 border radius presets |
+| `theme/icon-map.ts` | 28 canonical icons mapped across 4 libraries |
+| `theme/resolve.ts` | `resolveTheme()` — layered resolution pipeline |
+| `theme/generate-css.ts` | `generateThemeCSS()` — CSS string output |
+
+---
+
+## @pilotiq/panels — Legacy
+
+```
+@rudderjs/* (framework — linked via pnpm.overrides)
   └── @pilotiq/panels          Resource builder, schema, theming
        ├── @pilotiq/lexical     Rich text editor (Panel.use(panelsLexical()))
        └── @pilotiq/media       Media library (Panel.use(media(config)))
 ```
 
-**Requires**: `@rudderjs/{core,router,orm,auth}` + optional packages (cache, localization, storage).
+Panels ships vendored React pages:
+```bash
+pnpm rudder vendor:publish --tag=pilotiq-pages --force
+```
 
-**Pro extensions** (pilotiq-pro repo):
-- `@pilotiq-pro/ai` — PanelAgent runtime, chat sidebar, AI field actions
-- `@pilotiq-pro/collab` — Yjs real-time collab, multi-user cursors, persistence
+**After EVERY edit to `packages/panels/pages/`, re-run vendor:publish.**
+
+Being migrated to `@pilotiq/pilotiq`. Key differences:
+
+| | `@pilotiq/panels` (legacy) | `@pilotiq/pilotiq` (new) |
+|---|---|---|
+| Page delivery | Vendored copy | Auto-generated by Vite plugin |
+| Routing | Route functions in vendored pages | Route functions generated at build time |
+| Layout | AdminLayout in vendored `+Layout.tsx` | AppShell in generated `+Layout.tsx` |
+| Theme | Full engine + editor in panels | Engine in core, editor as plugin (planned) |
+| Fields | 20+ types | 8 types (growing) |
 
 ---
 
@@ -99,13 +205,40 @@ All `@rudderjs/*` packages resolve to `link:../rudderjs/packages/<name>` via `pn
 
 ---
 
-## Playground
+## Playgrounds
 
-Port 3001, HMR 24679. Pure free pilotiq — no AI, no collab, no pro packages.
+| Playground | Port | HMR | Purpose |
+|---|---|---|---|
+| `rudderjs/playground` | 3000 | 24678 | Framework demo — zero pilotiq deps |
+| `pilotiq/playground` | 3001 | 24679 | Free panels demo — panels + pilotiq + lexical + media |
+| `pilotiq-pro/playground` | 3002 | 24680 | Full stack — framework + panels + AI + collab |
 
-**Providers**: log, database, session, hash, cache, auth, storage, localization, panels.
+### Free playground providers
+
+log, database, session, hash, cache, auth, storage, localization, panels, pilotiq.
 
 ```bash
 cd ~/Projects/rudderjs && pnpm build     # build framework first
+cd ~/Projects/pilotiq && pnpm build      # build pilotiq packages
 cd ~/Projects/pilotiq/playground && pnpm dev
 ```
+
+### Playground panel definitions
+
+| Panel | Path | Layout | Theme |
+|---|---|---|---|
+| Pilotiq Admin | `/new-admin` | sidebar | nova + blue accent |
+| Pilotiq Simple | `/simple` | topbar | default |
+
+---
+
+## Package Exports
+
+### @pilotiq/pilotiq
+
+| Export path | Contents |
+|---|---|
+| `@pilotiq/pilotiq` | Builder, Resource, Page, Fields, Schema, Theme engine (resolveTheme, generateThemeCSS, presets, colors) |
+| `@pilotiq/pilotiq/react` | AppShell, SchemaRenderer, ThemeProvider, ThemeToggle, useTheme |
+| `@pilotiq/pilotiq/registry` | PilotiqRegistry singleton |
+| `@pilotiq/pilotiq/vite` | `pilotiq()` Vite plugin |

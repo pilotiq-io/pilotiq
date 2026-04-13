@@ -69,24 +69,39 @@ Pilotiq.make() builder → pilotiq([panels]) provider → registerPilotiqRoutes(
 2. `bootstrap/providers.ts` — `import { pilotiq } from '@pilotiq/pilotiq'` → `pilotiq([adminPanel])`
 
 **Key files:**
-- `src/Pilotiq.ts` — Builder: `.path()`, `.branding()`, `.layout('sidebar'|'topbar')`, `.resources()`, `.pages()`, `.schema()`, `.guard()`
+- `src/Pilotiq.ts` — Builder: `.path()`, `.branding()`, `.theme()`, `.layout('sidebar'|'topbar')`, `.resources()`, `.pages()`, `.schema()`, `.guard()`
 - `src/Page.ts` — Custom page class with `static schema()`, `static slug/label/icon`
 - `src/PilotiqRegistry.ts` — globalThis-backed singleton registry, `findByPath()` for route matching
 - `src/PilotiqServiceProvider.ts` — Provider + `pilotiq()` factory
-- `src/routes.ts` — `registerPilotiqRoutes()` using `view()`, resolves schema
-- `src/vite.ts` — `pilotiq()` Vite plugin, generates `(pilotiq)/` pages + `+Layout.tsx`
+- `src/routes.ts` — `registerPilotiqRoutes()` using `view()`, resolves schema + theme
+- `src/vite.ts` — `pilotiq()` Vite plugin, generates `(pilotiq)/` pages + `+Layout.tsx` + `+Head.tsx`
 - `src/schema/` — Schema elements: `Text`, `Heading`, `Alert`, `Divider`, `Card` + `resolveSchema()`
+- `src/theme/` — Theme engine: types, presets (default/nova/maia/lyra), base-colors, accent-colors, chart-palettes, radius, icon-map, `resolveTheme()`, `generateThemeCSS()`
 - `src/react/AppShell.tsx` — Picks layout mode, renders sidebar or topbar
+- `src/react/ThemeProvider.tsx` — Light/dark/system context, localStorage, CSS var injection
+- `src/react/ThemeToggle.tsx` — Sun/moon toggle button (in both layout headers)
 - `src/react/layouts/SidebarLayout.tsx` — shadcn Sidebar (collapsible, mobile-responsive)
 - `src/react/layouts/TopbarLayout.tsx` — horizontal nav variant
 - `src/react/SchemaRenderer.tsx` — Renders resolved schema elements
 - `src/react/ui/` — shadcn primitives (sidebar, button, sheet, separator, tooltip, skeleton, input)
 
 **Pilotiq page generation:**
-- `pages/(pilotiq)/+Layout.tsx` — renders AppShell, persists across navigations (sidebar state survives)
+- `pages/(pilotiq)/+Head.tsx` — FOUC prevention script (reads localStorage, sets `.dark` before hydration) + Google Fonts preload
+- `pages/(pilotiq)/+Layout.tsx` — wraps pages in ThemeProvider + AppShell, injects theme CSS inline for SSR
 - `pages/(pilotiq)/+config.ts` — `passToClient: ['viewProps']`
 - Individual `+Page.tsx` stubs render only content (no shell wrapper)
 - Route functions check `PilotiqRegistry` on server, tentatively match on client for SPA nav
+
+**Theme system:**
+- `Pilotiq.theme({ preset, baseColor, accentColor, chartPalette, radius, fonts, iconLibrary, cssVariables })` configures theme
+- `resolveTheme()` layers: preset → base color → accent color → chart palette → raw CSS vars
+- `generateThemeCSS()` outputs `:root { ... } .dark { ... }` with `!important` for Tailwind override
+- ThemeProvider manages light/dark/system state, persists to `localStorage['pilotiq-theme']`
+- ThemeToggle renders in both SidebarLayout and TopbarLayout headers
+- FOUC prevention: inline `<script>` in +Head.tsx + inline `<style>` in +Layout.tsx
+- 4 presets (default, nova, maia, lyra), 6 base colors, 16 accent colors, 5 chart palettes, 5 radii
+- All colors in OKLCH format for perceptual uniformity
+- `themeEditor()` plugin for live editing is planned (separate from core)
 
 ### @pilotiq/panels Architecture (Legacy)
 

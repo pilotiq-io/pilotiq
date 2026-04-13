@@ -20,34 +20,53 @@ Pilotiq is the Filament-meets-VS-Code admin builder for the Node.js ecosystem. D
 Define your admin panel in TypeScript. Pilotiq generates the API and UI automatically — including forms, tables, filters, actions, dashboards, and a rich-text editor.
 
 ```ts
-import { Panel, Resource, TextField, EmailField, SelectField, DateField } from '@pilotiq/panels'
+import { Pilotiq, Resource, TextField, Column, Heading, Alert, Card } from '@pilotiq/pilotiq'
 
-class UserResource extends Resource {
-  static model = User
-  static label = 'Users'
+class ArticleResource extends Resource {
+  static label         = 'Articles'
+  static labelSingular = 'Article'
+  static icon          = 'file-text'
 
-  fields() {
-    return [
-      TextField.make('name').required().searchable().sortable(),
-      EmailField.make('email').required().searchable(),
-      SelectField.make('role').options(['user', 'admin']),
-      DateField.make('createdAt').readonly().hideFromCreate(),
-    ]
+  table() {
+    return {
+      columns: [
+        Column.make('title').label('Title').sortable().searchable(),
+        Column.make('slug').label('Slug'),
+        Column.make('createdAt').label('Created'),
+      ],
+    }
+  }
+
+  form() {
+    return {
+      fields: [
+        TextField.make('title').label('Title').required(),
+        TextField.make('slug').label('Slug').required(),
+      ],
+    }
   }
 }
 
-export const admin = Panel.make('admin')
+export const admin = Pilotiq.make('Admin')
   .path('/admin')
   .branding({ title: 'My App' })
-  .resources([UserResource])
+  .theme({ preset: 'nova', accentColor: 'blue', radius: 'medium' })
+  .resources([new ArticleResource()])
+  .schema(async () => [
+    Heading.make('Dashboard').description('Welcome back.'),
+    Card.make('Getting Started').schema([
+      Alert.make('Create your first article to get started.').info(),
+    ]),
+  ])
 ```
 
 **What you get from this:**
 
-- CRUD API at `/admin/api/users` (list, create, read, update, delete)
-- Searchable, sortable table with column rendering
-- Create/edit forms with validation
-- Global search, pagination, filters — all auto-wired
+- Auto-generated Vike pages with sidebar/topbar layouts
+- CRUD routes for resources (list, create, edit)
+- Dashboard with schema elements (headings, cards, alerts, dividers)
+- Dark/light/system theme with OKLCH presets, accent colors, and FOUC prevention
+- No vendoring — the `pilotiq()` Vite plugin generates pages automatically
 
 ---
 
@@ -55,16 +74,20 @@ export const admin = Panel.make('admin')
 
 **Core (free, MIT)**
 
-- 20+ field types — text, email, number, date, select, toggle, tags, color, JSON, file, rich-text, relations, repeater, builder
-- Schema elements — Stats, Chart, Table, List, Form, Dialog, Dashboard, Wizard
-- Inline table editing (inline, popover, modal modes)
-- Reactive derived fields — `.from('title').derive(({ title }) => slugify(title))`
-- Draft/publish workflow, soft deletes, version history
-- Autosave + draft recovery (localStorage backup)
-- Global settings pages, custom pages with route params
-- i18n with automatic RTL (Arabic, Hebrew, Persian, Urdu)
-- Dark mode, theme presets, theme editor with live preview
-- Plugin system via `Panel.use()`
+- **Two layout modes** — collapsible sidebar (shadcn) or horizontal topbar
+- **Resources** — table + form views with columns, fields, sorting, search
+- **Schema system** — Heading, Text, Alert, Divider, Card (nested) — async or static
+- **Custom pages** — `Page` class with `static schema()`, slug, label, icon
+- **Theme engine** — 4 style presets (default, nova, maia, lyra), 6 base colors, 16 accent colors, 5 chart palettes, 5 border radii, Google Fonts, icon library selection
+- **Dark mode** — light/dark/system toggle, localStorage persistence, FOUC prevention via inline script
+- **Theme editor** — `.use(themeEditor())` plugin for live preview + save/reset (coming soon)
+- **Auto page generation** — `pilotiq()` Vite plugin writes Vike page stubs at build time
+- **Plugin system** — `.use()` for extending panels
+
+**Legacy panels (`@pilotiq/panels`)**
+
+- 20+ field types, inline editing, draft/publish, version history, i18n with RTL, theme editor
+- Being migrated to `@pilotiq/pilotiq`
 
 **Pro features ([pilotiq.io](https://pilotiq.io))**
 
@@ -81,10 +104,11 @@ Pro packages are commercial. They live in a separate private repo at `pilotiq-io
 
 | Package | Description |
 |---|---|
-| [`@pilotiq/panels`](./packages/panels) | Resource builder, forms, fields, schema, registries, theming, i18n, server-side handlers |
+| [`@pilotiq/pilotiq`](./packages/pilotiq) | **New** — View-based admin panel with auto page generation, theme engine, schema system, AppShell layouts |
+| [`@pilotiq/panels`](./packages/panels) | **Legacy** — Resource builder with vendored pages, full field system, i18n, theme editor |
 | [`@pilotiq/lexical`](./packages/lexical) | Lexical rich-text editor adapter — local-only by default |
 | [`@pilotiq/media`](./packages/media) | Media library + `MediaPickerField` |
-| [`playground/`](./playground) | Free pilotiq dev fixture — panels + lexical + media on port 3001. No pro deps. |
+| [`playground/`](./playground) | Free pilotiq dev fixture — panels + pilotiq + lexical + media on port 3001 |
 
 ---
 
@@ -93,71 +117,76 @@ Pro packages are commercial. They live in a separate private repo at `pilotiq-io
 ### 1. Install
 
 ```bash
-pnpm add @pilotiq/panels
+pnpm add @pilotiq/pilotiq
 ```
 
-### 2. Define a resource
+### 2. Define a panel
 
 ```ts
-// app/Panels/Admin/resources/ArticleResource.ts
-import { Resource, TextField, TextareaField, SelectField, DateField, Section } from '@pilotiq/panels'
+// app/Pilotiq/AdminPanel.ts
+import { Pilotiq, Resource, TextField, Column } from '@pilotiq/pilotiq'
 
-export class ArticleResource extends Resource {
-  static model         = Article
-  static label         = 'Articles'
-  static titleField    = 'title'
-  static defaultSort   = 'createdAt'
-  static defaultSortDir = 'DESC' as const
-  static softDeletes   = true
-  static versioned     = true
+class UserResource extends Resource {
+  static label = 'Users'
+  static labelSingular = 'User'
+  static icon = 'users'
 
-  fields() {
-    return [
-      Section.make('Content').schema(
-        TextField.make('title').required().searchable().sortable(),
-        TextareaField.make('excerpt').rows(3),
-      ),
-      Section.make('Publishing').columns(2).schema(
-        SelectField.make('status').options(['draft', 'published']).required(),
-        DateField.make('publishedAt').withTime(),
-      ),
-    ]
+  table() {
+    return {
+      columns: [
+        Column.make('name').label('Name').sortable().searchable(),
+        Column.make('email').label('Email'),
+      ],
+    }
+  }
+
+  form() {
+    return {
+      fields: [
+        TextField.make('name').label('Name').required(),
+        TextField.make('email').label('Email').required(),
+      ],
+    }
   }
 }
-```
 
-### 3. Create a panel and register it
-
-```ts
-// app/Panels/Admin/AdminPanel.ts
-import { Panel } from '@pilotiq/panels'
-import { ArticleResource } from './resources/ArticleResource.js'
-
-export const adminPanel = Panel.make('admin')
+export const adminPanel = Pilotiq.make('Admin')
   .path('/admin')
-  .branding({ title: 'My CMS' })
-  .guard(async (ctx) => ctx.user?.role === 'admin')
-  .resources([ArticleResource])
+  .branding({ title: 'My App' })
+  .theme({ preset: 'nova', accentColor: 'indigo' })
+  .resources([new UserResource()])
 ```
+
+### 3. Register the provider
 
 ```ts
 // bootstrap/providers.ts
-import { panels } from '@pilotiq/panels'
-import { adminPanel } from '../app/Panels/Admin/AdminPanel.js'
+import { pilotiq } from '@pilotiq/pilotiq'
+import { adminPanel } from '../app/Pilotiq/AdminPanel.js'
 
 export default [
-  panels([adminPanel]),
+  pilotiq([adminPanel]),
 ]
 ```
 
-### 4. Publish the UI and run
+### 4. Add the Vite plugin
+
+```ts
+// vite.config.ts
+import { pilotiq } from '@pilotiq/pilotiq/vite'
+
+export default {
+  plugins: [pilotiq(), /* ... */],
+}
+```
+
+### 5. Run
 
 ```bash
-pnpm rudder vendor:publish --tag=pilotiq-pages
 pnpm dev
 ```
 
-Visit `/admin` — your admin panel is ready.
+Visit `/admin` — your admin panel is ready with dark/light toggle and themed UI.
 
 ---
 
@@ -168,9 +197,10 @@ Pilotiq is built on top of [RudderJS](https://github.com/rudderjs/rudder), the L
 - Node.js 20+
 - `@rudderjs/core` — DI container, application bootstrap
 - `@rudderjs/router` — HTTP routing
+- `@rudderjs/view` — View controller routes (used by `@pilotiq/pilotiq`)
 - `@rudderjs/orm` — ORM (Prisma or Drizzle)
 - `@rudderjs/auth` — auth
-- Optional: `@rudderjs/cache`, `@rudderjs/storage`, `@rudderjs/live`, `@rudderjs/broadcast`, `@rudderjs/localization`
+- Optional: `@rudderjs/cache`, `@rudderjs/storage`, `@rudderjs/localization`
 
 Pilotiq's packages declare these as peer dependencies. Install both, register the panel provider in your RudderJS app's `bootstrap/providers.ts`, and you're done.
 
