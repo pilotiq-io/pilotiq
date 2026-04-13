@@ -2,6 +2,8 @@ import type { Router } from '@rudderjs/router'
 import { view } from '@rudderjs/view'
 import type { Pilotiq } from './Pilotiq.js'
 import type { Resource } from './Resource.js'
+import type { Page } from './Page.js'
+import { resolveSchema } from './schema/resolveSchema.js'
 
 function panelInfo(cfg: ReturnType<Pilotiq['getConfig']>) {
   return {
@@ -11,6 +13,9 @@ function panelInfo(cfg: ReturnType<Pilotiq['getConfig']>) {
       const Ctor = R.constructor as typeof Resource
       return { label: Ctor.label, slug: Ctor.getSlug(), icon: Ctor.icon }
     }),
+    pages: cfg.pages.map(P => ({
+      label: P.getLabel(), slug: P.getSlug(), icon: P.icon,
+    })),
   }
 }
 
@@ -23,9 +28,12 @@ export function registerPilotiqRoutes(
 
   // Dashboard
   router.get(base, async () => {
+    const schemaData = await resolveSchema(cfg.schema, {})
     return view('pilotiq.dashboard', {
       panel: panelInfo(cfg),
       basePath: base,
+      layout: cfg.layout,
+      schemaData,
     })
   })
 
@@ -47,6 +55,7 @@ export function registerPilotiqRoutes(
           searchable: col.isSearchable(),
         })),
         basePath: base,
+        layout: cfg.layout,
       })
     })
 
@@ -66,6 +75,7 @@ export function registerPilotiqRoutes(
         })),
         mode:     'create' as const,
         basePath: base,
+        layout: cfg.layout,
       })
     })
 
@@ -86,6 +96,26 @@ export function registerPilotiqRoutes(
         mode:     'edit' as const,
         recordId: req.params['id'],
         basePath: base,
+        layout: cfg.layout,
+      })
+    })
+  }
+
+  // Custom page routes
+  for (const PageClass of cfg.pages) {
+    const pageSlug = PageClass.getSlug()
+
+    router.get(`${base}/${pageSlug}`, async () => {
+      const schemaData = await resolveSchema(
+        (ctx) => PageClass.schema(ctx),
+        {},
+      )
+      return view('pilotiq.page', {
+        panel:      panelInfo(cfg),
+        page:       PageClass.toMeta(),
+        schemaData,
+        basePath:   base,
+        layout:     cfg.layout,
       })
     })
   }

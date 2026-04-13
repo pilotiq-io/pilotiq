@@ -3,9 +3,8 @@ import type { RouteSync } from 'vike/types'
 import { PilotiqRegistry } from '@pilotiq/pilotiq/registry'
 
 export const route: RouteSync = (pageContext) => {
-  if (!import.meta.env.SSR) return false
   const parts = pageContext.urlPathname.split('/').filter(Boolean)
   if (parts.length !== 3 || parts[2] !== 'create') return false
-  if (!PilotiqRegistry.findByPath('/' + parts[0])) return false
+  if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
   return { routeParams: { basePath: parts[0], slug: parts[1] } }
 }

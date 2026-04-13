@@ -38,6 +38,11 @@
     "@rudderjs/core": "workspace:*",
     "@rudderjs/router": "workspace:*",
     "@rudderjs/view": "workspace:*",
+    "@base-ui/react": "^1",
+    "class-variance-authority": "^0.7",
+    "clsx": "^2",
+    "lucide-react": "^0.503",
+    "tailwind-merge": "^3",
     "react": "^18 || ^19"
   },
   "devDependencies": {
@@ -45,6 +50,11 @@
     "@rudderjs/core": "workspace:*",
     "@rudderjs/router": "workspace:*",
     "@rudderjs/view": "workspace:*",
+    "@base-ui/react": "^1",
+    "class-variance-authority": "^0.7",
+    "clsx": "^2",
+    "lucide-react": "^0.503",
+    "tailwind-merge": "^3",
     "@types/node": "^20",
     "vite": "^7",
     "@types/react": "^19",
