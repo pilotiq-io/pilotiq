@@ -36,6 +36,7 @@ overrides:
   '@rudderjs/horizon': link:../rudderjs/packages/horizon
   '@rudderjs/rudder': link:../rudderjs/packages/rudder
   '@rudderjs/cli': link:../rudderjs/packages/cli
+  '@rudderjs/view': link:../rudderjs/packages/view
 
 importers:
 
@@ -243,6 +244,28 @@ importers:
         specifier: ^4.0.0
         version: 4.3.6
 
+  packages/pilotiq:
+    dependencies:
+      '@rudderjs/contracts':
+        specifier: link:../../../rudderjs/packages/contracts
+        version: link:../../../rudderjs/packages/contracts
+      '@rudderjs/router':
+        specifier: link:../../../rudderjs/packages/router
+        version: link:../../../rudderjs/packages/router
+      '@rudderjs/view':
+        specifier: link:../../../rudderjs/packages/view
+        version: link:../../../rudderjs/packages/view
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.2.14
+      react:
+        specifier: ^19
+        version: 19.2.5
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
   playground:
     dependencies:
       '@base-ui-components/react':
@@ -305,6 +328,9 @@ importers:
       '@pilotiq/panels':
         specifier: workspace:*
         version: link:../packages/panels
+      '@pilotiq/pilotiq':
+        specifier: workspace:*
+        version: link:../packages/pilotiq
       '@prisma/adapter-better-sqlite3':
         specifier: ^7.0.0
         version: 7.7.0
@@ -365,6 +391,9 @@ importers:
       '@rudderjs/storage':
         specifier: link:../../rudderjs/packages/storage
         version: link:../../rudderjs/packages/storage
+      '@rudderjs/view':
+        specifier: link:../../rudderjs/packages/view
+        version: link:../../rudderjs/packages/view
       '@rudderjs/vite':
         specifier: link:../../rudderjs/packages/vite
         version: link:../../rudderjs/packages/vite

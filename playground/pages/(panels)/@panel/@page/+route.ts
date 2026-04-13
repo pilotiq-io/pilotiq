@@ -7,8 +7,9 @@ import { PanelRegistry } from '@pilotiq/panels'
 // Resources live at /{panel}/resources/... and globals at /{panel}/globals/...,
 // so those prefixes are excluded here.
 //
-// On the client PanelRegistry is empty, so we return a tentative match for any
-// non-reserved URL under a panel and let the server validate via data().
+// On the client PanelRegistry is empty so we can't validate. Return false
+// and let the server resolve the route via .pageContext.json — SPA navigation
+// still works because Vike fetches the server-resolved pageId.
 export const route: RouteSync = (pageContext) => {
   const url = pageContext.urlPathname
   const parts = url.split('/').filter(Boolean)
@@ -21,10 +22,8 @@ export const route: RouteSync = (pageContext) => {
 
   const urlPath = rest.join('/')
 
-  // Client-side: trust the URL shape, server validates.
-  if (!import.meta.env.SSR) {
-    return { routeParams: { panel: panelSegment ?? '', page: urlPath } }
-  }
+  // Client-side: can't validate, let server resolve.
+  if (!import.meta.env.SSR) return false
 
   // Server-side: find the first page whose slug pattern matches the URL path.
   const panel = PanelRegistry.all().find((p) => p.getPath() === `/${panelSegment}`)

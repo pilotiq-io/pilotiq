@@ -1,0 +1,42 @@
+{
+  "name": "@pilotiq/pilotiq",
+  "version": "0.0.1",
+  "description": "View-based admin panel for RudderJS",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pilotiq-io/pilotiq",
+    "directory": "packages/pilotiq"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./react": {
+      "import": "./dist/react/index.js",
+      "types": "./dist/react/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "@rudderjs/contracts": "workspace:*",
+    "@rudderjs/router": "workspace:*",
+    "@rudderjs/view": "workspace:*",
+    "react": "^18 || ^19"
+  },
+  "devDependencies": {
+    "@rudderjs/contracts": "workspace:*",
+    "@rudderjs/router": "workspace:*",
+    "@rudderjs/view": "workspace:*",
+    "@types/react": "^19",
+    "react": "^19",
+    "typescript": "^5"
+  }
+}

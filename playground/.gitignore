@@ -21,5 +21,8 @@ bootstrap/cache/
 # Storage uploads
 storage/app/
 public/storage
+# Auto-generated view pages (@rudderjs/vite view scanner)
+pages/__view/
+
 # Playwright
 test-results/

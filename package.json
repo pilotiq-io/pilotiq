@@ -62,7 +62,8 @@
       "@rudderjs/pulse": "link:../rudderjs/packages/pulse",
       "@rudderjs/horizon": "link:../rudderjs/packages/horizon",
       "@rudderjs/rudder": "link:../rudderjs/packages/rudder",
-      "@rudderjs/cli": "link:../rudderjs/packages/cli"
+      "@rudderjs/cli": "link:../rudderjs/packages/cli",
+      "@rudderjs/view": "link:../rudderjs/packages/view"
     }
   },
   "devDependencies": {
