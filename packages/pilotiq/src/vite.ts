@@ -210,7 +210,7 @@ export default function ResourceForm() {
   writeIfChanged(path.join(outDir, 'resource-edit', '+Page.tsx'), formPage)
 }
 
-export function pilotiqPages(): Plugin {
+export function pilotiq(): Plugin {
   const cwd = process.cwd()
   const pagesRoot = path.join(cwd, 'pages')
 
