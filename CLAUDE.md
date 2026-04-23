@@ -148,11 +148,11 @@ Source: `packages/panels/pages/` → Target: `playground/pages/(panels)/`
 
 ## Cross-Repo Wiring
 
-All `@rudderjs/*` packages resolve to `link:../rudderjs/packages/<name>` via `pnpm.overrides` in the root `package.json`. No git submodules — sibling clones on disk.
+All `@rudderjs/*` packages resolve to `link:../rudder/packages/<name>` via `pnpm.overrides` in the root `package.json`. No git submodules — sibling clones on disk.
 
 ```
 ~/Projects/
-├── rudderjs/       # Framework
+├── rudder/         # Framework
 ├── pilotiq/        # This repo (free panels)
 └── pilotiq-pro/    # Pro extensions (AI, collab)
 ```
