@@ -50,7 +50,7 @@
  * runs; the panel's inline <style> overrides these with its resolved tokens. */
 :root {
   --radius: 0.625rem;
-  --background: oklch(0.979 0.008 78);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.218 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.218 0 0);
@@ -68,7 +68,7 @@
   --border: oklch(0.88 0.008 78);
   --input: oklch(0.88 0.008 78);
   --ring: oklch(0.685 0.126 43);
-  --sidebar: oklch(1 0 0);
+  --sidebar: oklch(0.979 0.008 78);
   --sidebar-foreground: oklch(0.218 0 0);
   --sidebar-primary: oklch(0.685 0.126 43);
   --sidebar-primary-foreground: oklch(1 0 0);

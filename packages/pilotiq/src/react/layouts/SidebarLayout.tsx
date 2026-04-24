@@ -23,7 +23,7 @@ export function SidebarLayout({ panel, basePath, children }: AppShellProps) {
 
   return (
     <SidebarProvider>
-      <Sidebar collapsible="icon">
+      <Sidebar variant="inset" collapsible="icon">
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
@@ -91,9 +91,9 @@ export function SidebarLayout({ panel, basePath, children }: AppShellProps) {
       </Sidebar>
 
       <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 bg-background">
+        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2">
           <div className="flex flex-1 items-center gap-2 px-3">
-            <SidebarTrigger className="-ms-1" />
+            <SidebarTrigger />
             <Separator orientation="vertical" className="me-2 data-[orientation=vertical]:h-4" />
           </div>
           <div className="flex items-center gap-1 px-3">
