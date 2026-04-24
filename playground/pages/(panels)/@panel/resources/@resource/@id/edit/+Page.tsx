@@ -57,7 +57,7 @@ export default function EditPage() {
       agents,
     })
     return () => setResourceContext(null)
-  }, [slug, id, pathSegment, agents.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [slug, id, pathSegment, agents.length])
 
   // Back navigation
   const defaultBack = `/${pathSegment}/resources/${slug}`

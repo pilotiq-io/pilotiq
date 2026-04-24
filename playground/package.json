@@ -33,7 +33,6 @@
     "@pilotiq/lexical": "workspace:*",
     "@pilotiq/media": "workspace:*",
     "@pilotiq/panels": "workspace:*",
-    "@pilotiq/pilotiq": "workspace:*",
     "@prisma/adapter-better-sqlite3": "^7.0.0",
     "@prisma/client": "^7.0.0",
     "@react-three/drei": "^10.0.0",

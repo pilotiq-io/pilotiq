@@ -106,11 +106,13 @@ export class Pilotiq {
     }
   }
 
-  /** @internal — returns code defaults merged with DB overrides. */
+  /** @internal — returns code defaults merged with DB overrides. Returns an
+   *  empty config when the theme editor is on so the built-in default preset
+   *  still resolves and the editor can persist overrides on top. */
   getMergedTheme(): ThemeConfig | undefined {
     const base = this.config.theme
     const overrides = this.config._themeOverrides
-    if (!base && !overrides) return undefined
+    if (!base && !overrides && !this.config.themeEditor) return undefined
     return { ...base, ...overrides }
   }
 

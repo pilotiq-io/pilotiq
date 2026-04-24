@@ -1,12 +1,10 @@
 import { defineConfig } from 'vite'
 import rudderjs from '@rudderjs/vite'
-import { pilotiq } from '@pilotiq/pilotiq/vite'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [
-    pilotiq(),
     rudderjs(),
     tailwindcss(),
     react(),
@@ -95,7 +93,6 @@ export default defineConfig({
     exclude: [
       // Keep as workspace-link runtime imports so a single instance is shared
       // with the playground's own imports.
-      '@pilotiq/pilotiq',
       '@pilotiq/panels',
       '@pilotiq/lexical',
       // CLI-only — server-side, must not be pre-bundled

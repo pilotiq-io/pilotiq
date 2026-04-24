@@ -183,7 +183,7 @@ export function TreeView({ records, folderField, titleField, iconField, fields, 
   const recordIds = records.map(r => String(r.id)).join(',')
   useEffect(() => {
     setItems(buildTree(records, folderField))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [recordIds, folderField])
 
   const handleItemsChanged = useCallback((newItems: TreeItems<TreeRecord>, reason: ItemChangedReason<TreeRecord>) => {

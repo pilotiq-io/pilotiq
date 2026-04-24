@@ -150,6 +150,17 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
     )
   }
 
+  // Register this panel path synchronously during render so +route.ts can
+  // distinguish panels URLs from other route groups during SPA navigation.
+  // Writing to globalThis (no DOM mutation) is hydration-safe and guarantees
+  // the set is populated before any SPA nav click fires.
+  if (data.panelMeta?.path) {
+    const g = globalThis as Record<string, unknown>
+    const KEY = '__pilotiq_panels_known_paths__'
+    if (!g[KEY]) g[KEY] = new Set<string>()
+    ;(g[KEY] as Set<string>).add(data.panelMeta.path)
+  }
+
   // SSR: inject theme CSS inline to prevent FOUC
   const themeCss = data.panelMeta.theme ? generateThemeCSS(data.panelMeta.theme) : null
 

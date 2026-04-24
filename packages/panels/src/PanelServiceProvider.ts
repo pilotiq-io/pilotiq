@@ -133,13 +133,16 @@ export class PanelServiceProvider extends ServiceProvider {
       // Chat routes (`/api/_chat/*`) are mounted by
       // `@pilotiq-pro/ai`'s `AiServiceProvider.boot()` since Phase 4.3.
 
-      // Theme: load saved overrides from DB and mount editor routes
-      if (panel.getTheme()) {
+      // Theme: when the editor is on, load saved overrides from DB and mount
+      // editor routes. This works even when `.theme()` wasn't called — the
+      // built-in default preset still renders and the editor persists on top.
+      if (panel.hasThemeEditor()) {
         const overrides = await loadThemeOverrides(panel)
         if (overrides) panel.setThemeOverrides(overrides)
-        if (panel.hasThemeEditor()) {
-          mountThemeRoutes(router, panel, mw)
-        }
+        mountThemeRoutes(router, panel, mw)
+      } else if (panel.getTheme()) {
+        const overrides = await loadThemeOverrides(panel)
+        if (overrides) panel.setThemeOverrides(overrides)
       }
 
       // Notifications

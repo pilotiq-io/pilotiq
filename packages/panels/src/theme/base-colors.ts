@@ -276,11 +276,62 @@ const taupe: PresetDefinition = {
   },
 }
 
+// Pilotiq brand: cream bg, paper cards, ink text, dark-gray muted
+const cream: PresetDefinition = {
+  light: {
+    '--background':                   'oklch(0.979 0.008 78)',
+    '--foreground':                   'oklch(0.218 0 0)',
+    '--card':                         'oklch(1 0 0)',
+    '--card-foreground':              'oklch(0.218 0 0)',
+    '--popover':                      'oklch(1 0 0)',
+    '--popover-foreground':           'oklch(0.218 0 0)',
+    '--secondary':                    'oklch(0.955 0.006 78)',
+    '--secondary-foreground':         'oklch(0.218 0 0)',
+    '--muted':                        'oklch(0.955 0.006 78)',
+    '--muted-foreground':             'oklch(0.467 0 0)',
+    '--accent':                       'oklch(0.94 0.022 60)',
+    '--accent-foreground':            'oklch(0.365 0.173 28)',
+    '--border':                       'oklch(0.88 0.008 78)',
+    '--input':                        'oklch(0.88 0.008 78)',
+    '--sidebar':                      'oklch(1 0 0)',
+    '--sidebar-foreground':           'oklch(0.218 0 0)',
+    '--sidebar-accent':               'oklch(0.955 0.006 78)',
+    '--sidebar-accent-foreground':    'oklch(0.218 0 0)',
+    '--sidebar-border':               'oklch(0.88 0.008 78)',
+  },
+  dark: {
+    '--background':                   'oklch(0.218 0 0)',
+    '--foreground':                   'oklch(0.979 0.008 78)',
+    '--card':                         'oklch(0.258 0 0)',
+    '--card-foreground':              'oklch(0.979 0.008 78)',
+    '--popover':                      'oklch(0.258 0 0)',
+    '--popover-foreground':           'oklch(0.979 0.008 78)',
+    '--secondary':                    'oklch(0.28 0 0)',
+    '--secondary-foreground':         'oklch(0.979 0.008 78)',
+    '--muted':                        'oklch(0.28 0 0)',
+    '--muted-foreground':             'oklch(0.7 0 0)',
+    '--accent':                       'oklch(0.35 0.02 43)',
+    '--accent-foreground':            'oklch(0.979 0.008 78)',
+    '--border':                       'oklch(1 0 0 / 10%)',
+    '--input':                        'oklch(1 0 0 / 15%)',
+    '--sidebar':                      'oklch(0.258 0 0)',
+    '--sidebar-foreground':           'oklch(0.979 0.008 78)',
+    '--sidebar-accent':               'oklch(0.28 0 0)',
+    '--sidebar-accent-foreground':    'oklch(0.979 0.008 78)',
+    '--sidebar-border':               'oklch(1 0 0 / 10%)',
+  },
+}
+
+// Sentinel: "use preset default" — empty override, no variables written.
+const defaultBase: PresetDefinition = { light: {}, dark: {} }
+
 export const baseColors: Record<BaseColor, PresetDefinition> = {
+  default: defaultBase,
   neutral,
   stone,
   zinc,
   slate,
   olive,
   taupe,
+  cream,
 }

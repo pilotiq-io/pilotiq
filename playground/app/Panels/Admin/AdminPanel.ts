@@ -33,17 +33,17 @@ export const adminPanel = Panel.make('admin')
     title: 'Pilotiq',
     logo: '/logo.svg',
   })
-  .theme({
-    preset: 'nova',
-    baseColor: 'zinc',
-    accentColor: 'orange',
-    chartPalette: 'ocean',
-    // radius: 'none',
-    fonts: {
-      heading: 'Space Grotesk',
-      body: 'Inter',
-    },
-  })
+  // .theme({
+  //   preset: 'nova',
+  //   baseColor: 'zinc',
+  //   accentColor: 'orange',
+  //   chartPalette: 'ocean',
+  //   // radius: 'none',
+  //   fonts: {
+  //     heading: 'Space Grotesk',
+  //     body: 'Inter',
+  //   },
+  // })
   .themeEditor()
   .layout('sidebar')
   .locale('en')

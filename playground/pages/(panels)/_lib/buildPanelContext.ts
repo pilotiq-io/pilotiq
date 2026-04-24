@@ -25,7 +25,7 @@ export async function buildPanelContext(
   let sessionGet: ((key: string) => unknown) | undefined
   try {
     const { app: getApp } = await import('@rudderjs/core') as { app(): { make<T>(key: string): T } }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const sessionConfig = getApp().make<any>('session.config')
     if (sessionConfig?.secret && sessionConfig?.cookie?.name) {
       const cookieHeader = ((pageContext as any).headers?.cookie ?? '') as string

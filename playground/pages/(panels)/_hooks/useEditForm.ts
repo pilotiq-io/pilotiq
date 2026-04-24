@@ -42,13 +42,13 @@ export function useEditForm(opts: UseEditFormOptions) {
     setValues(newValues)
     setFormKey((k: number) => k + 1)
     setActiveVersionId(null)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   /** Rejoin collaborative mode. */
   const rejoinLive = useCallback(() => {
     setFormKey(0)
     setActiveVersionId(null)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   const setFormValue = useCallback((name: string, value: unknown) => {
     setValues((prev) => ({ ...prev, [name]: value }))

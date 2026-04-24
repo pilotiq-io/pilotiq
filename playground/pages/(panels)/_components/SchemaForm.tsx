@@ -127,7 +127,7 @@ export function SchemaForm({ form, panelPath, i18n, onSuccess, submitUrl, submit
   const [userColor] = useState(() => typeof window === 'undefined' ? '#3b82f6' : `hsl(${Math.floor(Math.random() * 360)}, 70%, 50%)`)
 
   const collabRef = useRef<{
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     doc: any; provider: any; idb: any; fieldsMap: any; suppress: Set<string>
   } | null>(null)
 
@@ -185,9 +185,9 @@ export function SchemaForm({ form, panelPath, i18n, onSuccess, submitUrl, submit
         })
       })
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       let wsProvider: any = null
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       let idbProvider: any = null
 
       function seedAfterSync() {
@@ -217,7 +217,7 @@ export function SchemaForm({ form, panelPath, i18n, onSuccess, submitUrl, submit
         wsProvider.awareness.on('change', () => {
           if (destroyed) return
           const states = [...wsProvider.awareness.getStates().values()]
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
           setCollabPresences(states.flatMap((s: any) => s.user ? [s.user] : []))
         })
         wsProvider.once('synced', () => { if (!destroyed) seedAfterSync() })
@@ -239,7 +239,7 @@ export function SchemaForm({ form, panelPath, i18n, onSuccess, submitUrl, submit
       setCollabConnected(false)
       setCollabPresences([])
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [formYjs.yjs, formYjs.docName])
 
   // Restore localStorage after hydration
@@ -254,7 +254,7 @@ export function SchemaForm({ form, panelPath, i18n, onSuccess, submitUrl, submit
       }
     }
     if (Object.keys(restored).length > 0) setValues(prev => ({ ...prev, ...restored }))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [])
 
   // Persist a field value
@@ -279,7 +279,7 @@ export function SchemaForm({ form, panelPath, i18n, onSuccess, submitUrl, submit
         body: JSON.stringify({ field: name, value }),
       }).catch(() => {})
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [form.id, pathSegment])
 
   // Ref to track latest values for compute without state updater
@@ -346,7 +346,7 @@ export function SchemaForm({ form, panelPath, i18n, onSuccess, submitUrl, submit
         delete (window as unknown as { __updateFormState?: unknown }).__updateFormState
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [form.id, mode])
 
   function handleChange(name: string, value: unknown) {
@@ -567,7 +567,7 @@ export function SchemaForm({ form, panelPath, i18n, onSuccess, submitUrl, submit
         }
       })
     }
-  }, [agentFieldUpdates]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [agentFieldUpdates])
 
   // Cleanup on unmount
   useEffect(() => () => {

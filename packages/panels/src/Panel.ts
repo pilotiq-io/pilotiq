@@ -360,14 +360,17 @@ export class Panel {
     return pages
   }
 
-  /** Merge code defaults + DB overrides into a single config for resolution. */
+  /** Merge code defaults + DB overrides into a single config for resolution.
+   *  Returns an empty config when themeEditor is enabled so the built-in default
+   *  preset (and any DB overrides) still resolve. */
   private _mergedTheme(): PanelThemeConfig | undefined {
-    if (!this._theme) return undefined
-    if (!this._themeOverrides) return this._theme
+    if (!this._theme && !this._themeOverrides && !this._themeEditor) return undefined
+    const base = this._theme ?? {}
+    const overrides = this._themeOverrides ?? {}
     return {
-      ...this._theme,
-      ...this._themeOverrides,
-      fonts: { ...this._theme.fonts, ...this._themeOverrides.fonts },
+      ...base,
+      ...overrides,
+      fonts: { ...base.fonts, ...overrides.fonts },
     }
   }
   getSchema(): PanelSchemaDefinition | undefined { return this._schema }
@@ -408,7 +411,7 @@ export class Panel {
       locale,
       dir:       getPanelDir(locale),
       i18n:      getPanelI18n(locale),
-      ...(this._theme ? { theme: resolveTheme(this._mergedTheme()!) } : {}),
+      ...(this._mergedTheme() ? { theme: resolveTheme(this._mergedTheme()!) } : {}),
     }
   }
 
@@ -426,7 +429,7 @@ export class Panel {
       locale,
       dir:       getPanelDir(locale),
       i18n:      getPanelI18n(locale),
-      ...(this._theme ? { theme: resolveTheme(this._mergedTheme()!) } : {}),
+      ...(this._mergedTheme() ? { theme: resolveTheme(this._mergedTheme()!) } : {}),
     }
   }
 

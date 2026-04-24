@@ -9,18 +9,18 @@ import { useTheme } from './ThemeProvider.js'
 // ─── Constants ──────────────────────────────────────────────
 
 const PRESETS    = ['default', 'nova', 'maia', 'lyra'] as const
-const BASE_COLORS = ['neutral', 'stone', 'zinc', 'slate', 'olive', 'taupe'] as const
+const BASE_COLORS = ['default', 'neutral', 'stone', 'zinc', 'slate', 'olive', 'taupe', 'cream'] as const
 const ACCENT_COLORS = [
   'blue', 'red', 'green', 'amber', 'orange', 'cyan',
   'violet', 'purple', 'pink', 'rose', 'emerald', 'teal',
-  'indigo', 'fuchsia', 'lime', 'sky',
+  'indigo', 'fuchsia', 'lime', 'sky', 'terracotta',
 ] as const
-const CHART_PALETTES = ['default', 'ocean', 'sunset', 'forest', 'berry'] as const
+const CHART_PALETTES = ['default', 'ocean', 'sunset', 'forest', 'berry', 'terracotta'] as const
 const RADII = ['none', 'small', 'default', 'medium', 'large'] as const
 const ICON_LIBRARIES = ['lucide', 'tabler', 'phosphor', 'remix'] as const
 
 const POPULAR_FONTS = [
-  'Inter', 'Geist', 'Space Grotesk', 'Plus Jakarta Sans', 'DM Sans',
+  'Satoshi', 'Inter', 'Geist', 'Space Grotesk', 'Plus Jakarta Sans', 'DM Sans',
   'Manrope', 'Outfit', 'Sora', 'Figtree', 'Poppins',
   'Nunito', 'Raleway', 'Open Sans', 'Lato', 'Roboto',
 ]
@@ -31,7 +31,7 @@ const ACCENT_SWATCHES: Record<string, string> = {
   violet: 'oklch(0.488 0.205 277)', purple: 'oklch(0.496 0.22 292)', pink: 'oklch(0.564 0.2 350)',
   rose: 'oklch(0.514 0.222 16)', emerald: 'oklch(0.532 0.157 163)', teal: 'oklch(0.528 0.121 186)',
   indigo: 'oklch(0.457 0.24 277)', fuchsia: 'oklch(0.542 0.238 322)', lime: 'oklch(0.58 0.2 130)',
-  sky: 'oklch(0.539 0.158 222)',
+  sky: 'oklch(0.539 0.158 222)', terracotta: 'oklch(0.685 0.126 43)',
 }
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -67,13 +67,18 @@ function buildPreviewHTML(config: Partial<PanelThemeConfig>, mode: 'light' | 'da
   const resolved = resolveTheme(merged)
   const themeCSS = generateThemeCSS(resolved)
 
-  // Google Fonts links
-  const fontLinks: string[] = []
-  if (config.fonts?.body) fontLinks.push(config.fonts.body)
-  if (config.fonts?.heading && config.fonts.heading !== config.fonts.body) fontLinks.push(config.fonts.heading)
-  const fontTags = fontLinks.map(f =>
-    `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=${f.replace(/ /g, '+')}:wght@400;500;600;700&display=swap">`
-  ).join('\n')
+  // Font CDN links — Fontshare for Satoshi, Google Fonts otherwise
+  const fontshareUrls: Record<string, string> = {
+    Satoshi: 'https://api.fontshare.com/v2/css?f[]=satoshi@300,500,700&display=swap',
+  }
+  const fontFamilies: string[] = []
+  if (config.fonts?.body) fontFamilies.push(config.fonts.body)
+  if (config.fonts?.heading && config.fonts.heading !== config.fonts.body) fontFamilies.push(config.fonts.heading)
+  const fontTags = fontFamilies.map(f => {
+    const fsUrl = fontshareUrls[f]
+    const href = fsUrl ?? `https://fonts.googleapis.com/css2?family=${f.replace(/ /g, '+')}:wght@400;500;600;700&display=swap`
+    return `<link rel="stylesheet" href="${href}">`
+  }).join('\n')
 
   const bodyFont = resolved.fontFamily?.body ?? "'Geist Variable', sans-serif"
   const headingFont = resolved.fontFamily?.heading ?? bodyFont
@@ -361,7 +366,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig }: ThemeSettingsPag
         {/* Base Color */}
         <ControlGroup label="Base Color">
           <select
-            value={config.baseColor ?? 'neutral'}
+            value={config.baseColor ?? 'default'}
             onChange={e => update('baseColor', e.target.value)}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >

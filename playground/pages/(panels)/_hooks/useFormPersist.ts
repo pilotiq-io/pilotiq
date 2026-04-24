@@ -58,7 +58,7 @@ export function useFormPersist(opts: UseFormPersistOptions) {
         }
       }
     } catch { /* corrupt data — ignore */ }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Debounced write to localStorage on value changes ────────
   useEffect(() => {
@@ -80,7 +80,7 @@ export function useFormPersist(opts: UseFormPersistOptions) {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [enabled, storageKey, values])  
+  }, [enabled, storageKey, values])
 
   // ── beforeunload warning ────────────────────────────────────
   useEffect(() => {

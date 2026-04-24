@@ -42,5 +42,6 @@ export const accentColors: Record<AccentColor, PresetDefinition> = {
   indigo:  accent('oklch(0.457 0.24 277)',   'oklch(0.985 0 0)', 'oklch(0.685 0.17 277)',   'oklch(0.145 0 0)'),
   fuchsia: accent('oklch(0.542 0.238 322)',  'oklch(0.985 0 0)', 'oklch(0.73 0.18 322)',    'oklch(0.145 0 0)'),
   lime:    accent('oklch(0.58 0.2 130)',     'oklch(0.145 0 0)', 'oklch(0.8 0.2 130)',      'oklch(0.145 0 0)'),
-  sky:     accent('oklch(0.539 0.158 222)',  'oklch(0.985 0 0)', 'oklch(0.73 0.13 222)',    'oklch(0.145 0 0)'),
+  sky:        accent('oklch(0.539 0.158 222)',  'oklch(0.985 0 0)', 'oklch(0.73 0.13 222)',    'oklch(0.145 0 0)'),
+  terracotta: accent('oklch(0.685 0.126 43)',   'oklch(1 0 0)',     'oklch(0.75 0.13 43)',     'oklch(0.218 0 0)'),
 }

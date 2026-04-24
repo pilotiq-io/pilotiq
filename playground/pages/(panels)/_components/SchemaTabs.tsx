@@ -8,7 +8,7 @@ import { Tabs, TabsList, TabsTab, TabsPanels, TabsPanel } from '@/components/ani
 import { Tabs as TabsPrimitive } from '@/components/animate-ui/primitives/base/tabs.js'
 
 // Lazy import to avoid circular dependency — DashboardSection is only used inside tab content
-let DashboardSectionComp: React.ComponentType<{ dashboard: DashboardEl; pathSegment: string; panelPath: string; i18n: I18nExtended }> | null = null
+const DashboardSectionComp: React.ComponentType<{ dashboard: DashboardEl; pathSegment: string; panelPath: string; i18n: I18nExtended }> | null = null
 
 export interface SchemaTabsProps {
   id?: string | undefined
@@ -74,7 +74,7 @@ export function SchemaTabs({ id, tabs, urlSearch, panelPath, pathSegment, i18n, 
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [])
 
   async function switchTab(label: string) {

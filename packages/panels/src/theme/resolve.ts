@@ -46,14 +46,18 @@ export function resolveTheme(config: PanelThemeConfig): PanelThemeMeta {
   if (config.cssVariables?.light) Object.assign(light, config.cssVariables.light)
   if (config.cssVariables?.dark)  Object.assign(dark, config.cssVariables.dark)
 
-  // Resolve radius
-  const radius = radiusMap[config.radius ?? 'default']
+  // Resolve radius — 'medium' is the pilotiq brand default
+  const radius = radiusMap[config.radius ?? 'medium']
 
-  // Resolve fonts — omit undefined keys for exactOptionalPropertyTypes
-  const fonts = config.fonts
+  // Resolve fonts — Satoshi is the pilotiq brand default for both body and heading.
+  // Field-level fallback (not object-level ??) so `fonts: {}` still triggers the default.
+  const fonts = {
+    body:    config.fonts?.body    ?? 'Satoshi',
+    heading: config.fonts?.heading ?? 'Satoshi',
+  }
   const fontFamily: { heading?: string; body?: string } = {}
-  if (fonts?.heading) fontFamily.heading = `'${fonts.heading}', sans-serif`
-  if (fonts?.body)    fontFamily.body    = `'${fonts.body}', sans-serif`
+  if (fonts.heading) fontFamily.heading = `'${fonts.heading}', system-ui, sans-serif`
+  if (fonts.body)    fontFamily.body    = `'${fonts.body}', system-ui, sans-serif`
 
   const result: PanelThemeMeta = {
     light,
@@ -61,7 +65,7 @@ export function resolveTheme(config: PanelThemeConfig): PanelThemeMeta {
     radius,
     iconLibrary: config.iconLibrary ?? 'lucide',
   }
-  if (fonts) result.fonts = fonts
+  result.fonts = fonts
   if (Object.keys(fontFamily).length > 0) result.fontFamily = fontFamily
 
   return result

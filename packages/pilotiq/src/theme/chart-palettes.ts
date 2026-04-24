@@ -5,22 +5,8 @@ import type { ChartPalette, PresetDefinition } from './types.js'
  */
 
 export const chartPalettes: Record<ChartPalette, PresetDefinition> = {
-  default: {
-    light: {
-      '--chart-1': 'oklch(0.809 0.105 251.813)',
-      '--chart-2': 'oklch(0.623 0.214 259.815)',
-      '--chart-3': 'oklch(0.546 0.245 262.881)',
-      '--chart-4': 'oklch(0.488 0.243 264.376)',
-      '--chart-5': 'oklch(0.424 0.199 265.638)',
-    },
-    dark: {
-      '--chart-1': 'oklch(0.809 0.105 251.813)',
-      '--chart-2': 'oklch(0.623 0.214 259.815)',
-      '--chart-3': 'oklch(0.546 0.245 262.881)',
-      '--chart-4': 'oklch(0.488 0.243 264.376)',
-      '--chart-5': 'oklch(0.424 0.199 265.638)',
-    },
-  },
+  // Sentinel: "use preset default" — empty override, preset chart colors carry through.
+  default: { light: {}, dark: {} },
 
   ocean: {
     light: {
@@ -87,6 +73,23 @@ export const chartPalettes: Record<ChartPalette, PresetDefinition> = {
       '--chart-3': 'oklch(0.7 0.16 350)',
       '--chart-4': 'oklch(0.55 0.2 270)',
       '--chart-5': 'oklch(0.72 0.13 10)',
+    },
+  },
+
+  terracotta: {
+    light: {
+      '--chart-1': 'oklch(0.685 0.126 43)',
+      '--chart-2': 'oklch(0.72 0.16 55)',
+      '--chart-3': 'oklch(0.55 0.18 30)',
+      '--chart-4': 'oklch(0.75 0.1 80)',
+      '--chart-5': 'oklch(0.365 0.173 28)',
+    },
+    dark: {
+      '--chart-1': 'oklch(0.75 0.13 43)',
+      '--chart-2': 'oklch(0.78 0.15 55)',
+      '--chart-3': 'oklch(0.65 0.18 30)',
+      '--chart-4': 'oklch(0.8 0.1 80)',
+      '--chart-5': 'oklch(0.55 0.18 28)',
     },
   },
 }

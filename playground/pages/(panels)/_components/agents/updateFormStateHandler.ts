@@ -104,7 +104,7 @@ export function makeUpdateFormStateHandler(deps: UpdateFormStateDeps) {
     // Phase 3 dev log — verifies the agent is routing through the client tool
     // path. Remove once Phase 5 ships.
     if (typeof console !== 'undefined') {
-      // eslint-disable-next-line no-console
+
       console.log(
         `%c[update_form_state]%c field="${args.field}" ops=${ops.map(o => o.type).join(',')}`,
         'color:#8b5cf6;font-weight:bold',
@@ -193,7 +193,7 @@ function applyPlainOp(
 // registry, which was populated by panels-lexical.
 interface LexicalEditorLike {
   update(fn: () => void): void
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   registerNodes?: any
 }
 
@@ -205,7 +205,7 @@ async function applyLexicalOps(
 ): Promise<UpdateFormStateResult> {
   // Dynamic imports — same pattern as `pages/@panel/+Layout.tsx`. These resolve
   // at runtime in the playground (or any host that installs panels-lexical).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let lexical: any, panelsLexical: any, richText: any, link: any, code: any
   try {
     ;[lexical, panelsLexical, richText, link, code] = await Promise.all([
@@ -229,7 +229,7 @@ async function applyLexicalOps(
   const { $createLinkNode, $isLinkNode } = link
   const { $createCodeNode } = code
   // applyTextOp is exported from CollaborativePlainText — re-exported via index? Check fallback.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const applyTextOp = (panelsLexical as unknown as { applyTextOp?: any }).applyTextOp as
     | ((op: { type: 'replace' | 'insert_after' | 'delete'; search: string; replace?: string; text?: string }, editor: unknown) => void)
     | undefined
@@ -318,7 +318,7 @@ async function applyLexicalOps(
               for (const child of children) {
                 if (unwrapped) return
                 if ($isLinkNode(child)) {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
                   const link = child as any
                   if (link.getTextContent().includes(op.search)) {
                     // Unwrap: replace LinkNode with its children inline
@@ -338,9 +338,9 @@ async function applyLexicalOps(
             break
           }
           case 'set_paragraph_type': {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             const root: any = $getRoot()
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             let target: any = null
             if ('paragraphIndex' in op.selector) {
               target = root.getChildAtIndex(op.selector.paragraphIndex)
@@ -374,7 +374,7 @@ async function applyLexicalOps(
           case 'insert_paragraph': {
             const p = $createParagraphNode()
             if (op.text) p.append($createTextNode(op.text))
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             const root: any = $getRoot()
             if (typeof op.position === 'number') {
               const at = root.getChildAtIndex(op.position)
@@ -419,7 +419,7 @@ async function applyLexicalOps(
               rejected.push(`update_block: no "${op.blockType}" at index ${op.blockIndex}`)
               break
             }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             const block = found as any
             block.setBlockData({ ...block.__blockData, [op.field]: op.value })
             applied++
@@ -438,7 +438,7 @@ async function applyLexicalOps(
               rejected.push(`delete_block: no "${op.blockType}" at index ${op.blockIndex}`)
               break
             }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             ;(found as any).remove()
             applied++
             break
@@ -461,7 +461,7 @@ async function applyLexicalOps(
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function replaceAllText(getRoot: any, createParagraph: any, createText: any, text: string) {
   const root = getRoot()
   root.clear()
@@ -482,7 +482,7 @@ function replaceAllText(getRoot: any, createParagraph: any, createText: any, tex
  * Caller can then operate on the returned node directly (setFormat, replace
  * with LinkNode, etc.).
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function findAndSplitText(getRoot: any, search: string): any | null {
   const textNodes = getRoot().getAllTextNodes()
   for (const node of textNodes) {
@@ -495,7 +495,7 @@ function findAndSplitText(getRoot: any, search: string): any | null {
   return null
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function createParagraphLikeNode(type: ParagraphType, ctors: any): any | null {
   switch (type) {
     case 'paragraph': return ctors.$createParagraphNode()
@@ -507,7 +507,7 @@ function createParagraphLikeNode(type: ParagraphType, ctors: any): any | null {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function findBlockByTypeAndIndex(getRoot: any, isBlockNode: (n: unknown) => boolean, blockType: string, blockIndex: number): unknown | null {
   let matchIndex = 0
   for (const child of getRoot().getChildren()) {

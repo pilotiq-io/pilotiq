@@ -30,7 +30,8 @@ class ArticleResource extends Resource {
 export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .path('/new-admin')
   .branding({ title: 'Pilotiq' })
-  .theme({ preset: 'nova', accentColor: 'blue', radius: 'medium' })
+  // No .theme() → inherits the Pilotiq brand default (terracotta on cream,
+  // Satoshi via Fontshare). Override per-panel if you want a custom palette.
   .use(themeEditor())
   .resources([new ArticleResource()])
   .pages([SimplePage])

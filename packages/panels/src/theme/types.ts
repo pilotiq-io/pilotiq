@@ -5,8 +5,9 @@ export type StylePreset = 'default' | 'nova' | 'maia' | 'lyra'
 
 // ─── Base Colors (gray/neutral scales) ─────────────────────
 
-/** Base color scale — controls the neutral/gray tones across the UI. */
-export type BaseColor = 'neutral' | 'stone' | 'zinc' | 'slate' | 'olive' | 'taupe'
+/** Base color scale — controls the neutral/gray tones across the UI.
+ *  `default` means "use the preset's built-in base" (empty override). */
+export type BaseColor = 'default' | 'neutral' | 'stone' | 'zinc' | 'slate' | 'olive' | 'taupe' | 'cream'
 
 // ─── Accent Colors ─────────────────────────────────────────
 
@@ -14,7 +15,7 @@ export type BaseColor = 'neutral' | 'stone' | 'zinc' | 'slate' | 'olive' | 'taup
 export type AccentColor =
   | 'blue' | 'red' | 'green' | 'amber' | 'orange' | 'cyan'
   | 'violet' | 'purple' | 'pink' | 'rose' | 'emerald' | 'teal'
-  | 'indigo' | 'fuchsia' | 'lime' | 'sky'
+  | 'indigo' | 'fuchsia' | 'lime' | 'sky' | 'terracotta'
 
 // ─── Radius ────────────────────────────────────────────────
 
@@ -24,7 +25,7 @@ export type RadiusPreset = 'none' | 'small' | 'default' | 'medium' | 'large'
 // ─── Chart Palette ─────────────────────────────────────────
 
 /** Chart color palette — defines chart-1 through chart-5 colors. */
-export type ChartPalette = 'default' | 'ocean' | 'sunset' | 'forest' | 'berry'
+export type ChartPalette = 'default' | 'ocean' | 'sunset' | 'forest' | 'berry' | 'terracotta'
 
 // ─── Icon Library (Phase 2) ────────────────────────────────
 

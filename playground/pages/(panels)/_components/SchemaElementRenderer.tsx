@@ -10,7 +10,7 @@ import { CodeBlock, CopyButton } from './CodeBlock.js'
 import { FieldInput } from './FieldInput.js'
 
 // Cache for React.lazy wrappers around lazy element factories
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 const lazyCache = new Map<string, React.LazyExoticComponent<any>>()
 function getOrCreateLazy(type: string) {
   const factory = getLazyElement(type)

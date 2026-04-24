@@ -79,7 +79,7 @@ export function VersionHistory({ pathSegment, slug, id, values, fields, onRestor
   }
 
   // Load on first render
-  useEffect(() => { if (!loaded && !loading) void loadVersions() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!loaded && !loading) void loadVersions() }, [])
 
   // Compute which fields differ between current and selected version
   const diffs = useMemo(() => {

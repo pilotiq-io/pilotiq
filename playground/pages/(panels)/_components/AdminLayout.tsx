@@ -145,7 +145,7 @@ function useSessionUser(initial?: SessionUser): SessionUser | null {
       .then(r => r.ok ? r.json() : null)
       .then((data: { user?: SessionUser } | null) => { if (data?.user) setUser(data.user) })
       .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [])
   return user
 }

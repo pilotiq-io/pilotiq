@@ -46,7 +46,7 @@ export function useFieldPersist(opts: UseFieldPersistOptions) {
         }
       } catch { /* corrupt — ignore */ }
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Debounced write on value changes ──────────────────────
   useEffect(() => {
@@ -65,14 +65,14 @@ export function useFieldPersist(opts: UseFieldPersistOptions) {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [storageKeyPrefix, values]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [storageKeyPrefix, values])
 
   /** Clear all persisted field values (call after successful save). */
   const clearPersistedFields = useCallback(() => {
     for (const name of persistFieldNames) {
       localStorage.removeItem(`${storageKeyPrefix}:f:${name}`)
     }
-  }, [storageKeyPrefix, persistFieldNames.join(',')])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [storageKeyPrefix, persistFieldNames.join(',')])
 
   return { clearPersistedFields }
 }
