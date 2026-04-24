@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { resolveTheme } from '../theme/resolve.js'
+import { radiusMap } from '../theme/radius.js'
 
 import { generateThemeCSS } from '../theme/generate-css.js'
 import type { ThemeConfig } from '../theme/types.js'
@@ -81,13 +82,16 @@ function buildPreviewHTML(config: Partial<ThemeConfig>, mode: 'light' | 'dark' =
   const resolved = resolveTheme(merged)
   const themeCSS = generateThemeCSS(resolved)
 
-  // Font CDN links — Fontshare for Satoshi, Google Fonts otherwise
+  // Font CDN links — Fontshare for Satoshi, Google Fonts otherwise.
+  // Read from `resolved.fonts` (post-defaults) so the Satoshi fallback is also
+  // loaded when the user only overrode one of body/heading — otherwise the
+  // unset side silently falls through to system-ui.
   const fontshareUrls: Record<string, string> = {
     Satoshi: 'https://api.fontshare.com/v2/css?f[]=satoshi@300,500,700&display=swap',
   }
   const fontFamilies: string[] = []
-  if (config.fonts?.body) fontFamilies.push(config.fonts.body)
-  if (config.fonts?.heading && config.fonts.heading !== config.fonts.body) fontFamilies.push(config.fonts.heading)
+  if (resolved.fonts?.body) fontFamilies.push(resolved.fonts.body)
+  if (resolved.fonts?.heading && resolved.fonts.heading !== resolved.fonts.body) fontFamilies.push(resolved.fonts.heading)
   const fontTags = fontFamilies.map(f => {
     const fsUrl = fontshareUrls[f]
     const href = fsUrl ?? `https://fonts.googleapis.com/css2?family=${f.replace(/ /g, '+')}:wght@400;500;600;700&display=swap`
@@ -453,18 +457,22 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
           </select>
         </ControlGroup>
 
-        {/* Radius */}
+        {/* Radius — each swatch previews its own border-radius value */}
         <ControlGroup label="Radius">
           <div className="flex gap-1">
-            {RADII.map(r => (
-              <button
-                key={r}
-                onClick={() => update('radius', r)}
-                className={`flex-1 px-2 py-1.5 text-xs rounded-md border transition-all ${config.radius === r ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-input hover:bg-accent'}`}
-              >
-                {r.charAt(0).toUpperCase() + r.slice(1)}
-              </button>
-            ))}
+            {RADII.map(r => {
+              const selected = (config.radius ?? 'medium') === r
+              return (
+                <button
+                  key={r}
+                  onClick={() => update('radius', r)}
+                  title={r.charAt(0).toUpperCase() + r.slice(1)}
+                  aria-label={r}
+                  style={{ borderRadius: radiusMap[r] }}
+                  className={`w-9 h-9 border-2 transition-all ${selected ? 'bg-primary border-primary' : 'bg-background border-input hover:bg-accent'}`}
+                />
+              )
+            })}
           </div>
         </ControlGroup>
 
