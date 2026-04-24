@@ -44,7 +44,8 @@ pilotiq/
 │   ├── lexical/               # Lexical rich-text editor adapter
 │   └── media/                 # Media library + MediaPickerField
 ├── docs/                      # Documentation
-└── playground/                # Free pilotiq dev fixture (port 3001)
+├── playground/                # Panels demo (port 3001)
+└── playground-pilotiq/        # Pilotiq demo (port 3003)
 ```
 
 ---
@@ -240,17 +241,23 @@ All `@rudderjs/*` packages resolve to `link:../rudderjs/packages/<name>` via `pn
 | Playground | Port | HMR | Purpose |
 |---|---|---|---|
 | `rudderjs/playground` | 3000 | 24678 | Framework demo — zero pilotiq deps |
-| `pilotiq/playground` | 3001 | 24679 | Free panels demo — panels + pilotiq + lexical + media |
+| `pilotiq/playground` | 3001 | 24679 | **Panels** demo — panels + lexical + media |
+| `pilotiq/playground-pilotiq` | 3003 | 24680 | **Pilotiq** demo — view-based panel + themeEditor |
 | `pilotiq-pro/playground` | 3002 | 24680 | Full stack — framework + panels + AI + collab |
 
-### Free playground providers
+Two pilotiq playgrounds split 2026-04-24 to sidestep a Vike route collision between panels' parametric `@panel/` and pilotiq's route functions. Each playground only registers one of the two provider factories.
 
-log, database, session, hash, cache, auth, storage, localization, panels, pilotiq.
+### Playground providers
+
+- **playground/** (panels): log, database, session, hash, cache, auth, storage, localization, panels
+- **playground-pilotiq/** (pilotiq): log, orm-prisma, session, cache, pilotiq
 
 ```bash
 cd ~/Projects/rudderjs && pnpm build     # build framework first
 cd ~/Projects/pilotiq && pnpm build      # build pilotiq packages
-cd ~/Projects/pilotiq/playground && pnpm dev
+cd ~/Projects/pilotiq/playground && pnpm dev              # panels on :3001
+# or
+cd ~/Projects/pilotiq/playground-pilotiq && pnpm dev      # pilotiq on :3003
 ```
 
 ### Playground panel definitions

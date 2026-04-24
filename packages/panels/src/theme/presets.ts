@@ -35,7 +35,7 @@ const defaultPreset: PresetDefinition = {
     '--chart-3':                      'oklch(0.55 0.18 30)',
     '--chart-4':                      'oklch(0.75 0.1 80)',
     '--chart-5':                      'oklch(0.365 0.173 28)',
-    '--sidebar':                      'oklch(0.979 0.008 78)',
+    '--sidebar':                      'oklch(0.955 0.006 78)',
     '--sidebar-foreground':           'oklch(0.218 0 0)',
     '--sidebar-primary':              'oklch(0.685 0.126 43)',
     '--sidebar-primary-foreground':   'oklch(1 0 0)',

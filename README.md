@@ -110,7 +110,8 @@ Pro packages are commercial. They live in a separate private repo at `pilotiq-io
 | [`@pilotiq/panels`](./packages/panels) | **Legacy** — Resource builder with vendored pages, full field system, i18n, theme editor |
 | [`@pilotiq/lexical`](./packages/lexical) | Lexical rich-text editor adapter — local-only by default |
 | [`@pilotiq/media`](./packages/media) | Media library + `MediaPickerField` |
-| [`playground/`](./playground) | Free pilotiq dev fixture — panels + pilotiq + lexical + media on port 3001 |
+| [`playground/`](./playground) | **Panels** demo — panels + lexical + media on port 3001 |
+| [`playground-pilotiq/`](./playground-pilotiq) | **Pilotiq** demo — view-based panel on port 3003 |
 
 ---
 

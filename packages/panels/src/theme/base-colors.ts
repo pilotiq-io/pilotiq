@@ -293,7 +293,7 @@ const cream: PresetDefinition = {
     '--accent-foreground':            'oklch(0.365 0.173 28)',
     '--border':                       'oklch(0.88 0.008 78)',
     '--input':                        'oklch(0.88 0.008 78)',
-    '--sidebar':                      'oklch(0.979 0.008 78)',
+    '--sidebar':                      'oklch(0.955 0.006 78)',
     '--sidebar-foreground':           'oklch(0.218 0 0)',
     '--sidebar-accent':               'oklch(0.955 0.006 78)',
     '--sidebar-accent-foreground':    'oklch(0.218 0 0)',
