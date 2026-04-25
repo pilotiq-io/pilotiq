@@ -1039,7 +1039,7 @@ function PickerCard({
         side="right"
         align="start"
         sideOffset={24}
-        className="dark min-w-[200px] rounded-xl border-0 bg-card/80 text-card-foreground ring-1 ring-foreground/10 backdrop-blur-xl shadow-2xl"
+        className="dark min-w-[200px] rounded-xl border-0 bg-card/80 text-sm text-card-foreground ring-1 ring-foreground/10 backdrop-blur-xl shadow-2xl"
       >
         {options.map((opt, i) => (
           <PickerOptionItem
@@ -1061,7 +1061,7 @@ function PickerCard({
 function PickerOptionItem({ opt, selected, separator }: { opt: PickerOption; selected: boolean; separator?: boolean }) {
   if (opt.header) {
     return (
-      <div className="px-2 pt-2 pb-1 text-xs text-white/50 select-none">
+      <div className="px-2 pt-2 pb-1 text-sm text-white/50 select-none">
         {opt.label}
       </div>
     )
@@ -1069,10 +1069,7 @@ function PickerOptionItem({ opt, selected, separator }: { opt: PickerOption; sel
   return (
     <>
       <SelectItem className="rounded-lg" value={opt.value} hideIndicator selected={selected}>
-        <span className="flex items-center gap-2">
-          {opt.indicator && <span className="shrink-0 text-white/70">{opt.indicator}</span>}
-          <span>{opt.label}</span>
-        </span>
+        <span>{opt.label}</span>
       </SelectItem>
       {separator && <SelectSeparator className='bg-input/50 dark:bg-input/50' />}
     </>
