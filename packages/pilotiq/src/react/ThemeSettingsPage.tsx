@@ -15,7 +15,8 @@ import {
 // ─── Constants ──────────────────────────────────────────────
 
 import { colors, BASE_COLOR_NAMES, HUE_NAMES } from '../theme/colors.js'
-import { PRESET_FONTS, PRESET_RADIUS } from '../theme/presets.js'
+import { PRESET_FONTS, PRESET_RADIUS, PRESET_SPACING } from '../theme/presets.js'
+import { spacingMap } from '../theme/spacing.js'
 import type { StylePreset } from '../theme/types.js'
 
 const PRESETS = ['vega', 'nova', 'maia', 'lyra', 'mira', 'luma', 'sera'] as const
@@ -24,6 +25,9 @@ const THEME_COLORS = ['base', ...HUE_NAMES] as const
 const CHART_COLORS = ['base', ...HUE_NAMES] as const
 // Order: 'default' first (= medium semantically) so it's the leading option.
 const RADII = ['default', 'none', 'small', 'medium', 'large'] as const
+// Spacing density — `'default'` is a sentinel that resolves through
+// PRESET_SPACING; the explicit values drive Tailwind's `--spacing` directly.
+const SPACINGS = ['default', 'compact', 'comfortable'] as const
 const ICON_LIBRARIES = ['lucide', 'tabler', 'phosphor', 'remix'] as const
 
 // Fonts grouped by type. Renders inside the Heading/Font picker dropdown
@@ -75,6 +79,7 @@ function applyToParent(config: Partial<ThemeConfig>) {
     root.style.setProperty(key, value)
   }
   root.style.setProperty('--radius', resolved.radius)
+  root.style.setProperty('--spacing', resolved.spacing)
   if (resolved.fontFamily?.body) {
     root.style.setProperty('--font-sans', resolved.fontFamily.body)
     root.style.setProperty('--default-font-family', resolved.fontFamily.body)
@@ -189,18 +194,24 @@ function buildStaticPreviewHTML(): string {
     --chart-4: oklch(0.6 0.1 120);
     --chart-5: oklch(0.6 0.1 150);
     --radius: 0.5rem;
+    --spacing: 0.25rem;
   }
+  /* Spacing values use Tailwind v4's --spacing convention: calc(var(--spacing) * N)
+     where N matches the equivalent Tailwind utility step (p-4 maps to * 4).
+     One token drives all density — Mira compact, Lyra default,
+     Vega/Nova/Maia/Luma/Sera comfortable. Font sizes and line-heights stay
+     literal so type scale doesn't depend on density. */
   * { box-sizing: border-box; margin: 0; padding: 0; border: 0 solid; }
   body {
     font-family: var(--default-font-family, 'Geist Variable', sans-serif);
     background: var(--muted);
     color: var(--foreground);
-    padding: 1.5rem;
+    padding: calc(var(--spacing) * 6);
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
   h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading, var(--default-font-family, 'Geist Variable', sans-serif)); }
-  .grid { display: grid; gap: 1rem; }
+  .grid { display: grid; gap: calc(var(--spacing) * 4); }
   .grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
   /* grid-main uses the same 3-col base as the stat-cards row so the right
      column (calendar / activity) lines up exactly with the third stat card. */
@@ -210,9 +221,9 @@ function buildStaticPreviewHTML(): string {
   .flex-col { flex-direction: column; }
   .items-center { align-items: center; }
   .justify-between { justify-content: space-between; }
-  .gap-2 { gap: 0.5rem; }
-  .gap-3 { gap: 0.75rem; }
-  .gap-4 { gap: 1rem; }
+  .gap-2 { gap: calc(var(--spacing) * 2); }
+  .gap-3 { gap: calc(var(--spacing) * 3); }
+  .gap-4 { gap: calc(var(--spacing) * 4); }
   .text-xs { font-size: 0.75rem; }
   .text-sm { font-size: 0.875rem; }
   .text-2xl { font-size: 1.5rem; }
@@ -222,65 +233,65 @@ function buildStaticPreviewHTML(): string {
   .font-bold { font-weight: 700; }
   .tracking-tight { letter-spacing: -0.025em; }
   .text-muted { color: var(--muted-foreground); }
-  .mt-1 { margin-top: 0.25rem; }
-  .mt-2 { margin-top: 0.5rem; }
-  .mt-3 { margin-top: 0.75rem; }
-  .mt-4 { margin-top: 1rem; }
+  .mt-1 { margin-top: calc(var(--spacing) * 1); }
+  .mt-2 { margin-top: calc(var(--spacing) * 2); }
+  .mt-3 { margin-top: calc(var(--spacing) * 3); }
+  .mt-4 { margin-top: calc(var(--spacing) * 4); }
   .card {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--card);
     color: var(--card-foreground);
-    padding: 1.25rem;
+    padding: calc(var(--spacing) * 5);
     box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
   }
   .card-header { display: flex; justify-content: space-between; align-items: flex-start; }
   .card-label { font-size: 0.8125rem; color: var(--muted-foreground); font-weight: 500; }
-  .card-value { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.025em; margin-top: 0.25rem; }
-  .delta { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; font-weight: 500; padding: 0.125rem 0.5rem; border-radius: 9999px; border: 1px solid var(--border); }
+  .card-value { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.025em; margin-top: calc(var(--spacing) * 1); }
+  .delta { display: inline-flex; align-items: center; gap: calc(var(--spacing) * 1); font-size: 0.75rem; font-weight: 500; padding: calc(var(--spacing) * 0.5) calc(var(--spacing) * 2); border-radius: 9999px; border: 1px solid var(--border); }
   .delta-up { color: var(--primary); }
-  .badge { padding: 0.125rem 0.625rem; font-size: 0.75rem; font-weight: 500; border-radius: 9999px; display: inline-flex; align-items: center; gap: 0.25rem; border: 1px solid var(--border); }
+  .badge { padding: calc(var(--spacing) * 0.5) calc(var(--spacing) * 2.5); font-size: 0.75rem; font-weight: 500; border-radius: 9999px; display: inline-flex; align-items: center; gap: calc(var(--spacing) * 1); border: 1px solid var(--border); }
   .badge-primary { background: color-mix(in oklch, var(--primary) 12%, transparent); color: var(--primary); border-color: color-mix(in oklch, var(--primary) 30%, transparent); }
   .badge-muted { background: var(--muted); color: var(--muted-foreground); }
-  .btn { padding: 0.5rem 0.875rem; font-size: 0.8125rem; font-weight: 500; border-radius: calc(var(--radius) - 2px); cursor: pointer; display: inline-flex; align-items: center; gap: 0.375rem; border: 1px solid transparent; }
+  .btn { padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3.5); font-size: 0.8125rem; font-weight: 500; border-radius: calc(var(--radius) - 2px); cursor: pointer; display: inline-flex; align-items: center; gap: calc(var(--spacing) * 1.5); border: 1px solid transparent; }
   .btn-primary { background: var(--primary); color: var(--primary-foreground); }
   .btn-outline { background: var(--card); color: var(--foreground); border-color: var(--border); }
-  .input { width: 100%; border: 1px solid var(--input); border-radius: calc(var(--radius) - 2px); background: var(--background); padding: 0.5rem 0.75rem; font-size: 0.875rem; color: var(--foreground); outline: none; }
+  .input { width: 100%; border: 1px solid var(--input); border-radius: calc(var(--radius) - 2px); background: var(--background); padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3); font-size: 0.875rem; color: var(--foreground); outline: none; }
   table { width: 100%; font-size: 0.8125rem; border-collapse: collapse; }
-  th { text-align: left; padding: 0.625rem 0.875rem; font-weight: 500; color: var(--muted-foreground); font-size: 0.75rem; }
-  td { padding: 0.625rem 0.875rem; border-top: 1px solid var(--border); }
+  th { text-align: left; padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3.5); font-weight: 500; color: var(--muted-foreground); font-size: 0.75rem; }
+  td { padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3.5); border-top: 1px solid var(--border); }
   thead tr { border-bottom: 1px solid var(--border); }
   .avatar { width: 1.75rem; height: 1.75rem; border-radius: 9999px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.6875rem; font-weight: 600; color: var(--primary-foreground); background: var(--primary); flex-shrink: 0; }
   .dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 9999px; }
-  .legend { display: flex; gap: 1rem; align-items: center; font-size: 0.75rem; color: var(--muted-foreground); }
+  .legend { display: flex; gap: calc(var(--spacing) * 4); align-items: center; font-size: 0.75rem; color: var(--muted-foreground); }
   /* Calendar */
-  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 0.75rem; }
-  .cal-head { font-size: 0.6875rem; color: var(--muted-foreground); text-align: center; padding: 0.375rem 0; font-weight: 500; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: calc(var(--spacing) * 3); }
+  .cal-head { font-size: 0.6875rem; color: var(--muted-foreground); text-align: center; padding: calc(var(--spacing) * 1.5) 0; font-weight: 500; }
   .cal-cell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; border-radius: calc(var(--radius) - 4px); cursor: pointer; }
   .cal-cell:hover:not(.empty) { background: var(--accent); }
   .cal-cell.empty { visibility: hidden; }
   .cal-cell.highlight { background: var(--accent); color: var(--accent-foreground); font-weight: 500; }
   .cal-cell.today { background: var(--primary); color: var(--primary-foreground); font-weight: 600; }
   /* Activity */
-  .activity { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.625rem 0; }
+  .activity { display: flex; align-items: flex-start; gap: calc(var(--spacing) * 3); padding: calc(var(--spacing) * 2.5) 0; }
   .activity + .activity { border-top: 1px solid var(--border); }
   .activity-text { font-size: 0.8125rem; flex: 1; }
-  .activity-time { font-size: 0.6875rem; color: var(--muted-foreground); margin-top: 0.125rem; }
+  .activity-time { font-size: 0.6875rem; color: var(--muted-foreground); margin-top: calc(var(--spacing) * 0.5); }
   /* Token swatch row — fixed 34×34 boxes in a wrapping flex row, mirroring
      the reference design. Each swatch has a monospace label beneath it,
      truncated with ellipsis if the variable name overflows the box width. */
-  .swatch-row { display: flex; flex-wrap: wrap; gap: 0.625rem; margin-top: 0.75rem; }
-  .swatch-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; width: 34px; }
+  .swatch-row { display: flex; flex-wrap: wrap; gap: calc(var(--spacing) * 2.5); margin-top: calc(var(--spacing) * 3); }
+  .swatch-cell { display: flex; flex-direction: column; align-items: flex-start; gap: calc(var(--spacing) * 1); width: 34px; }
   .swatch { width: 34px; height: 34px; border-radius: calc(var(--radius) - 2px); border: 1px solid var(--border); }
   .swatch-label { font-family: ui-monospace, 'JetBrains Mono', 'Geist Mono', monospace; font-size: 0.625rem; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .preview-h { font-size: 1.375rem; font-weight: 700; letter-spacing: -0.025em; line-height: 1.15; }
-  .preview-p { font-size: 0.8125rem; color: var(--muted-foreground); margin-top: 0.5rem; line-height: 1.5; }
+  .preview-p { font-size: 0.8125rem; color: var(--muted-foreground); margin-top: calc(var(--spacing) * 2); line-height: 1.5; }
 </style>
 </head>
 <body>
 
 <!-- Header row -->
-<div class="flex justify-between items-center" style="margin-bottom:1.25rem">
+<div class="flex justify-between items-center" style="margin-bottom:calc(var(--spacing) * 5)">
   <div>
     <h1 class="text-2xl font-bold tracking-tight">Dashboard</h1>
     <p class="text-sm text-muted mt-1">Welcome back — here's what's happening today.</p>
@@ -301,7 +312,7 @@ function buildStaticPreviewHTML(): string {
     <div class="card-value">$45,231.89</div>
     <p class="text-xs text-muted mt-2">Trending up this month</p>
     <!-- Mini sparkline -->
-    <svg viewBox="0 0 200 40" style="width:100%;height:40px;margin-top:0.75rem" preserveAspectRatio="none">
+    <svg viewBox="0 0 200 40" style="width:100%;height:40px;margin-top:calc(var(--spacing) * 3)" preserveAspectRatio="none">
       <defs>
         <linearGradient id="grad1" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stop-color="var(--chart-1)" stop-opacity="0.4"/>
@@ -319,7 +330,7 @@ function buildStaticPreviewHTML(): string {
     </div>
     <div class="card-value">1,234</div>
     <p class="text-xs text-muted mt-2">Strong user retention</p>
-    <svg viewBox="0 0 200 40" style="width:100%;height:40px;margin-top:0.75rem" preserveAspectRatio="none">
+    <svg viewBox="0 0 200 40" style="width:100%;height:40px;margin-top:calc(var(--spacing) * 3)" preserveAspectRatio="none">
       <defs>
         <linearGradient id="grad2" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stop-color="var(--chart-2)" stop-opacity="0.4"/>
@@ -337,7 +348,7 @@ function buildStaticPreviewHTML(): string {
     </div>
     <div class="card-value">8,492</div>
     <p class="text-xs text-muted mt-2">Above target this week</p>
-    <svg viewBox="0 0 200 40" style="width:100%;height:40px;margin-top:0.75rem" preserveAspectRatio="none">
+    <svg viewBox="0 0 200 40" style="width:100%;height:40px;margin-top:calc(var(--spacing) * 3)" preserveAspectRatio="none">
       <defs>
         <linearGradient id="grad3" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stop-color="var(--chart-3)" stop-opacity="0.4"/>
@@ -351,7 +362,7 @@ function buildStaticPreviewHTML(): string {
 </div>
 
 <!-- Main grid: chart + calendar -->
-<div class="grid grid-main" style="margin-top:1rem">
+<div class="grid grid-main" style="margin-top:calc(var(--spacing) * 4)">
   <div class="card col-span-2">
     <div class="card-header">
       <div>
@@ -364,7 +375,7 @@ function buildStaticPreviewHTML(): string {
       </div>
     </div>
     <!-- Bar chart -->
-    <svg viewBox="0 0 600 200" style="width:100%;height:200px;margin-top:1rem">
+    <svg viewBox="0 0 600 200" style="width:100%;height:200px;margin-top:calc(var(--spacing) * 4)">
       ${(() => {
         const data = [
           [120, 80], [95, 70], [140, 90], [110, 85], [160, 100], [130, 95],
@@ -384,7 +395,7 @@ function buildStaticPreviewHTML(): string {
       })()}
       <line x1="0" y1="190" x2="600" y2="190" stroke="var(--border)" stroke-width="1"/>
     </svg>
-    <div class="flex justify-between text-xs text-muted" style="margin-top:0.5rem;padding:0 0.5rem">
+    <div class="flex justify-between text-xs text-muted" style="margin-top:calc(var(--spacing) * 2);padding:0 calc(var(--spacing) * 2)">
       <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span>
     </div>
   </div>
@@ -396,8 +407,8 @@ function buildStaticPreviewHTML(): string {
         <p class="text-xs text-muted mt-1">Schedule</p>
       </div>
       <div class="flex gap-2">
-        <button class="btn btn-outline" style="padding:0.25rem 0.5rem">‹</button>
-        <button class="btn btn-outline" style="padding:0.25rem 0.5rem">›</button>
+        <button class="btn btn-outline" style="padding:calc(var(--spacing) * 1) calc(var(--spacing) * 2)">‹</button>
+        <button class="btn btn-outline" style="padding:calc(var(--spacing) * 1) calc(var(--spacing) * 2)">›</button>
       </div>
     </div>
     <div class="cal-grid">
@@ -410,9 +421,9 @@ function buildStaticPreviewHTML(): string {
 </div>
 
 <!-- Bottom grid: table + activity -->
-<div class="grid grid-main" style="margin-top:1rem">
+<div class="grid grid-main" style="margin-top:calc(var(--spacing) * 4)">
   <div class="card col-span-2" style="padding:0;overflow:hidden">
-    <div style="padding:1.25rem 1.25rem 0.75rem">
+    <div style="padding:calc(var(--spacing) * 5) calc(var(--spacing) * 5) calc(var(--spacing) * 3)">
       <div class="flex justify-between items-center">
         <div>
           <span class="card-label" style="font-size:0.9375rem;color:var(--foreground);font-weight:600">Recent Transactions</span>
@@ -488,7 +499,7 @@ function buildStaticPreviewHTML(): string {
     <div class="card">
       <span class="card-label" style="font-size:0.9375rem;color:var(--foreground);font-weight:600">Activity</span>
       <p class="text-xs text-muted mt-1">Recent updates from your team</p>
-      <div style="margin-top:0.75rem">
+      <div style="margin-top:calc(var(--spacing) * 3)">
         <div class="activity">
           <span class="avatar" style="background:var(--chart-1)">AJ</span>
           <div class="activity-text">
@@ -676,6 +687,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
       themeColor: randomPick(THEME_COLORS),
       chartColor: randomPick(CHART_COLORS),
       radius: randomPick(RADII),
+      spacing: randomPick(SPACINGS),
     }
     if (config.fonts) next.fonts = config.fonts
     if (config.iconLibrary) next.iconLibrary = config.iconLibrary
@@ -726,6 +738,25 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
     )
   }
 
+  // Three stacked bars with the gap proportional to the resolved spacing
+  // value — mirrors how list / card density actually feels at a glance.
+  // `gap` is given as a unitless ratio (compact: 1px, default: 2px, comfortable: 3px)
+  // so the glyph stays at a consistent overall height regardless of density.
+  const SpacingGlyph = ({ value }: { value: string | undefined }) => {
+    const key = value && value !== 'default' ? value : PRESET_SPACING[presetName]
+    // Use the actual spacingMap value (a rem string) to drive a small px gap —
+    // compact ≈ 1px, default ≈ 2px, comfortable ≈ 3px on a 16px root.
+    const remValue = parseFloat(spacingMap[key as keyof typeof spacingMap] ?? '0.25rem')
+    const gapPx = Math.round(remValue * 16 * 0.5) // half a Tailwind unit, rounded
+    return (
+      <span className="flex flex-col" style={{ gap: `${gapPx}px` }}>
+        <span className="block h-[2px] w-3.5 bg-current rounded-sm" />
+        <span className="block h-[2px] w-3.5 bg-current rounded-sm" />
+        <span className="block h-[2px] w-3.5 bg-current rounded-sm" />
+      </span>
+    )
+  }
+
   // Build option lists. Theme + Chart pin the `'base'` sentinel at the top
   // (separator below), labeled with the current base color name.
   const styleOptions = PRESETS.map(p => ({ value: p, label: cap(p), indicator: <Square className="size-3" /> }))
@@ -756,109 +787,128 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
       />
     ),
   }))
+  const spacingOptions = SPACINGS.map(s => ({
+    value: s,
+    label: cap(s),
+    indicator: <SpacingGlyph value={s} />,
+  }))
 
   return (
     <div className="flex items-start h-full gap-6">
       {/* Controls Sidebar — frosted-glass card on top of the page surface,
           matching shadcn's customizer panel. `dark` scopes the inner
           `bg-card/90`, `text-card-foreground`, etc. to the dark variants. */}
-      <div className="dark isolate z-10 flex flex-col gap-2 w-48 shrink-0 self-start max-h-full min-h-0 overflow-y-auto rounded-2xl bg-card/90 text-sm text-card-foreground ring-1 ring-foreground/10 shadow-xl backdrop-blur-xl p-4">
-        <PickerCard
-          label="Style"
-          value={config.preset ?? 'vega'}
-          options={styleOptions}
-          onValueChange={v => update('preset', v)}
-          triggerIcon={<Square className="size-4 opacity-70" />}
-          keepOpenOnSelect
-        />
+      <div
+        className="dark isolate z-10 overflow-hidden flex flex-col gap-2 w-48 shrink-0 self-start min-h-0 rounded-xl bg-card/90 text-sm text-card-foreground ring-1 ring-foreground/10 shadow-xl backdrop-blur-xl"
+        style={{ maxHeight: 'calc(100vh - 106px)' }}
+      >
+        <div className='h-full overflow-y-auto flex flex-col gap-3 p-3'>
+          <PickerCard
+            label="Style"
+            value={config.preset ?? 'vega'}
+            options={styleOptions}
+            onValueChange={v => update('preset', v)}
+            triggerIcon={<Square className="size-4 opacity-70" />}
+            keepOpenOnSelect
+          />
 
-        <PickerCard
-          label="Base Color"
-          value={config.baseColor ?? 'neutral'}
-          options={baseOptions}
-          onValueChange={v => update('baseColor', v)}
-          triggerIcon={<Dot color={baseSwatch} />}
-          keepOpenOnSelect
-        />
+          <PickerCard
+            label="Base Color"
+            value={config.baseColor ?? 'neutral'}
+            options={baseOptions}
+            onValueChange={v => update('baseColor', v)}
+            triggerIcon={<Dot color={baseSwatch} />}
+            keepOpenOnSelect
+          />
 
-        <PickerCard
-          label="Theme"
-          value={config.themeColor ?? 'base'}
-          options={themeOptions}
-          separatorAfter="base"
-          onValueChange={v => update('themeColor', v)}
-          triggerIcon={<Dot color={themeSwatch} />}
-          formatTriggerValue={v => v === 'base' ? cap(baseName) : cap(v)}
-          keepOpenOnSelect
-        />
+          <PickerCard
+            label="Theme"
+            value={config.themeColor ?? 'base'}
+            options={themeOptions}
+            separatorAfter="base"
+            onValueChange={v => update('themeColor', v)}
+            triggerIcon={<Dot color={themeSwatch} />}
+            formatTriggerValue={v => v === 'base' ? cap(baseName) : cap(v)}
+            keepOpenOnSelect
+          />
 
-        <PickerCard
-          label="Chart Color"
-          value={config.chartColor ?? 'base'}
-          options={chartOptions}
-          separatorAfter="base"
-          onValueChange={v => update('chartColor', v)}
-          triggerIcon={<Dot color={chartSwatch} />}
-          formatTriggerValue={v => v === 'base' ? cap(baseName) : cap(v)}
-          keepOpenOnSelect
-        />
+          <PickerCard
+            label="Chart Color"
+            value={config.chartColor ?? 'base'}
+            options={chartOptions}
+            separatorAfter="base"
+            onValueChange={v => update('chartColor', v)}
+            triggerIcon={<Dot color={chartSwatch} />}
+            formatTriggerValue={v => v === 'base' ? cap(baseName) : cap(v)}
+            keepOpenOnSelect
+          />
 
-        <PickerCard
-          label="Heading"
-          value={config.fonts?.heading ?? presetFonts.heading}
-          options={headingFontOptions}
-          separatorAfter={presetFonts.heading}
-          onValueChange={v => updateFont('heading', v)}
-          triggerIcon={<AaGlyph />}
-          keepOpenOnSelect
-        />
+          <PickerCard
+            label="Heading"
+            value={config.fonts?.heading ?? presetFonts.heading}
+            options={headingFontOptions}
+            separatorAfter={presetFonts.heading}
+            onValueChange={v => updateFont('heading', v)}
+            triggerIcon={<AaGlyph />}
+            keepOpenOnSelect
+          />
 
-        <PickerCard
-          label="Font"
-          value={config.fonts?.body ?? presetFonts.body}
-          options={bodyFontOptions}
-          separatorAfter={presetFonts.body}
-          onValueChange={v => updateFont('body', v)}
-          triggerIcon={<AaGlyph />}
-          keepOpenOnSelect
-        />
+          <PickerCard
+            label="Font"
+            value={config.fonts?.body ?? presetFonts.body}
+            options={bodyFontOptions}
+            separatorAfter={presetFonts.body}
+            onValueChange={v => updateFont('body', v)}
+            triggerIcon={<AaGlyph />}
+            keepOpenOnSelect
+          />
 
-        <PickerCard
-          label="Icon Library"
-          value={config.iconLibrary ?? 'lucide'}
-          options={iconOptions}
-          onValueChange={v => update('iconLibrary', v)}
-          triggerIcon={<Sparkles className="size-4 opacity-70" />}
-        />
+          <PickerCard
+            label="Icon Library"
+            value={config.iconLibrary ?? 'lucide'}
+            options={iconOptions}
+            onValueChange={v => update('iconLibrary', v)}
+            triggerIcon={<Sparkles className="size-4 opacity-70" />}
+          />
 
-        <PickerCard
-          label="Radius"
-          value={config.radius ?? 'default'}
-          options={radiusOptions}
-          separatorAfter="default"
-          onValueChange={v => update('radius', v)}
-          triggerIcon={<RadiusGlyph />}
-          keepOpenOnSelect
-        />
+          <PickerCard
+            label="Radius"
+            value={config.radius ?? 'default'}
+            options={radiusOptions}
+            separatorAfter="default"
+            onValueChange={v => update('radius', v)}
+            triggerIcon={<RadiusGlyph />}
+            keepOpenOnSelect
+          />
 
+          <PickerCard
+            label="Spacing"
+            value={config.spacing ?? 'default'}
+            options={spacingOptions}
+            separatorAfter="default"
+            onValueChange={v => update('spacing', v)}
+            triggerIcon={<SpacingGlyph value={config.spacing} />}
+            keepOpenOnSelect
+          />
+        </div>
         {/* Actions */}
-        <div className="pt-4 space-y-2">
+        <div className="p-3 space-y-2 bg-muted/50 border-t">
           <button
             onClick={handleShuffle}
-            className="w-full px-3 py-2 text-xs rounded-md border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
+            className="w-full px-3 py-1.5 text-xs rounded-md border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
           >
             Shuffle
           </button>
           <button
             onClick={handleReset}
-            className="w-full px-3 py-2 text-xs rounded-md border border-white/10 bg-white/5 hover:bg-white/10 transition-colors opacity-70"
+            className="w-full px-3 py-1.5 text-xs rounded-md border border-white/10 bg-white/5 hover:bg-white/10 transition-colors opacity-70"
           >
             Reset to Defaults
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="w-full px-3 py-2 text-xs rounded-md bg-zinc-100 text-zinc-900 hover:bg-white transition-colors disabled:opacity-50"
+            className="w-full px-3 py-1.5 text-xs rounded-md bg-zinc-100 text-zinc-900 hover:bg-white transition-colors disabled:opacity-50"
           >
             {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Theme'}
           </button>
@@ -953,7 +1003,7 @@ function PickerCard({
     >
       <SelectTrigger
         hideIcon
-        className="w-full !h-auto items-start py-2.5 px-3 rounded-lg border-white/10 --bg-white/5 hover:bg-white/10 text-left shadow-none transition-colors"
+        className="w-full !h-auto items-start py-2 px-3 rounded-lg border-white/10 --bg-white/5 hover:bg-white/10 text-left shadow-none transition-colors"
       >
         <div className="flex items-center justify-between gap-2 w-full">
           <div className="flex flex-col gap-0.5 min-w-0">

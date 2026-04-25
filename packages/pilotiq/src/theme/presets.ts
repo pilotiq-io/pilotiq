@@ -1,5 +1,5 @@
 import { colors } from './colors.js'
-import type { PresetDefinition, StylePreset, ThemeFonts, RadiusPreset } from './types.js'
+import type { PresetDefinition, StylePreset, ThemeFonts, RadiusPreset, SpacingPreset } from './types.js'
 
 // Pure white for surfaces that sit ABOVE the sidebar (`--background`, `--card`,
 // `--popover`). The sidebar tracks `--muted` (one step darker than white) so
@@ -116,4 +116,20 @@ export const PRESET_RADIUS: Record<StylePreset, RadiusPreset> = {
   mira: 'medium',
   luma: 'large',
   sera: 'none',
+}
+
+/**
+ * Per-style default spacing density. The picker's "Default" option resolves
+ * through this map. Mirrors shadcn/ui/create's per-preset density behavior:
+ * Vega / Nova / Maia / Luma / Sera lean comfortable; Lyra stays at default;
+ * Mira goes compact.
+ */
+export const PRESET_SPACING: Record<StylePreset, SpacingPreset> = {
+  vega: 'comfortable',
+  nova: 'compact',
+  maia: 'comfortable',
+  lyra: 'default',
+  mira: 'compact',
+  luma: 'comfortable',
+  sera: 'comfortable',
 }

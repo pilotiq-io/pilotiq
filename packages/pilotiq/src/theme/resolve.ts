@@ -1,9 +1,10 @@
 import type { ThemeConfig, ThemeMeta, BaseColor } from './types.js'
-import { presets, PRESET_FONTS, PRESET_RADIUS } from './presets.js'
+import { presets, PRESET_FONTS, PRESET_RADIUS, PRESET_SPACING } from './presets.js'
 import { baseColors } from './base-colors.js'
 import { resolveThemeColor } from './theme-colors.js'
 import { resolveChartColor } from './chart-colors.js'
 import { radiusMap } from './radius.js'
+import { spacingMap } from './spacing.js'
 
 /**
  * Resolves a user-facing `ThemeConfig` into a serializable `ThemeMeta`.
@@ -59,6 +60,12 @@ export function resolveTheme(config: ThemeConfig): ThemeMeta {
   const radiusKey = isExplicit ? config.radius! : PRESET_RADIUS[presetName]
   const radius = radiusMap[radiusKey]
 
+  // Resolve spacing density — same pattern as radius. Drives `--spacing`,
+  // which Tailwind v4 multiplies into every `p-*` / `gap-*` / `m-*` utility.
+  const isSpacingExplicit = config.spacing && config.spacing !== 'default'
+  const spacingKey = isSpacingExplicit ? config.spacing! : PRESET_SPACING[presetName]
+  const spacing = spacingMap[spacingKey]
+
   // Resolve fonts — fall through to the per-style font pairing in PRESET_FONTS.
   // Field-level fallback (not object-level ??) so `fonts: { body: '...' }`
   // doesn't accidentally drop the heading default.
@@ -75,6 +82,7 @@ export function resolveTheme(config: ThemeConfig): ThemeMeta {
     light,
     dark,
     radius,
+    spacing,
     iconLibrary: config.iconLibrary ?? 'lucide',
   }
   result.fonts = fonts

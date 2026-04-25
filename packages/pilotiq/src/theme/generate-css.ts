@@ -17,7 +17,7 @@ export function generateThemeCSS(theme: ThemeMeta): string {
 
   // !important ensures theme overrides Tailwind's @layer declarations
   // and works correctly with .dark class toggling.
-  let css = `:root {\n${lightVars}\n  --radius: ${theme.radius} !important;\n`
+  let css = `:root {\n${lightVars}\n  --radius: ${theme.radius} !important;\n  --spacing: ${theme.spacing} !important;\n`
 
   if (theme.fontFamily?.body) {
     css += `  --font-sans: ${theme.fontFamily.body} !important;\n`

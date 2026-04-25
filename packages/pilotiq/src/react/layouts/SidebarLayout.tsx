@@ -100,7 +100,7 @@ export function SidebarLayout({ panel, basePath, children }: AppShellProps) {
             <ThemeToggle />
           </div>
         </header>
-        <div className="flex flex-1 flex-col p-6">
+        <div className="flex flex-1 flex-col px-4 pb-4">
           {children}
         </div>
       </SidebarInset>

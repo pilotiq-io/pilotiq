@@ -31,6 +31,12 @@ export type ChartColor = ThemeColor
 /** Border radius preset. */
 export type RadiusPreset = 'none' | 'small' | 'default' | 'medium' | 'large'
 
+// ─── Spacing (UI density) ──────────────────────────────────
+
+/** Spacing density preset — drives Tailwind's `--spacing` multiplier so every
+ *  `p-*`, `gap-*`, `m-*` utility scales uniformly across the panel. */
+export type SpacingPreset = 'default' | 'compact' | 'comfortable'
+
 // ─── Icon Library ──────────────────────────────────────────
 
 /** Icon library identifier — controls which icon set is resolved. */
@@ -73,6 +79,9 @@ export interface ThemeConfig {
   chartColor?:  ChartColor
   /** Border radius preset. Defaults to `'medium'` (Pilotiq brand). */
   radius?:      RadiusPreset
+  /** Spacing density preset. `'default'` falls through to the per-style value
+   *  in `PRESET_SPACING` (e.g. Mira → compact, Vega → comfortable). */
+  spacing?:     SpacingPreset
   /** Font families (loaded from Google Fonts / Fontshare). */
   fonts?:       ThemeFonts
   /** Icon library. */
@@ -94,6 +103,8 @@ export interface ThemeMeta {
   dark:  Record<string, string>
   /** Border radius value (e.g. '0.625rem'). */
   radius: string
+  /** Spacing multiplier for Tailwind's `--spacing` token (e.g. '0.25rem'). */
+  spacing: string
   /** Google Fonts families to load via <link> tag. */
   fonts?: ThemeFonts
   /** Font family CSS values with fallbacks (e.g. "'Inter', sans-serif"). */
