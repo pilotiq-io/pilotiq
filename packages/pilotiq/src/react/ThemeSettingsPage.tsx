@@ -712,12 +712,16 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
   // `block` so `size-3` actually applies — inline <span> ignores width/height.
   // Resolve through PRESET_RADIUS so the preview corner matches what
   // resolve.ts will actually render (e.g. Maia + Default → large).
+  // Only top + end borders are drawn so the rendered corner reads as a single
+  // rounded quadrant (matches shadcn/ui/create's radius indicator). The radius
+  // is resolved through PRESET_RADIUS so the glyph reflects what resolve.ts
+  // will actually emit (e.g. Maia + Default → large).
   const RadiusGlyph = () => {
     const key = config.radius && config.radius !== 'default' ? config.radius : PRESET_RADIUS[presetName]
     return (
       <span
-        className="block size-3 border border-current"
-        style={{ borderRadius: radiusMap[key] }}
+        className="block size-4 border-t border-e border-current"
+        style={{ borderTopRightRadius: radiusMap[key] }}
       />
     )
   }
@@ -745,7 +749,12 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
   const radiusOptions = RADII.map(r => ({
     value: r,
     label: cap(r),
-    indicator: <span className="size-3 border border-current" style={{ borderRadius: radiusMap[r] }} />,
+    indicator: (
+      <span
+        className="block size-3 border-t border-e border-current"
+        style={{ borderTopRightRadius: radiusMap[r] }}
+      />
+    ),
   }))
 
   return (

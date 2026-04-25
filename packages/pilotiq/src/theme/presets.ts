@@ -2,9 +2,8 @@ import { colors } from './colors.js'
 import type { PresetDefinition, StylePreset, ThemeFonts, RadiusPreset } from './types.js'
 
 // Pure white for surfaces that sit ABOVE the sidebar (`--background`, `--card`,
-// `--popover`). The sidebar uses `neutral[50]` (oklch(0.985 0 0)) so there's a
-// subtle contrast between page surface and sidebar — this matches shadcn's
-// stock theme and prevents the sidebar from disappearing into the page.
+// `--popover`). The sidebar tracks `--muted` (one step darker than white) so
+// the sidebar reads as a recessed surface against the bright content area.
 const WHITE = 'oklch(1 0 0)'
 
 // ─── Shadcn neutral default ────────────────────────────────
@@ -38,9 +37,9 @@ const shadcnNeutral: PresetDefinition = {
     '--destructive-foreground':       colors.red[600],
     '--border':                       colors.neutral[200],
     '--input':                        colors.neutral[200],
-    '--sidebar':                      colors.neutral[50],
+    '--sidebar':                      'var(--muted)',
     '--sidebar-foreground':           colors.neutral[950],
-    '--sidebar-accent':               colors.neutral[100],
+    '--sidebar-accent':               colors.neutral[200],
     '--sidebar-accent-foreground':    colors.neutral[900],
     '--sidebar-border':               colors.neutral[200],
   },
@@ -61,11 +60,11 @@ const shadcnNeutral: PresetDefinition = {
     '--destructive-foreground':       colors.red[500],
     '--border':                       colors.neutral[800],
     '--input':                        colors.neutral[800],
-    '--sidebar':                      colors.neutral[900],
+    '--sidebar':                      'var(--muted)',
     '--sidebar-foreground':           colors.neutral[50],
-    '--sidebar-accent':               colors.neutral[800],
+    '--sidebar-accent':               colors.neutral[700],
     '--sidebar-accent-foreground':    colors.neutral[50],
-    '--sidebar-border':               colors.neutral[800],
+    '--sidebar-border':               colors.neutral[700],
   },
 }
 
