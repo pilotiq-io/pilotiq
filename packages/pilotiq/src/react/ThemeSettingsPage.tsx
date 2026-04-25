@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, type ReactNode } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { Square, Sparkles } from 'lucide-react'
 import { resolveTheme } from '../theme/resolve.js'
 import { radiusMap } from '../theme/radius.js'
@@ -84,31 +84,67 @@ function applyToParent(config: Partial<ThemeConfig>) {
   }
 }
 
-/** Build the preview iframe HTML with inline CSS variables. */
-function buildPreviewHTML(config: Partial<ThemeConfig>, mode: 'light' | 'dark' = 'light'): string {
+// Fontshare overrides for fonts not on Google Fonts.
+const FONTSHARE_URLS: Record<string, string> = {
+  Satoshi: 'https://api.fontshare.com/v2/css?f[]=satoshi@300,500,700&display=swap',
+}
+
+function fontStylesheetUrl(family: string): string {
+  return FONTSHARE_URLS[family]
+    ?? `https://fonts.googleapis.com/css2?family=${family.replace(/ /g, '+')}:wght@400;500;600;700&display=swap`
+}
+
+/**
+ * Apply config changes to a live preview document — patches CSS vars, font
+ * links, mode class, and preset fingerprint text WITHOUT reloading the iframe.
+ * Called on every config/mode change so the user's scroll position survives.
+ */
+function applyConfigToDoc(doc: Document, config: Partial<ThemeConfig>, mode: 'light' | 'dark') {
   const merged: ThemeConfig = { preset: 'vega', ...config }
   const resolved = resolveTheme(merged)
   const themeCSS = generateThemeCSS(resolved)
 
-  // Font CDN links — Fontshare for Satoshi, Google Fonts otherwise.
-  // Read from `resolved.fonts` (post-defaults) so the Satoshi fallback is also
-  // loaded when the user only overrode one of body/heading — otherwise the
-  // unset side silently falls through to system-ui.
-  const fontshareUrls: Record<string, string> = {
-    Satoshi: 'https://api.fontshare.com/v2/css?f[]=satoshi@300,500,700&display=swap',
+  // Light/dark switch — generateThemeCSS emits `.dark { ... }`, so toggling
+  // the class on <html> picks up the right var set without a re-render.
+  doc.documentElement.className = mode
+
+  // Theme CSS — single <style id="pilotiq-theme"> we keep refilling.
+  let style = doc.getElementById('pilotiq-theme') as HTMLStyleElement | null
+  if (!style) {
+    style = doc.createElement('style')
+    style.id = 'pilotiq-theme'
+    doc.head.appendChild(style)
   }
-  const fontFamilies: string[] = []
-  if (resolved.fonts?.body) fontFamilies.push(resolved.fonts.body)
-  if (resolved.fonts?.heading && resolved.fonts.heading !== resolved.fonts.body) fontFamilies.push(resolved.fonts.heading)
-  const fontTags = fontFamilies.map(f => {
-    const fsUrl = fontshareUrls[f]
-    const href = fsUrl ?? `https://fonts.googleapis.com/css2?family=${f.replace(/ /g, '+')}:wght@400;500;600;700&display=swap`
-    return `<link rel="stylesheet" href="${href}">`
-  }).join('\n')
+  style.textContent = themeCSS
 
-  const bodyFont = resolved.fontFamily?.body ?? "'Geist Variable', sans-serif"
-  const headingFont = resolved.fontFamily?.heading ?? bodyFont
+  // Font links — diff against current set so the browser doesn't re-fetch
+  // already-loaded stylesheets (avoids the brief FOIT on every config change).
+  const wanted = new Set<string>()
+  if (resolved.fonts?.body) wanted.add(resolved.fonts.body)
+  if (resolved.fonts?.heading) wanted.add(resolved.fonts.heading)
+  const existing = doc.querySelectorAll<HTMLLinkElement>('link[data-pilotiq-font]')
+  const haveSet = new Set<string>()
+  existing.forEach(link => {
+    const family = link.dataset.pilotiqFont ?? ''
+    if (!wanted.has(family)) link.remove()
+    else haveSet.add(family)
+  })
+  for (const family of wanted) {
+    if (haveSet.has(family)) continue
+    const link = doc.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = fontStylesheetUrl(family)
+    link.dataset.pilotiqFont = family
+    doc.head.appendChild(link)
+  }
 
+  // Preset fingerprint heading — only piece of body text that depends on config.
+  const fp = doc.getElementById('preset-fingerprint')
+  if (fp) fp.textContent = `${cap(config.preset ?? 'vega')} - ${resolved.fonts?.heading ?? 'System'}`
+}
+
+/** Build the static preview skeleton — config-independent so the iframe loads once. */
+function buildStaticPreviewHTML(): string {
   // Calendar — current month grid with a few highlighted dates.
   const today = new Date()
   const year = today.getFullYear()
@@ -127,22 +163,43 @@ function buildPreviewHTML(config: Partial<ThemeConfig>, mode: 'light' | 'dark' =
   }
 
   return `<!DOCTYPE html>
-<html lang="en" class="${mode}">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-${fontTags}
 <style>
-  ${themeCSS}
+  /* Fallback vars so the very first paint isn't blank when applyConfigToDoc
+     hasn't run yet — replaced by the <style id="pilotiq-theme"> we inject. */
+  :root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.15 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.55 0 0);
+    --border: oklch(0.9 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.15 0 0);
+    --primary: oklch(0.55 0 0);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.97 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.15 0 0);
+    --input: oklch(0.9 0 0);
+    --chart-1: oklch(0.6 0.1 30);
+    --chart-2: oklch(0.6 0.1 60);
+    --chart-3: oklch(0.6 0.1 90);
+    --chart-4: oklch(0.6 0.1 120);
+    --chart-5: oklch(0.6 0.1 150);
+    --radius: 0.5rem;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; border: 0 solid; }
   body {
-    font-family: ${bodyFont};
+    font-family: var(--default-font-family, 'Geist Variable', sans-serif);
     background: var(--muted);
     color: var(--foreground);
     padding: 1.5rem;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
-  h1, h2, h3, h4, h5, h6 { font-family: ${headingFont}; }
+  h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading, var(--default-font-family, 'Geist Variable', sans-serif)); }
   .grid { display: grid; gap: 1rem; }
   .grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
   /* grid-main uses the same 3-col base as the stat-cards row so the right
@@ -461,7 +518,7 @@ ${fontTags}
          preview area. Heading + body sentence preview the resolved fonts;
          34×34 swatches wrap into rows mirroring the reference design. -->
     <div class="card">
-      <h3 class="preview-h">${cap(config.preset ?? 'vega')} - ${resolved.fonts?.heading ?? 'System'}</h3>
+      <h3 class="preview-h" id="preset-fingerprint">Vega - Satoshi</h3>
       <p class="preview-p">Designers love packing quirky glyphs into test phrases. This is a preview of the resolved theme tokens.</p>
       <div class="swatch-row">
         <div class="swatch-cell"><div class="swatch" style="background:var(--background)"></div><span class="swatch-label">--backgr…</span></div>
@@ -492,11 +549,36 @@ ${fontTags}
 function PreviewIframe({ config, mode }: { config: Partial<ThemeConfig>; mode: 'light' | 'dark' }) {
   const [mounted, setMounted] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  // Refs so the onLoad handler always patches with the freshest values
+  // (handler is bound once, but config/mode change between mount and load).
+  const configRef = useRef(config)
+  const modeRef = useRef(mode)
+  configRef.current = config
+  modeRef.current = mode
+
   useEffect(() => setMounted(true), [])
+
+  // Static skeleton — config-independent so srcDoc never changes.
+  // Memoized so the iframe doesn't reload (which would lose scroll position).
+  const staticHTML = useMemo(() => buildStaticPreviewHTML(), [])
+
+  // Patch the live document on every config / mode change. No reload, no
+  // flicker, no scroll loss — only CSS vars + font links + class change.
+  useEffect(() => {
+    if (!loaded) return
+    const doc = iframeRef.current?.contentDocument
+    if (doc) applyConfigToDoc(doc, config, mode)
+  }, [config, mode, loaded])
+
+  const handleLoad = () => {
+    const doc = iframeRef.current?.contentDocument
+    if (doc) applyConfigToDoc(doc, configRef.current, modeRef.current)
+    if (!loaded) setLoaded(true)
+  }
 
   if (!mounted) return <div className="w-full h-full rounded-lg border border-border bg-muted" />
 
-  const html = buildPreviewHTML(config, mode)
   return (
     <div className="relative w-full h-full">
       {!loaded && (
@@ -505,8 +587,9 @@ function PreviewIframe({ config, mode }: { config: Partial<ThemeConfig>; mode: '
         </div>
       )}
       <iframe
-        srcDoc={html}
-        onLoad={() => { if (!loaded) setLoaded(true) }}
+        ref={iframeRef}
+        srcDoc={staticHTML}
+        onLoad={handleLoad}
         className={`w-full h-full rounded-lg border border-border bg-muted transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-0'}`}
         title="Theme Preview"
       />
