@@ -740,27 +740,36 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
 
   // Density indicator — fewer rows = roomier, more rows = tighter.
   // Mirrors the resolved spacing value (compact / default / comfortable).
-  const SpacingGlyph = ({ value, className = 'size-3.5 stroke-[1.5]' }: { value: string | undefined; className?: string }) => {
+  // `strokeWidth` is passed as a prop (not via className) because Lucide
+  // writes it as an SVG presentation attribute that wins over inherited CSS,
+  // so `stroke-[1.5]` alone would be a no-op against the default `2`.
+  const SpacingGlyph = ({ value, className = 'size-3.5 text-white' }: { value: string | undefined; className?: string }) => {
     const key = value && value !== 'default' ? value : PRESET_SPACING[presetName]
-    if (key === 'compact')     return <Rows4 className={className} />
-    if (key === 'comfortable') return <Rows2 className={className} />
-    return <Rows3 className={className} />
+    const props = { className, strokeWidth: 1.5 }
+    if (key === 'compact')     return <Rows4 {...props} />
+    if (key === 'comfortable') return <Rows2 {...props} />
+    return <Rows3 {...props} />
   }
 
   // Each Style gets its own geometric glyph so the preset has a distinct
   // visual identity — the shape hints at the preset's personality
-  // (Maia → fully rounded circle, Lyra → sharp hexagon, Sera → square corners,
-  // Luma → horizontal pill, etc.).
+  // (Maia → circle, Lyra → hexagon, Sera → sharp square, Luma → horizontal
+  // pill, Mira → rotated rounded square, etc.).
+  //
+  // Inner shapes deliberately omit a `stroke-width` attribute so they inherit
+  // the SVG's CSS `stroke-width` (set via Tailwind `stroke-[1.5]` at the call
+  // site). A presentation attribute would override the inherited value and
+  // make the className tweak a no-op.
   const StyleGlyph = ({ preset, className = 'size-3' }: { preset: StylePreset; className?: string }) => {
-    const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinejoin: 'round' as const }
+    const common = { fill: 'none', stroke: 'currentColor', strokeLinejoin: 'round' as const }
     return (
       <svg viewBox="0 0 16 16" className={className} aria-hidden="true">
-        {preset === 'vega' && <rect x="2.5" y="2.5" width="11" height="11" rx="2"  {...common} />}
-        {preset === 'nova' && <rect x="2.5" y="2.5" width="11" height="11" rx="3.5" {...common} />}
+        {preset === 'vega' && <rect x="2.5" y="2.5" width="11" height="11" rx="3.5" {...common} />}
+        {preset === 'nova' && <rect x="2"   y="3.5" width="12" height="9"  rx="3"   {...common} />}
         {preset === 'maia' && <circle cx="8" cy="8" r="5.5" {...common} />}
         {preset === 'lyra' && <polygon points="8,2 13.2,5 13.2,11 8,14 2.8,11 2.8,5" {...common} />}
-        {preset === 'mira' && <polygon points="8,2 14,8 8,14 2,8" {...common} />}
-        {preset === 'luma' && <rect x="1.5" y="5" width="13" height="6" rx="3" {...common} />}
+        {preset === 'mira' && <rect x="2.5" y="2.5" width="11" height="11" rx="3.5" transform="rotate(45 8 8)" {...common} />}
+        {preset === 'luma' && <rect x="1.5" y="4.5" width="13" height="7" rx="3.5" {...common} />}
         {preset === 'sera' && <rect x="2.5" y="2.5" width="11" height="11" rx="0" {...common} />}
       </svg>
     )
@@ -768,7 +777,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
 
   // Build option lists. Theme + Chart pin the `'base'` sentinel at the top
   // (separator below), labeled with the current base color name.
-  const styleOptions = PRESETS.map(p => ({ value: p, label: cap(p), indicator: <StyleGlyph preset={p} className="size-3.5 stroke-[1.5]" /> }))
+  const styleOptions = PRESETS.map(p => ({ value: p, label: cap(p), indicator: <StyleGlyph preset={p} className="size-3.5" /> }))
   const baseOptions = BASE_COLORS.map(c => ({ value: c, label: cap(c), indicator: <Dot color={colors[c][600]} /> }))
   const themeOptions = [
     { value: 'base', label: cap(baseName), indicator: <Dot color={baseSwatch} /> },
@@ -817,7 +826,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
             value={config.preset ?? 'vega'}
             options={styleOptions}
             onValueChange={v => update('preset', v)}
-            triggerIcon={<StyleGlyph preset={presetName} className="size-3.5 stroke-[1.5] opacity-80" />}
+            triggerIcon={<StyleGlyph preset={presetName} className="size-3.5 text-white" />}
             keepOpenOnSelect
           />
 
@@ -877,7 +886,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
             value={config.iconLibrary ?? 'lucide'}
             options={iconOptions}
             onValueChange={v => update('iconLibrary', v)}
-            triggerIcon={<Sparkles className="opacity-70" />}
+            triggerIcon={<Sparkles className="stroke-[1.5] text-white" />}
           />
 
           <PickerCard
@@ -1015,11 +1024,11 @@ function PickerCard({
         className="w-full !h-auto items-start py-2 px-3 rounded-lg border-white/10 --bg-white/5 hover:bg-white/10 text-left shadow-none transition-colors"
       >
         <div className="flex items-center justify-between gap-2 w-full">
-          <div className="flex flex-col gap-0.5 min-w-0">
+          <div className="flex flex-col min-w-0">
             <span className="text-[11px] text-white/50">{label}</span>
-            <span className="text-sm font-medium text-white truncate">{triggerLabel}</span>
+            <span className="text-sm font-medium truncate">{triggerLabel}</span>
           </div>
-          {triggerIcon && <span className="shrink-0 mt-0.5 text-white/70">{triggerIcon}</span>}
+          {triggerIcon && <span className="shrink-0 mt-0.5">{triggerIcon}</span>}
         </div>
       </SelectTrigger>
       {/* Anchor to the right of the trigger so users can click through items
