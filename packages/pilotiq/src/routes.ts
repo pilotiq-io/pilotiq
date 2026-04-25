@@ -8,8 +8,8 @@ import { resolveTheme } from './theme/resolve.js'
 import type { ThemeConfig, ThemeMeta } from './theme/types.js'
 import { presets } from './theme/presets.js'
 import { baseColors } from './theme/base-colors.js'
-import { accentColors } from './theme/accent-colors.js'
-import { chartPalettes } from './theme/chart-palettes.js'
+import { HUE_NAMES } from './theme/colors.js'
+import { migrateThemeOverrides } from './theme/migrate.js'
 import { radiusMap } from './theme/radius.js'
 
 function panelInfo(panel: Pilotiq) {
@@ -155,7 +155,8 @@ export function registerPilotiqRoutes(
         const slug = `${cfg.name}__theme`
         const row = await prisma.panelGlobal.findUnique({ where: { slug } })
         if (row?.data) {
-          overrides = typeof row.data === 'string' ? JSON.parse(row.data as string) : row.data
+          const raw = typeof row.data === 'string' ? JSON.parse(row.data as string) : row.data
+          overrides = migrateThemeOverrides(raw)
         }
       } catch { /* no DB or no table — that's fine */ }
 
@@ -165,8 +166,8 @@ export function registerPilotiqRoutes(
         options: {
           presets:       Object.keys(presets),
           baseColors:    Object.keys(baseColors),
-          accentColors:  Object.keys(accentColors),
-          chartPalettes: Object.keys(chartPalettes),
+          themeColors:   ['base', ...HUE_NAMES],
+          chartColors:   ['base', ...HUE_NAMES],
           radii:         Object.keys(radiusMap),
           iconLibraries: ['lucide', 'tabler', 'phosphor', 'remix'],
         },

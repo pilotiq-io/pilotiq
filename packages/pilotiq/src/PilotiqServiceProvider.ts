@@ -34,8 +34,9 @@ class PilotiqServiceProvider extends ServiceProvider {
           const slug = `${panel.getConfig().name}__theme`
           const row = await prisma.panelGlobal.findUnique({ where: { slug } })
           if (row?.data) {
-            const overrides = typeof row.data === 'string' ? JSON.parse(row.data as string) : row.data
-            panel.setThemeOverrides(overrides)
+            const raw = typeof row.data === 'string' ? JSON.parse(row.data as string) : row.data
+            const { migrateThemeOverrides } = await import('./theme/migrate.js')
+            panel.setThemeOverrides(migrateThemeOverrides(raw))
           }
         } catch { /* no DB or no table — use code defaults */ }
       }

@@ -1,31 +1,35 @@
+import { BASE_COLOR_NAMES, HUE_NAMES } from './colors.js'
+
 // ─── Style Presets ─────────────────────────────────────────
 
-/** Built-in style presets — each defines a complete set of OKLCH CSS variables. */
-export type StylePreset = 'default' | 'nova' | 'maia' | 'lyra'
+/** Built-in style presets — each defines a complete set of OKLCH CSS variables.
+ *  `vega` is the Pilotiq brand (terracotta on cream, Satoshi). The other six are
+ *  placeholder neutrals awaiting visual differentiation. */
+export type StylePreset = 'vega' | 'nova' | 'maia' | 'lyra' | 'mira' | 'luma' | 'sera'
 
 // ─── Base Colors (gray/neutral scales) ─────────────────────
 
-/** Base color scale — controls the neutral/gray tones across the UI.
- *  `default` means "use the preset's built-in base" (empty override). */
-export type BaseColor = 'default' | 'neutral' | 'stone' | 'zinc' | 'slate' | 'olive' | 'taupe' | 'cream'
+/** Base color scale — controls the neutral/gray tones across the UI. */
+export type BaseColor = typeof BASE_COLOR_NAMES[number]
 
-// ─── Accent Colors ─────────────────────────────────────────
+// ─── Theme + Chart Colors ──────────────────────────────────
 
-/** Accent color — overrides the primary color (buttons, links, active states). */
-export type AccentColor =
-  | 'blue' | 'red' | 'green' | 'amber' | 'orange' | 'cyan'
-  | 'violet' | 'purple' | 'pink' | 'rose' | 'emerald' | 'teal'
-  | 'indigo' | 'fuchsia' | 'lime' | 'sky' | 'terracotta'
+/** Hue tokens shared by both the Theme color and Chart color pickers. */
+export type HueColor = typeof HUE_NAMES[number]
+
+/** Theme (primary) color — drives buttons, links, active states, ring.
+ *  `'base'` means "use the current base color's hue". Strings outside the
+ *  union are treated as raw hex/oklch seeds (custom color escape hatch). */
+export type ThemeColor = 'base' | HueColor | (string & {})
+
+/** Chart palette color — drives `--chart-1..5` as a single-hue ramp.
+ *  Same shape as `ThemeColor`. */
+export type ChartColor = ThemeColor
 
 // ─── Radius ────────────────────────────────────────────────
 
 /** Border radius preset. */
 export type RadiusPreset = 'none' | 'small' | 'default' | 'medium' | 'large'
-
-// ─── Chart Palette ─────────────────────────────────────────
-
-/** Chart color palette — defines chart-1 through chart-5 colors. */
-export type ChartPalette = 'default' | 'ocean' | 'sunset' | 'forest' | 'berry' | 'terracotta'
 
 // ─── Icon Library ──────────────────────────────────────────
 
@@ -49,29 +53,30 @@ export interface ThemeFonts {
  * @example
  * ```ts
  * Pilotiq.make('admin').theme({
- *   preset: 'nova',
- *   baseColor: 'zinc',
- *   accentColor: 'blue',
+ *   preset: 'vega',
+ *   baseColor: 'taupe',
+ *   themeColor: 'orange',
+ *   chartColor: 'base',
  *   radius: 'medium',
  *   fonts: { heading: 'Space Grotesk', body: 'Inter' },
  * })
  * ```
  */
 export interface ThemeConfig {
-  /** Style preset — sets all CSS variables at once. Defaults to 'default'. */
-  preset?:       StylePreset
+  /** Style preset — sets all CSS variables at once. Defaults to `'vega'`. */
+  preset?:      StylePreset
   /** Base color scale — overrides neutral/gray tones from the preset. */
-  baseColor?:    BaseColor
-  /** Accent color — overrides primary color from the preset. */
-  accentColor?:  AccentColor
-  /** Chart color palette. Defaults to 'default'. */
-  chartPalette?: ChartPalette
-  /** Border radius preset. Defaults to 'default'. */
-  radius?:       RadiusPreset
-  /** Font families (loaded from Google Fonts). */
-  fonts?:        ThemeFonts
+  baseColor?:   BaseColor
+  /** Theme (primary) color. `'base'` = derive from current base color. */
+  themeColor?:  ThemeColor
+  /** Chart color. `'base'` = derive ramp from current base color. */
+  chartColor?:  ChartColor
+  /** Border radius preset. Defaults to `'medium'` (Pilotiq brand). */
+  radius?:      RadiusPreset
+  /** Font families (loaded from Google Fonts / Fontshare). */
+  fonts?:       ThemeFonts
   /** Icon library. */
-  iconLibrary?:  IconLibrary
+  iconLibrary?: IconLibrary
   /** Escape hatch: raw CSS variable overrides in OKLCH. Applied last, highest priority. */
   cssVariables?: {
     light?: Record<string, string>

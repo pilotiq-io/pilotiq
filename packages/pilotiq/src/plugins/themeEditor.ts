@@ -10,7 +10,7 @@ import type { PilotiqPlugin } from '../Pilotiq.js'
  * import { themeEditor } from '@pilotiq/pilotiq/plugins'
  *
  * Pilotiq.make('Admin')
- *   .theme({ preset: 'nova', accentColor: 'blue' })
+ *   .theme({ preset: 'vega', themeColor: 'blue' })
  *   .use(themeEditor())
  * ```
  */

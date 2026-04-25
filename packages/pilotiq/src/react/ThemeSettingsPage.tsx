@@ -1,40 +1,48 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, type ReactNode } from 'react'
+import { Square, Sparkles } from 'lucide-react'
 import { resolveTheme } from '../theme/resolve.js'
 import { radiusMap } from '../theme/radius.js'
 
 import { generateThemeCSS } from '../theme/generate-css.js'
-import type { ThemeConfig } from '../theme/types.js'
+import type { ThemeConfig, BaseColor } from '../theme/types.js'
 import { useTheme } from './ThemeProvider.js'
+import {
+  Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger,
+} from './ui/select.js'
 
 // ─── Constants ──────────────────────────────────────────────
 
-const PRESETS    = ['default', 'nova', 'maia', 'lyra'] as const
-const BASE_COLORS = ['default', 'neutral', 'stone', 'zinc', 'slate', 'olive', 'taupe', 'cream'] as const
-const ACCENT_COLORS = [
-  'blue', 'red', 'green', 'amber', 'orange', 'cyan',
-  'violet', 'purple', 'pink', 'rose', 'emerald', 'teal',
-  'indigo', 'fuchsia', 'lime', 'sky', 'terracotta',
-] as const
-const CHART_PALETTES = ['default', 'ocean', 'sunset', 'forest', 'berry', 'terracotta'] as const
-const RADII = ['none', 'small', 'default', 'medium', 'large'] as const
+import { colors, BASE_COLOR_NAMES, HUE_NAMES } from '../theme/colors.js'
+import { PRESET_FONTS, PRESET_RADIUS } from '../theme/presets.js'
+import type { StylePreset } from '../theme/types.js'
+
+const PRESETS = ['vega', 'nova', 'maia', 'lyra', 'mira', 'luma', 'sera'] as const
+const BASE_COLORS = BASE_COLOR_NAMES
+const THEME_COLORS = ['base', ...HUE_NAMES] as const
+const CHART_COLORS = ['base', ...HUE_NAMES] as const
+// Order: 'default' first (= medium semantically) so it's the leading option.
+const RADII = ['default', 'none', 'small', 'medium', 'large'] as const
 const ICON_LIBRARIES = ['lucide', 'tabler', 'phosphor', 'remix'] as const
 
-const POPULAR_FONTS = [
-  'Satoshi', 'Inter', 'Geist', 'Space Grotesk', 'Plus Jakarta Sans', 'DM Sans',
-  'Manrope', 'Outfit', 'Sora', 'Figtree', 'Poppins',
-  'Nunito', 'Raleway', 'Open Sans', 'Lato', 'Roboto',
-]
-
-const ACCENT_SWATCHES: Record<string, string> = {
-  blue: 'oklch(0.488 0.243 264)', red: 'oklch(0.505 0.213 27)', green: 'oklch(0.517 0.174 149)',
-  amber: 'oklch(0.666 0.179 58)', orange: 'oklch(0.601 0.206 50)', cyan: 'oklch(0.55 0.135 200)',
-  violet: 'oklch(0.488 0.205 277)', purple: 'oklch(0.496 0.22 292)', pink: 'oklch(0.564 0.2 350)',
-  rose: 'oklch(0.514 0.222 16)', emerald: 'oklch(0.532 0.157 163)', teal: 'oklch(0.528 0.121 186)',
-  indigo: 'oklch(0.457 0.24 277)', fuchsia: 'oklch(0.542 0.238 322)', lime: 'oklch(0.58 0.2 130)',
-  sky: 'oklch(0.539 0.158 222)', terracotta: 'oklch(0.685 0.126 43)',
+// Fonts grouped by type. Renders inside the Heading/Font picker dropdown
+// with each group's name as a non-selectable label, mirroring shadcn/ui/create.
+const FONT_GROUPS: Record<string, string[]> = {
+  Sans: [
+    'Satoshi', 'Inter', 'Geist', 'Space Grotesk', 'Plus Jakarta Sans', 'DM Sans',
+    'Manrope', 'Outfit', 'Sora', 'Figtree', 'Poppins',
+    'Nunito', 'Raleway', 'Open Sans', 'Lato', 'Roboto', 'Noto Sans',
+  ],
+  Serif: ['Playfair Display'],
+  Mono:  ['JetBrains Mono', 'Geist Mono'],
 }
+
+// Swatch preview color for each picker option — pulls from the canonical
+// scale at step 600 so swatches stay in sync if a hue is retuned in colors.ts.
+const HUE_SWATCHES: Record<string, string> = Object.fromEntries(
+  HUE_NAMES.map(name => [name, colors[name][600]]),
+)
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -44,7 +52,7 @@ function randomPick<T>(arr: readonly T[]): T {
 
 /** Apply theme to parent page immediately — updates the <style> tag AND inline styles. */
 function applyToParent(config: Partial<ThemeConfig>) {
-  const merged: ThemeConfig = { preset: 'default', ...config }
+  const merged: ThemeConfig = { preset: 'vega', ...config }
   const resolved = resolveTheme(merged)
   const css = generateThemeCSS(resolved)
 
@@ -78,7 +86,7 @@ function applyToParent(config: Partial<ThemeConfig>) {
 
 /** Build the preview iframe HTML with inline CSS variables. */
 function buildPreviewHTML(config: Partial<ThemeConfig>, mode: 'light' | 'dark' = 'light'): string {
-  const merged: ThemeConfig = { preset: 'default', ...config }
+  const merged: ThemeConfig = { preset: 'vega', ...config }
   const resolved = resolveTheme(merged)
   const themeCSS = generateThemeCSS(resolved)
 
@@ -101,6 +109,23 @@ function buildPreviewHTML(config: Partial<ThemeConfig>, mode: 'light' | 'dark' =
   const bodyFont = resolved.fontFamily?.body ?? "'Geist Variable', sans-serif"
   const headingFont = resolved.fontFamily?.heading ?? bodyFont
 
+  // Calendar — current month grid with a few highlighted dates.
+  const today = new Date()
+  const year = today.getFullYear()
+  const monthIdx = today.getMonth()
+  const monthName = today.toLocaleString('en-US', { month: 'long' })
+  const firstDay = new Date(year, monthIdx, 1).getDay()
+  const daysInMonth = new Date(year, monthIdx + 1, 0).getDate()
+  const todayDate = today.getDate()
+  const calendarCells: string[] = []
+  for (let i = 0; i < firstDay; i++) calendarCells.push('<div class="cal-cell empty"></div>')
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isToday = d === todayDate
+    const isHighlight = [4, 12, 18, 24].includes(d)
+    const cls = isToday ? 'cal-cell today' : isHighlight ? 'cal-cell highlight' : 'cal-cell'
+    calendarCells.push(`<div class="${cls}">${d}</div>`)
+  }
+
   return `<!DOCTYPE html>
 <html lang="en" class="${mode}">
 <head>
@@ -111,145 +136,350 @@ ${fontTags}
   * { box-sizing: border-box; margin: 0; padding: 0; border: 0 solid; }
   body {
     font-family: ${bodyFont};
-    background: var(--background);
+    background: var(--muted);
     color: var(--foreground);
-    padding: 2rem;
+    padding: 1.5rem;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
   h1, h2, h3, h4, h5, h6 { font-family: ${headingFont}; }
-  .space-y > * + * { margin-top: 1.5rem; }
-  .space-y-sm > * + * { margin-top: 0.75rem; }
+  .grid { display: grid; gap: 1rem; }
+  .grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-main { grid-template-columns: 2fr 1fr; }
   .flex { display: flex; }
-  .flex-wrap { flex-wrap: wrap; }
+  .flex-col { flex-direction: column; }
+  .items-center { align-items: center; }
+  .justify-between { justify-content: space-between; }
   .gap-2 { gap: 0.5rem; }
   .gap-3 { gap: 0.75rem; }
-  .gap-6 { gap: 1.5rem; }
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  .gap-4 { gap: 1rem; }
   .text-xs { font-size: 0.75rem; }
   .text-sm { font-size: 0.875rem; }
-  .text-lg { font-size: 1.125rem; }
-  .text-3xl { font-size: 1.875rem; }
+  .text-2xl { font-size: 1.5rem; }
+  .text-3xl { font-size: 1.875rem; line-height: 1.1; }
   .font-medium { font-weight: 500; }
   .font-semibold { font-weight: 600; }
   .font-bold { font-weight: 700; }
   .tracking-tight { letter-spacing: -0.025em; }
-  .uppercase { text-transform: uppercase; }
-  .tracking-wider { letter-spacing: 0.05em; }
-  .rounded-md { border-radius: calc(var(--radius) - 2px); }
-  .rounded-lg { border-radius: var(--radius); }
-  .rounded-full { border-radius: 9999px; }
-  .border { border-width: 1px; border-style: solid; border-color: var(--border); }
-  .border-b { border-bottom: 1px solid var(--border); }
-  .swatch { width: 3rem; height: 3rem; border-radius: var(--radius); }
-  .swatch-sm { width: 2.5rem; height: 2.5rem; border-radius: var(--radius); }
-  .label { font-size: 0.625rem; color: var(--muted-foreground); margin-top: 0.25rem; text-align: center; }
-  .btn { padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; border-radius: calc(var(--radius) - 2px); cursor: pointer; display: inline-flex; align-items: center; }
-  .card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--card-foreground); padding: 1.5rem; }
+  .text-muted { color: var(--muted-foreground); }
+  .mt-1 { margin-top: 0.25rem; }
+  .mt-2 { margin-top: 0.5rem; }
+  .mt-3 { margin-top: 0.75rem; }
+  .mt-4 { margin-top: 1rem; }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--card-foreground);
+    padding: 1.25rem;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .card-label { font-size: 0.8125rem; color: var(--muted-foreground); font-weight: 500; }
+  .card-value { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.025em; margin-top: 0.25rem; }
+  .delta { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; font-weight: 500; padding: 0.125rem 0.5rem; border-radius: 9999px; border: 1px solid var(--border); }
+  .delta-up { color: var(--primary); }
+  .badge { padding: 0.125rem 0.625rem; font-size: 0.75rem; font-weight: 500; border-radius: 9999px; display: inline-flex; align-items: center; gap: 0.25rem; border: 1px solid var(--border); }
+  .badge-primary { background: color-mix(in oklch, var(--primary) 12%, transparent); color: var(--primary); border-color: color-mix(in oklch, var(--primary) 30%, transparent); }
+  .badge-muted { background: var(--muted); color: var(--muted-foreground); }
+  .btn { padding: 0.5rem 0.875rem; font-size: 0.8125rem; font-weight: 500; border-radius: calc(var(--radius) - 2px); cursor: pointer; display: inline-flex; align-items: center; gap: 0.375rem; border: 1px solid transparent; }
+  .btn-primary { background: var(--primary); color: var(--primary-foreground); }
+  .btn-outline { background: var(--card); color: var(--foreground); border-color: var(--border); }
   .input { width: 100%; border: 1px solid var(--input); border-radius: calc(var(--radius) - 2px); background: var(--background); padding: 0.5rem 0.75rem; font-size: 0.875rem; color: var(--foreground); outline: none; }
-  .badge { padding: 0.125rem 0.625rem; font-size: 0.75rem; font-weight: 500; border-radius: 9999px; display: inline-block; }
-  table { width: 100%; font-size: 0.875rem; border-collapse: collapse; }
-  th { text-align: left; padding: 0.75rem 1rem; font-weight: 500; color: var(--muted-foreground); }
-  td { padding: 0.75rem 1rem; }
-  thead tr { border-bottom: 1px solid var(--border); background: color-mix(in oklch, var(--muted) 50%, transparent); }
-  tbody tr { border-bottom: 1px solid var(--border); }
-  tbody tr:last-child { border-bottom: none; }
-  .section-label { font-size: 0.75rem; font-weight: 500; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
+  table { width: 100%; font-size: 0.8125rem; border-collapse: collapse; }
+  th { text-align: left; padding: 0.625rem 0.875rem; font-weight: 500; color: var(--muted-foreground); font-size: 0.75rem; }
+  td { padding: 0.625rem 0.875rem; border-top: 1px solid var(--border); }
+  thead tr { border-bottom: 1px solid var(--border); }
+  .avatar { width: 1.75rem; height: 1.75rem; border-radius: 9999px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.6875rem; font-weight: 600; color: var(--primary-foreground); background: var(--primary); flex-shrink: 0; }
+  .dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 9999px; }
+  .legend { display: flex; gap: 1rem; align-items: center; font-size: 0.75rem; color: var(--muted-foreground); }
+  /* Calendar */
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 0.75rem; }
+  .cal-head { font-size: 0.6875rem; color: var(--muted-foreground); text-align: center; padding: 0.375rem 0; font-weight: 500; }
+  .cal-cell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; border-radius: calc(var(--radius) - 4px); cursor: pointer; }
+  .cal-cell:hover:not(.empty) { background: var(--accent); }
+  .cal-cell.empty { visibility: hidden; }
+  .cal-cell.highlight { background: var(--accent); color: var(--accent-foreground); font-weight: 500; }
+  .cal-cell.today { background: var(--primary); color: var(--primary-foreground); font-weight: 600; }
+  /* Activity */
+  .activity { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.625rem 0; }
+  .activity + .activity { border-top: 1px solid var(--border); }
+  .activity-text { font-size: 0.8125rem; flex: 1; }
+  .activity-time { font-size: 0.6875rem; color: var(--muted-foreground); margin-top: 0.125rem; }
+  /* Token swatch row — fixed 34×34 boxes in a wrapping flex row, mirroring
+     the reference design. Each swatch has a monospace label beneath it,
+     truncated with ellipsis if the variable name overflows the box width. */
+  .swatch-row { display: flex; flex-wrap: wrap; gap: 0.625rem; margin-top: 0.75rem; }
+  .swatch-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; width: 34px; }
+  .swatch { width: 34px; height: 34px; border-radius: calc(var(--radius) - 2px); border: 1px solid var(--border); }
+  .swatch-label { font-family: ui-monospace, 'JetBrains Mono', 'Geist Mono', monospace; font-size: 0.625rem; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .preview-h { font-size: 1.375rem; font-weight: 700; letter-spacing: -0.025em; line-height: 1.15; }
+  .preview-p { font-size: 0.8125rem; color: var(--muted-foreground); margin-top: 0.5rem; line-height: 1.5; }
 </style>
 </head>
 <body>
-<div class="space-y">
 
-  <!-- Typography -->
+<!-- Header row -->
+<div class="flex justify-between items-center" style="margin-bottom:1.25rem">
   <div>
-    <p class="section-label">${(config.preset ?? 'default').toUpperCase()} &mdash; ${config.fonts?.heading ?? 'System'}</p>
-    <h1 class="text-3xl font-bold tracking-tight" style="margin-top:0.5rem">Designing with rhythm and hierarchy.</h1>
-    <p style="color:var(--muted-foreground);margin-top:0.75rem;line-height:1.625">
-      A strong body font keeps long-form content readable and balances the visual weight of headings.
-      Thoughtful spacing and cadence help paragraphs scan quickly without feeling dense.
-    </p>
+    <h1 class="text-2xl font-bold tracking-tight">Dashboard</h1>
+    <p class="text-sm text-muted mt-1">Welcome back — here's what's happening today.</p>
   </div>
-
-  <!-- Color Swatches -->
-  <div>
-    <p class="section-label">Colors</p>
-    <div class="flex flex-wrap gap-2">
-      <div style="text-align:center"><div class="swatch border" style="background:var(--background)"></div><div class="label">--bg</div></div>
-      <div style="text-align:center"><div class="swatch" style="background:var(--foreground)"></div><div class="label">--fg</div></div>
-      <div style="text-align:center"><div class="swatch" style="background:var(--primary)"></div><div class="label">--pri</div></div>
-      <div style="text-align:center"><div class="swatch border" style="background:var(--secondary)"></div><div class="label">--sec</div></div>
-      <div style="text-align:center"><div class="swatch border" style="background:var(--muted)"></div><div class="label">--mut</div></div>
-      <div style="text-align:center"><div class="swatch border" style="background:var(--accent)"></div><div class="label">--acc</div></div>
-      <div style="text-align:center"><div class="swatch" style="background:var(--destructive)"></div><div class="label">--des</div></div>
-    </div>
-    <div class="flex flex-wrap gap-2" style="margin-top:0.5rem">
-      <div style="text-align:center"><div class="swatch-sm" style="background:var(--chart-1)"></div><div class="label">--cha1</div></div>
-      <div style="text-align:center"><div class="swatch-sm" style="background:var(--chart-2)"></div><div class="label">--cha2</div></div>
-      <div style="text-align:center"><div class="swatch-sm" style="background:var(--chart-3)"></div><div class="label">--cha3</div></div>
-      <div style="text-align:center"><div class="swatch-sm" style="background:var(--chart-4)"></div><div class="label">--cha4</div></div>
-      <div style="text-align:center"><div class="swatch-sm" style="background:var(--chart-5)"></div><div class="label">--cha5</div></div>
-    </div>
+  <div class="flex gap-2">
+    <button class="btn btn-outline">Export</button>
+    <button class="btn btn-primary">New report</button>
   </div>
+</div>
 
-  <!-- Buttons -->
-  <div>
-    <p class="section-label">Buttons</p>
-    <div class="flex flex-wrap gap-3">
-      <button class="btn" style="background:var(--primary);color:var(--primary-foreground)">Button</button>
-      <button class="btn" style="background:var(--secondary);color:var(--secondary-foreground)">Secondary</button>
-      <button class="btn border" style="background:var(--background);color:var(--foreground)">Outline</button>
-      <button class="btn" style="background:transparent;color:var(--muted-foreground)">Ghost</button>
-      <button class="btn" style="background:var(--destructive);color:#fff">Destructive</button>
+<!-- Stat cards row -->
+<div class="grid grid-cols-3">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">Total Revenue</span>
+      <span class="delta delta-up">↑ 12.5%</span>
     </div>
+    <div class="card-value">$45,231.89</div>
+    <p class="text-xs text-muted mt-2">Trending up this month</p>
+    <!-- Mini sparkline -->
+    <svg viewBox="0 0 200 40" style="width:100%;height:40px;margin-top:0.75rem" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="grad1" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="var(--chart-1)" stop-opacity="0.4"/>
+          <stop offset="100%" stop-color="var(--chart-1)" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="M0,30 L20,28 L40,32 L60,22 L80,24 L100,18 L120,15 L140,20 L160,12 L180,8 L200,5 L200,40 L0,40 Z" fill="url(#grad1)"/>
+      <path d="M0,30 L20,28 L40,32 L60,22 L80,24 L100,18 L120,15 L140,20 L160,12 L180,8 L200,5" fill="none" stroke="var(--chart-1)" stroke-width="1.5"/>
+    </svg>
   </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">New Customers</span>
+      <span class="delta delta-up">↑ 8.2%</span>
+    </div>
+    <div class="card-value">1,234</div>
+    <p class="text-xs text-muted mt-2">Strong user retention</p>
+    <svg viewBox="0 0 200 40" style="width:100%;height:40px;margin-top:0.75rem" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="grad2" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="var(--chart-2)" stop-opacity="0.4"/>
+          <stop offset="100%" stop-color="var(--chart-2)" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="M0,32 L20,30 L40,28 L60,30 L80,22 L100,25 L120,20 L140,18 L160,22 L180,15 L200,10 L200,40 L0,40 Z" fill="url(#grad2)"/>
+      <path d="M0,32 L20,30 L40,28 L60,30 L80,22 L100,25 L120,20 L140,18 L160,22 L180,15 L200,10" fill="none" stroke="var(--chart-2)" stroke-width="1.5"/>
+    </svg>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">Active Accounts</span>
+      <span class="delta delta-up">↑ 4.1%</span>
+    </div>
+    <div class="card-value">8,492</div>
+    <p class="text-xs text-muted mt-2">Above target this week</p>
+    <svg viewBox="0 0 200 40" style="width:100%;height:40px;margin-top:0.75rem" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="grad3" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="var(--chart-3)" stop-opacity="0.4"/>
+          <stop offset="100%" stop-color="var(--chart-3)" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="M0,28 L20,25 L40,30 L60,20 L80,22 L100,16 L120,20 L140,14 L160,18 L180,12 L200,14 L200,40 L0,40 Z" fill="url(#grad3)"/>
+      <path d="M0,28 L20,25 L40,30 L60,20 L80,22 L100,16 L120,20 L140,14 L160,18 L180,12 L200,14" fill="none" stroke="var(--chart-3)" stroke-width="1.5"/>
+    </svg>
+  </div>
+</div>
 
-  <!-- Cards -->
-  <div class="grid-2">
-    <div class="card space-y-sm">
-      <h3 class="font-semibold">Card Title</h3>
-      <p class="text-sm" style="color:var(--muted-foreground)">Card description with muted text and standard spacing.</p>
-      <div class="space-y-sm">
-        <input class="input" placeholder="Name">
-        <input class="input" placeholder="Email">
-        <button class="btn" style="background:var(--primary);color:var(--primary-foreground);width:100%;justify-content:center">Submit</button>
+<!-- Main grid: chart + calendar -->
+<div class="grid grid-main" style="margin-top:1rem">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <span class="card-label">Total Visitors</span>
+        <p class="text-xs text-muted mt-1">Last 3 months</p>
+      </div>
+      <div class="legend">
+        <span class="flex items-center gap-2"><span class="dot" style="background:var(--chart-1)"></span>Desktop</span>
+        <span class="flex items-center gap-2"><span class="dot" style="background:var(--chart-2)"></span>Mobile</span>
       </div>
     </div>
-    <div class="card space-y-sm">
-      <h3 class="font-semibold">Badges &amp; States</h3>
-      <div class="flex flex-wrap gap-2">
-        <span class="badge" style="background:color-mix(in oklch, var(--primary) 10%, transparent);color:var(--primary)">Primary</span>
-        <span class="badge" style="background:var(--secondary);color:var(--secondary-foreground)">Secondary</span>
-        <span class="badge" style="background:color-mix(in oklch, var(--destructive) 10%, transparent);color:var(--destructive)">Destructive</span>
-        <span class="badge" style="background:oklch(0.962 0.044 156.743);color:oklch(0.527 0.154 150.069)">Success</span>
-        <span class="badge" style="background:oklch(0.962 0.059 95.617);color:oklch(0.555 0.163 48.998)">Warning</span>
-      </div>
-      <div style="margin-top:1rem">
-        <div class="flex border-b" style="justify-content:space-between;padding:0.5rem 0;font-size:0.875rem;align-items:center">
-          <span>Two-factor authentication</span><span style="color:var(--muted-foreground)">Enable</span>
-        </div>
-        <div class="flex border-b" style="justify-content:space-between;padding:0.5rem 0;font-size:0.875rem;align-items:center">
-          <span>Email notifications</span><span style="color:var(--muted-foreground)">Enabled</span>
-        </div>
-        <div class="flex" style="justify-content:space-between;padding:0.5rem 0;font-size:0.875rem;align-items:center">
-          <span>API access</span><span style="color:var(--muted-foreground)">Restricted</span>
-        </div>
-      </div>
+    <!-- Bar chart -->
+    <svg viewBox="0 0 600 200" style="width:100%;height:200px;margin-top:1rem">
+      ${(() => {
+        const data = [
+          [120, 80], [95, 70], [140, 90], [110, 85], [160, 100], [130, 95],
+          [180, 120], [150, 110], [170, 130], [200, 140], [185, 135], [220, 160],
+        ]
+        const barWidth = 38
+        const gap = 12
+        return data.map((pair, i) => {
+          const x = i * (barWidth + gap) + 10
+          const h1 = pair[0]
+          const h2 = pair[1]
+          return `
+            <rect x="${x}" y="${190 - h1!}" width="${barWidth / 2 - 1}" height="${h1}" fill="var(--chart-1)" rx="2"/>
+            <rect x="${x + barWidth / 2 + 1}" y="${190 - h2!}" width="${barWidth / 2 - 1}" height="${h2}" fill="var(--chart-2)" rx="2"/>
+          `
+        }).join('')
+      })()}
+      <line x1="0" y1="190" x2="600" y2="190" stroke="var(--border)" stroke-width="1"/>
+    </svg>
+    <div class="flex justify-between text-xs text-muted" style="margin-top:0.5rem;padding:0 0.5rem">
+      <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span>
     </div>
   </div>
 
-  <!-- Table -->
-  <div class="border rounded-lg" style="overflow:hidden">
+  <div class="card">
+    <div class="flex justify-between items-center">
+      <div>
+        <span class="card-label">${monthName} ${year}</span>
+        <p class="text-xs text-muted mt-1">Schedule</p>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-outline" style="padding:0.25rem 0.5rem">‹</button>
+        <button class="btn btn-outline" style="padding:0.25rem 0.5rem">›</button>
+      </div>
+    </div>
+    <div class="cal-grid">
+      <div class="cal-head">S</div><div class="cal-head">M</div><div class="cal-head">T</div><div class="cal-head">W</div><div class="cal-head">T</div><div class="cal-head">F</div><div class="cal-head">S</div>
+    </div>
+    <div class="cal-grid" style="margin-top:0">
+      ${calendarCells.join('')}
+    </div>
+  </div>
+</div>
+
+<!-- Bottom grid: table + activity -->
+<div class="grid grid-main" style="margin-top:1rem">
+  <div class="card" style="padding:0;overflow:hidden">
+    <div style="padding:1.25rem 1.25rem 0.75rem">
+      <div class="flex justify-between items-center">
+        <div>
+          <span class="card-label" style="font-size:0.9375rem;color:var(--foreground);font-weight:600">Recent Transactions</span>
+          <p class="text-xs text-muted mt-1">Latest activity from your customers</p>
+        </div>
+        <button class="btn btn-outline">View all</button>
+      </div>
+    </div>
     <table>
-      <thead><tr><th>Name</th><th>Status</th><th>Role</th><th style="text-align:right">Actions</th></tr></thead>
+      <thead>
+        <tr><th>Customer</th><th>Status</th><th>Method</th><th style="text-align:right">Amount</th></tr>
+      </thead>
       <tbody>
-        <tr><td class="font-medium">Alice Johnson</td><td><span class="badge" style="background:oklch(0.962 0.044 156.743);color:oklch(0.527 0.154 150.069)">Active</span></td><td style="color:var(--muted-foreground)">Admin</td><td style="text-align:right"><a style="color:var(--primary);font-size:0.75rem;cursor:pointer">Edit</a></td></tr>
-        <tr><td class="font-medium">Bob Smith</td><td><span class="badge" style="background:var(--muted);color:var(--muted-foreground)">Inactive</span></td><td style="color:var(--muted-foreground)">Editor</td><td style="text-align:right"><a style="color:var(--primary);font-size:0.75rem;cursor:pointer">Edit</a></td></tr>
-        <tr><td class="font-medium">Carol Williams</td><td><span class="badge" style="background:oklch(0.962 0.044 156.743);color:oklch(0.527 0.154 150.069)">Active</span></td><td style="color:var(--muted-foreground)">Viewer</td><td style="text-align:right"><a style="color:var(--primary);font-size:0.75rem;cursor:pointer">Edit</a></td></tr>
+        <tr>
+          <td><div class="flex items-center gap-3"><span class="avatar" style="background:var(--chart-1)">AJ</span><span class="font-medium">Alice Johnson</span></div></td>
+          <td><span class="badge badge-primary"><span class="dot" style="background:currentColor"></span>Paid</span></td>
+          <td class="text-muted">Credit Card</td>
+          <td style="text-align:right" class="font-medium">$1,250.00</td>
+        </tr>
+        <tr>
+          <td><div class="flex items-center gap-3"><span class="avatar" style="background:var(--chart-2)">BS</span><span class="font-medium">Bob Smith</span></div></td>
+          <td><span class="badge badge-muted">Pending</span></td>
+          <td class="text-muted">Bank Transfer</td>
+          <td style="text-align:right" class="font-medium">$840.50</td>
+        </tr>
+        <tr>
+          <td><div class="flex items-center gap-3"><span class="avatar" style="background:var(--chart-3)">CW</span><span class="font-medium">Carol Williams</span></div></td>
+          <td><span class="badge badge-primary"><span class="dot" style="background:currentColor"></span>Paid</span></td>
+          <td class="text-muted">PayPal</td>
+          <td style="text-align:right" class="font-medium">$2,100.00</td>
+        </tr>
+        <tr>
+          <td><div class="flex items-center gap-3"><span class="avatar" style="background:var(--chart-4)">DM</span><span class="font-medium">Dan Murphy</span></div></td>
+          <td><span class="badge badge-muted">Refunded</span></td>
+          <td class="text-muted">Credit Card</td>
+          <td style="text-align:right" class="font-medium">$420.00</td>
+        </tr>
+        <tr>
+          <td><div class="flex items-center gap-3"><span class="avatar" style="background:var(--chart-5)">EK</span><span class="font-medium">Emma King</span></div></td>
+          <td><span class="badge badge-primary"><span class="dot" style="background:currentColor"></span>Paid</span></td>
+          <td class="text-muted">Apple Pay</td>
+          <td style="text-align:right" class="font-medium">$675.20</td>
+        </tr>
+        <tr>
+          <td><div class="flex items-center gap-3"><span class="avatar" style="background:var(--chart-1)">FH</span><span class="font-medium">Frank Hayes</span></div></td>
+          <td><span class="badge badge-primary"><span class="dot" style="background:currentColor"></span>Paid</span></td>
+          <td class="text-muted">Stripe</td>
+          <td style="text-align:right" class="font-medium">$1,840.00</td>
+        </tr>
+        <tr>
+          <td><div class="flex items-center gap-3"><span class="avatar" style="background:var(--chart-2)">GP</span><span class="font-medium">Grace Park</span></div></td>
+          <td><span class="badge badge-muted">Pending</span></td>
+          <td class="text-muted">ACH</td>
+          <td style="text-align:right" class="font-medium">$310.75</td>
+        </tr>
+        <tr>
+          <td><div class="flex items-center gap-3"><span class="avatar" style="background:var(--chart-3)">HL</span><span class="font-medium">Henry Lee</span></div></td>
+          <td><span class="badge badge-primary"><span class="dot" style="background:currentColor"></span>Paid</span></td>
+          <td class="text-muted">Credit Card</td>
+          <td style="text-align:right" class="font-medium">$925.00</td>
+        </tr>
+        <tr>
+          <td><div class="flex items-center gap-3"><span class="avatar" style="background:var(--chart-4)">IR</span><span class="font-medium">Iris Romero</span></div></td>
+          <td><span class="badge badge-muted">Failed</span></td>
+          <td class="text-muted">Wire</td>
+          <td style="text-align:right" class="font-medium">$2,540.00</td>
+        </tr>
       </tbody>
     </table>
   </div>
 
+  <div class="flex flex-col gap-4">
+    <div class="card">
+      <span class="card-label" style="font-size:0.9375rem;color:var(--foreground);font-weight:600">Activity</span>
+      <p class="text-xs text-muted mt-1">Recent updates from your team</p>
+      <div style="margin-top:0.75rem">
+        <div class="activity">
+          <span class="avatar" style="background:var(--chart-1)">AJ</span>
+          <div class="activity-text">
+            <div><span class="font-medium">Alice</span> approved invoice <span class="font-medium">#1042</span></div>
+            <div class="activity-time">2 minutes ago</div>
+          </div>
+        </div>
+        <div class="activity">
+          <span class="avatar" style="background:var(--chart-2)">BS</span>
+          <div class="activity-text">
+            <div><span class="font-medium">Bob</span> commented on <span class="font-medium">Project Atlas</span></div>
+            <div class="activity-time">14 minutes ago</div>
+          </div>
+        </div>
+        <div class="activity">
+          <span class="avatar" style="background:var(--chart-3)">CW</span>
+          <div class="activity-text">
+            <div><span class="font-medium">Carol</span> shipped a new release</div>
+            <div class="activity-time">1 hour ago</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tokens swatch — sits under Activity in the 1/3 right column so the
+         resolved theme variables stay inspectable without dominating the
+         preview area. Heading + body sentence preview the resolved fonts;
+         34×34 swatches wrap into rows mirroring the reference design. -->
+    <div class="card">
+      <h3 class="preview-h">${cap(config.preset ?? 'vega')} - ${resolved.fonts?.heading ?? 'System'}</h3>
+      <p class="preview-p">Designers love packing quirky glyphs into test phrases. This is a preview of the resolved theme tokens.</p>
+      <div class="swatch-row">
+        <div class="swatch-cell"><div class="swatch" style="background:var(--background)"></div><span class="swatch-label">--backgr…</span></div>
+        <div class="swatch-cell"><div class="swatch" style="background:var(--foreground)"></div><span class="swatch-label">--foregr…</span></div>
+        <div class="swatch-cell"><div class="swatch" style="background:var(--primary)"></div><span class="swatch-label">--primary</span></div>
+        <div class="swatch-cell"><div class="swatch" style="background:var(--secondary)"></div><span class="swatch-label">--second…</span></div>
+        <div class="swatch-cell"><div class="swatch" style="background:var(--muted)"></div><span class="swatch-label">--muted</span></div>
+        <div class="swatch-cell"><div class="swatch" style="background:var(--accent)"></div><span class="swatch-label">--accent</span></div>
+      </div>
+      <div class="swatch-row">
+        <div class="swatch-cell"><div class="swatch" style="background:var(--border)"></div><span class="swatch-label">--border</span></div>
+        <div class="swatch-cell"><div class="swatch" style="background:var(--chart-1)"></div><span class="swatch-label">--chart-1</span></div>
+        <div class="swatch-cell"><div class="swatch" style="background:var(--chart-2)"></div><span class="swatch-label">--chart-2</span></div>
+        <div class="swatch-cell"><div class="swatch" style="background:var(--chart-3)"></div><span class="swatch-label">--chart-3</span></div>
+        <div class="swatch-cell"><div class="swatch" style="background:var(--chart-4)"></div><span class="swatch-label">--chart-4</span></div>
+        <div class="swatch-cell"><div class="swatch" style="background:var(--chart-5)"></div><span class="swatch-label">--chart-5</span></div>
+      </div>
+    </div>
+  </div>
 </div>
+
 </body>
 </html>`
 }
@@ -261,20 +491,20 @@ function PreviewIframe({ config, mode }: { config: Partial<ThemeConfig>; mode: '
   const [loaded, setLoaded] = useState(false)
   useEffect(() => setMounted(true), [])
 
-  if (!mounted) return <div className="w-full h-full rounded-lg border border-border bg-background" />
+  if (!mounted) return <div className="w-full h-full rounded-lg border border-border bg-muted" />
 
   const html = buildPreviewHTML(config, mode)
   return (
     <div className="relative w-full h-full">
       {!loaded && (
-        <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-border bg-background z-10">
+        <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-border bg-muted z-10">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
         </div>
       )}
       <iframe
         srcDoc={html}
         onLoad={() => { if (!loaded) setLoaded(true) }}
-        className={`w-full h-full rounded-lg border border-border bg-background transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        className={`w-full h-full rounded-lg border border-border bg-muted transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-0'}`}
         title="Theme Preview"
       />
     </div>
@@ -340,12 +570,16 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
   }
 
   const handleReset = async () => {
-    applyToParent(codeDefaults)
+    // Snap state to truly empty (NOT `codeDefaults`, which is `initialConfig`
+    // = code .theme() defaults merged with whatever DB overrides existed at
+    // page-load time). With config = {}, the preview resolves the bare
+    // `vega` preset — i.e. the package's factory default.
+    setConfig({})
+    applyToParent({})
     try {
       await fetch(`${panelPath}/api/_theme`, { method: 'DELETE' })
       await reNavigate()
     } catch { /* visual update already applied */ }
-    setConfig({ ...codeDefaults })
     setSaved(false)
   }
 
@@ -353,8 +587,8 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
     const next: Partial<ThemeConfig> = {
       preset: randomPick(PRESETS),
       baseColor: randomPick(BASE_COLORS),
-      accentColor: randomPick(ACCENT_COLORS),
-      chartPalette: randomPick(CHART_PALETTES),
+      themeColor: randomPick(THEME_COLORS),
+      chartColor: randomPick(CHART_COLORS),
       radius: randomPick(RADII),
     }
     if (config.fonts) next.fonts = config.fonts
@@ -363,137 +597,173 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
     setSaved(false)
   }
 
+  // ── Indicator helpers ──────────────────────────────────
+  // Each control's trigger and items show a leading visual cue. Defined here
+  // so the picker components below can stay declarative.
+
+  // Resolved active style + its preset font pair. Pulled up here so the
+  // RadiusGlyph and font pickers below can both reference them.
+  const presetName = (config.preset ?? 'vega') as StylePreset
+  const presetFonts = PRESET_FONTS[presetName]
+
+  const baseName: BaseColor = config.baseColor ?? 'neutral'
+  const baseSwatch = colors[baseName][600]
+  const themeSwatch = config.themeColor && config.themeColor !== 'base' && config.themeColor in HUE_SWATCHES
+    ? HUE_SWATCHES[config.themeColor]
+    : baseSwatch
+  const chartSwatch = config.chartColor && config.chartColor !== 'base' && config.chartColor in HUE_SWATCHES
+    ? HUE_SWATCHES[config.chartColor]
+    : baseSwatch
+
+  // Dot renders inside the dark sidebar — use a translucent white border for
+  // contrast against both light dots (e.g. cream) and dark dots (e.g. neutral 600).
+  // `block` is required so `size-3` (width/height) actually applies — inline
+  // <span> ignores width/height by default.
+  const Dot = ({ color }: { color: string | undefined }) => (
+    <span className="block size-3 rounded-full border border-white/30 ring-1 ring-black/20" style={{ backgroundColor: color }} />
+  )
+  const AaGlyph = () => <span className="text-[11px] font-semibold tracking-tight">Aa</span>
+  // `block` so `size-3` actually applies — inline <span> ignores width/height.
+  // Resolve through PRESET_RADIUS so the preview corner matches what
+  // resolve.ts will actually render (e.g. Maia + Default → large).
+  const RadiusGlyph = () => {
+    const key = config.radius && config.radius !== 'default' ? config.radius : PRESET_RADIUS[presetName]
+    return (
+      <span
+        className="block size-3 border border-current"
+        style={{ borderRadius: radiusMap[key] }}
+      />
+    )
+  }
+
+  // Build option lists. Theme + Chart pin the `'base'` sentinel at the top
+  // (separator below), labeled with the current base color name.
+  const styleOptions = PRESETS.map(p => ({ value: p, label: cap(p), indicator: <Square className="size-3" /> }))
+  const baseOptions = BASE_COLORS.map(c => ({ value: c, label: cap(c), indicator: <Dot color={colors[c][600]} /> }))
+  const themeOptions = [
+    { value: 'base', label: cap(baseName), indicator: <Dot color={baseSwatch} /> },
+    ...HUE_NAMES.map(c => ({ value: c, label: cap(c), indicator: <Dot color={HUE_SWATCHES[c]} /> })),
+  ]
+  const chartOptions = [
+    { value: 'base', label: cap(baseName), indicator: <Dot color={baseSwatch} /> },
+    ...HUE_NAMES.map(c => ({ value: c, label: cap(c), indicator: <Dot color={HUE_SWATCHES[c]} /> })),
+  ]
+  // Pin each picker's preset default at the top with a separator below, then
+  // list the rest of the fonts grouped by type (Sans / Serif / Mono) with
+  // a non-selectable header per group. Mirrors shadcn/ui/create's font menu.
+  // Heading and body get separate lists so each can pin its own preset font
+  // (which may differ — e.g. Sera = Playfair Display + Noto Sans).
+  const headingFontOptions = buildFontOptions(presetFonts.heading)
+  const bodyFontOptions = buildFontOptions(presetFonts.body)
+  const iconOptions = ICON_LIBRARIES.map(l => ({ value: l, label: cap(l), indicator: <Sparkles className="size-3" /> }))
+  const radiusOptions = RADII.map(r => ({
+    value: r,
+    label: cap(r),
+    indicator: <span className="size-3 border border-current" style={{ borderRadius: radiusMap[r] }} />,
+  }))
+
   return (
-    <div className="flex h-full">
-      {/* Controls Sidebar */}
-      <div className="w-72 shrink-0 overflow-y-auto p-5 space-y-6">
-        <div>
-          <h2 className="text-lg font-semibold mb-4">Theme</h2>
-        </div>
+    <div className="flex items-start h-full gap-6">
+      {/* Controls Sidebar — frosted-glass card on top of the page surface,
+          matching shadcn's customizer panel. `dark` scopes the inner
+          `bg-card/90`, `text-card-foreground`, etc. to the dark variants. */}
+      <div className="dark isolate z-10 flex flex-col gap-2 w-48 shrink-0 self-start max-h-full min-h-0 overflow-y-auto rounded-2xl bg-card/90 text-sm text-card-foreground ring-1 ring-foreground/10 shadow-xl backdrop-blur-xl p-4">
+        <PickerCard
+          label="Style"
+          value={config.preset ?? 'vega'}
+          options={styleOptions}
+          onValueChange={v => update('preset', v)}
+          triggerIcon={<Square className="size-4 opacity-70" />}
+          keepOpenOnSelect
+        />
 
-        {/* Preset */}
-        <ControlGroup label="Style">
-          <select
-            value={config.preset ?? 'default'}
-            onChange={e => update('preset', e.target.value)}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            {PRESETS.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
-          </select>
-        </ControlGroup>
+        <PickerCard
+          label="Base Color"
+          value={config.baseColor ?? 'neutral'}
+          options={baseOptions}
+          onValueChange={v => update('baseColor', v)}
+          triggerIcon={<Dot color={baseSwatch} />}
+          keepOpenOnSelect
+        />
 
-        {/* Base Color */}
-        <ControlGroup label="Base Color">
-          <select
-            value={config.baseColor ?? 'default'}
-            onChange={e => update('baseColor', e.target.value)}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            {BASE_COLORS.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-          </select>
-        </ControlGroup>
+        <PickerCard
+          label="Theme"
+          value={config.themeColor ?? 'base'}
+          options={themeOptions}
+          separatorAfter="base"
+          onValueChange={v => update('themeColor', v)}
+          triggerIcon={<Dot color={themeSwatch} />}
+          formatTriggerValue={v => v === 'base' ? cap(baseName) : cap(v)}
+          keepOpenOnSelect
+        />
 
-        {/* Accent Color */}
-        <ControlGroup label="Theme Color">
-          <div className="grid grid-cols-8 gap-1.5">
-            {ACCENT_COLORS.map(c => (
-              <button
-                key={c}
-                onClick={() => update('accentColor', c)}
-                className={`w-7 h-7 rounded-full border-2 transition-all ${config.accentColor === c ? 'border-foreground ring-2 ring-primary/30 scale-110' : 'border-transparent'}`}
-                style={{ backgroundColor: ACCENT_SWATCHES[c] }}
-                title={c.charAt(0).toUpperCase() + c.slice(1)}
-              />
-            ))}
-          </div>
-          {config.accentColor && (
-            <span className="text-xs text-muted-foreground mt-1">{config.accentColor.charAt(0).toUpperCase() + config.accentColor.slice(1)}</span>
-          )}
-        </ControlGroup>
+        <PickerCard
+          label="Chart Color"
+          value={config.chartColor ?? 'base'}
+          options={chartOptions}
+          separatorAfter="base"
+          onValueChange={v => update('chartColor', v)}
+          triggerIcon={<Dot color={chartSwatch} />}
+          formatTriggerValue={v => v === 'base' ? cap(baseName) : cap(v)}
+          keepOpenOnSelect
+        />
 
-        {/* Chart Palette */}
-        <ControlGroup label="Chart Color">
-          <select
-            value={config.chartPalette ?? 'default'}
-            onChange={e => update('chartPalette', e.target.value)}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            {CHART_PALETTES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
-          </select>
-        </ControlGroup>
+        <PickerCard
+          label="Heading"
+          value={config.fonts?.heading ?? presetFonts.heading}
+          options={headingFontOptions}
+          separatorAfter={presetFonts.heading}
+          onValueChange={v => updateFont('heading', v)}
+          triggerIcon={<AaGlyph />}
+          keepOpenOnSelect
+        />
 
-        {/* Heading Font */}
-        <ControlGroup label="Heading">
-          <select
-            value={config.fonts?.heading ?? ''}
-            onChange={e => updateFont('heading', e.target.value)}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            <option value="">Default</option>
-            {POPULAR_FONTS.map(f => <option key={f} value={f}>{f}</option>)}
-          </select>
-        </ControlGroup>
+        <PickerCard
+          label="Font"
+          value={config.fonts?.body ?? presetFonts.body}
+          options={bodyFontOptions}
+          separatorAfter={presetFonts.body}
+          onValueChange={v => updateFont('body', v)}
+          triggerIcon={<AaGlyph />}
+          keepOpenOnSelect
+        />
 
-        {/* Body Font */}
-        <ControlGroup label="Font">
-          <select
-            value={config.fonts?.body ?? ''}
-            onChange={e => updateFont('body', e.target.value)}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            <option value="">Default</option>
-            {POPULAR_FONTS.map(f => <option key={f} value={f}>{f}</option>)}
-          </select>
-        </ControlGroup>
+        <PickerCard
+          label="Icon Library"
+          value={config.iconLibrary ?? 'lucide'}
+          options={iconOptions}
+          onValueChange={v => update('iconLibrary', v)}
+          triggerIcon={<Sparkles className="size-4 opacity-70" />}
+        />
 
-        {/* Icon Library */}
-        <ControlGroup label="Icon Library">
-          <select
-            value={config.iconLibrary ?? 'lucide'}
-            onChange={e => update('iconLibrary', e.target.value)}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            {ICON_LIBRARIES.map(l => <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>)}
-          </select>
-        </ControlGroup>
-
-        {/* Radius — each swatch previews its own border-radius value */}
-        <ControlGroup label="Radius">
-          <div className="flex gap-1">
-            {RADII.map(r => {
-              const selected = (config.radius ?? 'medium') === r
-              return (
-                <button
-                  key={r}
-                  onClick={() => update('radius', r)}
-                  title={r.charAt(0).toUpperCase() + r.slice(1)}
-                  aria-label={r}
-                  style={{ borderRadius: radiusMap[r] }}
-                  className={`w-9 h-9 border-2 transition-all ${selected ? 'bg-primary border-primary' : 'bg-background border-input hover:bg-accent'}`}
-                />
-              )
-            })}
-          </div>
-        </ControlGroup>
+        <PickerCard
+          label="Radius"
+          value={config.radius ?? 'default'}
+          options={radiusOptions}
+          separatorAfter="default"
+          onValueChange={v => update('radius', v)}
+          triggerIcon={<RadiusGlyph />}
+          keepOpenOnSelect
+        />
 
         {/* Actions */}
-        <div className="space-y-2 pt-4 border-t">
+        <div className="pt-4 space-y-2">
           <button
             onClick={handleShuffle}
-            className="w-full px-4 py-2 text-sm rounded-md border border-input bg-background hover:bg-accent transition-colors"
+            className="w-full px-3 py-2 text-xs rounded-md border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
           >
             Shuffle
           </button>
           <button
             onClick={handleReset}
-            className="w-full px-4 py-2 text-sm rounded-md border border-input bg-background hover:bg-accent transition-colors text-muted-foreground"
+            className="w-full px-3 py-2 text-xs rounded-md border border-white/10 bg-white/5 hover:bg-white/10 transition-colors opacity-70"
           >
             Reset to Defaults
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="w-full px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="w-full px-3 py-2 text-xs rounded-md bg-zinc-100 text-zinc-900 hover:bg-white transition-colors disabled:opacity-50"
           >
             {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Theme'}
           </button>
@@ -501,7 +771,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
       </div>
 
       {/* Preview Area — isolated iframe, syncs with panel dark/light toggle */}
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden h-full">
         <PreviewIframe config={config} mode={previewMode} />
       </div>
     </div>
@@ -510,11 +780,138 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
 
 // ─── Sub-components ─────────────────────────────────────────
 
-function ControlGroup({ label, children }: { label: string; children: React.ReactNode }) {
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+interface PickerOption {
+  value: string
+  label: string
+  indicator?: ReactNode
+  /** Render this row as a non-selectable group header (no value, no check). */
+  header?: boolean
+}
+
+/**
+ * Build a flat option list from `FONT_GROUPS`, with the pinned font at top
+ * and a separator after, then each group introduced by a header row. The
+ * pinned font is filtered out of its own group so it doesn't appear twice.
+ */
+function buildFontOptions(pinnedFont: string): PickerOption[] {
+  const items: PickerOption[] = [
+    { value: pinnedFont, label: pinnedFont, indicator: <AaGlyphStatic /> },
+  ]
+  for (const [groupName, fonts] of Object.entries(FONT_GROUPS)) {
+    const filtered = fonts.filter(f => f !== pinnedFont)
+    if (filtered.length === 0) continue
+    items.push({ value: `__header_${groupName}`, label: groupName, header: true })
+    for (const f of filtered) {
+      items.push({ value: f, label: f, indicator: <AaGlyphStatic /> })
+    }
+  }
+  return items
+}
+
+// Standalone glyph (no closure over component state) so `buildFontOptions`
+// can run outside the component scope.
+function AaGlyphStatic() {
+  return <span className="text-[11px] font-semibold tracking-tight">Aa</span>
+}
+
+interface PickerCardProps {
+  label: string
+  value: string
+  options: PickerOption[]
+  onValueChange: (value: string) => void
+  triggerIcon?: ReactNode
+  /** Insert a `<SelectSeparator />` after the option whose `value` matches this. */
+  separatorAfter?: string
+  /** Custom formatter for the value displayed in the trigger (e.g. `'base'` → current base name). */
+  formatTriggerValue?: (value: string) => string
+  /**
+   * Keep the popup open after selecting an item — lets the user click through
+   * options and watch the live preview update without re-opening each time.
+   * Outside-press, Escape, and trigger-press still close normally.
+   */
+  keepOpenOnSelect?: boolean
+}
+
+function PickerCard({
+  label, value, options, onValueChange, triggerIcon, separatorAfter, formatTriggerValue, keepOpenOnSelect,
+}: PickerCardProps) {
+  const current = options.find(o => o.value === value)
+  const triggerLabel = formatTriggerValue ? formatTriggerValue(value) : (current?.label ?? value)
+  const [open, setOpen] = useState(false)
+
   return (
-    <div className="space-y-1.5">
-      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</label>
-      {children}
-    </div>
+    <Select
+      value={value}
+      onValueChange={(v) => onValueChange(v as string)}
+      open={open}
+      onOpenChange={(nextOpen, details) => {
+        // Suppress the auto-close that follows an item press for browseable
+        // pickers (Style / Base / Theme / Chart). The popup stays mounted;
+        // we render the checkmark ourselves below from `opt.value === value`
+        // so we don't depend on Base UI's `selectedIndex`, which only re-syncs
+        // when the popup closes.
+        if (keepOpenOnSelect && !nextOpen && details?.reason === 'item-press') return
+        setOpen(nextOpen)
+      }}
+    >
+      <SelectTrigger
+        hideIcon
+        className="w-full !h-auto items-start py-2.5 px-3 rounded-lg border-white/10 --bg-white/5 hover:bg-white/10 text-left shadow-none transition-colors"
+      >
+        <div className="flex items-center justify-between gap-2 w-full">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-[11px] text-white/50">{label}</span>
+            <span className="text-sm font-medium text-white truncate">{triggerLabel}</span>
+          </div>
+          {triggerIcon && <span className="shrink-0 mt-0.5 text-white/70">{triggerIcon}</span>}
+        </div>
+      </SelectTrigger>
+      {/* Anchor to the right of the trigger so users can click through items
+          and watch the preview update beside the dropdown — matches the
+          shadcn/ui/create flow. Larger sideOffset (16px) and frosted-glass
+          surface (semi-transparent + backdrop-blur) match shadcn's menu look. */}
+      <SelectContent
+        side="right"
+        align="start"
+        sideOffset={24}
+        className="dark min-w-[200px] rounded-xl border-0 bg-card/80 text-card-foreground ring-1 ring-foreground/10 backdrop-blur-xl shadow-2xl"
+      >
+        {options.map((opt, i) => (
+          <PickerOptionItem
+            key={opt.value || `__empty_${i}`}
+            opt={opt}
+            selected={opt.value === value}
+            separator={opt.value === separatorAfter}
+          />
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+// Item rendering: text label + a trailing check rendered manually based on
+// the controlled `selected` flag (NOT Base UI's SelectItemIndicator). This
+// keeps the popup state in lockstep with React state even when we suppress
+// the auto-close on item-press.
+function PickerOptionItem({ opt, selected, separator }: { opt: PickerOption; selected: boolean; separator?: boolean }) {
+  if (opt.header) {
+    return (
+      <div className="px-2 pt-2 pb-1 text-xs text-white/50 select-none">
+        {opt.label}
+      </div>
+    )
+  }
+  return (
+    <>
+      <SelectItem className="rounded-lg" value={opt.value} hideIndicator selected={selected}>
+        <span className="flex items-center gap-2">
+          {opt.indicator && <span className="shrink-0 text-white/70">{opt.indicator}</span>}
+          <span>{opt.label}</span>
+        </span>
+      </SelectItem>
+      {separator && <SelectSeparator className='bg-input/50 dark:bg-input/50' />}
+    </>
   )
 }

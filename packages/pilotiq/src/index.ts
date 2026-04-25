@@ -17,11 +17,15 @@ export { registerPilotiqRoutes } from './routes.js'
 
 // Theme
 export { resolveTheme, generateThemeCSS, iconMap, resolveIconName } from './theme/index.js'
-export { presets, baseColors, accentColors, chartPalettes, radiusMap } from './theme/index.js'
+export {
+  presets, baseColors, resolveThemeColor, resolveChartColor, radiusMap,
+  colors, BASE_COLOR_NAMES, HUE_NAMES, parseSeedToScale,
+} from './theme/index.js'
 export type {
   ThemeConfig, ThemeMeta,
-  StylePreset, BaseColor, AccentColor, RadiusPreset, ChartPalette,
+  StylePreset, BaseColor, HueColor, ThemeColor, ChartColor, RadiusPreset,
   IconLibrary, ThemeFonts, PresetDefinition,
+  ColorName, ColorScale, ColorStep,
 } from './theme/index.js'
 
 // Schema
