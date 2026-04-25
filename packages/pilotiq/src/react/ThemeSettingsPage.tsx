@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
-import { Square, Sparkles } from 'lucide-react'
+import { Sparkles, Rows2, Rows3, Rows4 } from 'lucide-react'
 import { resolveTheme } from '../theme/resolve.js'
 import { radiusMap } from '../theme/radius.js'
 
@@ -720,7 +720,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
   const Dot = ({ color }: { color: string | undefined }) => (
     <span className="block size-3 rounded-full border border-white/30 ring-1 ring-black/20" style={{ backgroundColor: color }} />
   )
-  const AaGlyph = () => <span className="text-[11px] font-semibold tracking-tight">Aa</span>
+  const AaGlyph = () => <span className="text-[12px] font-semibold tracking-tight">Aa</span>
   // `block` so `size-3` actually applies — inline <span> ignores width/height.
   // Resolve through PRESET_RADIUS so the preview corner matches what
   // resolve.ts will actually render (e.g. Maia + Default → large).
@@ -732,34 +732,43 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
     const key = config.radius && config.radius !== 'default' ? config.radius : PRESET_RADIUS[presetName]
     return (
       <span
-        className="block size-4 border-t border-e border-current"
+        className="block size-3 border-t border-e border-current"
         style={{ borderTopRightRadius: radiusMap[key] }}
       />
     )
   }
 
-  // Three stacked bars with the gap proportional to the resolved spacing
-  // value — mirrors how list / card density actually feels at a glance.
-  // `gap` is given as a unitless ratio (compact: 1px, default: 2px, comfortable: 3px)
-  // so the glyph stays at a consistent overall height regardless of density.
-  const SpacingGlyph = ({ value }: { value: string | undefined }) => {
+  // Density indicator — fewer rows = roomier, more rows = tighter.
+  // Mirrors the resolved spacing value (compact / default / comfortable).
+  const SpacingGlyph = ({ value, className = 'size-3.5 stroke-[1.5]' }: { value: string | undefined; className?: string }) => {
     const key = value && value !== 'default' ? value : PRESET_SPACING[presetName]
-    // Use the actual spacingMap value (a rem string) to drive a small px gap —
-    // compact ≈ 1px, default ≈ 2px, comfortable ≈ 3px on a 16px root.
-    const remValue = parseFloat(spacingMap[key as keyof typeof spacingMap] ?? '0.25rem')
-    const gapPx = Math.round(remValue * 16 * 0.5) // half a Tailwind unit, rounded
+    if (key === 'compact')     return <Rows4 className={className} />
+    if (key === 'comfortable') return <Rows2 className={className} />
+    return <Rows3 className={className} />
+  }
+
+  // Each Style gets its own geometric glyph so the preset has a distinct
+  // visual identity — the shape hints at the preset's personality
+  // (Maia → fully rounded circle, Lyra → sharp hexagon, Sera → square corners,
+  // Luma → horizontal pill, etc.).
+  const StyleGlyph = ({ preset, className = 'size-3' }: { preset: StylePreset; className?: string }) => {
+    const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinejoin: 'round' as const }
     return (
-      <span className="flex flex-col" style={{ gap: `${gapPx}px` }}>
-        <span className="block h-[2px] w-3.5 bg-current rounded-sm" />
-        <span className="block h-[2px] w-3.5 bg-current rounded-sm" />
-        <span className="block h-[2px] w-3.5 bg-current rounded-sm" />
-      </span>
+      <svg viewBox="0 0 16 16" className={className} aria-hidden="true">
+        {preset === 'vega' && <rect x="2.5" y="2.5" width="11" height="11" rx="2"  {...common} />}
+        {preset === 'nova' && <rect x="2.5" y="2.5" width="11" height="11" rx="3.5" {...common} />}
+        {preset === 'maia' && <circle cx="8" cy="8" r="5.5" {...common} />}
+        {preset === 'lyra' && <polygon points="8,2 13.2,5 13.2,11 8,14 2.8,11 2.8,5" {...common} />}
+        {preset === 'mira' && <polygon points="8,2 14,8 8,14 2,8" {...common} />}
+        {preset === 'luma' && <rect x="1.5" y="5" width="13" height="6" rx="3" {...common} />}
+        {preset === 'sera' && <rect x="2.5" y="2.5" width="11" height="11" rx="0" {...common} />}
+      </svg>
     )
   }
 
   // Build option lists. Theme + Chart pin the `'base'` sentinel at the top
   // (separator below), labeled with the current base color name.
-  const styleOptions = PRESETS.map(p => ({ value: p, label: cap(p), indicator: <Square className="size-3" /> }))
+  const styleOptions = PRESETS.map(p => ({ value: p, label: cap(p), indicator: <StyleGlyph preset={p} className="size-3.5 stroke-[1.5]" /> }))
   const baseOptions = BASE_COLORS.map(c => ({ value: c, label: cap(c), indicator: <Dot color={colors[c][600]} /> }))
   const themeOptions = [
     { value: 'base', label: cap(baseName), indicator: <Dot color={baseSwatch} /> },
@@ -808,7 +817,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
             value={config.preset ?? 'vega'}
             options={styleOptions}
             onValueChange={v => update('preset', v)}
-            triggerIcon={<Square className="size-4 opacity-70" />}
+            triggerIcon={<StyleGlyph preset={presetName} className="size-3.5 stroke-[1.5] opacity-80" />}
             keepOpenOnSelect
           />
 
@@ -868,7 +877,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
             value={config.iconLibrary ?? 'lucide'}
             options={iconOptions}
             onValueChange={v => update('iconLibrary', v)}
-            triggerIcon={<Sparkles className="size-4 opacity-70" />}
+            triggerIcon={<Sparkles className="opacity-70" />}
           />
 
           <PickerCard
