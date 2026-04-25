@@ -145,7 +145,10 @@ ${fontTags}
   h1, h2, h3, h4, h5, h6 { font-family: ${headingFont}; }
   .grid { display: grid; gap: 1rem; }
   .grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
-  .grid-main { grid-template-columns: 2fr 1fr; }
+  /* grid-main uses the same 3-col base as the stat-cards row so the right
+     column (calendar / activity) lines up exactly with the third stat card. */
+  .grid-main { grid-template-columns: repeat(3, 1fr); }
+  .col-span-2 { grid-column: span 2; }
   .flex { display: flex; }
   .flex-col { flex-direction: column; }
   .items-center { align-items: center; }
@@ -292,7 +295,7 @@ ${fontTags}
 
 <!-- Main grid: chart + calendar -->
 <div class="grid grid-main" style="margin-top:1rem">
-  <div class="card">
+  <div class="card col-span-2">
     <div class="card-header">
       <div>
         <span class="card-label">Total Visitors</span>
@@ -351,7 +354,7 @@ ${fontTags}
 
 <!-- Bottom grid: table + activity -->
 <div class="grid grid-main" style="margin-top:1rem">
-  <div class="card" style="padding:0;overflow:hidden">
+  <div class="card col-span-2" style="padding:0;overflow:hidden">
     <div style="padding:1.25rem 1.25rem 0.75rem">
       <div class="flex justify-between items-center">
         <div>
