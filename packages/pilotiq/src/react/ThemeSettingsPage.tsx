@@ -433,7 +433,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
       </div>
 
       {/* Preview Area — isolated iframe, syncs with panel dark/light toggle */}
-      <div className="flex-1 overflow-hidden h-full ring ring-foreground/10 md:ring-muted bg-muted rounded-xl">
+      <div className="flex-1 overflow-hidden h-full ring ring-foreground/10 md:ring-muted bg-muted dark:bg-background rounded-xl">
         <PreviewIframe config={config} mode={previewMode} />
       </div>
     </div>

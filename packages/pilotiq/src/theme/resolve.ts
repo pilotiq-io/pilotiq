@@ -17,9 +17,13 @@ import { spacingMap } from './spacing.js'
  * 5. Raw cssVariables escape hatch
  */
 export function resolveTheme(config: ThemeConfig): ThemeMeta {
-  // 1. Start with preset
-  const presetName = config.preset ?? 'vega'
-  const preset = presets[presetName] ?? presets.vega
+  // 1. Start with preset. Validate the name once so every downstream
+  //    preset-keyed lookup (PRESET_RADIUS, PRESET_SPACING, PRESET_FONTS) is
+  //    safe — bogus names from deserialized data fall through to 'vega'
+  //    instead of crashing with "Cannot read properties of undefined".
+  const requestedName = config.preset ?? 'vega'
+  const presetName = presets[requestedName] ? requestedName : 'vega'
+  const preset = presets[presetName]
   const light = { ...preset.light }
   const dark  = { ...preset.dark }
 

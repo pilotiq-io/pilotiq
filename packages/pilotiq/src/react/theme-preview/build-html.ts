@@ -52,6 +52,10 @@ export function buildStaticPreviewHTML(): string {
      Vega/Nova/Maia/Luma/Sera comfortable. Font sizes and line-heights stay
      literal so type scale doesn't depend on density. */
   * { box-sizing: border-box; margin: 0; padding: 0; border: 0 solid; }
+  /* Light mode: --muted (recessed look against white card surfaces).
+     Dark mode: --background (deep page color — cards already use --card,
+     which is one step lighter, so the page sits behind them). Mirrors
+     Tailwind's bg-muted dark:bg-background pattern. */
   body {
     font-family: var(--default-font-family, 'Geist Variable', sans-serif);
     background: var(--muted);
@@ -60,6 +64,7 @@ export function buildStaticPreviewHTML(): string {
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
+  .dark body { background: var(--background); }
   h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading, var(--default-font-family, 'Geist Variable', sans-serif)); }
   .grid { display: grid; gap: calc(var(--spacing) * 4); }
   .grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
