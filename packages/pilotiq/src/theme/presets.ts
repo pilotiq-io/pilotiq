@@ -114,7 +114,7 @@ export const PRESET_RADIUS: Record<StylePreset, RadiusPreset> = {
   maia: 'large',
   lyra: 'none',
   mira: 'medium',
-  luma: 'large',
+  luma: 'xlarge',
   sera: 'none',
 }
 

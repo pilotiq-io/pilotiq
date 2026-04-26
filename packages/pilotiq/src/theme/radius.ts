@@ -13,5 +13,6 @@ export const radiusMap: Record<RadiusPreset, string> = {
   none:    '0px',
   small:   '0.25rem',
   medium:  '0.625rem',
-  large:   '1.5rem',
+  large:   '1rem',
+  xlarge:  '1.5rem',
 }

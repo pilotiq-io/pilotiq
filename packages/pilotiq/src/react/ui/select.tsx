@@ -50,11 +50,13 @@ function SelectContent({
   align = 'start',
   alignOffset = 0,
   alignItemWithTrigger = false,
+  anchor,
+  collisionAvoidance,
   ...props
 }: SelectPrimitive.Popup.Props &
   Pick<
     SelectPrimitive.Positioner.Props,
-    'align' | 'alignOffset' | 'side' | 'sideOffset' | 'alignItemWithTrigger'
+    'align' | 'alignOffset' | 'side' | 'sideOffset' | 'alignItemWithTrigger' | 'anchor' | 'collisionAvoidance'
   >) {
   return (
     <SelectPrimitive.Portal>
@@ -64,17 +66,23 @@ function SelectContent({
         side={side}
         sideOffset={sideOffset}
         alignItemWithTrigger={alignItemWithTrigger}
+        anchor={anchor}
+        collisionAvoidance={collisionAvoidance}
         className="isolate z-50"
       >
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(
-            'bg-popover text-popover-foreground z-50 max-h-(--available-height) min-w-[8rem] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-md border shadow-md data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
+            // Visual chrome only — keep overflow/max-h off this element so
+            // iOS Safari doesn't clip the scrollable area against the rounded
+            // corners (a known WebKit quirk with `border-radius` + `overflow`
+            // on the same node). The inner List below owns scrolling.
+            'bg-popover text-popover-foreground z-50 min-w-[8rem] origin-(--transform-origin) rounded-md border shadow-md data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
             className,
           )}
           {...props}
         >
-          <SelectPrimitive.List className="p-1">
+          <SelectPrimitive.List className="max-h-(--available-height) overflow-x-hidden overflow-y-auto p-1">
             {children}
           </SelectPrimitive.List>
         </SelectPrimitive.Popup>

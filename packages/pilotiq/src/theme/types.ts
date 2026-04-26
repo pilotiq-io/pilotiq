@@ -29,7 +29,7 @@ export type ChartColor = ThemeColor
 // ─── Radius ────────────────────────────────────────────────
 
 /** Border radius preset. */
-export type RadiusPreset = 'none' | 'small' | 'default' | 'medium' | 'large'
+export type RadiusPreset = 'none' | 'small' | 'default' | 'medium' | 'large' | 'xlarge'
 
 // ─── Spacing (UI density) ──────────────────────────────────
 

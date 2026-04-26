@@ -24,7 +24,7 @@ const BASE_COLORS = BASE_COLOR_NAMES
 const THEME_COLORS = ['base', ...HUE_NAMES] as const
 const CHART_COLORS = ['base', ...HUE_NAMES] as const
 // Order: 'default' first (= medium semantically) so it's the leading option.
-const RADII = ['default', 'none', 'small', 'medium', 'large'] as const
+const RADII = ['default', 'none', 'small', 'medium', 'large', 'xlarge'] as const
 // Spacing density — `'default'` is a sentinel that resolves through
 // PRESET_SPACING; the explicit values drive Tailwind's `--spacing` directly.
 const SPACINGS = ['default', 'compact', 'comfortable'] as const
@@ -246,7 +246,11 @@ function buildStaticPreviewHTML(): string {
     box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
   }
   .card-header { display: flex; justify-content: space-between; align-items: flex-start; }
-  .card-label { font-size: 0.8125rem; color: var(--muted-foreground); font-weight: 500; }
+  /* Card titles use the heading font (visually display-weight even though
+     rendered as <span>). Stat values stay in the body font — numbers read
+     as data, not headings, and most heading faces look awkward at large
+     numeric weights. */
+  .card-label { font-family: var(--font-heading, var(--default-font-family, 'Geist Variable', sans-serif)); font-size: 0.8125rem; color: var(--muted-foreground); font-weight: 500; }
   .card-value { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.025em; margin-top: calc(var(--spacing) * 1); }
   .delta { display: inline-flex; align-items: center; gap: calc(var(--spacing) * 1); font-size: 0.75rem; font-weight: 500; padding: calc(var(--spacing) * 0.5) calc(var(--spacing) * 2); border-radius: 9999px; border: 1px solid var(--border); }
   .delta-up { color: var(--primary); }
@@ -588,22 +592,22 @@ function PreviewIframe({ config, mode }: { config: Partial<ThemeConfig>; mode: '
     if (!loaded) setLoaded(true)
   }
 
-  if (!mounted) return <div className="w-full h-full rounded-lg border border-border bg-muted" />
-
   return (
     <div className="relative w-full h-full">
-      {!loaded && (
-        <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-border bg-muted z-10">
+      {(!mounted || !loaded) && (
+        <div className="absolute inset-0 flex items-center justify-center z-10">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
         </div>
       )}
-      <iframe
-        ref={iframeRef}
-        srcDoc={staticHTML}
-        onLoad={handleLoad}
-        className={`w-full h-full rounded-lg border border-border bg-muted transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-        title="Theme Preview"
-      />
+      {mounted && (
+        <iframe
+          ref={iframeRef}
+          srcDoc={staticHTML}
+          onLoad={handleLoad}
+          className={`w-full h-full transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          title="Theme Preview"
+        />
+      )}
     </div>
   )
 }
@@ -817,7 +821,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
           matching shadcn's customizer panel. `dark` scopes the inner
           `bg-card/90`, `text-card-foreground`, etc. to the dark variants. */}
       <div
-        className="dark isolate z-10 overflow-hidden flex flex-col gap-2 w-48 shrink-0 self-start min-h-0 rounded-xl bg-card/90 text-sm text-card-foreground ring-1 ring-foreground/10 shadow-xl backdrop-blur-xl"
+        className="dark isolate z-10 overflow-hidden flex flex-col gap-2 w-[14rem] shrink-0 self-start min-h-0 rounded-xl bg-card/90 text-sm text-card-foreground ring-1 ring-foreground/10 shadow-xl backdrop-blur-xl"
         style={{ maxHeight: 'calc(100vh - 106px)' }}
       >
         <div className='h-full overflow-y-auto flex flex-col gap-3 p-3'>
@@ -934,7 +938,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
       </div>
 
       {/* Preview Area — isolated iframe, syncs with panel dark/light toggle */}
-      <div className="flex-1 overflow-hidden h-full">
+      <div className="flex-1 overflow-hidden h-full ring ring-foreground/10 md:ring-muted bg-muted rounded-xl">
         <PreviewIframe config={config} mode={previewMode} />
       </div>
     </div>
@@ -1031,14 +1035,17 @@ function PickerCard({
           {triggerIcon && <span className="shrink-0 mt-0.5">{triggerIcon}</span>}
         </div>
       </SelectTrigger>
-      {/* Anchor to the right of the trigger so users can click through items
+      {/* Open to the right of the trigger so users can click through items
           and watch the preview update beside the dropdown — matches the
-          shadcn/ui/create flow. Larger sideOffset (16px) and frosted-glass
-          surface (semi-transparent + backdrop-blur) match shadcn's menu look. */}
+          shadcn/ui/create flow. `align: 'none'` disables Base UI's vertical
+          shift so the popup's top edge stays anchored to the trigger's top
+          edge even when the list overflows. Max-height + overflow live on
+          the inner List (in select.tsx), not here, to avoid iOS clipping. */}
       <SelectContent
         side="right"
         align="start"
         sideOffset={24}
+        collisionAvoidance={{ side: 'flip', align: 'none' }}
         className="dark min-w-[200px] rounded-xl border-0 bg-card/80 text-sm text-card-foreground ring-1 ring-foreground/10 backdrop-blur-xl shadow-2xl"
       >
         {options.map((opt, i) => (
@@ -1071,7 +1078,7 @@ function PickerOptionItem({ opt, selected, separator }: { opt: PickerOption; sel
       <SelectItem className="rounded-lg" value={opt.value} hideIndicator selected={selected}>
         <span>{opt.label}</span>
       </SelectItem>
-      {separator && <SelectSeparator className='bg-input/50 dark:bg-input/50' />}
+      {separator && <SelectSeparator className='bg-input'/>}
     </>
   )
 }
