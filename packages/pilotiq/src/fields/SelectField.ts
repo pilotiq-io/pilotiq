@@ -1,4 +1,4 @@
-import { Field } from './Field.js'
+import { Field, type FieldMeta } from './Field.js'
 
 export class SelectField extends Field {
   private _options: Array<{ value: string; label: string }> = []
@@ -16,4 +16,11 @@ export class SelectField extends Field {
   }
 
   getOptions(): Array<{ value: string; label: string }> { return this._options }
+
+  override toMeta(record?: unknown): FieldMeta {
+    return {
+      ...super.toMeta(record),
+      options: this._options,
+    }
+  }
 }

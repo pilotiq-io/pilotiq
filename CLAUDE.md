@@ -78,7 +78,12 @@ Pilotiq.make() builder → pilotiq([panels]) provider → registerPilotiqRoutes(
 - `src/PilotiqServiceProvider.ts` — Provider + `pilotiq()` factory
 - `src/routes.ts` — `registerPilotiqRoutes()` using `view()`, resolves schema + theme
 - `src/vite.ts` — `pilotiq()` Vite plugin, generates `(pilotiq)/` pages + `+Layout.tsx` + `+Head.tsx`
-- `src/schema/` — Schema elements: `Text`, `Heading`, `Alert`, `Divider`, `Card` + `resolveSchema()`
+- `src/schema/` — Unified `Element` model (Phase 1 foundation):
+  - `Element.ts` — abstract base class. Every primitive (Field, Action, display elements) extends this. Contract: `getType()`, `toMeta()`, optional `_children: Element[]`.
+  - **Display elements:** `Text`, `Heading`, `Alert`, `Divider`. Containers: `Card`, `Section`, `Tabs`/`Tab`, `Grid` — all hold `children: Element[]`.
+  - `resolveSchema()` — async recursive walker; emits `meta.children` for containers; plugin-extensible via `registerResolver(type, fn)`. Filters hidden Fields server-side using `RenderContext { mode?, record? }`.
+- `src/fields/` — `Field` (extends `Element`, `getType()` returns `'field'`, `fieldType` discriminates subtypes), 9 subclasses (`TextField`, `EmailField`, `NumberField`, `SelectField`, `TextareaField`, `ToggleField`, `DateField`, `SlugField`), visibility flags (`hideFromTable/Create/Edit/View`) + condition callbacks (`showWhen`, `hideWhen`, `disabledWhen`), `resolveField`/`resolveFields` helpers (used by Resource paths until they migrate to the unified resolver).
+- `src/actions/` — `Action` primitive (single class, `placement: 'inline'|'bulk'|'row'|'header'`, `destructive`, `confirm`, `handler`). Phase 1 ships shape + serialization only; handler dispatch is Phase 2.
 - `src/theme/` — Theme engine: types, presets (default/nova/maia/lyra), base-colors, accent-colors, chart-palettes, radius, icon-map, `resolveTheme()`, `generateThemeCSS()`
 - `src/react/AppShell.tsx` — Picks layout mode, renders sidebar or topbar
 - `src/react/ThemeProvider.tsx` — Light/dark/system context, localStorage, CSS var injection

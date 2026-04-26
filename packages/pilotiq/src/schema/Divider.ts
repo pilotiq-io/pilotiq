@@ -1,7 +1,9 @@
-import type { SchemaElement } from './SchemaElement.js'
+import { Element } from './Element.js'
 
-export class Divider implements SchemaElement {
-  private constructor(private _label?: string) {}
+export class Divider extends Element {
+  private constructor(private _label?: string) {
+    super()
+  }
 
   static make(label?: string): Divider {
     return new Divider(label)

@@ -1,5 +1,5 @@
-import React from 'react'
-import type { SchemaElementMeta } from '../schema/SchemaElement.js'
+import React, { useState } from 'react'
+import type { ElementMeta } from '../schema/Element.js'
 
 const alertStyles: Record<string, string> = {
   info:    'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200',
@@ -8,19 +8,221 @@ const alertStyles: Record<string, string> = {
   danger:  'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200',
 }
 
-function renderElement(el: SchemaElementMeta, index: number): React.ReactNode {
+const inputClass =
+  'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm ' +
+  'transition-colors placeholder:text-muted-foreground ' +
+  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ' +
+  'disabled:cursor-not-allowed disabled:opacity-50'
+
+// ─── Field rendering ────────────────────────────────────────
+
+function renderField(el: ElementMeta, index: number): React.ReactNode {
+  const fieldType   = String(el['fieldType'] ?? 'text')
+  const name        = String(el['name'] ?? '')
+  const label       = String(el['label'] ?? name)
+  const required    = Boolean(el['required'])
+  const disabled    = Boolean(el['disabled'])
+  const placeholder = el['placeholder'] ? String(el['placeholder']) : undefined
+
+  const labelEl = (
+    <label htmlFor={name} className="text-sm font-medium leading-none">
+      {label}{required && <span className="text-destructive ml-0.5">*</span>}
+    </label>
+  )
+
+  const common = { id: name, name, disabled, placeholder, required, className: inputClass }
+
+  let input: React.ReactNode
+  switch (fieldType) {
+    case 'textarea':
+      input = (
+        <textarea
+          {...common}
+          rows={Number(el['rows']) || 4}
+          className={`${inputClass} h-auto`}
+        />
+      )
+      break
+
+    case 'select':
+      input = (
+        <select {...common}>
+          <option value="">{placeholder ?? 'Select…'}</option>
+          {((el['options'] as Array<{ value: string; label: string }>) ?? []).map(o => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      )
+      break
+
+    case 'toggle':
+      input = (
+        <label className="inline-flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" disabled={disabled} className="h-4 w-4 rounded border-input" />
+          <span className="text-sm text-muted-foreground">Enabled</span>
+        </label>
+      )
+      break
+
+    case 'number':
+      input = (
+        <input
+          {...common}
+          type="number"
+          {...(el['min']  !== undefined ? { min:  Number(el['min'])  } : {})}
+          {...(el['max']  !== undefined ? { max:  Number(el['max'])  } : {})}
+          {...(el['step'] !== undefined ? { step: Number(el['step']) } : {})}
+        />
+      )
+      break
+
+    case 'email':    input = <input {...common} type="email" />; break
+    case 'date':     input = <input {...common} type="date"  />; break
+    case 'slug':
+    case 'text':
+    default:
+      input = (
+        <input
+          {...common}
+          type="text"
+          {...(el['maxLength'] !== undefined ? { maxLength: Number(el['maxLength']) } : {})}
+        />
+      )
+  }
+
+  return (
+    <div key={index} className="flex flex-col gap-1.5">
+      {labelEl}
+      {input}
+    </div>
+  )
+}
+
+// ─── Action rendering ───────────────────────────────────────
+
+function renderAction(el: ElementMeta, index: number): React.ReactNode {
+  const label       = String(el['label'] ?? el['name'] ?? '')
+  const destructive = Boolean(el['destructive'])
+  const placement   = String(el['placement'] ?? 'inline')
+
+  // Phase 1.4: handler dispatch is not wired up. Buttons are visual-only.
+  const variant = destructive
+    ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+    : 'bg-primary text-primary-foreground hover:bg-primary/90'
+
+  const sizing = placement === 'row'
+    ? 'h-7 px-2 text-xs'
+    : 'h-8 px-3 text-sm'
+
+  return (
+    <button
+      key={index}
+      type="button"
+      className={`inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition ${variant} ${sizing}`}
+      data-action-name={String(el['name'] ?? '')}
+    >
+      {label}
+    </button>
+  )
+}
+
+// ─── Container helpers ──────────────────────────────────────
+
+function renderChildren(children: ElementMeta[] | undefined, gap = 'gap-4'): React.ReactNode {
+  if (!children || children.length === 0) return null
+  return (
+    <div className={`flex flex-col ${gap}`}>
+      {children.map((child, i) => renderElement(child, i))}
+    </div>
+  )
+}
+
+// ─── Tabs (stateful — needs useState) ────────────────────────
+
+function TabsRenderer({ el, index }: { el: ElementMeta; index: number }) {
+  const tabs = (el.children ?? []).filter(c => c.type === 'tab')
+  const [active, setActive] = useState(0)
+
+  if (tabs.length === 0) return null
+
+  return (
+    <div key={index} className="flex flex-col gap-4">
+      <div className="flex border-b border-border">
+        {tabs.map((tab, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => setActive(i)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition -mb-px ${
+              i === active
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {String(tab['label'] ?? '')}
+            {tab['badge'] ? <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-muted">{String(tab['badge'])}</span> : null}
+          </button>
+        ))}
+      </div>
+      <div>{renderChildren(tabs[active]?.children)}</div>
+    </div>
+  )
+}
+
+// ─── Section (stateful when collapsible) ────────────────────
+
+function SectionRenderer({ el, index }: { el: ElementMeta; index: number }) {
+  const title       = el['title']       ? String(el['title']) : undefined
+  const description = el['description'] ? String(el['description']) : undefined
+  const columns     = Number(el['columns'] ?? 1)
+  const collapsible = Boolean(el['collapsible'])
+  const [collapsed, setCollapsed] = useState(Boolean(el['defaultCollapsed']))
+
+  const gridClass = columns === 2 ? 'grid grid-cols-2 gap-4' : columns === 3 ? 'grid grid-cols-3 gap-4' : 'flex flex-col gap-4'
+
+  return (
+    <section key={index} className="flex flex-col gap-3 rounded-lg border bg-card p-4">
+      {(title || description || collapsible) && (
+        <header className="flex items-start justify-between gap-2">
+          <div>
+            {title && <h3 className="text-base font-semibold">{title}</h3>}
+            {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+          </div>
+          {collapsible && (
+            <button
+              type="button"
+              onClick={() => setCollapsed(c => !c)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              {collapsed ? 'Expand' : 'Collapse'}
+            </button>
+          )}
+        </header>
+      )}
+      {!collapsed && el.children && el.children.length > 0 && (
+        <div className={gridClass}>
+          {el.children.map((c, i) => renderElement(c, i))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+// ─── Top-level dispatch ─────────────────────────────────────
+
+function renderElement(el: ElementMeta, index: number): React.ReactNode {
   switch (el.type) {
     case 'text':
       return (
         <p key={index} className="text-sm text-muted-foreground">
-          {String(el.content ?? '')}
+          {String(el['content'] ?? '')}
         </p>
       )
 
     case 'heading': {
-      const level = (el.level as number) ?? 1
-      const content = String(el.content ?? '')
-      const description = el.description ? String(el.description) : undefined
+      const level = (el['level'] as number) ?? 1
+      const content = String(el['content'] ?? '')
+      const description = el['description'] ? String(el['description']) : undefined
       const Tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3'
       const sizes = { 1: 'text-2xl', 2: 'text-xl', 3: 'text-lg' } as const
       return (
@@ -36,19 +238,19 @@ function renderElement(el: SchemaElementMeta, index: number): React.ReactNode {
     }
 
     case 'alert': {
-      const alertType = String(el.alertType ?? 'info')
+      const alertType = String(el['alertType'] ?? 'info')
       const styles = alertStyles[alertType] ?? alertStyles['info']
-      const title = el.title ? String(el.title) : undefined
+      const title = el['title'] ? String(el['title']) : undefined
       return (
         <div key={index} className={`rounded-lg border p-4 ${styles}`}>
           {title && <p className="font-medium mb-1">{title}</p>}
-          <p className="text-sm">{String(el.content ?? '')}</p>
+          <p className="text-sm">{String(el['content'] ?? '')}</p>
         </div>
       )
     }
 
     case 'divider': {
-      const label = el.label ? String(el.label) : undefined
+      const label = el['label'] ? String(el['label']) : undefined
       return label
         ? <div key={index} className="relative py-2">
             <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
@@ -58,21 +260,49 @@ function renderElement(el: SchemaElementMeta, index: number): React.ReactNode {
     }
 
     case 'card': {
-      const elements = (el.elements ?? []) as SchemaElementMeta[]
-      const title = el.title ? String(el.title) : undefined
-      const description = el.description ? String(el.description) : undefined
+      const title = el['title'] ? String(el['title']) : undefined
+      const description = el['description'] ? String(el['description']) : undefined
       return (
         <div key={index} className="rounded-xl border bg-card p-6 shadow-sm">
           {title && <h3 className="font-semibold mb-1">{title}</h3>}
           {description && <p className="text-sm text-muted-foreground mb-4">{description}</p>}
-          {elements.length > 0 && (
-            <div className="flex flex-col gap-4">
-              {elements.map((child, i) => renderElement(child, i))}
-            </div>
-          )}
+          {renderChildren(el.children)}
         </div>
       )
     }
+
+    case 'section':
+      return <SectionRenderer key={index} el={el} index={index} />
+
+    case 'tabs':
+      return <TabsRenderer key={index} el={el} index={index} />
+
+    case 'tab':
+      // Tabs are rendered by their parent `tabs` element; standalone Tab is a no-op.
+      return null
+
+    case 'grid': {
+      const columns = Math.max(1, Math.min(12, Number(el['columns'] ?? 2)))
+      const gapPx   = el['gap'] !== undefined ? `${Number(el['gap'])}px` : undefined
+      return (
+        <div
+          key={index}
+          className="grid gap-4"
+          style={{
+            gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+            ...(gapPx ? { gap: gapPx } : {}),
+          }}
+        >
+          {(el.children ?? []).map((c, i) => renderElement(c, i))}
+        </div>
+      )
+    }
+
+    case 'field':
+      return renderField(el, index)
+
+    case 'action':
+      return renderAction(el, index)
 
     default:
       return null
@@ -80,7 +310,7 @@ function renderElement(el: SchemaElementMeta, index: number): React.ReactNode {
 }
 
 export interface SchemaRendererProps {
-  elements: SchemaElementMeta[]
+  elements: ElementMeta[]
 }
 
 export function SchemaRenderer({ elements }: SchemaRendererProps) {

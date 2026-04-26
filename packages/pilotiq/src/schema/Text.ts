@@ -1,7 +1,9 @@
-import type { SchemaElement } from './SchemaElement.js'
+import { Element } from './Element.js'
 
-export class Text implements SchemaElement {
-  private constructor(private content: string) {}
+export class Text extends Element {
+  private constructor(private content: string) {
+    super()
+  }
 
   static make(content: string): Text {
     return new Text(content)

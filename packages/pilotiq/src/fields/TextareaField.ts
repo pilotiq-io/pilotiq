@@ -1,4 +1,4 @@
-import { Field } from './Field.js'
+import { Field, type FieldMeta } from './Field.js'
 
 export class TextareaField extends Field {
   private _rows = 4
@@ -13,4 +13,11 @@ export class TextareaField extends Field {
 
   rows(n: number): this { this._rows = n; return this }
   getRows(): number { return this._rows }
+
+  override toMeta(record?: unknown): FieldMeta {
+    return {
+      ...super.toMeta(record),
+      rows: this._rows,
+    }
+  }
 }

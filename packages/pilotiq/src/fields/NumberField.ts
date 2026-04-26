@@ -1,4 +1,4 @@
-import { Field } from './Field.js'
+import { Field, type FieldMeta } from './Field.js'
 
 export class NumberField extends Field {
   private _min?: number
@@ -20,4 +20,13 @@ export class NumberField extends Field {
   getMin(): number | undefined { return this._min }
   getMax(): number | undefined { return this._max }
   getStep(): number | undefined { return this._step }
+
+  override toMeta(record?: unknown): FieldMeta {
+    return {
+      ...super.toMeta(record),
+      ...(this._min  !== undefined ? { min:  this._min  } : {}),
+      ...(this._max  !== undefined ? { max:  this._max  } : {}),
+      ...(this._step !== undefined ? { step: this._step } : {}),
+    }
+  }
 }

@@ -1,4 +1,4 @@
-import type { SchemaElement } from './schema/SchemaElement.js'
+import type { Element } from './schema/Element.js'
 import type { SchemaContext, SchemaDefinition } from './schema/resolveSchema.js'
 
 export interface PageMeta {
@@ -39,7 +39,7 @@ export class Page {
    * Return the page's schema elements.
    * Override this method for full control, or use define() for inline definitions.
    */
-  static schema(_ctx?: SchemaContext): SchemaElement[] | Promise<SchemaElement[]> {
+  static schema(_ctx?: SchemaContext): Element[] | Promise<Element[]> {
     if (!this._schemaDef) return []
     return typeof this._schemaDef === 'function'
       ? this._schemaDef(_ctx ?? {})

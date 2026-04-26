@@ -1,4 +1,4 @@
-import { Field } from './Field.js'
+import { Field, type FieldMeta } from './Field.js'
 
 export class TextField extends Field {
   private _maxLength?: number
@@ -13,4 +13,11 @@ export class TextField extends Field {
 
   maxLength(n: number): this { this._maxLength = n; return this }
   getMaxLength(): number | undefined { return this._maxLength }
+
+  override toMeta(record?: unknown): FieldMeta {
+    return {
+      ...super.toMeta(record),
+      ...(this._maxLength !== undefined ? { maxLength: this._maxLength } : {}),
+    }
+  }
 }

@@ -1,4 +1,4 @@
-import { Field } from './Field.js'
+import { Field, type FieldMeta } from './Field.js'
 
 export class SlugField extends Field {
   private _from?: string
@@ -13,4 +13,11 @@ export class SlugField extends Field {
 
   from(field: string): this { this._from = field; return this }
   getFrom(): string | undefined { return this._from }
+
+  override toMeta(record?: unknown): FieldMeta {
+    return {
+      ...super.toMeta(record),
+      ...(this._from ? { from: this._from } : {}),
+    }
+  }
 }

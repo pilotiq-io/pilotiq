@@ -1,12 +1,14 @@
-import type { SchemaElement } from './SchemaElement.js'
+import { Element } from './Element.js'
 
 export type AlertType = 'info' | 'warning' | 'success' | 'danger'
 
-export class Alert implements SchemaElement {
+export class Alert extends Element {
   private _alertType: AlertType = 'info'
   private _title?: string
 
-  private constructor(private content: string) {}
+  private constructor(private content: string) {
+    super()
+  }
 
   static make(content: string): Alert {
     return new Alert(content)

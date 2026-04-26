@@ -3,7 +3,16 @@ export { PilotiqRegistry } from './PilotiqRegistry.js'
 export { pilotiq } from './PilotiqServiceProvider.js'
 export { Resource, type TableConfig, type FormConfig } from './Resource.js'
 export { Page, type PageMeta } from './Page.js'
-export { Field, type FieldType } from './fields/Field.js'
+export { Field, type FieldType, type FieldMeta, type FieldCondition } from './fields/Field.js'
+export { resolveField, resolveFields } from './fields/resolveField.js'
+export {
+  Action,
+  type ActionPlacement,
+  type ActionContext,
+  type ActionHandler,
+  type ActionConfirm,
+  type ActionMeta,
+} from './actions/Action.js'
 export { TextField } from './fields/TextField.js'
 export { TextareaField } from './fields/TextareaField.js'
 export { EmailField } from './fields/EmailField.js'
@@ -29,10 +38,21 @@ export type {
 } from './theme/index.js'
 
 // Schema
-export type { SchemaElement, SchemaElementMeta } from './schema/SchemaElement.js'
+export { Element, type ElementMeta } from './schema/Element.js'
 export { Text } from './schema/Text.js'
 export { Heading } from './schema/Heading.js'
 export { Alert, type AlertType } from './schema/Alert.js'
 export { Divider } from './schema/Divider.js'
 export { Card } from './schema/Card.js'
-export { resolveSchema, type SchemaDefinition, type SchemaContext } from './schema/resolveSchema.js'
+export { Section } from './schema/Section.js'
+export { Tabs, Tab } from './schema/Tabs.js'
+export { Grid } from './schema/Grid.js'
+export {
+  resolveSchema,
+  registerResolver,
+  type SchemaDefinition,
+  type SchemaContext,
+  type RenderContext,
+  type RenderMode,
+  type ElementResolver,
+} from './schema/resolveSchema.js'

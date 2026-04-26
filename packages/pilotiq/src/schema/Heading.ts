@@ -1,10 +1,12 @@
-import type { SchemaElement } from './SchemaElement.js'
+import { Element } from './Element.js'
 
-export class Heading implements SchemaElement {
+export class Heading extends Element {
   private _level: 1 | 2 | 3 = 1
   private _description?: string
 
-  private constructor(private content: string) {}
+  private constructor(private content: string) {
+    super()
+  }
 
   static make(content: string): Heading {
     return new Heading(content)

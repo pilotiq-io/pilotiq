@@ -1,6 +1,7 @@
 import { Pilotiq, Resource, TextField, Column, Heading, Text, Alert, Divider, Card } from '@pilotiq/pilotiq'
 import { themeEditor } from '@pilotiq/pilotiq/plugins'
 import { SimplePage } from './pages/SimplePage.js'
+import { ElementsShowcase } from './pages/ElementsShowcase.js'
 
 class ArticleResource extends Resource {
   static label          = 'Articles'
@@ -34,7 +35,7 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   // Satoshi via Fontshare). Override per-panel if you want a custom palette.
   .use(themeEditor())
   .resources([new ArticleResource()])
-  .pages([SimplePage])
+  .pages([SimplePage, ElementsShowcase])
   .schema(async () => [
     Heading.make('Welcome to Pilotiq').description('Here\'s a quick overview of your content.'),
     Alert.make('This is a demo of the new schema system.').info().title('Schema Demo'),
