@@ -116,6 +116,18 @@ export function buildStaticPreviewHTML(): string {
      numeric weights. */
   .card-label { font-family: var(--font-heading, var(--default-font-family, 'Geist Variable', sans-serif)); font-size: 0.8125rem; color: var(--muted-foreground); font-weight: 500; }
   .card-value { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.025em; margin-top: calc(var(--spacing) * 1); }
+  /* Stat-card sparkline — full-bleed to card edges. The card's overflow:hidden
+     clips against the rounded corners; negative margins matching the card's
+     padding (spacing * 6) extend the chart out to those edges. */
+  .card-chart {
+    display: block;
+    width: calc(100% + calc(var(--spacing) * 12));
+    height: 40px;
+    margin-left: calc(var(--spacing) * -6);
+    margin-right: calc(var(--spacing) * -6);
+    margin-bottom: calc(var(--spacing) * -6);
+    margin-top: calc(var(--spacing) * 3);
+  }
   .delta { display: inline-flex; align-items: center; gap: calc(var(--spacing) * 1); font-size: 0.75rem; font-weight: 500; padding: calc(var(--spacing) * 0.5) calc(var(--spacing) * 2); border-radius: 9999px; border: 1px solid var(--border); }
   .delta-up { color: var(--primary); }
   .badge { padding: calc(var(--spacing) * 0.5) calc(var(--spacing) * 2.5); font-size: 0.75rem; font-weight: 500; border-radius: 9999px; display: inline-flex; align-items: center; gap: calc(var(--spacing) * 1); border: 1px solid var(--border); }
@@ -180,7 +192,7 @@ export function buildStaticPreviewHTML(): string {
     <div class="card-value">$45,231.89</div>
     <p class="text-xs text-muted mt-2">Trending up this month</p>
     <!-- Mini sparkline -->
-    <svg viewBox="0 0 200 40" style="width:100%;height:40px;margin-top:calc(var(--spacing) * 3)" preserveAspectRatio="none">
+    <svg viewBox="0 0 200 40" class="card-chart" preserveAspectRatio="none">
       <defs>
         <linearGradient id="grad1" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stop-color="var(--chart-1)" stop-opacity="0.4"/>
@@ -198,7 +210,7 @@ export function buildStaticPreviewHTML(): string {
     </div>
     <div class="card-value">1,234</div>
     <p class="text-xs text-muted mt-2">Strong user retention</p>
-    <svg viewBox="0 0 200 40" style="width:100%;height:40px;margin-top:calc(var(--spacing) * 3)" preserveAspectRatio="none">
+    <svg viewBox="0 0 200 40" class="card-chart" preserveAspectRatio="none">
       <defs>
         <linearGradient id="grad2" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stop-color="var(--chart-2)" stop-opacity="0.4"/>
@@ -216,7 +228,7 @@ export function buildStaticPreviewHTML(): string {
     </div>
     <div class="card-value">8,492</div>
     <p class="text-xs text-muted mt-2">Above target this week</p>
-    <svg viewBox="0 0 200 40" style="width:100%;height:40px;margin-top:calc(var(--spacing) * 3)" preserveAspectRatio="none">
+    <svg viewBox="0 0 200 40" class="card-chart" preserveAspectRatio="none">
       <defs>
         <linearGradient id="grad3" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stop-color="var(--chart-3)" stop-opacity="0.4"/>
