@@ -1,5 +1,6 @@
 import { Element, type ElementMeta } from '../schema/Element.js'
 import type { RenderMode } from '../schema/resolveSchema.js'
+import type { SerializedRule, Validator, ValidatorContext } from '../validation/Validator.js'
 
 export type FieldType = 'text' | 'textarea' | 'email' | 'number' | 'select' | 'toggle' | 'date' | 'slug'
 
@@ -20,6 +21,7 @@ export interface FieldMeta extends ElementMeta {
   required:     boolean
   disabled:     boolean
   placeholder?: string
+  rules?:       SerializedRule[]
 }
 
 export type FieldCondition = (record: unknown) => boolean
@@ -45,6 +47,10 @@ export abstract class Field extends Element {
   protected _showWhen?:     FieldCondition
   protected _hideWhen?:     FieldCondition
   protected _disabledWhen?: FieldCondition
+
+  // Validators run server-side on submit. Each may carry a serialized
+  // descriptor mirrored to the client via `toMeta().rules` for live UX.
+  protected _validators: Validator[] = []
 
   constructor(name: string, type: FieldType) {
     super()
@@ -75,6 +81,21 @@ export abstract class Field extends Element {
   showWhen(fn: FieldCondition):     this { this._showWhen     = fn; return this }
   hideWhen(fn: FieldCondition):     this { this._hideWhen     = fn; return this }
   disabledWhen(fn: FieldCondition): this { this._disabledWhen = fn; return this }
+
+  // ─── Validation ───────────────────────────────────────
+
+  /**
+   * Append one or more validators. Multiple calls accumulate; pass an array
+   * to add several at once. Order is preserved — `runValidators()` collects
+   * every error in order so the user sees all problems at once.
+   */
+  validate(v: Validator | Validator[]): this {
+    if (Array.isArray(v)) this._validators.push(...v)
+    else this._validators.push(v)
+    return this
+  }
+
+  getValidators(): Validator[] { return this._validators }
 
   // ─── Getters (read-only access for resolver/tests) ───
 
@@ -111,6 +132,45 @@ export abstract class Field extends Element {
   }
 
   /**
+   * Run every validator against `value`, collecting all error messages in
+   * declaration order. The `_required` flag implicitly contributes a
+   * required check unless the validator list already includes one (matched
+   * by `serialized.rule === 'required'`) — keeps `.required()` and
+   * `.validate(required())` from double-firing.
+   */
+  runValidators(value: unknown, ctx?: ValidatorContext): string[] {
+    const errors: string[] = []
+
+    if (this._required && !this.hasRequiredValidator()) {
+      if (value === undefined || value === null || value === '') {
+        errors.push('This field is required')
+      }
+    }
+
+    for (const v of this._validators) {
+      const result = v(value, ctx)
+      if (result) errors.push(result)
+    }
+    return errors
+  }
+
+  private hasRequiredValidator(): boolean {
+    return this._validators.some(v => v.serialized?.rule === 'required')
+  }
+
+  /** Serialized rule descriptors mirrored to the client. */
+  protected getSerializedRules(): SerializedRule[] {
+    const rules: SerializedRule[] = []
+    if (this._required && !this.hasRequiredValidator()) {
+      rules.push({ rule: 'required', message: 'This field is required' })
+    }
+    for (const v of this._validators) {
+      if (v.serialized) rules.push(v.serialized)
+    }
+    return rules
+  }
+
+  /**
    * Serialize this field's state for the client. Subclasses spread this and
    * add their own fields (e.g. `maxLength`, `options`).
    *
@@ -119,6 +179,7 @@ export abstract class Field extends Element {
    * omitted, only the static `readonly()` setting contributes.
    */
   override toMeta(record?: unknown): FieldMeta {
+    const rules = this.getSerializedRules()
     return {
       type:        'field',
       fieldType:   this.fieldType,
@@ -127,6 +188,7 @@ export abstract class Field extends Element {
       required:    this._required,
       disabled:    this.isDisabledIn(record),
       ...(this._placeholder ? { placeholder: this._placeholder } : {}),
+      ...(rules.length > 0 ? { rules } : {}),
     }
   }
 }

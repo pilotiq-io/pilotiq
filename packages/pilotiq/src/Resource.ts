@@ -1,32 +1,79 @@
-import type { Field } from './fields/Field.js'
-import type { Column } from './Column.js'
+import type { Element } from './schema/Element.js'
+import type { Form } from './elements/Form.js'
+import type { Table } from './elements/Table.js'
+import type { Page } from './Page.js'
 
-export interface TableConfig {
-  columns: Column[]
+/** Map of resource page roles to Page subclasses. */
+export interface ResourcePages {
+  index?:  typeof Page
+  create?: typeof Page
+  edit?:   typeof Page
+  view?:   typeof Page
 }
 
-export interface FormConfig {
-  fields: Field[]
-}
+/** Placeholder until Phase 3+ relations work lands. */
+export type RelationDef = unknown
 
+/**
+ * Abstract Resource base class. **All methods are static** — resources are
+ * registered by class, not by instance. Routes look up the class and call
+ * statics directly.
+ *
+ * Subclasses override `form()`, `table()`, `detail()`, and `pages()` to
+ * shape the resource. Defaults make the most-common case (CRUD with a
+ * form + a table) work with minimal boilerplate; 2.2 will fill in
+ * auto-generated default Page classes.
+ */
 export abstract class Resource {
-  /** The display label (plural) */
+  /** Human-readable plural label, e.g. `'Articles'`. */
   static label: string = 'Resources'
-  /** Singular label */
+
+  /** Singular label, e.g. `'Article'`. */
   static labelSingular: string = 'Resource'
-  /** URL slug — derived from label if not set */
+
+  /** URL slug. Derived from `label` when unset. */
   static slug: string = ''
-  /** Navigation icon name */
+
+  /** Sidebar / nav icon name. */
   static icon: string = 'file'
 
-  /** Define table columns */
-  abstract table(): TableConfig
+  /** Optional model identifier (e.g. Prisma model name). Phase 3 ORM adapters use this. */
+  static model?: string
 
-  /** Define form fields */
-  abstract form(): FormConfig
+  /**
+   * Configure the form used by `create` and `edit` pages by default.
+   * Receives a fresh `Form` instance; return the configured form.
+   */
+  static form(form: Form): Form { return form }
 
-  /** Get the URL slug */
+  /**
+   * Configure the table used by the `index` page by default.
+   * Receives a fresh `Table` instance; return the configured table.
+   */
+  static table(table: Table): Table { return table }
+
+  /**
+   * Schema for the read-only `view` page. Receives the loaded record.
+   * Returns an array of Elements (typically Sections + display elements).
+   */
+  static detail(_record: unknown): Element[] { return [] }
+
+  /**
+   * Map of resource pages: `{ index, create, edit, view? }`. Each entry
+   * is a `Page` subclass. Phase 2.2 wires in auto-generated defaults when
+   * a key is missing — for now an empty object is fine; routes still work
+   * via the legacy paths until 2.3.
+   */
+  static pages(): ResourcePages { return {} }
+
+  /** Phase 3+ relations metadata. */
+  static relations(): RelationDef[] { return [] }
+
+  /** URL slug, derived from `label` when not set explicitly. */
   static getSlug(): string {
     return this.slug || this.label.toLowerCase().replace(/\s+/g, '-')
   }
 }
+
+/** Constructor type for `Resource` subclasses. Used in panel registration. */
+export type ResourceClass = typeof Resource

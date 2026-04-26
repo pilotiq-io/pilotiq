@@ -1,30 +1,30 @@
-import { Pilotiq, Resource, TextField, Column, Heading, Text, Alert, Divider, Card } from '@pilotiq/pilotiq'
+import {
+  Pilotiq, Resource, TextField, Column,
+  Form, Table,
+  Heading, Text, Alert, Divider, Card,
+} from '@pilotiq/pilotiq'
 import { themeEditor } from '@pilotiq/pilotiq/plugins'
 import { SimplePage } from './pages/SimplePage.js'
 import { ElementsShowcase } from './pages/ElementsShowcase.js'
 
 class ArticleResource extends Resource {
-  static label          = 'Articles'
-  static labelSingular  = 'Article'
-  static icon           = 'file-text'
+  static override label         = 'Articles'
+  static override labelSingular = 'Article'
+  static override icon          = 'file-text'
 
-  table() {
-    return {
-      columns: [
-        Column.make('title').label('Title').sortable().searchable(),
-        Column.make('slug').label('Slug'),
-        Column.make('createdAt').label('Created'),
-      ],
-    }
+  static override form(form: Form): Form {
+    return form.schema([
+      TextField.make('title').label('Title').required().placeholder('Article title...'),
+      TextField.make('slug').label('Slug').required(),
+    ])
   }
 
-  form() {
-    return {
-      fields: [
-        TextField.make('title').label('Title').required().placeholder('Article title...'),
-        TextField.make('slug').label('Slug').required(),
-      ],
-    }
+  static override table(table: Table): Table {
+    return table.columns([
+      Column.make('title').label('Title').sortable().searchable(),
+      Column.make('slug').label('Slug'),
+      Column.make('createdAt').label('Created'),
+    ])
   }
 }
 
@@ -34,7 +34,7 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   // No .theme() → inherits the Pilotiq brand default (terracotta on cream,
   // Satoshi via Fontshare). Override per-panel if you want a custom palette.
   .use(themeEditor())
-  .resources([new ArticleResource()])
+  .resources([ArticleResource])
   .pages([SimplePage, ElementsShowcase])
   .schema(async () => [
     Heading.make('Welcome to Pilotiq').description('Here\'s a quick overview of your content.'),
@@ -52,4 +52,4 @@ export const pilotiqSimple = Pilotiq.make('Pilotiq simple')
   .path('/simple')
   .layout('topbar')
   .branding({ title: 'Simple' })
-  .resources([new ArticleResource()])
+  .resources([ArticleResource])

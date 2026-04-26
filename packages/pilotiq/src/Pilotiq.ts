@@ -1,4 +1,4 @@
-import type { Resource } from './Resource.js'
+import type { ResourceClass } from './Resource.js'
 import type { Page } from './Page.js'
 import type { SchemaDefinition } from './schema/resolveSchema.js'
 import type { ThemeConfig } from './theme/types.js'
@@ -16,7 +16,7 @@ export interface PilotiqConfig {
   name:          string
   path:          string
   layout:        PilotiqLayout
-  resources:     Resource[]
+  resources:     ResourceClass[]
   pages:         (typeof Page)[]
   branding:      { title?: string; logo?: string }
   schema?:       SchemaDefinition
@@ -56,7 +56,7 @@ export class Pilotiq {
     return this
   }
 
-  resources(r: Resource[]): this {
+  resources(r: ResourceClass[]): this {
     this.config.resources = r
     return this
   }

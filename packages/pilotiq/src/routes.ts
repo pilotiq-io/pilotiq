@@ -1,9 +1,11 @@
 import type { Router } from '@rudderjs/router'
 import { view } from '@rudderjs/view'
 import type { Pilotiq } from './Pilotiq.js'
-import type { Resource } from './Resource.js'
-import type { Page } from './Page.js'
 import { resolveSchema } from './schema/resolveSchema.js'
+import { Form } from './elements/Form.js'
+import { Table } from './elements/Table.js'
+import type { Field } from './fields/Field.js'
+import { Field as FieldBase } from './fields/Field.js'
 import { resolveTheme } from './theme/resolve.js'
 import type { ThemeConfig, ThemeMeta } from './theme/types.js'
 import { presets } from './theme/presets.js'
@@ -19,16 +21,29 @@ function panelInfo(panel: Pilotiq) {
   return {
     name: cfg.name,
     branding: cfg.branding,
-    resources: cfg.resources.map(R => {
-      const Ctor = R.constructor as typeof Resource
-      return { label: Ctor.label, slug: Ctor.getSlug(), icon: Ctor.icon }
-    }),
+    resources: cfg.resources.map(R => ({
+      label: R.label, slug: R.getSlug(), icon: R.icon,
+    })),
     pages: cfg.pages.map(P => ({
       label: P.getLabel(), slug: P.getSlug(), icon: P.icon,
     })),
     theme,
     themeEditor: cfg.themeEditor ?? false,
   }
+}
+
+/** Walk the children of a Form Element and return only the `Field` leaves. */
+function flattenFields(form: Form): Field[] {
+  const out: Field[] = []
+  const walk = (els: ReadonlyArray<unknown>): void => {
+    for (const el of els) {
+      if (el instanceof FieldBase) out.push(el)
+      const children = (el as { getChildren?: () => unknown[] | undefined }).getChildren?.()
+      if (children && children.length > 0) walk(children)
+    }
+  }
+  walk(form.getChildren() ?? [])
+  return out
 }
 
 export function registerPilotiqRoutes(
@@ -51,17 +66,16 @@ export function registerPilotiqRoutes(
 
   // Resource routes
   for (const R of cfg.resources) {
-    const Ctor = R.constructor as typeof Resource
-    const slug = Ctor.getSlug()
+    const slug = R.getSlug()
 
     // Index
     router.get(`${base}/${slug}`, async () => {
-      const tableConfig = R.table()
+      const table = R.table(Table.make())
       return view('pilotiq.slug', {
         pageType: 'resource',
         panel:    panelInfo(pilotiq),
-        resource: { label: Ctor.label, labelSingular: Ctor.labelSingular, slug, icon: Ctor.icon },
-        columns:  tableConfig.columns.map(col => ({
+        resource: { label: R.label, labelSingular: R.labelSingular, slug, icon: R.icon },
+        columns:  table.getColumns().map(col => ({
           name: col.name,
           label: col.getLabel(),
           sortable: col.isSortable(),
@@ -74,11 +88,12 @@ export function registerPilotiqRoutes(
 
     // Create
     router.get(`${base}/${slug}/create`, async () => {
-      const formConfig = R.form()
+      const form = R.form(Form.make())
+      const fields = flattenFields(form)
       return view('pilotiq.resources.form', {
         panel:    panelInfo(pilotiq),
-        resource: { label: Ctor.labelSingular, slug, icon: Ctor.icon },
-        fields:   formConfig.fields.map(f => ({
+        resource: { label: R.labelSingular, slug, icon: R.icon },
+        fields:   fields.map(f => ({
           name: f.name,
           fieldType: f.fieldType,
           label: f.getLabel(),
@@ -94,11 +109,12 @@ export function registerPilotiqRoutes(
 
     // Edit
     router.get(`${base}/${slug}/:id/edit`, async (req) => {
-      const formConfig = R.form()
+      const form = R.form(Form.make())
+      const fields = flattenFields(form)
       return view('pilotiq.resources.form', {
         panel:    panelInfo(pilotiq),
-        resource: { label: Ctor.labelSingular, slug, icon: Ctor.icon },
-        fields:   formConfig.fields.map(f => ({
+        resource: { label: R.labelSingular, slug, icon: R.icon },
+        fields:   fields.map(f => ({
           name: f.name,
           fieldType: f.fieldType,
           label: f.getLabel(),
