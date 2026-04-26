@@ -23,6 +23,7 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
   const required    = Boolean(el['required'])
   const disabled    = Boolean(el['disabled'])
   const placeholder = el['placeholder'] ? String(el['placeholder']) : undefined
+  const defaultValue = el['defaultValue']
 
   const labelEl = (
     <label htmlFor={name} className="text-sm font-medium leading-none">
@@ -30,7 +31,17 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
     </label>
   )
 
-  const common = { id: name, name, disabled, placeholder, required, className: inputClass }
+  const common = {
+    id: name,
+    name,
+    disabled,
+    placeholder,
+    required,
+    className: inputClass,
+    ...(defaultValue !== undefined && defaultValue !== null
+      ? { defaultValue: String(defaultValue) }
+      : {}),
+  }
 
   let input: React.ReactNode
   switch (fieldType) {
@@ -304,9 +315,128 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
     case 'action':
       return renderAction(el, index)
 
+    case 'form':
+      return <FormRenderer key={index} el={el} />
+
+    case 'table':
+      return <TableRenderer key={index} el={el} />
+
+    case 'column':
+      // Columns are rendered by their parent table; standalone column is a no-op.
+      return null
+
     default:
       return null
   }
+}
+
+// ─── Form ───────────────────────────────────────────────────
+
+function FormRenderer({ el }: { el: ElementMeta }) {
+  const formId = String(el['formId'] ?? '')
+  const method = String(el['method'] ?? 'post').toLowerCase()
+  const action = el['action'] ? String(el['action']) : undefined
+  const values = (el['values'] as Record<string, unknown> | undefined) ?? {}
+  const errors = (el['errors'] as Record<string, string[]> | undefined) ?? {}
+
+  // Methods other than GET/POST are spoofed via _method, mirroring Laravel.
+  const httpMethod = method === 'get' ? 'get' : 'post'
+  const spoofedMethod = method !== 'get' && method !== 'post' ? method : undefined
+
+  return (
+    <form
+      id={formId || undefined}
+      data-form-id={formId || undefined}
+      method={httpMethod}
+      action={action}
+      className="flex flex-col gap-6"
+    >
+      {spoofedMethod && <input type="hidden" name="_method" value={spoofedMethod} />}
+      {Object.keys(errors).length > 0 && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 text-destructive p-3 text-sm">
+          Please correct the errors below.
+        </div>
+      )}
+      {(el.children ?? []).map((child, i) => renderFormChild(child, i, values, errors))}
+    </form>
+  )
+}
+
+function renderFormChild(
+  child: ElementMeta,
+  index: number,
+  values: Record<string, unknown>,
+  errors: Record<string, string[]>,
+): React.ReactNode {
+  if (child.type === 'field') {
+    const name      = String(child['name'] ?? '')
+    const fieldErrors = errors[name] ?? []
+    const value     = values[name]
+    return (
+      <div key={index} className="flex flex-col gap-1">
+        {renderFieldWithValue(child, index, value)}
+        {fieldErrors.map((msg, i) => (
+          <p key={i} className="text-xs text-destructive">{msg}</p>
+        ))}
+      </div>
+    )
+  }
+  return renderElement(child, index)
+}
+
+function renderFieldWithValue(el: ElementMeta, index: number, value: unknown): React.ReactNode {
+  // Spread the original meta so renderField sees defaultValue.
+  const enriched: ElementMeta = { ...el, defaultValue: value }
+  return renderField(enriched, index)
+}
+
+// ─── Table ──────────────────────────────────────────────────
+
+function TableRenderer({ el }: { el: ElementMeta }) {
+  const children = el.children ?? []
+  const columns  = children.filter(c => c.type === 'column')
+  const actions  = children.filter(c => c.type === 'action')
+
+  if (columns.length === 0) {
+    return (
+      <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
+        No columns configured for this table.
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {actions.length > 0 && (
+        <div className="flex items-center gap-2">
+          {actions.map((a, i) => renderAction(a, i))}
+        </div>
+      )}
+      <div className="rounded-xl border bg-card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-muted border-b">
+            <tr>
+              {columns.map((col, i) => (
+                <th
+                  key={i}
+                  className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider"
+                >
+                  {String(col['label'] ?? col['name'] ?? '')}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colSpan={columns.length} className="px-4 py-12 text-center text-muted-foreground">
+                No records yet.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
 }
 
 export interface SchemaRendererProps {

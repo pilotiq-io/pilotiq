@@ -2,6 +2,7 @@ import type { Element } from './schema/Element.js'
 import type { Form } from './elements/Form.js'
 import type { Table } from './elements/Table.js'
 import type { Page } from './Page.js'
+import { defaultPages } from './defaultPages.js'
 
 /** Map of resource page roles to Page subclasses. */
 export interface ResourcePages {
@@ -59,12 +60,21 @@ export abstract class Resource {
   static detail(_record: unknown): Element[] { return [] }
 
   /**
-   * Map of resource pages: `{ index, create, edit, view? }`. Each entry
-   * is a `Page` subclass. Phase 2.2 wires in auto-generated defaults when
-   * a key is missing — for now an empty object is fine; routes still work
-   * via the legacy paths until 2.3.
+   * User-overridable page map. Return any subset of `{ index, create, edit, view }`
+   * to override the auto-generated defaults; missing keys fall through to
+   * defaults via `resolvePages()`.
    */
   static pages(): ResourcePages { return {} }
+
+  /**
+   * Resolved page map: defaults from `defaultPages(this)` overlaid with whatever
+   * `pages()` returns. This is what routing consumes (wired in 2.3).
+   */
+  static resolvePages(): ResourcePages {
+    const defaults  = defaultPages(this as unknown as ResourceClass)
+    const overrides = this.pages()
+    return { ...defaults, ...overrides }
+  }
 
   /** Phase 3+ relations metadata. */
   static relations(): RelationDef[] { return [] }

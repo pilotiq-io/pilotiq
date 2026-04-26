@@ -1,11 +1,8 @@
 import type { Router } from '@rudderjs/router'
 import { view } from '@rudderjs/view'
 import type { Pilotiq } from './Pilotiq.js'
-import { resolveSchema } from './schema/resolveSchema.js'
-import { Form } from './elements/Form.js'
-import { Table } from './elements/Table.js'
-import type { Field } from './fields/Field.js'
-import { Field as FieldBase } from './fields/Field.js'
+import type { Page } from './Page.js'
+import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { resolveTheme } from './theme/resolve.js'
 import type { ThemeConfig, ThemeMeta } from './theme/types.js'
 import { presets } from './theme/presets.js'
@@ -14,9 +11,9 @@ import { HUE_NAMES } from './theme/colors.js'
 import { migrateThemeOverrides } from './theme/migrate.js'
 import { radiusMap } from './theme/radius.js'
 
-function panelInfo(panel: Pilotiq) {
-  const cfg = panel.getConfig()
-  const merged = panel.getMergedTheme()
+function panelInfo(pilotiq: Pilotiq) {
+  const cfg = pilotiq.getConfig()
+  const merged = pilotiq.getMergedTheme()
   const theme: ThemeMeta | undefined = merged ? resolveTheme(merged) : undefined
   return {
     name: cfg.name,
@@ -32,18 +29,16 @@ function panelInfo(panel: Pilotiq) {
   }
 }
 
-/** Walk the children of a Form Element and return only the `Field` leaves. */
-function flattenFields(form: Form): Field[] {
-  const out: Field[] = []
-  const walk = (els: ReadonlyArray<unknown>): void => {
-    for (const el of els) {
-      if (el instanceof FieldBase) out.push(el)
-      const children = (el as { getChildren?: () => unknown[] | undefined }).getChildren?.()
-      if (children && children.length > 0) walk(children)
-    }
-  }
-  walk(form.getChildren() ?? [])
-  return out
+/**
+ * Resolve a Page's schema with a given render context, returning the
+ * serialized element tree for the client. All resource and custom-page
+ * routes funnel through this so the schema pipeline is identical.
+ */
+async function resolvePageSchema(
+  PageClass: typeof Page,
+  ctx: SchemaContext & { mode?: 'table' | 'create' | 'edit' | 'view' },
+) {
+  return resolveSchema(c => PageClass.schema({ ...ctx, ...c }), ctx)
 }
 
 export function registerPilotiqRoutes(
@@ -53,7 +48,7 @@ export function registerPilotiqRoutes(
   const cfg = pilotiq.getConfig()
   const base = cfg.path
 
-  // Dashboard
+  // ── Dashboard (1-segment) ─────────────────────────────
   router.get(base, async () => {
     const schemaData = await resolveSchema(cfg.schema, {})
     return view('pilotiq.dashboard', {
@@ -64,95 +59,86 @@ export function registerPilotiqRoutes(
     })
   })
 
-  // Resource routes
+  // ── Resource routes ───────────────────────────────────
+  // Each resource exposes index/create/edit/view via Resource.resolvePages().
+  // URL conventions are fixed by role; the Page class supplies the schema.
   for (const R of cfg.resources) {
-    const slug = R.getSlug()
+    const slug  = R.getSlug()
+    const pages = R.resolvePages()
 
-    // Index
-    router.get(`${base}/${slug}`, async () => {
-      const table = R.table(Table.make())
-      return view('pilotiq.slug', {
-        pageType: 'resource',
-        panel:    panelInfo(pilotiq),
-        resource: { label: R.label, labelSingular: R.labelSingular, slug, icon: R.icon },
-        columns:  table.getColumns().map(col => ({
-          name: col.name,
-          label: col.getLabel(),
-          sortable: col.isSortable(),
-          searchable: col.isSearchable(),
-        })),
-        basePath: base,
-        layout: cfg.layout,
+    // Index — 2-segment URL
+    if (pages.index) {
+      const PageClass = pages.index
+      router.get(`${base}/${slug}`, async () => {
+        const schemaData = await resolvePageSchema(PageClass, { mode: 'table' })
+        return view('pilotiq.slug', {
+          pageType: 'resource',
+          panel:    panelInfo(pilotiq),
+          page:     PageClass.toMeta(),
+          resource: { label: R.label, labelSingular: R.labelSingular, slug, icon: R.icon },
+          basePath: base,
+          layout:   cfg.layout,
+          schemaData,
+        })
       })
-    })
+    }
 
-    // Create
-    router.get(`${base}/${slug}/create`, async () => {
-      const form = R.form(Form.make())
-      const fields = flattenFields(form)
-      return view('pilotiq.resources.form', {
-        panel:    panelInfo(pilotiq),
-        resource: { label: R.labelSingular, slug, icon: R.icon },
-        fields:   fields.map(f => ({
-          name: f.name,
-          fieldType: f.fieldType,
-          label: f.getLabel(),
-          required: f.isRequired(),
-          readonly: f.isReadonly(),
-          placeholder: f.getPlaceholder(),
-        })),
-        mode:     'create' as const,
-        basePath: base,
-        layout: cfg.layout,
+    // Create — 3-segment URL with /create suffix
+    if (pages.create) {
+      const PageClass = pages.create
+      router.get(`${base}/${slug}/create`, async () => {
+        const schemaData = await resolvePageSchema(PageClass, { mode: 'create' })
+        return view('pilotiq.resource-create', {
+          panel:    panelInfo(pilotiq),
+          page:     PageClass.toMeta(),
+          resource: { label: R.labelSingular, slug, icon: R.icon },
+          mode:     'create' as const,
+          basePath: base,
+          layout:   cfg.layout,
+          schemaData,
+        })
       })
-    })
+    }
 
-    // Edit
-    router.get(`${base}/${slug}/:id/edit`, async (req) => {
-      const form = R.form(Form.make())
-      const fields = flattenFields(form)
-      return view('pilotiq.resources.form', {
-        panel:    panelInfo(pilotiq),
-        resource: { label: R.labelSingular, slug, icon: R.icon },
-        fields:   fields.map(f => ({
-          name: f.name,
-          fieldType: f.fieldType,
-          label: f.getLabel(),
-          required: f.isRequired(),
-          readonly: f.isReadonly(),
-          placeholder: f.getPlaceholder(),
-        })),
-        mode:     'edit' as const,
-        recordId: req.params['id'],
-        basePath: base,
-        layout: cfg.layout,
+    // Edit — 4-segment URL with /edit suffix. Record loading lands in 2.4.
+    if (pages.edit) {
+      const PageClass = pages.edit
+      router.get(`${base}/${slug}/:id/edit`, async (req) => {
+        const recordId = req.params['id']
+        const schemaData = await resolvePageSchema(PageClass, { mode: 'edit', recordId })
+        return view('pilotiq.resource-edit', {
+          panel:    panelInfo(pilotiq),
+          page:     PageClass.toMeta(),
+          resource: { label: R.labelSingular, slug, icon: R.icon },
+          mode:     'edit' as const,
+          recordId,
+          basePath: base,
+          layout:   cfg.layout,
+          schemaData,
+        })
       })
-    })
+    }
   }
 
-  // Custom page routes
+  // ── Custom pages (2-segment, slug route) ──────────────
   for (const PageClass of cfg.pages) {
     const pageSlug = PageClass.getSlug()
 
     router.get(`${base}/${pageSlug}`, async () => {
-      const schemaData = await resolveSchema(
-        (ctx) => PageClass.schema(ctx),
-        {},
-      )
+      const schemaData = await resolvePageSchema(PageClass, {})
       return view('pilotiq.slug', {
-        pageType:   'page',
-        panel:      panelInfo(pilotiq),
-        page:       PageClass.toMeta(),
+        pageType: 'page',
+        panel:    panelInfo(pilotiq),
+        page:     PageClass.toMeta(),
         schemaData,
-        basePath:   base,
-        layout:     cfg.layout,
+        basePath: base,
+        layout:   cfg.layout,
       })
     })
   }
 
-  // Theme editor routes (only when themeEditor plugin is active)
+  // ── Theme editor ──────────────────────────────────────
   if (cfg.themeEditor) {
-    // Theme editor page
     router.get(`${base}/theme`, async () => {
       return view('pilotiq.theme', {
         panel:       panelInfo(pilotiq),
@@ -162,7 +148,6 @@ export function registerPilotiqRoutes(
       })
     })
 
-    // Theme API — GET (load config + overrides + options)
     router.get(`${base}/api/_theme`, async (_req, res) => {
       let overrides: Partial<ThemeConfig> | null = null
       try {
@@ -190,7 +175,6 @@ export function registerPilotiqRoutes(
       })
     })
 
-    // Theme API — PUT (save overrides)
     router.put(`${base}/api/_theme`, async (req, res) => {
       try {
         const overrides = req.body as Partial<ThemeConfig>
@@ -211,7 +195,6 @@ export function registerPilotiqRoutes(
       }
     })
 
-    // Theme API — DELETE (reset to code defaults)
     router.delete(`${base}/api/_theme`, async (_req, res) => {
       try {
         const { app } = await import(/* @vite-ignore */ '@rudderjs/core') as { app(): { make(key: string): unknown } }

@@ -5,43 +5,5 @@ import { SchemaRenderer } from '@pilotiq/pilotiq/react'
 export default function SlugPage() {
   const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown> }
   const vp = ctx.viewProps as any ?? {}
-
-  // Server sets pageType: 'resource' or 'page'
-  if (vp.pageType === 'page') {
-    return <SchemaRenderer elements={vp.schemaData ?? []} />
-  }
-
-  // Resource index (default)
-  const { basePath, resource, columns } = vp
-  return (
-    <>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">{resource?.label}</h1>
-        <a href={basePath + '/' + resource?.slug + '/create'}
-           className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition">
-          Create {resource?.labelSingular}
-        </a>
-      </div>
-      <div className="rounded-xl border bg-card overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted border-b">
-            <tr>
-              {columns?.map((col: any) => (
-                <th key={col.name} className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  {col.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td colSpan={columns?.length ?? 1} className="px-4 py-12 text-center text-muted-foreground">
-                No records yet.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </>
-  )
+  return <SchemaRenderer elements={vp.schemaData ?? []} />
 }

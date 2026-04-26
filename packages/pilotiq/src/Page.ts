@@ -1,10 +1,19 @@
 import type { Element } from './schema/Element.js'
 import type { SchemaContext, SchemaDefinition } from './schema/resolveSchema.js'
+import type { ResourceClass } from './Resource.js'
+
+/**
+ * Discriminator the framework uses for default rendering, route generation,
+ * and breadcrumbs. `'custom'` is for standalone Pages that don't belong to
+ * a Resource. The other modes correspond to the four resource page roles.
+ */
+export type PageMode = 'list' | 'create' | 'edit' | 'view' | 'custom'
 
 export interface PageMeta {
   slug:  string
   label: string
   icon:  string | undefined
+  mode:  PageMode
 }
 
 export class Page {
@@ -61,12 +70,26 @@ export class Page {
     return this._schemaDef !== undefined || this.schema !== Page.schema
   }
 
+  /**
+   * Optional back-reference to the owning Resource. Auto-generated default
+   * pages set this; user subclasses may override for breadcrumb / title
+   * resolution. Standalone custom pages return undefined.
+   */
+  static getResource(): ResourceClass | undefined { return undefined }
+
+  /**
+   * Mode discriminator. Default `'custom'` (standalone page). Resource-bound
+   * pages override to one of `'list' | 'create' | 'edit' | 'view'`.
+   */
+  static getMode(): PageMode { return 'custom' }
+
   /** @internal */
   static toMeta(): PageMeta {
     return {
       slug:  this.getSlug(),
       label: this.getLabel(),
       icon:  this.icon,
+      mode:  this.getMode(),
     }
   }
 }

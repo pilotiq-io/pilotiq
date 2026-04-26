@@ -4,7 +4,8 @@ export { PilotiqRegistry } from './PilotiqRegistry.js'
 export { pilotiq } from './PilotiqServiceProvider.js'
 export { registerPilotiqRoutes } from './routes.js'
 export { Resource, type ResourcePages, type ResourceClass, type RelationDef } from './Resource.js'
-export { Page, type PageMeta } from './Page.js'
+export { Page, type PageMeta, type PageMode } from './Page.js'
+export { defaultPages, defaultListPage, defaultCreatePage, defaultEditPage } from './defaultPages.js'
 export { Column, type ColumnMeta } from './Column.js'
 
 // ─── Schema (Element tree + resolver) ─────────────────
