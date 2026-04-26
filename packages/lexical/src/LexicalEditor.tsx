@@ -45,7 +45,7 @@ export interface Props {
   onChange:      (json: unknown) => void
   placeholder?:  string
   disabled?:     boolean
-  /** WebSocket path for live collaboration (e.g. '/ws-live') */
+  /** WebSocket path for live collaboration (e.g. '/ws-sync') */
   wsPath?:       string | null
   /** Base document name — each editor creates room `${docName}:${fragmentName}` */
   docName?:      string | null

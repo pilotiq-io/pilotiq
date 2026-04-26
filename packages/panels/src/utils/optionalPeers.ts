@@ -10,8 +10,8 @@ export interface BroadcastModule {
   broadcast(channel: string, event: string, data: unknown): void
 }
 
-export interface LiveModule {
-  Live: {
+export interface SyncModule {
+  Sync: {
     seed?(docName: string, fields: Record<string, unknown>): Promise<void> | void
   }
 }

@@ -4,6 +4,8 @@ Split the single oversized `rudderjs/playground` into **three** focused playgrou
 
 **Status:** Phases 6.0–6.3, 6.5, 6.6 all DONE 2026-04-10. 6.4 (cross-repo HMR check) is optional — manual smoke test.
 
+**Note (2026-04-27):** package renamed from @rudderjs/live to @rudderjs/sync. Lexical helpers moved to @rudderjs/sync/lexical.
+
 **Repos affected:**
 - `rudderjs` — playground slimmed to a pure framework demo (no panels, no pilotiq-pro)
 - `pilotiq` — new `playground/` exercising free `@pilotiq/{panels,lexical,media,workspaces}` on top of the framework

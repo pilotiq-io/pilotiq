@@ -211,7 +211,7 @@ fields() {
 
 Each text-based collaborative field gets its own WebSocket room (e.g., `panel:articles:{id}:text:title`) for complete isolation. Non-text collaborative fields share a single Y.Map in the form-level Y.Doc.
 
-**Requirements**: `@rudderjs/live` registered in providers.
+**Requirements**: `@rudderjs/sync` registered in providers.
 
 ### Composing Flags
 

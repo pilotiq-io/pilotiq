@@ -59,7 +59,7 @@ export async function data(pageContext: PageContextServer) {
 
     if (formMeta.wsLivePath && record) {
       try {
-        const { Live } = await import('@rudderjs/live')
+        const { Sync } = await import('@rudderjs/sync')
         const fieldData: Record<string, unknown> = {}
         const collabFields = formFields.filter((f: Field) => f.isYjs())
 
@@ -68,8 +68,8 @@ export async function data(pageContext: PageContextServer) {
           if (name in record) fieldData[name] = record[name]
         }
 
-        await Live.seed(resourceDocName, fieldData)
-      } catch { /* @rudderjs/live not available */ }
+        await Sync.seed(resourceDocName, fieldData)
+      } catch { /* @rudderjs/sync not available */ }
     }
   }
 

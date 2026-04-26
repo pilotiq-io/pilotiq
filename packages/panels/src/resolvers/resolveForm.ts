@@ -7,7 +7,7 @@ import { FormRegistry } from '../registries/FormRegistry.js'
 import { ComputeRegistry } from '../registries/ComputeRegistry.js'
 import { debugWarn } from '../debug.js'
 import { loadOptional } from '../utils/loadOptional.js'
-import type { LiveModule } from '../utils/optionalPeers.js'
+import type { SyncModule } from '../utils/optionalPeers.js'
 
 export async function resolveForm(
   el: SchemaElementLike,
@@ -127,7 +127,7 @@ export async function resolveForm(
 
     const docName = `form:${formId}`
     formMeta.yjs = true
-    formMeta.wsLivePath = needsWebsocket ? '/ws-live' : null
+    formMeta.wsLivePath = needsWebsocket ? '/ws-sync' : null
     formMeta.docName = docName
 
     // Collect all providers
@@ -141,9 +141,9 @@ export async function resolveForm(
 
     // Seed Y.Doc with initial values (server-side)
     if (needsWebsocket && Object.keys(initialValues).length > 0) {
-      const mod = await loadOptional<LiveModule>('@rudderjs/live')
-      if (mod?.Live?.seed) {
-        await mod.Live.seed(docName, initialValues)
+      const mod = await loadOptional<SyncModule>('@rudderjs/sync')
+      if (mod?.Sync?.seed) {
+        await mod.Sync.seed(docName, initialValues)
       }
     }
   }

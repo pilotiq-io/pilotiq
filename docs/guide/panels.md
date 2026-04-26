@@ -816,7 +816,7 @@ fields() {
 
 Text-based fields get their own Y.Doc + Lexical editor with live cursors. Value-based fields (toggles, selects, dates, etc.) sync via Y.Map (last-write-wins). The edit page shows connection status and presence avatars automatically.
 
-Requires `@rudderjs/live` registered in providers.
+Requires `@rudderjs/sync` registered in providers.
 
 ---
 

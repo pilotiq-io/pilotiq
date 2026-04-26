@@ -685,7 +685,7 @@ TextField.make('notes').persist(['websocket', 'indexeddb'])
 // syncs live over WebSocket; local changes survive offline via IndexedDB
 ```
 
-Requires `@rudderjs/live` to be registered.
+Requires `@rudderjs/sync` to be registered.
 
 ---
 

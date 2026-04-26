@@ -84,8 +84,8 @@ export function mountVersionRoutes(
       } else if (isCollab) {
         // Collaborative: read from Y.Doc
         try {
-          const { Live } = await import(/* @vite-ignore */ '@rudderjs/live')
-          fieldValues = Live.readMap(docName, 'fields')
+          const { Sync } = await import(/* @vite-ignore */ '@rudderjs/sync')
+          fieldValues = Sync.readMap(docName, 'fields')
         } catch {
           // Y.Doc not available — fall back to DB record
           const record = await Model.find(id)
@@ -137,7 +137,7 @@ export function mountVersionRoutes(
     const docName = `panel:${slug}:${id}`
 
     try {
-      const { Live } = await import(/* @vite-ignore */ '@rudderjs/live')
+      const { Sync } = await import(/* @vite-ignore */ '@rudderjs/sync')
 
       const resource = new ResourceClass()
       const vFormFields = flattenFields(resource._resolveForm().getFields() as import('../Resource.js').FieldOrGrouping[])
@@ -151,16 +151,16 @@ export function mountVersionRoutes(
       })
 
       // Clear all Y.Doc rooms (main + per-field)
-      await Live.clearDocument(docName)
-      for (const name of fieldDocNames) await Live.clearDocument(name)
+      await Sync.clearDocument(docName)
+      for (const name of fieldDocNames) await Sync.clearDocument(name)
 
       // y-websocket auto-reconnects and re-pushes stale data — clear again after delays
       // to catch reconnection at different exponential backoff intervals (100ms, 200ms, 400ms...)
       for (const delay of [300, 1000, 3000]) {
         setTimeout(async () => {
           try {
-            for (const name of fieldDocNames) await Live.clearDocument(name)
-            await Live.clearDocument(docName)
+            for (const name of fieldDocNames) await Sync.clearDocument(name)
+            await Sync.clearDocument(docName)
           } catch { /* ignore */ }
         }, delay)
       }
@@ -177,16 +177,16 @@ export function mountVersionRoutes(
               fieldData[name] = record[name]
             }
           }
-          await Live.seed(docName, fieldData)
+          await Sync.seed(docName, fieldData)
         }
       }
 
       // Broadcast to all clients so they remount editors with fresh Y.Docs
       liveBroadcast(slug, 'version.restored', { id })
 
-      return res.json({ message: 'Live documents synced.' })
+      return res.json({ message: 'Sync documents synced.' })
     } catch {
-      return res.json({ message: 'No live provider — skipped.' })
+      return res.json({ message: 'No sync provider — skipped.' })
     }
   }, mw)
 

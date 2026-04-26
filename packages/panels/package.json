@@ -48,7 +48,7 @@
     "@rudderjs/broadcast": "^0.0.1",
     "@rudderjs/cache": "^0.0.6",
     "@rudderjs/image": "^0.0.1",
-    "@rudderjs/live": "^0.0.1",
+    "@rudderjs/sync": "^0.0.1",
     "@rudderjs/localization": "^0.0.1",
     "@rudderjs/storage": "^0.0.6",
     "recharts": ">=2.0.0",
@@ -69,7 +69,7 @@
     "@rudderjs/broadcast": {
       "optional": true
     },
-    "@rudderjs/live": {
+    "@rudderjs/sync": {
       "optional": true
     },
     "@rudderjs/localization": {
@@ -92,7 +92,7 @@
     "@base-ui-components/react": "1.0.0-rc.0",
     "@rudderjs/broadcast": "^0.0.1",
     "@rudderjs/cache": "^0.0.6",
-    "@rudderjs/live": "^0.0.1",
+    "@rudderjs/sync": "^0.0.1",
     "@rudderjs/localization": "^0.0.1",
     "@rudderjs/storage": "^0.0.6",
     "@dnd-kit/core": "^6.3.1",

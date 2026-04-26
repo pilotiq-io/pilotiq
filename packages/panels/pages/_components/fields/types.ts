@@ -13,7 +13,7 @@ export interface FieldInputProps {
   /** Stable user identity for collaborative cursors (shared across all field types) */
   userName?: string
   userColor?: string
-  /** WebSocket path for live collaboration (e.g. '/ws-live') — used by LexicalEditor */
+  /** WebSocket path for live collaboration (e.g. '/ws-sync') — used by LexicalEditor */
   wsPath?:   string | null
   /** Base document name for live collaboration — used by LexicalEditor */
   docName?:  string | null

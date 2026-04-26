@@ -180,17 +180,17 @@ Form (resource edit page)
 |-------|-------|:---:|:---:|:---:|
 | **WebSocket** (server memory) | All users | ✓ | ✗ | ✓ |
 | **IndexedDB** (browser) | Single browser | ✓ | ✓ | ✗ |
-| **livePrisma** (database) | All users | ✓ | ✓ | ✓ |
+| **syncPrisma** (database) | All users | ✓ | ✓ | ✓ |
 
-For production, enable `livePrisma()` in your live config for full persistence:
+For production, enable `syncPrisma()` in your sync config for full persistence:
 
 ```ts
-// config/live.ts
-import { livePrisma } from '@rudderjs/live'
+// config/sync.ts
+import { syncPrisma } from '@rudderjs/sync'
 
 export default {
-  path: '/ws-live',
-  persistence: livePrisma(),
+  path: '/ws-sync',
+  persistence: syncPrisma(),
   providers: ['websocket', 'indexeddb'],
 }
 ```
@@ -222,7 +222,7 @@ DateField.make('publishedAt').collaborative()
 
 2. **The form must have Yjs enabled** — this happens automatically when any field has `.collaborative()` or `.persist(['websocket', ...])`.
 
-3. **`config/live.ts` `providers` controls the form-level Y.Map** — set `providers: ['websocket', 'indexeddb']` to enable persistence for simple collab fields (toggle, date, color).
+3. **`config/sync.ts` `providers` controls the form-level Y.Map** — set `providers: ['websocket', 'indexeddb']` to enable persistence for simple collab fields (toggle, date, color).
 
 4. **Per-field Y.Doc rooms are created automatically** — each text/richcontent collaborative field gets its own WebSocket room + IndexedDB database. Room names follow the pattern: `panel:{resource}:{recordId}:{type}:{fieldName}`.
 
@@ -232,7 +232,7 @@ DateField.make('publishedAt').collaborative()
 
 7. **Version restore uses imperative refs** — `EditorRefPlugin` / `PlainTextEditorRefPlugin` expose `setContent()` so the form can write directly to the editor. Changes propagate through CollaborationPlugin to Y.Doc and all connected users.
 
-8. **SeedPlugin handles fresh rooms** — when a Y.Doc room is empty (first load, after server restart without livePrisma), the SeedPlugin seeds from the DB value. It checks actual root content (not state vector) and retries to handle CollaborationPlugin race conditions.
+8. **SeedPlugin handles fresh rooms** — when a Y.Doc room is empty (first load, after server restart without syncPrisma), the SeedPlugin seeds from the DB value. It checks actual root content (not state vector) and retries to handle CollaborationPlugin race conditions.
 
 ### Seeding Behavior
 
@@ -240,7 +240,7 @@ When the edit page loads:
 
 ```
 1. +data.ts loads record from DB
-2. Live.seed(docName, fieldData) seeds the form-level Y.Map (simple fields)
+2. Sync.seed(docName, fieldData) seeds the form-level Y.Map (simple fields)
 3. Form renders with DB values as initialValues
 4. Each collaborative field mounts:
    a. useYjsCollab creates Y.Doc + IndexedDB + WebSocket providers
@@ -298,7 +298,7 @@ When used inside `@pilotiq/panels`, both callbacks are auto-wired by the field i
 
 ### Server-side editing
 
-When the AI edits collaborative fields, changes are applied via `Live.editText()` / `Live.editBlock()` on the server. These edits propagate through Yjs to all connected clients in real-time, with an AI cursor highlight showing where changes are being made. (Inside panels, the `update_form_state` client tool is the preferred path — see the panels README — because it routes through the live React/Lexical state and supports formatting ops the server-side path doesn't.)
+When the AI edits collaborative fields, changes are applied via `editText()` / `editBlock()` from `@rudderjs/sync/lexical` on the server (get the `Y.Doc` via `Sync.document(docName)` first). These edits propagate through Yjs to all connected clients in real-time, with an AI cursor highlight showing where changes are being made. (Inside panels, the `update_form_state` client tool is the preferred path — see the panels README — because it routes through the live React/Lexical state and supports formatting ops the server-side path doesn't.)
 
 ## Without this package
 

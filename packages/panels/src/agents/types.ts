@@ -22,7 +22,7 @@ export type PanelAgentFieldType = '*' | string
  * `./PanelAgent.ts` and `implements` this interface; pulling the surface
  * out as a type lets the schema layer (Field, Resource, registries) stay
  * decoupled from the AI runtime, which depends on `@rudderjs/ai` and
- * `@rudderjs/live`. The heavy class will move to `@pilotiq-pro/ai` in a
+ * `@rudderjs/sync`. The heavy class will move to `@pilotiq-pro/ai` in a
  * future phase; this seam means none of the schema-layer call sites will
  * need to change when it does.
  */
