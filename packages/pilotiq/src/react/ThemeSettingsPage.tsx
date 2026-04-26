@@ -237,13 +237,22 @@ function buildStaticPreviewHTML(): string {
   .mt-2 { margin-top: calc(var(--spacing) * 2); }
   .mt-3 { margin-top: calc(var(--spacing) * 3); }
   .mt-4 { margin-top: calc(var(--spacing) * 4); }
+  /* Mirrors shadcn/ui/create's .style-vega .cn-card: 1.4x radius, 10%-foreground
+     hairline ring (instead of a solid --border), subtle shadow, and overflow:
+     hidden so child overflow is clipped against the rounded corner. Padding
+     stays symmetric here because our cards don't have a separate inner section
+     pattern like shadcn's .cn-card-content. */
   .card {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: calc(var(--radius) * 1.4);
     background: var(--card);
     color: var(--card-foreground);
-    padding: calc(var(--spacing) * 5);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+    padding: calc(var(--spacing) * 6);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--foreground) 10%, transparent),
+      0 1px 2px 0 rgb(0 0 0 / 0.05);
+    overflow: hidden;
   }
   .card-header { display: flex; justify-content: space-between; align-items: flex-start; }
   /* Card titles use the heading font (visually display-weight even though
@@ -821,8 +830,8 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
           matching shadcn's customizer panel. `dark` scopes the inner
           `bg-card/90`, `text-card-foreground`, etc. to the dark variants. */}
       <div
-        className="dark isolate z-10 overflow-hidden flex flex-col gap-2 w-[14rem] shrink-0 self-start min-h-0 rounded-xl bg-card/90 text-sm text-card-foreground ring-1 ring-foreground/10 shadow-xl backdrop-blur-xl"
-        style={{ maxHeight: 'calc(100vh - 106px)' }}
+        className="dark isolate z-10 overflow-hidden flex flex-col gap-2 shrink-0 self-start min-h-0 rounded-lg bg-card/90 text-sm text-card-foreground ring-1 ring-foreground/10 shadow-xl backdrop-blur-xl"
+        style={{ maxHeight: 'calc(100vh - 106px)', width: '14rem' }}
       >
         <div className='h-full overflow-y-auto flex flex-col gap-3 p-3'>
           <PickerCard
@@ -1025,7 +1034,7 @@ function PickerCard({
     >
       <SelectTrigger
         hideIcon
-        className="w-full !h-auto items-start py-2 px-3 rounded-lg border-white/10 --bg-white/5 hover:bg-white/10 text-left shadow-none transition-colors"
+        className="w-full h-auto! items-start py-2 px-3 rounded-md border-white/10 --bg-white/5 hover:bg-white/10 text-left shadow-none transition-colors"
       >
         <div className="flex items-center justify-between gap-2 w-full">
           <div className="flex flex-col min-w-0">
@@ -1046,7 +1055,7 @@ function PickerCard({
         align="start"
         sideOffset={24}
         collisionAvoidance={{ side: 'flip', align: 'none' }}
-        className="dark min-w-[200px] rounded-xl border-0 bg-card/80 text-sm text-card-foreground ring-1 ring-foreground/10 backdrop-blur-xl shadow-2xl"
+        className="dark min-w-[200px] rounded-lg border-0 bg-card/80 text-sm text-card-foreground ring-1 ring-foreground/10 backdrop-blur-xl shadow-2xl"
       >
         {options.map((opt, i) => (
           <PickerOptionItem
@@ -1075,7 +1084,7 @@ function PickerOptionItem({ opt, selected, separator }: { opt: PickerOption; sel
   }
   return (
     <>
-      <SelectItem className="rounded-lg" value={opt.value} hideIndicator selected={selected}>
+      <SelectItem className="rounded-md" value={opt.value} hideIndicator selected={selected}>
         <span>{opt.label}</span>
       </SelectItem>
       {separator && <SelectSeparator className='bg-input'/>}

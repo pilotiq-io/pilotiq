@@ -23,16 +23,16 @@ export function resolveTheme(config: ThemeConfig): ThemeMeta {
   const light = { ...preset.light }
   const dark  = { ...preset.dark }
 
-  // 2. Apply base color
-  const base = config.baseColor ? baseColors[config.baseColor] : undefined
-  if (base) {
-    Object.assign(light, base.light)
-    Object.assign(dark, base.dark)
-  }
-
-  // The `'base'` sentinel for theme/chart resolves against the user's chosen
-  // base color when set, falling back to neutral when nothing is selected.
+  // 2. Apply base color — always layered, defaulting to neutral so the
+  //    "default state" and an explicit `baseColor: 'neutral'` resolve to the
+  //    same tokens. Without this, the preset's hardcoded surface values
+  //    (e.g. WHITE for --background) would leak through whenever no base
+  //    color is selected, making the picker show "Neutral" while the actual
+  //    rendered colors didn't match a neutral selection.
   const effectiveBase: BaseColor = config.baseColor ?? 'neutral'
+  const base = baseColors[effectiveBase]
+  Object.assign(light, base.light)
+  Object.assign(dark, base.dark)
 
   // 3 + 4. Always apply theme + chart color (default to `'base'` sentinel).
   // We default these so the editor's trigger ("Theme: Neutral", "Chart: Neutral")
