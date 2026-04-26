@@ -551,7 +551,7 @@ LIMIT 10;`).language('sql').title('Top Articles by Comments').lineNumbers(),
 
       // ── Collaborative Rich Content ────────────────────────────
       Heading.make('Collaborative Rich Content').level(2),
-      Text.make('Open this page in two browser tabs — type in one, see it appear instantly in the other. Uses Yjs CRDT via @rudderjs/live WebSocket.'),
+      Text.make('Open this page in two browser tabs — type in one, see it appear instantly in the other. Uses Yjs CRDT via @rudderjs/sync WebSocket.'),
 
       Form.make('collab-richcontent')
         .description('Real-time collaborative editor. Try editing in two tabs simultaneously.')

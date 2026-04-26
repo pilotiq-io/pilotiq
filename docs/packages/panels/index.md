@@ -21,7 +21,7 @@ Admin panel builder for RudderJS. Define resources in TypeScript — panels auto
 - **Server-side validation** — `.required()`, `.validate()`, and full `FormRequest` integration
 - **Column transforms** — `.compute()` to derive values server-side, `.display()` to format for output
 - **Dashboard builder** — drag-and-drop widget grids with per-user layout persistence
-- **Collaborative editing** — real-time co-editing via Yjs CRDT (requires `@rudderjs/live`)
+- **Collaborative editing** — real-time co-editing via Yjs CRDT (requires `@rudderjs/sync`)
 - **Draft recovery & versioning** — localStorage backup, restore banner, and full version history
 - **Custom pages & sub-pages** — add arbitrary schema-driven or React pages to the nav
 - **AI chat with block introspection** — record-edit chat agent receives a structured catalog of every block type declared on `RichContentField` / `BuilderField` fields, so it can answer block questions and call `update_block` against real schemas instead of guessing
@@ -41,7 +41,7 @@ Optional peer dependencies (install when you need them):
 
 ```bash
 pnpm add recharts          # Chart element
-pnpm add @rudderjs/live    # Collaborative editing / .persist('websocket')
+pnpm add @rudderjs/sync    # Collaborative editing / .persist('websocket')
 pnpm add @rudderjs/broadcast  # .live() real-time push updates
 ```
 

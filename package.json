@@ -42,7 +42,7 @@
       "@rudderjs/storage": "link:../rudder/packages/storage",
       "@rudderjs/image": "link:../rudder/packages/image",
       "@rudderjs/broadcast": "link:../rudder/packages/broadcast",
-      "@rudderjs/live": "link:../rudder/packages/live",
+      "@rudderjs/sync": "link:../rudder/packages/sync",
       "@rudderjs/localization": "link:../rudder/packages/localization",
       "@rudderjs/auth": "link:../rudder/packages/auth",
       "@rudderjs/hash": "link:../rudder/packages/hash",

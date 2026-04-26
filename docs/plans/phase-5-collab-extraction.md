@@ -4,6 +4,8 @@ Carve `useYjsCollab` and the Yjs runtime wiring out of `@pilotiq/lexical` (free,
 
 **Status:** DRAFT 2026-04-09.
 
+**Note (2026-04-27):** package renamed from @rudderjs/live to @rudderjs/sync. Lexical helpers moved to @rudderjs/sync/lexical.
+
 **Packages affected:**
 - `@pilotiq/lexical` — yjs/y-websocket/y-indexeddb dependency surface removed; `useYjsCollab` becomes a thin wrapper that delegates to pro when present
 - `@pilotiq-pro/collab` — new package containing the real Yjs setup, the React provider/context, and the type augmentation for `y-websocket`

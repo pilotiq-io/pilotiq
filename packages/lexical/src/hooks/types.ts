@@ -25,7 +25,7 @@ export interface YjsCollabRef {
 }
 
 export interface UseYjsCollabOptions {
-  /** WebSocket path (e.g. '/ws-live'). Null/undefined = no collaboration. */
+  /** WebSocket path (e.g. '/ws-sync'). Null/undefined = no collaboration. */
   wsPath?:       string | null | undefined
   /** Base document name — room = `${docName}:${fragmentName}` */
   docName?:      string | null | undefined

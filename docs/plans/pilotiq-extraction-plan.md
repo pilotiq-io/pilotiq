@@ -4,6 +4,8 @@ Extract `packages/panels` and `packages/panels-lexical` out of the `rudderjs/rud
 
 **Status:** DRAFT 2026-04-09.
 
+**Note (2026-04-27):** package renamed from @rudderjs/live to @rudderjs/sync. Lexical helpers moved to @rudderjs/sync/lexical.
+
 **Packages affected:**
 - Removed from `rudderjs/rudder`: `@rudderjs/panels`, `@rudderjs/panels-lexical`
 - New in `pilotiq-io/pilotiq` (public, MIT): `@pilotiq/panels`, `@pilotiq/lexical`

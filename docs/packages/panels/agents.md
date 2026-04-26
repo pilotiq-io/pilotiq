@@ -66,7 +66,7 @@ export class ArticleResource extends Resource {
 
 Every `PanelAgent` ships with five tools out of the box:
 
-- **`update_field`** *(server)* — Direct field write via `@rudderjs/live` (Yjs). Headless-only — for cron jobs and background runs.
+- **`update_field`** *(server)* — Direct field write via `@rudderjs/sync` (Yjs). Headless-only — for cron jobs and background runs.
 - **`read_record`** *(server)* — Returns the current record as JSON.
 - **`edit_text`** *(server)* — Direct rope edit on a field's persisted value. Headless-only.
 - **`update_form_state`** *(client)* — Dispatches form-state ops to the live `<SchemaForm>` in the user's browser. **Use this when a browser is open** — it preserves unsaved local edits and works for non-collaborative fields.
