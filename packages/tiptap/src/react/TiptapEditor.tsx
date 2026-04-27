@@ -36,7 +36,7 @@ export function TiptapEditor(props: FieldRendererProps) {
     return (
       <div className="flex flex-col gap-1">
         <input type="hidden" name={props.name} value={JSON.stringify(initialContent ?? null)} />
-        <div className="prose prose-sm max-w-none min-h-[180px] rounded-md border border-input bg-transparent px-3 py-2 text-sm text-muted-foreground">
+        <div className="prose prose-sm max-w-none min-h-[180px] rounded-md border border-input bg-transparent px-10 py-3 text-sm text-muted-foreground">
           {props.placeholder ?? 'Start writing…'}
         </div>
       </div>
@@ -87,7 +87,7 @@ function ClientEditor(props: FieldRendererProps) {
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none min-h-[180px] rounded-md border border-input bg-transparent px-3 py-2 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        class: 'prose prose-sm dark:prose-invert max-w-none min-h-[180px] rounded-md border border-input bg-transparent px-10 py-3 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
       },
     },
   })

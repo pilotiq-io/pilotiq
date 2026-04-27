@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @source "../../packages/pilotiq/src";
+@source "../../packages/tiptap/src";
 @import "tw-animate-css";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 

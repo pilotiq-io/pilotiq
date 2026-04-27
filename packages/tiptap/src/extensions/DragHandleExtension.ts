@@ -1,5 +1,5 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 
 const dragHandlePluginKey = new PluginKey('pilotiqDragHandle')
@@ -49,7 +49,7 @@ function createDragHandleView(view: EditorView): {
     'cursor: grab',
     'background: transparent',
     'border: 0',
-    'padding: 4px',
+    'padding: 2px',
     'color: var(--muted-foreground, #888)',
     'opacity: 0',
     'transition: opacity 0.15s',
@@ -57,7 +57,7 @@ function createDragHandleView(view: EditorView): {
     'line-height: 1',
     'border-radius: 4px',
   ].join(';')
-  handle.innerHTML = '<svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.5"/><circle cx="3" cy="8" r="1.5"/><circle cx="3" cy="13" r="1.5"/><circle cx="9" cy="3" r="1.5"/><circle cx="9" cy="8" r="1.5"/><circle cx="9" cy="13" r="1.5"/></svg>'
+  handle.innerHTML = '<svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor" aria-hidden="true"><circle cx="2" cy="2" r="1"/><circle cx="2" cy="6" r="1"/><circle cx="2" cy="10" r="1"/><circle cx="6" cy="2" r="1"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="10" r="1"/></svg>'
   document.body.appendChild(handle)
 
   let activePos: number | null = null
@@ -90,7 +90,7 @@ function createDragHandleView(view: EditorView): {
     handle.style.display = 'block'
     handle.style.opacity = '1'
     handle.style.top  = `${rect.top + window.scrollY + 4}px`
-    handle.style.left = `${rect.left + window.scrollX - 28}px`
+    handle.style.left = `${rect.left + window.scrollX - 24}px`
     activePos = blockPos
   }
 
@@ -107,20 +107,36 @@ function createDragHandleView(view: EditorView): {
   }
 
   const onDragStart = (event: DragEvent): void => {
-    if (activePos === null) return
-    // Select the node so PM's built-in drag-drop ships the right slice.
-    const tr = view.state.tr.setSelection(
-      // @ts-ignore — NodeSelection is available on `pm/state`'s namespace
-      (view.state.selection.constructor as any).create
-        ? (view.state.selection.constructor as any).create(view.state.doc, activePos)
-        : view.state.selection,
-    )
-    view.dispatch(tr)
-    if (!event.dataTransfer) return
-    event.dataTransfer.effectAllowed = 'move'
-    // Forward to PM's editable handler — it sets up the move/drop transaction.
-    const slice = view.state.doc.slice(activePos, activePos + view.state.doc.nodeAt(activePos)!.nodeSize)
-    event.dataTransfer.setData('text/html', slice.content.toString())
+    if (activePos === null || !event.dataTransfer) return
+    const node = view.state.doc.nodeAt(activePos)
+    if (!node) return
+
+    // Select the block as a NodeSelection so PM treats the drag as a node
+    // move, not a text-range move.
+    const selection = NodeSelection.create(view.state.doc, activePos)
+    view.dispatch(view.state.tr.setSelection(selection))
+
+    // PM's drop handler reads `view.dragging` for in-editor drags. Without
+    // it the drop falls back to clipboard-HTML parsing and silently no-ops
+    // (drop returns to origin). This is the line that actually fixes drop.
+    const slice = selection.content()
+    ;(view as unknown as { dragging: { slice: typeof slice; move: boolean } }).dragging = {
+      slice,
+      move: !event.ctrlKey && !event.metaKey,
+    }
+
+    // Use PM's clipboard serializer so the drag carries proper HTML — both
+    // for cross-editor pastes and as the visible drag image.
+    const { dom, text } = view.serializeForClipboard(slice)
+    event.dataTransfer.clearData()
+    event.dataTransfer.setData('text/html', dom.innerHTML)
+    event.dataTransfer.setData('text/plain', text)
+    event.dataTransfer.effectAllowed = 'copyMove'
+
+    // Drag image = the actual block, not the handle button.
+    const blockNode = view.nodeDOM(activePos) as HTMLElement | null
+    if (blockNode) event.dataTransfer.setDragImage(blockNode, 0, 0)
+
     handle.style.cursor = 'grabbing'
   }
 
