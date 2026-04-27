@@ -2,7 +2,7 @@ import type { Element } from './schema/Element.js'
 import type { Form } from './elements/Form.js'
 import type { Table } from './elements/Table.js'
 import type { Page } from './Page.js'
-import type { ModelLike } from '@rudderjs/contracts'
+import type { ModelLike } from './orm/modelDefaults.js'
 import { defaultPages } from './defaultPages.js'
 
 /** Map of resource page roles to Page subclasses. */

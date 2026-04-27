@@ -21,12 +21,9 @@ export {
 export { Column, type ColumnMeta } from './Column.js'
 
 // ─── ORM model wiring ─────────────────────────────────
-// `ModelLike` / `ModelQuery` are owned by `@rudderjs/contracts` — re-export
-// from there so users can `import { ModelLike } from '@pilotiq/pilotiq'`
-// without reaching into the rudder contracts package directly.
-export type { ModelLike, ModelQuery } from '@rudderjs/contracts'
 export {
   modelSave, modelLoadRecord, modelTableRecords, getPrimaryKey,
+  type ModelLike, type ModelQuery, type ModelWhereOperator,
 } from './orm/modelDefaults.js'
 
 // ─── Schema (Element tree + resolver) ─────────────────
@@ -90,6 +87,17 @@ export {
   type DispatchSuccess,
   type DispatchFailure,
 } from './elements/dispatchForm.js'
+export {
+  dispatchAction,
+  findActions,
+  parseActionBody,
+  type ActionRequestInput,
+  type DispatchActionInput,
+  type DispatchActionResult,
+  type DispatchActionSuccess,
+  type DispatchActionFailure,
+  type ResolveRecord,
+} from './elements/dispatchAction.js'
 
 // ─── Fields ───────────────────────────────────────────
 export { Field, type FieldType, type FieldMeta, type FieldCondition } from './fields/Field.js'
@@ -109,6 +117,7 @@ export {
   type ActionPlacement,
   type ActionContext,
   type ActionHandler,
+  type ActionResult,
   type ActionConfirm,
   type ActionMethod,
   type ActionMeta,

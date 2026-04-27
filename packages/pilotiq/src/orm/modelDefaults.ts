@@ -1,7 +1,46 @@
-import type { ModelLike } from '@rudderjs/contracts'
 import type { Column } from '../Column.js'
 import type { Table, TableRecordsHandler, TableRecordsResult } from '../elements/Table.js'
 import type { SaveHandler, LoadRecordHandler, FormContext } from '../elements/Form.js'
+
+/**
+ * SQL-style operators understood by `ModelLike.query()`. Mirrors the
+ * `WhereOperator` set from `@rudderjs/contracts` so any rudder Model is
+ * structurally assignable to `ModelLike` — but pilotiq doesn't import
+ * `@rudderjs/contracts` here to keep this file dependency-light.
+ */
+export type ModelWhereOperator = '=' | '!=' | '>' | '>=' | '<' | '<=' | 'LIKE' | 'IN' | 'NOT IN'
+
+/**
+ * Eloquent-style query builder pilotiq drives when it auto-generates
+ * `Table.records()` / `Form.save()` / `Form.loadRecord()` from a
+ * Resource's `static model`. Any query builder that satisfies this shape
+ * works — the rudder `QueryBuilder<T>` from `@rudderjs/contracts` does,
+ * and so does anything user-supplied with the same method names.
+ */
+export interface ModelQuery {
+  where(column: string, value: unknown): ModelQuery
+  where(column: string, operator: ModelWhereOperator, value: unknown): ModelQuery
+  orWhere(column: string, value: unknown): ModelQuery
+  orWhere(column: string, operator: ModelWhereOperator, value: unknown): ModelQuery
+  orderBy(column: string, direction?: 'ASC' | 'DESC'): ModelQuery
+  paginate(page: number, perPage?: number): Promise<{ data: unknown[]; total: number }>
+}
+
+/**
+ * Structural shape pilotiq calls to wire ORM defaults. A class extending
+ * `@rudderjs/orm`'s `Model` satisfies this automatically via its static
+ * methods. Users with a different ORM can build their own object.
+ */
+export interface ModelLike {
+  /** Primary-key column name. Defaults to `'id'`. */
+  primaryKey?: string
+
+  find(id: string | number):                                 Promise<unknown>
+  create(data: Record<string, unknown>):                     Promise<unknown>
+  update(id: string | number, data: Record<string, unknown>): Promise<unknown>
+  delete(id: string | number):                               Promise<void>
+  query():                                                   ModelQuery
+}
 
 /** Read the configured primary key (default `'id'`) off a `ModelLike`. */
 export function getPrimaryKey(M: ModelLike): string {

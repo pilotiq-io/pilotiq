@@ -8,6 +8,7 @@ import type { Element } from './schema/Element.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { dispatchFormSubmit, findForms, selectForm } from './elements/dispatchForm.js'
 import { loadTableRecords } from './elements/dispatchTable.js'
+import { dispatchAction, findActions, parseActionBody, type ResolveRecord } from './elements/dispatchAction.js'
 import { resolveTheme } from './theme/resolve.js'
 import type { ThemeConfig, ThemeMeta } from './theme/types.js'
 import { presets } from './theme/presets.js'
@@ -86,6 +87,21 @@ function tagFormActions(elements: ReadonlyArray<Element>, action: string): void 
   }
 }
 
+/**
+ * Stamp every handler-style Action on the page (i.e. one with a
+ * `.handler()` and no `href`/`method`) with its dispatch URL. The client
+ * renderer reads this off `ActionMeta.dispatchUrl` to know where to
+ * POST when the action button is clicked.
+ */
+function tagActionDispatch(elements: ReadonlyArray<Element>, baseUrl: string): void {
+  for (const action of findActions(elements)) {
+    if (!action.getHandler()) continue
+    if (action.getHref() || action.getMethod()) continue
+    if (action.getDispatchUrl()) continue
+    action.dispatchUrl(`${baseUrl}/_action/${action.name}`)
+  }
+}
+
 export function registerPilotiqRoutes(
   router: Router,
   pilotiq: Pilotiq,
@@ -112,9 +128,11 @@ export function registerPilotiqRoutes(
     // Index — GET ${base}/${slug}
     if (pages.index) {
       const PageClass = pages.index
-      router.get(`${base}/${slug}`, async (req) => {
+      const indexUrl  = `${base}/${slug}`
+      router.get(indexUrl, async (req) => {
         const ctx: SchemaContext = { mode: 'table', basePath: base }
         const elements = await callPageSchema(PageClass, ctx)
+        tagActionDispatch(elements, indexUrl)
         await loadTableRecords(elements, req.query)
         const schemaData = await resolveSchema(elements, ctx)
         return view('pilotiq.slug', {
@@ -126,6 +144,33 @@ export function registerPilotiqRoutes(
           layout:   cfg.layout,
           schemaData,
         })
+      })
+
+      // Action dispatch — POST ${base}/${slug}/_action/:actionName
+      router.post(`${indexUrl}/_action/:actionName`, async (req, res) => {
+        const actionName = req.params['actionName']!
+        const body  = await readFormBody(req)
+        const input = parseActionBody(body)
+
+        const ctx: SchemaContext = { mode: 'table', basePath: base }
+        const elements = await callPageSchema(PageClass, ctx)
+        tagActionDispatch(elements, indexUrl)
+        const action = findActions(elements).find(a => a.name === actionName)
+        if (!action) {
+          res.status(404)
+          return res.send(`Action "${actionName}" not found on ${R.label}`)
+        }
+
+        const resolveRecord: ResolveRecord | undefined = R.model
+          ? (id: string) => R.model!.find(id)
+          : undefined
+
+        const result = await dispatchAction(action, { ...input, request: req }, resolveRecord)
+        if (!result.ok) {
+          res.status(500)
+          return res.send(result.error)
+        }
+        return res.redirect(result.redirect ?? indexUrl, 303)
       })
     }
 
@@ -441,6 +486,7 @@ export function registerPilotiqRoutes(
       const ctx: SchemaContext = {}
       const elements = await callPageSchema(PageClass, ctx)
       tagFormActions(elements, pageUrl)
+      tagActionDispatch(elements, pageUrl)
       const schemaData = await resolveSchema(elements, ctx)
       return view('pilotiq.slug', {
         pageType: 'page',
@@ -450,6 +496,29 @@ export function registerPilotiqRoutes(
         basePath: base,
         layout:   cfg.layout,
       })
+    })
+
+    // Action dispatch — POST ${base}/${pageSlug}/_action/:actionName
+    router.post(`${pageUrl}/_action/:actionName`, async (req, res) => {
+      const actionName = req.params['actionName']!
+      const body  = await readFormBody(req)
+      const input = parseActionBody(body)
+
+      const ctx: SchemaContext = {}
+      const elements = await callPageSchema(PageClass, ctx)
+      tagActionDispatch(elements, pageUrl)
+      const action = findActions(elements).find(a => a.name === actionName)
+      if (!action) {
+        res.status(404)
+        return res.send(`Action "${actionName}" not found on page`)
+      }
+
+      const result = await dispatchAction(action, { ...input, request: req })
+      if (!result.ok) {
+        res.status(500)
+        return res.send(result.error)
+      }
+      return res.redirect(result.redirect ?? pageUrl, 303)
     })
 
     // Custom pages can also accept submits when their schema includes a Form.

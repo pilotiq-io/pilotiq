@@ -7,7 +7,7 @@ import { Table } from '../elements/Table.js'
 import { Column } from '../Column.js'
 import { TextField } from '../fields/TextField.js'
 import { defaultListPage, defaultCreatePage, defaultEditPage } from '../defaultPages.js'
-import type { ModelLike, ModelQuery } from '@rudderjs/contracts'
+import type { ModelLike, ModelQuery } from './modelDefaults.js'
 import type { TableContext } from '../elements/Table.js'
 
 // ── Fake ModelLike that records every call so tests can assert on it ──

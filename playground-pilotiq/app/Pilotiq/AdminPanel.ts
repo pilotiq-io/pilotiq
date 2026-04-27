@@ -1,5 +1,5 @@
 import {
-  Pilotiq, Resource, Global, TextField, Column,
+  Pilotiq, Resource, Global, TextField, Column, Action,
   Form, Table,
   Heading, Text, Alert, Divider, Card, Section,
 } from '@pilotiq/pilotiq'
@@ -47,6 +47,20 @@ class ArticleResource extends Resource {
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
+      .actions([
+        Action.make('markFeatured')
+          .label('Mark featured')
+          .bulk()
+          .confirm('Mark these articles as featured?')
+          .handler(async (ctx) => {
+            const ids = (ctx.records as { id?: string }[] | undefined)?.map(r => r.id).filter(Boolean) ?? []
+            if (ids.length === 0) return
+            await prisma().article.updateMany({
+              where: { id: { in: ids } },
+              data:  { featured: true },
+            })
+          }),
+      ])
   }
 }
 

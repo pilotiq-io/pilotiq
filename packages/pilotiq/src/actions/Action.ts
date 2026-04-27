@@ -13,16 +13,28 @@ export type ActionPlacement = 'inline' | 'bulk' | 'row' | 'header'
 /**
  * Context handed to an Action's handler at dispatch time. `record` is set
  * for row/inline actions that operate on a single entity; `records` is set
- * for bulk actions. Phase 1.4 stores the handler but doesn't invoke it —
- * dispatch is wired up in Phase 2 alongside Resource form/table rendering.
+ * for bulk actions. `values` carries any additional payload submitted with
+ * the action (useful when an action has its own confirmation dialog form).
+ * `request` is the raw `AppRequest` for handlers that need direct access
+ * (auth, headers, etc).
  */
 export interface ActionContext {
   record?:  unknown
   records?: unknown[]
   user?:    unknown
+  values?:  Record<string, unknown>
+  request?: unknown
 }
 
-export type ActionHandler = (ctx: ActionContext) => Promise<void> | void
+/**
+ * Result a handler may return to influence the response. `void` is the
+ * default — the dispatcher 303-redirects to the page the action was
+ * triggered from. Returning `{ redirect }` overrides that with an
+ * explicit URL. Throw an Error to surface as a 500 with the message.
+ */
+export type ActionResult = void | { redirect?: string }
+
+export type ActionHandler = (ctx: ActionContext) => ActionResult | Promise<ActionResult>
 
 /**
  * A confirmation prompt shown before the handler runs. A bare string is
@@ -40,16 +52,19 @@ export interface ActionConfirm {
 export type ActionMethod = 'post' | 'put' | 'patch' | 'delete'
 
 export interface ActionMeta extends ElementMeta {
-  type:        'action'
-  name:        string
-  label:       string
-  placement:   ActionPlacement
-  destructive: boolean
-  icon?:       string
-  confirm?:    ActionConfirm
-  href?:       string
-  method?:     ActionMethod
-  action?:     string
+  type:         'action'
+  name:         string
+  label:        string
+  placement:    ActionPlacement
+  destructive:  boolean
+  icon?:        string
+  confirm?:     ActionConfirm
+  href?:        string
+  method?:      ActionMethod
+  action?:      string
+  /** POST URL for handler-style actions. Set server-side by the route
+   * registrar so the client knows where to dispatch. */
+  dispatchUrl?: string
 }
 
 /**
@@ -75,6 +90,7 @@ export class Action extends Element {
   protected _href?: string
   protected _method?: ActionMethod
   protected _actionUrl?: string
+  protected _dispatchUrl?: string
 
   private constructor(name: string) {
     super()
@@ -144,15 +160,26 @@ export class Action extends Element {
     return this
   }
 
+  /**
+   * Render-time URL the client should POST to when invoking this
+   * action's handler. Set by the route registrar — users don't normally
+   * call this directly. Format: `${pageUrl}/_action/${action.name}`.
+   */
+  dispatchUrl(url: string): this {
+    this._dispatchUrl = url
+    return this
+  }
+
   // ─── Getters ──────────────────────────────────────────
 
   getLabel():     string             { return this._label }
   getPlacement(): ActionPlacement    { return this._placement }
   isDestructive(): boolean           { return this._destructive }
-  getHandler():   ActionHandler | undefined { return this._handler }
-  getHref():      string | undefined        { return this._href }
-  getMethod():    ActionMethod | undefined  { return this._method }
-  getActionUrl(): string | undefined        { return this._actionUrl }
+  getHandler():     ActionHandler | undefined { return this._handler }
+  getHref():        string | undefined        { return this._href }
+  getMethod():      ActionMethod | undefined  { return this._method }
+  getActionUrl():   string | undefined        { return this._actionUrl }
+  getDispatchUrl(): string | undefined        { return this._dispatchUrl }
 
   // ─── Element contract ────────────────────────────────
 
@@ -165,11 +192,12 @@ export class Action extends Element {
       label:       this._label,
       placement:   this._placement,
       destructive: this._destructive,
-      ...(this._icon      ? { icon:    this._icon    } : {}),
-      ...(this._confirm   ? { confirm: this._confirm } : {}),
-      ...(this._href      ? { href:    this._href    } : {}),
-      ...(this._method    ? { method:  this._method  } : {}),
-      ...(this._actionUrl ? { action:  this._actionUrl } : {}),
+      ...(this._icon        ? { icon:        this._icon        } : {}),
+      ...(this._confirm     ? { confirm:     this._confirm     } : {}),
+      ...(this._href        ? { href:        this._href        } : {}),
+      ...(this._method      ? { method:      this._method      } : {}),
+      ...(this._actionUrl   ? { action:      this._actionUrl   } : {}),
+      ...(this._dispatchUrl ? { dispatchUrl: this._dispatchUrl } : {}),
     }
   }
 }

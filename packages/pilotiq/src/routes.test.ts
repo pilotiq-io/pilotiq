@@ -504,3 +504,116 @@ describe('registerPilotiqRoutes — POST submit lifecycle', () => {
     assert.equal(res.redirectedTo?.url, '/elsewhere')
   })
 })
+
+describe('registerPilotiqRoutes — Action handler dispatch', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  function panelWith(R: any) {
+    return Pilotiq.make('T').path('/admin').resources([R])
+  }
+
+  it('registers POST /admin/{slug}/_action/:actionName for resources', () => {
+    registerPilotiqRoutes(router, panelWith(ArticleResource))
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.ok(paths.includes('POST /admin/articles/_action/:actionName'))
+  })
+
+  it('runs the named action handler and 303-redirects to the index by default', async () => {
+    let called = false
+    const { Action } = await import('./actions/Action.js')
+    class WithAction extends ArticleResource {
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).actions([
+          Action.make('refresh').handler(() => { called = true }),
+        ])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(WithAction))
+
+    const post = router.list().find(r =>
+      r.method === 'POST' && r.path === '/admin/articles/_action/:actionName',
+    )!
+    const { res } = await callHandlerCapturing(
+      post.handler,
+      fakeReq({ params: { actionName: 'refresh' }, body: {} }),
+    )
+    assert.equal(called, true)
+    assert.deepEqual(res.redirectedTo, { url: '/admin/articles', code: 303 })
+  })
+
+  it('passes ids through to the handler as ctx.records (bulk)', async () => {
+    let captured: unknown
+    const { Action } = await import('./actions/Action.js')
+    class WithBulk extends ArticleResource {
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).actions([
+          Action.make('archive').bulk().handler((ctx) => { captured = ctx.records }),
+        ])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(WithBulk))
+
+    const post = router.list().find(r =>
+      r.method === 'POST' && r.path === '/admin/articles/_action/:actionName',
+    )!
+    await callHandlerCapturing(
+      post.handler,
+      fakeReq({ params: { actionName: 'archive' }, body: { ids: ['1', '2', '3'] } }),
+    )
+    assert.deepEqual(captured, [{ id: '1' }, { id: '2' }, { id: '3' }])
+  })
+
+  it('returns 404 when the action name does not exist on the page', async () => {
+    registerPilotiqRoutes(router, panelWith(ArticleResource))
+    const post = router.list().find(r =>
+      r.method === 'POST' && r.path === '/admin/articles/_action/:actionName',
+    )!
+    const { res } = await callHandlerCapturing(
+      post.handler,
+      fakeReq({ params: { actionName: 'ghost' }, body: {} }),
+    )
+    assert.equal(res.statusCode, 404)
+  })
+
+  it('returns 500 with the error message when the handler throws', async () => {
+    const { Action } = await import('./actions/Action.js')
+    class Boom extends ArticleResource {
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).actions([
+          Action.make('explode').handler(() => { throw new Error('boom') }),
+        ])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Boom))
+    const post = router.list().find(r =>
+      r.method === 'POST' && r.path === '/admin/articles/_action/:actionName',
+    )!
+    const { res } = await callHandlerCapturing(
+      post.handler,
+      fakeReq({ params: { actionName: 'explode' }, body: {} }),
+    )
+    assert.equal(res.statusCode, 500)
+    assert.equal(res.sentBody, 'boom')
+  })
+
+  it('honors a redirect returned by the handler', async () => {
+    const { Action } = await import('./actions/Action.js')
+    class Redir extends ArticleResource {
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).actions([
+          Action.make('go').handler(() => ({ redirect: '/somewhere' })),
+        ])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Redir))
+    const post = router.list().find(r =>
+      r.method === 'POST' && r.path === '/admin/articles/_action/:actionName',
+    )!
+    const { res } = await callHandlerCapturing(
+      post.handler,
+      fakeReq({ params: { actionName: 'go' }, body: {} }),
+    )
+    assert.deepEqual(res.redirectedTo, { url: '/somewhere', code: 303 })
+  })
+})

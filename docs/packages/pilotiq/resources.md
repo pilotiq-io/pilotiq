@@ -209,10 +209,11 @@ The `POST ${slug}/:id/delete` route calls this, returns 303 to the list on succe
 
 ### `ModelLike` shape (for non-rudder ORMs)
 
-`Resource.model` accepts any object matching `ModelLike` — a contract owned by `@rudderjs/contracts`:
+`Resource.model` accepts any object matching `ModelLike`:
 
 ```ts
-// from @rudderjs/contracts
+import type { ModelLike } from '@pilotiq/pilotiq'
+
 export interface ModelLike {
   primaryKey?: string                                              // defaults to 'id'
   find(id):    Promise<unknown>
@@ -223,7 +224,65 @@ export interface ModelLike {
 }
 ```
 
-`@rudderjs/orm`'s `Model` base class structurally satisfies the contract — the orm package even ships a compile-time `satisfies` check so the conformance can't drift. Pilotiq imports `ModelLike` from `@rudderjs/contracts` (already a peer dep), so there's no runtime dependency on `@rudderjs/orm` and users with a different stack can plug in a hand-rolled object.
+Any class extending `@rudderjs/orm`'s `Model` satisfies this structurally via its static methods. Pilotiq doesn't import `@rudderjs/orm` at runtime — the contract is pilotiq-internal — so users with a different stack can plug in a hand-rolled object.
+
+---
+
+## Action handler dispatch
+
+Actions can render as links (`Action.href(url)`), form-style submits (`Action.method('post').action(url)`), or **handler-style** — a `.handler(ctx)` callback that runs server-side when the button is clicked:
+
+```ts
+static override table(table: Table): Table {
+  return table
+    .columns([Column.make('title')])
+    .actions([
+      Action.make('markFeatured')
+        .label('Mark featured')
+        .bulk()
+        .confirm('Mark these articles as featured?')
+        .handler(async (ctx) => {
+          const ids = (ctx.records as { id: string }[]).map(r => r.id)
+          await prisma.article.updateMany({
+            where: { id: { in: ids } },
+            data:  { featured: true },
+          })
+        }),
+    ])
+}
+```
+
+The route registrar auto-generates a POST endpoint per resource and stamps every handler-style action with its `dispatchUrl` so the client knows where to submit:
+
+| URL                                        | Source page          |
+| ------------------------------------------ | -------------------- |
+| `POST {base}/{slug}/_action/{actionName}`  | resource index page  |
+| `POST {base}/{pageSlug}/_action/{actionName}` | custom page       |
+
+Body shape (form-encoded or JSON):
+
+```jsonc
+{
+  "ids":     ["1", "2", "3"],   // optional — record ids the action operates on
+  "subject": "..."              // any other fields are passed through as ctx.values
+}
+```
+
+The handler receives an `ActionContext`:
+
+| `ids.length` | Resolved as          |
+| ------------ | -------------------- |
+| 0            | `ctx.record` / `ctx.records` left empty (header action) |
+| 1            | `ctx.record` — single record |
+| > 1          | `ctx.records` — array |
+
+When `Resource.model` is set, ids hydrate through `R.model.find(id)` so handlers receive full records. Without a model the framework passes bare `{ id }` stubs.
+
+**Return value:**
+
+- `void` (or async returning `undefined`) — the dispatcher 303-redirects back to the page that triggered the action.
+- `{ redirect: '/elsewhere' }` — explicit redirect.
+- Throwing an Error returns 500 with the message.
 
 ---
 
