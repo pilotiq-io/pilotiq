@@ -1,4 +1,4 @@
-import { Column, Action, type Table } from '@pilotiq/pilotiq'
+import { Column, Action, SelectFilter, BooleanFilter, type Table } from '@pilotiq/pilotiq'
 import { app } from '@rudderjs/core'
 
 const prisma = (): any => app().make('prisma')
@@ -10,6 +10,14 @@ export const ArticlesTable = {
         Column.make('title').label('Title').sortable().searchable(),
         Column.make('slug').label('Slug').searchable(),
         Column.make('createdAt').label('Created').sortable(),
+      ])
+      .filters([
+        SelectFilter.make('status').options([
+          { value: 'draft',     label: 'Draft' },
+          { value: 'published', label: 'Published' },
+          { value: 'archived',  label: 'Archived' },
+        ]),
+        BooleanFilter.make('featured').label('Featured'),
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)

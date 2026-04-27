@@ -1,11 +1,38 @@
 import { Element } from '../schema/Element.js'
 import { Table, type TableContext, type SortDirection } from './Table.js'
+import type { Filter } from '../filters/Filter.js'
 
 export interface QueryParams {
   search?: string
   sort?:   string  // "col:dir" or "col"
   page?:   string | number
   perPage?: string | number
+  /** Filter values keyed by filter name. Any URL query key not in the
+   * reserved set above is treated as a candidate filter value. */
+  [key: string]: unknown
+}
+
+/** Reserved query keys consumed by the framework — anything else is a filter. */
+const RESERVED_QUERY_KEYS = new Set(['search', 'sort', 'page', 'perPage'])
+
+/**
+ * Pull filter values out of a flat query-string record. A key matches a
+ * filter when its name is registered on the table and the value is a
+ * non-empty string. Unknown / empty / reserved keys are dropped.
+ */
+export function parseFilterValues(
+  query:   QueryParams,
+  filters: ReadonlyArray<Filter>,
+): Record<string, string> {
+  if (filters.length === 0) return {}
+  const filterNames = new Set(filters.map(f => f.name))
+  const out: Record<string, string> = {}
+  for (const [key, val] of Object.entries(query)) {
+    if (RESERVED_QUERY_KEYS.has(key)) continue
+    if (!filterNames.has(key)) continue
+    if (typeof val === 'string' && val !== '') out[key] = val
+  }
+  return out
 }
 
 /**
@@ -92,10 +119,21 @@ export async function loadTableRecords(
     const effectivePerPage = perPage ?? table.getPerPage()
     const effectivePage    = page    ?? 1
 
+    // Parse filter values from the URL query. Mirror them back onto the
+    // Filter elements so the renderer can show the active selection, and
+    // pass them through TableContext for the records handler to consume.
+    const tableFilters = table.getFilters()
+    const filterValues = parseFilterValues(query, tableFilters)
+    for (const filter of tableFilters) {
+      const v = filterValues[filter.name]
+      if (v !== undefined) filter.withValue(v)
+    }
+
     const ctx: TableContext = {
-      ...(search !== undefined      ? { search }                : {}),
-      ...(effectiveSort !== undefined  ? { sort: effectiveSort } : {}),
-      ...(effectivePerPage !== undefined ? { perPage: effectivePerPage } : {}),
+      ...(search !== undefined           ? { search }                       : {}),
+      ...(effectiveSort !== undefined    ? { sort: effectiveSort }          : {}),
+      ...(effectivePerPage !== undefined ? { perPage: effectivePerPage }    : {}),
+      ...(Object.keys(filterValues).length > 0 ? { filters: filterValues } : {}),
       page: effectivePage,
     }
 

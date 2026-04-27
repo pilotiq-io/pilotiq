@@ -86,6 +86,7 @@ export function modelTableRecords(M: ModelLike, table: Table): TableRecordsHandl
   // we don't re-walk the children on every request.
   const columns: Column[]    = table.getColumns()
   const searchable: string[] = columns.filter(c => c.isSearchable()).map(c => c.name)
+  const filters             = table.getFilters()
 
   return async (ctx): Promise<TableRecordsResult> => {
     let q = M.query()
@@ -97,6 +98,24 @@ export function modelTableRecords(M: ModelLike, table: Table): TableRecordsHandl
           ? q.where(col, 'LIKE', needle)
           : q.orWhere(col, 'LIKE', needle)
       })
+    }
+
+    // Apply filters. Each Filter contributes a `where` clause with type
+    // coercion based on its `kind` — boolean filters cast '1'/'true' to
+    // a real boolean. Custom `Filter.query(fn)` overrides the default.
+    const filterValues = ctx.filters ?? {}
+    for (const filter of filters) {
+      const value = filterValues[filter.name]
+      if (value === undefined || value === '') continue
+      const customQuery = filter.getQuery()
+      if (customQuery) {
+        q = customQuery(q, value)
+      } else if (filter.getKind() === 'boolean') {
+        const bool = value === '1' || value === 'true' || value === 'yes' || value === 'on'
+        q = q.where(filter.name, bool)
+      } else {
+        q = q.where(filter.name, value)
+      }
     }
 
     if (ctx.sort) {

@@ -1,6 +1,7 @@
 import { Element, type ElementMeta } from '../schema/Element.js'
 import { Column } from '../Column.js'
 import { Action } from '../actions/Action.js'
+import { Filter } from '../filters/Filter.js'
 
 export type SortDirection = 'asc' | 'desc'
 
@@ -11,6 +12,9 @@ export interface TableContext<R = unknown> {
   page?:    number
   perPage?: number
   records?: R[]
+  /** Active filter values keyed by filter name (e.g. `{ status: 'published' }`).
+   * Empty / unsupplied filters are absent. */
+  filters?: Record<string, string>
   [key: string]: unknown
 }
 
@@ -101,6 +105,14 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
+  /** Shorthand: replace the filter children. Existing columns/actions stay. */
+  filters(filters: Filter[]): this {
+    const existing = this._children ?? []
+    const nonFilters = existing.filter(el => !(el instanceof Filter))
+    this._children = [...nonFilters, ...filters]
+    return this
+  }
+
   // ─── Lifecycle config ────────────────────────────────
 
   /** Adapter-flavored query builder hook. Reserved for ORM adapters in Phase 3+. */
@@ -150,6 +162,11 @@ export class Table<R = unknown, Q = unknown> extends Element {
   /** Convenience: the `Column` children only. */
   getColumns(): Column[] {
     return (this._children ?? []).filter((el): el is Column => el instanceof Column)
+  }
+
+  /** Convenience: the `Filter` children only. */
+  getFilters(): Filter[] {
+    return (this._children ?? []).filter((el): el is Filter => el instanceof Filter)
   }
 
   // ─── Serialization ────────────────────────────────────

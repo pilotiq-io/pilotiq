@@ -365,6 +365,43 @@ When `Resource.model` is set, ids hydrate through `R.model.find(id)` so handlers
 - `{ redirect: '/elsewhere' }` — explicit redirect.
 - Throwing an Error returns 500 with the message.
 
+### Filters
+
+Tables can declare filters that surface as form controls in the header bar. Each filter contributes a `where` clause to the underlying ORM query when a value is selected. Two built-in kinds:
+
+```ts
+import { SelectFilter, BooleanFilter } from '@pilotiq/pilotiq'
+
+table
+  .columns([Column.make('title').sortable()])
+  .filters([
+    SelectFilter.make('status').options([
+      { value: 'draft',     label: 'Draft' },
+      { value: 'published', label: 'Published' },
+    ]),
+    BooleanFilter.make('featured').label('Featured'),
+  ])
+```
+
+Filter values ride in the URL query directly under their filter name (`?status=published&featured=1`). Reserved keys (`search`, `sort`, `page`, `perPage`) can't be used as filter names. Active values mirror back onto the meta so the rendered `<select>` keeps the selection on reload.
+
+Filter dropdowns auto-submit the form on `change`, so changing a filter immediately reloads the table — no explicit Apply button. The search input still submits on Enter.
+
+When `Resource.model` is set, the default `Table.records()` applies filters automatically:
+
+- `SelectFilter` → `query.where(name, value)`
+- `BooleanFilter` → `query.where(name, true|false)` (string values `'1'`, `'true'`, `'yes'`, `'on'` map to `true`)
+
+For non-default behavior (range queries, ORM-specific lookups, custom logic), pass a query hook:
+
+```ts
+SelectFilter.make('age')
+  .options([{ value: '18', label: '18+' }, { value: '21', label: '21+' }])
+  .query((query, value) => query.where('age', '>=', Number(value)))
+```
+
+The hook receives the running `ModelQuery` plus the active string value and must return the modified query.
+
 ### Built-in CRUD actions
 
 The base page classes inject default actions to fill in the common pieces. They only appear when you haven't already added an action with the same name.

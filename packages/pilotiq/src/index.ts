@@ -93,9 +93,17 @@ export {
 export {
   loadTableRecords,
   parseTableQuery,
+  parseFilterValues,
   findTables,
   type QueryParams,
 } from './elements/dispatchTable.js'
+
+// ─── Filters ──────────────────────────────────────────
+export {
+  Filter, type FilterKind, type FilterMeta, type FilterQueryHandler,
+} from './filters/Filter.js'
+export { SelectFilter, type SelectFilterOption } from './filters/SelectFilter.js'
+export { BooleanFilter, coerceBooleanFilterValue } from './filters/BooleanFilter.js'
 export {
   dispatchFormSubmit,
   findForms,

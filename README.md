@@ -20,31 +20,43 @@ Pilotiq is the Filament-meets-VS-Code admin builder for the Node.js ecosystem. D
 Define your admin panel in TypeScript. Pilotiq generates the API and UI automatically — including forms, tables, filters, actions, dashboards, and a rich-text editor.
 
 ```ts
-import { Pilotiq, Resource, TextField, Column, Heading, Alert, Card } from '@pilotiq/pilotiq'
+import {
+  Pilotiq, Resource, Form, Table,
+  TextField, Column, SelectFilter, BooleanFilter,
+  Heading, Alert, Card,
+} from '@pilotiq/pilotiq'
 import { themeEditor } from '@pilotiq/pilotiq/plugins'
+import { Article } from './app/Models/Article.js'   // @rudderjs/orm Model
 
 class ArticleResource extends Resource {
-  static label         = 'Articles'
-  static labelSingular = 'Article'
-  static icon          = 'file-text'
+  static override label         = 'Articles'
+  static override labelSingular = 'Article'
+  static override icon          = 'file-text'
+  static override model         = Article         // ← auto-wires save / loadRecord / records / delete
 
-  table() {
-    return {
-      columns: [
-        Column.make('title').label('Title').sortable().searchable(),
-        Column.make('slug').label('Slug'),
-        Column.make('createdAt').label('Created'),
-      ],
-    }
+  static override form(form: Form): Form {
+    return form.schema([
+      TextField.make('title').required(),
+      TextField.make('slug').required(),
+    ])
   }
 
-  form() {
-    return {
-      fields: [
-        TextField.make('title').label('Title').required(),
-        TextField.make('slug').label('Slug').required(),
-      ],
-    }
+  static override table(table: Table): Table {
+    return table
+      .columns([
+        Column.make('title').sortable().searchable(),
+        Column.make('slug').searchable(),
+        Column.make('createdAt').sortable(),
+      ])
+      .filters([
+        SelectFilter.make('status').options([
+          { value: 'draft',     label: 'Draft' },
+          { value: 'published', label: 'Published' },
+        ]),
+        BooleanFilter.make('featured'),
+      ])
+      .defaultSort('createdAt', 'desc')
+      .paginate(10)
   }
 }
 
@@ -53,7 +65,7 @@ export const admin = Pilotiq.make('Admin')
   .branding({ title: 'My App' })
   .theme({ preset: 'nova', accentColor: 'blue', radius: 'medium' })
   .use(themeEditor())
-  .resources([new ArticleResource()])
+  .resources([ArticleResource])
   .schema(async () => [
     Heading.make('Dashboard').description('Welcome back.'),
     Card.make('Getting Started').schema([
@@ -64,11 +76,15 @@ export const admin = Pilotiq.make('Admin')
 
 **What you get from this:**
 
-- Auto-generated Vike pages with sidebar/topbar layouts
-- CRUD routes for resources (list, create, edit)
-- Dashboard with schema elements (headings, cards, alerts, dividers)
-- Dark/light/system theme with OKLCH presets, accent colors, and FOUC prevention
-- No vendoring — the `pilotiq()` Vite plugin generates pages automatically
+- **Working CRUD pages** — list (with sort, search, pagination, per-row Edit/Delete), create form, edit form, view page. URLs `${base}/${slug}`, `/create`, `/:id`, `/:id/edit`.
+- **Auto-wired persistence** — `Resource.model = Article` (a `@rudderjs/orm` Model) plumbs save / loadRecord / records / delete through the ORM. Override per-method when you need custom logic.
+- **Filters** — `SelectFilter` / `BooleanFilter` render as dropdowns in the table header; values ride in the URL query and feed the ORM `where` clauses. Auto-submit on change.
+- **Filament-style page header** — title left, Save button right (`<button form="…">` driving the form below). Override hooks: `getHeader / getHeaderActions / getRowActions / getFormActions`.
+- **Action dispatch** — `Action.handler((ctx) => ...)` POSTs to `${base}/${slug}/_action/{name}` server-side; `ctx.record` (row), `ctx.records` (bulk), `ctx.values` (dialog form fields). Bulk actions get a checkbox column + selection toolbar; row actions get a per-row Actions column.
+- **Filament-style file layout** — `app/Pilotiq/Articles/{ArticleResource.ts, Pages/, Schemas/, Tables/}` for non-trivial resources. `ListPage` / `CreatePage` / `EditPage` / `ViewPage` base classes — subclass + `static getResource()` to bind.
+- **SSR + SPA dual data path** — every page works both via direct URL (rudder route handler) and via SPA navigation (Vike's `+data` hook). Both call the same per-role data builders in `pageData.ts`.
+- **Dark/light/system theme** — OKLCH presets (default, nova, maia, lyra), accent colors, FOUC prevention. `.use(themeEditor())` plugin for live theme editing with DB persistence.
+- **No vendoring** — the `pilotiq()` Vite plugin generates Vike page stubs at build time.
 
 ---
 
@@ -77,13 +93,17 @@ export const admin = Pilotiq.make('Admin')
 **Core (free, MIT)**
 
 - **Two layout modes** — collapsible sidebar (shadcn) or horizontal topbar
-- **Resources** — table + form views with columns, fields, sorting, search
-- **Schema system** — Heading, Text, Alert, Divider, Card (nested) — async or static
-- **Custom pages** — `Page` class with `static schema()`, slug, label, icon
-- **Theme engine** — 4 style presets (default, nova, maia, lyra), 6 base colors, 16 accent colors, 5 chart palettes, 5 border radii, Google Fonts, icon library selection
+- **Resources** — `static form(form: Form)` / `static table(table: Table)` / `static detail(record)`. Auto-wires CRUD when `static model = SomeOrmModel` is set.
+- **Schema system** — Heading (with optional right-aligned actions), Text, Alert, Divider, Card, Section, Tabs, Grid — async or static
+- **Fields** — TextField, EmailField, NumberField, SelectField, TextareaField, ToggleField, DateField, SlugField. Visibility flags (`hideFromTable/Create/Edit/View`) + condition callbacks (`showWhen`, `hideWhen`, `disabledWhen`). Validators via `.validate(...)`.
+- **Filters** — `SelectFilter` / `BooleanFilter` (more kinds extend the `Filter` base). Custom `query(fn)` hook for non-default ORM behavior.
+- **Actions** — Four modes: `.href(url)` link, `.method(m).action(url)` form-post, `.handler((ctx) => ...)` server-dispatched (`{ ids?, values? }` POST), `.submit()` for `<button type="submit">`. Four placements: `inline`, `header`, `bulk`, `row`. `:id` URL templating for row-level link/form actions.
+- **Custom pages** — `Page` class with `static schema()`, slug, label, icon. Or extend the Filament-style `ListPage` / `CreatePage` / `EditPage` / `ViewPage` bases for resource pages.
+- **Globals (singletons)** — `Global` class with the same shape minus list/create/delete; renders as `${base}/${slug}` (no `/:id`).
+- **Theme engine** — 4 style presets (default, nova, maia, lyra), 6 base colors, 17 accent colors, 6 chart palettes, 5 border radii, Google Fonts + Fontshare (Satoshi), icon library selection
 - **Dark mode** — light/dark/system toggle, localStorage persistence, FOUC prevention via inline script
 - **Theme editor** — `.use(themeEditor())` plugin with live preview, save/reset/shuffle, DB persistence
-- **Auto page generation** — `pilotiq()` Vite plugin writes Vike page stubs at build time
+- **Auto page generation** — `pilotiq()` Vite plugin writes Vike page stubs + `+data.ts` hooks (for SPA nav) at build time
 - **Plugin system** — `.use()` for extending panels
 
 **Legacy panels (`@pilotiq/panels`)**

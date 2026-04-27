@@ -567,12 +567,19 @@ interface TableUrlState {
 }
 
 function buildTableQuery(
-  state:    TableUrlState,
-  override: TableUrlState,
-  pathname: string,
+  state:        TableUrlState,
+  override:     TableUrlState,
+  pathname:     string,
+  filterValues: Record<string, string> = {},
 ): string {
   const merged: TableUrlState = { ...state, ...override }
   const params = new URLSearchParams()
+  // Carry forward active filter values so sort/pagination links don't
+  // accidentally clear them. Filter names can't collide with reserved
+  // keys (search/sort/page/perPage) — that's enforced upstream.
+  for (const [name, val] of Object.entries(filterValues)) {
+    if (val) params.set(name, val)
+  }
   if (merged.search)    params.set('search', merged.search)
   if (merged.sort)      params.set('sort', `${merged.sort.column}:${merged.sort.direction}`)
   if (merged.page && merged.page > 1) params.set('page', String(merged.page))
@@ -610,10 +617,58 @@ function rowId(row: unknown, index: number): string {
   return String(index)
 }
 
+/**
+ * Auto-submit the enclosing GET form whenever a filter select changes.
+ * Keeps the URL in sync with the active filter values without requiring
+ * a separate "Apply" button — search input still submits on Enter.
+ */
+function autoSubmitForm(e: React.ChangeEvent<HTMLSelectElement>): void {
+  const form = e.currentTarget.form
+  if (form) form.submit()
+}
+
+function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
+  const name        = String(el['name'] ?? '')
+  const label       = String(el['label'] ?? name)
+  const kind        = String(el['kind'] ?? 'select')
+  const value       = el['value'] ? String(el['value']) : ''
+  const placeholder = el['placeholder'] ? String(el['placeholder']) : 'All'
+
+  const selectClass = inputClass + ' min-w-[10rem]'
+
+  if (kind === 'boolean') {
+    return (
+      <label key={index} className="flex flex-col gap-1 text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <select name={name} defaultValue={value} onChange={autoSubmitForm} className={selectClass}>
+          <option value="">{placeholder}</option>
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </select>
+      </label>
+    )
+  }
+
+  // 'select' (default)
+  const options = (el['options'] as Array<{ value: string; label: string }> | undefined) ?? []
+  return (
+    <label key={index} className="flex flex-col gap-1 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <select name={name} defaultValue={value} onChange={autoSubmitForm} className={selectClass}>
+        <option value="">{placeholder}</option>
+        {options.map(o => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 function TableRenderer({ el }: { el: ElementMeta }) {
   const children = el.children ?? []
   const columns  = children.filter(c => c.type === 'column')
   const actions  = children.filter(c => c.type === 'action')
+  const filters  = children.filter(c => c.type === 'filter')
 
   // Group actions by placement. `inline` defaults to header so it shows up
   // somewhere visible — explicit placements always win.
@@ -635,6 +690,15 @@ function TableRenderer({ el }: { el: ElementMeta }) {
     ...(search       !== undefined ? { search }      : {}),
     ...(currentSort  !== undefined ? { sort: currentSort } : {}),
     page: currentPage,
+  }
+
+  // Snapshot active filter values for sort/pagination href construction.
+  // Filter form submits already carry these (selects are inside the
+  // form); `<a href>` links don't, so we re-emit them here.
+  const activeFilters: Record<string, string> = {}
+  for (const f of filters) {
+    const v = f['value']
+    if (typeof v === 'string' && v !== '') activeFilters[String(f['name'])] = v
   }
 
   // Track which row ids are currently checked. Keyed by id (string), not
@@ -674,7 +738,8 @@ function TableRenderer({ el }: { el: ElementMeta }) {
 
   const totalPages = perPage && perPage > 0 ? Math.max(1, Math.ceil(total / perPage)) : 1
   const showPagination = totalPages > 1
-  const showHeaderBar  = searchable || headerActions.length > 0
+  const hasFilters     = filters.length > 0
+  const showHeaderBar  = searchable || headerActions.length > 0 || hasFilters
   const hasBulkActions = bulkActions.length > 0
   const hasRowActions  = rowActions.length > 0
   const totalCols      = columns.length + (hasBulkActions ? 1 : 0) + (hasRowActions ? 1 : 0)
@@ -682,22 +747,29 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   return (
     <div className="flex flex-col gap-3">
       {showHeaderBar && (
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-          {searchable ? (
-            <form method="get" action={currentPath || undefined} className="flex items-center gap-2">
-              <input
-                type="search"
-                name="search"
-                defaultValue={search ?? ''}
-                placeholder="Search…"
-                className={inputClass + ' max-w-xs'}
-              />
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-end sm:justify-between">
+          {(searchable || hasFilters) ? (
+            <form method="get" action={currentPath || undefined} className="flex flex-wrap items-end gap-2">
+              {searchable && (
+                <label className="flex flex-col gap-1 text-xs">
+                  <span className="text-muted-foreground">Search</span>
+                  <input
+                    type="search"
+                    name="search"
+                    defaultValue={search ?? ''}
+                    placeholder="Search…"
+                    className={inputClass + ' max-w-xs'}
+                  />
+                </label>
+              )}
+              {filters.map((f, i) => renderFilterControl(f, i))}
               {currentSort && <input type="hidden" name="sort" value={`${currentSort.column}:${currentSort.direction}`} />}
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition bg-secondary text-secondary-foreground hover:bg-secondary/80 h-9 px-3 text-sm"
-              >
-                Search
+              {/* No visible submit button — filter <select>s auto-submit
+                  on change (see autoSubmitForm), and the search <input>
+                  submits via Enter natively. A hidden submit keeps form
+                  semantics clean for screen readers. */}
+              <button type="submit" className="sr-only" tabIndex={-1} aria-hidden="true">
+                Apply
               </button>
             </form>
           ) : <span />}
@@ -759,7 +831,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                   )
                 }
                 const next = nextSortDir(currentSort, name)
-                const href = buildTableQuery(state, { sort: next, page: 1 }, currentPath)
+                const href = buildTableQuery(state, { sort: next, page: 1 }, currentPath, activeFilters)
                 return (
                   <th
                     key={i}
@@ -836,7 +908,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
           <div className="flex items-center gap-2">
             {currentPage > 1 && (
               <a
-                href={buildTableQuery(state, { page: currentPage - 1 }, currentPath)}
+                href={buildTableQuery(state, { page: currentPage - 1 }, currentPath, activeFilters)}
                 className="rounded-md border px-3 py-1 text-xs hover:bg-muted"
               >
                 ← Previous
@@ -844,7 +916,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
             )}
             {currentPage < totalPages && (
               <a
-                href={buildTableQuery(state, { page: currentPage + 1 }, currentPath)}
+                href={buildTableQuery(state, { page: currentPage + 1 }, currentPath, activeFilters)}
                 className="rounded-md border px-3 py-1 text-xs hover:bg-muted"
               >
                 Next →
