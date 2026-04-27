@@ -2,5 +2,8 @@
 import type { Config } from 'vike/types'
 
 export default {
-  passToClient: ['viewProps'],
+  // 'viewProps' is set by the rudder server handler via view().
+  // 'data' is the Vike +data() return value — populated on SPA nav.
+  // Page renderers read from data ?? viewProps so both paths work.
+  passToClient: ['viewProps', 'data'],
 } satisfies Config

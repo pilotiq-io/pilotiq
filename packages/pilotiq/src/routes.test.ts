@@ -171,9 +171,12 @@ describe('registerPilotiqRoutes — handler → schema round-trip', () => {
     assert.equal(schemaData[0]!.type, 'heading')
     assert.equal(schemaData[1]!.type, 'table')
     const tableChildren = schemaData[1]!.children as Array<{ type: string; name?: string }>
-    assert.equal(tableChildren.length, 1)
-    assert.equal(tableChildren[0]!.type, 'column')
-    assert.equal(tableChildren[0]!.name, 'title')
+    const cols    = tableChildren.filter(c => c.type === 'column')
+    const actions = tableChildren.filter(c => c.type === 'action')
+    assert.equal(cols.length, 1)
+    assert.equal(cols[0]!.name, 'title')
+    // ListPage injects default Create header + Edit/Delete row actions.
+    assert.deepEqual(actions.map(a => a.name).sort(), ['create', 'delete', 'edit'])
   })
 
   it('create handler resolves a Form schema with mode=create', async () => {
@@ -236,9 +239,11 @@ describe('registerPilotiqRoutes — handler → schema round-trip', () => {
     const route = router.list().find(r => r.path === '/admin/x/create')!
     const response = await callHandler(route.handler) as { props: Record<string, unknown> }
     const schemaData = response.props['schemaData'] as Array<{ type: string; children?: unknown[] }>
-    const formChildren = schemaData[1]!.children as Array<{ name?: string }>
-    assert.equal(formChildren.length, 1)
-    assert.equal(formChildren[0]!.name, 'public')
+    // Form children = visible fields + default submit action.
+    const formChildren = schemaData[1]!.children as Array<{ type: string; name?: string }>
+    const fields = formChildren.filter(c => c.type === 'field')
+    assert.equal(fields.length, 1)
+    assert.equal(fields[0]!.name, 'public')
   })
 
   it('panelInfo includes resources and pages summary', async () => {

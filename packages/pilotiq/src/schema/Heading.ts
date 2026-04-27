@@ -1,4 +1,5 @@
 import { Element } from './Element.js'
+import type { Action } from '../actions/Action.js'
 
 export class Heading extends Element {
   private _level: 1 | 2 | 3 = 1
@@ -14,6 +15,16 @@ export class Heading extends Element {
 
   level(l: 1 | 2 | 3): this { this._level = l; return this }
   description(d: string): this { this._description = d; return this }
+
+  /**
+   * Attach action buttons that render aligned to the right of the
+   * heading text — Filament-style page header. The renderer lays the
+   * heading + actions out as a flex row.
+   */
+  actions(actions: Action[]): this {
+    this._children = actions
+    return this
+  }
 
   getType(): string { return 'heading' }
 

@@ -11,8 +11,8 @@ export default function PilotiqHead() {
   let fontFamilies: string[] = []
 
   try {
-    const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown> }
-    const theme = (ctx.viewProps as any)?.panel?.theme
+    const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown>; data?: Record<string, unknown> }
+    const theme = ((ctx.data ?? ctx.viewProps) as any)?.panel?.theme
     const fonts = theme?.fonts
     if (fonts) {
       const seen = new Set<string>()

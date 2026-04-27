@@ -111,38 +111,119 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
 
 // ─── Action rendering ───────────────────────────────────────
 
-function renderAction(el: ElementMeta, index: number): React.ReactNode {
+/**
+ * Build a hidden `<form>` with `ids[]` + arbitrary value fields and
+ * submit it. Browsers handle the 303 redirect natively, so this is
+ * a one-shot navigation rather than a fetch + manual `location.assign`.
+ */
+function submitHandlerAction(
+  url:    string,
+  ids:    string[],
+  values: Record<string, string> = {},
+): void {
+  if (typeof document === 'undefined') return
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = url
+  form.style.display = 'none'
+  for (const id of ids) {
+    const input = document.createElement('input')
+    input.type  = 'hidden'
+    input.name  = 'ids'
+    input.value = id
+    form.appendChild(input)
+  }
+  for (const [k, v] of Object.entries(values)) {
+    const input = document.createElement('input')
+    input.type  = 'hidden'
+    input.name  = k
+    input.value = v
+    form.appendChild(input)
+  }
+  document.body.appendChild(form)
+  form.submit()
+}
+
+interface RenderActionOptions {
+  /** Ids to send when this action is handler-style. Used by row + bulk
+   * placements to pass selected/current record id(s). */
+  ids?: string[]
+  /** Optional sizing override (e.g. row actions render smaller). */
+  size?: 'sm' | 'md'
+}
+
+function renderAction(
+  el: ElementMeta,
+  index: number,
+  opts: RenderActionOptions = {},
+): React.ReactNode {
   const name        = String(el['name'] ?? '')
   const label       = String(el['label'] ?? name)
   const destructive = Boolean(el['destructive'])
   const placement   = String(el['placement'] ?? 'inline')
-  const href        = el['href']    as string | undefined
-  const method      = el['method']  as 'post' | 'put' | 'patch' | 'delete' | undefined
-  const actionUrl   = el['action']  as string | undefined
-  const confirm     = el['confirm'] as { title?: string; message: string } | undefined
+  const href        = el['href']        as string | undefined
+  const method      = el['method']      as 'post' | 'put' | 'patch' | 'delete' | undefined
+  const actionUrl   = el['action']      as string | undefined
+  const dispatchUrl = el['dispatchUrl'] as string | undefined
+  const submit      = Boolean(el['submit'])
+  const confirm     = el['confirm']     as { title?: string; message: string } | undefined
 
   const variant = destructive
     ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
     : 'bg-primary text-primary-foreground hover:bg-primary/90'
 
-  const sizing = placement === 'row'
+  const sizingClass = opts.size === 'sm' || placement === 'row'
     ? 'h-7 px-2 text-xs'
     : 'h-8 px-3 text-sm'
 
-  const className = `inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition ${variant} ${sizing}`
+  const className = `inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition ${variant} ${sizingClass}`
+
+  // Submit-style action — renders as <button type="submit">. Optionally
+  // targets a specific form via the HTML `form="<id>"` attribute so the
+  // button can submit a form it lives outside of (e.g. a page-header
+  // Save button driving a form below).
+  if (submit) {
+    const formTarget = el['form'] as string | undefined
+    const onClick = confirm
+      ? (e: React.MouseEvent<HTMLButtonElement>) => {
+          if (typeof window !== 'undefined' && !window.confirm(confirm.message)) {
+            e.preventDefault()
+          }
+        }
+      : undefined
+    return (
+      <button
+        key={index}
+        type="submit"
+        form={formTarget}
+        onClick={onClick}
+        className={className}
+        data-action-name={name}
+      >
+        {label}
+      </button>
+    )
+  }
+
+  // Substitute the `:id` placeholder with the current row id when this
+  // action is rendered in a row context. Lets row-level link/form actions
+  // ship a single template URL like `/admin/articles/:id/edit`.
+  const rowId = opts.ids?.length === 1 ? opts.ids[0]! : undefined
+  const resolveTemplate = (s: string | undefined): string | undefined =>
+    s && rowId ? s.replace(':id', rowId) : s
 
   // Link-style action.
   if (href) {
     return (
-      <a key={index} href={href} className={className} data-action-name={name}>
+      <a key={index} href={resolveTemplate(href)} className={className} data-action-name={name}>
         {label}
       </a>
     )
   }
 
-  // Form-style action (POST/PUT/PATCH/DELETE).
+  // Form-style action (POST/PUT/PATCH/DELETE) — server-rendered <form>.
   if (method) {
-    const httpMethod = method === 'post' ? 'post' : 'post' // hono accepts POST + _method spoof
+    const httpMethod = 'post' // hono accepts POST + _method spoof for non-POST
     const spoofed = method === 'put' || method === 'patch' || method === 'delete' ? method : undefined
     const handleSubmit = confirm
       ? (e: React.FormEvent<HTMLFormElement>) => {
@@ -155,7 +236,7 @@ function renderAction(el: ElementMeta, index: number): React.ReactNode {
       <form
         key={index}
         method={httpMethod}
-        action={actionUrl}
+        action={resolveTemplate(actionUrl)}
         className="inline-block"
         onSubmit={handleSubmit}
       >
@@ -167,12 +248,34 @@ function renderAction(el: ElementMeta, index: number): React.ReactNode {
     )
   }
 
-  // Plain button (no dispatch wired yet).
+  // Handler-style action — POSTs to `dispatchUrl` with `ids[]` body.
+  if (dispatchUrl) {
+    const ids = opts.ids ?? []
+    const onClick = () => {
+      if (confirm && typeof window !== 'undefined' && !window.confirm(confirm.message)) return
+      submitHandlerAction(dispatchUrl, ids)
+    }
+    return (
+      <button
+        key={index}
+        type="button"
+        onClick={onClick}
+        className={className}
+        data-action-name={name}
+      >
+        {label}
+      </button>
+    )
+  }
+
+  // No dispatch wired (no href / method / dispatchUrl). Render a disabled
+  // placeholder so the user sees the button, but it does nothing.
   return (
     <button
       key={index}
       type="button"
-      className={className}
+      disabled
+      className={className + ' opacity-50 cursor-not-allowed'}
       data-action-name={name}
     >
       {label}
@@ -277,16 +380,28 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
       const level = (el['level'] as number) ?? 1
       const content = String(el['content'] ?? '')
       const description = el['description'] ? String(el['description']) : undefined
+      const headerActions = (el.children ?? []).filter(c => c.type === 'action')
       const Tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3'
       const sizes = { 1: 'text-2xl', 2: 'text-xl', 3: 'text-lg' } as const
-      return (
-        <div key={index}>
+      const titleBlock = (
+        <div>
           <Tag className={`${sizes[level as 1 | 2 | 3]} font-bold tracking-tight`}>
             {content}
           </Tag>
           {description && (
             <p className="text-sm text-muted-foreground mt-1">{description}</p>
           )}
+        </div>
+      )
+      if (headerActions.length === 0) {
+        return <div key={index}>{titleBlock}</div>
+      }
+      return (
+        <div key={index} className="flex items-start justify-between gap-4">
+          {titleBlock}
+          <div className="flex items-center gap-2 shrink-0">
+            {headerActions.map((a, i) => renderAction(a, i))}
+          </div>
         </div>
       )
     }
@@ -451,14 +566,22 @@ interface TableUrlState {
   page?:   number
 }
 
-function buildTableQuery(state: TableUrlState, override: TableUrlState): string {
+function buildTableQuery(
+  state:    TableUrlState,
+  override: TableUrlState,
+  pathname: string,
+): string {
   const merged: TableUrlState = { ...state, ...override }
   const params = new URLSearchParams()
   if (merged.search)    params.set('search', merged.search)
   if (merged.sort)      params.set('sort', `${merged.sort.column}:${merged.sort.direction}`)
   if (merged.page && merged.page > 1) params.set('page', String(merged.page))
   const qs = params.toString()
-  return qs ? `?${qs}` : ''
+  // Always anchor to a real pathname — Vike's client-side router treats
+  // a bare `?qs` href as a fresh URL with empty pathname, which routes
+  // to the dashboard and blanks the page during SPA navigation.
+  const base = pathname || (typeof window !== 'undefined' ? window.location.pathname : '')
+  return qs ? `${base}?${qs}` : (base || '#')
 }
 
 function nextSortDir(
@@ -479,10 +602,25 @@ function formatCell(value: unknown): React.ReactNode {
   return String(value)
 }
 
+function rowId(row: unknown, index: number): string {
+  if (row && typeof row === 'object' && 'id' in row) {
+    const id = (row as { id?: unknown }).id
+    if (id !== undefined && id !== null) return String(id)
+  }
+  return String(index)
+}
+
 function TableRenderer({ el }: { el: ElementMeta }) {
   const children = el.children ?? []
   const columns  = children.filter(c => c.type === 'column')
   const actions  = children.filter(c => c.type === 'action')
+
+  // Group actions by placement. `inline` defaults to header so it shows up
+  // somewhere visible — explicit placements always win.
+  const placementOf = (a: ElementMeta): string => String(a['placement'] ?? 'inline')
+  const headerActions = actions.filter(a => { const p = placementOf(a); return p === 'header' || p === 'inline' })
+  const bulkActions   = actions.filter(a => placementOf(a) === 'bulk')
+  const rowActions    = actions.filter(a => placementOf(a) === 'row')
 
   const rows        = (el['rows'] as unknown[] | undefined) ?? []
   const total       = (el['total'] as number | undefined) ?? rows.length
@@ -491,11 +629,39 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   const currentPage = (el['currentPage'] as number | undefined) ?? 1
   const perPage     = el['perPage'] as number | undefined
   const searchable  = Boolean(el['searchable'])
+  const currentPath = (el['currentPath'] as string | undefined) ?? ''
 
   const state: TableUrlState = {
     ...(search       !== undefined ? { search }      : {}),
     ...(currentSort  !== undefined ? { sort: currentSort } : {}),
     page: currentPage,
+  }
+
+  // Track which row ids are currently checked. Keyed by id (string), not
+  // by index, so pagination and re-renders don't drop selection state.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const visibleIds = rows.map((row, i) => rowId(row, i))
+  const allChecked = visibleIds.length > 0 && visibleIds.every(id => selected.has(id))
+  const someChecked = selected.size > 0
+
+  const toggleRow = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  const toggleAll = () => {
+    setSelected(prev => {
+      if (visibleIds.every(id => prev.has(id))) {
+        const next = new Set(prev)
+        for (const id of visibleIds) next.delete(id)
+        return next
+      }
+      const next = new Set(prev)
+      for (const id of visibleIds) next.add(id)
+      return next
+    })
   }
 
   if (columns.length === 0) {
@@ -508,14 +674,17 @@ function TableRenderer({ el }: { el: ElementMeta }) {
 
   const totalPages = perPage && perPage > 0 ? Math.max(1, Math.ceil(total / perPage)) : 1
   const showPagination = totalPages > 1
-  const showHeaderBar  = searchable || actions.length > 0
+  const showHeaderBar  = searchable || headerActions.length > 0
+  const hasBulkActions = bulkActions.length > 0
+  const hasRowActions  = rowActions.length > 0
+  const totalCols      = columns.length + (hasBulkActions ? 1 : 0) + (hasRowActions ? 1 : 0)
 
   return (
     <div className="flex flex-col gap-3">
       {showHeaderBar && (
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
           {searchable ? (
-            <form method="get" className="flex items-center gap-2">
+            <form method="get" action={currentPath || undefined} className="flex items-center gap-2">
               <input
                 type="search"
                 name="search"
@@ -532,17 +701,47 @@ function TableRenderer({ el }: { el: ElementMeta }) {
               </button>
             </form>
           ) : <span />}
-          {actions.length > 0 && (
+          {headerActions.length > 0 && (
             <div className="flex items-center gap-2">
-              {actions.map((a, i) => renderAction(a, i))}
+              {headerActions.map((a, i) => renderAction(a, i))}
             </div>
           )}
+        </div>
+      )}
+      {hasBulkActions && someChecked && (
+        <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">
+            {selected.size} selected
+          </span>
+          <div className="flex items-center gap-2">
+            {bulkActions.map((a, i) =>
+              renderAction(a, i, { ids: Array.from(selected) }),
+            )}
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </button>
+          </div>
         </div>
       )}
       <div className="rounded-xl border bg-card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted border-b">
             <tr>
+              {hasBulkActions && (
+                <th className="px-3 py-3 w-9">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all rows"
+                    checked={allChecked}
+                    onChange={toggleAll}
+                    className="h-4 w-4 rounded border-input"
+                  />
+                </th>
+              )}
               {columns.map((col, i) => {
                 const name     = String(col['name'] ?? '')
                 const label    = String(col['label'] ?? name)
@@ -560,7 +759,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                   )
                 }
                 const next = nextSortDir(currentSort, name)
-                const href = buildTableQuery(state, { sort: next, page: 1 })
+                const href = buildTableQuery(state, { sort: next, page: 1 }, currentPath)
                 return (
                   <th
                     key={i}
@@ -575,28 +774,57 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                   </th>
                 )
               })}
+              {hasRowActions && (
+                <th className="px-4 py-3 w-px text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Actions
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-4 py-12 text-center text-muted-foreground">
+                <td colSpan={totalCols} className="px-4 py-12 text-center text-muted-foreground">
                   No records yet.
                 </td>
               </tr>
-            ) : rows.map((row, ri) => (
-              <tr key={ri} className="border-b last:border-b-0">
-                {columns.map((col, ci) => {
-                  const name = String(col['name'] ?? '')
-                  const value = (row as Record<string, unknown>)[name]
-                  return (
-                    <td key={ci} className="px-4 py-3 text-sm text-foreground">
-                      {formatCell(value)}
+            ) : rows.map((row, ri) => {
+              const id = visibleIds[ri]!
+              const isSelected = selected.has(id)
+              return (
+                <tr key={id} className={`border-b last:border-b-0 ${isSelected ? 'bg-muted/30' : ''}`}>
+                  {hasBulkActions && (
+                    <td className="px-3 py-3 w-9">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select row ${id}`}
+                        checked={isSelected}
+                        onChange={() => toggleRow(id)}
+                        className="h-4 w-4 rounded border-input"
+                      />
                     </td>
-                  )
-                })}
-              </tr>
-            ))}
+                  )}
+                  {columns.map((col, ci) => {
+                    const name = String(col['name'] ?? '')
+                    const value = (row as Record<string, unknown>)[name]
+                    return (
+                      <td key={ci} className="px-4 py-3 text-sm text-foreground">
+                        {formatCell(value)}
+                      </td>
+                    )
+                  })}
+                  {hasRowActions && (
+                    <td className="px-4 py-3 w-px whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {rowActions.map((a, ai) =>
+                          renderAction(a, ai, { ids: [id], size: 'sm' }),
+                        )}
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -608,7 +836,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
           <div className="flex items-center gap-2">
             {currentPage > 1 && (
               <a
-                href={buildTableQuery(state, { page: currentPage - 1 })}
+                href={buildTableQuery(state, { page: currentPage - 1 }, currentPath)}
                 className="rounded-md border px-3 py-1 text-xs hover:bg-muted"
               >
                 ← Previous
@@ -616,7 +844,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
             )}
             {currentPage < totalPages && (
               <a
-                href={buildTableQuery(state, { page: currentPage + 1 })}
+                href={buildTableQuery(state, { page: currentPage + 1 }, currentPath)}
                 className="rounded-md border px-3 py-1 text-xs hover:bg-muted"
               >
                 Next →

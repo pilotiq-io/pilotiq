@@ -69,10 +69,17 @@ export function findTables(elements: ReadonlyArray<Element>): Table[] {
  * Tables without a `records()` handler are left untouched — `toMeta()`
  * will emit them with no rows, which the renderer falls back to as
  * "No records yet."
+ *
+ * `pathname` is the absolute route the page lives at (e.g.
+ * `/admin/articles`). Sort, search, and pagination links in the rendered
+ * table prefix with it so SPA navigation has a real pathname to route
+ * against — Vike's client-side router doesn't resolve `?qs`-only
+ * relative hrefs against the current URL.
  */
 export async function loadTableRecords(
   elements: ReadonlyArray<Element>,
   query:    QueryParams = {},
+  pathname?: string,
 ): Promise<void> {
   const tables = findTables(elements)
   if (tables.length === 0) return
@@ -105,5 +112,6 @@ export async function loadTableRecords(
     if (effectiveSort)  table.withSort(effectiveSort.column, effectiveSort.direction)
     if (search !== undefined) table.withSearch(search)
     table.withPage(effectivePage)
+    if (pathname) table.withCurrentPath(pathname)
   }))
 }

@@ -6,7 +6,7 @@ import { ThemeSettingsPage } from '@pilotiq/pilotiq/react'
 const handleNavigate = (url: string) => navigate(url, { overwriteLastHistoryEntry: true, scrollToTop: false } as any)
 
 export default function ThemeEditorPage() {
-  const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown> }
-  const { basePath, themeConfig } = ctx.viewProps as any ?? {}
+  const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown>; data?: Record<string, unknown> }
+  const { basePath, themeConfig } = (ctx.data ?? ctx.viewProps) as any ?? {}
   return <ThemeSettingsPage panelPath={basePath} initialConfig={themeConfig} onNavigate={handleNavigate} />
 }

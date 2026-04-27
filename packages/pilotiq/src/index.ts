@@ -3,15 +3,32 @@ export { Pilotiq, type PilotiqConfig, type PilotiqPlugin } from './Pilotiq.js'
 export { PilotiqRegistry } from './PilotiqRegistry.js'
 export { pilotiq } from './PilotiqServiceProvider.js'
 export { registerPilotiqRoutes } from './routes.js'
+
+// Per-page-role data builders (consumed by Vike +data hooks for SPA nav).
+export {
+  dispatchPageData,
+  panelInfo,
+  dashboardData,
+  resourceIndexData,
+  resourceCreateData,
+  resourceEditData,
+  resourceViewData,
+  globalEditData,
+  globalViewData,
+  customPageData,
+  type PageContextLike,
+} from './pageData.js'
 export { Resource, type ResourcePages, type ResourceClass, type RelationDef } from './Resource.js'
 export { Global, type GlobalPages, type GlobalClass } from './Global.js'
 export { Page, type PageMeta, type PageMode } from './Page.js'
 export {
+  // Filament-style base classes — extend these to bind a Page to a Resource.
+  ListPage, CreatePage, EditPage, ViewPage,
+  // Factory functions — return anonymous subclasses bound to a Resource.
   defaultPages,
-  defaultListPage,
-  defaultCreatePage,
-  defaultEditPage,
-  defaultViewPage,
+  defaultListPage, defaultCreatePage, defaultEditPage, defaultViewPage,
+  // Helpers exposed for advanced override of the default schema wiring.
+  applyFormDefaults, applyTableDefaults,
 } from './defaultPages.js'
 export {
   defaultGlobalPages,

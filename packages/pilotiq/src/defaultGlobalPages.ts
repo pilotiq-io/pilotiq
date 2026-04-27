@@ -29,7 +29,11 @@ export function defaultGlobalEditPage(G: GlobalClass): typeof Page {
     static override schema(): Element[] {
       const form = G.form(Form.make())
       if (!form.getSave()) form.save(noSaveHandler(G))
-      return [Heading.make(G.labelSingular).level(1), form]
+      // Page-header Save button targets the form below via HTML `form` attr.
+      const heading = Heading.make(G.labelSingular).level(1).actions([
+        Action.make('submit').label('Save changes').submit().form(form.getFormId()),
+      ])
+      return [heading, form]
     }
   }
 }

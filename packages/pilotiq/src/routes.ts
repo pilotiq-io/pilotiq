@@ -2,50 +2,21 @@ import type { Router } from '@rudderjs/router'
 import type { AppRequest } from '@rudderjs/contracts'
 import { view } from '@rudderjs/view'
 import type { Pilotiq } from './Pilotiq.js'
-import type { Page } from './Page.js'
 import type { Form } from './elements/Form.js'
-import type { Element } from './schema/Element.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { dispatchFormSubmit, findForms, selectForm } from './elements/dispatchForm.js'
-import { loadTableRecords } from './elements/dispatchTable.js'
 import { dispatchAction, findActions, parseActionBody, type ResolveRecord } from './elements/dispatchAction.js'
-import { resolveTheme } from './theme/resolve.js'
-import type { ThemeConfig, ThemeMeta } from './theme/types.js'
+import {
+  panelInfo, callPageSchema, tagFormActions, tagActionDispatch,
+  dashboardData, resourceIndexData, resourceCreateData, resourceEditData,
+  resourceViewData, globalEditData, globalViewData, customPageData,
+} from './pageData.js'
+import type { ThemeConfig } from './theme/types.js'
 import { presets } from './theme/presets.js'
 import { baseColors } from './theme/base-colors.js'
 import { HUE_NAMES } from './theme/colors.js'
 import { migrateThemeOverrides } from './theme/migrate.js'
 import { radiusMap } from './theme/radius.js'
-
-function panelInfo(pilotiq: Pilotiq) {
-  const cfg = pilotiq.getConfig()
-  const merged = pilotiq.getMergedTheme()
-  const theme: ThemeMeta | undefined = merged ? resolveTheme(merged) : undefined
-  return {
-    name: cfg.name,
-    branding: cfg.branding,
-    resources: cfg.resources.map(R => ({
-      label: R.label, slug: R.getSlug(), icon: R.icon,
-    })),
-    globals: cfg.globals.map(G => ({
-      label: G.label, slug: G.getSlug(), icon: G.icon,
-    })),
-    pages: cfg.pages.map(P => ({
-      label: P.getLabel(), slug: P.getSlug(), icon: P.icon,
-    })),
-    theme,
-    themeEditor: cfg.themeEditor ?? false,
-  }
-}
-
-/**
- * Pull the page's raw `Element[]` out of `Page.schema(ctx)`. The handler
- * needs the live tree (not the serialized meta) so it can locate `Form`
- * instances and run their lifecycle hooks server-side.
- */
-async function callPageSchema(PageClass: typeof Page, ctx: SchemaContext): Promise<Element[]> {
-  return Promise.resolve(PageClass.schema(ctx))
-}
 
 /**
  * Read the request body as a `Record<string, unknown>`. The hono adapter
@@ -80,28 +51,6 @@ function splitMeta(body: Record<string, unknown>): {
   }
 }
 
-/** Mark every Form on the page with its action URL so the rendered <form> posts to itself. */
-function tagFormActions(elements: ReadonlyArray<Element>, action: string): void {
-  for (const form of findForms(elements)) {
-    if (!form.getAction()) form.action(action)
-  }
-}
-
-/**
- * Stamp every handler-style Action on the page (i.e. one with a
- * `.handler()` and no `href`/`method`) with its dispatch URL. The client
- * renderer reads this off `ActionMeta.dispatchUrl` to know where to
- * POST when the action button is clicked.
- */
-function tagActionDispatch(elements: ReadonlyArray<Element>, baseUrl: string): void {
-  for (const action of findActions(elements)) {
-    if (!action.getHandler()) continue
-    if (action.getHref() || action.getMethod()) continue
-    if (action.getDispatchUrl()) continue
-    action.dispatchUrl(`${baseUrl}/_action/${action.name}`)
-  }
-}
-
 export function registerPilotiqRoutes(
   router: Router,
   pilotiq: Pilotiq,
@@ -111,13 +60,7 @@ export function registerPilotiqRoutes(
 
   // ── Dashboard (1-segment) ─────────────────────────────
   router.get(base, async () => {
-    const schemaData = await resolveSchema(cfg.schema, {})
-    return view('pilotiq.dashboard', {
-      panel: panelInfo(pilotiq),
-      basePath: base,
-      layout: cfg.layout,
-      schemaData,
-    })
+    return view('pilotiq.dashboard', await dashboardData(pilotiq))
   })
 
   // ── Resource routes ───────────────────────────────────
@@ -130,20 +73,8 @@ export function registerPilotiqRoutes(
       const PageClass = pages.index
       const indexUrl  = `${base}/${slug}`
       router.get(indexUrl, async (req) => {
-        const ctx: SchemaContext = { mode: 'table', basePath: base }
-        const elements = await callPageSchema(PageClass, ctx)
-        tagActionDispatch(elements, indexUrl)
-        await loadTableRecords(elements, req.query)
-        const schemaData = await resolveSchema(elements, ctx)
-        return view('pilotiq.slug', {
-          pageType: 'resource',
-          panel:    panelInfo(pilotiq),
-          page:     PageClass.toMeta(),
-          resource: { label: R.label, labelSingular: R.labelSingular, slug, icon: R.icon },
-          basePath: base,
-          layout:   cfg.layout,
-          schemaData,
-        })
+        const data = await resourceIndexData(pilotiq, slug, req.query)
+        return view('pilotiq.slug', data ?? {})
       })
 
       // Action dispatch — POST ${base}/${slug}/_action/:actionName
@@ -180,19 +111,8 @@ export function registerPilotiqRoutes(
       const createUrl = `${base}/${slug}/create`
 
       router.get(createUrl, async () => {
-        const ctx: SchemaContext = { mode: 'create', basePath: base }
-        const elements = await callPageSchema(PageClass, ctx)
-        tagFormActions(elements, createUrl)
-        const schemaData = await resolveSchema(elements, ctx)
-        return view('pilotiq.resource-create', {
-          panel:    panelInfo(pilotiq),
-          page:     PageClass.toMeta(),
-          resource: { label: R.labelSingular, slug, icon: R.icon },
-          mode:     'create' as const,
-          basePath: base,
-          layout:   cfg.layout,
-          schemaData,
-        })
+        const data = await resourceCreateData(pilotiq, slug)
+        return view('pilotiq.resource-create', data ?? {})
       })
 
       // Create — POST ${base}/${slug}/create
@@ -212,19 +132,11 @@ export function registerPilotiqRoutes(
         const result = await dispatchFormSubmit(form, values, { values })
 
         if (!result.ok) {
-          form.withValues(values).withErrors(result.errors)
-          const schemaData = await resolveSchema(elements, ctx)
+          // Re-render through the same builder so the page is identical to GET,
+          // just with values + errors prefilled.
+          const data = await resourceCreateData(pilotiq, slug, { values, errors: result.errors })
           res.status(422)
-          return view('pilotiq.resource-create', {
-            panel:     panelInfo(pilotiq),
-            page:      PageClass.toMeta(),
-            resource:  { label: R.labelSingular, slug, icon: R.icon },
-            mode:      'create' as const,
-            basePath:  base,
-            layout:    cfg.layout,
-            schemaData,
-            hasErrors: true,
-          })
+          return view('pilotiq.resource-create', data ?? {})
         }
 
         const recordId = (result.record as { id?: unknown })?.id
@@ -236,26 +148,13 @@ export function registerPilotiqRoutes(
     // View — GET ${base}/${slug}/:id (literal `create` matches first via
     // Hono's literal-over-param routing, so `:id` only catches everything else.)
     if (pages.view) {
-      const PageClass = pages.view
-
       router.get(`${base}/${slug}/:id`, async (req) => {
         const recordId = req.params['id']!
         // Hono routes both `/create` and `/:id` against this slot; only the
         // literal `create` segment hits the create route. Defensive guard:
         if (recordId === 'create') return // handled by create route
-        const ctx: SchemaContext = { mode: 'view', recordId, basePath: base }
-        const elements = await callPageSchema(PageClass, ctx)
-        const schemaData = await resolveSchema(elements, ctx)
-        return view('pilotiq.resource-view', {
-          panel:    panelInfo(pilotiq),
-          page:     PageClass.toMeta(),
-          resource: { label: R.labelSingular, slug, icon: R.icon },
-          mode:     'view' as const,
-          recordId,
-          basePath: base,
-          layout:   cfg.layout,
-          schemaData,
-        })
+        const data = await resourceViewData(pilotiq, slug, recordId)
+        return view('pilotiq.resource-view', data ?? {})
       })
 
       // Delete — POST ${base}/${slug}/:id/delete
@@ -277,42 +176,8 @@ export function registerPilotiqRoutes(
 
       router.get(`${base}/${slug}/:id/edit`, async (req) => {
         const recordId = req.params['id']!
-        const editUrl  = `${base}/${slug}/${recordId}/edit`
-        const ctx: SchemaContext = { mode: 'edit', recordId, basePath: base }
-
-        const elements = await callPageSchema(PageClass, ctx)
-        tagFormActions(elements, editUrl)
-
-        // Locate the primary form, load the record, and fill values.
-        const form = findForms(elements)[0]
-        let record: unknown = undefined
-        if (form?.getLoadRecord()) {
-          try {
-            record = await form.getLoadRecord()!(recordId, { values: {} })
-          } catch {
-            // Sentinel/missing record — fall through with empty form.
-          }
-          if (record != null) {
-            const fill = form.getFillFromRecord()
-            const values = fill ? fill(record) : { ...(record as Record<string, unknown>) }
-            form.withValues(values)
-          }
-        }
-
-        const schemaData = await resolveSchema(
-          elements,
-          record !== undefined ? { ...ctx, record } : ctx,
-        )
-        return view('pilotiq.resource-edit', {
-          panel:    panelInfo(pilotiq),
-          page:     PageClass.toMeta(),
-          resource: { label: R.labelSingular, slug, icon: R.icon },
-          mode:     'edit' as const,
-          recordId,
-          basePath: base,
-          layout:   cfg.layout,
-          schemaData,
-        })
+        const data = await resourceEditData(pilotiq, slug, recordId)
+        return view('pilotiq.resource-edit', data ?? {})
       })
 
       // Edit — POST ${base}/${slug}/:id/edit
@@ -344,23 +209,9 @@ export function registerPilotiqRoutes(
         )
 
         if (!result.ok) {
-          form.withValues(values).withErrors(result.errors)
-          const schemaData = await resolveSchema(
-            elements,
-            record !== undefined ? { ...ctx, record } : ctx,
-          )
+          const data = await resourceEditData(pilotiq, slug, recordId, { values, errors: result.errors })
           res.status(422)
-          return view('pilotiq.resource-edit', {
-            panel:     panelInfo(pilotiq),
-            page:      PageClass.toMeta(),
-            resource:  { label: R.labelSingular, slug, icon: R.icon },
-            mode:      'edit' as const,
-            recordId,
-            basePath:  base,
-            layout:    cfg.layout,
-            schemaData,
-            hasErrors: true,
-          })
+          return view('pilotiq.resource-edit', data ?? {})
         }
 
         return res.redirect(result.redirect ?? editUrl, 303)
@@ -378,35 +229,8 @@ export function registerPilotiqRoutes(
       const PageClass = pages.edit
 
       router.get(editUrl, async () => {
-        const ctx: SchemaContext = { mode: 'edit', basePath: base }
-        const elements = await callPageSchema(PageClass, ctx)
-        tagFormActions(elements, editUrl)
-
-        // Singletons: load the record (no id) and pre-fill form values.
-        const form = findForms(elements)[0]
-        let record: unknown = undefined
-        if (form?.getLoadRecord()) {
-          try { record = await form.getLoadRecord()!('', { values: {} }) } catch { /* ignore */ }
-          if (record != null) {
-            const fill = form.getFillFromRecord()
-            const values = fill ? fill(record) : { ...(record as Record<string, unknown>) }
-            form.withValues(values)
-          }
-        }
-
-        const schemaData = await resolveSchema(
-          elements,
-          record !== undefined ? { ...ctx, record } : ctx,
-        )
-        return view('pilotiq.slug', {
-          pageType: 'global',
-          panel:    panelInfo(pilotiq),
-          page:     PageClass.toMeta(),
-          global:   { label: G.label, labelSingular: G.labelSingular, slug, icon: G.icon },
-          basePath: base,
-          layout:   cfg.layout,
-          schemaData,
-        })
+        const data = await globalEditData(pilotiq, slug)
+        return view('pilotiq.slug', data ?? {})
       })
 
       router.post(editUrl, async (req, res) => {
@@ -436,22 +260,9 @@ export function registerPilotiqRoutes(
         )
 
         if (!result.ok) {
-          form.withValues(values).withErrors(result.errors)
-          const schemaData = await resolveSchema(
-            elements,
-            record !== undefined ? { ...ctx, record } : ctx,
-          )
+          const data = await globalEditData(pilotiq, slug, { values, errors: result.errors })
           res.status(422)
-          return view('pilotiq.slug', {
-            pageType:  'global',
-            panel:     panelInfo(pilotiq),
-            page:      PageClass.toMeta(),
-            global:    { label: G.label, labelSingular: G.labelSingular, slug, icon: G.icon },
-            basePath:  base,
-            layout:    cfg.layout,
-            schemaData,
-            hasErrors: true,
-          })
+          return view('pilotiq.slug', data ?? {})
         }
 
         return res.redirect(result.redirect ?? editUrl, 303)
@@ -460,19 +271,9 @@ export function registerPilotiqRoutes(
 
     // Optional view page when the user opts in via pages().view
     if (pages.view) {
-      const PageClass = pages.view
       router.get(`${base}/${slug}/view`, async () => {
-        const ctx: SchemaContext = { mode: 'view', basePath: base }
-        const elements = await callPageSchema(PageClass, ctx)
-        const schemaData = await resolveSchema(elements, ctx)
-        return view('pilotiq.resource-view', {
-          panel:    panelInfo(pilotiq),
-          page:     PageClass.toMeta(),
-          global:   { label: G.label, labelSingular: G.labelSingular, slug, icon: G.icon },
-          basePath: base,
-          layout:   cfg.layout,
-          schemaData,
-        })
+        const data = await globalViewData(pilotiq, slug)
+        return view('pilotiq.resource-view', data ?? {})
       })
     }
   }
@@ -483,19 +284,8 @@ export function registerPilotiqRoutes(
     const pageUrl  = `${base}/${pageSlug}`
 
     router.get(pageUrl, async () => {
-      const ctx: SchemaContext = {}
-      const elements = await callPageSchema(PageClass, ctx)
-      tagFormActions(elements, pageUrl)
-      tagActionDispatch(elements, pageUrl)
-      const schemaData = await resolveSchema(elements, ctx)
-      return view('pilotiq.slug', {
-        pageType: 'page',
-        panel:    panelInfo(pilotiq),
-        page:     PageClass.toMeta(),
-        schemaData,
-        basePath: base,
-        layout:   cfg.layout,
-      })
+      const data = await customPageData(pilotiq, pageSlug)
+      return view('pilotiq.slug', data ?? {})
     })
 
     // Action dispatch — POST ${base}/${pageSlug}/_action/:actionName

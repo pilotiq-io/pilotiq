@@ -65,6 +65,14 @@ export interface ActionMeta extends ElementMeta {
   /** POST URL for handler-style actions. Set server-side by the route
    * registrar so the client knows where to dispatch. */
   dispatchUrl?: string
+  /** True when this action submits its enclosing `<form>` — renders as
+   * `<button type="submit">` and lets the form's `action`/`method`
+   * attributes drive the request. */
+  submit?:      boolean
+  /** When `submit` is true and this id is set, the rendered button uses
+   * the HTML `form="<id>"` attribute so it can submit a form it lives
+   * outside of (e.g. a Save action in the page header). */
+  form?:        string
 }
 
 /**
@@ -91,6 +99,8 @@ export class Action extends Element {
   protected _method?: ActionMethod
   protected _actionUrl?: string
   protected _dispatchUrl?: string
+  protected _submit = false
+  protected _formTarget?: string
 
   private constructor(name: string) {
     super()
@@ -170,6 +180,32 @@ export class Action extends Element {
     return this
   }
 
+  /**
+   * Mark this action as the form-submit button for its enclosing
+   * `<form>`. Renders as `<button type="submit">` and relies on the form
+   * itself to carry `action` + `method`. Mutually exclusive with
+   * `.href()` / `.method()` / handler-style.
+   */
+  submit(): this {
+    this._submit = true
+    delete this._href
+    delete this._method
+    delete this._actionUrl
+    delete this._dispatchUrl
+    return this
+  }
+
+  /**
+   * Target a specific `<form id="">` when this is a submit action — uses
+   * the HTML `form` attribute so the button can submit a form it doesn't
+   * live inside. Required when the submit action sits in the page
+   * header (outside the form's DOM subtree).
+   */
+  form(formId: string): this {
+    this._formTarget = formId
+    return this
+  }
+
   // ─── Getters ──────────────────────────────────────────
 
   getLabel():     string             { return this._label }
@@ -180,6 +216,8 @@ export class Action extends Element {
   getMethod():      ActionMethod | undefined  { return this._method }
   getActionUrl():   string | undefined        { return this._actionUrl }
   getDispatchUrl(): string | undefined        { return this._dispatchUrl }
+  isSubmit():       boolean                   { return this._submit }
+  getFormTarget():  string | undefined        { return this._formTarget }
 
   // ─── Element contract ────────────────────────────────
 
@@ -198,6 +236,8 @@ export class Action extends Element {
       ...(this._method      ? { method:      this._method      } : {}),
       ...(this._actionUrl   ? { action:      this._actionUrl   } : {}),
       ...(this._dispatchUrl ? { dispatchUrl: this._dispatchUrl } : {}),
+      ...(this._submit      ? { submit:      true              } : {}),
+      ...(this._formTarget  ? { form:        this._formTarget  } : {}),
     }
   }
 }

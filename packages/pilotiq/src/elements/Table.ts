@@ -45,6 +45,11 @@ export interface TableMeta extends ElementMeta {
   currentSort?: { column: string; direction: SortDirection }
   search?:      string
   currentPage?: number
+  /** Absolute pathname the table lives at (e.g. `/admin/articles`). The
+   * renderer prefixes sort/pagination/search hrefs with this so SPA
+   * navigation resolves against the right route — Vike's client-side
+   * router doesn't follow `?qs`-only relative links. */
+  currentPath?: string
 }
 
 /**
@@ -60,11 +65,12 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _perPage?:      number
 
   // Render-time state
-  private _rows?:        R[]
-  private _total?:       number
-  private _currentSort?: { column: string; direction: SortDirection }
+  private _rows?:         R[]
+  private _total?:        number
+  private _currentSort?:  { column: string; direction: SortDirection }
   private _currentSearch?: string
-  private _currentPage?: number
+  private _currentPage?:  number
+  private _currentPath?:  string
 
   private constructor() { super() }
 
@@ -126,6 +132,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
 
   withSearch(query: string): this { this._currentSearch = query; return this }
   withPage(page: number): this { this._currentPage = page; return this }
+  withCurrentPath(path: string): this { this._currentPath = path; return this }
 
   // ─── Getters ──────────────────────────────────────────
 
@@ -138,6 +145,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   getCurrentSort(): { column: string; direction: SortDirection } | undefined { return this._currentSort }
   getCurrentSearch(): string | undefined { return this._currentSearch }
   getCurrentPage(): number | undefined { return this._currentPage }
+  getCurrentPath(): string | undefined { return this._currentPath }
 
   /** Convenience: the `Column` children only. */
   getColumns(): Column[] {
@@ -160,6 +168,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
       ...(this._currentSort  !== undefined ? { currentSort: this._currentSort } : {}),
       ...(this._currentSearch !== undefined ? { search:     this._currentSearch } : {}),
       ...(this._currentPage  !== undefined ? { currentPage: this._currentPage } : {}),
+      ...(this._currentPath  !== undefined ? { currentPath: this._currentPath } : {}),
     }
   }
 }

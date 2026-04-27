@@ -3,7 +3,7 @@ import { usePageContext } from 'vike-react/usePageContext'
 import { SchemaRenderer } from '@pilotiq/pilotiq/react'
 
 export default function SlugPage() {
-  const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown> }
-  const vp = ctx.viewProps as any ?? {}
+  const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown>; data?: Record<string, unknown> }
+  const vp = (ctx.data ?? ctx.viewProps) as any ?? {}
   return <SchemaRenderer elements={vp.schemaData ?? []} />
 }

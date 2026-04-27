@@ -4,8 +4,8 @@ import { AppShell, ThemeProvider, generateThemeCSS } from '@pilotiq/pilotiq/reac
 import type { ReactNode } from 'react'
 
 export default function PilotiqLayout({ children }: { children: ReactNode }) {
-  const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown> }
-  const { panel, basePath, layout } = ctx.viewProps as any ?? {}
+  const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown>; data?: Record<string, unknown> }
+  const { panel, basePath, layout } = (ctx.data ?? ctx.viewProps) as any ?? {}
   if (!panel) return <>{children}</>
 
   // SSR: inject theme CSS inline to prevent FOUC

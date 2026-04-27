@@ -1,67 +1,16 @@
 import {
-  Pilotiq, Resource, Global, TextField, Column, Action,
-  Form, Table,
-  Heading, Text, Alert, Divider, Card, Section,
+  Pilotiq, Global, TextField,
+  Form,
+  Heading, Text, Alert, Divider, Card,
 } from '@pilotiq/pilotiq'
 import { themeEditor } from '@pilotiq/pilotiq/plugins'
 import { app } from '@rudderjs/core'
-import { Article } from '../Models/Article.js'
+import { ArticleResource } from './Articles/ArticleResource.js'
 import { SimplePage } from './pages/SimplePage.js'
 import { ElementsShowcase } from './pages/ElementsShowcase.js'
 
 function prisma(): any {
   return app().make('prisma')
-}
-
-class ArticleResource extends Resource {
-  static override label         = 'Articles'
-  static override labelSingular = 'Article'
-  static override icon          = 'file-text'
-  static override model         = Article
-
-  static override form(form: Form): Form {
-    return form.schema([
-      TextField.make('title').label('Title').required().placeholder('Article title...'),
-      TextField.make('slug').label('Slug').required(),
-    ])
-  }
-
-  static override detail(record: unknown) {
-    const r = record as { id?: string; title?: string; slug?: string | null; status?: string; createdAt?: Date | string } | null
-    if (!r) return [Text.make('Article not found.')]
-    return [
-      Section.make('Overview').schema([
-        Text.make(`Title: ${r.title ?? '(untitled)'}`),
-        Text.make(`Slug: ${r.slug ?? '(none)'}`),
-        Text.make(`Status: ${r.status ?? 'draft'}`),
-      ]),
-    ]
-  }
-
-  static override table(table: Table): Table {
-    return table
-      .columns([
-        Column.make('title').label('Title').sortable().searchable(),
-        Column.make('slug').label('Slug').searchable(),
-        Column.make('createdAt').label('Created').sortable(),
-      ])
-      .defaultSort('createdAt', 'desc')
-      .paginate(10)
-      .actions([
-        Action.make('markFeatured')
-          .label('Mark featured')
-          .bulk()
-          .confirm('Mark these articles as featured?')
-          .handler(async (ctx) => {
-            const ids = (ctx.records as { id?: string }[] | undefined)?.map(r => r.id).filter(Boolean) ?? []
-            if (ids.length === 0) return
-            await prisma().article.updateMany({
-              where: { id: { in: ids } },
-              data:  { featured: true },
-            })
-          }),
-      ])
-  }
 }
 
 class SiteSettings extends Global {
@@ -93,9 +42,9 @@ class SiteSettings extends Global {
 
 export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .path('/new-admin')
+  // .layout('topbar')
   .branding({ title: 'Pilotiq' })
   // No .theme() → inherits the Pilotiq brand default (terracotta on cream,
-  // Satoshi via Fontshare). Override per-panel if you want a custom palette.
   .use(themeEditor())
   .resources([ArticleResource])
   .globals([SiteSettings])

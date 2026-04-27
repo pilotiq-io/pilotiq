@@ -85,6 +85,87 @@ That's it. After this you have working list, create, edit, and view pages at `/a
 
 ---
 
+## Filament-style file organization (recommended for non-trivial resources)
+
+For larger resources, split the configuration across files mirroring Filament's layout:
+
+```
+app/Pilotiq/Articles/
+├── ArticleResource.ts       # binds form / table / detail / pages
+├── Pages/
+│   ├── ListArticles.ts      # extends ListPage
+│   ├── CreateArticle.ts     # extends CreatePage
+│   ├── EditArticle.ts       # extends EditPage
+│   └── ViewArticle.ts       # extends ViewPage
+├── Schemas/
+│   └── ArticleForm.ts       # Form configuration helper
+└── Tables/
+    └── ArticlesTable.ts     # Table columns + actions
+```
+
+Each page file is a one-liner subclass binding the Resource:
+
+```ts
+// Pages/ListArticles.ts
+import { ListPage } from '@pilotiq/pilotiq'
+import { ArticleResource } from '../ArticleResource.js'
+
+export class ListArticles extends ListPage {
+  static override getResource() { return ArticleResource }
+}
+```
+
+The base classes (`ListPage`, `CreatePage`, `EditPage`, `ViewPage`) handle all the wiring — slug derivation, form/table construction, model-backed save/loadRecord defaults, default headers and actions. Subclasses only override hooks they want to customize:
+
+```ts
+export class EditArticle extends EditPage {
+  static override getResource() { return ArticleResource }
+
+  // Custom header above the form
+  static override getHeader(R: typeof ArticleResource) {
+    return [Heading.make(`Editing ${R.labelSingular.toLowerCase()}`).level(1)]
+  }
+}
+
+export class ViewArticle extends ViewPage {
+  static override getResource() { return ArticleResource }
+
+  // Replace the default Edit + Delete row with custom actions
+  static override getActions(R, recordId, basePath) {
+    return [
+      Action.make('publish').label('Publish').handler(async () => {/* … */}),
+      ...super.getActions(R, recordId, basePath), // keep default Edit + Delete
+    ]
+  }
+}
+```
+
+Wire them via `Resource.pages()`:
+
+```ts
+// ArticleResource.ts
+import { Resource } from '@pilotiq/pilotiq'
+import { ArticleForm }   from './Schemas/ArticleForm.js'
+import { ArticlesTable } from './Tables/ArticlesTable.js'
+import { ListArticles, CreateArticle, EditArticle, ViewArticle } from './Pages/index.js'
+
+export class ArticleResource extends Resource {
+  static override label = 'Articles'
+  static override model = Article
+
+  static override form(form)  { return ArticleForm.configure(form) }
+  static override table(table) { return ArticlesTable.configure(table) }
+
+  static override pages() {
+    return { index: ListArticles, create: CreateArticle, edit: EditArticle, view: ViewArticle }
+  }
+}
+```
+
+You can omit `pages()` entirely — the framework auto-generates equivalent anonymous subclasses via `defaultPages(this)`. The Filament-style file layout is for when you want to customize page hooks; the inline minimal example above still works for simple cases.
+
+---
+
 ## The four pages
 
 Each Resource auto-generates four `Page` subclasses via `defaultPages(R)`. The URL conventions are fixed by role:
@@ -283,6 +364,61 @@ When `Resource.model` is set, ids hydrate through `R.model.find(id)` so handlers
 - `void` (or async returning `undefined`) — the dispatcher 303-redirects back to the page that triggered the action.
 - `{ redirect: '/elsewhere' }` — explicit redirect.
 - Throwing an Error returns 500 with the message.
+
+### Built-in CRUD actions
+
+The base page classes inject default actions to fill in the common pieces. They only appear when you haven't already added an action with the same name.
+
+**`ListPage` table actions:**
+
+| Default      | Placement | Behavior                                                          |
+| ------------ | --------- | ----------------------------------------------------------------- |
+| `create`     | header    | Link → `${basePath}/${slug}/create` (label: "New ${labelSingular}") |
+| `edit`       | row       | Link → `${basePath}/${slug}/:id/edit`                             |
+| `delete`     | row       | Form-post → `${basePath}/${slug}/:id/delete` (with confirm prompt) |
+
+The `:id` placeholder in row-action URLs is substituted at render time with the actual row's id. Override `ListPage.getHeaderActions()` / `ListPage.getRowActions()` to customize or `return []` to suppress.
+
+**`CreatePage` / `EditPage` form submit:**
+
+The submit button renders **in the page header** (right of the title), not at the bottom of the form — Filament-style. The button uses HTML's `form="<id>"` attribute to drive the form below it.
+
+| Default      | Page          | Header button label                                            |
+| ------------ | ------------- | -------------------------------------------------------------- |
+| `submit`     | `CreatePage`  | "Create ${labelSingular}"                                      |
+| `submit`     | `EditPage`    | "Save changes"                                                 |
+| `submit`     | global edit   | "Save changes"                                                 |
+
+Override `CreatePage.getFormActions(R)` / `EditPage.getFormActions(R)` to customize the header buttons. Return `[]` to suppress entirely (e.g. if you compose your own action row inside `R.form()`).
+
+```ts
+class ListArticles extends ListPage {
+  static override getResource() { return ArticleResource }
+  static override getHeaderActions() { return [] }   // hide Create button
+}
+
+class EditArticle extends EditPage {
+  static override getResource() { return ArticleResource }
+  static override getFormActions(R) {
+    return [
+      Action.make('cancel').label('Cancel').href(`/admin/${R.getSlug()}`),
+      Action.make('submit').label('Update').submit(),
+    ]
+  }
+}
+```
+
+### How it renders
+
+The default `SchemaRenderer` segregates table actions by placement:
+
+- `header` (and `inline`) — top-right of the list page header bar.
+- `bulk` — appears in a toolbar above the table only when ≥1 row is checked. Clicking dispatches with the selected ids.
+- `row` — rendered as buttons in a final "Actions" column on each row. Clicking dispatches with that one row's id.
+
+When any bulk action is registered the renderer prepends a checkbox column (with a master checkbox in the header). Selection state lives in React component state, keyed by `row.id`, and survives within-page interaction; navigating to another page resets it.
+
+For confirmation, `Action.confirm('Are you sure?')` triggers `window.confirm()` before the POST. Custom modal UI is a future polish — the dispatch path is the same either way.
 
 ---
 

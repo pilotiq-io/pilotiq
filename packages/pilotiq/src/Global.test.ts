@@ -57,14 +57,20 @@ describe('Global (singleton resource)', () => {
     assert.equal(resolved.view!.getMode(), 'view')
   })
 
-  it('default edit page schema is [Heading, Form] with the configured fields', () => {
+  it('default edit page schema is [Heading-with-save-action, Form] with the configured fields', () => {
     const Edit = defaultGlobalEditPage(SiteSettings)
-    const elements = Edit.schema() as Array<{ getType(): string }>
+    const elements = Edit.schema() as Array<{ getType(): string; getChildren(): unknown[] | undefined }>
     assert.equal(elements.length, 2)
     assert.equal(elements[0]!.getType(), 'heading')
     assert.equal(elements[1]!.getType(), 'form')
     const form = elements[1] as Form
-    assert.equal((form.getChildren() ?? []).length, 1)
+    // Form children: just the user field — save action lives in the heading.
+    const formChildren = form.getChildren() ?? []
+    assert.equal(formChildren.length, 1)
+    // Heading carries the submit action.
+    const headingChildren = elements[0]!.getChildren() ?? []
+    assert.equal(headingChildren.length, 1)
+    assert.equal((headingChildren[0] as { getType(): string }).getType(), 'action')
   })
 
   it('sentinel save fires when the user did not configure one', () => {
