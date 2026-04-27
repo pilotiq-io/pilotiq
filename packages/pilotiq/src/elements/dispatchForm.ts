@@ -1,4 +1,5 @@
 import { Element } from '../schema/Element.js'
+import { Field } from '../fields/Field.js'
 import { Form, type FormContext } from './Form.js'
 import { validateSchema, type ValidationErrors } from '../validation/index.js'
 
@@ -52,7 +53,7 @@ export async function dispatchFormSubmit<R = unknown>(
     return { ok: false, errors }
   }
 
-  let data: Record<string, unknown> = body
+  let data: Record<string, unknown> = coerceFormValues(children as Element[], body)
   const mutate = form.getMutateData()
   if (mutate) data = await mutate(data, { ...ctx, values: data })
 
@@ -74,6 +75,81 @@ export async function dispatchFormSubmit<R = unknown>(
   const redirect = redirectFn ? redirectFn(record, { ...ctx, record, values: data }) : undefined
 
   return { ok: true, record, redirect }
+}
+
+/**
+ * Coerce raw form-body strings into the runtime types each field expects:
+ * booleans for toggles, numbers for number inputs, Dates for dates. The
+ * browser submits everything as a string by default, but ORM layers (Prisma,
+ * etc.) expect actual booleans/numbers/Dates. Runs after validation so
+ * validators still see the raw submitted text.
+ *
+ * Empty / missing values are normalized:
+ *   - `toggle`  → `false` when missing or 'false'/empty; `true` otherwise.
+ *   - `number`  → `null` when empty; otherwise `Number(v)` (NaN passes through).
+ *   - `date`    → `null` when empty; otherwise a `Date` parsed from the string.
+ *
+ * Other field types are passed through untouched.
+ */
+function coerceFormValues(
+  elements: Element[],
+  body:     Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...body }
+  walkFields(elements, field => {
+    const name = field.name
+    const raw  = out[name]
+    switch (field.fieldType) {
+      case 'toggle': {
+        if (raw === undefined || raw === null || raw === '' || raw === 'false' || raw === '0' || raw === false) {
+          out[name] = false
+        } else {
+          out[name] = true
+        }
+        break
+      }
+      case 'number': {
+        if (raw === undefined || raw === null || raw === '') {
+          out[name] = null
+        } else if (typeof raw === 'string') {
+          out[name] = Number(raw)
+        }
+        break
+      }
+      case 'date': {
+        if (raw === undefined || raw === null || raw === '') {
+          out[name] = null
+        } else if (typeof raw === 'string') {
+          out[name] = new Date(raw)
+        }
+        break
+      }
+      case 'richtext': {
+        // Editor posts the document as a JSON-encoded string via a hidden
+        // input. Prisma's Json column wants a real object, so parse here.
+        // Empty / unparseable → null so the column accepts it.
+        if (raw === undefined || raw === null || raw === '') {
+          out[name] = null
+        } else if (typeof raw === 'string') {
+          try { out[name] = JSON.parse(raw) }
+          catch { out[name] = null }
+        }
+        break
+      }
+      default:
+        // text/textarea/email/select/slug — leave as string.
+        break
+    }
+  })
+  return out
+}
+
+function walkFields(elements: Element[], visit: (f: Field) => void): void {
+  for (const el of elements) {
+    if (el instanceof Field) visit(el)
+    const children = el.getChildren()
+    if (children && children.length > 0) walkFields(children as Element[], visit)
+  }
 }
 
 /**

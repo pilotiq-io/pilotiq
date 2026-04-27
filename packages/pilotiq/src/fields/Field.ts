@@ -2,7 +2,19 @@ import { Element, type ElementMeta } from '../schema/Element.js'
 import type { RenderMode } from '../schema/resolveSchema.js'
 import type { SerializedRule, Validator, ValidatorContext } from '../validation/Validator.js'
 
-export type FieldType = 'text' | 'textarea' | 'email' | 'number' | 'select' | 'toggle' | 'date' | 'slug'
+export type FieldType =
+  | 'text'
+  | 'textarea'
+  | 'email'
+  | 'number'
+  | 'select'
+  | 'toggle'
+  | 'date'
+  | 'slug'
+  // Permits external packages (`@pilotiq/tiptap` etc.) to declare their own
+  // fieldType strings without having to widen this union. The `& {}` trick
+  // keeps autocomplete on the literal members for built-ins.
+  | (string & {})
 
 /**
  * JSON-serializable field metadata sent to the client.

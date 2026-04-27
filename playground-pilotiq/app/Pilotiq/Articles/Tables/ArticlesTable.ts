@@ -9,6 +9,9 @@ export const ArticlesTable = {
       .columns([
         Column.make('title').label('Title').sortable().searchable(),
         Column.make('slug').label('Slug').searchable(),
+        Column.make('status').label('Status').sortable(),
+        Column.make('featured').label('Featured').sortable(),
+        Column.make('publishedAt').label('Published').sortable(),
         Column.make('createdAt').label('Created').sortable(),
       ])
       .filters([

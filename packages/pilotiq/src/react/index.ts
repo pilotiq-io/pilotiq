@@ -1,6 +1,7 @@
 export { AppShell, type AppShellProps } from './AppShell.js'
 
 export { SchemaRenderer, type SchemaRendererProps } from './SchemaRenderer.js'
+export { registerFieldRenderer, getFieldRenderer, type FieldRendererProps } from './registry.js'
 
 export { ThemeProvider, useTheme } from './ThemeProvider.js'
 export { ThemeToggle } from './ThemeToggle.js'

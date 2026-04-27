@@ -23,6 +23,10 @@ export default defineConfig({
     dedupe: [
       'react', 'react-dom',
       '@pilotiq/pilotiq',
+      '@pilotiq/tiptap',
+      // Tiptap keeps state on module-level singletons — multiple copies
+      // of @tiptap/core / @tiptap/pm break the editor.
+      '@tiptap/core', '@tiptap/pm', '@tiptap/react',
     ],
   },
   optimizeDeps: {
@@ -30,6 +34,37 @@ export default defineConfig({
       'reflect-metadata',
       'vike/abort',
       'vike-react/useConfig',
+      // Pre-bundle tiptap + its peers up-front so the first edit-page visit
+      // doesn't trigger a multi-second "new dependencies optimized" stall.
+      // Without this Vite discovers them lazily on import.
+      '@tiptap/core',
+      '@tiptap/pm/state',
+      '@tiptap/pm/view',
+      '@tiptap/react',
+      '@tiptap/starter-kit',
+      '@tiptap/extension-placeholder',
+      '@tiptap/suggestion',
+      'tippy.js',
+      // Base UI sub-paths — each import is a separate optimizeDeps entry,
+      // so listing them up-front avoids one-by-one discovery stalls.
+      '@base-ui/react/input',
+      '@base-ui/react/select',
+      '@base-ui/react/switch',
+      '@base-ui/react/checkbox',
+      '@base-ui/react/popover',
+      '@base-ui/react/dialog',
+      '@base-ui/react/tooltip',
+      '@base-ui/react/separator',
+      '@base-ui/react/button',
+      'react-day-picker',
+      'lucide-react',
+      '@base-ui/react/merge-props',
+      '@base-ui/react/use-render',
+      'clsx',
+      'tailwind-merge',
+      'class-variance-authority',
+      'zod',
+      'vike/server',
     ],
     exclude: [
       // Keep as workspace-link runtime imports so a single instance is shared
@@ -37,6 +72,7 @@ export default defineConfig({
       // not be pre-bundled — it transitively imports `@rudderjs/core` which
       // touches `node:fs` and would break client builds.
       '@pilotiq/pilotiq',
+      '@pilotiq/tiptap',
       // CLI-only — server-side, must not be pre-bundled
       '@clack/prompts',
       '@clack/core',

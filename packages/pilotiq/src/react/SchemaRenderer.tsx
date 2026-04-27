@@ -1,5 +1,20 @@
 import React, { useState } from 'react'
 import type { ElementMeta } from '../schema/Element.js'
+import { getFieldRenderer } from './registry.js'
+import { Input } from './ui/input.js'
+import { Textarea } from './ui/textarea.js'
+import { Switch } from './ui/switch.js'
+import { Checkbox } from './ui/checkbox.js'
+import { Calendar } from './ui/calendar.js'
+import { Popover, PopoverTrigger, PopoverContent } from './ui/popover.js'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select.js'
+import { CalendarIcon } from 'lucide-react'
 
 const alertStyles: Record<string, string> = {
   info:    'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200',
@@ -8,13 +23,118 @@ const alertStyles: Record<string, string> = {
   danger:  'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200',
 }
 
-const inputClass =
+// Filter controls still use a raw <select> wired into the search form so
+// the browser can auto-submit on change. shadcn Select would need a
+// hidden input + JS to submit the parent form, which is more wiring than
+// the filter bar needs. Keep this class for that callsite only.
+const filterSelectClass =
   'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm ' +
   'transition-colors placeholder:text-muted-foreground ' +
   'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ' +
   'disabled:cursor-not-allowed disabled:opacity-50'
 
 // ─── Field rendering ────────────────────────────────────────
+
+function ToggleFieldInput({
+  name, defaultChecked, disabled,
+}: { name: string; defaultChecked: boolean; disabled: boolean }) {
+  const [checked, setChecked] = useState(defaultChecked)
+  return (
+    <div className="flex items-center gap-2">
+      {/* Hidden input is the source of truth for form POST. Always present
+          (even when unchecked) so coerceFormValues sees a definitive value. */}
+      <input type="hidden" name={name} value={checked ? 'true' : 'false'} />
+      <Switch
+        id={name}
+        checked={checked}
+        onCheckedChange={(next) => setChecked(next)}
+        disabled={disabled}
+      />
+    </div>
+  )
+}
+
+function SelectFieldInput({
+  name, defaultValue, disabled, required, placeholder, options,
+}: {
+  name:         string
+  defaultValue: string | undefined
+  disabled:     boolean
+  required:     boolean
+  placeholder:  string | undefined
+  options:      Array<{ value: string; label: string }>
+}) {
+  // Always-controlled. Initialize to '' (not undefined) so Base UI's Select
+  // doesn't see the value flip from undefined → string when the user picks
+  // an option (warns: "changing the uncontrolled value state to controlled").
+  const [value, setValue] = useState<string>(defaultValue ?? '')
+  return (
+    <>
+      <input type="hidden" name={name} value={value} />
+      <Select
+        value={value}
+        onValueChange={(v) => setValue(v as string)}
+        disabled={disabled}
+        required={required}
+      >
+        <SelectTrigger className="w-full" id={name}>
+          <SelectValue placeholder={placeholder ?? 'Select…'} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
+  )
+}
+
+function DateFieldInput({
+  name, defaultValue, disabled, placeholder,
+}: {
+  name:         string
+  defaultValue: string | undefined
+  disabled:     boolean
+  placeholder:  string | undefined
+}) {
+  const initial = defaultValue ? new Date(defaultValue) : undefined
+  const [date, setDate] = useState<Date | undefined>(
+    initial && !isNaN(initial.getTime()) ? initial : undefined,
+  )
+  const formatted = date ? date.toISOString().slice(0, 10) : ''
+  const display   = date
+    ? date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    : (placeholder ?? 'Pick a date')
+
+  return (
+    <>
+      <input type="hidden" name={name} value={formatted} />
+      <Popover>
+        <PopoverTrigger
+          render={
+            <button
+              type="button"
+              id={name}
+              disabled={disabled}
+              className={`flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 ${
+                date ? 'text-foreground' : 'text-muted-foreground'
+              }`}
+            >
+              <span>{display}</span>
+              <CalendarIcon className="size-4 opacity-60" />
+            </button>
+          }
+        />
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+        </PopoverContent>
+      </Popover>
+    </>
+  )
+}
 
 function renderField(el: ElementMeta, index: number): React.ReactNode {
   const fieldType   = String(el['fieldType'] ?? 'text')
@@ -24,6 +144,7 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
   const disabled    = Boolean(el['disabled'])
   const placeholder = el['placeholder'] ? String(el['placeholder']) : undefined
   const defaultValue = el['defaultValue']
+  const defaultStr = defaultValue !== undefined && defaultValue !== null ? String(defaultValue) : undefined
 
   const labelEl = (
     <label htmlFor={name} className="text-sm font-medium leading-none">
@@ -37,47 +158,59 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
     disabled,
     placeholder,
     required,
-    className: inputClass,
-    ...(defaultValue !== undefined && defaultValue !== null
-      ? { defaultValue: String(defaultValue) }
-      : {}),
+    ...(defaultStr !== undefined ? { defaultValue: defaultStr } : {}),
+  }
+
+  // External packages (e.g. @pilotiq/tiptap) register custom renderers
+  // for non-built-in fieldTypes. The registry wins over the built-in
+  // switch so consumers can override built-ins too if they want.
+  const Custom = getFieldRenderer(fieldType)
+  if (Custom) {
+    return (
+      <div key={index} className="flex flex-col gap-1.5">
+        {labelEl}
+        <Custom
+          el={el}
+          name={name}
+          defaultValue={defaultValue}
+          required={required}
+          disabled={disabled}
+          placeholder={placeholder}
+        />
+      </div>
+    )
   }
 
   let input: React.ReactNode
   switch (fieldType) {
     case 'textarea':
+      input = <Textarea {...common} rows={Number(el['rows']) || 4} />
+      break
+
+    case 'select': {
+      const options = (el['options'] as Array<{ value: string; label: string }>) ?? []
       input = (
-        <textarea
-          {...common}
-          rows={Number(el['rows']) || 4}
-          className={`${inputClass} h-auto`}
+        <SelectFieldInput
+          name={name}
+          defaultValue={defaultStr}
+          disabled={disabled}
+          required={required}
+          placeholder={placeholder}
+          options={options}
         />
       )
       break
+    }
 
-    case 'select':
-      input = (
-        <select {...common}>
-          <option value="">{placeholder ?? 'Select…'}</option>
-          {((el['options'] as Array<{ value: string; label: string }>) ?? []).map(o => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-      )
+    case 'toggle': {
+      const initialChecked = defaultValue === true || defaultValue === 'true' || defaultValue === 1 || defaultValue === '1'
+      input = <ToggleFieldInput name={name} defaultChecked={initialChecked} disabled={disabled} />
       break
-
-    case 'toggle':
-      input = (
-        <label className="inline-flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" disabled={disabled} className="h-4 w-4 rounded border-input" />
-          <span className="text-sm text-muted-foreground">Enabled</span>
-        </label>
-      )
-      break
+    }
 
     case 'number':
       input = (
-        <input
+        <Input
           {...common}
           type="number"
           {...(el['min']  !== undefined ? { min:  Number(el['min'])  } : {})}
@@ -87,13 +220,42 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
       )
       break
 
-    case 'email':    input = <input {...common} type="email" />; break
-    case 'date':     input = <input {...common} type="date"  />; break
+    case 'email':
+      input = <Input {...common} type="email" />
+      break
+
+    case 'date': {
+      // SSR may hand us a JS Date object directly; SPA JSON nav arrives as
+      // an ISO string. Normalize both into a `YYYY-MM-DD` slice — naive
+      // string slicing on `Date.toString()` ("Mon Apr 27 2026 ...") gives
+      // garbage when re-parsed, so handle the Date branch explicitly.
+      let iso: string | undefined
+      if (defaultValue instanceof Date) {
+        iso = isNaN(defaultValue.getTime())
+          ? undefined
+          : defaultValue.toISOString().slice(0, 10)
+      } else if (typeof defaultValue === 'string' && defaultValue) {
+        const parsed = new Date(defaultValue)
+        iso = isNaN(parsed.getTime())
+          ? undefined
+          : parsed.toISOString().slice(0, 10)
+      }
+      input = (
+        <DateFieldInput
+          name={name}
+          defaultValue={iso}
+          disabled={disabled}
+          placeholder={placeholder}
+        />
+      )
+      break
+    }
+
     case 'slug':
     case 'text':
     default:
       input = (
-        <input
+        <Input
           {...common}
           type="text"
           {...(el['maxLength'] !== undefined ? { maxLength: Number(el['maxLength']) } : {})}
@@ -634,7 +796,7 @@ function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
   const value       = el['value'] ? String(el['value']) : ''
   const placeholder = el['placeholder'] ? String(el['placeholder']) : 'All'
 
-  const selectClass = inputClass + ' min-w-[10rem]'
+  const selectClass = filterSelectClass + ' min-w-[10rem]'
 
   if (kind === 'boolean') {
     return (
@@ -753,12 +915,12 @@ function TableRenderer({ el }: { el: ElementMeta }) {
               {searchable && (
                 <label className="flex flex-col gap-1 text-xs">
                   <span className="text-muted-foreground">Search</span>
-                  <input
+                  <Input
                     type="search"
                     name="search"
                     defaultValue={search ?? ''}
                     placeholder="Search…"
-                    className={inputClass + ' max-w-xs'}
+                    className="max-w-xs"
                   />
                 </label>
               )}
@@ -805,12 +967,10 @@ function TableRenderer({ el }: { el: ElementMeta }) {
             <tr>
               {hasBulkActions && (
                 <th className="px-3 py-3 w-9">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     aria-label="Select all rows"
                     checked={allChecked}
-                    onChange={toggleAll}
-                    className="h-4 w-4 rounded border-input"
+                    onCheckedChange={() => toggleAll()}
                   />
                 </th>
               )}
@@ -867,12 +1027,10 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                 <tr key={id} className={`border-b last:border-b-0 ${isSelected ? 'bg-muted/30' : ''}`}>
                   {hasBulkActions && (
                     <td className="px-3 py-3 w-9">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         aria-label={`Select row ${id}`}
                         checked={isSelected}
-                        onChange={() => toggleRow(id)}
-                        className="h-4 w-4 rounded border-input"
+                        onCheckedChange={() => toggleRow(id)}
                       />
                     </td>
                   )}
