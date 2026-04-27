@@ -1,4 +1,5 @@
 import type { ResourceClass } from './Resource.js'
+import type { GlobalClass } from './Global.js'
 import type { Page } from './Page.js'
 import type { SchemaDefinition } from './schema/resolveSchema.js'
 import type { ThemeConfig } from './theme/types.js'
@@ -17,6 +18,7 @@ export interface PilotiqConfig {
   path:          string
   layout:        PilotiqLayout
   resources:     ResourceClass[]
+  globals:       GlobalClass[]
   pages:         (typeof Page)[]
   branding:      { title?: string; logo?: string }
   schema?:       SchemaDefinition
@@ -37,6 +39,7 @@ export class Pilotiq {
       path: '/admin',
       layout: 'sidebar',
       resources: [],
+      globals: [],
       pages: [],
       branding: {},
     }
@@ -58,6 +61,11 @@ export class Pilotiq {
 
   resources(r: ResourceClass[]): this {
     this.config.resources = r
+    return this
+  }
+
+  globals(g: GlobalClass[]): this {
+    this.config.globals = g
     return this
   }
 

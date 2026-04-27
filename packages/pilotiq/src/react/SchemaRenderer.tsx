@@ -112,11 +112,15 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
 // ─── Action rendering ───────────────────────────────────────
 
 function renderAction(el: ElementMeta, index: number): React.ReactNode {
-  const label       = String(el['label'] ?? el['name'] ?? '')
+  const name        = String(el['name'] ?? '')
+  const label       = String(el['label'] ?? name)
   const destructive = Boolean(el['destructive'])
   const placement   = String(el['placement'] ?? 'inline')
+  const href        = el['href']    as string | undefined
+  const method      = el['method']  as 'post' | 'put' | 'patch' | 'delete' | undefined
+  const actionUrl   = el['action']  as string | undefined
+  const confirm     = el['confirm'] as { title?: string; message: string } | undefined
 
-  // Phase 1.4: handler dispatch is not wired up. Buttons are visual-only.
   const variant = destructive
     ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
     : 'bg-primary text-primary-foreground hover:bg-primary/90'
@@ -125,12 +129,51 @@ function renderAction(el: ElementMeta, index: number): React.ReactNode {
     ? 'h-7 px-2 text-xs'
     : 'h-8 px-3 text-sm'
 
+  const className = `inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition ${variant} ${sizing}`
+
+  // Link-style action.
+  if (href) {
+    return (
+      <a key={index} href={href} className={className} data-action-name={name}>
+        {label}
+      </a>
+    )
+  }
+
+  // Form-style action (POST/PUT/PATCH/DELETE).
+  if (method) {
+    const httpMethod = method === 'post' ? 'post' : 'post' // hono accepts POST + _method spoof
+    const spoofed = method === 'put' || method === 'patch' || method === 'delete' ? method : undefined
+    const handleSubmit = confirm
+      ? (e: React.FormEvent<HTMLFormElement>) => {
+          if (typeof window !== 'undefined' && !window.confirm(confirm.message)) {
+            e.preventDefault()
+          }
+        }
+      : undefined
+    return (
+      <form
+        key={index}
+        method={httpMethod}
+        action={actionUrl}
+        className="inline-block"
+        onSubmit={handleSubmit}
+      >
+        {spoofed && <input type="hidden" name="_method" value={spoofed} />}
+        <button type="submit" className={className} data-action-name={name}>
+          {label}
+        </button>
+      </form>
+    )
+  }
+
+  // Plain button (no dispatch wired yet).
   return (
     <button
       key={index}
       type="button"
-      className={`inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition ${variant} ${sizing}`}
-      data-action-name={String(el['name'] ?? '')}
+      className={className}
+      data-action-name={name}
     >
       {label}
     </button>
@@ -343,6 +386,9 @@ function FormRenderer({ el }: { el: ElementMeta }) {
   const httpMethod = method === 'get' ? 'get' : 'post'
   const spoofedMethod = method !== 'get' && method !== 'post' ? method : undefined
 
+  const formErrors = errors['_form'] ?? []
+  const hasFieldErrors = Object.keys(errors).some(k => k !== '_form')
+
   return (
     <form
       id={formId || undefined}
@@ -351,10 +397,17 @@ function FormRenderer({ el }: { el: ElementMeta }) {
       action={action}
       className="flex flex-col gap-6"
     >
+      {formId && <input type="hidden" name="_formId" value={formId} />}
       {spoofedMethod && <input type="hidden" name="_method" value={spoofedMethod} />}
-      {Object.keys(errors).length > 0 && (
+      {(formErrors.length > 0 || hasFieldErrors) && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/5 text-destructive p-3 text-sm">
-          Please correct the errors below.
+          {formErrors.length > 0 ? (
+            <ul className="list-disc pl-4">
+              {formErrors.map((msg, i) => <li key={i}>{msg}</li>)}
+            </ul>
+          ) : (
+            'Please correct the errors below.'
+          )}
         </div>
       )}
       {(el.children ?? []).map((child, i) => renderFormChild(child, i, values, errors))}
@@ -392,10 +445,58 @@ function renderFieldWithValue(el: ElementMeta, index: number, value: unknown): R
 
 // ─── Table ──────────────────────────────────────────────────
 
+interface TableUrlState {
+  search?: string
+  sort?:   { column: string; direction: 'asc' | 'desc' }
+  page?:   number
+}
+
+function buildTableQuery(state: TableUrlState, override: TableUrlState): string {
+  const merged: TableUrlState = { ...state, ...override }
+  const params = new URLSearchParams()
+  if (merged.search)    params.set('search', merged.search)
+  if (merged.sort)      params.set('sort', `${merged.sort.column}:${merged.sort.direction}`)
+  if (merged.page && merged.page > 1) params.set('page', String(merged.page))
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
+function nextSortDir(
+  current: TableUrlState['sort'],
+  column:  string,
+): { column: string; direction: 'asc' | 'desc' } {
+  if (current?.column === column) {
+    return { column, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+  }
+  return { column, direction: 'asc' }
+}
+
+function formatCell(value: unknown): React.ReactNode {
+  if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>
+  if (value instanceof Date)               return value.toISOString().slice(0, 10)
+  if (typeof value === 'boolean')          return value ? 'Yes' : 'No'
+  if (typeof value === 'object')           return JSON.stringify(value)
+  return String(value)
+}
+
 function TableRenderer({ el }: { el: ElementMeta }) {
   const children = el.children ?? []
   const columns  = children.filter(c => c.type === 'column')
   const actions  = children.filter(c => c.type === 'action')
+
+  const rows        = (el['rows'] as unknown[] | undefined) ?? []
+  const total       = (el['total'] as number | undefined) ?? rows.length
+  const search      = el['search'] as string | undefined
+  const currentSort = el['currentSort'] as { column: string; direction: 'asc' | 'desc' } | undefined
+  const currentPage = (el['currentPage'] as number | undefined) ?? 1
+  const perPage     = el['perPage'] as number | undefined
+  const searchable  = Boolean(el['searchable'])
+
+  const state: TableUrlState = {
+    ...(search       !== undefined ? { search }      : {}),
+    ...(currentSort  !== undefined ? { sort: currentSort } : {}),
+    page: currentPage,
+  }
 
   if (columns.length === 0) {
     return (
@@ -405,36 +506,125 @@ function TableRenderer({ el }: { el: ElementMeta }) {
     )
   }
 
+  const totalPages = perPage && perPage > 0 ? Math.max(1, Math.ceil(total / perPage)) : 1
+  const showPagination = totalPages > 1
+  const showHeaderBar  = searchable || actions.length > 0
+
   return (
     <div className="flex flex-col gap-3">
-      {actions.length > 0 && (
-        <div className="flex items-center gap-2">
-          {actions.map((a, i) => renderAction(a, i))}
+      {showHeaderBar && (
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+          {searchable ? (
+            <form method="get" className="flex items-center gap-2">
+              <input
+                type="search"
+                name="search"
+                defaultValue={search ?? ''}
+                placeholder="Search…"
+                className={inputClass + ' max-w-xs'}
+              />
+              {currentSort && <input type="hidden" name="sort" value={`${currentSort.column}:${currentSort.direction}`} />}
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition bg-secondary text-secondary-foreground hover:bg-secondary/80 h-9 px-3 text-sm"
+              >
+                Search
+              </button>
+            </form>
+          ) : <span />}
+          {actions.length > 0 && (
+            <div className="flex items-center gap-2">
+              {actions.map((a, i) => renderAction(a, i))}
+            </div>
+          )}
         </div>
       )}
       <div className="rounded-xl border bg-card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted border-b">
             <tr>
-              {columns.map((col, i) => (
-                <th
-                  key={i}
-                  className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider"
-                >
-                  {String(col['label'] ?? col['name'] ?? '')}
-                </th>
-              ))}
+              {columns.map((col, i) => {
+                const name     = String(col['name'] ?? '')
+                const label    = String(col['label'] ?? name)
+                const sortable = Boolean(col['sortable'])
+                const isActive = currentSort?.column === name
+
+                if (!sortable) {
+                  return (
+                    <th
+                      key={i}
+                      className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider"
+                    >
+                      {label}
+                    </th>
+                  )
+                }
+                const next = nextSortDir(currentSort, name)
+                const href = buildTableQuery(state, { sort: next, page: 1 })
+                return (
+                  <th
+                    key={i}
+                    className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider"
+                  >
+                    <a href={href} className="inline-flex items-center gap-1 hover:text-foreground">
+                      {label}
+                      <span className="text-muted-foreground/70">
+                        {isActive ? (currentSort!.direction === 'asc' ? '↑' : '↓') : '↕'}
+                      </span>
+                    </a>
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td colSpan={columns.length} className="px-4 py-12 text-center text-muted-foreground">
-                No records yet.
-              </td>
-            </tr>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="px-4 py-12 text-center text-muted-foreground">
+                  No records yet.
+                </td>
+              </tr>
+            ) : rows.map((row, ri) => (
+              <tr key={ri} className="border-b last:border-b-0">
+                {columns.map((col, ci) => {
+                  const name = String(col['name'] ?? '')
+                  const value = (row as Record<string, unknown>)[name]
+                  return (
+                    <td key={ci} className="px-4 py-3 text-sm text-foreground">
+                      {formatCell(value)}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
+      {showPagination && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            Page {currentPage} of {totalPages}{total > 0 ? ` · ${total} record${total === 1 ? '' : 's'}` : ''}
+          </span>
+          <div className="flex items-center gap-2">
+            {currentPage > 1 && (
+              <a
+                href={buildTableQuery(state, { page: currentPage - 1 })}
+                className="rounded-md border px-3 py-1 text-xs hover:bg-muted"
+              >
+                ← Previous
+              </a>
+            )}
+            {currentPage < totalPages && (
+              <a
+                href={buildTableQuery(state, { page: currentPage + 1 })}
+                className="rounded-md border px-3 py-1 text-xs hover:bg-muted"
+              >
+                Next →
+              </a>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

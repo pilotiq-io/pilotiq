@@ -33,12 +33,48 @@ class CategoryResource extends Resource {
   static override slug          = 'categories'
 }
 
-function fakeReq(overrides: Partial<{ params: Record<string, string> }> = {}): any {
-  return { params: overrides.params ?? {} }
+function fakeReq(overrides: Partial<{
+  params: Record<string, string>
+  body:   unknown
+  query:  Record<string, string>
+}> = {}): any {
+  return {
+    params: overrides.params ?? {},
+    body:   overrides.body ?? null,
+    query:  overrides.query ?? {},
+    raw:    {},
+  }
 }
 
-async function callHandler(handler: (...args: any[]) => unknown, req: any = fakeReq()) {
-  return await handler(req, {} as any)
+interface FakeRes {
+  statusCode:    number
+  redirectedTo?: { url: string; code: number }
+  sentBody?:     unknown
+  status(code: number): FakeRes
+  redirect(url: string, code?: number): FakeRes
+  send(body: unknown): FakeRes
+  json(body: unknown): FakeRes
+}
+
+function fakeRes(): FakeRes {
+  const r: FakeRes = {
+    statusCode: 200,
+    status(code) { this.statusCode = code; return this },
+    redirect(url, code = 302) { this.redirectedTo = { url, code }; return this },
+    send(body) { this.sentBody = body; return this },
+    json(body) { this.sentBody = body; return this },
+  }
+  return r
+}
+
+async function callHandler(handler: (...args: any[]) => unknown, req: any = fakeReq(), res: any = fakeRes()) {
+  return await handler(req, res)
+}
+
+async function callHandlerCapturing(handler: (...args: any[]) => unknown, req: any = fakeReq()) {
+  const res = fakeRes()
+  const result = await handler(req, res)
+  return { result, res }
 }
 
 describe('registerPilotiqRoutes — route registration', () => {
@@ -225,5 +261,246 @@ describe('registerPilotiqRoutes — handler → schema round-trip', () => {
 
     assert.equal(panelData.resources.length, 1)
     assert.equal(panelData.pages.length, 1)
+  })
+})
+
+describe('registerPilotiqRoutes — POST submit lifecycle', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  function panelWith(SaveR: any) {
+    return Pilotiq.make('T').path('/admin').resources([SaveR])
+  }
+
+  it('registers POST /admin/articles/create and POST /admin/articles/:id/edit', () => {
+    registerPilotiqRoutes(router, panelWith(ArticleResource))
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.ok(paths.includes('POST /admin/articles/create'))
+    assert.ok(paths.includes('POST /admin/articles/:id/edit'))
+  })
+
+  it('registers GET /admin/articles/:id (view) and POST /admin/articles/:id/delete', () => {
+    registerPilotiqRoutes(router, panelWith(ArticleResource))
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.ok(paths.includes('GET /admin/articles/:id'))
+    assert.ok(paths.includes('POST /admin/articles/:id/delete'))
+  })
+
+  it('view handler runs Resource.detail(record) and ships schemaData', async () => {
+    class ViewableResource extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title')])
+          .loadRecord(async (id) => ({ id, title: `Article ${id}` }))
+      }
+      static override detail(record: unknown) {
+        const r = record as { title?: string }
+        return [Heading.make(`Detail: ${r.title}`).level(2)]
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(ViewableResource))
+
+    const route = router.list().find(r => r.method === 'GET' && r.path === '/admin/articles/:id')!
+    const result = await callHandler(route.handler, fakeReq({ params: { id: '7' } })) as {
+      id: string
+      props: Record<string, unknown>
+    }
+    assert.equal(result.id, 'pilotiq.resource-view')
+    assert.equal(result.props['recordId'], '7')
+
+    const schemaData = result.props['schemaData'] as Array<{ type: string; content?: string }>
+    // [page-heading, edit-action, delete-action, detail-heading]
+    assert.equal(schemaData.length, 4)
+    assert.equal(schemaData[0]!.type, 'heading')           // labelSingular heading
+    assert.equal(schemaData[1]!.type, 'action')
+    assert.equal(schemaData[2]!.type, 'action')
+    assert.equal(schemaData[3]!.content, 'Detail: Article 7') // detail() heading
+  })
+
+  it('delete POST calls Resource.deleteRecord and 303-redirects to list', async () => {
+    let deletedId: string | null = null
+    class Deletable extends ArticleResource {
+      static override async deleteRecord(id: string) { deletedId = id }
+    }
+    registerPilotiqRoutes(router, panelWith(Deletable))
+
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/:id/delete')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({ params: { id: 'abc' } }))
+    assert.equal(deletedId, 'abc')
+    assert.deepEqual(res.redirectedTo, { url: '/admin/articles', code: 303 })
+  })
+
+  it('delete POST returns 500 when deleteRecord throws (default)', async () => {
+    registerPilotiqRoutes(router, panelWith(ArticleResource))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/:id/delete')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({ params: { id: 'abc' } }))
+    assert.equal(res.statusCode, 500)
+  })
+
+  it('happy path: validates, runs save, redirects 303 to edit URL', async () => {
+    let savedWith: unknown = null
+    class Saver extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title').required()])
+          .save(async (data) => { savedWith = data; return { id: 'r42' } })
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Saver))
+
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/create')!
+    const { res } = await callHandlerCapturing(post.handler, fakeReq({ body: { title: 'Hello' } }))
+
+    assert.deepEqual(res.redirectedTo, { url: '/admin/articles/r42/edit', code: 303 })
+    assert.deepEqual(savedWith, { title: 'Hello' })
+  })
+
+  it('validation failure re-renders the create view with errors + values, status 422', async () => {
+    class Saver extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title').required()])
+          .save(async () => ({ id: '1' }))
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Saver))
+
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/create')!
+    const { result, res } = await callHandlerCapturing(post.handler, fakeReq({ body: { title: '' } }))
+
+    assert.equal(res.statusCode, 422)
+    assert.equal(res.redirectedTo, undefined)
+    const view = result as { id: string; props: Record<string, unknown> }
+    assert.equal(view.id, 'pilotiq.resource-create')
+    assert.equal(view.props['hasErrors'], true)
+
+    const schemaData = view.props['schemaData'] as Array<{ type: string; values?: unknown; errors?: unknown }>
+    const formMeta = schemaData[1]!
+    assert.equal(formMeta.type, 'form')
+    assert.deepEqual(formMeta.values, { title: '' })
+    assert.deepEqual((formMeta.errors as Record<string, string[]>)['title']?.length! > 0, true)
+  })
+
+  it('discriminates by submitted _formId on a multi-form page', async () => {
+    let calledForm: string | null = null
+
+    class TwoFormsPage extends Page {
+      static override getMode() { return 'create' as const }
+      static override schema() {
+        const a = Form.make().formId('alpha')
+          .schema([TextField.make('a')])
+          .save(async () => { calledForm = 'alpha'; return { id: 'a1' } })
+        const b = Form.make().formId('beta')
+          .schema([TextField.make('b')])
+          .save(async () => { calledForm = 'beta'; return { id: 'b1' } })
+        return [a, b]
+      }
+    }
+    class TwoFormsResource extends Resource {
+      static override label = 'Two'
+      static override labelSingular = 'Two'
+      static override slug = 'two'
+      static override pages() { return { create: TwoFormsPage } }
+    }
+    registerPilotiqRoutes(router, panelWith(TwoFormsResource))
+
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/two/create')!
+    await callHandlerCapturing(post.handler, fakeReq({ body: { _formId: 'beta', b: 'value' } }))
+    assert.equal(calledForm, 'beta')
+  })
+
+  it('GET edit calls loadRecord and pre-fills form values', async () => {
+    class Loader extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title')])
+          .loadRecord(async (id) => ({ id, title: `Loaded ${id}` }))
+          .save(async (d) => ({ id: '1', ...d }))
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Loader))
+
+    const get = router.list().find(r => r.method === 'GET' && r.path === '/admin/articles/:id/edit')!
+    const result = await callHandler(get.handler, fakeReq({ params: { id: '99' } })) as {
+      props: Record<string, unknown>
+    }
+    const schemaData = result.props['schemaData'] as Array<{ type: string; values?: Record<string, unknown> }>
+    const formMeta = schemaData[1]!
+    assert.equal(formMeta.type, 'form')
+    assert.deepEqual(formMeta.values, { id: '99', title: 'Loaded 99' })
+  })
+
+  it('POST edit redirects back to the edit URL by default', async () => {
+    class EditSaver extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title')])
+          .save(async (d) => ({ id: '7', ...d }))
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(EditSaver))
+
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/:id/edit')!
+    const { res } = await callHandlerCapturing(post.handler, fakeReq({
+      params: { id: '7' },
+      body:   { title: 'Updated' },
+    }))
+    assert.deepEqual(res.redirectedTo, { url: '/admin/articles/7/edit', code: 303 })
+  })
+
+  it('index route passes ?sort/?search/?page through to Table.records()', async () => {
+    let seen: Record<string, unknown> | null = null
+    class TableR extends Resource {
+      static override label = 'Items'
+      static override labelSingular = 'Item'
+      static override slug = 'items'
+      static override table(table: Table): Table {
+        return table
+          .columns([Column.make('title').sortable().searchable()])
+          .records(async (ctx) => {
+            seen = { ...ctx }
+            return { rows: [{ title: 'a' }, { title: 'b' }], total: 17 }
+          })
+          .paginate(5)
+      }
+    }
+    registerPilotiqRoutes(router, Pilotiq.make('T').path('/admin').resources([TableR]))
+
+    const indexRoute = router.list().find(r => r.method === 'GET' && r.path === '/admin/items')!
+    const result = await callHandler(indexRoute.handler, fakeReq({
+      query: { sort: 'title:desc', search: 'foo', page: '3' },
+    })) as { props: Record<string, unknown> }
+
+    assert.deepEqual(seen, {
+      sort:    { column: 'title', direction: 'desc' },
+      search:  'foo',
+      page:    3,
+      perPage: 5,
+    } satisfies Record<string, unknown>)
+
+    const schemaData = result.props['schemaData'] as Array<{ type: string; rows?: unknown[]; total?: number; currentSort?: unknown; search?: unknown; currentPage?: unknown }>
+    const tableMeta = schemaData[1]!
+    assert.equal(tableMeta.type, 'table')
+    assert.equal(tableMeta.rows!.length, 2)
+    assert.equal(tableMeta.total, 17)
+    assert.deepEqual(tableMeta.currentSort, { column: 'title', direction: 'desc' })
+    assert.equal(tableMeta.search, 'foo')
+    assert.equal(tableMeta.currentPage, 3)
+  })
+
+  it('honors Form.redirectAfterSave when supplied', async () => {
+    class CustomRedirect extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title')])
+          .save(async () => ({ id: '99' }))
+          .redirectAfterSave(() => '/elsewhere')
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(CustomRedirect))
+
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/create')!
+    const { res } = await callHandlerCapturing(post.handler, fakeReq({ body: { title: 'x' } }))
+    assert.equal(res.redirectedTo?.url, '/elsewhere')
   })
 })

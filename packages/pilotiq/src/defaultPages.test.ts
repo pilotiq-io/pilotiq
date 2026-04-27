@@ -108,11 +108,12 @@ describe('Resource.resolvePages()', () => {
     assert.equal(typeof resolved.index, 'function')
     assert.equal(typeof resolved.create, 'function')
     assert.equal(typeof resolved.edit, 'function')
-    assert.equal(resolved.view, undefined)
+    assert.equal(typeof resolved.view, 'function')
 
     assert.equal(resolved.index!.getMode(), 'list')
     assert.equal(resolved.create!.getMode(), 'create')
     assert.equal(resolved.edit!.getMode(), 'edit')
+    assert.equal(resolved.view!.getMode(), 'view')
     assert.equal(resolved.index!.getResource(), ArticleResource)
   })
 

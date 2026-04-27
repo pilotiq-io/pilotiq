@@ -60,6 +60,17 @@ export abstract class Resource {
   static detail(_record: unknown): Element[] { return [] }
 
   /**
+   * Delete a record by id. Default throws — users override on their
+   * Resource subclass to wire up real persistence (e.g. Prisma delete).
+   * Wired up by the `POST {base}/{slug}/{id}/delete` route.
+   */
+  static async deleteRecord(_id: string): Promise<void> {
+    throw new Error(
+      `[Pilotiq] ${this.name}: no deleteRecord(id) implementation. Override Resource.deleteRecord to wire up deletion.`,
+    )
+  }
+
+  /**
    * User-overridable page map. Return any subset of `{ index, create, edit, view }`
    * to override the auto-generated defaults; missing keys fall through to
    * defaults via `resolvePages()`.

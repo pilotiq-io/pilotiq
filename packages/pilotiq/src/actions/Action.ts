@@ -35,6 +35,10 @@ export interface ActionConfirm {
   confirmLabel?: string
 }
 
+/** HTTP method for form-style actions. `'get'` is implied by `.href()`; the
+ *  others spawn a `<form>`-wrapped submit button at render time. */
+export type ActionMethod = 'post' | 'put' | 'patch' | 'delete'
+
 export interface ActionMeta extends ElementMeta {
   type:        'action'
   name:        string
@@ -43,6 +47,9 @@ export interface ActionMeta extends ElementMeta {
   destructive: boolean
   icon?:       string
   confirm?:    ActionConfirm
+  href?:       string
+  method?:     ActionMethod
+  action?:     string
 }
 
 /**
@@ -65,6 +72,9 @@ export class Action extends Element {
   protected _destructive = false
   protected _confirm?: ActionConfirm
   protected _handler?: ActionHandler
+  protected _href?: string
+  protected _method?: ActionMethod
+  protected _actionUrl?: string
 
   private constructor(name: string) {
     super()
@@ -103,12 +113,46 @@ export class Action extends Element {
   /** Server-side handler. Stored in Phase 1; dispatched in Phase 2. */
   handler(fn: ActionHandler): this { this._handler = fn; return this }
 
+  // ─── Link / form modes ────────────────────────────────
+
+  /**
+   * Render this action as a link to `url`. Mutually exclusive with
+   * `.method()` — setting `href` clears any prior method/action URL.
+   */
+  href(url: string): this {
+    this._href = url
+    delete this._method
+    delete this._actionUrl
+    return this
+  }
+
+  /**
+   * Render this action as a form-style submit button using `method`. Pair
+   * with `.action(url)` to set the form's action URL — falls back to the
+   * current page URL otherwise.
+   */
+  method(m: ActionMethod): this {
+    this._method = m
+    delete this._href
+    return this
+  }
+
+  /** Form action URL — only meaningful when `.method()` is set. */
+  action(url: string): this {
+    this._actionUrl = url
+    delete this._href
+    return this
+  }
+
   // ─── Getters ──────────────────────────────────────────
 
   getLabel():     string             { return this._label }
   getPlacement(): ActionPlacement    { return this._placement }
   isDestructive(): boolean           { return this._destructive }
   getHandler():   ActionHandler | undefined { return this._handler }
+  getHref():      string | undefined        { return this._href }
+  getMethod():    ActionMethod | undefined  { return this._method }
+  getActionUrl(): string | undefined        { return this._actionUrl }
 
   // ─── Element contract ────────────────────────────────
 
@@ -121,8 +165,11 @@ export class Action extends Element {
       label:       this._label,
       placement:   this._placement,
       destructive: this._destructive,
-      ...(this._icon    ? { icon:    this._icon    } : {}),
-      ...(this._confirm ? { confirm: this._confirm } : {}),
+      ...(this._icon      ? { icon:    this._icon    } : {}),
+      ...(this._confirm   ? { confirm: this._confirm } : {}),
+      ...(this._href      ? { href:    this._href    } : {}),
+      ...(this._method    ? { method:  this._method  } : {}),
+      ...(this._actionUrl ? { action:  this._actionUrl } : {}),
     }
   }
 }

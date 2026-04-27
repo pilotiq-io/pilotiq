@@ -4,8 +4,20 @@ export { PilotiqRegistry } from './PilotiqRegistry.js'
 export { pilotiq } from './PilotiqServiceProvider.js'
 export { registerPilotiqRoutes } from './routes.js'
 export { Resource, type ResourcePages, type ResourceClass, type RelationDef } from './Resource.js'
+export { Global, type GlobalPages, type GlobalClass } from './Global.js'
 export { Page, type PageMeta, type PageMode } from './Page.js'
-export { defaultPages, defaultListPage, defaultCreatePage, defaultEditPage } from './defaultPages.js'
+export {
+  defaultPages,
+  defaultListPage,
+  defaultCreatePage,
+  defaultEditPage,
+  defaultViewPage,
+} from './defaultPages.js'
+export {
+  defaultGlobalPages,
+  defaultGlobalEditPage,
+  defaultGlobalViewPage,
+} from './defaultGlobalPages.js'
 export { Column, type ColumnMeta } from './Column.js'
 
 // ─── Schema (Element tree + resolver) ─────────────────
@@ -51,8 +63,24 @@ export {
   type TableMeta,
   type TableContext,
   type TableQueryHandler,
+  type TableRecordsHandler,
+  type TableRecordsResult,
   type SortDirection,
 } from './elements/Table.js'
+export {
+  loadTableRecords,
+  parseTableQuery,
+  findTables,
+  type QueryParams,
+} from './elements/dispatchTable.js'
+export {
+  dispatchFormSubmit,
+  findForms,
+  selectForm,
+  type DispatchResult,
+  type DispatchSuccess,
+  type DispatchFailure,
+} from './elements/dispatchForm.js'
 
 // ─── Fields ───────────────────────────────────────────
 export { Field, type FieldType, type FieldMeta, type FieldCondition } from './fields/Field.js'
@@ -73,6 +101,7 @@ export {
   type ActionContext,
   type ActionHandler,
   type ActionConfirm,
+  type ActionMethod,
   type ActionMeta,
 } from './actions/Action.js'
 

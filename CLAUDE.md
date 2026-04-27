@@ -72,19 +72,37 @@ Pilotiq.make() builder → pilotiq([panels]) provider → registerPilotiqRoutes(
 2. `bootstrap/providers.ts` — `import { pilotiq } from '@pilotiq/pilotiq'` → `pilotiq([adminPanel])`
 
 **Key files:**
-- `src/Pilotiq.ts` — Builder: `.path()`, `.branding()`, `.theme()`, `.layout('sidebar'|'topbar')`, `.resources()`, `.pages()`, `.schema()`, `.guard()`
-- `src/Page.ts` — Custom page class with `static schema()`, `static slug/label/icon`
+- `src/Pilotiq.ts` — Builder: `.path()`, `.branding()`, `.theme()`, `.layout('sidebar'|'topbar')`, `.resources()`, `.globals()`, `.pages()`, `.schema()`, `.guard()`, `.use(plugin)`
+- `src/Resource.ts` — abstract class with **static** methods: `label`, `labelSingular`, `slug`, `icon`, `model`, `form(form)`, `table(table)`, `detail(record)`, `deleteRecord(id)`, `pages()`, `resolvePages()`, `relations()`, `getSlug()`. Resources register as classes, not instances. `resolvePages()` overlays user `pages()` over `defaultPages(this)`.
+- `src/Global.ts` — abstract class for singleton resources (site settings, brand config). Same shape as `Resource` minus list/create/delete; ships `{ edit }` by default, `view` opt-in via `pages()`.
+- `src/Page.ts` — page class with `static slug/label/icon`, `static schema(ctx)`, plus `static getResource()` (back-reference to owning Resource, undefined for standalone pages) and `static getMode()` returning `'list'|'create'|'edit'|'view'|'custom'`.
+- `src/defaultPages.ts` — `defaultPages(R)` returns `{ index, create, edit, view }` Page subclasses auto-generated from `R.form()` / `R.table()` / `R.detail()`. View page builds default Edit (link) + Delete (form-post) actions. Sentinel `save`/`loadRecord` only fire when the user hasn't configured them on the Resource form.
+- `src/defaultGlobalPages.ts` — same factory pattern for `Global`; default returns `{ edit }` (Heading + Form). View opt-in.
+- `src/Column.ts` — `Column.make(name).label().sortable().searchable()`. Joins the schema tree as a child of `Table`.
 - `src/PilotiqRegistry.ts` — globalThis-backed singleton registry, `findByPath()` for route matching
 - `src/PilotiqServiceProvider.ts` — Provider + `pilotiq()` factory
-- `src/routes.ts` — `registerPilotiqRoutes()` using `view()`, resolves schema + theme
+- `src/routes.ts` — `registerPilotiqRoutes()` using `view()`. Routes:
+  - `GET ${base}` → dashboard schema
+  - `GET ${base}/${slug}` → resource list (runs `loadTableRecords` → ships `schemaData`)
+  - `GET/POST ${base}/${slug}/create` → create form (POST runs `dispatchFormSubmit`)
+  - `GET ${base}/${slug}/:id` → resource view (runs `R.detail(record)`)
+  - `GET/POST ${base}/${slug}/:id/edit` → edit form (POST runs lifecycle, 303 redirect on success / 422 + re-render on validation error)
+  - `POST ${base}/${slug}/:id/delete` → calls `R.deleteRecord(id)`, 303 to list
+  - `GET/POST ${base}/${slug}` (Global) → singleton edit, no `:id`
+  - `GET ${base}/${pageSlug}` → custom page schema; can also `POST` if the page schema has a Form
 - `src/vite.ts` — `pilotiq()` Vite plugin, generates `(pilotiq)/` pages + `+Layout.tsx` + `+Head.tsx`
 - `src/schema/` — Unified `Element` model (Phase 1 foundation):
   - `Element.ts` — abstract base class. Every primitive (Field, Action, display elements) extends this. Contract: `getType()`, `toMeta()`, optional `_children: Element[]`.
   - **Display elements:** `Text`, `Heading`, `Alert`, `Divider`. Containers: `Card`, `Section`, `Tabs`/`Tab`, `Grid` — all hold `children: Element[]`.
-  - `resolveSchema()` — async recursive walker; emits `meta.children` for containers; plugin-extensible via `registerResolver(type, fn)`. Filters hidden Fields server-side using `RenderContext { mode?, record? }`.
-- `src/fields/` — `Field` (extends `Element`, `getType()` returns `'field'`, `fieldType` discriminates subtypes), 8 subclasses (`TextField`, `EmailField`, `NumberField`, `SelectField`, `TextareaField`, `ToggleField`, `DateField`, `SlugField`), visibility flags (`hideFromTable/Create/Edit/View`) + condition callbacks (`showWhen`, `hideWhen`, `disabledWhen`), validators via `.validate(v|v[])` (see `src/validation/`), `resolveField`/`resolveFields` helpers (used by Resource paths until they migrate to the unified resolver).
-- `src/actions/` — `Action` primitive (single class, `placement: 'inline'|'bulk'|'row'|'header'`, `destructive`, `confirm`, `handler`). Phase 1 ships shape + serialization only; handler dispatch is Phase 2.
-- `src/validation/` — Field-level validation. `Validator` is `(value, ctx?) => string|null` plus an optional `serialized: SerializedRule` descriptor mirrored to the client via `FieldMeta.rules`. Built-in helpers: `required()`, `email()`, `minLength(n)`, `maxLength(n)`, `min(n)`, `max(n)`, `pattern(regex)`. `validateSchema(elements, values, record?)` walks any Element tree and returns `{ name → string[] }`. `Field.required()` flag auto-contributes a required check + serialized rule unless an explicit `required()` validator is present. Independent of `@rudderjs/core`'s zod-based `FormRequest`/`validate()` — the two layers will meet at the Resource controller in Phase 2 via a `fieldsToZod()` adapter.
+  - `resolveSchema()` — async recursive walker; emits `meta.children` for containers; plugin-extensible via `registerResolver(type, fn)`. Filters hidden Fields server-side using `RenderContext { mode?, record?, basePath?, recordId? }`.
+- `src/elements/` — first-class container Elements that own their lifecycle:
+  - `Form.ts` — `Form.make().schema([...])`, lifecycle setters `validate / mutateData / beforeSave / save / afterSave / redirectAfterSave / loadRecord / fillFromRecord`, render-time setters `withValues / withErrors`. `toMeta()` emits `formId / method / action / values / errors`. Auto-generated `formId` per instance; multi-form pages discriminate via hidden `_formId` input.
+  - `Table.ts` — `Table.make().columns([...]).records(fn).defaultSort(col,dir).paginate(n)`. `records(ctx) → { rows, total }` (or bare row array). Render-time setters `withRows / withSort / withSearch / withPage`. `toMeta()` emits `rows / total / currentSort / search / currentPage / perPage / searchable`.
+  - `dispatchForm.ts` — `dispatchFormSubmit(form, body, ctx)` runs the lifecycle: `validateSchema` → form-level validators → `mutateData` → `beforeSave` → `save` → `afterSave` → `redirectAfterSave`. Form-level validator errors land under `_form` key. `findForms(elements)` + `selectForm(forms, formId)` for multi-form pages.
+  - `dispatchTable.ts` — `parseTableQuery({ search, sort, page, perPage })` normalizes URL params; `loadTableRecords(elements, query)` walks the tree, calls every `Table.records(ctx)` in parallel, mirrors state back via `withRows/withSort/...`.
+- `src/fields/` — `Field` (extends `Element`, `getType()` returns `'field'`, `fieldType` discriminates subtypes), 8 subclasses (`TextField`, `EmailField`, `NumberField`, `SelectField`, `TextareaField`, `ToggleField`, `DateField`, `SlugField`), visibility flags (`hideFromTable/Create/Edit/View`) + condition callbacks (`showWhen`, `hideWhen`, `disabledWhen`), validators via `.validate(v|v[])` (see `src/validation/`).
+- `src/actions/` — `Action` primitive (single class, `placement: 'inline'|'bulk'|'row'|'header'`, `destructive`, `confirm`, `handler`). Plus link/form modes: `Action.href(url)` for link-style (Edit), `Action.method('post'|'put'|'patch'|'delete').action(url)` for form-style (Delete). The two are mutually exclusive.
+- `src/validation/` — Field-level validation. `Validator` is `(value, ctx?) => string|null` plus an optional `serialized: SerializedRule` descriptor mirrored to the client via `FieldMeta.rules`. Built-in helpers: `required()`, `email()`, `minLength(n)`, `maxLength(n)`, `min(n)`, `max(n)`, `pattern(regex)`. `validateSchema(elements, values, record?)` walks any Element tree and returns `{ name → string[] }`. `Field.required()` flag auto-contributes a required check + serialized rule unless an explicit `required()` validator is present.
 - `src/theme/` — Theme engine: types, presets (default/nova/maia/lyra), base-colors, accent-colors, chart-palettes, radius, icon-map, `resolveTheme()`, `generateThemeCSS()`
 - `src/react/AppShell.tsx` — Picks layout mode, renders sidebar or topbar
 - `src/react/ThemeProvider.tsx` — Light/dark/system context, localStorage, CSS var injection
@@ -101,10 +119,12 @@ Pilotiq.make() builder → pilotiq([panels]) provider → registerPilotiqRoutes(
 - `pages/(pilotiq)/+Layout.tsx` — wraps pages in ThemeProvider + AppShell, injects theme CSS inline for SSR
 - `pages/(pilotiq)/+config.ts` — `passToClient: ['viewProps']`
 - `pages/(pilotiq)/dashboard/` — Dashboard (1-segment URL)
-- `pages/(pilotiq)/slug/` — **Single route** for 2-segment URLs (resource index OR custom page). Server sets `pageType: 'resource' | 'page'` in viewProps; the +Page.tsx renders accordingly. Avoids the "two routes match on client" problem that breaks SPA nav.
-- `pages/(pilotiq)/resource-create/`, `resource-edit/` — 3+ segment URLs
+- `pages/(pilotiq)/slug/` — **Single route** for 2-segment URLs (resource index, Global edit, custom page). Server sets `pageType: 'resource' | 'global' | 'page'` in viewProps; the renderer just renders `schemaData` uniformly via `<SchemaRenderer />`.
+- `pages/(pilotiq)/resource-create/` — 3-segment with `parts[2] === 'create'`
+- `pages/(pilotiq)/resource-view/` — 3-segment with `parts[2] !== 'create'` and `parts[1] !== 'theme'` (catches `${slug}/:id` for resource view AND `${global-slug}/view`)
+- `pages/(pilotiq)/resource-edit/` — 4-segment with `parts[3] === 'edit'`
 - `pages/(pilotiq)/theme/` — Theme editor page (only when `.use(themeEditor())`); slug route excludes `parts[1] === 'theme'`
-- Individual `+Page.tsx` stubs render only content (no shell wrapper)
+- Every `+Page.tsx` stub is just `<SchemaRenderer elements={vp.schemaData ?? []} />` — server resolves, client renders.
 - Route functions check `PilotiqRegistry` on server, tentatively match on client for SPA nav
 
 **Plugin system:**

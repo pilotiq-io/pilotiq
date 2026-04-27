@@ -1,8 +1,13 @@
 import type { Router } from '@rudderjs/router'
+import type { AppRequest } from '@rudderjs/contracts'
 import { view } from '@rudderjs/view'
 import type { Pilotiq } from './Pilotiq.js'
 import type { Page } from './Page.js'
+import type { Form } from './elements/Form.js'
+import type { Element } from './schema/Element.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
+import { dispatchFormSubmit, findForms, selectForm } from './elements/dispatchForm.js'
+import { loadTableRecords } from './elements/dispatchTable.js'
 import { resolveTheme } from './theme/resolve.js'
 import type { ThemeConfig, ThemeMeta } from './theme/types.js'
 import { presets } from './theme/presets.js'
@@ -21,6 +26,9 @@ function panelInfo(pilotiq: Pilotiq) {
     resources: cfg.resources.map(R => ({
       label: R.label, slug: R.getSlug(), icon: R.icon,
     })),
+    globals: cfg.globals.map(G => ({
+      label: G.label, slug: G.getSlug(), icon: G.icon,
+    })),
     pages: cfg.pages.map(P => ({
       label: P.getLabel(), slug: P.getSlug(), icon: P.icon,
     })),
@@ -30,15 +38,52 @@ function panelInfo(pilotiq: Pilotiq) {
 }
 
 /**
- * Resolve a Page's schema with a given render context, returning the
- * serialized element tree for the client. All resource and custom-page
- * routes funnel through this so the schema pipeline is identical.
+ * Pull the page's raw `Element[]` out of `Page.schema(ctx)`. The handler
+ * needs the live tree (not the serialized meta) so it can locate `Form`
+ * instances and run their lifecycle hooks server-side.
  */
-async function resolvePageSchema(
-  PageClass: typeof Page,
-  ctx: SchemaContext & { mode?: 'table' | 'create' | 'edit' | 'view' },
-) {
-  return resolveSchema(c => PageClass.schema({ ...ctx, ...c }), ctx)
+async function callPageSchema(PageClass: typeof Page, ctx: SchemaContext): Promise<Element[]> {
+  return Promise.resolve(PageClass.schema(ctx))
+}
+
+/**
+ * Read the request body as a `Record<string, unknown>`. The hono adapter
+ * auto-parses JSON, but `application/x-www-form-urlencoded` and
+ * `multipart/form-data` need a manual fall-through to Hono's own parser.
+ */
+async function readFormBody(req: AppRequest): Promise<Record<string, unknown>> {
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+    return { ...(req.body as Record<string, unknown>) }
+  }
+  const raw = req.raw as { req?: { parseBody?: () => Promise<Record<string, unknown>> } } | undefined
+  if (raw?.req?.parseBody) {
+    try {
+      const parsed = await raw.req.parseBody()
+      return parsed && typeof parsed === 'object' ? { ...parsed } : {}
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
+
+/** Strip framework meta keys (`_formId`, `_method`) from a parsed body. */
+function splitMeta(body: Record<string, unknown>): {
+  values: Record<string, unknown>
+  formId: string | undefined
+} {
+  const { _formId, _method: _omitMethod, ...rest } = body
+  return {
+    values: rest,
+    formId: typeof _formId === 'string' ? _formId : undefined,
+  }
+}
+
+/** Mark every Form on the page with its action URL so the rendered <form> posts to itself. */
+function tagFormActions(elements: ReadonlyArray<Element>, action: string): void {
+  for (const form of findForms(elements)) {
+    if (!form.getAction()) form.action(action)
+  }
 }
 
 export function registerPilotiqRoutes(
@@ -60,17 +105,18 @@ export function registerPilotiqRoutes(
   })
 
   // ── Resource routes ───────────────────────────────────
-  // Each resource exposes index/create/edit/view via Resource.resolvePages().
-  // URL conventions are fixed by role; the Page class supplies the schema.
   for (const R of cfg.resources) {
     const slug  = R.getSlug()
     const pages = R.resolvePages()
 
-    // Index — 2-segment URL
+    // Index — GET ${base}/${slug}
     if (pages.index) {
       const PageClass = pages.index
-      router.get(`${base}/${slug}`, async () => {
-        const schemaData = await resolvePageSchema(PageClass, { mode: 'table' })
+      router.get(`${base}/${slug}`, async (req) => {
+        const ctx: SchemaContext = { mode: 'table', basePath: base }
+        const elements = await callPageSchema(PageClass, ctx)
+        await loadTableRecords(elements, req.query)
+        const schemaData = await resolveSchema(elements, ctx)
         return view('pilotiq.slug', {
           pageType: 'resource',
           panel:    panelInfo(pilotiq),
@@ -83,11 +129,16 @@ export function registerPilotiqRoutes(
       })
     }
 
-    // Create — 3-segment URL with /create suffix
+    // Create — GET ${base}/${slug}/create
     if (pages.create) {
       const PageClass = pages.create
-      router.get(`${base}/${slug}/create`, async () => {
-        const schemaData = await resolvePageSchema(PageClass, { mode: 'create' })
+      const createUrl = `${base}/${slug}/create`
+
+      router.get(createUrl, async () => {
+        const ctx: SchemaContext = { mode: 'create', basePath: base }
+        const elements = await callPageSchema(PageClass, ctx)
+        tagFormActions(elements, createUrl)
+        const schemaData = await resolveSchema(elements, ctx)
         return view('pilotiq.resource-create', {
           panel:    panelInfo(pilotiq),
           page:     PageClass.toMeta(),
@@ -98,14 +149,115 @@ export function registerPilotiqRoutes(
           schemaData,
         })
       })
+
+      // Create — POST ${base}/${slug}/create
+      router.post(createUrl, async (req, res) => {
+        const body = await readFormBody(req)
+        const { values, formId } = splitMeta(body)
+
+        const ctx: SchemaContext = { mode: 'create', basePath: base }
+        const elements = await callPageSchema(PageClass, ctx)
+        tagFormActions(elements, createUrl)
+        const form = selectForm(findForms(elements), formId)
+        if (!form) {
+          res.status(404)
+          return res.send('No form found on page')
+        }
+
+        const result = await dispatchFormSubmit(form, values, { values })
+
+        if (!result.ok) {
+          form.withValues(values).withErrors(result.errors)
+          const schemaData = await resolveSchema(elements, ctx)
+          res.status(422)
+          return view('pilotiq.resource-create', {
+            panel:     panelInfo(pilotiq),
+            page:      PageClass.toMeta(),
+            resource:  { label: R.labelSingular, slug, icon: R.icon },
+            mode:      'create' as const,
+            basePath:  base,
+            layout:    cfg.layout,
+            schemaData,
+            hasErrors: true,
+          })
+        }
+
+        const recordId = (result.record as { id?: unknown })?.id
+        const fallback = recordId !== undefined ? `${base}/${slug}/${String(recordId)}/edit` : `${base}/${slug}`
+        return res.redirect(result.redirect ?? fallback, 303)
+      })
     }
 
-    // Edit — 4-segment URL with /edit suffix. Record loading lands in 2.4.
+    // View — GET ${base}/${slug}/:id (literal `create` matches first via
+    // Hono's literal-over-param routing, so `:id` only catches everything else.)
+    if (pages.view) {
+      const PageClass = pages.view
+
+      router.get(`${base}/${slug}/:id`, async (req) => {
+        const recordId = req.params['id']!
+        // Hono routes both `/create` and `/:id` against this slot; only the
+        // literal `create` segment hits the create route. Defensive guard:
+        if (recordId === 'create') return // handled by create route
+        const ctx: SchemaContext = { mode: 'view', recordId, basePath: base }
+        const elements = await callPageSchema(PageClass, ctx)
+        const schemaData = await resolveSchema(elements, ctx)
+        return view('pilotiq.resource-view', {
+          panel:    panelInfo(pilotiq),
+          page:     PageClass.toMeta(),
+          resource: { label: R.labelSingular, slug, icon: R.icon },
+          mode:     'view' as const,
+          recordId,
+          basePath: base,
+          layout:   cfg.layout,
+          schemaData,
+        })
+      })
+
+      // Delete — POST ${base}/${slug}/:id/delete
+      router.post(`${base}/${slug}/:id/delete`, async (req, res) => {
+        const recordId = req.params['id']!
+        try {
+          await R.deleteRecord(recordId)
+        } catch (err) {
+          res.status(500)
+          return res.send(err instanceof Error ? err.message : 'Delete failed')
+        }
+        return res.redirect(`${base}/${slug}`, 303)
+      })
+    }
+
+    // Edit — GET ${base}/${slug}/:id/edit
     if (pages.edit) {
       const PageClass = pages.edit
+
       router.get(`${base}/${slug}/:id/edit`, async (req) => {
-        const recordId = req.params['id']
-        const schemaData = await resolvePageSchema(PageClass, { mode: 'edit', recordId })
+        const recordId = req.params['id']!
+        const editUrl  = `${base}/${slug}/${recordId}/edit`
+        const ctx: SchemaContext = { mode: 'edit', recordId, basePath: base }
+
+        const elements = await callPageSchema(PageClass, ctx)
+        tagFormActions(elements, editUrl)
+
+        // Locate the primary form, load the record, and fill values.
+        const form = findForms(elements)[0]
+        let record: unknown = undefined
+        if (form?.getLoadRecord()) {
+          try {
+            record = await form.getLoadRecord()!(recordId, { values: {} })
+          } catch {
+            // Sentinel/missing record — fall through with empty form.
+          }
+          if (record != null) {
+            const fill = form.getFillFromRecord()
+            const values = fill ? fill(record) : { ...(record as Record<string, unknown>) }
+            form.withValues(values)
+          }
+        }
+
+        const schemaData = await resolveSchema(
+          elements,
+          record !== undefined ? { ...ctx, record } : ctx,
+        )
         return view('pilotiq.resource-edit', {
           panel:    panelInfo(pilotiq),
           page:     PageClass.toMeta(),
@@ -117,15 +269,179 @@ export function registerPilotiqRoutes(
           schemaData,
         })
       })
+
+      // Edit — POST ${base}/${slug}/:id/edit
+      router.post(`${base}/${slug}/:id/edit`, async (req, res) => {
+        const recordId = req.params['id']!
+        const editUrl  = `${base}/${slug}/${recordId}/edit`
+        const body = await readFormBody(req)
+        const { values, formId } = splitMeta(body)
+
+        const ctx: SchemaContext = { mode: 'edit', recordId, basePath: base }
+        const elements = await callPageSchema(PageClass, ctx)
+        tagFormActions(elements, editUrl)
+        const form = selectForm(findForms(elements), formId)
+        if (!form) {
+          res.status(404)
+          return res.send('No form found on page')
+        }
+
+        // Try to load the record so validators with cross-field rules see it.
+        let record: unknown = undefined
+        if (form.getLoadRecord()) {
+          try { record = await form.getLoadRecord()!(recordId, { values }) } catch { /* ignore */ }
+        }
+
+        const result = await dispatchFormSubmit(
+          form,
+          values,
+          record !== undefined ? { values, record } : { values },
+        )
+
+        if (!result.ok) {
+          form.withValues(values).withErrors(result.errors)
+          const schemaData = await resolveSchema(
+            elements,
+            record !== undefined ? { ...ctx, record } : ctx,
+          )
+          res.status(422)
+          return view('pilotiq.resource-edit', {
+            panel:     panelInfo(pilotiq),
+            page:      PageClass.toMeta(),
+            resource:  { label: R.labelSingular, slug, icon: R.icon },
+            mode:      'edit' as const,
+            recordId,
+            basePath:  base,
+            layout:    cfg.layout,
+            schemaData,
+            hasErrors: true,
+          })
+        }
+
+        return res.redirect(result.redirect ?? editUrl, 303)
+      })
+    }
+  }
+
+  // ── Globals (singletons — 2-segment, no /:id) ────────
+  for (const G of cfg.globals) {
+    const slug    = G.getSlug()
+    const editUrl = `${base}/${slug}`
+    const pages   = G.resolvePages()
+
+    if (pages.edit) {
+      const PageClass = pages.edit
+
+      router.get(editUrl, async () => {
+        const ctx: SchemaContext = { mode: 'edit', basePath: base }
+        const elements = await callPageSchema(PageClass, ctx)
+        tagFormActions(elements, editUrl)
+
+        // Singletons: load the record (no id) and pre-fill form values.
+        const form = findForms(elements)[0]
+        let record: unknown = undefined
+        if (form?.getLoadRecord()) {
+          try { record = await form.getLoadRecord()!('', { values: {} }) } catch { /* ignore */ }
+          if (record != null) {
+            const fill = form.getFillFromRecord()
+            const values = fill ? fill(record) : { ...(record as Record<string, unknown>) }
+            form.withValues(values)
+          }
+        }
+
+        const schemaData = await resolveSchema(
+          elements,
+          record !== undefined ? { ...ctx, record } : ctx,
+        )
+        return view('pilotiq.slug', {
+          pageType: 'global',
+          panel:    panelInfo(pilotiq),
+          page:     PageClass.toMeta(),
+          global:   { label: G.label, labelSingular: G.labelSingular, slug, icon: G.icon },
+          basePath: base,
+          layout:   cfg.layout,
+          schemaData,
+        })
+      })
+
+      router.post(editUrl, async (req, res) => {
+        const body = await readFormBody(req)
+        const { values, formId } = splitMeta(body)
+
+        const ctx: SchemaContext = { mode: 'edit', basePath: base }
+        const elements = await callPageSchema(PageClass, ctx)
+        tagFormActions(elements, editUrl)
+        const form = selectForm(findForms(elements), formId)
+        if (!form) {
+          res.status(404)
+          return res.send('No form found on page')
+        }
+
+        // Provide the existing singleton record to the lifecycle context
+        // so cross-field validators / mutateData see prior state.
+        let record: unknown = undefined
+        if (form.getLoadRecord()) {
+          try { record = await form.getLoadRecord()!('', { values }) } catch { /* ignore */ }
+        }
+
+        const result = await dispatchFormSubmit(
+          form,
+          values,
+          record !== undefined ? { values, record } : { values },
+        )
+
+        if (!result.ok) {
+          form.withValues(values).withErrors(result.errors)
+          const schemaData = await resolveSchema(
+            elements,
+            record !== undefined ? { ...ctx, record } : ctx,
+          )
+          res.status(422)
+          return view('pilotiq.slug', {
+            pageType:  'global',
+            panel:     panelInfo(pilotiq),
+            page:      PageClass.toMeta(),
+            global:    { label: G.label, labelSingular: G.labelSingular, slug, icon: G.icon },
+            basePath:  base,
+            layout:    cfg.layout,
+            schemaData,
+            hasErrors: true,
+          })
+        }
+
+        return res.redirect(result.redirect ?? editUrl, 303)
+      })
+    }
+
+    // Optional view page when the user opts in via pages().view
+    if (pages.view) {
+      const PageClass = pages.view
+      router.get(`${base}/${slug}/view`, async () => {
+        const ctx: SchemaContext = { mode: 'view', basePath: base }
+        const elements = await callPageSchema(PageClass, ctx)
+        const schemaData = await resolveSchema(elements, ctx)
+        return view('pilotiq.resource-view', {
+          panel:    panelInfo(pilotiq),
+          page:     PageClass.toMeta(),
+          global:   { label: G.label, labelSingular: G.labelSingular, slug, icon: G.icon },
+          basePath: base,
+          layout:   cfg.layout,
+          schemaData,
+        })
+      })
     }
   }
 
   // ── Custom pages (2-segment, slug route) ──────────────
   for (const PageClass of cfg.pages) {
     const pageSlug = PageClass.getSlug()
+    const pageUrl  = `${base}/${pageSlug}`
 
-    router.get(`${base}/${pageSlug}`, async () => {
-      const schemaData = await resolvePageSchema(PageClass, {})
+    router.get(pageUrl, async () => {
+      const ctx: SchemaContext = {}
+      const elements = await callPageSchema(PageClass, ctx)
+      tagFormActions(elements, pageUrl)
+      const schemaData = await resolveSchema(elements, ctx)
       return view('pilotiq.slug', {
         pageType: 'page',
         panel:    panelInfo(pilotiq),
@@ -134,6 +450,40 @@ export function registerPilotiqRoutes(
         basePath: base,
         layout:   cfg.layout,
       })
+    })
+
+    // Custom pages can also accept submits when their schema includes a Form.
+    router.post(pageUrl, async (req, res) => {
+      const body = await readFormBody(req)
+      const { values, formId } = splitMeta(body)
+
+      const ctx: SchemaContext = {}
+      const elements = await callPageSchema(PageClass, ctx)
+      tagFormActions(elements, pageUrl)
+      const form = selectForm(findForms(elements), formId)
+      if (!form) {
+        res.status(404)
+        return res.send('No form found on page')
+      }
+
+      const result = await dispatchFormSubmit(form, values, { values })
+
+      if (!result.ok) {
+        form.withValues(values).withErrors(result.errors)
+        const schemaData = await resolveSchema(elements, ctx)
+        res.status(422)
+        return view('pilotiq.slug', {
+          pageType:  'page',
+          panel:     panelInfo(pilotiq),
+          page:      PageClass.toMeta(),
+          schemaData,
+          basePath:  base,
+          layout:    cfg.layout,
+          hasErrors: true,
+        })
+      }
+
+      return res.redirect(result.redirect ?? pageUrl, 303)
     })
   }
 
@@ -207,3 +557,8 @@ export function registerPilotiqRoutes(
     })
   }
 }
+
+// ─── Lifecycle helpers exported for tests ────────────────
+export { dispatchFormSubmit, findForms, selectForm }
+export { loadTableRecords, parseTableQuery, findTables } from './elements/dispatchTable.js'
+export type { Form }

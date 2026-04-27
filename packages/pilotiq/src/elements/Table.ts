@@ -6,41 +6,70 @@ export type SortDirection = 'asc' | 'desc'
 
 export interface TableContext<R = unknown> {
   request?: unknown
-  search?: string
-  sort?: { column: string; direction: SortDirection }
-  page?: number
+  search?:  string
+  sort?:    { column: string; direction: SortDirection }
+  page?:    number
   perPage?: number
+  records?: R[]
   [key: string]: unknown
 }
 
 export type TableQueryHandler<Q = unknown> = (
   query: Q,
-  ctx: TableContext,
+  ctx:   TableContext,
 ) => Q | Promise<Q>
+
+/**
+ * User-supplied row loader. Returns the records to render plus an optional
+ * `total` for pagination. When `total` is omitted the framework treats
+ * `rows.length` as the total.
+ */
+export interface TableRecordsResult<R = unknown> {
+  rows:   R[]
+  total?: number
+}
+
+export type TableRecordsHandler<R = unknown> = (
+  ctx: TableContext<R>,
+) => TableRecordsResult<R> | R[] | Promise<TableRecordsResult<R> | R[]>
 
 export interface TableMeta extends ElementMeta {
   type:        'table'
   defaultSort?: { column: string; direction: SortDirection }
   perPage?:    number
   searchable:  boolean
+
+  // Render-time state — populated by the framework after `records()` runs.
+  rows?:        unknown[]
+  total?:       number
+  currentSort?: { column: string; direction: SortDirection }
+  search?:      string
+  currentPage?: number
 }
 
 /**
  * Table container. Children are typically `Column[]` plus header / row /
- * bulk Actions. The query handler stays server-side; toMeta emits the
- * configured sort/pagination state plus a derived `searchable` flag (any
- * column being searchable). Phase 2.1 ships shape + serialization;
- * dispatch lands in 2.5.
+ * bulk Actions. The query hook stays server-side; toMeta emits the
+ * configured sort/pagination state, the searchable flag, and (after the
+ * framework runs `records()`) the resolved rows + pagination state.
  */
-export class Table<Q = unknown> extends Element {
-  private _query?: TableQueryHandler<Q>
-  private _defaultSort?: { column: string; direction: SortDirection }
-  private _perPage?: number
+export class Table<R = unknown, Q = unknown> extends Element {
+  private _query?:        TableQueryHandler<Q>
+  private _records?:      TableRecordsHandler<R>
+  private _defaultSort?:  { column: string; direction: SortDirection }
+  private _perPage?:      number
+
+  // Render-time state
+  private _rows?:        R[]
+  private _total?:       number
+  private _currentSort?: { column: string; direction: SortDirection }
+  private _currentSearch?: string
+  private _currentPage?: number
 
   private constructor() { super() }
 
-  static make<Q = unknown>(): Table<Q> {
-    return new Table<Q>()
+  static make<R = unknown, Q = unknown>(): Table<R, Q> {
+    return new Table<R, Q>()
   }
 
   // ─── Children ─────────────────────────────────────────
@@ -66,9 +95,13 @@ export class Table<Q = unknown> extends Element {
     return this
   }
 
-  // ─── Static config ────────────────────────────────────
+  // ─── Lifecycle config ────────────────────────────────
 
+  /** Adapter-flavored query builder hook. Reserved for ORM adapters in Phase 3+. */
   query(fn: TableQueryHandler<Q>): this { this._query = fn; return this }
+
+  /** Row loader — receives a `TableContext` and returns rows (and optional total). */
+  records(fn: TableRecordsHandler<R>): this { this._records = fn; return this }
 
   defaultSort(column: string, direction: SortDirection = 'asc'): this {
     this._defaultSort = { column, direction }
@@ -77,11 +110,34 @@ export class Table<Q = unknown> extends Element {
 
   paginate(perPage: number): this { this._perPage = perPage; return this }
 
+  // ─── Render-time state ────────────────────────────────
+
+  /** Attach loaded rows + total. Called by the framework after `records()` runs. */
+  withRows(rows: R[], total?: number): this {
+    this._rows = rows
+    if (total !== undefined) this._total = total
+    return this
+  }
+
+  withSort(column: string, direction: SortDirection): this {
+    this._currentSort = { column, direction }
+    return this
+  }
+
+  withSearch(query: string): this { this._currentSearch = query; return this }
+  withPage(page: number): this { this._currentPage = page; return this }
+
   // ─── Getters ──────────────────────────────────────────
 
   getQuery(): TableQueryHandler<Q> | undefined { return this._query }
+  getRecords(): TableRecordsHandler<R> | undefined { return this._records }
   getDefaultSort(): { column: string; direction: SortDirection } | undefined { return this._defaultSort }
   getPerPage(): number | undefined { return this._perPage }
+  getRows(): R[] | undefined { return this._rows }
+  getTotal(): number | undefined { return this._total }
+  getCurrentSort(): { column: string; direction: SortDirection } | undefined { return this._currentSort }
+  getCurrentSearch(): string | undefined { return this._currentSearch }
+  getCurrentPage(): number | undefined { return this._currentPage }
 
   /** Convenience: the `Column` children only. */
   getColumns(): Column[] {
@@ -97,8 +153,13 @@ export class Table<Q = unknown> extends Element {
     return {
       type:       'table',
       searchable,
-      ...(this._defaultSort ? { defaultSort: this._defaultSort } : {}),
+      ...(this._defaultSort   ? { defaultSort:  this._defaultSort } : {}),
       ...(this._perPage !== undefined ? { perPage: this._perPage } : {}),
+      ...(this._rows         !== undefined ? { rows:        this._rows }        : {}),
+      ...(this._total        !== undefined ? { total:       this._total }       : {}),
+      ...(this._currentSort  !== undefined ? { currentSort: this._currentSort } : {}),
+      ...(this._currentSearch !== undefined ? { search:     this._currentSearch } : {}),
+      ...(this._currentPage  !== undefined ? { currentPage: this._currentPage } : {}),
     }
   }
 }
