@@ -2,6 +2,7 @@ import type { Element } from './schema/Element.js'
 import type { Form } from './elements/Form.js'
 import type { Table } from './elements/Table.js'
 import type { Page } from './Page.js'
+import type { ModelLike } from '@rudderjs/contracts'
 import { defaultPages } from './defaultPages.js'
 
 /** Map of resource page roles to Page subclasses. */
@@ -38,8 +39,16 @@ export abstract class Resource {
   /** Sidebar / nav icon name. */
   static icon: string = 'file'
 
-  /** Optional model identifier (e.g. Prisma model name). Phase 3 ORM adapters use this. */
-  static model?: string
+  /**
+   * Optional ORM model. When set, `defaultPages` auto-fills `Form.save`,
+   * `Form.loadRecord`, `Table.records`, and `Resource.deleteRecord` so
+   * the common CRUD case needs no manual wiring. Anything explicitly
+   * configured on `form()` / `table()` still wins.
+   *
+   * Any object satisfying `ModelLike` works — `@rudderjs/orm` `Model`
+   * subclasses do so structurally via their static methods.
+   */
+  static model?: ModelLike
 
   /**
    * Configure the form used by `create` and `edit` pages by default.
@@ -60,13 +69,18 @@ export abstract class Resource {
   static detail(_record: unknown): Element[] { return [] }
 
   /**
-   * Delete a record by id. Default throws — users override on their
-   * Resource subclass to wire up real persistence (e.g. Prisma delete).
+   * Delete a record by id. Falls through to `model.delete(id)` when
+   * `static model` is set; otherwise throws so the user knows to wire
+   * something up. Override on the subclass for custom delete logic.
    * Wired up by the `POST {base}/{slug}/{id}/delete` route.
    */
-  static async deleteRecord(_id: string): Promise<void> {
+  static async deleteRecord(id: string): Promise<void> {
+    if (this.model) {
+      await this.model.delete(id)
+      return
+    }
     throw new Error(
-      `[Pilotiq] ${this.name}: no deleteRecord(id) implementation. Override Resource.deleteRecord to wire up deletion.`,
+      `[Pilotiq] ${this.name}: no deleteRecord(id) implementation. Set Resource.model = … or override Resource.deleteRecord to wire up deletion.`,
     )
   }
 

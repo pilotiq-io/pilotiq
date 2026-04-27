@@ -10,54 +10,66 @@ The Filament/Nova-style `Resource.form()` and `Resource.table()` hooks return [`
 
 ## Minimal example
 
-```ts
-import { Resource, Form, Table, Column, TextField, TextareaField } from '@pilotiq/pilotiq'
-import { app } from '@rudderjs/core'
+The shortest path is to point the Resource at a `@rudderjs/orm` `Model`. Set `static model` and the framework auto-fills `Form.save`, `Form.loadRecord`, `Resource.deleteRecord`, and `Table.records` from the column metadata — no manual ORM plumbing needed.
 
-const prisma = () => app().make('prisma') as any
+```ts
+import { Resource, Form, Table, Column, TextField } from '@pilotiq/pilotiq'
+import { Article } from '../Models/Article.js'
 
 export class ArticleResource extends Resource {
   static override label         = 'Articles'
   static override labelSingular = 'Article'
-  static override slug          = 'articles'      // optional — derived from label
   static override icon          = 'file-text'
+  static override model         = Article
 
   static override form(form: Form): Form {
-    return form
-      .schema([
-        TextField.make('title').required().placeholder('Article title…'),
-        TextareaField.make('body'),
-      ])
-      .loadRecord(async (id) => prisma().article.findUnique({ where: { id } }))
-      .save(async (data, ctx) => {
-        const existing = ctx.record as { id?: string } | undefined
-        if (existing?.id) return prisma().article.update({ where: { id: existing.id }, data })
-        return prisma().article.create({ data })
-      })
+    return form.schema([
+      TextField.make('title').required().placeholder('Article title…'),
+      TextField.make('slug').required(),
+    ])
   }
 
   static override table(table: Table): Table {
     return table
       .columns([
         Column.make('title').sortable().searchable(),
-        Column.make('createdAt').label('Created'),
+        Column.make('slug').searchable(),
+        Column.make('createdAt').sortable().label('Created'),
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
-      .records(async (ctx) => {
-        const where = ctx.search ? { title: { contains: ctx.search } } : undefined
-        const orderBy = ctx.sort ? { [ctx.sort.column]: ctx.sort.direction } : undefined
-        const perPage = ctx.perPage ?? 10
-        const page    = ctx.page    ?? 1
-        const [rows, total] = await Promise.all([
-          prisma().article.findMany({ where, orderBy, take: perPage, skip: (page - 1) * perPage }),
-          prisma().article.count({ where }),
-        ])
-        return { rows, total }
-      })
   }
 }
 ```
+
+`Article` is a regular `@rudderjs/orm` Model:
+
+```ts
+// app/Models/Article.ts
+import { Model } from '@rudderjs/orm'
+
+export class Article extends Model {
+  static override table = 'article'      // matches the Prisma client delegate
+
+  id!:        string
+  title!:     string
+  slug!:      string | null
+  createdAt!: Date
+  updatedAt!: Date
+}
+```
+
+You get for free:
+
+- **List** — `Table.records()` paginates `Article.query()`. Every `Column.searchable()` joins via `LIKE`/`orWhere`; `Column.sortable()` + `defaultSort()` map to `orderBy`.
+- **Create** — `Form.save()` calls `Article.create(data)`.
+- **Edit** — `Form.loadRecord(id)` calls `Article.find(id)`; `Form.save()` discriminates create vs update by `ctx.record[primaryKey]`.
+- **Delete** — `Resource.deleteRecord(id)` calls `Article.delete(id)`. Soft-deletes (`Model.softDeletes = true`) work out of the box.
+- **Observers / mass-assignment / casts** — anything you set on the Model carries through, since pilotiq goes through `Article.create / .update / .delete` rather than poking the table directly.
+
+Anything you set explicitly still wins: call `form.save(...)`, `form.loadRecord(...)`, `table.records(...)`, or override `Resource.deleteRecord` and that handler runs instead of the model default.
+
+If you don't have a Model handy you can pass any object satisfying `ModelLike` (see [`@pilotiq/pilotiq` orm exports](#modellike-shape-for-non-rudder-orms)) — useful for testing or wiring a different ORM.
 
 Register it on the panel:
 
@@ -145,7 +157,7 @@ Resource pages are no different from custom standalone Pages — same class, jus
 | `label` / `labelSingular`         | `string`                                                       | Plural ("Articles") + singular ("Article"). Used for nav + headings. |
 | `slug`                            | `string`                                                       | URL slug. Optional — derived from `label` when unset.                |
 | `icon`                            | `string`                                                       | Sidebar icon name (lucide / tabler / phosphor / remix).              |
-| `model?`                          | `string`                                                       | Prisma/ORM model identifier. Phase 3 adapters consume this.          |
+| `model?`                          | `ModelLike` (`@rudderjs/orm` `Model` or duck-typed object)     | When set, auto-fills save / loadRecord / records / deleteRecord.     |
 | `form(form)`                      | `Form`                                                         | Configure the form used by `create` and `edit` pages by default.     |
 | `table(table)`                    | `Table`                                                        | Configure the table used by the `index` page.                        |
 | `detail(record)`                  | `Element[]`                                                    | Schema for the read-only `view` page. Receives the loaded record.    |
@@ -159,7 +171,9 @@ Resource pages are no different from custom standalone Pages — same class, jus
 
 ## Wiring real persistence
 
-`Resource.form()` is where the persistence story lives. The same `Form` instance is reused by both create and edit pages, so put `loadRecord` + `save` once and both work:
+The default path is `static model = …` (see [Minimal example](#minimal-example)) — the framework wires save / loadRecord / records / delete from a `@rudderjs/orm` Model class.
+
+When you need custom logic (a non-rudder ORM, a hand-rolled query, a service-layer call), set the handlers explicitly on the `Form` and they win over the model default. The same `Form` instance is reused by both create and edit pages, so put `loadRecord` + `save` once and both work:
 
 ```ts
 static override form(form: Form): Form {
@@ -192,6 +206,24 @@ static override async deleteRecord(id: string): Promise<void> {
 ```
 
 The `POST ${slug}/:id/delete` route calls this, returns 303 to the list on success, or 500 with the error message on failure.
+
+### `ModelLike` shape (for non-rudder ORMs)
+
+`Resource.model` accepts any object matching `ModelLike` — a contract owned by `@rudderjs/contracts`:
+
+```ts
+// from @rudderjs/contracts
+export interface ModelLike {
+  primaryKey?: string                                              // defaults to 'id'
+  find(id):    Promise<unknown>
+  create(data): Promise<unknown>
+  update(id, data): Promise<unknown>
+  delete(id):  Promise<void>
+  query():     ModelQuery   // .where / .orWhere / .orderBy / .paginate
+}
+```
+
+`@rudderjs/orm`'s `Model` base class structurally satisfies the contract — the orm package even ships a compile-time `satisfies` check so the conformance can't drift. Pilotiq imports `ModelLike` from `@rudderjs/contracts` (already a peer dep), so there's no runtime dependency on `@rudderjs/orm` and users with a different stack can plug in a hand-rolled object.
 
 ---
 

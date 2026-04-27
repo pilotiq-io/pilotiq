@@ -6,12 +6,13 @@ import { Action } from './actions/Action.js'
 import type { Element } from './schema/Element.js'
 import type { SchemaContext } from './schema/resolveSchema.js'
 import type { ResourceClass, ResourcePages } from './Resource.js'
+import { modelSave, modelLoadRecord, modelTableRecords } from './orm/modelDefaults.js'
 
 /** Sentinel save handler — throws unless the user overrides via a custom Page or Form.save(). */
 function noSaveHandler(R: ResourceClass): () => never {
   return () => {
     throw new Error(
-      `[Pilotiq] ${R.name}: no save handler. Override Resource.pages().{create,edit} with a Page that supplies Form.save(), or set Resource.form(form => form.save(...)) once 2.4 wires submit dispatch.`,
+      `[Pilotiq] ${R.name}: no save handler. Set Resource.model = … to use the ORM defaults, or call Form.save(...) inside Resource.form().`,
     )
   }
 }
@@ -20,9 +21,27 @@ function noSaveHandler(R: ResourceClass): () => never {
 function noLoadRecordHandler(R: ResourceClass): () => never {
   return () => {
     throw new Error(
-      `[Pilotiq] ${R.name}: no loadRecord handler. Override Resource.pages().edit with a Page that supplies Form.loadRecord(), or set it on Resource.form() once 2.4 wires submit dispatch.`,
+      `[Pilotiq] ${R.name}: no loadRecord handler. Set Resource.model = … to use the ORM defaults, or call Form.loadRecord(...) inside Resource.form().`,
     )
   }
+}
+
+/** Install model-backed save/loadRecord on a freshly-built form when the user hasn't supplied them. */
+function applyFormDefaults(R: ResourceClass, form: Form, mode: 'create' | 'edit' | 'view'): void {
+  const M = R.model
+  if (!form.getSave()) {
+    form.save(M ? modelSave(M) : noSaveHandler(R))
+  }
+  if (mode !== 'create' && !form.getLoadRecord()) {
+    form.loadRecord(M ? modelLoadRecord(M) : noLoadRecordHandler(R))
+  }
+}
+
+/** Install model-backed records on a freshly-built table when the user hasn't supplied them. */
+function applyTableDefaults(R: ResourceClass, table: Table): void {
+  if (table.getRecords()) return
+  const M = R.model
+  if (M) table.records(modelTableRecords(M, table))
 }
 
 export function defaultListPage(R: ResourceClass): typeof Page {
@@ -36,6 +55,7 @@ export function defaultListPage(R: ResourceClass): typeof Page {
 
     static override schema(): Element[] {
       const table = R.table(Table.make())
+      applyTableDefaults(R, table)
       return [Heading.make(R.label).level(1), table]
     }
   }
@@ -52,7 +72,7 @@ export function defaultCreatePage(R: ResourceClass): typeof Page {
 
     static override schema(): Element[] {
       const form = R.form(Form.make())
-      if (!form.getSave()) form.save(noSaveHandler(R))
+      applyFormDefaults(R, form, 'create')
       return [Heading.make(`Create ${R.labelSingular}`).level(1), form]
     }
   }
@@ -69,8 +89,7 @@ export function defaultEditPage(R: ResourceClass): typeof Page {
 
     static override schema(): Element[] {
       const form = R.form(Form.make())
-      if (!form.getSave())       form.save(noSaveHandler(R))
-      if (!form.getLoadRecord()) form.loadRecord(noLoadRecordHandler(R))
+      applyFormDefaults(R, form, 'edit')
       return [Heading.make(`Edit ${R.labelSingular}`).level(1), form]
     }
   }
@@ -89,10 +108,12 @@ export function defaultViewPage(R: ResourceClass): typeof Page {
       const recordId = ctx?.['recordId'] as string | undefined
       const basePath = (ctx?.['basePath'] as string | undefined) ?? ''
 
-      // Reuse the form's loadRecord — the same loader that powers edit mode.
+      // Reuse the form's loadRecord — the same loader that powers edit mode,
+      // including the model-backed default when `R.model` is set.
       let record: unknown = null
       if (recordId) {
         const form = R.form(Form.make())
+        applyFormDefaults(R, form, 'view')
         const loader = form.getLoadRecord()
         if (loader) {
           try { record = await loader(recordId, { values: {} }) } catch { /* sentinel/missing */ }

@@ -5,6 +5,7 @@ import {
 } from '@pilotiq/pilotiq'
 import { themeEditor } from '@pilotiq/pilotiq/plugins'
 import { app } from '@rudderjs/core'
+import { Article } from '../Models/Article.js'
 import { SimplePage } from './pages/SimplePage.js'
 import { ElementsShowcase } from './pages/ElementsShowcase.js'
 
@@ -16,22 +17,13 @@ class ArticleResource extends Resource {
   static override label         = 'Articles'
   static override labelSingular = 'Article'
   static override icon          = 'file-text'
+  static override model         = Article
 
   static override form(form: Form): Form {
-    return form
-      .schema([
-        TextField.make('title').label('Title').required().placeholder('Article title...'),
-        TextField.make('slug').label('Slug').required(),
-      ])
-      .loadRecord(async (id) => prisma().article.findUnique({ where: { id } }))
-      .save(async (data, ctx) => {
-        const payload = { title: String(data['title'] ?? ''), slug: String(data['slug'] ?? '') }
-        const existing = ctx.record as { id?: string } | undefined
-        if (existing?.id) {
-          return prisma().article.update({ where: { id: existing.id }, data: payload })
-        }
-        return prisma().article.create({ data: payload })
-      })
+    return form.schema([
+      TextField.make('title').label('Title').required().placeholder('Article title...'),
+      TextField.make('slug').label('Slug').required(),
+    ])
   }
 
   static override detail(record: unknown) {
@@ -46,37 +38,15 @@ class ArticleResource extends Resource {
     ]
   }
 
-  static override async deleteRecord(id: string): Promise<void> {
-    await prisma().article.delete({ where: { id } })
-  }
-
   static override table(table: Table): Table {
     return table
       .columns([
         Column.make('title').label('Title').sortable().searchable(),
-        Column.make('slug').label('Slug'),
-        Column.make('createdAt').label('Created'),
+        Column.make('slug').label('Slug').searchable(),
+        Column.make('createdAt').label('Created').sortable(),
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
-      .records(async (ctx) => {
-        const where = ctx.search
-          ? { OR: [
-              { title: { contains: ctx.search } },
-              { slug:  { contains: ctx.search } },
-            ] }
-          : undefined
-        const orderBy = ctx.sort
-          ? { [ctx.sort.column]: ctx.sort.direction }
-          : { createdAt: 'desc' as const }
-        const perPage = ctx.perPage ?? 10
-        const page    = ctx.page ?? 1
-        const [rows, total] = await Promise.all([
-          prisma().article.findMany({ where, orderBy, take: perPage, skip: (page - 1) * perPage }),
-          prisma().article.count({ where }),
-        ])
-        return { rows, total }
-      })
   }
 }
 

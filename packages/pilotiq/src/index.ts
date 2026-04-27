@@ -20,6 +20,15 @@ export {
 } from './defaultGlobalPages.js'
 export { Column, type ColumnMeta } from './Column.js'
 
+// ─── ORM model wiring ─────────────────────────────────
+// `ModelLike` / `ModelQuery` are owned by `@rudderjs/contracts` — re-export
+// from there so users can `import { ModelLike } from '@pilotiq/pilotiq'`
+// without reaching into the rudder contracts package directly.
+export type { ModelLike, ModelQuery } from '@rudderjs/contracts'
+export {
+  modelSave, modelLoadRecord, modelTableRecords, getPrimaryKey,
+} from './orm/modelDefaults.js'
+
 // ─── Schema (Element tree + resolver) ─────────────────
 export { Element, type ElementMeta } from './schema/Element.js'
 export {
