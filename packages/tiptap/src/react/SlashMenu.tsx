@@ -1,28 +1,47 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SlashItem } from '../extensions/SlashCommandExtension.js'
 
-export interface SlashMenuRef {
-  onKeyDown: (props: { event: KeyboardEvent }) => boolean
-}
+/**
+ * Mutable ref the document-level keydown listener in `TiptapEditor` reads.
+ * `SlashMenu` installs its keyboard handler on mount, clears on unmount.
+ */
+export type SlashKeyHandlerRef = { current: ((event: KeyboardEvent) => boolean) | null }
 
 interface SlashMenuProps {
-  items:   SlashItem[]
-  command: (item: SlashItem) => void
+  items:         SlashItem[]
+  command:       (item: SlashItem) => void
+  keyHandlerRef: SlashKeyHandlerRef
 }
 
 /**
- * Floating list of slash items. Tippy mounts this; keyboard navigation is
- * forwarded from the Suggestion plugin via the imperative ref.
+ * Floating list of slash items. Mounted by the Base UI Popover in
+ * TiptapEditor; the popover's anchor is a virtual element, so we don't need
+ * to position the menu ourselves.
  *
  * Keys: ArrowUp / ArrowDown to move, Enter to pick. Escape is handled in
- * the extension's `onKeyDown` (closes Tippy).
+ * `SlashCommandExtension.onKeyDown` (closes the popup directly).
  */
-export const SlashMenu = forwardRef<SlashMenuRef, SlashMenuProps>(({ items, command }, ref) => {
+export function SlashMenu({ items, command, keyHandlerRef }: SlashMenuProps) {
   const [active, setActive] = useState(0)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
+  // Group items for visual organisation, then derive the flat render-order
+  // array. `items` is in plugin order (paragraph, h1, h2, h3, …) but we
+  // render grouped (Basic/Headings/Lists/Blocks). The active index must
+  // track render order — otherwise ArrowDown highlights item N visually
+  // but Enter inserts items[N] from the plugin-order array, which is a
+  // different item.
+  const grouped = useMemo(
+    () => groupBy(items, (it) => it.group ?? 'Other'),
+    [items],
+  )
+  const renderOrder = useMemo(
+    () => Array.from(grouped.values()).flat(),
+    [grouped],
+  )
+
   // Reset selection when the filtered list changes.
-  useEffect(() => { setActive(0) }, [items])
+  useEffect(() => { setActive(0) }, [renderOrder])
 
   // Keep the active item in view inside the scroll container.
   useEffect(() => {
@@ -30,42 +49,40 @@ export const SlashMenu = forwardRef<SlashMenuRef, SlashMenuProps>(({ items, comm
     el?.scrollIntoView({ block: 'nearest' })
   }, [active])
 
-  useImperativeHandle(ref, () => ({
-    onKeyDown: ({ event }) => {
+  // Install the keyboard bridge for the document-level listener in
+  // TiptapEditor.
+  useEffect(() => {
+    keyHandlerRef.current = (event) => {
+      const len = renderOrder.length
       if (event.key === 'ArrowDown') {
-        setActive((i) => (items.length === 0 ? 0 : (i + 1) % items.length))
+        setActive((i) => (len === 0 ? 0 : (i + 1) % len))
         return true
       }
       if (event.key === 'ArrowUp') {
-        setActive((i) => (items.length === 0 ? 0 : (i - 1 + items.length) % items.length))
+        setActive((i) => (len === 0 ? 0 : (i - 1 + len) % len))
         return true
       }
       if (event.key === 'Enter') {
-        const item = items[active]
+        const item = renderOrder[active]
         if (item) command(item)
         return true
       }
       return false
-    },
-  }), [active, items, command])
+    }
+    return () => { keyHandlerRef.current = null }
+  }, [renderOrder, active, command, keyHandlerRef])
 
-  if (items.length === 0) {
+  if (renderOrder.length === 0) {
     return (
-      <div className="rounded-md border bg-popover px-3 py-2 text-xs text-muted-foreground shadow-md">
+      <div className="px-3 py-2 text-xs text-muted-foreground">
         No matches
       </div>
     )
   }
 
-  // Group items for visual organisation (matches lexical's grouped menu).
-  const grouped = groupBy(items, (it) => it.group ?? 'Other')
-
   let runningIndex = 0
   return (
-    <div
-      ref={containerRef}
-      className="max-h-72 w-64 overflow-y-auto rounded-md border bg-popover p-1 text-sm shadow-md"
-    >
+    <div ref={containerRef} className="max-h-72 w-64 overflow-y-auto p-1 text-sm">
       {Array.from(grouped.entries()).map(([groupName, groupItems]) => (
         <div key={groupName}>
           <div className="px-2 pt-2 pb-1 text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
@@ -98,9 +115,7 @@ export const SlashMenu = forwardRef<SlashMenuRef, SlashMenuProps>(({ items, comm
       ))}
     </div>
   )
-})
-
-SlashMenu.displayName = 'SlashMenu'
+}
 
 function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
   const out = new Map<string, T[]>()

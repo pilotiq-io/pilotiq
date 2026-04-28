@@ -1,18 +1,6 @@
 import { Extension, type Editor, type Range } from '@tiptap/core'
-import { ReactRenderer } from '@tiptap/react'
 import Suggestion, { type SuggestionOptions } from '@tiptap/suggestion'
-// tippy is CJS-shaped; with esModuleInterop the default import picks up
-// the callable. Casting just lets us call it without TS choking on the
-// missing `.d.ts` signature for default-import-as-function.
-import tippyDefault, { type Instance as TippyInstance } from 'tippy.js'
-type TippyFn = (
-  targets: Element | Element[] | string,
-  options?: Record<string, unknown>,
-) => TippyInstance[]
-const tippy = tippyDefault as unknown as TippyFn
-import type { ComponentType } from 'react'
 import type { BlockMeta } from '../Block.js'
-import { SlashMenu, type SlashMenuRef } from '../react/SlashMenu.js'
 
 export interface SlashItem {
   /** Stable id used to dedupe + as React key. */
@@ -26,40 +14,93 @@ export interface SlashItem {
   command:    (args: { editor: Editor; range: Range }) => void
 }
 
+/**
+ * State the React side of the editor needs to render the slash menu. Set to
+ * `null` when the menu should be unmounted.
+ */
+export interface SlashState {
+  items:      SlashItem[]
+  /** Pick item — Suggestion will replace the slash range and run the command. */
+  command:    (item: SlashItem) => void
+  /**
+   * Cursor / range coords in viewport space. Re-call this every layout tick
+   * (the popover positioner does) so scroll/resize tracking comes for free.
+   */
+  clientRect: () => DOMRect | null
+  query:      string
+}
+
 export interface SlashCommandOptions {
   /** Custom blocks contributed by RichTextField.blocks([...]). */
   blocks: BlockMeta[]
+  /**
+   * Called whenever the menu should mount, update, or unmount. TiptapEditor
+   * holds the React state and passes a setter here.
+   */
+  onStateChange: (state: SlashState | null) => void
 }
 
 /**
- * `/`-triggered slash menu. Wraps Tiptap's Suggestion plugin and renders
- * the options through `SlashMenu` (React component). Items are computed
- * fresh on every keystroke so the search filter stays reactive without
- * us managing state inside the plugin.
+ * `/`-triggered slash menu. The plugin owns the suggestion lifecycle (range
+ * detection + command invocation); rendering is React-side via a Base UI
+ * Popover anchored to a virtual element. Keyboard events are NOT forwarded
+ * through the Suggestion plugin — TiptapEditor installs a document-level
+ * capture-phase keydown listener while the menu is open, because Base UI's
+ * focus manager can briefly steal focus from the editor when the popup mounts
+ * and the suggestion plugin's `handleKeyDown` only fires when the editor has
+ * focus.
  */
 export const SlashCommandExtension = Extension.create<SlashCommandOptions>({
   name: 'slashCommand',
 
   addOptions() {
-    return { blocks: [] }
+    return {
+      blocks:        [],
+      onStateChange: () => {},
+    }
   },
 
   addProseMirrorPlugins() {
+    const blocks = this.options.blocks
+    const emit   = this.options.onStateChange
+
     return [
       Suggestion({
         editor: this.editor,
         char: '/',
         startOfLine: false,
         allowSpaces: false,
-        items: ({ query }: { query: string }) => buildItems(this.options.blocks, query),
+        items: ({ query }: { query: string }) => buildItems(blocks, query),
         command: ({ editor, range, props }: { editor: Editor; range: Range; props: SlashItem }) => {
           props.command({ editor, range })
         },
-        render: makeRender,
+        render: () => ({
+          onStart:   (props) => emit(stateFrom(props)),
+          onUpdate:  (props) => emit(stateFrom(props)),
+          // Keys are handled at the document level by TiptapEditor; nothing
+          // to do here. Returning false lets PM's keymap handle anything we
+          // don't intercept (typing more of the slash query, etc.).
+          onKeyDown: () => false,
+          onExit:    () => emit(null),
+        }),
       } satisfies SuggestionOptions<SlashItem, SlashItem>),
     ]
   },
 })
+
+function stateFrom(props: {
+  items:      SlashItem[]
+  command:    (item: SlashItem) => void
+  clientRect?: (() => DOMRect | null) | null
+  query:      string
+}): SlashState {
+  return {
+    items:      props.items,
+    command:    props.command,
+    clientRect: props.clientRect ?? (() => null),
+    query:      props.query,
+  }
+}
 
 // Built-in items mirror Lexical's default slash menu. Custom blocks append.
 function buildItems(blocks: BlockMeta[], query: string): SlashItem[] {
@@ -151,53 +192,4 @@ function defaultsFromSchema(block: BlockMeta): Record<string, unknown> {
     out[f.name] = ''
   }
   return out
-}
-
-// Tippy-rendered React popup. Standard Tiptap pattern.
-function makeRender(): {
-  onStart:        (props: any) => void
-  onUpdate:       (props: any) => void
-  onKeyDown:      (props: any) => boolean
-  onExit:         () => void
-} {
-  let component: ReactRenderer<SlashMenuRef> | undefined
-  let popup:     TippyInstance | undefined
-
-  return {
-    onStart: (props) => {
-      component = new ReactRenderer(SlashMenu as ComponentType<any>, {
-        props,
-        editor: props.editor,
-      })
-      const rect = props.clientRect?.()
-      if (!rect) return
-      popup = tippy('body', {
-        getReferenceClientRect: () => rect,
-        appendTo: () => document.body,
-        content: component.element as HTMLElement,
-        showOnCreate: true,
-        interactive: true,
-        trigger: 'manual',
-        placement: 'bottom-start',
-      })[0]
-    },
-    onUpdate: (props) => {
-      component?.updateProps(props)
-      const rect = props.clientRect?.()
-      if (rect && popup) {
-        popup.setProps({ getReferenceClientRect: () => rect })
-      }
-    },
-    onKeyDown: (props) => {
-      if (props.event.key === 'Escape') {
-        popup?.hide()
-        return true
-      }
-      return component?.ref?.onKeyDown(props) ?? false
-    },
-    onExit: () => {
-      popup?.destroy()
-      component?.destroy()
-    },
-  }
 }

@@ -22,7 +22,6 @@
     "@tiptap/extension-link": "^3",
     "@tiptap/extension-placeholder": "^3",
     "@tiptap/suggestion": "^3",
-    "tippy.js": "^6",
     "@base-ui/react": "^1",
     "lucide-react": "^0.503",
     "react-day-picker": "^9",
