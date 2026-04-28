@@ -1,4 +1,4 @@
-import { Rudder } from '@rudderjs/rudder'
+import { Rudder } from '@rudderjs/console'
 import { User } from '../app/Models/User.js'
 import { Category } from '../app/Models/Category.js'
 

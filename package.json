@@ -61,7 +61,7 @@
       "@rudderjs/telescope": "link:../rudder/packages/telescope",
       "@rudderjs/pulse": "link:../rudder/packages/pulse",
       "@rudderjs/horizon": "link:../rudder/packages/horizon",
-      "@rudderjs/rudder": "link:../rudder/packages/rudder",
+      "@rudderjs/console": "link:../rudder/packages/console",
       "@rudderjs/cli": "link:../rudder/packages/cli",
       "@rudderjs/view": "link:../rudder/packages/view"
     }
