@@ -4,6 +4,12 @@ import type { EditorView } from '@tiptap/pm/view'
 
 const dragHandlePluginKey = new PluginKey('pilotiqDragHandle')
 
+// Node types whose direct children are the draggable units (e.g. each
+// `listItem` of a `bulletList` is a draggable unit). Listed forward-compat
+// includes `taskList` even though StarterKit 3 doesn't ship it; if a consumer
+// registers it later it'll just work.
+const LIST_CONTAINERS = new Set(['bulletList', 'orderedList', 'taskList'])
+
 /**
  * Hand-built drag handle: floats a six-dot button in the gutter on the left
  * of whichever top-level block the cursor is hovering. Click-drag to reorder.
@@ -79,8 +85,20 @@ function createDragHandleView(view: EditorView): {
       return
     }
     const $pos = view.state.doc.resolve(pos.pos)
-    // Climb to depth 1 = top-level block.
-    const blockPos = $pos.before(1)
+    // Pick the deepest ancestor whose parent is the doc OR a list container —
+    // that's the "unit" the user expects the handle to grab. So inside a
+    // bullet list, hovering an item resolves to the list_item (not the whole
+    // bullet_list); inside a blockquote, hovering its inner paragraph resolves
+    // to the blockquote (since the blockquote's parent is the doc).
+    let blockDepth = 1
+    for (let d = $pos.depth; d >= 1; d--) {
+      const parentName = $pos.node(d - 1).type.name
+      if (parentName === 'doc' || LIST_CONTAINERS.has(parentName)) {
+        blockDepth = d
+        break
+      }
+    }
+    const blockPos  = $pos.before(blockDepth)
     const blockNode = view.nodeDOM(blockPos) as HTMLElement | null
     if (!blockNode) {
       hide()
@@ -89,8 +107,13 @@ function createDragHandleView(view: EditorView): {
     const rect = blockNode.getBoundingClientRect()
     handle.style.display = 'block'
     handle.style.opacity = '1'
-    handle.style.top  = `${rect.top + window.scrollY + 4}px`
-    handle.style.left = `${rect.left + window.scrollX - 24}px`
+    handle.style.top = `${rect.top + window.scrollY + 4}px`
+    // Pin X to the editor's left gutter (not the block's left edge). For
+    // nested content the block's `rect.left` sits past the indent / bullet
+    // gutter, so handles for list items would overlap their bullets. Keeping
+    // the handle in a fixed column lets the eye track which block it points
+    // at by vertical alignment alone.
+    handle.style.left = `${editorRect.left + window.scrollX + 16}px`
     activePos = blockPos
   }
 
