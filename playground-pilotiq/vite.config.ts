@@ -54,6 +54,7 @@ export default defineConfig({
       '@base-ui/react/dialog',
       '@base-ui/react/tooltip',
       '@base-ui/react/tabs',
+      '@base-ui/react/menu',
       '@base-ui/react/separator',
       '@base-ui/react/button',
       'react-day-picker',

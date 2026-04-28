@@ -3,6 +3,8 @@ export { AppShell, type AppShellProps } from './AppShell.js'
 export { SchemaRenderer, type SchemaRendererProps } from './SchemaRenderer.js'
 export { registerFieldRenderer, getFieldRenderer, type FieldRendererProps } from './registry.js'
 
+export { NavigateProvider, useNavigate, type NavigateFn } from './navigate.js'
+
 export { ThemeProvider, useTheme } from './ThemeProvider.js'
 export { ThemeToggle } from './ThemeToggle.js'
 export { ThemeSettingsPage } from './ThemeSettingsPage.js'

@@ -23,7 +23,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select.js'
-import { CalendarIcon } from 'lucide-react'
+import {
+  Table as DataTable,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from './ui/table.js'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu.js'
+import { CalendarIcon, FilterIcon, MoreHorizontalIcon } from 'lucide-react'
+import { useNavigate } from './navigate.js'
 
 const alertStyles: Record<string, string> = {
   info:    'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200',
@@ -31,16 +46,6 @@ const alertStyles: Record<string, string> = {
   success: 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200',
   danger:  'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200',
 }
-
-// Filter controls still use a raw <select> wired into the search form so
-// the browser can auto-submit on change. shadcn Select would need a
-// hidden input + JS to submit the parent form, which is more wiring than
-// the filter bar needs. Keep this class for that callsite only.
-const filterSelectClass =
-  'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm ' +
-  'transition-colors placeholder:text-muted-foreground ' +
-  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ' +
-  'disabled:cursor-not-allowed disabled:opacity-50'
 
 // ─── Field rendering ────────────────────────────────────────
 
@@ -283,6 +288,31 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
 // ─── Action rendering ───────────────────────────────────────
 
 /**
+ * Build a `<form method="POST">` (with optional `_method` spoof) and
+ * submit it. Used for form-style row/header actions that fire from a
+ * non-form context (e.g. a dropdown menu item).
+ */
+function submitMethodForm(
+  url:    string,
+  method: 'post' | 'put' | 'patch' | 'delete',
+): void {
+  if (typeof document === 'undefined') return
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = url
+  const spoofed = method === 'put' || method === 'patch' || method === 'delete' ? method : undefined
+  if (spoofed) {
+    const input = document.createElement('input')
+    input.type  = 'hidden'
+    input.name  = '_method'
+    input.value = spoofed
+    form.appendChild(input)
+  }
+  document.body.appendChild(form)
+  form.submit()
+}
+
+/**
  * Build a hidden `<form>` with `ids[]` + arbitrary value fields and
  * submit it. Browsers handle the 303 redirect natively, so this is
  * a one-shot navigation rather than a fetch + manual `location.assign`.
@@ -484,19 +514,8 @@ function renderAction(
           message={confirm.message}
           destructive={destructive}
           onConfirm={() => {
-            if (typeof document === 'undefined' || !resolvedUrl) return
-            const form = document.createElement('form')
-            form.method = 'POST'
-            form.action = resolvedUrl
-            if (spoofed) {
-              const input = document.createElement('input')
-              input.type  = 'hidden'
-              input.name  = '_method'
-              input.value = spoofed
-              form.appendChild(input)
-            }
-            document.body.appendChild(form)
-            form.submit()
+            if (!resolvedUrl) return
+            submitMethodForm(resolvedUrl, method)
           }}
           trigger={(open) => (
             <button
@@ -590,6 +609,177 @@ function renderChildren(children: ElementMeta[] | undefined, gap = 'gap-4'): Rea
 }
 
 // ─── Tabs (stateful — needs useState) ────────────────────────
+
+/**
+ * Filter icon button + Popover containing every filter control.
+ * Opens on click; the inner Selects don't dismiss the outer Popover when
+ * an option is chosen (Base UI Popover doesn't auto-close on inner clicks).
+ *
+ * Each FilterSelect navigates the page on change (window.location), so the
+ * filter form is no longer needed — keeps the search input in its own
+ * lightweight form for native Enter-to-submit.
+ */
+function FilterPopover({ filters }: { filters: ElementMeta[] }) {
+  const activeCount = filters.filter(f => {
+    const v = f['value']
+    return typeof v === 'string' && v !== ''
+  }).length
+
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={(props) => (
+          <button
+            {...props}
+            type="button"
+            aria-label="Filters"
+            className="relative inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+          >
+            <FilterIcon className="size-4" />
+            <span>Filters</span>
+            {activeCount > 0 && (
+              <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                {activeCount}
+              </span>
+            )}
+          </button>
+        )}
+      />
+      <PopoverContent align="start" className="w-72 p-3">
+        <div className="flex flex-col gap-3">
+          {filters.map((f, i) => renderFilterControl(f, i))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
+ * Collapses all row-level actions into a single MoreHorizontal dropdown
+ * trigger. Each action becomes a DropdownMenuItem; on click we either:
+ *   - link-style: navigate to href (template `:id` substituted for rowId)
+ *   - form-style: POST a synthetic <form> via submitMethodForm
+ *   - handler-style: POST the dispatchUrl via submitHandlerAction
+ *   - any of the above with `confirm`: open a Dialog at the row level,
+ *     dispatch on confirm. The dropdown closes first (shadcn pattern —
+ *     single visible popup at a time), then the dialog opens.
+ */
+function RowActionsMenu({
+  rowId,
+  actions,
+}: {
+  rowId:   string
+  actions: ElementMeta[]
+}) {
+  const [pending, setPending] = useState<ElementMeta | null>(null)
+
+  const resolveTemplate = (s: string | undefined): string | undefined =>
+    s && rowId ? s.replace(':id', rowId) : s
+
+  const dispatchAction = (action: ElementMeta): void => {
+    const href        = action['href']        as string | undefined
+    const method      = action['method']      as 'post' | 'put' | 'patch' | 'delete' | undefined
+    const actionUrl   = action['action']      as string | undefined
+    const dispatchUrl = action['dispatchUrl'] as string | undefined
+    if (href) {
+      const url = resolveTemplate(href)
+      if (url && typeof window !== 'undefined') window.location.href = url
+      return
+    }
+    if (method) {
+      const url = resolveTemplate(actionUrl)
+      if (url) submitMethodForm(url, method)
+      return
+    }
+    if (dispatchUrl) {
+      submitHandlerAction(dispatchUrl, [rowId])
+      return
+    }
+  }
+
+  const onClick = (action: ElementMeta): void => {
+    if (action['confirm']) {
+      setPending(action)
+      return
+    }
+    dispatchAction(action)
+  }
+
+  const pendingConfirm = pending?.['confirm'] as
+    | { title?: string; message: string }
+    | undefined
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={(props) => (
+            <button
+              {...props}
+              type="button"
+              aria-label="Row actions"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            >
+              <MoreHorizontalIcon className="size-4" />
+            </button>
+          )}
+        />
+        <DropdownMenuContent align="end">
+          {actions.map((a, i) => {
+            const label       = String(a['label'] ?? a['name'] ?? '')
+            const destructive = Boolean(a['destructive'])
+            return (
+              <DropdownMenuItem
+                key={i}
+                destructive={destructive}
+                onClick={() => onClick(a)}
+              >
+                {label}
+              </DropdownMenuItem>
+            )
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Dialog open={pending !== null} onOpenChange={(o) => { if (!o) setPending(null) }}>
+        <DialogContent>
+          {pending && pendingConfirm && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{pendingConfirm.title ?? 'Are you sure?'}</DialogTitle>
+                <DialogDescription>{pendingConfirm.message}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <button
+                  type="button"
+                  onClick={() => setPending(null)}
+                  className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 h-9 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => {
+                    const action = pending
+                    setPending(null)
+                    dispatchAction(action)
+                  }}
+                  className={
+                    pending['destructive']
+                      ? 'inline-flex items-center justify-center rounded-md bg-destructive px-3 h-9 text-sm font-medium text-destructive-foreground hover:bg-destructive/90'
+                      : 'inline-flex items-center justify-center rounded-md bg-primary px-3 h-9 text-sm font-medium text-primary-foreground hover:bg-primary/90'
+                  }
+                >
+                  {pending['destructive'] ? 'Delete' : 'Confirm'}
+                </button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
 
 function TabsRenderer({ el, index }: { el: ElementMeta; index: number }) {
   const tabs = (el.children ?? []).filter(c => c.type === 'tab')
@@ -924,13 +1114,55 @@ function rowId(row: unknown, index: number): string {
 }
 
 /**
- * Auto-submit the enclosing GET form whenever a filter select changes.
- * Keeps the URL in sync with the active filter values without requiring
- * a separate "Apply" button — search input still submits on Enter.
+ * Filter dropdown that updates the URL directly on change. We don't rely
+ * on a wrapping `<form>` because filters now live inside a portaled
+ * Popover (the search input keeps its own form for Enter-to-submit).
+ *
+ * Empty value (`''`) is the "All" sentinel — the param is removed from
+ * the URL rather than serialized as `&name=`.
  */
-function autoSubmitForm(e: React.ChangeEvent<HTMLSelectElement>): void {
-  const form = e.currentTarget.form
-  if (form) form.submit()
+function FilterSelect({
+  name, label, defaultValue, placeholder, options,
+}: {
+  name:         string
+  label:        string
+  defaultValue: string
+  placeholder:  string
+  options:      Array<{ value: string; label: string }>
+}) {
+  const [value, setValue] = useState(defaultValue)
+  const navigate           = useNavigate()
+
+  const onChange = (next: unknown) => {
+    const v = typeof next === 'string' ? next : ''
+    setValue(v)
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    if (v === '') url.searchParams.delete(name)
+    else          url.searchParams.set(name, v)
+    // Filter changes reset pagination — first page of the new result set.
+    url.searchParams.delete('page')
+    // SPA navigate via context (vike's navigate when mounted under the
+    // Vike-generated +Layout). Fallback is full reload — see useNavigate.
+    void navigate(url.pathname + url.search)
+  }
+
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger size="sm" className="w-full">
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="">{placeholder}</SelectItem>
+          {options.map(o => (
+            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
 }
 
 function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
@@ -940,33 +1172,29 @@ function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
   const value       = el['value'] ? String(el['value']) : ''
   const placeholder = el['placeholder'] ? String(el['placeholder']) : 'All'
 
-  const selectClass = filterSelectClass + ' min-w-[10rem]'
-
   if (kind === 'boolean') {
     return (
-      <label key={index} className="flex flex-col gap-1 text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <select name={name} defaultValue={value} onChange={autoSubmitForm} className={selectClass}>
-          <option value="">{placeholder}</option>
-          <option value="1">Yes</option>
-          <option value="0">No</option>
-        </select>
-      </label>
+      <FilterSelect
+        key={index}
+        name={name}
+        label={label}
+        defaultValue={value}
+        placeholder={placeholder}
+        options={[{ value: '1', label: 'Yes' }, { value: '0', label: 'No' }]}
+      />
     )
   }
 
-  // 'select' (default)
   const options = (el['options'] as Array<{ value: string; label: string }> | undefined) ?? []
   return (
-    <label key={index} className="flex flex-col gap-1 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      <select name={name} defaultValue={value} onChange={autoSubmitForm} className={selectClass}>
-        <option value="">{placeholder}</option>
-        {options.map(o => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-    </label>
+    <FilterSelect
+      key={index}
+      name={name}
+      label={label}
+      defaultValue={value}
+      placeholder={placeholder}
+      options={options}
+    />
   )
 }
 
@@ -1053,31 +1281,29 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   return (
     <div className="flex flex-col gap-3">
       {showHeaderBar && (
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
           {(searchable || hasFilters) ? (
-            <form method="get" action={currentPath || undefined} className="flex flex-wrap items-end gap-2">
+            <div className="flex items-center gap-2">
               {searchable && (
-                <label className="flex flex-col gap-1 text-xs">
-                  <span className="text-muted-foreground">Search</span>
+                <form method="get" action={currentPath || undefined} className="flex items-end gap-2">
                   <Input
                     type="search"
                     name="search"
                     defaultValue={search ?? ''}
                     placeholder="Search…"
-                    className="max-w-xs"
+                    className="h-9 w-64"
                   />
-                </label>
+                  {/* Search submits via Enter natively. Hidden submit kept
+                      for screen-reader form semantics. */}
+                  <button type="submit" className="sr-only" tabIndex={-1} aria-hidden="true">
+                    Apply
+                  </button>
+                </form>
               )}
-              {filters.map((f, i) => renderFilterControl(f, i))}
-              {currentSort && <input type="hidden" name="sort" value={`${currentSort.column}:${currentSort.direction}`} />}
-              {/* No visible submit button — filter <select>s auto-submit
-                  on change (see autoSubmitForm), and the search <input>
-                  submits via Enter natively. A hidden submit keeps form
-                  semantics clean for screen readers. */}
-              <button type="submit" className="sr-only" tabIndex={-1} aria-hidden="true">
-                Apply
-              </button>
-            </form>
+              {hasFilters && (
+                <FilterPopover filters={filters} />
+              )}
+            </div>
           ) : <span />}
           {headerActions.length > 0 && (
             <div className="flex items-center gap-2">
@@ -1106,17 +1332,17 @@ function TableRenderer({ el }: { el: ElementMeta }) {
         </div>
       )}
       <div className="rounded-xl border bg-card overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted border-b">
-            <tr>
+        <DataTable>
+          <TableHeader className="bg-muted">
+            <TableRow>
               {hasBulkActions && (
-                <th className="px-3 py-3 w-9">
+                <TableHead className="w-9 px-3">
                   <Checkbox
                     aria-label="Select all rows"
                     checked={allChecked}
                     onCheckedChange={() => toggleAll()}
                   />
-                </th>
+                </TableHead>
               )}
               {columns.map((col, i) => {
                 const name     = String(col['name'] ?? '')
@@ -1126,81 +1352,71 @@ function TableRenderer({ el }: { el: ElementMeta }) {
 
                 if (!sortable) {
                   return (
-                    <th
-                      key={i}
-                      className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider"
-                    >
+                    <TableHead key={i} className="text-xs uppercase tracking-wider">
                       {label}
-                    </th>
+                    </TableHead>
                   )
                 }
                 const next = nextSortDir(currentSort, name)
                 const href = buildTableQuery(state, { sort: next, page: 1 }, currentPath, activeFilters)
                 return (
-                  <th
-                    key={i}
-                    className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider"
-                  >
+                  <TableHead key={i} className="text-xs uppercase tracking-wider">
                     <a href={href} className="inline-flex items-center gap-1 hover:text-foreground">
                       {label}
                       <span className="text-muted-foreground/70">
                         {isActive ? (currentSort!.direction === 'asc' ? '↑' : '↓') : '↕'}
                       </span>
                     </a>
-                  </th>
+                  </TableHead>
                 )
               })}
               {hasRowActions && (
-                <th className="px-4 py-3 w-px text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Actions
-                </th>
+                <TableHead className="w-px text-right text-xs uppercase tracking-wider">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               )}
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.length === 0 ? (
-              <tr>
-                <td colSpan={totalCols} className="px-4 py-12 text-center text-muted-foreground">
+              <TableRow>
+                <TableCell colSpan={totalCols} className="py-12 text-center text-muted-foreground">
                   No records yet.
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ) : rows.map((row, ri) => {
               const id = visibleIds[ri]!
               const isSelected = selected.has(id)
               return (
-                <tr key={id} className={`border-b last:border-b-0 ${isSelected ? 'bg-muted/30' : ''}`}>
+                <TableRow key={id} data-state={isSelected ? 'selected' : undefined}>
                   {hasBulkActions && (
-                    <td className="px-3 py-3 w-9">
+                    <TableCell className="w-9 px-3">
                       <Checkbox
                         aria-label={`Select row ${id}`}
                         checked={isSelected}
                         onCheckedChange={() => toggleRow(id)}
                       />
-                    </td>
+                    </TableCell>
                   )}
                   {columns.map((col, ci) => {
                     const name = String(col['name'] ?? '')
                     const value = (row as Record<string, unknown>)[name]
                     return (
-                      <td key={ci} className="px-4 py-3 text-sm text-foreground">
+                      <TableCell key={ci} className="text-sm text-foreground">
                         {formatCell(value)}
-                      </td>
+                      </TableCell>
                     )
                   })}
                   {hasRowActions && (
-                    <td className="px-4 py-3 w-px whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {rowActions.map((a, ai) =>
-                          renderAction(a, ai, { ids: [id], size: 'sm' }),
-                        )}
-                      </div>
-                    </td>
+                    <TableCell className="w-px text-right">
+                      <RowActionsMenu rowId={id} actions={rowActions} />
+                    </TableCell>
                   )}
-                </tr>
+                </TableRow>
               )
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </DataTable>
       </div>
       {showPagination && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
