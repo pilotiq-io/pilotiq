@@ -34,7 +34,7 @@ overrides:
   '@rudderjs/telescope': link:../rudder/packages/telescope
   '@rudderjs/pulse': link:../rudder/packages/pulse
   '@rudderjs/horizon': link:../rudder/packages/horizon
-  '@rudderjs/rudder': link:../rudder/packages/rudder
+  '@rudderjs/console': link:../rudder/packages/console
   '@rudderjs/cli': link:../rudder/packages/cli
   '@rudderjs/view': link:../rudder/packages/view
 
@@ -421,6 +421,9 @@ importers:
       '@rudderjs/cache':
         specifier: link:../../rudder/packages/cache
         version: link:../../rudder/packages/cache
+      '@rudderjs/console':
+        specifier: link:../../rudder/packages/console
+        version: link:../../rudder/packages/console
       '@rudderjs/contracts':
         specifier: link:../../rudder/packages/contracts
         version: link:../../rudder/packages/contracts
@@ -451,9 +454,6 @@ importers:
       '@rudderjs/router':
         specifier: link:../../rudder/packages/router
         version: link:../../rudder/packages/router
-      '@rudderjs/rudder':
-        specifier: link:../../rudder/packages/rudder
-        version: link:../../rudder/packages/rudder
       '@rudderjs/server-hono':
         specifier: link:../../rudder/packages/server-hono
         version: link:../../rudder/packages/server-hono
@@ -608,6 +608,9 @@ importers:
       '@rudderjs/cache':
         specifier: link:../../rudder/packages/cache
         version: link:../../rudder/packages/cache
+      '@rudderjs/console':
+        specifier: link:../../rudder/packages/console
+        version: link:../../rudder/packages/console
       '@rudderjs/contracts':
         specifier: link:../../rudder/packages/contracts
         version: link:../../rudder/packages/contracts
@@ -632,9 +635,6 @@ importers:
       '@rudderjs/router':
         specifier: link:../../rudder/packages/router
         version: link:../../rudder/packages/router
-      '@rudderjs/rudder':
-        specifier: link:../../rudder/packages/rudder
-        version: link:../../rudder/packages/rudder
       '@rudderjs/server-hono':
         specifier: link:../../rudder/packages/server-hono
         version: link:../../rudder/packages/server-hono

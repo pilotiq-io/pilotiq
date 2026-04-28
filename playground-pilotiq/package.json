@@ -44,7 +44,7 @@
     "@rudderjs/orm": "workspace:*",
     "@rudderjs/orm-prisma": "workspace:*",
     "@rudderjs/router": "workspace:*",
-    "@rudderjs/rudder": "workspace:*",
+    "@rudderjs/console": "workspace:*",
     "@rudderjs/server-hono": "workspace:*",
     "@rudderjs/session": "workspace:*",
     "@rudderjs/view": "workspace:*",
