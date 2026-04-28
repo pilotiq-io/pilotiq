@@ -8,6 +8,15 @@ import { Checkbox } from './ui/checkbox.js'
 import { Calendar } from './ui/calendar.js'
 import { Popover, PopoverTrigger, PopoverContent } from './ui/popover.js'
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from './ui/dialog.js'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs.js'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -306,6 +315,61 @@ function submitHandlerAction(
   form.submit()
 }
 
+/**
+ * Confirm-style dialog wrapping an action's button. The trigger button is
+ * rendered inline; clicking it opens the dialog. On confirm we run
+ * `onConfirm` (which is action-style-specific — submit a form, programmatic
+ * POST, etc.) and close the dialog.
+ */
+function ConfirmActionDialog({
+  trigger,
+  title,
+  message,
+  destructive,
+  onConfirm,
+}: {
+  trigger:     (open: () => void) => React.ReactNode
+  title:       string | undefined
+  message:     string
+  destructive: boolean
+  onConfirm:   () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const confirmClass = destructive
+    ? 'inline-flex items-center justify-center rounded-md bg-destructive px-3 h-9 text-sm font-medium text-destructive-foreground hover:bg-destructive/90'
+    : 'inline-flex items-center justify-center rounded-md bg-primary px-3 h-9 text-sm font-medium text-primary-foreground hover:bg-primary/90'
+  return (
+    <>
+      {trigger(() => setOpen(true))}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{title ?? 'Are you sure?'}</DialogTitle>
+            <DialogDescription>{message}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 h-9 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOpen(false); onConfirm() }}
+              className={confirmClass}
+              autoFocus
+            >
+              {destructive ? 'Delete' : 'Confirm'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 interface RenderActionOptions {
   /** Ids to send when this action is handler-style. Used by row + bulk
    * placements to pass selected/current record id(s). */
@@ -346,19 +410,41 @@ function renderAction(
   // Save button driving a form below).
   if (submit) {
     const formTarget = el['form'] as string | undefined
-    const onClick = confirm
-      ? (e: React.MouseEvent<HTMLButtonElement>) => {
-          if (typeof window !== 'undefined' && !window.confirm(confirm.message)) {
-            e.preventDefault()
-          }
-        }
-      : undefined
+    if (confirm) {
+      // Confirm-gated submit: render as type="button" so click opens the
+      // dialog instead of submitting; on confirm, programmatically submit
+      // the targeted form (or the closest enclosing form if no formTarget).
+      return (
+        <ConfirmActionDialog
+          key={index}
+          title={confirm.title}
+          message={confirm.message}
+          destructive={destructive}
+          onConfirm={() => {
+            if (typeof document === 'undefined') return
+            const form = formTarget
+              ? document.getElementById(formTarget) as HTMLFormElement | null
+              : document.querySelector<HTMLFormElement>('form')
+            form?.requestSubmit()
+          }}
+          trigger={(open) => (
+            <button
+              type="button"
+              onClick={open}
+              className={className}
+              data-action-name={name}
+            >
+              {label}
+            </button>
+          )}
+        />
+      )
+    }
     return (
       <button
         key={index}
         type="submit"
         form={formTarget}
-        onClick={onClick}
         className={className}
         data-action-name={name}
       >
@@ -387,20 +473,50 @@ function renderAction(
   if (method) {
     const httpMethod = 'post' // hono accepts POST + _method spoof for non-POST
     const spoofed = method === 'put' || method === 'patch' || method === 'delete' ? method : undefined
-    const handleSubmit = confirm
-      ? (e: React.FormEvent<HTMLFormElement>) => {
-          if (typeof window !== 'undefined' && !window.confirm(confirm.message)) {
-            e.preventDefault()
-          }
-        }
-      : undefined
+    const resolvedUrl = resolveTemplate(actionUrl)
+    if (confirm) {
+      // Build + submit the form on confirm. No server-rendered <form>, so
+      // accidental Enter-key submit can't bypass the dialog.
+      return (
+        <ConfirmActionDialog
+          key={index}
+          title={confirm.title}
+          message={confirm.message}
+          destructive={destructive}
+          onConfirm={() => {
+            if (typeof document === 'undefined' || !resolvedUrl) return
+            const form = document.createElement('form')
+            form.method = 'POST'
+            form.action = resolvedUrl
+            if (spoofed) {
+              const input = document.createElement('input')
+              input.type  = 'hidden'
+              input.name  = '_method'
+              input.value = spoofed
+              form.appendChild(input)
+            }
+            document.body.appendChild(form)
+            form.submit()
+          }}
+          trigger={(open) => (
+            <button
+              type="button"
+              onClick={open}
+              className={className}
+              data-action-name={name}
+            >
+              {label}
+            </button>
+          )}
+        />
+      )
+    }
     return (
       <form
         key={index}
         method={httpMethod}
-        action={resolveTemplate(actionUrl)}
+        action={resolvedUrl}
         className="inline-block"
-        onSubmit={handleSubmit}
       >
         {spoofed && <input type="hidden" name="_method" value={spoofed} />}
         <button type="submit" className={className} data-action-name={name}>
@@ -413,15 +529,32 @@ function renderAction(
   // Handler-style action — POSTs to `dispatchUrl` with `ids[]` body.
   if (dispatchUrl) {
     const ids = opts.ids ?? []
-    const onClick = () => {
-      if (confirm && typeof window !== 'undefined' && !window.confirm(confirm.message)) return
-      submitHandlerAction(dispatchUrl, ids)
+    if (confirm) {
+      return (
+        <ConfirmActionDialog
+          key={index}
+          title={confirm.title}
+          message={confirm.message}
+          destructive={destructive}
+          onConfirm={() => submitHandlerAction(dispatchUrl, ids)}
+          trigger={(open) => (
+            <button
+              type="button"
+              onClick={open}
+              className={className}
+              data-action-name={name}
+            >
+              {label}
+            </button>
+          )}
+        />
+      )
     }
     return (
       <button
         key={index}
         type="button"
-        onClick={onClick}
+        onClick={() => submitHandlerAction(dispatchUrl, ids)}
         className={className}
         data-action-name={name}
       >
@@ -460,31 +593,42 @@ function renderChildren(children: ElementMeta[] | undefined, gap = 'gap-4'): Rea
 
 function TabsRenderer({ el, index }: { el: ElementMeta; index: number }) {
   const tabs = (el.children ?? []).filter(c => c.type === 'tab')
-  const [active, setActive] = useState(0)
-
   if (tabs.length === 0) return null
 
+  const variant   = el['variant'] === 'underline' ? 'underline' : 'pills'
+  const tabValues = tabs.map((_, i) => `tab-${i}`)
+  const defaultValue = tabValues[0]!
+
+  // Underline variant overrides the primitive's pill chrome with a bottom
+  // border on the list and per-trigger underline-on-selected. No
+  // `<TabsIndicator>` is rendered, so there's no sliding pill to hide.
+  const listClass = variant === 'underline'
+    ? 'relative flex h-auto w-fit justify-start gap-0 rounded-none bg-transparent p-0 text-muted-foreground border-b border-border'
+    : undefined
+  const triggerClass = variant === 'underline'
+    ? 'rounded-none border-0 border-b-2 border-transparent bg-transparent px-4 py-2 text-sm font-medium -mb-px data-[active]:border-primary data-[active]:text-foreground data-[active]:bg-transparent data-[active]:shadow-none'
+    : undefined
+
   return (
-    <div key={index} className="flex flex-col gap-4">
-      <div className="flex border-b border-border">
+    <Tabs key={index} defaultValue={defaultValue}>
+      <TabsList className={listClass}>
         {tabs.map((tab, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => setActive(i)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition -mb-px ${
-              i === active
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
+          <TabsTrigger key={i} value={tabValues[i]!} className={triggerClass}>
             {String(tab['label'] ?? '')}
-            {tab['badge'] ? <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-muted">{String(tab['badge'])}</span> : null}
-          </button>
+            {tab['badge'] ? (
+              <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-muted">
+                {String(tab['badge'])}
+              </span>
+            ) : null}
+          </TabsTrigger>
         ))}
-      </div>
-      <div>{renderChildren(tabs[active]?.children)}</div>
-    </div>
+      </TabsList>
+      {tabs.map((tab, i) => (
+        <TabsContent key={i} value={tabValues[i]!} className="pt-2">
+          {renderChildren(tab['children'] as ElementMeta[] | undefined)}
+        </TabsContent>
+      ))}
+    </Tabs>
   )
 }
 

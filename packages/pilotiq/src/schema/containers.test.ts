@@ -82,6 +82,18 @@ describe('Tabs / Tab', () => {
     assert.equal(firstTab.children?.length, 2)
     assert.equal(firstTab.children![1]!['fieldType'], 'select')
   })
+
+  it('Tabs default variant is pills, .variant("underline") overrides', async () => {
+    const pillsTree = [Tabs.make().tabs([Tab.make('A').schema([])])]
+    const pills = await resolveSchema(pillsTree)
+    assert.equal(pills[0]!['variant'], 'pills')
+
+    const underlineTree = [
+      Tabs.make().variant('underline').tabs([Tab.make('A').schema([])]),
+    ]
+    const underline = await resolveSchema(underlineTree)
+    assert.equal(underline[0]!['variant'], 'underline')
+  })
 })
 
 describe('Grid', () => {

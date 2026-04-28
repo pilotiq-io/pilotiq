@@ -37,6 +37,8 @@ export class Tab extends Element {
   }
 }
 
+export type TabsVariant = 'pills' | 'underline'
+
 /**
  * Multi-tab container. Children are `Tab` instances; each Tab has its own
  * children rendered when its tab is active. Mirrors panels' `Tabs` element
@@ -44,6 +46,8 @@ export class Tab extends Element {
  * extension).
  */
 export class Tabs extends Element {
+  private _variant: TabsVariant = 'pills'
+
   private constructor() {
     super()
   }
@@ -58,9 +62,18 @@ export class Tabs extends Element {
     return this
   }
 
+  /**
+   * Visual style. `'pills'` (default) — shadcn pill background with sliding
+   * indicator. `'underline'` — Filament-style bottom border on active tab.
+   */
+  variant(v: TabsVariant): this {
+    this._variant = v
+    return this
+  }
+
   getType(): string { return 'tabs' }
 
   toMeta(): Record<string, unknown> {
-    return { type: 'tabs' as const }
+    return { type: 'tabs' as const, variant: this._variant }
   }
 }

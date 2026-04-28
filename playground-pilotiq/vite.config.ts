@@ -44,7 +44,6 @@ export default defineConfig({
       '@tiptap/starter-kit',
       '@tiptap/extension-placeholder',
       '@tiptap/suggestion',
-      'tippy.js',
       // Base UI sub-paths — each import is a separate optimizeDeps entry,
       // so listing them up-front avoids one-by-one discovery stalls.
       '@base-ui/react/input',
@@ -54,6 +53,7 @@ export default defineConfig({
       '@base-ui/react/popover',
       '@base-ui/react/dialog',
       '@base-ui/react/tooltip',
+      '@base-ui/react/tabs',
       '@base-ui/react/separator',
       '@base-ui/react/button',
       'react-day-picker',

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Editor } from '@tiptap/core'
 import { Tooltip } from '@base-ui/react/tooltip'
+import { Dialog } from '@base-ui/react/dialog'
 
 interface FloatingToolbarProps {
   editor: Editor
@@ -13,7 +14,9 @@ interface FloatingToolbarProps {
  * kind of action.
  */
 export function FloatingToolbar({ editor }: FloatingToolbarProps) {
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [pos,      setPos]      = useState<{ top: number; left: number } | null>(null)
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [linkUrl,  setLinkUrl]  = useState('')
 
   useEffect(() => {
     const update = (): void => {
@@ -48,65 +51,87 @@ export function FloatingToolbar({ editor }: FloatingToolbarProps) {
     }
   }, [editor])
 
-  if (!pos) return null
+  const openLinkDialog = (): void => {
+    const previousUrl = editor.getAttributes('link')['href'] as string | undefined
+    setLinkUrl(previousUrl ?? '')
+    setLinkOpen(true)
+  }
 
-  const mod = isMac() ? '⌘' : 'Ctrl+'
+  const applyLink = (): void => {
+    setLinkOpen(false)
+    const trimmed = linkUrl.trim()
+    if (trimmed === '') {
+      editor.chain().focus().extendMarkRange('link').unsetLink().run()
+      return
+    }
+    editor.chain().focus().extendMarkRange('link').setLink({ href: trimmed }).run()
+  }
+
+  const removeLink = (): void => {
+    setLinkOpen(false)
+    editor.chain().focus().extendMarkRange('link').unsetLink().run()
+  }
+
+  const mod    = isMac() ? '⌘' : 'Ctrl+'
+  const isLink = editor.isActive('link')
 
   return (
-    <Tooltip.Provider delay={400}>
-      <div
-        className="fixed z-40 flex items-center gap-0.5 rounded-md border bg-popover px-1 py-1 text-popover-foreground shadow-md"
-        style={{ top: pos.top, left: pos.left, transform: 'translateX(-50%)' }}
-      >
-        <ToolbarButton
-          label={`Bold (${mod}B)`}
-          active={editor.isActive('bold')}
-          onClick={() => editor.chain().focus().toggleBold().run()}
-        >
-          <BoldIcon />
-        </ToolbarButton>
-        <ToolbarButton
-          label={`Italic (${mod}I)`}
-          active={editor.isActive('italic')}
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-        >
-          <ItalicIcon />
-        </ToolbarButton>
-        <ToolbarButton
-          label={`Strikethrough (${mod}⇧X)`}
-          active={editor.isActive('strike')}
-          onClick={() => editor.chain().focus().toggleStrike().run()}
-        >
-          <StrikeIcon />
-        </ToolbarButton>
-        <ToolbarButton
-          label={`Code (${mod}E)`}
-          active={editor.isActive('code')}
-          onClick={() => editor.chain().focus().toggleCode().run()}
-        >
-          <CodeIcon />
-        </ToolbarButton>
-        <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />
-        <ToolbarButton
-          label={editor.isActive('link') ? 'Edit link' : 'Add link'}
-          active={editor.isActive('link')}
-          onClick={() => {
-            const previousUrl = editor.getAttributes('link')['href'] as string | undefined
-            // v1: native prompt. Replace with a Dialog primitive once that
-            // lands in @pilotiq/pilotiq.
-            const url = typeof window !== 'undefined' ? window.prompt('Link URL', previousUrl ?? '') : null
-            if (url === null) return
-            if (url === '') {
-              editor.chain().focus().extendMarkRange('link').unsetLink().run()
-              return
-            }
-            editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
-          }}
-        >
-          <LinkIcon />
-        </ToolbarButton>
-      </div>
-    </Tooltip.Provider>
+    <>
+      {pos && (
+        <Tooltip.Provider delay={400}>
+          <div
+            className="fixed z-40 flex items-center gap-0.5 rounded-md border bg-popover px-1 py-1 text-popover-foreground shadow-md"
+            style={{ top: pos.top, left: pos.left, transform: 'translateX(-50%)' }}
+          >
+            <ToolbarButton
+              label={`Bold (${mod}B)`}
+              active={editor.isActive('bold')}
+              onClick={() => editor.chain().focus().toggleBold().run()}
+            >
+              <BoldIcon />
+            </ToolbarButton>
+            <ToolbarButton
+              label={`Italic (${mod}I)`}
+              active={editor.isActive('italic')}
+              onClick={() => editor.chain().focus().toggleItalic().run()}
+            >
+              <ItalicIcon />
+            </ToolbarButton>
+            <ToolbarButton
+              label={`Strikethrough (${mod}⇧X)`}
+              active={editor.isActive('strike')}
+              onClick={() => editor.chain().focus().toggleStrike().run()}
+            >
+              <StrikeIcon />
+            </ToolbarButton>
+            <ToolbarButton
+              label={`Code (${mod}E)`}
+              active={editor.isActive('code')}
+              onClick={() => editor.chain().focus().toggleCode().run()}
+            >
+              <CodeIcon />
+            </ToolbarButton>
+            <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />
+            <ToolbarButton
+              label={isLink ? 'Edit link' : 'Add link'}
+              active={isLink}
+              onClick={openLinkDialog}
+            >
+              <LinkIcon />
+            </ToolbarButton>
+          </div>
+        </Tooltip.Provider>
+      )}
+      <LinkDialog
+        open={linkOpen}
+        onOpenChange={setLinkOpen}
+        url={linkUrl}
+        onUrlChange={setLinkUrl}
+        onApply={applyLink}
+        onRemove={isLink ? removeLink : null}
+        isEdit={isLink}
+      />
+    </>
   )
 }
 
@@ -149,6 +174,76 @@ function ToolbarButton({
         </Tooltip.Positioner>
       </Tooltip.Portal>
     </Tooltip.Root>
+  )
+}
+
+function LinkDialog({
+  open,
+  onOpenChange,
+  url,
+  onUrlChange,
+  onApply,
+  onRemove,
+  isEdit,
+}: {
+  open:         boolean
+  onOpenChange: (open: boolean) => void
+  url:          string
+  onUrlChange:  (url: string) => void
+  onApply:      () => void
+  onRemove:     (() => void) | null
+  isEdit:       boolean
+}) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/50 transition-opacity duration-150 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0" />
+        <Dialog.Popup className="fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] sm:max-w-md translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg transition-[opacity,transform] duration-150 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:scale-95 data-[ending-style]:opacity-0">
+          <Dialog.Title className="text-lg leading-none font-semibold">
+            {isEdit ? 'Edit link' : 'Add link'}
+          </Dialog.Title>
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => onUrlChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                onApply()
+              }
+            }}
+            placeholder="https://example.com"
+            autoFocus
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <div className="flex flex-row-reverse items-center gap-2">
+            <button
+              type="button"
+              onClick={onApply}
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              {isEdit ? 'Update' : 'Add'}
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              Cancel
+            </button>
+            {onRemove && (
+              <button
+                type="button"
+                onClick={onRemove}
+                className="me-auto inline-flex h-9 items-center justify-center rounded-md px-3 text-sm font-medium text-destructive hover:bg-destructive/10"
+              >
+                Remove link
+              </button>
+            )}
+          </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 
