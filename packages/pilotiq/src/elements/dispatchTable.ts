@@ -1,6 +1,7 @@
 import { Element } from '../schema/Element.js'
 import { Table, type TableContext, type SortDirection } from './Table.js'
 import type { Filter } from '../filters/Filter.js'
+import { Action } from '../actions/Action.js'
 
 export interface QueryParams {
   search?: string
@@ -140,8 +141,36 @@ export async function loadTableRecords(
     const handler = table.getRecords()
     if (handler) {
       const result = await handler(ctx)
-      const rows  = Array.isArray(result) ? result : result.rows
-      const total = Array.isArray(result) ? rows.length : (result.total ?? rows.length)
+      const rawRows = Array.isArray(result) ? result : result.rows
+      const total   = Array.isArray(result) ? rawRows.length : (result.total ?? rawRows.length)
+
+      // Per-row visibility evaluation for row-placement actions with rules.
+      // Static row actions (no rules) are always visible/enabled, so we
+      // skip stamping on rows when none of the table's row actions opt in.
+      const rowActionsWithRules = (table.getChildren() ?? [])
+        .filter((c): c is Action =>
+          c instanceof Action
+          && c.getPlacement() === 'row'
+          && c.hasVisibilityRules(),
+        )
+
+      const rows = rowActionsWithRules.length === 0
+        ? rawRows
+        : rawRows.map(row => {
+            const visibleActions: string[] = []
+            const disabledActions: string[] = []
+            for (const a of rowActionsWithRules) {
+              const { visible, disabled } = a.evaluate({ record: row })
+              if (visible)  visibleActions.push(a.name)
+              if (disabled) disabledActions.push(a.name)
+            }
+            return {
+              ...(row as Record<string, unknown>),
+              _visibleActions:  visibleActions,
+              _disabledActions: disabledActions,
+            }
+          })
+
       table.withRows(rows, total)
     }
 

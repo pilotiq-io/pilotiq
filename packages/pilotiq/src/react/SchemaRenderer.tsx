@@ -655,8 +655,9 @@ function renderAction(
   const confirm     = el['confirm']     as { title?: string; message: string } | undefined
   const tooltip     = el['tooltip'] as string | undefined
   const iconOnly    = Boolean(el['iconOnly'])
+  const isDisabled  = Boolean(el['disabled'])
 
-  const className = actionButtonClass(el, opts)
+  const className = actionButtonClass(el, opts) + (isDisabled ? ' opacity-50 cursor-not-allowed pointer-events-none' : '')
   const icon  = renderActionIcon(el)
   const badge = renderActionBadge(el)
   // Icon-only buttons hide the label visually but expose it via aria-label.
@@ -930,6 +931,17 @@ function RowActionsMenu({
 }) {
   const [pending, setPending] = useState<ElementMeta | null>(null)
 
+  // Per-row visibility/disabled comes from the server-side eval inside
+  // dispatchTable. Only conditional actions (those with `.visible(...)`,
+  // `.hidden(...)`, or `.disabled(...)` rules) are listed; static actions
+  // render unconditionally.
+  const rowVisibleSet  = new Set((rowRecord?.['_visibleActions']  as string[] | undefined) ?? [])
+  const rowDisabledSet = new Set((rowRecord?.['_disabledActions'] as string[] | undefined) ?? [])
+  const visibleActions = actions.filter(a => {
+    if (!a['conditional']) return true
+    return rowVisibleSet.has(String(a['name'] ?? ''))
+  })
+
   const resolveTemplate = (s: string | undefined): string | undefined =>
     s && rowId ? s.replace(':id', rowId) : s
 
@@ -989,14 +1001,16 @@ function RowActionsMenu({
           )}
         />
         <DropdownMenuContent align="end">
-          {actions.map((a, i) => {
+          {visibleActions.map((a, i) => {
             const label       = String(a['label'] ?? a['name'] ?? '')
             const destructive = Boolean(a['destructive'])
+            const disabled    = rowDisabledSet.has(String(a['name'] ?? ''))
             return (
               <DropdownMenuItem
                 key={i}
                 destructive={destructive}
-                onClick={() => onClick(a)}
+                disabled={disabled}
+                onClick={() => { if (!disabled) onClick(a) }}
               >
                 {label}
               </DropdownMenuItem>

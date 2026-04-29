@@ -1,5 +1,6 @@
 import { Element, type ElementMeta } from './Element.js'
 import { Field } from '../fields/Field.js'
+import { Action } from '../actions/Action.js'
 
 export interface SchemaContext {
   user?: { name?: string; email?: string; [key: string]: unknown }
@@ -92,6 +93,18 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
     return null
   }
 
+  // Action visibility — non-row placements evaluate against the page-level
+  // context here; row-placement actions defer to per-row evaluation in
+  // `loadTableRecords` (we always include them in the tree). Disabled
+  // gets stamped on meta either way.
+  if (el instanceof Action && el.hasVisibilityRules() && el.getPlacement() !== 'row') {
+    const evalCtx: { record?: unknown; user?: unknown } = {}
+    if (ctx.record !== undefined) evalCtx.record = ctx.record
+    if (ctx.user   !== undefined) evalCtx.user   = ctx.user
+    const { visible } = el.evaluate(evalCtx)
+    if (!visible) return null
+  }
+
   const type = el.getType()
 
   const customResolver = registry.get(type)
@@ -103,6 +116,16 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
   // get their record-aware overload so disabledWhen evaluates correctly.
   const meta = (el instanceof Field ? el.toMeta(ctx.record) : el.toMeta()) as ElementMeta
   meta.type = type // ensure type is always set, even if toMeta forgot
+
+  // Stamp the page-level disabled state on non-row Actions so the renderer
+  // greys out the button. Row actions get per-row stamping in dispatchTable.
+  if (el instanceof Action && el.hasVisibilityRules() && el.getPlacement() !== 'row') {
+    const evalCtx: { record?: unknown; user?: unknown } = {}
+    if (ctx.record !== undefined) evalCtx.record = ctx.record
+    if (ctx.user   !== undefined) evalCtx.user   = ctx.user
+    const { disabled } = el.evaluate(evalCtx)
+    if (disabled) meta['disabled'] = true
+  }
 
   const children = el.getChildren()
   if (children && children.length > 0) {

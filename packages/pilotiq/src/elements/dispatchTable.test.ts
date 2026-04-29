@@ -131,4 +131,46 @@ describe('loadTableRecords', () => {
   it('is a no-op when there are no Tables', async () => {
     await loadTableRecords([Column.make('x')], {})  // no throw
   })
+
+  describe('per-row action visibility', () => {
+    it('stamps _visibleActions / _disabledActions when row actions have rules', async () => {
+      const { Action } = await import('../actions/Action.js')
+      const t = Table.make()
+        .columns([Column.make('id')])
+        .recordActions([
+          Action.make('archive').visible(({ record }) => (record as { archived?: boolean }).archived === false),
+          Action.make('lock').disabled(({ record }) => (record as { locked?: boolean }).locked === true),
+        ])
+        .records(async () => [
+          { id: '1', archived: false, locked: false },
+          { id: '2', archived: true,  locked: true },
+        ])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      // Row 0: archive visible (not archived), lock visible (default — no
+      // visibility rule, only a disabled rule), lock not disabled.
+      assert.deepEqual(rows[0]!['_visibleActions'], ['archive', 'lock'])
+      assert.deepEqual(rows[0]!['_disabledActions'], [])
+      // Row 1: archive hidden (already archived), lock still visible but
+      // disabled.
+      assert.deepEqual(rows[1]!['_visibleActions'], ['lock'])
+      assert.deepEqual(rows[1]!['_disabledActions'], ['lock'])
+    })
+
+    it('does not stamp _visibleActions when no row actions have rules', async () => {
+      const { Action } = await import('../actions/Action.js')
+      const t = Table.make()
+        .columns([Column.make('id')])
+        .recordActions([Action.make('edit')])  // no rules
+        .records(async () => [{ id: '1' }])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_visibleActions'],  undefined)
+      assert.equal(rows[0]!['_disabledActions'], undefined)
+    })
+  })
 })

@@ -60,6 +60,20 @@ export type ActionColor = 'primary' | 'destructive' | 'success' | 'warning' | 'i
 /** Visual size preset. Maps to button height + padding + text size. */
 export type ActionSize = 'sm' | 'md' | 'lg'
 
+/** Context passed to visibility / disabled callbacks. `record` is set
+ * for single-target evaluation (row actions, edit-page header actions);
+ * `records` for bulk evaluations; `user` from the request when wired. */
+export interface ActionVisibilityContext {
+  record?:  unknown
+  records?: unknown[]
+  user?:    unknown
+}
+
+/** Boolean-or-callback rule used by `.visible()` / `.hidden()` /
+ * `.disabled()`. Boolean values short-circuit; functions receive the
+ * evaluation context and return the result. */
+export type VisibilityRule = boolean | ((ctx: ActionVisibilityContext) => boolean)
+
 /** Modal width preset — maps to a max-width class on the Dialog popup. */
 export type ActionModalWidth = 'sm' | 'md' | 'lg' | 'xl'
 
@@ -119,6 +133,14 @@ export interface ActionMeta extends ElementMeta {
   /** Optional badge shown on the trigger (e.g. unread count). */
   badge?:       string | number
   badgeColor?:  string
+  /** Disabled flag set at evaluation time. The trigger renders greyed-out
+   * and skips dispatch when true. */
+  disabled?:    boolean
+  /** True when the action has `.visible()`, `.hidden()`, or `.disabled()`
+   * rules — the row renderer uses this to know whether to consult the
+   * row's `_visibleActions` / `_disabledActions` lookup. Static actions
+   * without rules render unconditionally. */
+  conditional?: boolean
 }
 
 /**
@@ -167,6 +189,11 @@ export class Action extends Element {
   protected _iconOnly = false
   protected _badge?: string | number
   protected _badgeColor?: string
+
+  // Conditional visibility / disabled rules
+  protected _visible?: VisibilityRule
+  protected _hidden?: VisibilityRule
+  protected _isDisabled?: VisibilityRule
 
   private constructor(name: string) {
     super()
@@ -218,6 +245,54 @@ export class Action extends Element {
 
   /** Optional color class for the badge (e.g. 'bg-emerald-500'). */
   badgeColor(c: string): this { this._badgeColor = c; return this }
+
+  // ─── Conditional visibility / disabled ───────────────
+
+  /** Show the action only when `rule` is truthy. Pair with a function for
+   * record-aware visibility (e.g. `({ record }) => !record.archived`).
+   * Row-placement actions are evaluated per-row at table-load time;
+   * other placements are evaluated at schema-resolve time with the
+   * page-level context. */
+  visible(rule: VisibilityRule): this { this._visible = rule; return this }
+
+  /** Inverse of `visible` — hide the action when `rule` is truthy.
+   * Both rules combine via AND: visible if `visible !== false` AND
+   * `hidden !== true`. */
+  hidden(rule: VisibilityRule): this { this._hidden = rule; return this }
+
+  /** Disable (render greyed-out and skip dispatch) when `rule` is truthy.
+   * Disabled actions still appear in the UI, unlike hidden ones. */
+  disabled(rule: VisibilityRule): this { this._isDisabled = rule; return this }
+
+  /** Policy-style alias for `.visible(fn)` — semantically identical
+   * but reads better when guarding by user permissions. */
+  authorize(rule: VisibilityRule): this { return this.visible(rule) }
+
+  /** Evaluate the visibility / disabled rules with the given context.
+   * Defaults: visible = true, disabled = false. Both `visible` and
+   * `hidden` are folded in: `visible: visible !== false && hidden !== true`.
+   */
+  evaluate(ctx: ActionVisibilityContext = {}): { visible: boolean; disabled: boolean } {
+    const evalRule = (rule: VisibilityRule | undefined, fallback: boolean): boolean => {
+      if (rule === undefined) return fallback
+      if (typeof rule === 'function') return rule(ctx)
+      return rule
+    }
+    const visibleRaw  = evalRule(this._visible, true)
+    const hiddenRaw   = evalRule(this._hidden, false)
+    const disabledRaw = evalRule(this._isDisabled, false)
+    return {
+      visible:  visibleRaw && !hiddenRaw,
+      disabled: disabledRaw,
+    }
+  }
+
+  /** True when any visibility / hidden / disabled rule is set. Useful for
+   * the resolver to know whether per-row evaluation is needed for a
+   * row-placement action. */
+  hasVisibilityRules(): boolean {
+    return this._visible !== undefined || this._hidden !== undefined || this._isDisabled !== undefined
+  }
 
   /**
    * Prompt the user before running the handler. Pass a string for a simple
@@ -379,6 +454,7 @@ export class Action extends Element {
       ...(this._iconOnly    ? { iconOnly:    true              } : {}),
       ...(this._badge       !== undefined ? { badge:      this._badge      } : {}),
       ...(this._badgeColor  ? { badgeColor:  this._badgeColor  } : {}),
+      ...(this.hasVisibilityRules() ? { conditional: true   } : {}),
     }
   }
 }

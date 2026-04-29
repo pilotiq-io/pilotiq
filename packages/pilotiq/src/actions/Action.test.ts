@@ -162,3 +162,80 @@ describe('Action variants & cosmetics', () => {
     assert.equal(meta.badge, undefined)
   })
 })
+
+describe('Action visibility evaluation', () => {
+  it('default — no rules → visible:true, disabled:false', () => {
+    const a = Action.make('a')
+    assert.deepEqual(a.evaluate(), { visible: true, disabled: false })
+    assert.equal(a.hasVisibilityRules(), false)
+  })
+
+  it('visible(false) hides the action', () => {
+    assert.equal(Action.make('a').visible(false).evaluate().visible, false)
+  })
+
+  it('hidden(true) hides the action', () => {
+    assert.equal(Action.make('a').hidden(true).evaluate().visible, false)
+  })
+
+  it('visible(fn) receives the context', () => {
+    const a = Action.make('a').visible(({ record }) => Boolean((record as { active?: boolean })?.active))
+    assert.equal(a.evaluate({ record: { active: true } }).visible, true)
+    assert.equal(a.evaluate({ record: { active: false } }).visible, false)
+    assert.equal(a.evaluate({ record: undefined }).visible, false)
+  })
+
+  it('disabled(fn) receives the context', () => {
+    const a = Action.make('a').disabled(({ record }) => Boolean((record as { locked?: boolean })?.locked))
+    assert.equal(a.evaluate({ record: { locked: true } }).disabled, true)
+    assert.equal(a.evaluate({ record: { locked: false } }).disabled, false)
+  })
+
+  it('combines visible and hidden via AND (visible && !hidden)', () => {
+    const a = Action.make('a').visible(true).hidden(({ record }) => (record as { trashed?: boolean })?.trashed === true)
+    assert.equal(a.evaluate({ record: { trashed: false } }).visible, true)
+    assert.equal(a.evaluate({ record: { trashed: true  } }).visible, false)
+  })
+
+  it('authorize() is an alias for visible()', () => {
+    const a = Action.make('a').authorize(({ user }) => Boolean((user as { admin?: boolean })?.admin))
+    assert.equal(a.evaluate({ user: { admin: true  } }).visible, true)
+    assert.equal(a.evaluate({ user: { admin: false } }).visible, false)
+  })
+
+  it('hasVisibilityRules returns true when any rule is set', () => {
+    assert.equal(Action.make('a').visible(true).hasVisibilityRules(), true)
+    assert.equal(Action.make('a').hidden(false).hasVisibilityRules(), true)
+    assert.equal(Action.make('a').disabled(false).hasVisibilityRules(), true)
+    assert.equal(Action.make('a').authorize(true).hasVisibilityRules(), true)
+  })
+
+  it('toMeta emits conditional:true when rules exist', () => {
+    assert.equal(Action.make('a').toMeta().conditional, undefined)
+    assert.equal(Action.make('a').visible(true).toMeta().conditional, true)
+  })
+})
+
+describe('Action visibility through resolveSchema (non-row placements)', () => {
+  it('drops a header action when visible() returns false', async () => {
+    const tree = [
+      Action.make('hidden').header().visible(false),
+      Action.make('shown').header(),
+    ]
+    const result = await resolveSchema(tree)
+    assert.equal(result.length, 1)
+    assert.equal(result[0]!['name'], 'shown')
+  })
+
+  it('keeps row-placement actions in the tree even when hidden — per-row eval handles them', async () => {
+    const tree = [Action.make('rowAction').row().visible(false)]
+    const result = await resolveSchema(tree)
+    assert.equal(result.length, 1, 'row actions are always serialized; per-row eval filters at render time')
+    assert.equal(result[0]!['conditional'], true, 'conditional flag tells the row renderer to consult the lookup')
+  })
+
+  it('stamps disabled:true on header action when disabled(true) is set', async () => {
+    const result = await resolveSchema([Action.make('a').header().disabled(true)])
+    assert.equal(result[0]!['disabled'], true)
+  })
+})

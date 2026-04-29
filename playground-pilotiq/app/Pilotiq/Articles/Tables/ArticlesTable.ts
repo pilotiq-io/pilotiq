@@ -42,6 +42,8 @@ export const ArticlesTable = {
       .recordActions([
         Action.make('toggleFeatured')
           .label('Toggle featured')
+          // Only show when article is published — drafts can't be featured.
+          .visible(({ record }) => (record as { status?: string })?.status === 'published')
           .handler(async (ctx) => {
             const r = ctx.record as { id?: string; featured?: boolean } | undefined
             if (!r?.id) return
@@ -52,6 +54,8 @@ export const ArticlesTable = {
           }),
         Action.make('changeStatus')
           .label('Change status…')
+          // Disable for archived articles — you have to restore first.
+          .disabled(({ record }) => (record as { status?: string })?.status === 'archived')
           .modalHeading('Change article status')
           .modalDescription('Pick a new status. Empty publish date is fine.')
           .modalSubmitLabel('Save')
