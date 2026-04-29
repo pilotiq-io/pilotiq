@@ -146,7 +146,18 @@ export {
   type ActionConfirm,
   type ActionMethod,
   type ActionMeta,
+  type ActionColor,
+  type ActionSize,
+  type ActionModalWidth,
+  type ActionModalMeta,
+  type ActionVisibilityContext,
+  type VisibilityRule,
 } from './actions/Action.js'
+
+export {
+  ActionGroup,
+  type ActionGroupMeta,
+} from './actions/ActionGroup.js'
 
 // ─── Validation ───────────────────────────────────────
 export {

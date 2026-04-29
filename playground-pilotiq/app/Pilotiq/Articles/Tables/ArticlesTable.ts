@@ -1,4 +1,4 @@
-import { Column, Action, SelectFilter, BooleanFilter, TextField, SelectField, type Table } from '@pilotiq/pilotiq'
+import { Column, Action, ActionGroup, SelectFilter, BooleanFilter, TextField, SelectField, type Table } from '@pilotiq/pilotiq'
 import { app } from '@rudderjs/core'
 
 const prisma = (): any => app().make('prisma')
@@ -24,6 +24,31 @@ export const ArticlesTable = {
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
+      .headerActions([
+        ActionGroup.make('manage')
+          .label('Manage')
+          .icon('more-horizontal')
+          .outlined()
+          .actions([
+            Action.make('archiveDrafts')
+              .label('Archive all drafts')
+              .confirm('Archive every draft article? This is reversible.')
+              .handler(async () => {
+                await prisma().article.updateMany({
+                  where: { status: 'draft' },
+                  data:  { status: 'archived' },
+                })
+              }),
+            Action.make('clearFeatured')
+              .label('Un-feature all')
+              .handler(async () => {
+                await prisma().article.updateMany({
+                  where: { featured: true },
+                  data:  { featured: false },
+                })
+              }),
+          ]),
+      ])
       .bulkActions([
         Action.make('markFeatured')
           .label('Mark featured')

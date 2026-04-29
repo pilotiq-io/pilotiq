@@ -548,6 +548,20 @@ interface RenderActionOptions {
   size?: 'sm' | 'md'
 }
 
+/** Render either a single Action or an ActionGroup based on `el.type`.
+ * Used by callsites that accept both (table header / bulk toolbars,
+ * heading actions, container schemas). */
+function renderActionLike(
+  el:    ElementMeta,
+  index: number,
+  opts:  RenderActionOptions = {},
+): React.ReactNode {
+  if (el.type === 'actionGroup') {
+    return <ActionGroupTrigger key={index} el={el} ids={opts.ids ?? []} />
+  }
+  return renderAction(el, index, opts)
+}
+
 /** Color preset → tailwind class group. `ghost` is bg-less and works
  * with hover:bg-accent. Others are solid + hover-darken. */
 const COLOR_VARIANTS: Record<string, string> = {
@@ -1076,6 +1090,157 @@ function RowActionsMenu({
   )
 }
 
+/**
+ * Trigger button + dropdown menu for an `ActionGroup` meta. Reuses the
+ * action button styling helpers so a group's chrome (color/size/outlined/
+ * tooltip/iconButton) matches a regular Action. Each child Action
+ * dispatches via the same logic as `renderAction` — link/method/handler/
+ * confirm/modal — but routed through a `pending` state so the dropdown
+ * closes before any dialog opens (shadcn pattern: one popup at a time).
+ */
+function ActionGroupTrigger({
+  el,
+  ids = [],
+}: {
+  el:   ElementMeta
+  ids?: string[]
+}) {
+  const [pending, setPending] = useState<ElementMeta | null>(null)
+
+  const name        = String(el['name'] ?? '')
+  const label       = String(el['label'] ?? name)
+  const tooltip     = el['tooltip'] as string | undefined
+  const iconOnly    = Boolean(el['iconOnly'])
+  const isDisabled  = Boolean(el['disabled'])
+  const childActions = (el.children ?? []).filter(c => c.type === 'action')
+
+  const className = actionButtonClass(el, {}) + (isDisabled ? ' opacity-50 cursor-not-allowed pointer-events-none' : '')
+  const ariaLabel = iconOnly ? label : undefined
+
+  // Direct-dispatch path mirrors renderAction's branches but skipping
+  // confirm/modal (those queue into `pending` so the dropdown can close).
+  const dispatch = (action: ElementMeta): void => {
+    const href        = action['href']        as string | undefined
+    const method      = action['method']      as 'post' | 'put' | 'patch' | 'delete' | undefined
+    const actionUrl   = action['action']      as string | undefined
+    const dispatchUrl = action['dispatchUrl'] as string | undefined
+    if (href) {
+      if (typeof window !== 'undefined') window.location.href = href
+      return
+    }
+    if (method && actionUrl) {
+      submitMethodForm(actionUrl, method)
+      return
+    }
+    if (dispatchUrl) {
+      submitHandlerAction(dispatchUrl, ids)
+      return
+    }
+  }
+
+  const onItemClick = (action: ElementMeta): void => {
+    if (action['modal'] || action['confirm']) {
+      setPending(action)
+      return
+    }
+    dispatch(action)
+  }
+
+  const pendingHandler     = pending && pending['dispatchUrl']
+  const pendingConfirmOnly = pending && !pendingHandler && (pending['confirm'] as { title?: string; message: string } | undefined)
+  const pendingConfirm     = pendingConfirmOnly || (pending?.['confirm'] as { title?: string; message: string } | undefined)
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={(props) => withTooltip(
+            <button
+              {...props}
+              type="button"
+              className={className}
+              data-action-group-name={name}
+              aria-label={ariaLabel}
+            >
+              {iconOnly ? null : <span>{label}</span>}
+            </button>,
+            tooltip,
+          ) as React.ReactElement}
+        />
+        <DropdownMenuContent align="end">
+          {childActions.map((a, i) => {
+            const itemLabel    = String(a['label'] ?? a['name'] ?? '')
+            const destructive  = Boolean(a['destructive'])
+            const itemDisabled = Boolean(a['disabled'])
+            return (
+              <DropdownMenuItem
+                key={i}
+                destructive={destructive}
+                disabled={itemDisabled}
+                onClick={() => { if (!itemDisabled) onItemClick(a) }}
+              >
+                {itemLabel}
+              </DropdownMenuItem>
+            )
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Modal / handler-style pending — fetch+JSON dispatch via ActionModalDialog. */}
+      {pendingHandler && pending && (
+        <ActionModalDialog
+          meta={pending}
+          ids={ids}
+          open={true}
+          onOpenChange={(o) => { if (!o) setPending(null) }}
+        />
+      )}
+
+      {/* Form-method confirm — keeps native form-post + 303 flow. */}
+      <Dialog
+        open={Boolean(pendingConfirmOnly)}
+        onOpenChange={(o) => { if (!o) setPending(null) }}
+      >
+        <DialogContent>
+          {pendingConfirmOnly && pendingConfirm && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{pendingConfirm.title ?? 'Are you sure?'}</DialogTitle>
+                <DialogDescription>{pendingConfirm.message}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <button
+                  type="button"
+                  onClick={() => setPending(null)}
+                  className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 h-9 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => {
+                    const action = pending
+                    setPending(null)
+                    if (action) dispatch(action)
+                  }}
+                  className={
+                    pending && pending['destructive']
+                      ? 'inline-flex items-center justify-center rounded-md bg-destructive px-3 h-9 text-sm font-medium text-destructive-foreground hover:bg-destructive/90'
+                      : 'inline-flex items-center justify-center rounded-md bg-primary px-3 h-9 text-sm font-medium text-primary-foreground hover:bg-primary/90'
+                  }
+                >
+                  {pending && pending['destructive'] ? 'Delete' : 'Confirm'}
+                </button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 function TabsRenderer({ el, index }: { el: ElementMeta; index: number }) {
   const tabs = (el.children ?? []).filter(c => c.type === 'tab')
   if (tabs.length === 0) return null
@@ -1171,7 +1336,7 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
       const level = (el['level'] as number) ?? 1
       const content = String(el['content'] ?? '')
       const description = el['description'] ? String(el['description']) : undefined
-      const headerActions = (el.children ?? []).filter(c => c.type === 'action')
+      const headerActions = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup')
       const Tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3'
       const sizes = { 1: 'text-2xl', 2: 'text-xl', 3: 'text-lg' } as const
       const titleBlock = (
@@ -1191,7 +1356,7 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
         <div key={index} className="flex items-start justify-between gap-4">
           {titleBlock}
           <div className="flex items-center gap-2 shrink-0">
-            {headerActions.map((a, i) => renderAction(a, i))}
+            {headerActions.map((a, i) => renderActionLike(a, i))}
           </div>
         </div>
       )
@@ -1263,6 +1428,9 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
 
     case 'action':
       return renderAction(el, index)
+
+    case 'actionGroup':
+      return <ActionGroupTrigger key={index} el={el} />
 
     case 'form':
       return <FormRenderer key={index} el={el} />
@@ -1496,15 +1664,17 @@ function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
 function TableRenderer({ el }: { el: ElementMeta }) {
   const children = el.children ?? []
   const columns  = children.filter(c => c.type === 'column')
-  const actions  = children.filter(c => c.type === 'action')
-  const filters  = children.filter(c => c.type === 'filter')
+  // Actions and ActionGroups share placement — both show up in the
+  // header/bulk/row toolbars depending on their `placement` field.
+  const actionLike = children.filter(c => c.type === 'action' || c.type === 'actionGroup')
+  const filters    = children.filter(c => c.type === 'filter')
 
   // Group actions by placement. `inline` defaults to header so it shows up
   // somewhere visible — explicit placements always win.
   const placementOf = (a: ElementMeta): string => String(a['placement'] ?? 'inline')
-  const headerActions = actions.filter(a => { const p = placementOf(a); return p === 'header' || p === 'inline' })
-  const bulkActions   = actions.filter(a => placementOf(a) === 'bulk')
-  const rowActions    = actions.filter(a => placementOf(a) === 'row')
+  const headerActions = actionLike.filter(a => { const p = placementOf(a); return p === 'header' || p === 'inline' })
+  const bulkActions   = actionLike.filter(a => placementOf(a) === 'bulk')
+  const rowActions    = actionLike.filter(a => placementOf(a) === 'row')
 
   const rows        = (el['rows'] as unknown[] | undefined) ?? []
   const total       = (el['total'] as number | undefined) ?? rows.length
@@ -1602,7 +1772,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
           ) : <span />}
           {headerActions.length > 0 && (
             <div className="flex items-center gap-2">
-              {headerActions.map((a, i) => renderAction(a, i))}
+              {headerActions.map((a, i) => renderActionLike(a, i))}
             </div>
           )}
         </div>
@@ -1614,7 +1784,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
           </span>
           <div className="flex items-center gap-2">
             {bulkActions.map((a, i) =>
-              renderAction(a, i, { ids: Array.from(selected) }),
+              renderActionLike(a, i, { ids: Array.from(selected) }),
             )}
             <button
               type="button"

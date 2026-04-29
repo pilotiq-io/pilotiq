@@ -1,6 +1,7 @@
 import { Element, type ElementMeta } from './Element.js'
 import { Field } from '../fields/Field.js'
 import { Action } from '../actions/Action.js'
+import { ActionGroup } from '../actions/ActionGroup.js'
 
 export interface SchemaContext {
   user?: { name?: string; email?: string; [key: string]: unknown }
@@ -105,6 +106,19 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
     if (!visible) return null
   }
 
+  // ActionGroup visibility — same shape as Action; the dropdown trigger
+  // hides when the group rule resolves false. Also drop the group when
+  // every child action is hidden (group with no usable items is dead UX).
+  if (el instanceof ActionGroup) {
+    if (el.hasVisibilityRules()) {
+      const evalCtx: { record?: unknown; user?: unknown } = {}
+      if (ctx.record !== undefined) evalCtx.record = ctx.record
+      if (ctx.user   !== undefined) evalCtx.user   = ctx.user
+      const { visible } = el.evaluate(evalCtx)
+      if (!visible) return null
+    }
+  }
+
   const type = el.getType()
 
   const customResolver = registry.get(type)
@@ -120,6 +134,15 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
   // Stamp the page-level disabled state on non-row Actions so the renderer
   // greys out the button. Row actions get per-row stamping in dispatchTable.
   if (el instanceof Action && el.hasVisibilityRules() && el.getPlacement() !== 'row') {
+    const evalCtx: { record?: unknown; user?: unknown } = {}
+    if (ctx.record !== undefined) evalCtx.record = ctx.record
+    if (ctx.user   !== undefined) evalCtx.user   = ctx.user
+    const { disabled } = el.evaluate(evalCtx)
+    if (disabled) meta['disabled'] = true
+  }
+
+  // Same for ActionGroup — stamp disabled when the group's rule says so.
+  if (el instanceof ActionGroup && el.hasVisibilityRules()) {
     const evalCtx: { record?: unknown; user?: unknown } = {}
     if (ctx.record !== undefined) evalCtx.record = ctx.record
     if (ctx.user   !== undefined) evalCtx.user   = ctx.user
