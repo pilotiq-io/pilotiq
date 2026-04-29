@@ -1,7 +1,8 @@
-import { Action, type ActionContext } from '../actions/Action.js'
+import { Action, type ActionContext, type NotificationLike } from '../actions/Action.js'
 import type { Element } from '../schema/Element.js'
 import { validateSchema, type ValidationErrors } from '../validation/index.js'
 import { coerceFormValues } from './dispatchForm.js'
+import { Notification, type NotificationMeta } from '../notifications/Notification.js'
 
 /**
  * Walk an Element tree and return every `Action` instance in document
@@ -55,8 +56,12 @@ export interface DispatchActionInput extends ActionRequestInput {
 }
 
 export interface DispatchActionSuccess {
-  ok:        true
-  redirect?: string
+  ok:           true
+  redirect?:    string
+  /** Notifications the handler emitted via the return shape `{ notify }`.
+   * Forwarded by the route layer either inline (JSON dispatch) or as
+   * a flash payload through the redirect (HTML dispatch). */
+  notifications?: NotificationMeta[]
 }
 
 export interface DispatchActionFailure {
@@ -128,14 +133,31 @@ export async function dispatchAction(
 
   try {
     const result = await handler(ctx)
-    if (result && typeof result === 'object' && typeof result.redirect === 'string') {
-      return { ok: true, redirect: result.redirect }
+    const success: DispatchActionSuccess = { ok: true }
+    if (result && typeof result === 'object') {
+      if (typeof result.redirect === 'string') success.redirect = result.redirect
+      if (result.notify !== undefined) {
+        const notifs = normalizeNotifications(result.notify)
+        if (notifs.length > 0) success.notifications = notifs
+      }
     }
-    return { ok: true }
+    return success
   } catch (err) {
     return {
       ok:    false,
       error: err instanceof Error ? err.message : 'Action failed',
     }
   }
+}
+
+/** Coerce the loose `NotificationLike` shape (single / array / built /
+ * meta) into a flat `NotificationMeta[]`. */
+function normalizeNotifications(input: NotificationLike): NotificationMeta[] {
+  const arr = Array.isArray(input) ? input : [input]
+  const out: NotificationMeta[] = []
+  for (const n of arr) {
+    if (n instanceof Notification) out.push(n.toMeta())
+    else if (n && typeof n === 'object') out.push(n as NotificationMeta)
+  }
+  return out
 }

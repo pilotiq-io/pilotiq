@@ -3,6 +3,7 @@ import {
   Action, ActionGroup,
   SelectFilter, BooleanFilter,
   TextField, SelectField,
+  Notification,
   type Table,
 } from '@pilotiq/pilotiq'
 import { app } from '@rudderjs/core'
@@ -80,6 +81,11 @@ export const ArticlesTable = {
               where: { id: { in: ids } },
               data:  { featured: true },
             })
+            return {
+              notify: Notification.make(`${ids.length} article${ids.length === 1 ? '' : 's'} featured`)
+                .body('They now appear in the home feed.')
+                .success(),
+            }
           }),
       ])
       .recordActions([
@@ -111,7 +117,7 @@ export const ArticlesTable = {
             TextField.make('reason').label('Reason (optional)'),
           ])
           .handler(async (ctx) => {
-            const r = ctx.record as { id?: string } | undefined
+            const r = ctx.record as { id?: string; title?: string } | undefined
             if (!r?.id) return
             const status = String(ctx.values?.['status'] ?? 'draft')
             await prisma().article.update({
@@ -120,6 +126,11 @@ export const ArticlesTable = {
                 ? { status, publishedAt: new Date() }
                 : { status },
             })
+            return {
+              notify: Notification.make(`Status updated`)
+                .body(`"${r.title ?? 'Article'}" is now ${status}.`)
+                .success(),
+            }
           }),
       ])
   },

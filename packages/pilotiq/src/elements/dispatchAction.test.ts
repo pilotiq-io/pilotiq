@@ -219,3 +219,64 @@ describe('Action modal-form dispatch', () => {
     assert.equal(result.ok, true, 'no schema means no validation gate')
   })
 })
+
+describe('Action notifications', () => {
+  it('handler can return a single Notification instance', async () => {
+    const { Notification } = await import('../notifications/Notification.js')
+    const a = Action.make('save').handler(() => ({ notify: Notification.make('Done').success() }))
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.equal(result.notifications?.length, 1)
+      assert.equal(result.notifications?.[0]?.title, 'Done')
+      assert.equal(result.notifications?.[0]?.type, 'success')
+    }
+  })
+
+  it('handler can return a serialized NotificationMeta directly', async () => {
+    const a = Action.make('save').handler(() => ({
+      notify: { id: 'n1', type: 'info' as const, title: 'Hi' },
+    }))
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.equal(result.notifications?.[0]?.id, 'n1')
+      assert.equal(result.notifications?.[0]?.title, 'Hi')
+    }
+  })
+
+  it('handler can return an array of notifications', async () => {
+    const { Notification } = await import('../notifications/Notification.js')
+    const a = Action.make('save').handler(() => ({
+      notify: [Notification.make('A').success(), Notification.make('B').warning()],
+    }))
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.equal(result.notifications?.length, 2)
+      assert.equal(result.notifications?.[0]?.title, 'A')
+      assert.equal(result.notifications?.[1]?.type, 'warning')
+    }
+  })
+
+  it('absence of notify means no notifications field on success', async () => {
+    const a = Action.make('save').handler(() => {})
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, true)
+    if (result.ok) assert.equal(result.notifications, undefined)
+  })
+
+  it('redirect + notify both flow through', async () => {
+    const { Notification } = await import('../notifications/Notification.js')
+    const a = Action.make('save').handler(() => ({
+      redirect: '/articles',
+      notify:   Notification.make('Saved').success(),
+    }))
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.equal(result.redirect, '/articles')
+      assert.equal(result.notifications?.[0]?.title, 'Saved')
+    }
+  })
+})

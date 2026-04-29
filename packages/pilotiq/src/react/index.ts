@@ -5,6 +5,8 @@ export { registerFieldRenderer, getFieldRenderer, type FieldRendererProps } from
 
 export { NavigateProvider, useNavigate, type NavigateFn } from './navigate.js'
 
+export { ToasterProvider, useToast } from './Toaster.js'
+
 export { ThemeProvider, useTheme } from './ThemeProvider.js'
 export { ThemeToggle } from './ThemeToggle.js'
 export { ThemeSettingsPage } from './ThemeSettingsPage.js'

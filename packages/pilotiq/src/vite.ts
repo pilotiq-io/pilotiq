@@ -130,7 +130,7 @@ const navigate = (url: string): void => {
 
 export default function PilotiqLayout({ children }: { children: ReactNode }) {
   const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown>; data?: Record<string, unknown> }
-  const { panel, basePath, layout } = (ctx.data ?? ctx.viewProps) as any ?? {}
+  const { panel, basePath, layout, notifications } = (ctx.data ?? ctx.viewProps) as any ?? {}
   if (!panel) return <NavigateProvider navigate={navigate}>{children}</NavigateProvider>
 
   // SSR: inject theme CSS inline to prevent FOUC
@@ -140,7 +140,7 @@ export default function PilotiqLayout({ children }: { children: ReactNode }) {
     <NavigateProvider navigate={navigate}>
       <ThemeProvider theme={panel.theme}>
         {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
-        <AppShell panel={panel} basePath={basePath} layout={layout}>
+        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications}>
           {children}
         </AppShell>
       </ThemeProvider>

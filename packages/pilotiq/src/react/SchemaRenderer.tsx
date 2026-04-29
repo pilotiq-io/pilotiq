@@ -51,6 +51,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useNavigate } from './navigate.js'
+import { useToast } from './Toaster.js'
 
 const alertStyles: Record<string, string> = {
   info:    'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200',
@@ -397,6 +398,7 @@ function ActionModalDialog({
   const [serverError, setServerError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const navigate = useNavigate()
+  const { notify } = useToast()
 
   const modal       = meta['modal']    as { heading?: string; description?: string; submitLabel?: string; cancelLabel?: string; icon?: string; width?: 'sm'|'md'|'lg'|'xl'; slideOver?: boolean } | undefined
   const confirm     = meta['confirm']  as { title?: string; message: string } | undefined
@@ -442,6 +444,13 @@ function ActionModalDialog({
       }
       setOpen(false)
       reset()
+      // Server-emitted notifications come through the JSON response;
+      // surface them via the Toaster before navigating so the user
+      // sees the success/error toast even when navigation re-renders.
+      const notifs = (data as { notifications?: Array<{ id: string; type: string; title: string; body?: string; icon?: string; duration?: number }> }).notifications
+      if (notifs && notifs.length > 0) {
+        for (const n of notifs) notify(n as Parameters<typeof notify>[0])
+      }
       const redirect = String((data as { redirect?: string }).redirect ?? '')
       if (redirect) navigate(redirect)
       else if (typeof window !== 'undefined') navigate(window.location.pathname + window.location.search)

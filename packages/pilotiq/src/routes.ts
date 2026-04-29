@@ -118,7 +118,13 @@ export function registerPilotiqRoutes(
           return res.send(result.error)
         }
         const redirect = result.redirect ?? indexUrl
-        if (json) return res.json({ ok: true, redirect })
+        if (json) {
+          return res.json({
+            ok: true,
+            redirect,
+            ...(result.notifications ? { notifications: result.notifications } : {}),
+          })
+        }
         return res.redirect(redirect, 303)
       })
     }
@@ -333,7 +339,13 @@ export function registerPilotiqRoutes(
         return res.send(result.error)
       }
       const redirect = result.redirect ?? pageUrl
-      if (json) return res.json({ ok: true, redirect })
+      if (json) {
+        return res.json({
+          ok: true,
+          redirect,
+          ...(result.notifications ? { notifications: result.notifications } : {}),
+        })
+      }
       return res.redirect(redirect, 303)
     })
 

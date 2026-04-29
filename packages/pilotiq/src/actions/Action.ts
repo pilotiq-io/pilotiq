@@ -1,5 +1,6 @@
 import { Element, type ElementMeta } from '../schema/Element.js'
 import type { ValidationErrors } from '../validation/index.js'
+import type { Notification, NotificationMeta } from '../notifications/Notification.js'
 
 /**
  * Where an Action renders. `inline` is the default — appears wherever the
@@ -27,13 +28,22 @@ export interface ActionContext {
   request?: unknown
 }
 
+/** Convenience type: handlers can return either a built `Notification`
+ * instance, its serialized meta, or arrays of either. */
+export type NotificationLike =
+  | Notification
+  | NotificationMeta
+  | ReadonlyArray<Notification | NotificationMeta>
+
 /**
  * Result a handler may return to influence the response. `void` is the
  * default — the dispatcher 303-redirects to the page the action was
  * triggered from. Returning `{ redirect }` overrides that with an
- * explicit URL. Throw an Error to surface as a 500 with the message.
+ * explicit URL. Returning `{ notify }` flashes one or more toast
+ * notifications on the next render. Throw an Error to surface as a
+ * 500 with the message.
  */
-export type ActionResult = void | { redirect?: string }
+export type ActionResult = void | { redirect?: string; notify?: NotificationLike }
 
 export type ActionHandler = (ctx: ActionContext) => ActionResult | Promise<ActionResult>
 

@@ -177,6 +177,13 @@ export {
   type ActionGroupMeta,
 } from './actions/ActionGroup.js'
 
+// ─── Notifications ────────────────────────────────────
+export {
+  Notification,
+  type NotificationType,
+  type NotificationMeta,
+} from './notifications/Notification.js'
+
 // ─── Validation ───────────────────────────────────────
 export {
   makeValidator,
