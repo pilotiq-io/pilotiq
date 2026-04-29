@@ -33,4 +33,81 @@ describe('Column', () => {
     assert.equal(result[0]!.type, 'column')
     assert.equal('children' in result[0]!, false)
   })
+
+  describe('layout & cosmetics', () => {
+    it('alignment / width / default / tooltip / wrap / lineClamp / weight / color round-trip', () => {
+      const meta = Column.make('a')
+        .alignment('center')
+        .width('120px')
+        .default('—')
+        .tooltip('Help')
+        .wrap()
+        .lineClamp(2)
+        .weight('semibold')
+        .color('muted')
+        .toMeta()
+      assert.equal(meta.alignment, 'center')
+      assert.equal(meta.width,     '120px')
+      assert.equal(meta.default,   '—')
+      assert.equal(meta.tooltip,   'Help')
+      assert.equal(meta.wrap,      true)
+      assert.equal(meta.lineClamp, 2)
+      assert.equal(meta.weight,    'semibold')
+      assert.equal(meta.color,     'muted')
+    })
+
+    it('placeholder() is an alias for default()', () => {
+      const meta = Column.make('a').placeholder('—').toMeta()
+      assert.equal(meta.default, '—')
+    })
+
+    it('cosmetic builders are absent from meta when not called', () => {
+      const meta = Column.make('a').toMeta()
+      assert.equal(meta.alignment, undefined)
+      assert.equal(meta.width,     undefined)
+      assert.equal(meta.tooltip,   undefined)
+      assert.equal(meta.wrap,      undefined)
+      assert.equal(meta.color,     undefined)
+    })
+  })
+
+  describe('built-in formatters', () => {
+    it('dateTime() with default pattern', () => {
+      const meta = Column.make('createdAt').dateTime().toMeta()
+      assert.deepEqual(meta.format, { kind: 'dateTime' })
+    })
+
+    it('dateTime("PPpp")', () => {
+      const meta = Column.make('createdAt').dateTime('PPpp').toMeta()
+      assert.deepEqual(meta.format, { kind: 'dateTime', pattern: 'PPpp' })
+    })
+
+    it('since() emits kind:since', () => {
+      const meta = Column.make('createdAt').since().toMeta()
+      assert.deepEqual(meta.format, { kind: 'since' })
+    })
+
+    it('money(currency) emits kind:money + currency', () => {
+      const meta = Column.make('amount').money('EUR').toMeta()
+      assert.deepEqual(meta.format, { kind: 'money', currency: 'EUR' })
+    })
+
+    it('numeric({decimals}) emits kind:numeric + decimals', () => {
+      const meta = Column.make('x').numeric({ decimals: 2 }).toMeta()
+      assert.deepEqual(meta.format, { kind: 'numeric', decimals: 2 })
+    })
+
+    it('limit(n) emits kind:limit + chars', () => {
+      const meta = Column.make('body').limit(40).toMeta()
+      assert.deepEqual(meta.format, { kind: 'limit', chars: 40 })
+    })
+
+    it('formatStateUsing stamps hasFormatter:true on meta', () => {
+      const col = Column.make('priority').formatStateUsing((v) => `${v}!`)
+      const meta = col.toMeta()
+      assert.equal(meta.hasFormatter, true)
+      assert.equal(col.hasFormatter(), true)
+      assert.equal(typeof col.getFormatStateHandler(), 'function')
+    })
+  })
 })

@@ -37,11 +37,23 @@ export type TableRecordsHandler<R = unknown> = (
   ctx: TableContext<R>,
 ) => TableRecordsResult<R> | R[] | Promise<TableRecordsResult<R> | R[]>
 
+export interface TableEmptyState {
+  heading?:     string
+  description?: string
+  icon?:        string
+}
+
 export interface TableMeta extends ElementMeta {
   type:        'table'
   defaultSort?: { column: string; direction: SortDirection }
   perPage?:    number
   searchable:  boolean
+
+  // Top-bar chrome
+  heading?:     string
+  description?: string
+  striped?:     boolean
+  emptyState?:  TableEmptyState
 
   // Render-time state — populated by the framework after `records()` runs.
   rows?:        unknown[]
@@ -67,6 +79,12 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _records?:      TableRecordsHandler<R>
   private _defaultSort?:  { column: string; direction: SortDirection }
   private _perPage?:      number
+
+  // Top-bar chrome
+  private _heading?:      string
+  private _description?:  string
+  private _striped = false
+  private _emptyState?:   TableEmptyState
 
   // Render-time state
   private _rows?:         R[]
@@ -148,6 +166,23 @@ export class Table<R = unknown, Q = unknown> extends Element {
 
   paginate(perPage: number): this { this._perPage = perPage; return this }
 
+  // ─── Top-bar chrome ───────────────────────────────────
+
+  /** Title rendered above the table (left of the header bar). */
+  heading(s: string): this { this._heading = s; return this }
+
+  /** Subtitle rendered under the heading. */
+  description(s: string): this { this._description = s; return this }
+
+  /** Alternating row backgrounds for visual scanning. */
+  striped(v = true): this { this._striped = v; return this }
+
+  /** Customize the "no records" placeholder. */
+  emptyState(state: TableEmptyState): this {
+    this._emptyState = state
+    return this
+  }
+
   // ─── Render-time state ────────────────────────────────
 
   /** Attach loaded rows + total. Called by the framework after `records()` runs. */
@@ -200,6 +235,10 @@ export class Table<R = unknown, Q = unknown> extends Element {
       searchable,
       ...(this._defaultSort   ? { defaultSort:  this._defaultSort } : {}),
       ...(this._perPage !== undefined ? { perPage: this._perPage } : {}),
+      ...(this._heading      !== undefined ? { heading:     this._heading      } : {}),
+      ...(this._description  !== undefined ? { description: this._description  } : {}),
+      ...(this._striped                    ? { striped:     true               } : {}),
+      ...(this._emptyState   !== undefined ? { emptyState:  this._emptyState   } : {}),
       ...(this._rows         !== undefined ? { rows:        this._rows }        : {}),
       ...(this._total        !== undefined ? { total:       this._total }       : {}),
       ...(this._currentSort  !== undefined ? { currentSort: this._currentSort } : {}),

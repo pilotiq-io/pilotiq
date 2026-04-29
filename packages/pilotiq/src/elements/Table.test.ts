@@ -118,6 +118,31 @@ describe('Table Element', () => {
       assert.equal(a.getPlacement(), 'bulk')
     })
 
+    it('top-bar chrome — heading / description / striped / emptyState round-trip', () => {
+      const meta = Table.make()
+        .heading('Articles')
+        .description('Manage published content.')
+        .striped()
+        .emptyState({ heading: 'No articles', description: 'Create one to get started.', icon: 'inbox' })
+        .toMeta()
+      assert.equal(meta.heading,     'Articles')
+      assert.equal(meta.description, 'Manage published content.')
+      assert.equal(meta.striped,     true)
+      assert.deepEqual(meta.emptyState, {
+        heading: 'No articles',
+        description: 'Create one to get started.',
+        icon: 'inbox',
+      })
+    })
+
+    it('chrome fields are absent from meta when not set', () => {
+      const meta = Table.make().toMeta()
+      assert.equal(meta.heading,     undefined)
+      assert.equal(meta.description, undefined)
+      assert.equal(meta.striped,     undefined)
+      assert.equal(meta.emptyState,  undefined)
+    })
+
     it('slots compose with .columns() and .filters() without clobbering', () => {
       const t = Table.make()
         .columns([Column.make('a')])

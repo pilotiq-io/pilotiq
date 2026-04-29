@@ -2,6 +2,7 @@ import { Element } from '../schema/Element.js'
 import { Table, type TableContext, type SortDirection } from './Table.js'
 import type { Filter } from '../filters/Filter.js'
 import { Action } from '../actions/Action.js'
+import { Column } from '../Column.js'
 
 export interface QueryParams {
   search?: string
@@ -154,21 +155,50 @@ export async function loadTableRecords(
           && c.hasVisibilityRules(),
         )
 
-      const rows = rowActionsWithRules.length === 0
+      // Per-row server-side `formatStateUsing` eval. Columns with a
+      // formatter (the function isn't serializable) get their result
+      // stashed under `row._formatted[columnName]` so the renderer can
+      // pick it up without re-running the function client-side.
+      const columnsWithFormatter = (table.getChildren() ?? [])
+        .filter((c): c is Column => c instanceof Column && c.hasFormatter())
+
+      const needsRowMutation =
+        rowActionsWithRules.length > 0 || columnsWithFormatter.length > 0
+
+      const rows = !needsRowMutation
         ? rawRows
         : rawRows.map(row => {
-            const visibleActions: string[] = []
-            const disabledActions: string[] = []
-            for (const a of rowActionsWithRules) {
-              const { visible, disabled } = a.evaluate({ record: row })
-              if (visible)  visibleActions.push(a.name)
-              if (disabled) disabledActions.push(a.name)
+            const recordObj = row as Record<string, unknown>
+            const out: Record<string, unknown> = { ...recordObj }
+
+            if (rowActionsWithRules.length > 0) {
+              const visibleActions: string[] = []
+              const disabledActions: string[] = []
+              for (const a of rowActionsWithRules) {
+                const { visible, disabled } = a.evaluate({ record: row })
+                if (visible)  visibleActions.push(a.name)
+                if (disabled) disabledActions.push(a.name)
+              }
+              out['_visibleActions']  = visibleActions
+              out['_disabledActions'] = disabledActions
             }
-            return {
-              ...(row as Record<string, unknown>),
-              _visibleActions:  visibleActions,
-              _disabledActions: disabledActions,
+
+            if (columnsWithFormatter.length > 0) {
+              const formatted: Record<string, string> = {}
+              for (const col of columnsWithFormatter) {
+                const fn = col.getFormatStateHandler()
+                if (!fn) continue
+                try {
+                  formatted[col.name] = fn(recordObj[col.name], recordObj)
+                } catch {
+                  // Swallow per-row formatter errors; the renderer falls
+                  // back to the raw value.
+                }
+              }
+              out['_formatted'] = formatted
             }
+
+            return out
           })
 
       table.withRows(rows, total)

@@ -35,7 +35,25 @@ export {
   defaultGlobalEditPage,
   defaultGlobalViewPage,
 } from './defaultGlobalPages.js'
-export { Column, type ColumnMeta } from './Column.js'
+export {
+  Column,
+  type ColumnMeta,
+  type ColumnAlignment,
+  type ColumnType,
+  type ColumnWeight,
+  type ColumnColor,
+  type ColumnFormat,
+  type FormatStateHandler,
+} from './Column.js'
+
+export {
+  BadgeColumn,
+  type BadgeColor,
+  IconColumn,
+  type IconOption,
+  BooleanColumn,
+  ImageColumn,
+} from './columns/index.js'
 
 // ─── ORM model wiring ─────────────────────────────────
 export {

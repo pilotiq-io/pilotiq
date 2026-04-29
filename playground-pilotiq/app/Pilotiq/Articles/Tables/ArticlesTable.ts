@@ -1,4 +1,10 @@
-import { Column, Action, ActionGroup, SelectFilter, BooleanFilter, TextField, SelectField, type Table } from '@pilotiq/pilotiq'
+import {
+  Column, BadgeColumn, BooleanColumn,
+  Action, ActionGroup,
+  SelectFilter, BooleanFilter,
+  TextField, SelectField,
+  type Table,
+} from '@pilotiq/pilotiq'
 import { app } from '@rudderjs/core'
 
 const prisma = (): any => app().make('prisma')
@@ -6,13 +12,25 @@ const prisma = (): any => app().make('prisma')
 export const ArticlesTable = {
   configure(table: Table): Table {
     return table
+      .heading('Articles')
+      .description('Manage published content, drafts, and archived posts.')
+      .striped()
+      .emptyState({
+        heading:     'No articles yet',
+        description: 'Create your first article to get started.',
+        icon:        'inbox',
+      })
       .columns([
-        Column.make('title').label('Title').sortable().searchable(),
-        Column.make('slug').label('Slug').searchable(),
-        Column.make('status').label('Status').sortable(),
-        Column.make('featured').label('Featured').sortable(),
-        Column.make('publishedAt').label('Published').sortable(),
-        Column.make('createdAt').label('Created').sortable(),
+        Column.make('title').label('Title').sortable().searchable().weight('semibold'),
+        Column.make('slug').label('Slug').searchable().color('muted').lineClamp(1),
+        BadgeColumn.make('status').label('Status').sortable().colors({
+          draft:     'gray',
+          published: 'success',
+          archived:  'warning',
+        }),
+        BooleanColumn.make('featured').label('Featured').sortable().alignment('center'),
+        Column.make('publishedAt').label('Published').sortable().dateTime(),
+        Column.make('createdAt').label('Created').sortable().since(),
       ])
       .filters([
         SelectFilter.make('status').options([

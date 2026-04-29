@@ -43,7 +43,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from './ui/tooltip.js'
-import { CalendarIcon, FilterIcon, MoreHorizontalIcon } from 'lucide-react'
+import {
+  CalendarIcon, FilterIcon, MoreHorizontalIcon,
+  CheckCircle2Icon, CircleIcon, XCircleIcon,
+  CheckIcon, XIcon, ShieldCheckIcon, UserIcon, StarIcon,
+  EyeIcon, EyeOffIcon, InboxIcon, BellIcon, MailIcon,
+  type LucideIcon,
+} from 'lucide-react'
 import { useNavigate } from './navigate.js'
 
 const alertStyles: Record<string, string> = {
@@ -1560,12 +1566,210 @@ function nextSortDir(
   return { column, direction: 'asc' }
 }
 
-function formatCell(value: unknown): React.ReactNode {
-  if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>
-  if (value instanceof Date)               return value.toISOString().slice(0, 10)
-  if (typeof value === 'boolean')          return value ? 'Yes' : 'No'
-  if (typeof value === 'object')           return JSON.stringify(value)
-  return String(value)
+/** Lucide icon registry for IconColumn / BooleanColumn. Unknown names fall
+ * back to `CircleIcon`. Add to this map when a new icon name shows up
+ * in user code; or wire dynamic loading later. */
+const ICON_REGISTRY: Record<string, LucideIcon> = {
+  'check':            CheckIcon,
+  'check-circle':     CheckCircle2Icon,
+  'check-circle-2':   CheckCircle2Icon,
+  'circle':           CircleIcon,
+  'x':                XIcon,
+  'x-circle':         XCircleIcon,
+  'shield-check':     ShieldCheckIcon,
+  'user':             UserIcon,
+  'star':             StarIcon,
+  'eye':              EyeIcon,
+  'eye-off':          EyeOffIcon,
+  'inbox':            InboxIcon,
+  'bell':             BellIcon,
+  'mail':             MailIcon,
+}
+
+/** Map ColumnColor → tailwind text-color class. Used by TextColumn and
+ * IconColumn alike. */
+const COLUMN_COLOR_CLASSES: Record<string, string> = {
+  default:     '',
+  muted:       'text-muted-foreground',
+  primary:     'text-primary',
+  destructive: 'text-destructive',
+  success:     'text-emerald-600 dark:text-emerald-400',
+  warning:     'text-amber-600 dark:text-amber-400',
+  info:        'text-blue-600 dark:text-blue-400',
+}
+
+const COLUMN_WEIGHT_CLASSES: Record<string, string> = {
+  normal:   'font-normal',
+  medium:   'font-medium',
+  semibold: 'font-semibold',
+  bold:     'font-bold',
+}
+
+const BADGE_COLOR_CLASSES: Record<string, string> = {
+  gray:        'bg-muted text-muted-foreground',
+  primary:     'bg-primary/10 text-primary',
+  success:     'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+  warning:     'bg-amber-100  text-amber-800  dark:bg-amber-900/40  dark:text-amber-200',
+  destructive: 'bg-destructive/10 text-destructive',
+  info:        'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
+}
+
+/** Apply a built-in `ColumnFormat` to a raw value; returns a string. */
+function applyColumnFormat(value: unknown, format: { kind: string; [k: string]: unknown }): string {
+  if (value === null || value === undefined || value === '') return ''
+  switch (format['kind']) {
+    case 'dateTime': {
+      const d = value instanceof Date ? value : new Date(String(value))
+      if (isNaN(d.getTime())) return String(value)
+      // Default — locale-aware short date+time. Custom patterns aren't
+      // supported (no date-fns dep); pattern is kept on meta for future use.
+      return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    }
+    case 'since': {
+      const d = value instanceof Date ? value : new Date(String(value))
+      if (isNaN(d.getTime())) return String(value)
+      const seconds = Math.round((Date.now() - d.getTime()) / 1000)
+      const abs = Math.abs(seconds)
+      const past = seconds >= 0
+      const fmt = (n: number, unit: string): string =>
+        past ? `${n} ${unit}${n === 1 ? '' : 's'} ago` : `in ${n} ${unit}${n === 1 ? '' : 's'}`
+      if (abs < 60)        return past ? 'just now' : 'in a moment'
+      if (abs < 3600)      return fmt(Math.floor(abs / 60),    'minute')
+      if (abs < 86400)     return fmt(Math.floor(abs / 3600),  'hour')
+      if (abs < 2592000)   return fmt(Math.floor(abs / 86400), 'day')
+      if (abs < 31536000)  return fmt(Math.floor(abs / 2592000), 'month')
+      return fmt(Math.floor(abs / 31536000), 'year')
+    }
+    case 'money': {
+      const n = typeof value === 'number' ? value : Number(value)
+      if (isNaN(n)) return String(value)
+      const currency = String(format['currency'] ?? 'USD')
+      const locale   = format['locale'] as string | undefined
+      return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(n)
+    }
+    case 'numeric': {
+      const n = typeof value === 'number' ? value : Number(value)
+      if (isNaN(n)) return String(value)
+      const decimals = format['decimals'] as number | undefined
+      const locale   = format['locale']   as string | undefined
+      const opts: Intl.NumberFormatOptions = {}
+      if (decimals !== undefined) {
+        opts.minimumFractionDigits = decimals
+        opts.maximumFractionDigits = decimals
+      }
+      return new Intl.NumberFormat(locale, opts).format(n)
+    }
+    case 'limit': {
+      const s = String(value)
+      const n = format['chars'] as number
+      return s.length > n ? s.slice(0, n) + '…' : s
+    }
+    default:
+      return String(value)
+  }
+}
+
+/** Render a cell. Honors the column's `columnType` (badge/icon/boolean/
+ * image), built-in `format` spec, and per-row `_formatted[name]`
+ * overrides from server-side `formatStateUsing` callbacks. */
+function formatCell(
+  value: unknown,
+  col?:  ElementMeta,
+  row?:  Record<string, unknown>,
+): React.ReactNode {
+  if (col === undefined) {
+    // Legacy raw-value fallback for non-column callsites.
+    if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>
+    if (value instanceof Date)               return value.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    if (typeof value === 'boolean')          return value ? 'Yes' : 'No'
+    if (typeof value === 'object')           return JSON.stringify(value)
+    return String(value)
+  }
+
+  const columnType = String(col['columnType'] ?? 'text')
+  const fallback   = (col['default'] as string | undefined)
+
+  // Per-row server-eval result wins over everything.
+  const formatted  = (row?.['_formatted'] as Record<string, string> | undefined)?.[String(col['name'] ?? '')]
+  const isBlank    = value === null || value === undefined || value === ''
+
+  if (formatted !== undefined && formatted !== '') {
+    return wrapCell(formatted, col)
+  }
+  if (isBlank) {
+    return <span className="text-muted-foreground">{fallback ?? '—'}</span>
+  }
+
+  switch (columnType) {
+    case 'badge': {
+      const map  = (col['badgeColors'] as Record<string, string> | undefined) ?? {}
+      const color = map[String(value)] ?? 'gray'
+      const cls  = BADGE_COLOR_CLASSES[color] ?? BADGE_COLOR_CLASSES['gray']
+      return (
+        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
+          {String(value)}
+        </span>
+      )
+    }
+    case 'icon':
+    case 'boolean': {
+      const map  = (col['iconOptions'] as Record<string, { icon: string; color?: string }> | undefined) ?? {}
+      const opt  = map[String(value)]
+      if (!opt) return <span className="text-muted-foreground">—</span>
+      const Icon = ICON_REGISTRY[opt.icon] ?? CircleIcon
+      const colorClass = opt.color ? (COLUMN_COLOR_CLASSES[opt.color] ?? '') : ''
+      return <Icon className={`size-4 inline ${colorClass}`} aria-label={String(value)} />
+    }
+    case 'image': {
+      const url = String(value)
+      const size = (col['imageSize'] as number | undefined) ?? 32
+      const shape = col['imageShape'] === 'circle' ? 'rounded-full' : 'rounded-md'
+      return (
+        <img
+          src={url}
+          alt=""
+          width={size}
+          height={size}
+          className={`${shape} object-cover`}
+        />
+      )
+    }
+    default: {
+      // Text column — apply built-in format, then wrapper.
+      const fmt = col['format'] as { kind: string; [k: string]: unknown } | undefined
+      const display = fmt ? applyColumnFormat(value, fmt) : String(value)
+      return wrapCell(display, col)
+    }
+  }
+}
+
+/** Apply text-rendering chrome (color, weight, line-clamp, wrap, tooltip)
+ * to a stringified cell value. Used by the text and per-row formatter
+ * paths so styling stays consistent. */
+function wrapCell(content: string, col: ElementMeta): React.ReactNode {
+  const color    = col['color']    as string | undefined
+  const weight   = col['weight']   as string | undefined
+  const tooltip  = col['tooltip']  as string | undefined
+  const wrapping = Boolean(col['wrap'])
+  const clamp    = col['lineClamp'] as number | undefined
+
+  const colorCls   = color  ? (COLUMN_COLOR_CLASSES[color]  ?? '') : ''
+  const weightCls  = weight ? (COLUMN_WEIGHT_CLASSES[weight] ?? '') : ''
+  const wrapCls    = wrapping ? 'whitespace-normal' : ''
+  const clampStyle = clamp !== undefined
+    ? { display: '-webkit-box', WebkitLineClamp: String(clamp), WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }
+    : undefined
+
+  const node = (
+    <span
+      className={`${colorCls} ${weightCls} ${wrapCls}`.trim()}
+      title={tooltip}
+      style={clampStyle}
+    >
+      {content}
+    </span>
+  )
+  return node
 }
 
 function rowId(row: unknown, index: number): string {
@@ -1743,8 +1947,23 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   const hasRowActions  = rowActions.length > 0
   const totalCols      = columns.length + (hasBulkActions ? 1 : 0) + (hasRowActions ? 1 : 0)
 
+  // Top-bar chrome (heading / description / striped / emptyState).
+  const tableHeading     = el['heading']     as string | undefined
+  const tableDescription = el['description'] as string | undefined
+  const striped          = Boolean(el['striped'])
+  const emptyState       = el['emptyState']  as { heading?: string; description?: string; icon?: string } | undefined
+  const hasFilterOrSearch = (search !== undefined && search !== '') ||
+    Object.keys(activeFilters).length > 0
+  const EmptyIcon = emptyState?.icon ? (ICON_REGISTRY[emptyState.icon] ?? InboxIcon) : InboxIcon
+
   return (
     <div className="flex flex-col gap-3">
+      {(tableHeading || tableDescription) && (
+        <div className="flex flex-col gap-1">
+          {tableHeading && <h2 className="text-lg font-semibold">{tableHeading}</h2>}
+          {tableDescription && <p className="text-sm text-muted-foreground">{tableDescription}</p>}
+        </div>
+      )}
       {showHeaderBar && (
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
           {(searchable || hasFilters) ? (
@@ -1845,15 +2064,29 @@ function TableRenderer({ el }: { el: ElementMeta }) {
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={totalCols} className="py-12 text-center text-muted-foreground">
-                  No records yet.
+                <TableCell colSpan={totalCols} className="py-12 text-center">
+                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                    <EmptyIcon className="size-8 opacity-60" />
+                    <p className="text-base font-medium text-foreground">
+                      {emptyState?.heading
+                        ?? (hasFilterOrSearch ? 'No matching records' : 'No records yet')}
+                    </p>
+                    {(emptyState?.description ||
+                      (hasFilterOrSearch && !emptyState?.description)) && (
+                      <p className="text-sm">
+                        {emptyState?.description
+                          ?? 'Try clearing filters or adjusting your search.'}
+                      </p>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ) : rows.map((row, ri) => {
               const id = visibleIds[ri]!
               const isSelected = selected.has(id)
+              const stripedClass = striped && ri % 2 === 1 ? 'bg-muted/30' : ''
               return (
-                <TableRow key={id} data-state={isSelected ? 'selected' : undefined}>
+                <TableRow key={id} data-state={isSelected ? 'selected' : undefined} className={stripedClass}>
                   {hasBulkActions && (
                     <TableCell className="w-9 px-3">
                       <Checkbox
@@ -1865,10 +2098,17 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                   )}
                   {columns.map((col, ci) => {
                     const name = String(col['name'] ?? '')
-                    const value = (row as Record<string, unknown>)[name]
+                    const recordObj = row as Record<string, unknown>
+                    const value = recordObj[name]
+                    const align = col['alignment'] === 'center' ? 'text-center'
+                                : col['alignment'] === 'end'    ? 'text-right'
+                                : 'text-left'
+                    const widthStyle = col['width']
+                      ? { width: String(col['width']) }
+                      : undefined
                     return (
-                      <TableCell key={ci} className="text-sm text-foreground">
-                        {formatCell(value)}
+                      <TableCell key={ci} className={`text-sm text-foreground ${align}`} style={widthStyle}>
+                        {formatCell(value, col, recordObj)}
                       </TableCell>
                     )
                   })}

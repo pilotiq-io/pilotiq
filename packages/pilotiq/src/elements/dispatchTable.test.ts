@@ -159,6 +159,41 @@ describe('loadTableRecords', () => {
       assert.deepEqual(rows[1]!['_disabledActions'], ['lock'])
     })
 
+    it('runs formatStateUsing per row and stamps _formatted on each row', async () => {
+      const t = Table.make()
+        .columns([
+          Column.make('title'),
+          Column.make('priority').formatStateUsing(
+            (v) => `★ ${(v as number ?? 0)}`,
+          ),
+        ])
+        .records(async () => [
+          { id: '1', title: 'one', priority: 5 },
+          { id: '2', title: 'two', priority: 9 },
+        ])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.deepEqual(rows[0]!['_formatted'], { priority: '★ 5' })
+      assert.deepEqual(rows[1]!['_formatted'], { priority: '★ 9' })
+    })
+
+    it('swallows errors thrown by a formatStateUsing handler', async () => {
+      const t = Table.make()
+        .columns([
+          Column.make('priority').formatStateUsing(() => { throw new Error('oops') }),
+        ])
+        .records(async () => [{ id: '1', priority: 0 }])
+
+      await loadTableRecords([t], {})  // no throw
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      // _formatted is present but the broken column's key is absent.
+      const formatted = rows[0]!['_formatted'] as Record<string, string>
+      assert.equal(formatted['priority'], undefined)
+    })
+
     it('does not stamp _visibleActions when no row actions have rules', async () => {
       const { Action } = await import('../actions/Action.js')
       const t = Table.make()
