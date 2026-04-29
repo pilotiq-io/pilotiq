@@ -346,10 +346,144 @@ function submitHandlerAction(
 }
 
 /**
+ * Modal-form action dialog. Opens a Dialog with an optional form schema
+ * (rendered from `meta.children`) plus header/footer chrome from
+ * `meta.modal`. On submit, fetches the dispatchUrl with `Accept:
+ * application/json` so the server can return:
+ *   - 200 `{ ok: true, redirect }` → navigate (SPA via useNavigate)
+ *   - 422 `{ ok: false, errors: { field: string[] } }` → inline errors
+ *   - 500 `{ ok: false, error }` → server error banner
+ *
+ * Used for handler-style actions that have a schema and/or a modal config.
+ * Replaces the older ConfirmActionDialog for that path; confirm-only
+ * actions without a schema also flow through here (no fields rendered,
+ * just header + footer = same UX as the old confirm dialog).
+ */
+function ActionModalDialog({
+  trigger,
+  meta,
+  ids,
+  initialValues = {},
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  trigger?:       (open: () => void) => React.ReactNode
+  meta:           ElementMeta
+  ids:            string[]
+  initialValues?: Record<string, unknown>
+  open?:          boolean
+  onOpenChange?:  (open: boolean) => void
+}) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const isControlled = controlledOpen !== undefined
+  const open = isControlled ? controlledOpen : internalOpen
+  const setOpen = (o: boolean): void => {
+    if (isControlled) onOpenChange?.(o)
+    else setInternalOpen(o)
+  }
+  const [errors, setErrors] = useState<Record<string, string[]>>({})
+  const [serverError, setServerError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const navigate = useNavigate()
+
+  const modal       = meta['modal']    as { heading?: string; description?: string; submitLabel?: string; cancelLabel?: string; icon?: string; width?: 'sm'|'md'|'lg'|'xl'; slideOver?: boolean } | undefined
+  const confirm     = meta['confirm']  as { title?: string; message: string } | undefined
+  const destructive = Boolean(meta['destructive'])
+  const dispatchUrl = meta['dispatchUrl'] as string | undefined
+  const fields      = (meta.children ?? []) as ElementMeta[]
+  const hasForm     = fields.length > 0
+
+  const heading     = modal?.heading ?? confirm?.title ?? (hasForm ? String(meta['label'] ?? 'Submit') : 'Are you sure?')
+  const description = modal?.description ?? confirm?.message
+  const submitLabel = modal?.submitLabel ?? (destructive ? 'Delete' : (hasForm ? 'Submit' : 'Confirm'))
+  const cancelLabel = modal?.cancelLabel ?? 'Cancel'
+  const widthClass  = ({ sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl', xl: 'sm:max-w-4xl' } as const)[modal?.width ?? 'md']
+
+  const reset = (): void => { setErrors({}); setServerError(null); setSubmitting(false) }
+
+  const onSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault()
+    if (!dispatchUrl) return
+    setSubmitting(true)
+    setServerError(null)
+    setErrors({})
+
+    const fd = new FormData(e.currentTarget)
+    for (const id of ids) fd.append('ids', id)
+
+    try {
+      const res = await fetch(dispatchUrl, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json' },
+        body: fd,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.status === 422) {
+        setErrors((data as { errors?: Record<string, string[]> }).errors ?? {})
+        setSubmitting(false)
+        return
+      }
+      if (!res.ok) {
+        setServerError(String((data as { error?: string }).error ?? `Request failed (${res.status})`))
+        setSubmitting(false)
+        return
+      }
+      setOpen(false)
+      reset()
+      const redirect = String((data as { redirect?: string }).redirect ?? '')
+      if (redirect) navigate(redirect)
+      else if (typeof window !== 'undefined') navigate(window.location.pathname + window.location.search)
+    } catch (err) {
+      setServerError(err instanceof Error ? err.message : 'Submit failed')
+      setSubmitting(false)
+    }
+  }
+
+  const cancelClass  = 'inline-flex items-center justify-center rounded-md border border-input bg-background px-3 h-9 text-sm font-medium hover:bg-accent hover:text-accent-foreground'
+  const confirmClass = destructive
+    ? 'inline-flex items-center justify-center rounded-md bg-destructive px-3 h-9 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50'
+    : 'inline-flex items-center justify-center rounded-md bg-primary px-3 h-9 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50'
+
+  return (
+    <>
+      {trigger?.(() => { reset(); setOpen(true) })}
+      <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); setOpen(o) }}>
+        <DialogContent className={widthClass}>
+          <form onSubmit={onSubmit}>
+            <DialogHeader>
+              <DialogTitle>{heading}</DialogTitle>
+              {description && <DialogDescription>{description}</DialogDescription>}
+            </DialogHeader>
+            {hasForm && (
+              <div className="flex flex-col gap-3 py-2">
+                {fields.map((f, i) => renderFormChild(f, i, initialValues, errors))}
+              </div>
+            )}
+            {serverError && (
+              <p className="py-2 text-sm text-destructive">{serverError}</p>
+            )}
+            <DialogFooter>
+              <button type="button" onClick={() => setOpen(false)} className={cancelClass}>
+                {cancelLabel}
+              </button>
+              <button type="submit" disabled={submitting} autoFocus={!hasForm} className={confirmClass}>
+                {submitting ? 'Working…' : submitLabel}
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+/**
  * Confirm-style dialog wrapping an action's button. The trigger button is
  * rendered inline; clicking it opens the dialog. On confirm we run
  * `onConfirm` (which is action-style-specific — submit a form, programmatic
- * POST, etc.) and close the dialog.
+ * POST, etc.) and close the dialog. Used by submit-style and form-method
+ * actions; handler-style + confirm/modal flows through ActionModalDialog
+ * instead.
  */
 function ConfirmActionDialog({
   trigger,
@@ -548,14 +682,13 @@ function renderAction(
   // Handler-style action — POSTs to `dispatchUrl` with `ids[]` body.
   if (dispatchUrl) {
     const ids = opts.ids ?? []
-    if (confirm) {
+    const modal = el['modal']
+    if (confirm || modal) {
       return (
-        <ConfirmActionDialog
+        <ActionModalDialog
           key={index}
-          title={confirm.title}
-          message={confirm.message}
-          destructive={destructive}
-          onConfirm={() => submitHandlerAction(dispatchUrl, ids)}
+          meta={el}
+          ids={ids}
           trigger={(open) => (
             <button
               type="button"
@@ -666,10 +799,12 @@ function FilterPopover({ filters }: { filters: ElementMeta[] }) {
  */
 function RowActionsMenu({
   rowId,
+  rowRecord,
   actions,
 }: {
-  rowId:   string
-  actions: ElementMeta[]
+  rowId:      string
+  rowRecord?: Record<string, unknown>
+  actions:    ElementMeta[]
 }) {
   const [pending, setPending] = useState<ElementMeta | null>(null)
 
@@ -698,16 +833,23 @@ function RowActionsMenu({
   }
 
   const onClick = (action: ElementMeta): void => {
-    if (action['confirm']) {
+    // Modal-form actions OR confirm-only actions queue up — the dropdown
+    // closes first (shadcn pattern: single visible popup at a time), then
+    // the dialog opens via the `pending` state.
+    if (action['modal'] || action['confirm']) {
       setPending(action)
       return
     }
     dispatchAction(action)
   }
 
-  const pendingConfirm = pending?.['confirm'] as
-    | { title?: string; message: string }
-    | undefined
+  // Modal/handler-style pending dialog — uses ActionModalDialog with the
+  // row's record values as initial form data so edit-in-place works.
+  const pendingHandler = pending && pending['dispatchUrl']
+  // Form-method (Delete) or no-dispatchUrl confirm path keeps the simpler
+  // confirm dialog that runs `dispatchAction(pending)` on confirm.
+  const pendingConfirmOnly = pending && !pendingHandler && pending['confirm'] as { title?: string; message: string } | undefined
+  const pendingConfirm = pendingConfirmOnly || (pending?.['confirm'] as { title?: string; message: string } | undefined)
 
   return (
     <>
@@ -740,9 +882,26 @@ function RowActionsMenu({
           })}
         </DropdownMenuContent>
       </DropdownMenu>
-      <Dialog open={pending !== null} onOpenChange={(o) => { if (!o) setPending(null) }}>
+
+      {/* Modal-form / handler-style pending action — uses fetch+JSON
+          dispatch via ActionModalDialog. */}
+      {pendingHandler && pending && (
+        <ActionModalDialog
+          meta={pending}
+          ids={[rowId]}
+          {...(rowRecord ? { initialValues: rowRecord } : {})}
+          open={true}
+          onOpenChange={(o) => { if (!o) setPending(null) }}
+        />
+      )}
+
+      {/* Form-method (Delete) confirm — keeps native form-post + 303 flow. */}
+      <Dialog
+        open={Boolean(pendingConfirmOnly)}
+        onOpenChange={(o) => { if (!o) setPending(null) }}
+      >
         <DialogContent>
-          {pending && pendingConfirm && (
+          {pendingConfirmOnly && pendingConfirm && (
             <>
               <DialogHeader>
                 <DialogTitle>{pendingConfirm.title ?? 'Are you sure?'}</DialogTitle>
@@ -762,15 +921,15 @@ function RowActionsMenu({
                   onClick={() => {
                     const action = pending
                     setPending(null)
-                    dispatchAction(action)
+                    if (action) dispatchAction(action)
                   }}
                   className={
-                    pending['destructive']
+                    pending && pending['destructive']
                       ? 'inline-flex items-center justify-center rounded-md bg-destructive px-3 h-9 text-sm font-medium text-destructive-foreground hover:bg-destructive/90'
                       : 'inline-flex items-center justify-center rounded-md bg-primary px-3 h-9 text-sm font-medium text-primary-foreground hover:bg-primary/90'
                   }
                 >
-                  {pending['destructive'] ? 'Delete' : 'Confirm'}
+                  {pending && pending['destructive'] ? 'Delete' : 'Confirm'}
                 </button>
               </DialogFooter>
             </>
@@ -1409,7 +1568,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                   })}
                   {hasRowActions && (
                     <TableCell className="w-px text-right">
-                      <RowActionsMenu rowId={id} actions={rowActions} />
+                      <RowActionsMenu rowId={id} rowRecord={row as Record<string, unknown>} actions={rowActions} />
                     </TableCell>
                   )}
                 </TableRow>

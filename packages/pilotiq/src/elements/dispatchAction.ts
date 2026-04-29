@@ -1,5 +1,7 @@
 import { Action, type ActionContext } from '../actions/Action.js'
 import type { Element } from '../schema/Element.js'
+import { validateSchema, type ValidationErrors } from '../validation/index.js'
+import { coerceFormValues } from './dispatchForm.js'
 
 /**
  * Walk an Element tree and return every `Action` instance in document
@@ -58,8 +60,12 @@ export interface DispatchActionSuccess {
 }
 
 export interface DispatchActionFailure {
-  ok:    false
-  error: string
+  ok:     false
+  error:  string
+  /** Per-field validation errors when the action's modal-form schema
+   * rejected the submitted values. Populated only on validation failure;
+   * absent for handler exceptions. */
+  errors?: ValidationErrors
 }
 
 export type DispatchActionResult = DispatchActionSuccess | DispatchActionFailure
@@ -103,6 +109,21 @@ export async function dispatchAction(
     ctx.records = resolveRecord
       ? await Promise.all(input.ids.map(id => Promise.resolve(resolveRecord(id))))
       : input.ids.map(id => ({ id }))
+  }
+
+  // Form-modal action — validate the submitted values against the action's
+  // schema, then coerce strings into runtime types (booleans/numbers/Dates)
+  // before invoking the handler. Action without `.schema()` skips both
+  // (degenerate confirm-only / no-modal cases).
+  if (action.hasModal()) {
+    const schema = action.getSchema()
+    if (schema.length > 0) {
+      const errors = validateSchema(schema, input.values, ctx.record)
+      if (Object.keys(errors).length > 0) {
+        return { ok: false, error: 'validation', errors }
+      }
+      ctx.values = coerceFormValues(schema, input.values)
+    }
   }
 
   try {

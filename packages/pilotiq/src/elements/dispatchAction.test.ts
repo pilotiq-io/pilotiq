@@ -151,3 +151,71 @@ describe('Action.dispatchUrl + toMeta', () => {
     assert.equal(meta.dispatchUrl, undefined)
   })
 })
+
+describe('Action modal-form dispatch', () => {
+  it('toMeta emits modal config when modalHeading/.schema/etc are set', async () => {
+    const { TextField } = await import('../fields/TextField.js')
+    const a = Action.make('feature')
+      .schema([TextField.make('priority').required()])
+      .modalHeading('Feature article')
+      .modalDescription('Pin to home feed.')
+      .modalSubmitLabel('Yes, feature')
+      .modalWidth('lg')
+      .handler(() => {})
+    const meta = a.toMeta()
+    assert.equal(meta['modal']?.heading, 'Feature article')
+    assert.equal(meta['modal']?.description, 'Pin to home feed.')
+    assert.equal(meta['modal']?.submitLabel, 'Yes, feature')
+    assert.equal(meta['modal']?.width, 'lg')
+    assert.equal(a.hasModal(), true)
+    assert.equal(a.getSchema().length, 1)
+  })
+
+  it('omits modal when no modal builders ran', () => {
+    const a = Action.make('plain').handler(() => {})
+    assert.equal(a.toMeta()['modal'], undefined)
+    assert.equal(a.hasModal(), false)
+  })
+
+  it('runs schema validation before the handler — rejects with errors', async () => {
+    const { TextField } = await import('../fields/TextField.js')
+    let handlerRan = false
+    const a = Action.make('save')
+      .schema([TextField.make('priority').required()])
+      .handler(() => { handlerRan = true })
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, false)
+    if (!result.ok) {
+      assert.equal(result.error, 'validation')
+      assert.ok(result.errors?.['priority']?.length, 'priority error expected')
+    }
+    assert.equal(handlerRan, false, 'handler should not run on validation failure')
+  })
+
+  it('coerces values before invoking the handler when valid', async () => {
+    const { ToggleField } = await import('../fields/ToggleField.js')
+    const { NumberField } = await import('../fields/NumberField.js')
+    let captured: Record<string, unknown> = {}
+    const a = Action.make('save')
+      .schema([
+        ToggleField.make('featured'),
+        NumberField.make('priority'),
+      ])
+      .handler((ctx) => { captured = ctx.values ?? {} })
+    const result = await dispatchAction(a, {
+      ids: [],
+      values: { featured: 'true', priority: '7' },
+    })
+    assert.equal(result.ok, true)
+    assert.equal(captured['featured'], true,  'toggle string "true" → boolean true')
+    assert.equal(captured['priority'], 7,     'number string "7" → 7')
+  })
+
+  it('does not run validation/coercion when action has no schema (confirm-only)', async () => {
+    const a = Action.make('confirm-only')
+      .modalHeading('Sure?')
+      .handler((ctx) => { /* values pass through untouched */ })
+    const result = await dispatchAction(a, { ids: [], values: { foo: 'bar' } })
+    assert.equal(result.ok, true, 'no schema means no validation gate')
+  })
+})

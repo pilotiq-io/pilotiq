@@ -1,4 +1,5 @@
 import { Element, type ElementMeta } from '../schema/Element.js'
+import type { ValidationErrors } from '../validation/index.js'
 
 /**
  * Where an Action renders. `inline` is the default — appears wherever the
@@ -51,6 +52,23 @@ export interface ActionConfirm {
  *  others spawn a `<form>`-wrapped submit button at render time. */
 export type ActionMethod = 'post' | 'put' | 'patch' | 'delete'
 
+/** Modal width preset — maps to a max-width class on the Dialog popup. */
+export type ActionModalWidth = 'sm' | 'md' | 'lg' | 'xl'
+
+/** Render-time meta for an action that opens a modal (with or without a
+ * form schema). When `meta.children` is also populated by the resolver,
+ * the modal renders those Elements as a form whose values pass through
+ * to the handler as `ctx.values`. */
+export interface ActionModalMeta {
+  heading?:     string
+  description?: string
+  submitLabel?: string
+  cancelLabel?: string
+  icon?:        string
+  width?:       ActionModalWidth
+  slideOver?:   boolean
+}
+
 export interface ActionMeta extends ElementMeta {
   type:         'action'
   name:         string
@@ -73,6 +91,10 @@ export interface ActionMeta extends ElementMeta {
    * the HTML `form="<id>"` attribute so it can submit a form it lives
    * outside of (e.g. a Save action in the page header). */
   form?:        string
+  /** Modal-style action chrome. Present when `.schema()` and/or any of
+   * the `modalXxx` builders ran. The fields themselves arrive on
+   * `meta.children` via the schema resolver. */
+  modal?:       ActionModalMeta
 }
 
 /**
@@ -101,6 +123,17 @@ export class Action extends Element {
   protected _dispatchUrl?: string
   protected _submit = false
   protected _formTarget?: string
+
+  // Modal chrome — present whenever `.schema()` or any of the modal
+  // builders below have been called.
+  protected _hasModal = false
+  protected _modalHeading?: string
+  protected _modalDescription?: string
+  protected _modalSubmitLabel?: string
+  protected _modalCancelLabel?: string
+  protected _modalIcon?: string
+  protected _modalWidth?: ActionModalWidth
+  protected _slideOver = false
 
   private constructor(name: string) {
     super()
@@ -138,6 +171,29 @@ export class Action extends Element {
 
   /** Server-side handler. Stored in Phase 1; dispatched in Phase 2. */
   handler(fn: ActionHandler): this { this._handler = fn; return this }
+
+  // ─── Modal / form-modal action ────────────────────────
+
+  /**
+   * Attach a form schema that opens in a modal Dialog when the action is
+   * triggered. The submitted values flow through validation + coercion
+   * server-side and arrive on the handler's `ctx.values`. Triggers modal
+   * chrome (heading / submit button / cancel button) if not configured
+   * via the other modal builders below.
+   */
+  schema(elements: Element[]): this {
+    this._children = elements
+    this._hasModal = true
+    return this
+  }
+
+  modalHeading(s: string): this     { this._modalHeading = s;     this._hasModal = true; return this }
+  modalDescription(s: string): this { this._modalDescription = s; this._hasModal = true; return this }
+  modalSubmitLabel(s: string): this { this._modalSubmitLabel = s; this._hasModal = true; return this }
+  modalCancelLabel(s: string): this { this._modalCancelLabel = s; this._hasModal = true; return this }
+  modalIcon(i: string): this        { this._modalIcon = i;        this._hasModal = true; return this }
+  modalWidth(w: ActionModalWidth): this { this._modalWidth = w;   this._hasModal = true; return this }
+  slideOver(v = true): this         { this._slideOver = v;        this._hasModal = true; return this }
 
   // ─── Link / form modes ────────────────────────────────
 
@@ -218,12 +274,24 @@ export class Action extends Element {
   getDispatchUrl(): string | undefined        { return this._dispatchUrl }
   isSubmit():       boolean                   { return this._submit }
   getFormTarget():  string | undefined        { return this._formTarget }
+  hasModal():       boolean                   { return this._hasModal }
+  /** Schema fields stored as children; `getChildren()` returns the same. */
+  getSchema():      Element[]                 { return this._children ?? [] }
 
   // ─── Element contract ────────────────────────────────
 
   getType(): string { return 'action' }
 
   override toMeta(): ActionMeta {
+    const modal: ActionModalMeta | undefined = this._hasModal ? {
+      ...(this._modalHeading      !== undefined ? { heading:     this._modalHeading      } : {}),
+      ...(this._modalDescription  !== undefined ? { description: this._modalDescription  } : {}),
+      ...(this._modalSubmitLabel  !== undefined ? { submitLabel: this._modalSubmitLabel  } : {}),
+      ...(this._modalCancelLabel  !== undefined ? { cancelLabel: this._modalCancelLabel  } : {}),
+      ...(this._modalIcon         !== undefined ? { icon:        this._modalIcon         } : {}),
+      ...(this._modalWidth        !== undefined ? { width:       this._modalWidth        } : {}),
+      ...(this._slideOver                       ? { slideOver:   true                    } : {}),
+    } : undefined
     return {
       type:        'action',
       name:        this.name,
@@ -238,6 +306,11 @@ export class Action extends Element {
       ...(this._dispatchUrl ? { dispatchUrl: this._dispatchUrl } : {}),
       ...(this._submit      ? { submit:      true              } : {}),
       ...(this._formTarget  ? { form:        this._formTarget  } : {}),
+      ...(modal             ? { modal                          } : {}),
     }
   }
 }
+
+/** Re-export for routes/dispatch consumers that need to type-narrow on
+ * action validation failures. */
+export type { ValidationErrors }

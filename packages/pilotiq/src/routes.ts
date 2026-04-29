@@ -18,6 +18,16 @@ import { HUE_NAMES } from './theme/colors.js'
 import { migrateThemeOverrides } from './theme/migrate.js'
 import { radiusMap } from './theme/radius.js'
 
+/** True when the client wants a JSON response (modal-form action submitting
+ * via fetch), false for a browser-style form post that wants a 303 redirect.
+ * Both action endpoints honor this so confirm/handler buttons (form-post)
+ * keep working unchanged while modal dialogs use fetch. */
+function wantsJson(req: AppRequest): boolean {
+  const headers = req.headers ?? {}
+  const accept = headers['accept'] ?? headers['Accept'] ?? ''
+  return accept.includes('application/json')
+}
+
 /**
  * Read the request body as a `Record<string, unknown>`. The hono adapter
  * auto-parses JSON, but `application/x-www-form-urlencoded` and
@@ -80,6 +90,7 @@ export function registerPilotiqRoutes(
       // Action dispatch — POST ${base}/${slug}/_action/:actionName
       router.post(`${indexUrl}/_action/:actionName`, async (req, res) => {
         const actionName = req.params['actionName']!
+        const json = wantsJson(req)
         const body  = await readFormBody(req)
         const input = parseActionBody(body)
 
@@ -88,6 +99,7 @@ export function registerPilotiqRoutes(
         tagActionDispatch(elements, indexUrl)
         const action = findActions(elements).find(a => a.name === actionName)
         if (!action) {
+          if (json) { res.status(404); return res.json({ ok: false, error: `Action "${actionName}" not found` }) }
           res.status(404)
           return res.send(`Action "${actionName}" not found on ${R.label}`)
         }
@@ -98,10 +110,16 @@ export function registerPilotiqRoutes(
 
         const result = await dispatchAction(action, { ...input, request: req }, resolveRecord)
         if (!result.ok) {
+          if (json) {
+            res.status(result.errors ? 422 : 500)
+            return res.json({ ok: false, error: result.error, ...(result.errors ? { errors: result.errors } : {}) })
+          }
           res.status(500)
           return res.send(result.error)
         }
-        return res.redirect(result.redirect ?? indexUrl, 303)
+        const redirect = result.redirect ?? indexUrl
+        if (json) return res.json({ ok: true, redirect })
+        return res.redirect(redirect, 303)
       })
     }
 
@@ -291,6 +309,7 @@ export function registerPilotiqRoutes(
     // Action dispatch — POST ${base}/${pageSlug}/_action/:actionName
     router.post(`${pageUrl}/_action/:actionName`, async (req, res) => {
       const actionName = req.params['actionName']!
+      const json = wantsJson(req)
       const body  = await readFormBody(req)
       const input = parseActionBody(body)
 
@@ -299,16 +318,23 @@ export function registerPilotiqRoutes(
       tagActionDispatch(elements, pageUrl)
       const action = findActions(elements).find(a => a.name === actionName)
       if (!action) {
+        if (json) { res.status(404); return res.json({ ok: false, error: `Action "${actionName}" not found` }) }
         res.status(404)
         return res.send(`Action "${actionName}" not found on page`)
       }
 
       const result = await dispatchAction(action, { ...input, request: req })
       if (!result.ok) {
+        if (json) {
+          res.status(result.errors ? 422 : 500)
+          return res.json({ ok: false, error: result.error, ...(result.errors ? { errors: result.errors } : {}) })
+        }
         res.status(500)
         return res.send(result.error)
       }
-      return res.redirect(result.redirect ?? pageUrl, 303)
+      const redirect = result.redirect ?? pageUrl
+      if (json) return res.json({ ok: true, redirect })
+      return res.redirect(redirect, 303)
     })
 
     // Custom pages can also accept submits when their schema includes a Form.

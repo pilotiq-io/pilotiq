@@ -91,7 +91,7 @@ export async function dispatchFormSubmit<R = unknown>(
  *
  * Other field types are passed through untouched.
  */
-function coerceFormValues(
+export function coerceFormValues(
   elements: Element[],
   body:     Record<string, unknown>,
 ): Record<string, unknown> {

@@ -1,4 +1,4 @@
-import { Column, Action, SelectFilter, BooleanFilter, type Table } from '@pilotiq/pilotiq'
+import { Column, Action, SelectFilter, BooleanFilter, TextField, SelectField, type Table } from '@pilotiq/pilotiq'
 import { app } from '@rudderjs/core'
 
 const prisma = (): any => app().make('prisma')
@@ -46,6 +46,30 @@ export const ArticlesTable = {
             await prisma().article.update({
               where: { id: r.id },
               data:  { featured: !r.featured },
+            })
+          }),
+        Action.make('changeStatus')
+          .label('Change status…')
+          .modalHeading('Change article status')
+          .modalDescription('Pick a new status. Empty publish date is fine.')
+          .modalSubmitLabel('Save')
+          .schema([
+            SelectField.make('status').required().options([
+              { value: 'draft',     label: 'Draft' },
+              { value: 'published', label: 'Published' },
+              { value: 'archived',  label: 'Archived' },
+            ]),
+            TextField.make('reason').label('Reason (optional)'),
+          ])
+          .handler(async (ctx) => {
+            const r = ctx.record as { id?: string } | undefined
+            if (!r?.id) return
+            const status = String(ctx.values?.['status'] ?? 'draft')
+            await prisma().article.update({
+              where: { id: r.id },
+              data:  status === 'published'
+                ? { status, publishedAt: new Date() }
+                : { status },
             })
           }),
       ])
