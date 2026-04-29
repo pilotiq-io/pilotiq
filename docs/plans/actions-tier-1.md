@@ -2,7 +2,7 @@
 
 Bring our `Action` API up to parity with mature admin-panel frameworks for the highest-leverage 80%. Five focused additions, all in `@pilotiq/pilotiq` core, all non-breaking on top of what shipped in Phase 3.
 
-**Status:** PROPOSED — awaiting alignment.
+**Status:** ✅ DONE — all 5 steps shipped 2026-04-29. Tests went from 318 → 364.
 
 **Depends on:** existing `Action`, `dispatchAction`, `Dialog` primitive, `validateSchema`, `coerceFormValues`, `dispatchForm` lifecycle.
 

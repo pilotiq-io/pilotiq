@@ -16,9 +16,9 @@ Land in this order. Each step is independently shippable; later steps build on e
 
 | # | Plan doc | Effort | Why this order |
 |---|---|---|---|
-| 1 | `actions-tier-1.md` | ~3 days | Already written. Form-modal actions unblock #2 + #6. |
-| 2 | `column-types.md` | ~2 days | Every list page benefits; small scope, no deps. |
-| 3 | `notifications.md` | ~1 day | Unblocks success/failure toasts in actions, forms, anywhere. Tiny primitive. |
+| 1 | ✅ `actions-tier-1.md` DONE | ~3 days | Slots, form-modal actions, variants, visibility, ActionGroup all shipped 2026-04-29. |
+| 2 | ✅ `column-types.md` DONE | ~2 days | TextColumn formatters + Badge/Icon/Boolean/ImageColumn + Table chrome (heading/description/striped/emptyState) shipped 2026-04-29. |
+| 3 | ✅ `notifications.md` DONE | ~1 day | Notification builder + Toaster + JSON-response wiring shipped 2026-04-29. (Browser-style 303 redirect path: flash mechanism deferred.) |
 | 4 | `page-lifecycle-hooks.md` | ~1 day | `mutateFormDataBeforeSave` etc. — nontrivial users hit this on day 1. |
 | 5 | `reactive-fields.md` | ~3 days | `live()` + `$get/$set` + dependent fields. Foundation for Wizard, conditional schemas. |
 | 6 | `field-types-expansion.md` | ~3 days | Checkbox, Radio, CheckboxList, ColorPicker, FileUpload, Hidden, KeyValue, Slider. Skip Repeater/Builder for now. |
