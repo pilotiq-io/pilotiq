@@ -106,3 +106,59 @@ describe('Action in the schema tree', () => {
     assert.deepEqual(result[0]!.children![1]!['confirm'], { message: 'Sure?' })
   })
 })
+
+describe('Action variants & cosmetics', () => {
+  it('color() sets the visual color', () => {
+    assert.equal(Action.make('a').color('success').toMeta().color, 'success')
+    assert.equal(Action.make('a').color('warning').toMeta().color, 'warning')
+    assert.equal(Action.make('a').color('ghost').toMeta().color,   'ghost')
+  })
+
+  it('destructive() implies color="destructive" when no explicit color', () => {
+    const meta = Action.make('delete').destructive().toMeta()
+    assert.equal(meta.destructive, true)
+    assert.equal(meta.color, 'destructive')
+  })
+
+  it('explicit color() wins over destructive() flag', () => {
+    const meta = Action.make('warn').destructive().color('warning').toMeta()
+    assert.equal(meta.destructive, true)
+    assert.equal(meta.color, 'warning')
+  })
+
+  it('size() sets the size preset', () => {
+    assert.equal(Action.make('a').size('sm').toMeta().size, 'sm')
+    assert.equal(Action.make('a').size('lg').toMeta().size, 'lg')
+  })
+
+  it('tooltip() round-trips', () => {
+    const meta = Action.make('save').tooltip('Save changes').toMeta()
+    assert.equal(meta.tooltip, 'Save changes')
+  })
+
+  it('outlined() emits the flag only when set', () => {
+    assert.equal(Action.make('a').toMeta().outlined, undefined)
+    assert.equal(Action.make('a').outlined().toMeta().outlined, true)
+  })
+
+  it('iconButton() emits iconOnly: true', () => {
+    const meta = Action.make('refresh').icon('refresh').iconButton().toMeta()
+    assert.equal(meta.iconOnly, true)
+  })
+
+  it('badge() / badgeColor() round-trip', () => {
+    const meta = Action.make('inbox').badge(7).badgeColor('bg-red-500').toMeta()
+    assert.equal(meta.badge, 7)
+    assert.equal(meta.badgeColor, 'bg-red-500')
+  })
+
+  it('cosmetic builders are absent from meta when not called', () => {
+    const meta = Action.make('plain').toMeta()
+    assert.equal(meta.color, undefined)
+    assert.equal(meta.size, undefined)
+    assert.equal(meta.tooltip, undefined)
+    assert.equal(meta.outlined, undefined)
+    assert.equal(meta.iconOnly, undefined)
+    assert.equal(meta.badge, undefined)
+  })
+})

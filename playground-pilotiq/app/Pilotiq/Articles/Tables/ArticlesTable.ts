@@ -27,6 +27,8 @@ export const ArticlesTable = {
       .bulkActions([
         Action.make('markFeatured')
           .label('Mark featured')
+          .color('success')
+          .tooltip('Pin selected articles to the home feed')
           .confirm('Mark these articles as featured?')
           .handler(async (ctx) => {
             const ids = (ctx.records as { id?: string }[] | undefined)?.map(r => r.id).filter(Boolean) ?? []

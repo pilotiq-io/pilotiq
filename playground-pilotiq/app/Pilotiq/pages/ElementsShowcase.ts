@@ -115,7 +115,7 @@ export class ElementsShowcase extends Page {
       Divider.make('Actions'),
       Heading.make('Actions').level(2),
 
-      Card.make('Action placements').description('All four placement variants. (Handlers wire up in Phase 2.)').schema([
+      Card.make('Action placements').description('All four placement variants.').schema([
         Text.make('Inline (default):'),
         Action.make('save').label('Save').icon('check'),
         Text.make('Header:'),
@@ -130,6 +130,29 @@ export class ElementsShowcase extends Page {
           message: 'This action cannot be undone.',
           confirmLabel: 'Yes, delete',
         }),
+      ]),
+
+      Card.make('Action colors').description('Color presets — primary, success, warning, info, destructive, ghost.').schema([
+        Action.make('primary').label('Primary').color('primary'),
+        Action.make('success').label('Approve').color('success'),
+        Action.make('warning').label('Warn').color('warning'),
+        Action.make('info').label('Info').color('info'),
+        Action.make('destructive').label('Delete').color('destructive'),
+        Action.make('ghost').label('Cancel').color('ghost'),
+      ]),
+
+      Card.make('Action sizes').description('sm | md | lg.').schema([
+        Action.make('sm').label('Small').size('sm'),
+        Action.make('md').label('Medium').size('md'),
+        Action.make('lg').label('Large').size('lg'),
+      ]),
+
+      Card.make('Outlined + tooltip + badge').description('Outlined trigger style, hover tooltip, and corner badge.').schema([
+        Action.make('outlined').label('Outlined primary').outlined(),
+        Action.make('outlined-danger').label('Outlined destructive').outlined().color('destructive'),
+        Action.make('tooltip-demo').label('Hover me').tooltip('This is a tooltip'),
+        Action.make('inbox').label('Inbox').badge(7),
+        Action.make('alerts').label('Alerts').badge('NEW').badgeColor('bg-amber-500 text-white'),
       ]),
     ]
   }

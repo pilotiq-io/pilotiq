@@ -52,6 +52,14 @@ export interface ActionConfirm {
  *  others spawn a `<form>`-wrapped submit button at render time. */
 export type ActionMethod = 'post' | 'put' | 'patch' | 'delete'
 
+/** Visual color preset. Maps to a tailwind class group at render time.
+ * `destructive` is what `Action.destructive()` sugar sets; the other
+ * presets exist so users can opt-in explicitly. */
+export type ActionColor = 'primary' | 'destructive' | 'success' | 'warning' | 'info' | 'ghost'
+
+/** Visual size preset. Maps to button height + padding + text size. */
+export type ActionSize = 'sm' | 'md' | 'lg'
+
 /** Modal width preset — maps to a max-width class on the Dialog popup. */
 export type ActionModalWidth = 'sm' | 'md' | 'lg' | 'xl'
 
@@ -95,6 +103,22 @@ export interface ActionMeta extends ElementMeta {
    * the `modalXxx` builders ran. The fields themselves arrive on
    * `meta.children` via the schema resolver. */
   modal?:       ActionModalMeta
+  /** Color preset — drives button colors at render time. `destructive`
+   * coincides with `destructive: true` (kept for back-compat). */
+  color?:       ActionColor
+  /** Size preset — drives button height/padding/text-size. */
+  size?:        ActionSize
+  /** Hover tooltip text. Wraps the rendered button in a Tooltip. */
+  tooltip?:     string
+  /** Outlined trigger style — replaces the solid color background with
+   * a border + transparent bg. */
+  outlined?:    boolean
+  /** Icon-only trigger style — hides the label and renders a square
+   * button. Requires `icon` to be set. */
+  iconOnly?:    boolean
+  /** Optional badge shown on the trigger (e.g. unread count). */
+  badge?:       string | number
+  badgeColor?:  string
 }
 
 /**
@@ -135,6 +159,15 @@ export class Action extends Element {
   protected _modalWidth?: ActionModalWidth
   protected _slideOver = false
 
+  // Trigger variants & cosmetics
+  protected _color?: ActionColor
+  protected _size?: ActionSize
+  protected _tooltip?: string
+  protected _outlined = false
+  protected _iconOnly = false
+  protected _badge?: string | number
+  protected _badgeColor?: string
+
   private constructor(name: string) {
     super()
     this.name = name
@@ -158,7 +191,33 @@ export class Action extends Element {
 
   // ─── Behavior ─────────────────────────────────────────
 
-  destructive(v = true): this { this._destructive = v; return this }
+  destructive(v = true): this {
+    this._destructive = v
+    if (v && this._color === undefined) this._color = 'destructive'
+    return this
+  }
+
+  /** Set the visual color. `destructive` is also set by `.destructive()`. */
+  color(c: ActionColor): this { this._color = c; return this }
+
+  /** Set the size preset (sm | md | lg). Default is `md`. */
+  size(s: ActionSize): this { this._size = s; return this }
+
+  /** Hover tooltip. Wraps the button in a Tooltip primitive. */
+  tooltip(t: string): this { this._tooltip = t; return this }
+
+  /** Outlined trigger style — border + transparent bg instead of solid color. */
+  outlined(v = true): this { this._outlined = v; return this }
+
+  /** Icon-only trigger style. Renders a square button with just the icon;
+   * the label is used as `aria-label`. Requires `.icon()` to be set. */
+  iconButton(v = true): this { this._iconOnly = v; return this }
+
+  /** Show a small badge on the trigger (e.g. unread count). */
+  badge(value: string | number): this { this._badge = value; return this }
+
+  /** Optional color class for the badge (e.g. 'bg-emerald-500'). */
+  badgeColor(c: string): this { this._badgeColor = c; return this }
 
   /**
    * Prompt the user before running the handler. Pass a string for a simple
@@ -277,6 +336,12 @@ export class Action extends Element {
   hasModal():       boolean                   { return this._hasModal }
   /** Schema fields stored as children; `getChildren()` returns the same. */
   getSchema():      Element[]                 { return this._children ?? [] }
+  getColor():       ActionColor | undefined   { return this._color }
+  getSize():        ActionSize | undefined    { return this._size }
+  getTooltip():     string | undefined        { return this._tooltip }
+  isOutlined():     boolean                   { return this._outlined }
+  isIconOnly():     boolean                   { return this._iconOnly }
+  getBadge():       string | number | undefined { return this._badge }
 
   // ─── Element contract ────────────────────────────────
 
@@ -307,6 +372,13 @@ export class Action extends Element {
       ...(this._submit      ? { submit:      true              } : {}),
       ...(this._formTarget  ? { form:        this._formTarget  } : {}),
       ...(modal             ? { modal                          } : {}),
+      ...(this._color       ? { color:       this._color       } : {}),
+      ...(this._size        ? { size:        this._size        } : {}),
+      ...(this._tooltip     ? { tooltip:     this._tooltip     } : {}),
+      ...(this._outlined    ? { outlined:    true              } : {}),
+      ...(this._iconOnly    ? { iconOnly:    true              } : {}),
+      ...(this._badge       !== undefined ? { badge:      this._badge      } : {}),
+      ...(this._badgeColor  ? { badgeColor:  this._badgeColor  } : {}),
     }
   }
 }

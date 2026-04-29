@@ -37,6 +37,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu.js'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from './ui/tooltip.js'
 import { CalendarIcon, FilterIcon, MoreHorizontalIcon } from 'lucide-react'
 import { useNavigate } from './navigate.js'
 
@@ -542,6 +548,97 @@ interface RenderActionOptions {
   size?: 'sm' | 'md'
 }
 
+/** Color preset → tailwind class group. `ghost` is bg-less and works
+ * with hover:bg-accent. Others are solid + hover-darken. */
+const COLOR_VARIANTS: Record<string, string> = {
+  primary:     'bg-primary text-primary-foreground hover:bg-primary/90',
+  destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+  success:     'bg-emerald-600 text-white hover:bg-emerald-600/90',
+  warning:     'bg-amber-500 text-white hover:bg-amber-500/90',
+  info:        'bg-blue-600 text-white hover:bg-blue-600/90',
+  ghost:       'bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground',
+}
+
+/** Outlined variant — replaces solid bg with a border + transparent bg. */
+const OUTLINED_VARIANTS: Record<string, string> = {
+  primary:     'border border-primary/40 text-primary bg-transparent hover:bg-primary/10',
+  destructive: 'border border-destructive/40 text-destructive bg-transparent hover:bg-destructive/10',
+  success:     'border border-emerald-600/40 text-emerald-700 dark:text-emerald-400 bg-transparent hover:bg-emerald-600/10',
+  warning:     'border border-amber-500/40 text-amber-700 dark:text-amber-400 bg-transparent hover:bg-amber-500/10',
+  info:        'border border-blue-600/40 text-blue-700 dark:text-blue-400 bg-transparent hover:bg-blue-600/10',
+  ghost:       'border border-input text-foreground bg-transparent hover:bg-accent',
+}
+
+/** Size preset → tailwind sizing classes. Icon-only buttons use the
+ * width=height variants from the second map. */
+const SIZE_CLASSES: Record<string, string> = {
+  sm: 'h-7 px-2 text-xs',
+  md: 'h-8 px-3 text-sm',
+  lg: 'h-10 px-4 text-base',
+}
+const ICON_SIZE_CLASSES: Record<string, string> = {
+  sm: 'h-7 w-7 text-xs',
+  md: 'h-8 w-8 text-sm',
+  lg: 'h-10 w-10 text-base',
+}
+
+/** Build the trigger button className from action meta + render context. */
+function actionButtonClass(el: ElementMeta, opts: RenderActionOptions): string {
+  const destructive = Boolean(el['destructive'])
+  const placement   = String(el['placement'] ?? 'inline')
+  const outlined    = Boolean(el['outlined'])
+  const iconOnly    = Boolean(el['iconOnly'])
+  const explicitColor = el['color'] as string | undefined
+  const explicitSize  = el['size'] as 'sm' | 'md' | 'lg' | undefined
+
+  // Color: explicit `.color()` wins; `destructive` flag falls back to
+  // 'destructive'; otherwise 'primary'.
+  const color = explicitColor ?? (destructive ? 'destructive' : 'primary')
+  const variant = (outlined ? OUTLINED_VARIANTS[color] : COLOR_VARIANTS[color]) ?? COLOR_VARIANTS['primary']
+
+  // Size: explicit `.size()` wins; otherwise small for row context, md elsewhere.
+  const size = explicitSize ?? (opts.size === 'sm' || placement === 'row' ? 'sm' : 'md')
+  const sizingMap = iconOnly ? ICON_SIZE_CLASSES : SIZE_CLASSES
+  const sizing = sizingMap[size] ?? sizingMap['md']
+
+  return `relative inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition ${variant} ${sizing}`
+}
+
+/** Render the action's icon (when set) — currently a placeholder string;
+ * Plan #3 will wire up Lucide icon resolution. */
+function renderActionIcon(_el: ElementMeta): React.ReactNode {
+  // Icon registry resolution lands later; for now icons are passed through
+  // to consumers that need to render them.
+  return null
+}
+
+/** Tiny corner badge for actions that set `.badge(...)`. */
+function renderActionBadge(el: ElementMeta): React.ReactNode {
+  const value = el['badge']
+  if (value === undefined || value === null || value === '') return null
+  const color = (el['badgeColor'] as string | undefined) ?? 'bg-primary text-primary-foreground'
+  return (
+    <span className={`absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-medium ${color}`}>
+      {String(value)}
+    </span>
+  )
+}
+
+/** If `meta.tooltip` is set, wrap the trigger in a Tooltip. The Tooltip's
+ * provider mounts on demand so multiple actions on a page don't share
+ * state. */
+function withTooltip(node: React.ReactNode, tooltip: string | undefined): React.ReactNode {
+  if (!tooltip) return node
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger render={() => node as React.ReactElement} />
+        <TooltipContent>{tooltip}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 function renderAction(
   el: ElementMeta,
   index: number,
@@ -550,23 +647,21 @@ function renderAction(
   const name        = String(el['name'] ?? '')
   const label       = String(el['label'] ?? name)
   const destructive = Boolean(el['destructive'])
-  const placement   = String(el['placement'] ?? 'inline')
   const href        = el['href']        as string | undefined
   const method      = el['method']      as 'post' | 'put' | 'patch' | 'delete' | undefined
   const actionUrl   = el['action']      as string | undefined
   const dispatchUrl = el['dispatchUrl'] as string | undefined
   const submit      = Boolean(el['submit'])
   const confirm     = el['confirm']     as { title?: string; message: string } | undefined
+  const tooltip     = el['tooltip'] as string | undefined
+  const iconOnly    = Boolean(el['iconOnly'])
 
-  const variant = destructive
-    ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-    : 'bg-primary text-primary-foreground hover:bg-primary/90'
-
-  const sizingClass = opts.size === 'sm' || placement === 'row'
-    ? 'h-7 px-2 text-xs'
-    : 'h-8 px-3 text-sm'
-
-  const className = `inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition ${variant} ${sizingClass}`
+  const className = actionButtonClass(el, opts)
+  const icon  = renderActionIcon(el)
+  const badge = renderActionBadge(el)
+  // Icon-only buttons hide the label visually but expose it via aria-label.
+  const ariaLabel = iconOnly ? label : undefined
+  const inner = iconOnly ? <>{icon}{badge}</> : <>{icon}<span>{label}</span>{badge}</>
 
   // Submit-style action — renders as <button type="submit">. Optionally
   // targets a specific form via the HTML `form="<id>"` attribute so the
@@ -591,29 +686,33 @@ function renderAction(
               : document.querySelector<HTMLFormElement>('form')
             form?.requestSubmit()
           }}
-          trigger={(open) => (
+          trigger={(open) => withTooltip(
             <button
               type="button"
               onClick={open}
               className={className}
               data-action-name={name}
+              aria-label={ariaLabel}
             >
-              {label}
-            </button>
+              {inner}
+            </button>,
+            tooltip,
           )}
         />
       )
     }
-    return (
+    return withTooltip(
       <button
         key={index}
         type="submit"
         form={formTarget}
         className={className}
         data-action-name={name}
+        aria-label={ariaLabel}
       >
-        {label}
-      </button>
+        {inner}
+      </button>,
+      tooltip,
     )
   }
 
@@ -626,10 +725,17 @@ function renderAction(
 
   // Link-style action.
   if (href) {
-    return (
-      <a key={index} href={resolveTemplate(href)} className={className} data-action-name={name}>
-        {label}
-      </a>
+    return withTooltip(
+      <a
+        key={index}
+        href={resolveTemplate(href)}
+        className={className}
+        data-action-name={name}
+        aria-label={ariaLabel}
+      >
+        {inner}
+      </a>,
+      tooltip,
     )
   }
 
@@ -651,15 +757,17 @@ function renderAction(
             if (!resolvedUrl) return
             submitMethodForm(resolvedUrl, method)
           }}
-          trigger={(open) => (
+          trigger={(open) => withTooltip(
             <button
               type="button"
               onClick={open}
               className={className}
               data-action-name={name}
+              aria-label={ariaLabel}
             >
-              {label}
-            </button>
+              {inner}
+            </button>,
+            tooltip,
           )}
         />
       )
@@ -672,9 +780,17 @@ function renderAction(
         className="inline-block"
       >
         {spoofed && <input type="hidden" name="_method" value={spoofed} />}
-        <button type="submit" className={className} data-action-name={name}>
-          {label}
-        </button>
+        {withTooltip(
+          <button
+            type="submit"
+            className={className}
+            data-action-name={name}
+            aria-label={ariaLabel}
+          >
+            {inner}
+          </button>,
+          tooltip,
+        )}
       </form>
     )
   }
@@ -689,44 +805,50 @@ function renderAction(
           key={index}
           meta={el}
           ids={ids}
-          trigger={(open) => (
+          trigger={(open) => withTooltip(
             <button
               type="button"
               onClick={open}
               className={className}
               data-action-name={name}
+              aria-label={ariaLabel}
             >
-              {label}
-            </button>
+              {inner}
+            </button>,
+            tooltip,
           )}
         />
       )
     }
-    return (
+    return withTooltip(
       <button
         key={index}
         type="button"
         onClick={() => submitHandlerAction(dispatchUrl, ids)}
         className={className}
         data-action-name={name}
+        aria-label={ariaLabel}
       >
-        {label}
-      </button>
+        {inner}
+      </button>,
+      tooltip,
     )
   }
 
   // No dispatch wired (no href / method / dispatchUrl). Render a disabled
   // placeholder so the user sees the button, but it does nothing.
-  return (
+  return withTooltip(
     <button
       key={index}
       type="button"
       disabled
       className={className + ' opacity-50 cursor-not-allowed'}
       data-action-name={name}
+      aria-label={ariaLabel}
     >
-      {label}
-    </button>
+      {inner}
+    </button>,
+    tooltip,
   )
 }
 
