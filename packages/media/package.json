@@ -35,11 +35,11 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@rudderjs/core": "^0.0.8",
+    "@rudderjs/core": "^1.0.0",
     "@rudderjs/image": "^0.0.1",
     "@pilotiq/panels": "workspace:*",
-    "@rudderjs/router": "^0.0.3",
-    "@rudderjs/storage": "^0.0.6",
+    "@rudderjs/router": "^1.0.0",
+    "@rudderjs/storage": "^1.0.0",
     "react": ">=18",
     "react-dom": ">=18"
   },
@@ -49,11 +49,11 @@
     }
   },
   "devDependencies": {
-    "@rudderjs/core": "^0.0.8",
+    "@rudderjs/core": "^1.0.0",
     "@rudderjs/image": "^0.0.1",
     "@pilotiq/panels": "workspace:*",
-    "@rudderjs/router": "^0.0.3",
-    "@rudderjs/storage": "^0.0.6",
+    "@rudderjs/router": "^1.0.0",
+    "@rudderjs/storage": "^1.0.0",
     "@types/node": "^20.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.2.3",
