@@ -42,9 +42,7 @@ class SiteSettings extends Global {
 
 export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .path('/new-admin')
-  // .layout('topbar')
   .branding({ title: 'Pilotiq' })
-  // No .theme() → inherits the Pilotiq brand default (terracotta on cream,
   .use(themeEditor())
   .resources([ArticleResource])
   .globals([SiteSettings])
