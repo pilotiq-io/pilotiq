@@ -50,10 +50,10 @@ export function applyTableDefaults(R: ResourceClass, table: Table): void {
 // ─── Base classes for resource page roles ────────────────────
 
 /**
- * Base class subclasses extend to bind a Page to a Resource. Filament
- * users will recognize this pattern — each role (`ListPage`, `CreatePage`,
- * `EditPage`, `ViewPage`) provides the boilerplate so a per-resource page
- * file is typically a one-liner override of `getResource()`.
+ * Base class subclasses extend to bind a Page to a Resource. Each role
+ * (`ListPage`, `CreatePage`, `EditPage`, `ViewPage`) provides the
+ * boilerplate so a per-resource page file is typically a one-liner
+ * override of `getResource()`.
  *
  * @example
  * class ListArticles extends ListPage {
@@ -102,11 +102,10 @@ export class ListPage extends ResourcePage {
         .filter((c): c is Action => c instanceof Action)
         .map(a => a.name),
     )
-    const defaults = [
-      ...this.getHeaderActions(R, basePath),
-      ...this.getRowActions(R, basePath),
-    ].filter(a => !existing.has(a.name))
-    if (defaults.length > 0) table.actions(defaults)
+    const headers = this.getHeaderActions(R, basePath).filter(a => !existing.has(a.name))
+    const rows    = this.getRowActions(R, basePath).filter(a => !existing.has(a.name))
+    if (headers.length > 0) table.headerActions(headers)
+    if (rows.length    > 0) table.recordActions(rows)
 
     return [
       ...this.getHeader(R),

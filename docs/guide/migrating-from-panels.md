@@ -16,7 +16,7 @@
 | Routing | Resources mount under `/{panel}/resources/{slug}` | Resources mount under `{base}/{slug}` (no `/resources` segment) |
 | Provider | `panels()` provider with config object | Two lines: `pilotiq()` Vite plugin + `pilotiq([panels])` provider |
 | Rich text | `RichContentField` (Lexical) | `RichTextField` from `@pilotiq/tiptap` (Tiptap) |
-| Page hierarchy | Single Page concept | Optional `ListPage` / `CreatePage` / `EditPage` / `ViewPage` base classes (Filament-style) |
+| Page hierarchy | Single Page concept | Optional `ListPage` / `CreatePage` / `EditPage` / `ViewPage` base classes |
 
 The biggest mental shift: **fields no longer auto-populate the table.** You declare form schema and table columns explicitly.
 
@@ -222,7 +222,7 @@ In panels, pages were vendored React files you edited in `pages/(panels)/`. In p
 
 For the standard list / create / edit / view CRUD, just define the Resource. The `pilotiq()` Vite plugin auto-generates the four pages.
 
-### Custom — Filament-style folder layout
+### Custom — folder-per-resource layout
 
 For per-page customization (custom headers, extra actions, custom save logic), break out one Page subclass per role:
 

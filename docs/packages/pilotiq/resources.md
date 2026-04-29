@@ -2,7 +2,7 @@
 
 A `Resource` describes a CRUD-managed entity in your panel — articles, users, categories, products. The class registers with `Pilotiq` and the framework auto-generates four pages from its declarative configuration: a list, a create form, an edit form, and a read-only view.
 
-The Filament/Nova-style `Resource.form()` and `Resource.table()` hooks return [`Form`](./schema.md#form--submit-lifecycle-as-an-element) and [`Table`](./schema.md#table--query-lifecycle-as-an-element) Elements. Those Elements own their own lifecycle (validate → save → redirect for forms; query → sort/search/paginate for tables), so resource pages stay declarative — there's no page-specific lifecycle hook surface to learn.
+The `Resource.form()` and `Resource.table()` hooks return [`Form`](./schema.md#form--submit-lifecycle-as-an-element) and [`Table`](./schema.md#table--query-lifecycle-as-an-element) Elements. Those Elements own their own lifecycle (validate → save → redirect for forms; query → sort/search/paginate for tables), so resource pages stay declarative — there's no page-specific lifecycle hook surface to learn.
 
 > **Note** — every method is **static**. Resources register as classes, not instances; the framework calls `Articles.form(...)` directly.
 
@@ -85,9 +85,9 @@ That's it. After this you have working list, create, edit, and view pages at `/a
 
 ---
 
-## Filament-style file organization (recommended for non-trivial resources)
+## Folder-per-resource layout (recommended for non-trivial resources)
 
-For larger resources, split the configuration across files mirroring Filament's layout:
+For larger resources, split the configuration across files in a per-resource folder:
 
 ```
 app/Pilotiq/Articles/
@@ -162,7 +162,7 @@ export class ArticleResource extends Resource {
 }
 ```
 
-You can omit `pages()` entirely — the framework auto-generates equivalent anonymous subclasses via `defaultPages(this)`. The Filament-style file layout is for when you want to customize page hooks; the inline minimal example above still works for simple cases.
+You can omit `pages()` entirely — the framework auto-generates equivalent anonymous subclasses via `defaultPages(this)`. The folder-per-resource layout is for when you want to customize page hooks; the inline minimal example above still works for simple cases.
 
 ---
 
@@ -418,7 +418,7 @@ The `:id` placeholder in row-action URLs is substituted at render time with the 
 
 **`CreatePage` / `EditPage` form submit:**
 
-The submit button renders **in the page header** (right of the title), not at the bottom of the form — Filament-style. The button uses HTML's `form="<id>"` attribute to drive the form below it.
+The submit button renders **in the page header** (right of the title), not at the bottom of the form. The button uses HTML's `form="<id>"` attribute to drive the form below it.
 
 | Default      | Page          | Header button label                                            |
 | ------------ | ------------- | -------------------------------------------------------------- |
@@ -501,9 +501,9 @@ The resolver filters hidden Fields server-side before any plugin resolver runs.
 
 ---
 
-## Filament-shaped layout (recommended for non-trivial resources)
+## Folder-per-resource layout (recommended for non-trivial resources)
 
-When a resource grows past ~100 lines, split it the way Filament does — a `Resource/` directory with separate Pages, Schemas, and Tables files:
+When a resource grows past ~100 lines, split it across a `Resource/` directory with separate `Pages/`, `Schemas/`, and `Tables/` files:
 
 ```
 app/Pilotiq/Resources/Articles/

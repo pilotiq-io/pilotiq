@@ -24,10 +24,9 @@ export const ArticlesTable = {
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
-      .actions([
+      .bulkActions([
         Action.make('markFeatured')
           .label('Mark featured')
-          .bulk()
           .confirm('Mark these articles as featured?')
           .handler(async (ctx) => {
             const ids = (ctx.records as { id?: string }[] | undefined)?.map(r => r.id).filter(Boolean) ?? []
@@ -37,9 +36,10 @@ export const ArticlesTable = {
               data:  { featured: true },
             })
           }),
+      ])
+      .recordActions([
         Action.make('toggleFeatured')
           .label('Toggle featured')
-          .row()
           .handler(async (ctx) => {
             const r = ctx.record as { id?: string; featured?: boolean } | undefined
             if (!r?.id) return

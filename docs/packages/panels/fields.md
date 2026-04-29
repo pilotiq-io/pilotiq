@@ -451,7 +451,7 @@ TextField.make('endDate')
 ### `.display(fn)` -- format a raw value for the table and show page
 
 Runs server-side before the response is sent. The pre-formatted value replaces the raw one.
-Inspired by FilamentPHP's `->formatStateUsing(fn)` and PayloadCMS's `hooks.afterRead`.
+Mirrors PayloadCMS's `hooks.afterRead` pattern.
 
 ```ts
 // Format cents as currency

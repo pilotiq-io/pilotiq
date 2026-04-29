@@ -64,7 +64,7 @@ export class Tabs extends Element {
 
   /**
    * Visual style. `'pills'` (default) — shadcn pill background with sliding
-   * indicator. `'underline'` — Filament-style bottom border on active tab.
+   * indicator. `'underline'` — bottom border on active tab.
    */
   variant(v: TabsVariant): this {
     this._variant = v

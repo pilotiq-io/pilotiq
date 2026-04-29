@@ -93,4 +93,43 @@ describe('Table Element', () => {
       assert.equal('query' in meta, false)
     })
   })
+
+  describe('action slots (recordActions / headerActions / bulkActions)', () => {
+    it('recordActions stamps placement="row" on each action', () => {
+      const t = Table.make().recordActions([
+        Action.make('edit'),
+        Action.make('delete').destructive(),
+      ])
+      const actions = (t.getChildren() ?? []).filter((c): c is Action => c instanceof Action)
+      assert.equal(actions.length, 2)
+      assert.equal(actions[0]!.getPlacement(), 'row')
+      assert.equal(actions[1]!.getPlacement(), 'row')
+    })
+
+    it('headerActions stamps placement="header"', () => {
+      const t = Table.make().headerActions([Action.make('create')])
+      const a = (t.getChildren() ?? []).find((c): c is Action => c instanceof Action)!
+      assert.equal(a.getPlacement(), 'header')
+    })
+
+    it('bulkActions stamps placement="bulk"', () => {
+      const t = Table.make().bulkActions([Action.make('archive')])
+      const a = (t.getChildren() ?? []).find((c): c is Action => c instanceof Action)!
+      assert.equal(a.getPlacement(), 'bulk')
+    })
+
+    it('slots compose with .columns() and .filters() without clobbering', () => {
+      const t = Table.make()
+        .columns([Column.make('a')])
+        .recordActions([Action.make('edit')])
+        .headerActions([Action.make('create')])
+        .bulkActions([Action.make('archive')])
+      const actions = (t.getChildren() ?? []).filter((c): c is Action => c instanceof Action)
+      assert.equal(actions.length, 3)
+      assert.deepEqual(
+        actions.map(a => [a.name, a.getPlacement()]),
+        [['edit', 'row'], ['create', 'header'], ['archive', 'bulk']],
+      )
+    })
+  })
 })

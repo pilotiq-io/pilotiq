@@ -22,7 +22,7 @@ export { Resource, type ResourcePages, type ResourceClass, type RelationDef } fr
 export { Global, type GlobalPages, type GlobalClass } from './Global.js'
 export { Page, type PageMeta, type PageMode } from './Page.js'
 export {
-  // Filament-style base classes — extend these to bind a Page to a Resource.
+  // Page base classes — extend these to bind a Page to a Resource.
   ListPage, CreatePage, EditPage, ViewPage,
   // Factory functions — return anonymous subclasses bound to a Resource.
   defaultPages,

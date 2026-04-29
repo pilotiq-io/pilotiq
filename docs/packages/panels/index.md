@@ -1,6 +1,6 @@
 # @pilotiq/panels
 
-Admin panel builder for RudderJS. Define resources in TypeScript — panels auto-generates CRUD API routes and a polished React UI. Think Laravel Nova or Filament, but for Node.js: schema-driven, type-safe, and framework-agnostic.
+Admin panel builder for RudderJS. Define resources in TypeScript — panels auto-generates CRUD API routes and a polished React UI. Schema-driven, type-safe, and framework-agnostic.
 
 ---
 

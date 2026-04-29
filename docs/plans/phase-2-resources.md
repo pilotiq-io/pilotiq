@@ -1,12 +1,12 @@
 # Phase 2 — Resources end-to-end
 
-Make `Resource` a real, usable surface in `@pilotiq/pilotiq`. Phase 1 locked the schema foundation; Phase 2 builds the next layer: **`Form` and `Table` become first-class container Elements that own their own lifecycle**, and resource pages collapse to subclasses of the existing `Page` class. The win, vs. Filament's four-class hierarchy: there's only one Page abstraction in the framework, every page is "a schema with whatever Elements you want," and form/table behavior lives on the Elements that produce it — not in special page classes.
+Make `Resource` a real, usable surface in `@pilotiq/pilotiq`. Phase 1 locked the schema foundation; Phase 2 builds the next layer: **`Form` and `Table` become first-class container Elements that own their own lifecycle**, and resource pages collapse to subclasses of the existing `Page` class. The win, vs. a four-class page hierarchy: there's only one Page abstraction in the framework, every page is "a schema with whatever Elements you want," and form/table behavior lives on the Elements that produce it — not in special page classes.
 
 **Status:** PROPOSED — awaiting alignment.
 
 **Depends on:** Phase 1 (Element / Field / Action / Validation). Brings back the deferred 1.6 work (`Resource.detail()`, `Global` shell, `Column.toMeta()`) at the end as part of 2.6 / 2.7.
 
-**Revises Phase 1 decision #6:** Phase 1 ruled "Form as a schema element? **No** in Phase 1, revisit if a real use-case appears." The use-case appeared (Phase 2): collapsing the page hierarchy via Form-as-Element is materially simpler than the Filament-shaped hierarchy. Flipping that decision now.
+**Revises Phase 1 decision #6:** Phase 1 ruled "Form as a schema element? **No** in Phase 1, revisit if a real use-case appears." The use-case appeared (Phase 2): collapsing the page hierarchy via Form-as-Element is materially simpler than a parallel page-class hierarchy. Flipping that decision now.
 
 **Related memory:** `project_phase_1_schema_foundation.md`, `project_pilotiq_package.md`.
 
@@ -77,7 +77,7 @@ class ArticleResource extends Resource {
 }
 ```
 
-Trivial resources stay one file (no pages override). Complex resources can split into the Filament-shaped tree (`Pages/`, `Schemas/`, `Tables/`) — that's a recommended pattern, not framework-enforced.
+Trivial resources stay one file (no pages override). Complex resources can split into a folder-per-resource tree (`Pages/`, `Schemas/`, `Tables/`) — that's a recommended pattern, not framework-enforced.
 
 Concretely, after Phase 2:
 
@@ -164,7 +164,7 @@ Phase 2 ships `columns()` / `query()` / basic pagination. Filters/search UI defe
 
 ### `Resource` as metadata holder
 
-Switch from instance methods to **static methods** (matches Filament; resources register as classes, not instances). Routes look up the class, call statics:
+Switch from instance methods to **static methods** (resources register as classes, not instances). Routes look up the class, call statics:
 
 ```ts
 abstract class Resource {
@@ -282,7 +282,7 @@ These are the calls the human needs to confirm before implementation. (Several s
 
 | # | Question | Recommendation |
 |---|---|---|
-| 1 | Static methods on Resource vs instance? | **Static.** Matches Filament; resources register as classes. Migration is mechanical. |
+| 1 | Static methods on Resource vs instance? | **Static.** Resources register as classes. Migration is mechanical. |
 | 2 | Unified `Page` class for both custom and resource pages? | **Yes (settled in conversation).** The existing `Page` covers it. No `ResourcePage` / `ListPage` / etc. |
 | 3 | `Form` and `Table` as container Elements with their own lifecycle? | **Yes (settled in conversation).** Revises Phase 1 decision #6. Form owns validate/mutate/save/redirect; Table owns query/columns/filters. |
 | 4 | Submit-action: dedicated Action subclass or `Action.type('submit')`? | **`Action.type('submit')`.** Keep one Action class (matches the 1.4 decision); `type` is just another field. |
@@ -345,7 +345,7 @@ Each sub-phase is mergeable on its own. None of them break existing playground b
 - Update CLAUDE.md (new Resource API, Form/Table/Column Elements, page composition pattern).
 - Update `docs/packages/pilotiq/schema.md` with Form/Table reference.
 - Add `docs/packages/pilotiq/resources.md` and `docs/packages/pilotiq/pages.md`.
-- Add a Filament-shaped resource example in playground-pilotiq.
+- Add a folder-per-resource example in playground-pilotiq.
 
 ---
 

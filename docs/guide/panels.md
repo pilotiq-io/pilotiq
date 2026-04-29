@@ -2,7 +2,7 @@
 
 `@pilotiq/panels` provides a multi-panel admin and user-facing dashboard system. Define resources with typed fields, filters, and actions — RudderJS auto-generates the CRUD API and a fully functional UI.
 
-Inspired by Filament PHP, Laravel Nova, and Payload CMS.
+Inspired by Laravel Nova and Payload CMS.
 
 ## Installation
 

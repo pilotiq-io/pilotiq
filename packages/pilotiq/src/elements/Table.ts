@@ -98,11 +98,31 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
-  /** Shorthand: append actions to the children. */
+  /** Shorthand: append actions to the children. Placement on each action is
+   * preserved as-is; use the slot variants below (`recordActions`,
+   * `headerActions`, `bulkActions`) when you want the table to assign
+   * placement automatically. */
   actions(acts: Action[]): this {
     const existing = this._children ?? []
     this._children = [...existing, ...acts]
     return this
+  }
+
+  /** Per-row actions slot — rendered in a DropdownMenu on each row.
+   * Stamps `placement: 'row'` on each action so callers don't need
+   * `Action.make(...).row()` boilerplate. */
+  recordActions(acts: Action[]): this {
+    return this.actions(acts.map(a => a.placement('row')))
+  }
+
+  /** Header actions slot — rendered top-right of the table. */
+  headerActions(acts: Action[]): this {
+    return this.actions(acts.map(a => a.placement('header')))
+  }
+
+  /** Bulk actions slot — shown in a toolbar when rows are selected. */
+  bulkActions(acts: Action[]): this {
+    return this.actions(acts.map(a => a.placement('bulk')))
   }
 
   /** Shorthand: replace the filter children. Existing columns/actions stay. */

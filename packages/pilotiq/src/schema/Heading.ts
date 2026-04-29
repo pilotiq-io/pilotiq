@@ -18,7 +18,7 @@ export class Heading extends Element {
 
   /**
    * Attach action buttons that render aligned to the right of the
-   * heading text — Filament-style page header. The renderer lays the
+   * heading text — admin-style page header. The renderer lays the
    * heading + actions out as a flex row.
    */
   actions(actions: Action[]): this {

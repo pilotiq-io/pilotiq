@@ -54,7 +54,7 @@ After this plan:
 
 `rudderjs/rudder` is a 47-package monorepo. Two packages are panel-specific:
 
-- **`packages/panels`** (`@rudderjs/panels` v0.0.3) — the Filament-style admin runtime. Hard-deps on `@rudderjs/core`, `@rudderjs/router`, `@rudderjs/support`. Optional peers on `@rudderjs/ai`, `@rudderjs/cache`, `@rudderjs/storage`, `@rudderjs/image`, `@rudderjs/broadcast`, `@rudderjs/live`, `@rudderjs/localization`. The optional-peer pattern means the package is already designed to gracefully degrade without AI / collab / etc.
+- **`packages/panels`** (`@rudderjs/panels` v0.0.3) — the admin runtime. Hard-deps on `@rudderjs/core`, `@rudderjs/router`, `@rudderjs/support`. Optional peers on `@rudderjs/ai`, `@rudderjs/cache`, `@rudderjs/storage`, `@rudderjs/image`, `@rudderjs/broadcast`, `@rudderjs/live`, `@rudderjs/localization`. The optional-peer pattern means the package is already designed to gracefully degrade without AI / collab / etc.
 - **`packages/panels-lexical`** — Lexical editor integration, including the Yjs collaboration wiring (per `feedback_yjs_idb_ws_order.md`, `useYjsCollab.ts` lives here).
 
 The AI surface inside `@rudderjs/panels` is already cleanly localized:
