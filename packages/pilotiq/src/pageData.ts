@@ -20,6 +20,7 @@ import { loadTableRecords } from './elements/dispatchTable.js'
 import { findActions } from './elements/dispatchAction.js'
 import { resolveTheme } from './theme/resolve.js'
 import type { ThemeMeta } from './theme/types.js'
+import { consumeFlashedNotifications } from './notifications/flash.js'
 
 // ─── Shared helpers ──────────────────────────────────────────
 
@@ -94,7 +95,7 @@ export function tagActionDispatch(elements: ReadonlyArray<Element>, baseUrl: str
 
 // ─── Per-role data builders ──────────────────────────────────
 
-export async function dashboardData(pilotiq: Pilotiq): Promise<Record<string, unknown>> {
+export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Record<string, unknown>> {
   const cfg = pilotiq.getConfig()
   const schemaData = await resolveSchema(cfg.schema, {})
   return {
@@ -102,6 +103,7 @@ export async function dashboardData(pilotiq: Pilotiq): Promise<Record<string, un
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
+    notifications: consumeFlashedNotifications(req),
   }
 }
 
@@ -109,6 +111,7 @@ export async function resourceIndexData(
   pilotiq: Pilotiq,
   slug:    string,
   query:   Record<string, string> = {},
+  req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
   const R = cfg.resources.find(r => r.getSlug() === slug)
@@ -133,6 +136,7 @@ export async function resourceIndexData(
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
+    notifications: consumeFlashedNotifications(req),
   }
 }
 
@@ -140,6 +144,7 @@ export async function resourceCreateData(
   pilotiq: Pilotiq,
   slug:    string,
   prefill?: { values?: Record<string, unknown>; errors?: Record<string, string[]> },
+  req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
   const R = cfg.resources.find(r => r.getSlug() === slug)
@@ -169,6 +174,7 @@ export async function resourceCreateData(
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
+    notifications: consumeFlashedNotifications(req),
     ...(prefill?.errors ? { hasErrors: true } : {}),
   }
 }
@@ -178,6 +184,7 @@ export async function resourceEditData(
   slug:     string,
   recordId: string,
   prefill?: { values?: Record<string, unknown>; errors?: Record<string, string[]> },
+  req?:     unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
   const R = cfg.resources.find(r => r.getSlug() === slug)
@@ -223,6 +230,7 @@ export async function resourceEditData(
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
+    notifications: consumeFlashedNotifications(req),
     ...(prefill?.errors ? { hasErrors: true } : {}),
   }
 }
@@ -231,6 +239,7 @@ export async function resourceViewData(
   pilotiq:  Pilotiq,
   slug:     string,
   recordId: string,
+  req?:     unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
   const R = cfg.resources.find(r => r.getSlug() === slug)
@@ -252,6 +261,7 @@ export async function resourceViewData(
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
+    notifications: consumeFlashedNotifications(req),
   }
 }
 
@@ -259,6 +269,7 @@ export async function globalEditData(
   pilotiq: Pilotiq,
   slug:    string,
   prefill?: { values?: Record<string, unknown>; errors?: Record<string, string[]> },
+  req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
   const G = cfg.globals.find(g => g.getSlug() === slug)
@@ -298,6 +309,7 @@ export async function globalEditData(
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
+    notifications: consumeFlashedNotifications(req),
     ...(prefill?.errors ? { hasErrors: true } : {}),
   }
 }
@@ -305,6 +317,7 @@ export async function globalEditData(
 export async function globalViewData(
   pilotiq: Pilotiq,
   slug:    string,
+  req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
   const G = cfg.globals.find(g => g.getSlug() === slug)
@@ -324,12 +337,14 @@ export async function globalViewData(
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
+    notifications: consumeFlashedNotifications(req),
   }
 }
 
 export async function customPageData(
   pilotiq: Pilotiq,
   pageSlug: string,
+  req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
   const PageClass = cfg.pages.find(P => P.getSlug() === pageSlug)
@@ -349,6 +364,7 @@ export async function customPageData(
     schemaData,
     basePath: cfg.path,
     layout:   cfg.layout,
+    notifications: consumeFlashedNotifications(req),
   }
 }
 

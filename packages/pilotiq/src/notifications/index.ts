@@ -9,3 +9,8 @@ export {
   resolveSavedNotification,
   type SavedNotificationMode,
 } from './resolveSavedNotification.js'
+
+export {
+  flashNotifications,
+  consumeFlashedNotifications,
+} from './flash.js'

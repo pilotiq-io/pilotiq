@@ -622,3 +622,122 @@ describe('registerPilotiqRoutes — Action handler dispatch', () => {
     assert.deepEqual(res.redirectedTo, { url: '/somewhere', code: 303 })
   })
 })
+
+describe('registerPilotiqRoutes — flash notifications across the 303 path', () => {
+  /**
+   * Stand-in for a real `SessionInstance`. Mirrors `flash` / `getFlash`
+   * so flash.ts duck-types onto it. `advance()` simulates the browser
+   * following the redirect (next request's `prev` becomes this request's
+   * `next`).
+   */
+  function makeSession() {
+    let prev: Record<string, unknown> = {}
+    let next: Record<string, unknown> = {}
+    return {
+      flash(key: string, value: unknown) { next[key] = value },
+      getFlash<T>(key: string, fallback?: T): T | undefined {
+        return (key in prev ? prev[key] : fallback) as T | undefined
+      },
+      advance() { prev = next; next = {} },
+    }
+  }
+
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  it('POST create flashes resolved notification; subsequent GET on the redirect target reads it', async () => {
+    class Saver extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title').required()])
+          .save(async () => ({ id: 'r1' }))
+          .savedNotification('Article created')
+      }
+    }
+    registerPilotiqRoutes(router, Pilotiq.make('Admin').path('/admin').resources([Saver]))
+
+    const session = makeSession()
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/create')!
+    const { res } = await callHandlerCapturing(
+      post.handler,
+      fakeReq({ body: { title: 'Hi' } } ) as any,
+    )
+    // Manually inject session before redirect to mirror the rudder runtime.
+    // (callHandlerCapturing fires synchronously; the helper above didn't
+    // include a session — we test wire-up by calling flash() directly via
+    // the request shape.)
+    void res
+
+    const reqWithSession: any = { ...fakeReq({ body: { title: 'Hi' } }), session }
+    const resWithSession  = fakeRes()
+    await (post.handler as any)(reqWithSession, resWithSession)
+    assert.deepEqual(resWithSession.redirectedTo, { url: '/admin/articles/r1/edit', code: 303 })
+
+    // Simulate the browser following the redirect.
+    session.advance()
+
+    const get = router.list().find(r => r.method === 'GET' && r.path === '/admin/articles/:id/edit')!
+    const reqGet: any = { ...fakeReq({ params: { id: 'r1' } }), session }
+    const result = await callHandler(get.handler, reqGet) as {
+      props: Record<string, unknown>
+    }
+    const flashed = result.props['notifications'] as Array<{ title: string }>
+    assert.equal(flashed.length, 1)
+    assert.equal(flashed[0]!.title, 'Article created')
+  })
+
+  it('without session installed: POST redirects normally and GET emits empty notifications', async () => {
+    class Saver extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title')])
+          .save(async () => ({ id: 'r1' }))
+          .savedNotification('Saved')
+      }
+    }
+    registerPilotiqRoutes(router, Pilotiq.make('Admin').path('/admin').resources([Saver]))
+
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/create')!
+    const { res } = await callHandlerCapturing(post.handler, fakeReq({ body: { title: 'Hi' } }))
+    assert.deepEqual(res.redirectedTo, { url: '/admin/articles/r1/edit', code: 303 })
+
+    const get = router.list().find(r => r.method === 'GET' && r.path === '/admin/articles/:id/edit')!
+    const result = await callHandler(get.handler, fakeReq({ params: { id: 'r1' } })) as {
+      props: Record<string, unknown>
+    }
+    assert.deepEqual(result.props['notifications'], [])
+  })
+
+  it('action handler 303 path flashes notifications from a notify result', async () => {
+    const { Action } = await import('./actions/Action.js')
+    const { Notification } = await import('./notifications/Notification.js')
+    class WithAction extends ArticleResource {
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).actions([
+          Action.make('feature').handler(() => ({
+            notify: Notification.make('Featured').success(),
+          })),
+        ])
+      }
+    }
+    registerPilotiqRoutes(router, Pilotiq.make('Admin').path('/admin').resources([WithAction]))
+
+    const session = makeSession()
+    const post = router.list().find(r =>
+      r.method === 'POST' && r.path === '/admin/articles/_action/:actionName',
+    )!
+    const reqPost: any = { ...fakeReq({ params: { actionName: 'feature' }, body: { ids: ['r1'] } }), session }
+    const resPost = fakeRes()
+    await (post.handler as any)(reqPost, resPost)
+    assert.equal(resPost.redirectedTo?.code, 303)
+
+    session.advance()
+
+    const get = router.list().find(r => r.method === 'GET' && r.path === '/admin/articles')!
+    const reqGet: any = { ...fakeReq(), session }
+    const result = await callHandler(get.handler, reqGet) as { props: Record<string, unknown> }
+    const flashed = result.props['notifications'] as Array<{ title: string }>
+    assert.equal(flashed.length, 1)
+    assert.equal(flashed[0]!.title, 'Featured')
+  })
+})

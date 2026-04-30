@@ -6,6 +6,7 @@ import type { Form } from './elements/Form.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { dispatchFormSubmit, findForms, selectForm } from './elements/dispatchForm.js'
 import { dispatchAction, findActions, parseActionBody, type ResolveRecord } from './elements/dispatchAction.js'
+import { flashNotifications } from './notifications/flash.js'
 import {
   panelInfo, callPageSchema, tagFormActions, tagActionDispatch,
   dashboardData, resourceIndexData, resourceCreateData, resourceEditData,
@@ -69,8 +70,8 @@ export function registerPilotiqRoutes(
   const base = cfg.path
 
   // ── Dashboard (1-segment) ─────────────────────────────
-  router.get(base, async () => {
-    return view('pilotiq.dashboard', await dashboardData(pilotiq))
+  router.get(base, async (req) => {
+    return view('pilotiq.dashboard', await dashboardData(pilotiq, req))
   })
 
   // ── Resource routes ───────────────────────────────────
@@ -83,7 +84,7 @@ export function registerPilotiqRoutes(
       const PageClass = pages.index
       const indexUrl  = `${base}/${slug}`
       router.get(indexUrl, async (req) => {
-        const data = await resourceIndexData(pilotiq, slug, req.query)
+        const data = await resourceIndexData(pilotiq, slug, req.query, req)
         return view('pilotiq.slug', data ?? {})
       })
 
@@ -125,6 +126,7 @@ export function registerPilotiqRoutes(
             ...(result.notifications ? { notifications: result.notifications } : {}),
           })
         }
+        flashNotifications(req, result.notifications)
         return res.redirect(redirect, 303)
       })
     }
@@ -134,8 +136,8 @@ export function registerPilotiqRoutes(
       const PageClass = pages.create
       const createUrl = `${base}/${slug}/create`
 
-      router.get(createUrl, async () => {
-        const data = await resourceCreateData(pilotiq, slug)
+      router.get(createUrl, async (req) => {
+        const data = await resourceCreateData(pilotiq, slug, undefined, req)
         return view('pilotiq.resource-create', data ?? {})
       })
 
@@ -165,6 +167,7 @@ export function registerPilotiqRoutes(
 
         const recordId = (result.record as { id?: unknown })?.id
         const fallback = recordId !== undefined ? `${base}/${slug}/${String(recordId)}/edit` : `${base}/${slug}`
+        flashNotifications(req, result.notifications)
         return res.redirect(result.redirect ?? fallback, 303)
       })
     }
@@ -177,7 +180,7 @@ export function registerPilotiqRoutes(
         // Hono routes both `/create` and `/:id` against this slot; only the
         // literal `create` segment hits the create route. Defensive guard:
         if (recordId === 'create') return // handled by create route
-        const data = await resourceViewData(pilotiq, slug, recordId)
+        const data = await resourceViewData(pilotiq, slug, recordId, req)
         return view('pilotiq.resource-view', data ?? {})
       })
 
@@ -200,7 +203,7 @@ export function registerPilotiqRoutes(
 
       router.get(`${base}/${slug}/:id/edit`, async (req) => {
         const recordId = req.params['id']!
-        const data = await resourceEditData(pilotiq, slug, recordId)
+        const data = await resourceEditData(pilotiq, slug, recordId, undefined, req)
         return view('pilotiq.resource-edit', data ?? {})
       })
 
@@ -238,6 +241,7 @@ export function registerPilotiqRoutes(
           return view('pilotiq.resource-edit', data ?? {})
         }
 
+        flashNotifications(req, result.notifications)
         return res.redirect(result.redirect ?? editUrl, 303)
       })
     }
@@ -252,8 +256,8 @@ export function registerPilotiqRoutes(
     if (pages.edit) {
       const PageClass = pages.edit
 
-      router.get(editUrl, async () => {
-        const data = await globalEditData(pilotiq, slug)
+      router.get(editUrl, async (req) => {
+        const data = await globalEditData(pilotiq, slug, undefined, req)
         return view('pilotiq.slug', data ?? {})
       })
 
@@ -289,14 +293,15 @@ export function registerPilotiqRoutes(
           return view('pilotiq.slug', data ?? {})
         }
 
+        flashNotifications(req, result.notifications)
         return res.redirect(result.redirect ?? editUrl, 303)
       })
     }
 
     // Optional view page when the user opts in via pages().view
     if (pages.view) {
-      router.get(`${base}/${slug}/view`, async () => {
-        const data = await globalViewData(pilotiq, slug)
+      router.get(`${base}/${slug}/view`, async (req) => {
+        const data = await globalViewData(pilotiq, slug, req)
         return view('pilotiq.resource-view', data ?? {})
       })
     }
@@ -307,8 +312,8 @@ export function registerPilotiqRoutes(
     const pageSlug = PageClass.getSlug()
     const pageUrl  = `${base}/${pageSlug}`
 
-    router.get(pageUrl, async () => {
-      const data = await customPageData(pilotiq, pageSlug)
+    router.get(pageUrl, async (req) => {
+      const data = await customPageData(pilotiq, pageSlug, req)
       return view('pilotiq.slug', data ?? {})
     })
 
@@ -346,6 +351,7 @@ export function registerPilotiqRoutes(
           ...(result.notifications ? { notifications: result.notifications } : {}),
         })
       }
+      flashNotifications(req, result.notifications)
       return res.redirect(redirect, 303)
     })
 
@@ -380,6 +386,7 @@ export function registerPilotiqRoutes(
         })
       }
 
+      flashNotifications(req, result.notifications)
       return res.redirect(result.redirect ?? pageUrl, 303)
     })
   }
