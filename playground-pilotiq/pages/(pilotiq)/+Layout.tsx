@@ -2,6 +2,7 @@
 import { usePageContext } from 'vike-react/usePageContext'
 import { AppShell, ThemeProvider, generateThemeCSS, NavigateProvider } from '@pilotiq/pilotiq/react'
 import { navigate as vikeNavigate } from 'vike/client/router'
+import { componentRegistry } from './_components.js'
 import type { ReactNode } from 'react'
 
 // Wrap vike's async navigate so the NavigateProvider's fire-and-forget
@@ -23,7 +24,7 @@ export default function PilotiqLayout({ children }: { children: ReactNode }) {
     <NavigateProvider navigate={navigate}>
       <ThemeProvider theme={panel.theme}>
         {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
-        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications}>
+        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} componentRegistry={componentRegistry as any}>
           {children}
         </AppShell>
       </ThemeProvider>

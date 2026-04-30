@@ -23,6 +23,7 @@ import { ListTab } from './Tab.js'
 import { resolveTheme } from './theme/resolve.js'
 import type { ThemeMeta } from './theme/types.js'
 import { consumeFlashedNotifications } from './notifications/flash.js'
+import { serializeIcon } from './icons/types.js'
 
 // ─── Shared helpers ──────────────────────────────────────────
 
@@ -33,14 +34,26 @@ export function panelInfo(pilotiq: Pilotiq) {
   return {
     name: cfg.name,
     branding: cfg.branding,
+    // Resource / Global / Page nav entries. `name` is the JS class name
+    // (`R.name`) — used as a stable identifier and as the lookup key
+    // into the build-time `_components.ts` manifest the Vite plugin
+    // emits. Component-typed icons serialize as `{ class: <name> }`;
+    // string-typed icons ship as-is and resolve through the runtime
+    // `registerIcons()` registry.
     resources: cfg.resources.map(R => ({
-      label: R.label, slug: R.getSlug(), icon: R.icon,
+      name:  R.name,
+      label: R.label, slug: R.getSlug(),
+      icon:  serializeIcon(R.icon, R.name),
     })),
     globals: cfg.globals.map(G => ({
-      label: G.label, slug: G.getSlug(), icon: G.icon,
+      name:  G.name,
+      label: G.label, slug: G.getSlug(),
+      icon:  serializeIcon(G.icon, G.name),
     })),
     pages: cfg.pages.map(P => ({
-      label: P.getLabel(), slug: P.getSlug(), icon: P.icon,
+      name:  P.name,
+      label: P.getLabel(), slug: P.getSlug(),
+      icon:  serializeIcon(P.icon, P.name),
     })),
     theme,
     themeEditor: cfg.themeEditor ?? false,
@@ -139,7 +152,7 @@ export async function resourceIndexData(
     pageType: 'resource',
     panel:    panelInfo(pilotiq),
     page:     PageClass.toMeta(),
-    resource: { label: R.label, labelSingular: R.labelSingular, slug, icon: R.icon },
+    resource: { name: R.name, label: R.label, labelSingular: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
@@ -259,7 +272,7 @@ export async function resourceCreateData(
   return {
     panel:    panelInfo(pilotiq),
     page:     PageClass.toMeta(),
-    resource: { label: R.labelSingular, slug, icon: R.icon },
+    resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'create' as const,
     basePath: cfg.path,
     layout:   cfg.layout,
@@ -314,7 +327,7 @@ export async function resourceEditData(
   return {
     panel:    panelInfo(pilotiq),
     page:     PageClass.toMeta(),
-    resource: { label: R.labelSingular, slug, icon: R.icon },
+    resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'edit' as const,
     recordId,
     basePath: cfg.path,
@@ -345,7 +358,7 @@ export async function resourceViewData(
   return {
     panel:    panelInfo(pilotiq),
     page:     PageClass.toMeta(),
-    resource: { label: R.labelSingular, slug, icon: R.icon },
+    resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'view' as const,
     recordId,
     basePath: cfg.path,
@@ -395,7 +408,7 @@ export async function globalEditData(
     pageType: 'global',
     panel:    panelInfo(pilotiq),
     page:     PageClass.toMeta(),
-    global:   { label: G.label, labelSingular: G.labelSingular, slug, icon: G.icon },
+    global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
@@ -423,7 +436,7 @@ export async function globalViewData(
   return {
     panel:    panelInfo(pilotiq),
     page:     PageClass.toMeta(),
-    global:   { label: G.label, labelSingular: G.labelSingular, slug, icon: G.icon },
+    global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,

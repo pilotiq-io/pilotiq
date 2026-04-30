@@ -45,13 +45,22 @@ import {
 } from './ui/tooltip.js'
 import {
   CalendarIcon, FilterIcon, MoreHorizontalIcon,
-  CheckCircle2Icon, CircleIcon, XCircleIcon,
-  CheckIcon, XIcon, ShieldCheckIcon, UserIcon, StarIcon,
-  EyeIcon, EyeOffIcon, InboxIcon, BellIcon, MailIcon,
-  type LucideIcon,
+  CircleIcon, InboxIcon,
 } from 'lucide-react'
+import type { ComponentType } from 'react'
 import { useNavigate, type NavigateFn } from './navigate.js'
 import { useToast } from './Toaster.js'
+import { getIcon } from '../icons/registry.js'
+
+/** Resolve an icon name through the user-extensible registry. Returns
+ * `undefined` when the name isn't registered — callers fall back to
+ * their own default. Pilotiq's own chrome (this file's hardcoded
+ * imports) never depends on the registry. */
+type IconCmp = ComponentType<{ className?: string; 'aria-hidden'?: boolean | 'true' | 'false'; 'aria-label'?: string }>
+function resolveIcon(name: string | undefined): IconCmp | undefined {
+  if (!name) return undefined
+  return getIcon(name) as IconCmp | undefined
+}
 
 const alertStyles: Record<string, string> = {
   info:    'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200',
@@ -762,12 +771,14 @@ function actionButtonClass(el: ElementMeta, opts: RenderActionOptions): string {
   return `relative inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition ${variant} ${sizing}`
 }
 
-/** Render the action's icon (when set) — currently a placeholder string;
- * Plan #3 will wire up Lucide icon resolution. */
-function renderActionIcon(_el: ElementMeta): React.ReactNode {
-  // Icon registry resolution lands later; for now icons are passed through
-  // to consumers that need to render them.
-  return null
+/** Render the action's icon (when set). String names resolve through the
+ * user-extensible icon registry; missing names render nothing rather
+ * than a fallback glyph (action icons are decorative, not load-bearing). */
+function renderActionIcon(el: ElementMeta): React.ReactNode {
+  const name = typeof el['icon'] === 'string' ? el['icon'] : undefined
+  const Icon = resolveIcon(name)
+  if (!Icon) return null
+  return <Icon className="size-4" aria-hidden="true" />
 }
 
 /** Tiny corner badge for actions that set `.badge(...)`. */
@@ -1624,25 +1635,6 @@ function nextSortDir(
   return { column, direction: 'asc' }
 }
 
-/** Lucide icon registry for IconColumn / BooleanColumn. Unknown names fall
- * back to `CircleIcon`. Add to this map when a new icon name shows up
- * in user code; or wire dynamic loading later. */
-const ICON_REGISTRY: Record<string, LucideIcon> = {
-  'check':            CheckIcon,
-  'check-circle':     CheckCircle2Icon,
-  'check-circle-2':   CheckCircle2Icon,
-  'circle':           CircleIcon,
-  'x':                XIcon,
-  'x-circle':         XCircleIcon,
-  'shield-check':     ShieldCheckIcon,
-  'user':             UserIcon,
-  'star':             StarIcon,
-  'eye':              EyeIcon,
-  'eye-off':          EyeOffIcon,
-  'inbox':            InboxIcon,
-  'bell':             BellIcon,
-  'mail':             MailIcon,
-}
 
 /** Map ColumnColor → tailwind text-color class. Used by TextColumn and
  * IconColumn alike. */
@@ -1774,7 +1766,7 @@ function formatCell(
       const map  = (col['iconOptions'] as Record<string, { icon: string; color?: string }> | undefined) ?? {}
       const opt  = map[String(value)]
       if (!opt) return <span className="text-muted-foreground">—</span>
-      const Icon = ICON_REGISTRY[opt.icon] ?? CircleIcon
+      const Icon = resolveIcon(opt.icon) ?? CircleIcon
       const colorClass = opt.color ? (COLUMN_COLOR_CLASSES[opt.color] ?? '') : ''
       return <Icon className={`size-4 inline ${colorClass}`} aria-label={String(value)} />
     }
@@ -1996,7 +1988,7 @@ function ListTabsRenderer({ el }: { el: ElementMeta }) {
           const active = Boolean(t['active'])
           const url    = String(t['url']   ?? `?tab=${encodeURIComponent(name)}`)
           const iconKey  = t['icon'] ? String(t['icon']) : undefined
-          const Icon     = iconKey ? (ICON_REGISTRY[iconKey] ?? CircleIcon) : undefined
+          const Icon     = iconKey ? (resolveIcon(iconKey) ?? CircleIcon) : undefined
           const badge    = t['badge'] !== undefined ? String(t['badge']) : undefined
           const badgeKey = t['badgeColor'] ? String(t['badgeColor']) : (active ? 'primary' : 'gray')
           const badgeCls = BADGE_COLOR_CLASSES[badgeKey] ?? BADGE_COLOR_CLASSES['gray']
@@ -2131,7 +2123,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   const emptyState       = el['emptyState']  as { heading?: string; description?: string; icon?: string } | undefined
   const hasFilterOrSearch = (search !== undefined && search !== '') ||
     Object.keys(activeFilters).length > 0
-  const EmptyIcon = emptyState?.icon ? (ICON_REGISTRY[emptyState.icon] ?? InboxIcon) : InboxIcon
+  const EmptyIcon = emptyState?.icon ? (resolveIcon(emptyState.icon) ?? InboxIcon) : InboxIcon
 
   return (
     <div className="flex flex-col gap-3">

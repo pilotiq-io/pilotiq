@@ -29,6 +29,14 @@
     "./plugins": {
       "import": "./dist/plugins/index.js",
       "types": "./dist/plugins/index.d.ts"
+    },
+    "./icons": {
+      "import": "./dist/icons/index.js",
+      "types": "./dist/icons/index.d.ts"
+    },
+    "./icons/lucide": {
+      "import": "./dist/icons/lucide.js",
+      "types": "./dist/icons/lucide.d.ts"
     }
   },
   "scripts": {
@@ -37,6 +45,9 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\"; EXIT=$?; rm -rf dist-test; exit $EXIT"
+  },
+  "dependencies": {
+    "jiti": "^2.6.0"
   },
   "peerDependencies": {
     "@rudderjs/contracts": "workspace:*",

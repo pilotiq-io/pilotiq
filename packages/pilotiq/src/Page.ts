@@ -1,6 +1,7 @@
 import type { Element } from './schema/Element.js'
 import type { SchemaContext, SchemaDefinition } from './schema/resolveSchema.js'
 import type { ResourceClass } from './Resource.js'
+import { type IconValue, serializeIcon } from './icons/types.js'
 
 /**
  * Discriminator the framework uses for default rendering, route generation,
@@ -12,7 +13,8 @@ export type PageMode = 'list' | 'create' | 'edit' | 'view' | 'custom'
 export interface PageMeta {
   slug:  string
   label: string
-  icon:  string | undefined
+  /** Serialized: string registry key, `{ class }` manifest reference, or undefined. */
+  icon:  string | { class: string } | undefined
   mode:  PageMode
 }
 
@@ -23,8 +25,12 @@ export class Page {
   /** Sidebar label (e.g. 'Analytics'). Derived from class name if not set. */
   static label?: string
 
-  /** Optional icon string shown in the sidebar. */
-  static icon?: string
+  /** Optional sidebar icon. Either a kebab-case name resolved through
+   * `registerIcons()` (e.g., `'newspaper'`), or a React component
+   * reference (e.g., `import { Newspaper } from 'lucide-react'`).
+   * Component refs serialize via the build-time `_components.ts`
+   * manifest emitted by the Pilotiq Vite plugin. */
+  static icon?: IconValue
 
   /** Stored schema definition. */
   protected static _schemaDef?: SchemaDefinition
@@ -85,10 +91,13 @@ export class Page {
 
   /** @internal */
   static toMeta(): PageMeta {
+    // Serialize via the icon-system helper so component-typed icons
+    // ship as `{ class: <name> }` rather than the raw forwardRef
+    // object — viewProps must be JSON-serializable.
     return {
       slug:  this.getSlug(),
       label: this.getLabel(),
-      icon:  this.icon,
+      icon:  serializeIcon(this.icon, this.name),
       mode:  this.getMode(),
     }
   }

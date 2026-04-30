@@ -17,6 +17,14 @@ import {
 import { Separator } from '../ui/separator.js'
 import { ThemeToggle } from '../ThemeToggle.js'
 import type { AppShellProps } from '../AppShell.js'
+import { useIconFor } from '../icon-context.js'
+import type { SerializedIcon } from '../../icons/types.js'
+
+function NavIcon({ value }: { value: SerializedIcon | undefined }) {
+  const Icon = useIconFor(value)
+  if (!Icon) return null
+  return <Icon className="size-4" aria-hidden="true" />
+}
 
 export function SidebarLayout({ panel, basePath, children }: AppShellProps) {
   const title = panel.branding?.title ?? panel.name
@@ -50,6 +58,7 @@ export function SidebarLayout({ panel, basePath, children }: AppShellProps) {
                   {panel.resources.map(r => (
                     <SidebarMenuItem key={r.slug}>
                       <SidebarMenuButton render={<a href={`${basePath}/${r.slug}`} />} tooltip={r.label}>
+                        <NavIcon value={r.icon} />
                         <span>{r.label}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -65,6 +74,7 @@ export function SidebarLayout({ panel, basePath, children }: AppShellProps) {
                   {panel.pages.map(p => (
                     <SidebarMenuItem key={p.slug}>
                       <SidebarMenuButton render={<a href={`${basePath}/${p.slug}`} />} tooltip={p.label}>
+                        <NavIcon value={p.icon} />
                         <span>{p.label}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>

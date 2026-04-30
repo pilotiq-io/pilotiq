@@ -2,6 +2,14 @@ import React from 'react'
 import { Separator } from '../ui/separator.js'
 import { ThemeToggle } from '../ThemeToggle.js'
 import type { AppShellProps } from '../AppShell.js'
+import { useIconFor } from '../icon-context.js'
+import type { SerializedIcon } from '../../icons/types.js'
+
+function NavIcon({ value }: { value: SerializedIcon | undefined }) {
+  const Icon = useIconFor(value)
+  if (!Icon) return null
+  return <Icon className="size-4" aria-hidden="true" />
+}
 
 export function TopbarLayout({ panel, basePath, children }: AppShellProps) {
   const title = panel.branding?.title ?? panel.name
@@ -27,12 +35,14 @@ export function TopbarLayout({ panel, basePath, children }: AppShellProps) {
           {panel.resources?.map(r => (
             <a key={r.slug} href={`${basePath}/${r.slug}`}
                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm whitespace-nowrap text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+              <NavIcon value={r.icon} />
               {r.label}
             </a>
           ))}
           {panel.pages?.map(p => (
             <a key={p.slug} href={`${basePath}/${p.slug}`}
                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm whitespace-nowrap text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+              <NavIcon value={p.icon} />
               {p.label}
             </a>
           ))}

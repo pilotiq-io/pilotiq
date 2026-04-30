@@ -1,4 +1,10 @@
 export { AppShell, type AppShellProps } from './AppShell.js'
+export {
+  ComponentRegistryProvider,
+  useComponentRegistry,
+  useIconFor,
+  type ComponentRegistry,
+} from './icon-context.js'
 
 export { SchemaRenderer, type SchemaRendererProps } from './SchemaRenderer.js'
 export { registerFieldRenderer, getFieldRenderer, type FieldRendererProps } from './registry.js'

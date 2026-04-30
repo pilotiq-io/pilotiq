@@ -4,7 +4,10 @@ import assert from 'node:assert/strict'
 import { Form } from './elements/Form.js'
 import { ListTab } from './Tab.js'
 import { ListTabs } from './elements/ListTabs.js'
-import { applyFillPipeline, resolveActiveTab } from './pageData.js'
+import { applyFillPipeline, panelInfo, resolveActiveTab } from './pageData.js'
+import { Pilotiq } from './Pilotiq.js'
+import { Resource } from './Resource.js'
+import { Global } from './Global.js'
 
 describe('applyFillPipeline', () => {
   it('defaults to a shallow record copy when nothing is configured', async () => {
@@ -170,5 +173,43 @@ describe('resolveActiveTab', () => {
     const tabs = ListTabs.make().tabs([tab])
     await resolveActiveTab([tabs], {}, '/admin/articles')
     assert.equal(tab.toMeta().badge, '5')
+  })
+})
+
+describe('panelInfo — icon serialization', () => {
+  it('ships string-typed Resource.icon as-is', () => {
+    class StringIconResource extends Resource {
+      static override label = 'Things'
+      static override icon  = 'newspaper'
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([StringIconResource])
+    const info  = panelInfo(panel)
+    const r     = info.resources[0]!
+    assert.equal(r.icon, 'newspaper')
+    assert.equal(r.name, 'StringIconResource')
+  })
+
+  it('ships component-typed Resource.icon as { class: ownerName }', () => {
+    const FakeIcon = () => null
+    class CmpIconResource extends Resource {
+      static override label = 'Things'
+      static override icon  = FakeIcon as unknown as string
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([CmpIconResource])
+    const info  = panelInfo(panel)
+    const r     = info.resources[0]!
+    assert.deepEqual(r.icon, { class: 'CmpIconResource' })
+    assert.equal(r.name, 'CmpIconResource')
+  })
+
+  it('serializes Global.icon and Page.icon the same way', () => {
+    const FakeIcon = () => null
+    class CmpIconGlobal extends Global {
+      static override label = 'Settings'
+      static override icon  = FakeIcon as unknown as string
+    }
+    const panel = Pilotiq.make('T').path('/admin').globals([CmpIconGlobal])
+    const info  = panelInfo(panel)
+    assert.deepEqual(info.globals[0]!.icon, { class: 'CmpIconGlobal' })
   })
 })

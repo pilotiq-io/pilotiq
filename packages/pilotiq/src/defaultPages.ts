@@ -19,6 +19,7 @@ import type { SchemaContext } from './schema/resolveSchema.js'
 import type { ResourceClass, ResourcePages } from './Resource.js'
 import type { PageMeta } from './Page.js'
 import { modelSave, modelLoadRecord, modelTableRecords } from './orm/modelDefaults.js'
+import { serializeIcon } from './icons/types.js'
 
 // ─── Sentinels for missing handlers ──────────────────────────
 
@@ -83,9 +84,9 @@ abstract class ResourcePage extends Page {
   /** Falls back to the resource's icon when the page didn't set one. */
   static override toMeta(): PageMeta {
     const meta = super.toMeta()
-    return meta.icon === undefined
-      ? { ...meta, icon: this.getResource().icon }
-      : meta
+    if (meta.icon !== undefined) return meta
+    const R = this.getResource()
+    return { ...meta, icon: serializeIcon(R.icon, R.name) }
   }
 }
 

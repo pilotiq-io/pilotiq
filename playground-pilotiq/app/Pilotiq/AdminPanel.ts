@@ -4,10 +4,18 @@ import {
   Heading, Text, Alert, Divider, Card,
 } from '@pilotiq/pilotiq'
 import { themeEditor } from '@pilotiq/pilotiq/plugins'
+import { registerIcons } from '@pilotiq/pilotiq/icons'
+import { lucideIcons } from '@pilotiq/pilotiq/icons/lucide'
 import { app } from '@rudderjs/core'
 import { ArticleResource } from './Articles/ArticleResource.js'
 import { SimplePage } from './pages/SimplePage.js'
 import { ElementsShowcase } from './pages/ElementsShowcase.js'
+
+// Register the curated lucide baseline so string-typed icons
+// (Action.icon('check'), Column.icon('star'), etc.) resolve at render time.
+// Runs at module load — both server (provider boot) and client (auto-gen
+// _components.ts re-imports this file).
+registerIcons(lucideIcons)
 
 function prisma(): any {
   return app().make('prisma')

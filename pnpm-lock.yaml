@@ -258,6 +258,9 @@ importers:
       '@rudderjs/view':
         specifier: link:../../../rudder/packages/view
         version: link:../../../rudder/packages/view
+      jiti:
+        specifier: ^2.6.0
+        version: 2.6.1
     devDependencies:
       '@base-ui/react':
         specifier: ^1

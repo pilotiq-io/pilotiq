@@ -3,6 +3,7 @@ import type { Form } from './elements/Form.js'
 import type { Table } from './elements/Table.js'
 import type { Page } from './Page.js'
 import type { ModelLike } from './orm/modelDefaults.js'
+import type { IconValue } from './icons/types.js'
 import { defaultPages } from './defaultPages.js'
 
 /** Map of resource page roles to Page subclasses. */
@@ -15,6 +16,19 @@ export interface ResourcePages {
 
 /** Placeholder until Phase 3+ relations work lands. */
 export type RelationDef = unknown
+
+/** Pill color tokens for `navigationBadgeColor`. Matches the shared color
+ * palette used by `ListTab.badgeColor` so the renderer can re-use the
+ * same Tailwind utility map. */
+export type NavigationBadgeColor =
+  | 'default' | 'primary' | 'success' | 'warning' | 'destructive' | 'info'
+
+/** Returned by `navigationBadge`: a string/number to render as a pill,
+ * or undefined to render no pill. May be async. Errors thrown from this
+ * handler are swallowed by `panelInfo()` so a flaky count never blanks
+ * the page. */
+export type NavigationBadgeHandler =
+  () => string | number | undefined | Promise<string | number | undefined>
 
 /**
  * Abstract Resource base class. **All methods are static** — resources are
@@ -36,8 +50,48 @@ export abstract class Resource {
   /** URL slug. Derived from `label` when unset. */
   static slug: string = ''
 
-  /** Sidebar / nav icon name. */
-  static icon: string = 'file'
+  /** Sidebar / nav icon. Either a kebab-case registry name (e.g.,
+   * `'file'`) or a React component reference imported from any icon
+   * library (e.g., `import { Newspaper } from 'lucide-react'`).
+   * See `@pilotiq/pilotiq/icons` for the registry; component refs
+   * resolve via the Vite-plugin `_components.ts` manifest. */
+  static icon: IconValue = 'file'
+
+  // ─── Plan #9: navigation metadata ──────────────────────────
+  // Static fields evaluated once at panel-config time; only
+  // `navigationBadge` runs per request. See docs/plans/resource-navigation.md.
+
+  /** Group label this resource renders under in the sidebar. Items
+   * without a group land in an unnamed top section. */
+  static navigationGroup: string | undefined = undefined
+
+  /** Sort key within a group. Lower sorts first; ties fall back to
+   * registration order. Items without a sort go after sorted items. */
+  static navigationSort: number | undefined = undefined
+
+  /** Sidebar label override. `Resource.label` still drives page titles. */
+  static navigationLabel: string | undefined = undefined
+
+  /** Sidebar icon override. Same `IconValue` contract as `icon`. */
+  static navigationIcon: IconValue = undefined
+
+  /** Server-eval'd badge handler; rendered as a small pill next to the
+   * label. Errors thrown here are swallowed so a broken count never
+   * breaks page render. */
+  static navigationBadge: NavigationBadgeHandler | undefined = undefined
+
+  /** Pill color for the badge. */
+  static navigationBadgeColor: NavigationBadgeColor = 'default'
+
+  /** Class name (`Resource.name` / `Global.name` / `Page.name`) of a
+   * parent nav item. Renders nested under the parent when set; renders
+   * at top level when the name doesn't resolve. */
+  static navigationParentItem: string | undefined = undefined
+
+  /** Column that names a record when referring to it in search results,
+   * breadcrumbs, or relation pickers. Resolution order at the call site
+   * is `recordTitleAttribute` → `'name'` → `'title'` → `'id'`. */
+  static recordTitleAttribute: string | undefined = undefined
 
   /**
    * Optional ORM model. When set, `defaultPages` auto-fills `Form.save`,
@@ -107,6 +161,16 @@ export abstract class Resource {
   /** URL slug, derived from `label` when not set explicitly. */
   static getSlug(): string {
     return this.slug || this.label.toLowerCase().replace(/\s+/g, '-')
+  }
+
+  /** Sidebar label: `navigationLabel` override falls through to `label`. */
+  static getNavigationLabel(): string {
+    return this.navigationLabel ?? this.label
+  }
+
+  /** Sidebar icon: `navigationIcon` override falls through to `icon`. */
+  static getNavigationIcon(): IconValue {
+    return this.navigationIcon ?? this.icon
   }
 }
 

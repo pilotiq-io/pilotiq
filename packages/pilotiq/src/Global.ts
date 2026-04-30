@@ -1,6 +1,7 @@
 import type { Element } from './schema/Element.js'
 import type { Form } from './elements/Form.js'
 import type { Page } from './Page.js'
+import type { IconValue } from './icons/types.js'
 import { defaultGlobalPages } from './defaultGlobalPages.js'
 
 /**
@@ -40,8 +41,9 @@ export abstract class Global {
   /** URL slug. Derived from `label` when unset. */
   static slug: string = ''
 
-  /** Sidebar / nav icon name. */
-  static icon: string = 'settings'
+  /** Sidebar / nav icon. String registry key or React component. See
+   * `Resource.icon` for the contract. */
+  static icon: IconValue = 'settings'
 
   /** Optional model identifier. Phase 3 ORM adapters use this. */
   static model?: string

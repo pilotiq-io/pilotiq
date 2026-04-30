@@ -1,4 +1,5 @@
 import { Resource, Section, Text, type Form, type Table, type Element } from '@pilotiq/pilotiq'
+import { Newspaper } from 'lucide-react'
 import { Article } from '../../Models/Article.js'
 import { ArticleForm }   from './Schemas/ArticleForm.js'
 import { ArticlesTable } from './Tables/ArticlesTable.js'
@@ -10,7 +11,7 @@ import { ViewArticle }   from './Pages/ViewArticle.js'
 export class ArticleResource extends Resource {
   static override label         = 'Articles'
   static override labelSingular = 'Article'
-  static override icon          = 'file-text'
+  static override icon          = Newspaper
   static override model         = Article
 
   static override form(form: Form): Form {
