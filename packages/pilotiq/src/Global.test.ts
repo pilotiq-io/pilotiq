@@ -73,6 +73,30 @@ describe('Global (singleton resource)', () => {
     assert.equal((headingChildren[0] as { getType(): string }).getType(), 'action')
   })
 
+  // ─── Plan #9: navigation metadata ──────────────────────────
+
+  it('navigationGroup defaults to "Settings"', () => {
+    class Anon extends Global { static override label = 'X' }
+    assert.equal(Anon.navigationGroup, 'Settings')
+  })
+
+  it('navigationGroup honors explicit null as opt-out', () => {
+    class Anon extends Global {
+      static override label = 'X'
+      static override navigationGroup = null
+    }
+    assert.equal(Anon.navigationGroup, null)
+  })
+
+  it('getNavigationLabel/Icon fall through to label/icon when overrides are unset', () => {
+    class Anon extends Global {
+      static override label = 'Brand Config'
+      static override icon  = 'palette'
+    }
+    assert.equal(Anon.getNavigationLabel(), 'Brand Config')
+    assert.equal(Anon.getNavigationIcon(),  'palette')
+  })
+
   it('sentinel save fires when the user did not configure one', () => {
     class NoSave extends Global {
       static override label = 'X'

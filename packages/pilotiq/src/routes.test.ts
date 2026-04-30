@@ -247,7 +247,7 @@ describe('registerPilotiqRoutes — handler → schema round-trip', () => {
     assert.equal(fields[0]!.name, 'public')
   })
 
-  it('panelInfo includes resources and pages summary', async () => {
+  it('panelInfo ships a unified navigation tree with one entry per resource/page', async () => {
     class AnalyticsPage extends Page {
       static override slug  = 'analytics'
       static override label = 'Analytics'
@@ -263,10 +263,13 @@ describe('registerPilotiqRoutes — handler → schema round-trip', () => {
 
     const indexRoute = router.list().find(r => r.path === '/admin/articles')!
     const response = await callHandler(indexRoute.handler) as { props: Record<string, unknown> }
-    const panelData = response.props['panel'] as { resources: unknown[]; pages: unknown[] }
+    const panelData = response.props['panel'] as { navigation: Array<{ name: string; url: string }> }
 
-    assert.equal(panelData.resources.length, 1)
-    assert.equal(panelData.pages.length, 1)
+    assert.equal(panelData.navigation.length, 2)
+    const articles = panelData.navigation.find(n => n.name === 'ArticleResource')!
+    const analytics = panelData.navigation.find(n => n.name === 'AnalyticsPage')!
+    assert.equal(articles.url,  '/admin/articles')
+    assert.equal(analytics.url, '/admin/analytics')
   })
 })
 

@@ -14,6 +14,16 @@ export class ArticleResource extends Resource {
   static override icon          = Newspaper
   static override model         = Article
 
+  // ── Navigation metadata (Plan #9) ─────────────────────────
+  static override navigationGroup       = 'Content'
+  static override navigationSort        = 10
+  static override navigationBadge       = async () => {
+    const n = await Article.where('status', 'draft').count()
+    return n > 0 ? n : undefined
+  }
+  static override navigationBadgeColor  = 'warning' as const
+  static override recordTitleAttribute  = 'title'
+
   static override form(form: Form): Form {
     return ArticleForm.configure(form)
   }

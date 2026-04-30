@@ -5,6 +5,9 @@ export class SimplePage extends Page {
   static label = 'Simple'
   static icon  = 'image'
 
+  static override navigationGroup       = 'Demos'
+  static override navigationParentItem  = 'ElementsShowcase'
+
   static schema() {
     return [
       Heading.make('Simple Page').description('A custom page built with the schema system.'),

@@ -13,6 +13,8 @@ import {
 export class ElementsShowcase extends Page {
   static slug  = 'elements'
   static label = 'Elements'
+
+  static override navigationGroup = 'Demos'
   static icon  = 'layout-grid'
 
   static schema() {

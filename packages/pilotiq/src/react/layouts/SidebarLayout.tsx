@@ -5,11 +5,16 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
@@ -19,6 +24,9 @@ import { ThemeToggle } from '../ThemeToggle.js'
 import type { AppShellProps } from '../AppShell.js'
 import { useIconFor } from '../icon-context.js'
 import type { SerializedIcon } from '../../icons/types.js'
+import type { NavItem } from '../../pageData.js'
+import type { NavigationBadgeColor } from '../../Resource.js'
+import { cn } from '../utils.js'
 
 function NavIcon({ value }: { value: SerializedIcon | undefined }) {
   const Icon = useIconFor(value)
@@ -26,8 +34,110 @@ function NavIcon({ value }: { value: SerializedIcon | undefined }) {
   return <Icon className="size-4" aria-hidden="true" />
 }
 
-export function SidebarLayout({ panel, basePath, children }: AppShellProps) {
+/** Tailwind utility map shared with `ListTab.badgeColor` so badges read
+ *  consistently across the admin panel. */
+const BADGE_COLOR: Record<NavigationBadgeColor, string> = {
+  default:     'bg-muted text-muted-foreground',
+  primary:     'bg-primary/10 text-primary',
+  success:     'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  warning:     'bg-amber-500/10  text-amber-600  dark:text-amber-400',
+  destructive: 'bg-red-500/10    text-red-600    dark:text-red-400',
+  info:        'bg-sky-500/10    text-sky-600    dark:text-sky-400',
+}
+
+function Badge({ value, color }: { value: string | undefined; color: NavigationBadgeColor | undefined }) {
+  if (value === undefined) return null
+  return (
+    <SidebarMenuBadge className={cn('px-1.5 rounded-md', BADGE_COLOR[color ?? 'default'])}>
+      {value}
+    </SidebarMenuBadge>
+  )
+}
+
+/**
+ * Active-link match is a longest-prefix walk. The dashboard URL (e.g.
+ * `/admin`) is a prefix of every other panel URL, so we only return
+ * "active" for it on an exact match. Otherwise we accept the URL as a
+ * prefix of `pathname` if it is followed by `/` or end-of-string —
+ * `/admin/users` should not light up `/admin/user`.
+ */
+function isActive(url: string, pathname: string | undefined, basePath: string): boolean {
+  if (!pathname) return false
+  if (url === basePath) return pathname === basePath
+  if (url === pathname) return true
+  return pathname.startsWith(url + '/')
+}
+
+/** Group nav items by `group`, preserving the order each group's first
+ *  member appeared in the (already-sorted) flat list. Items without a
+ *  group land in a leading unnamed bucket. */
+function groupItems(items: NavItem[]): Array<{ group: string | undefined; items: NavItem[] }> {
+  const order: Array<string | undefined> = []
+  const buckets = new Map<string | undefined, NavItem[]>()
+  for (const it of items) {
+    const key = it.group
+    if (!buckets.has(key)) {
+      buckets.set(key, [])
+      order.push(key)
+    }
+    buckets.get(key)!.push(it)
+  }
+  return order.map(g => ({ group: g, items: buckets.get(g)! }))
+}
+
+function NavTree({
+  items,
+  pathname,
+  basePath,
+}: {
+  items:     NavItem[]
+  pathname:  string | undefined
+  basePath:  string
+}) {
+  return (
+    <SidebarMenu>
+      {items.map(it => {
+        const active = isActive(it.url, pathname, basePath)
+        return (
+          <SidebarMenuItem key={it.name}>
+            <SidebarMenuButton
+              isActive={active}
+              render={<a href={it.url} />}
+              tooltip={it.label}
+            >
+              <NavIcon value={it.icon} />
+              <span>{it.label}</span>
+              <Badge value={it.badge} color={it.badgeColor} />
+            </SidebarMenuButton>
+            {it.children && it.children.length > 0 && (
+              <SidebarMenuSub>
+                {it.children.map(child => {
+                  const childActive = isActive(child.url, pathname, basePath)
+                  return (
+                    <SidebarMenuSubItem key={child.name}>
+                      <SidebarMenuSubButton
+                        isActive={childActive}
+                        render={<a href={child.url} />}
+                      >
+                        <NavIcon value={child.icon} />
+                        <span>{child.label}</span>
+                        <Badge value={child.badge} color={child.badgeColor} />
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )
+                })}
+              </SidebarMenuSub>
+            )}
+          </SidebarMenuItem>
+        )
+      })}
+    </SidebarMenu>
+  )
+}
+
+export function SidebarLayout({ panel, basePath, currentPath, children }: AppShellProps) {
   const title = panel.branding?.title ?? panel.name
+  const groups = groupItems(panel.navigation ?? [])
 
   return (
     <SidebarProvider>
@@ -51,38 +161,14 @@ export function SidebarLayout({ panel, basePath, children }: AppShellProps) {
         </SidebarHeader>
 
         <SidebarContent>
-          {panel.resources && panel.resources.length > 0 && (
-            <SidebarGroup>
+          {groups.map((g, idx) => (
+            <SidebarGroup key={g.group ?? `__top__${idx}`}>
+              {g.group !== undefined && <SidebarGroupLabel>{g.group}</SidebarGroupLabel>}
               <SidebarGroupContent>
-                <SidebarMenu>
-                  {panel.resources.map(r => (
-                    <SidebarMenuItem key={r.slug}>
-                      <SidebarMenuButton render={<a href={`${basePath}/${r.slug}`} />} tooltip={r.label}>
-                        <NavIcon value={r.icon} />
-                        <span>{r.label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
+                <NavTree items={g.items} pathname={currentPath} basePath={basePath} />
               </SidebarGroupContent>
             </SidebarGroup>
-          )}
-          {panel.pages && panel.pages.length > 0 && (
-            <SidebarGroup>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {panel.pages.map(p => (
-                    <SidebarMenuItem key={p.slug}>
-                      <SidebarMenuButton render={<a href={`${basePath}/${p.slug}`} />} tooltip={p.label}>
-                        <NavIcon value={p.icon} />
-                        <span>{p.label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          )}
+          ))}
         </SidebarContent>
 
         <SidebarFooter>

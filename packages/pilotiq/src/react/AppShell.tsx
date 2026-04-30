@@ -5,18 +5,19 @@ import { ToasterProvider } from './Toaster.js'
 import type { NotificationMeta } from '../notifications/Notification.js'
 import type { ComponentRegistry } from './icon-context.js'
 import { ComponentRegistryProvider } from './icon-context.js'
-import type { SerializedIcon } from '../icons/types.js'
+import type { NavItem } from '../pageData.js'
 
 export interface AppShellProps {
   panel: {
     name: string
     branding: { title?: string; logo?: string }
-    resources?: Array<{ name?: string; label: string; slug: string; icon?: SerializedIcon }>
-    globals?:   Array<{ name?: string; label: string; slug: string; icon?: SerializedIcon }>
-    pages?:     Array<{ name?: string; label: string; slug: string; icon?: SerializedIcon }>
+    /** Pre-grouped navigation tree built by `panelInfo()` (Plan #9). */
+    navigation?: NavItem[]
     themeEditor?: boolean
   }
   basePath: string
+  /** Pathname used to compute active-link state in the sidebar/topbar. */
+  currentPath?: string
   layout?: 'sidebar' | 'topbar'
   /** Server-flashed notifications from `viewProps.notifications`. The
    * Toaster mounts them on first render. */

@@ -584,6 +584,49 @@ For each resource, do them in this order — earlier steps unblock later ones, a
 
 ---
 
+## Sidebar grouping, sorting, and badges (net-new)
+
+Panels ships a flat sidebar; once a panel grows past ~6 resources it becomes
+unreadable. Pilotiq's `Resource` / `Global` / `Page` classes accept seven
+optional static fields that drive grouping, sorting, sub-nav, and a count
+badge:
+
+```ts
+class ArticleResource extends Resource {
+  static label                 = 'Articles'
+  static labelSingular         = 'Article'
+  static icon                  = Newspaper
+  static model                 = Article
+
+  // ── Navigation ────────────────────────────────────────
+  static navigationGroup       = 'Content'
+  static navigationSort        = 10
+  static navigationLabel       = 'Posts'              // sidebar override; titles still use `label`
+  static navigationIcon        = Pencil               // sidebar icon override
+  static navigationBadge       = () => Article.where('status', 'draft').count()
+  static navigationBadgeColor  = 'warning' as const   // 'default' | 'primary' | 'success' | 'warning' | 'destructive' | 'info'
+  static navigationParentItem  = 'CategoryResource'   // class name of the parent — renders nested
+  static recordTitleAttribute  = 'title'              // column used for record references (search, breadcrumbs)
+}
+```
+
+All fields are optional. Behavior:
+
+- Items without `navigationGroup` land in an unnamed leading section.
+- Within a group, items sort by `navigationSort` ascending; ties fall back
+  to registration order. Items without a sort go after sorted items.
+- Badges resolve in parallel server-side; handler errors swallow silently
+  (a flaky count never blanks the page).
+- `navigationParentItem` references the parent's **JS class name** (stable
+  across slug edits). Dangling references and cycles render at top level
+  (with a console warning in dev for cycles).
+- `Global` defaults `navigationGroup` to `'Settings'`. Pass
+  `navigationGroup = null` to opt out.
+
+Panels has no equivalent — this is net-new in pilotiq.
+
+---
+
 ## Things that aren't ported (yet)
 
 - **Live updates** (`static live = true`) — not implemented in pilotiq yet.

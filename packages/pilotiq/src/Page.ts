@@ -1,6 +1,6 @@
 import type { Element } from './schema/Element.js'
 import type { SchemaContext, SchemaDefinition } from './schema/resolveSchema.js'
-import type { ResourceClass } from './Resource.js'
+import type { ResourceClass, NavigationBadgeColor, NavigationBadgeHandler } from './Resource.js'
 import { type IconValue, serializeIcon } from './icons/types.js'
 
 /**
@@ -31,6 +31,16 @@ export class Page {
    * Component refs serialize via the build-time `_components.ts`
    * manifest emitted by the Pilotiq Vite plugin. */
   static icon?: IconValue
+
+  // ─── Plan #9: navigation metadata ──────────────────────────
+  // Mirrors Resource's nav fields (minus `recordTitleAttribute`).
+  static navigationGroup:       string | undefined = undefined
+  static navigationSort:        number | undefined = undefined
+  static navigationLabel:       string | undefined = undefined
+  static navigationIcon:        IconValue          = undefined
+  static navigationBadge:       NavigationBadgeHandler | undefined = undefined
+  static navigationBadgeColor:  NavigationBadgeColor = 'default'
+  static navigationParentItem:  string | undefined = undefined
 
   /** Stored schema definition. */
   protected static _schemaDef?: SchemaDefinition
@@ -70,6 +80,16 @@ export class Page {
     if (this.label) return this.label
     const name = this.name.replace(/Page$/, '')
     return name.replace(/([A-Z])/g, ' $1').trim()
+  }
+
+  /** Sidebar label: `navigationLabel` override falls through to `getLabel()`. */
+  static getNavigationLabel(): string {
+    return this.navigationLabel ?? this.getLabel()
+  }
+
+  /** Sidebar icon: `navigationIcon` override falls through to `icon`. */
+  static getNavigationIcon(): IconValue {
+    return this.navigationIcon ?? this.icon
   }
 
   static hasSchema(): boolean {

@@ -12,6 +12,8 @@
 import type { Pilotiq } from './Pilotiq.js'
 import { PilotiqRegistry } from './PilotiqRegistry.js'
 import type { Page } from './Page.js'
+import type { ResourceClass, NavigationBadgeColor } from './Resource.js'
+import type { GlobalClass } from './Global.js'
 import type { Element } from './schema/Element.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { Form } from './elements/Form.js'
@@ -23,41 +25,205 @@ import { ListTab } from './Tab.js'
 import { resolveTheme } from './theme/resolve.js'
 import type { ThemeMeta } from './theme/types.js'
 import { consumeFlashedNotifications } from './notifications/flash.js'
-import { serializeIcon } from './icons/types.js'
+import { serializeIcon, type SerializedIcon } from './icons/types.js'
 
 // ─── Shared helpers ──────────────────────────────────────────
 
-export function panelInfo(pilotiq: Pilotiq) {
+/**
+ * Single nav-tree entry. `name` is the JS class name (`R.name` /
+ * `G.name` / `P.name`) — also the lookup key into the build-time
+ * `_components.ts` manifest the Vite plugin emits, so component-typed
+ * icons resolve from the same identifier.
+ */
+export interface NavItem {
+  name:        string
+  label:       string
+  url:         string
+  icon?:       SerializedIcon
+  group?:      string
+  sort?:       number
+  badge?:      string
+  badgeColor?: NavigationBadgeColor
+  children?:   NavItem[]
+}
+
+/**
+ * Build the panel header summary + the unified navigation tree.
+ *
+ * Pipeline:
+ *   1. flatten resources + globals + pages into raw NavItem records
+ *   2. resolve `navigationParentItem` references → nest under parents
+ *      (cycles broken with a console warn; dangling parents render at top level)
+ *   3. sort within each grouping (top-level *and* every parent's children)
+ *      by `navigationSort` ascending → registration order
+ *   4. resolve every `navigationBadge()` in parallel via `Promise.all`;
+ *      handler errors are swallowed (badge omitted) so a flaky count
+ *      never blanks the page
+ */
+export async function panelInfo(pilotiq: Pilotiq) {
   const cfg = pilotiq.getConfig()
   const merged = pilotiq.getMergedTheme()
   const theme: ThemeMeta | undefined = merged ? resolveTheme(merged) : undefined
+  const navigation = await buildNavigation(pilotiq)
   return {
     name: cfg.name,
     branding: cfg.branding,
-    // Resource / Global / Page nav entries. `name` is the JS class name
-    // (`R.name`) — used as a stable identifier and as the lookup key
-    // into the build-time `_components.ts` manifest the Vite plugin
-    // emits. Component-typed icons serialize as `{ class: <name> }`;
-    // string-typed icons ship as-is and resolve through the runtime
-    // `registerIcons()` registry.
-    resources: cfg.resources.map(R => ({
-      name:  R.name,
-      label: R.label, slug: R.getSlug(),
-      icon:  serializeIcon(R.icon, R.name),
-    })),
-    globals: cfg.globals.map(G => ({
-      name:  G.name,
-      label: G.label, slug: G.getSlug(),
-      icon:  serializeIcon(G.icon, G.name),
-    })),
-    pages: cfg.pages.map(P => ({
-      name:  P.name,
-      label: P.getLabel(), slug: P.getSlug(),
-      icon:  serializeIcon(P.icon, P.name),
-    })),
+    navigation,
     theme,
     themeEditor: cfg.themeEditor ?? false,
   }
+}
+
+/** @internal Internal node before nesting; carries the registration index
+ *  so we can stable-sort by it as the tie-breaker. */
+interface RawNavItem extends NavItem {
+  parent?: string
+  /** Registration index across resources → globals → pages (in that order),
+   *  so resources beat globals on a sort tie within the same group. */
+  _idx: number
+}
+
+async function buildNavigation(pilotiq: Pilotiq): Promise<NavItem[]> {
+  const cfg = pilotiq.getConfig()
+  const base = cfg.path
+
+  // Flatten + resolve badges in parallel. We build the raw list first so
+  // every entry has its identity (`name`) and parent set; badges resolve
+  // alongside.
+  const raw: RawNavItem[] = []
+  let idx = 0
+
+  const pushBadge: Array<{ item: RawNavItem; handler: () => unknown }> = []
+
+  for (const R of cfg.resources) {
+    const item: RawNavItem = {
+      name:  R.name,
+      label: R.getNavigationLabel(),
+      url:   `${base}/${R.getSlug()}`,
+      icon:  serializeIcon(R.getNavigationIcon(), R.name),
+      _idx:  idx++,
+    }
+    if (R.navigationGroup        !== undefined) item.group        = R.navigationGroup
+    if (R.navigationSort         !== undefined) item.sort         = R.navigationSort
+    if (R.navigationParentItem   !== undefined) item.parent       = R.navigationParentItem
+    if (R.navigationBadgeColor   !== 'default') item.badgeColor   = R.navigationBadgeColor
+    if (R.navigationBadge)                       pushBadge.push({ item, handler: R.navigationBadge })
+    raw.push(item)
+  }
+
+  for (const G of cfg.globals) {
+    // Globals default `navigationGroup` to `'Settings'`. Allow `null` as
+    // an explicit opt-out → render at top level.
+    const group = G.navigationGroup === null ? undefined : G.navigationGroup
+    const item: RawNavItem = {
+      name:  G.name,
+      label: G.getNavigationLabel(),
+      url:   `${base}/${G.getSlug()}`,
+      icon:  serializeIcon(G.getNavigationIcon(), G.name),
+      _idx:  idx++,
+    }
+    if (group                    !== undefined) item.group        = group
+    if (G.navigationSort         !== undefined) item.sort         = G.navigationSort
+    if (G.navigationParentItem   !== undefined) item.parent       = G.navigationParentItem
+    if (G.navigationBadgeColor   !== 'default') item.badgeColor   = G.navigationBadgeColor
+    if (G.navigationBadge)                       pushBadge.push({ item, handler: G.navigationBadge })
+    raw.push(item)
+  }
+
+  for (const P of cfg.pages) {
+    const item: RawNavItem = {
+      name:  P.name,
+      label: P.getNavigationLabel(),
+      url:   `${base}/${P.getSlug()}`,
+      icon:  serializeIcon(P.getNavigationIcon(), P.name),
+      _idx:  idx++,
+    }
+    if (P.navigationGroup        !== undefined) item.group        = P.navigationGroup
+    if (P.navigationSort         !== undefined) item.sort         = P.navigationSort
+    if (P.navigationParentItem   !== undefined) item.parent       = P.navigationParentItem
+    if (P.navigationBadgeColor   !== 'default') item.badgeColor   = P.navigationBadgeColor
+    if (P.navigationBadge)                       pushBadge.push({ item, handler: P.navigationBadge })
+    raw.push(item)
+  }
+
+  await Promise.all(pushBadge.map(async ({ item, handler }) => {
+    try {
+      const v = await handler()
+      if (v === undefined || v === null) return
+      item.badge = String(v)
+    } catch {
+      // Per-badge errors stay silent.
+    }
+  }))
+
+  return nestAndSort(raw)
+}
+
+/**
+ * Resolve `parent` references → nest, drop cycles, sort within each
+ * grouping, then strip internal scaffolding (`parent`, `_idx`).
+ */
+function nestAndSort(raw: RawNavItem[]): NavItem[] {
+  const byName = new Map<string, RawNavItem>()
+  for (const it of raw) byName.set(it.name, it)
+
+  // Detect parent cycles: walk upwards from each item; any name seen
+  // twice → cycle. Items in a cycle get treated as top-level.
+  const inCycle = new Set<string>()
+  for (const it of raw) {
+    if (it.parent === undefined) continue
+    const seen = new Set<string>([it.name])
+    let cur: string | undefined = it.parent
+    while (cur !== undefined) {
+      if (seen.has(cur)) {
+        if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+          console.warn(`[Pilotiq] navigationParentItem cycle detected at "${it.name}" — rendering at top level.`)
+        }
+        inCycle.add(it.name)
+        break
+      }
+      seen.add(cur)
+      const parent = byName.get(cur)
+      if (!parent) break
+      cur = parent.parent
+    }
+  }
+
+  const childrenOf = new Map<string, RawNavItem[]>()
+  const top: RawNavItem[] = []
+  for (const it of raw) {
+    const parent = it.parent
+    if (parent && byName.has(parent) && !inCycle.has(it.name)) {
+      const list = childrenOf.get(parent) ?? []
+      list.push(it)
+      childrenOf.set(parent, list)
+    } else {
+      top.push(it)
+    }
+  }
+
+  // Sort items in a sibling group by sort (asc), ties → registration order.
+  const sortItems = (items: RawNavItem[]): RawNavItem[] => {
+    return [...items].sort((a, b) => {
+      const aHas = a.sort !== undefined, bHas = b.sort !== undefined
+      if (aHas && bHas)  return a.sort! - b.sort! || a._idx - b._idx
+      if (aHas)          return -1   // sorted items come before unsorted
+      if (bHas)          return  1
+      return a._idx - b._idx
+    })
+  }
+
+  // Strip internals + recurse into children.
+  const finalize = (items: RawNavItem[]): NavItem[] =>
+    sortItems(items).map(it => {
+      const kids = childrenOf.get(it.name)
+      const { parent, _idx, ...rest } = it
+      const out: NavItem = { ...rest }
+      if (kids && kids.length > 0) out.children = finalize(kids)
+      return out
+    })
+
+  return finalize(top)
 }
 
 export async function callPageSchema(PageClass: typeof Page, ctx: SchemaContext): Promise<Element[]> {
@@ -114,7 +280,7 @@ export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Re
   const cfg = pilotiq.getConfig()
   const schemaData = await resolveSchema(cfg.schema, {})
   return {
-    panel:    panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq),
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
@@ -150,7 +316,7 @@ export async function resourceIndexData(
 
   return {
     pageType: 'resource',
-    panel:    panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.label, labelSingular: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     basePath: cfg.path,
@@ -270,7 +436,7 @@ export async function resourceCreateData(
   const schemaData = await resolveSchema(elements, ctx)
 
   return {
-    panel:    panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'create' as const,
@@ -325,7 +491,7 @@ export async function resourceEditData(
   )
 
   return {
-    panel:    panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'edit' as const,
@@ -356,7 +522,7 @@ export async function resourceViewData(
   const schemaData = await resolveSchema(elements, ctx)
 
   return {
-    panel:    panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'view' as const,
@@ -406,7 +572,7 @@ export async function globalEditData(
 
   return {
     pageType: 'global',
-    panel:    panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq),
     page:     PageClass.toMeta(),
     global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
@@ -434,7 +600,7 @@ export async function globalViewData(
   const schemaData = await resolveSchema(elements, ctx)
 
   return {
-    panel:    panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq),
     page:     PageClass.toMeta(),
     global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
@@ -462,7 +628,7 @@ export async function customPageData(
 
   return {
     pageType: 'page',
-    panel:    panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq),
     page:     PageClass.toMeta(),
     schemaData,
     basePath: cfg.path,

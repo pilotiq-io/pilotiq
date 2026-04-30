@@ -462,7 +462,7 @@ export function registerPilotiqRoutes(
         res.status(422)
         return view('pilotiq.slug', {
           pageType:  'page',
-          panel:     panelInfo(pilotiq),
+          panel:     await panelInfo(pilotiq),
           page:      PageClass.toMeta(),
           schemaData,
           basePath:  base,
@@ -488,7 +488,7 @@ export function registerPilotiqRoutes(
   if (cfg.themeEditor) {
     router.get(`${base}/theme`, async () => {
       return view('pilotiq.theme', {
-        panel:       panelInfo(pilotiq),
+        panel:       await panelInfo(pilotiq),
         basePath:    base,
         layout:      cfg.layout,
         themeConfig: pilotiq.getMergedTheme() ?? {},

@@ -2,6 +2,7 @@ import type { Element } from './schema/Element.js'
 import type { Form } from './elements/Form.js'
 import type { Page } from './Page.js'
 import type { IconValue } from './icons/types.js'
+import type { NavigationBadgeColor, NavigationBadgeHandler } from './Resource.js'
 import { defaultGlobalPages } from './defaultGlobalPages.js'
 
 /**
@@ -45,6 +46,34 @@ export abstract class Global {
    * `Resource.icon` for the contract. */
   static icon: IconValue = 'settings'
 
+  // ─── Plan #9: navigation metadata ──────────────────────────
+  // Same shape as Resource minus `recordTitleAttribute` (singletons
+  // don't surface as record references). Default `navigationGroup`
+  // is `'Settings'` — most users want all globals grouped under that
+  // header. Override with `null` (or any other string) to opt out.
+
+  /** Group label. Defaults to `'Settings'`; set to `null` to opt out
+   * and render at the top level. */
+  static navigationGroup: string | null | undefined = 'Settings'
+
+  /** Sort key within a group. */
+  static navigationSort: number | undefined = undefined
+
+  /** Sidebar label override. */
+  static navigationLabel: string | undefined = undefined
+
+  /** Sidebar icon override. */
+  static navigationIcon: IconValue = undefined
+
+  /** Server-eval'd badge handler. */
+  static navigationBadge: NavigationBadgeHandler | undefined = undefined
+
+  /** Pill color for the badge. */
+  static navigationBadgeColor: NavigationBadgeColor = 'default'
+
+  /** Class name of a parent nav item. */
+  static navigationParentItem: string | undefined = undefined
+
   /** Optional model identifier. Phase 3 ORM adapters use this. */
   static model?: string
 
@@ -74,6 +103,16 @@ export abstract class Global {
   /** URL slug, derived from `label` when not set explicitly. */
   static getSlug(): string {
     return this.slug || this.label.toLowerCase().replace(/\s+/g, '-')
+  }
+
+  /** Sidebar label: `navigationLabel` override falls through to `label`. */
+  static getNavigationLabel(): string {
+    return this.navigationLabel ?? this.label
+  }
+
+  /** Sidebar icon: `navigationIcon` override falls through to `icon`. */
+  static getNavigationIcon(): IconValue {
+    return this.navigationIcon ?? this.icon
   }
 }
 

@@ -53,4 +53,48 @@ describe('Resource (static API)', () => {
     }
     assert.equal(ArticleResource.getSlug(), 'articles')
   })
+
+  // ─── Plan #9: navigation metadata ──────────────────────────
+
+  it('navigation fields default sanely', () => {
+    class R extends Resource { static override label = 'Things' }
+    assert.equal(R.navigationGroup,        undefined)
+    assert.equal(R.navigationSort,         undefined)
+    assert.equal(R.navigationLabel,        undefined)
+    assert.equal(R.navigationIcon,         undefined)
+    assert.equal(R.navigationBadge,        undefined)
+    assert.equal(R.navigationBadgeColor,   'default')
+    assert.equal(R.navigationParentItem,   undefined)
+    assert.equal(R.recordTitleAttribute,   undefined)
+  })
+
+  it('getNavigationLabel falls through to label when override is unset', () => {
+    class R extends Resource { static override label = 'Articles' }
+    assert.equal(R.getNavigationLabel(), 'Articles')
+  })
+
+  it('getNavigationLabel returns the override when set', () => {
+    class R extends Resource {
+      static override label = 'Articles'
+      static override navigationLabel = 'Posts'
+    }
+    assert.equal(R.getNavigationLabel(), 'Posts')
+  })
+
+  it('getNavigationIcon falls through to icon when override is unset', () => {
+    class R extends Resource {
+      static override label = 'Articles'
+      static override icon  = 'newspaper'
+    }
+    assert.equal(R.getNavigationIcon(), 'newspaper')
+  })
+
+  it('getNavigationIcon returns the override when set', () => {
+    class R extends Resource {
+      static override label          = 'Articles'
+      static override icon           = 'newspaper'
+      static override navigationIcon = 'pencil'
+    }
+    assert.equal(R.getNavigationIcon(), 'pencil')
+  })
 })

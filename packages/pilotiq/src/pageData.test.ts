@@ -177,39 +177,198 @@ describe('resolveActiveTab', () => {
 })
 
 describe('panelInfo — icon serialization', () => {
-  it('ships string-typed Resource.icon as-is', () => {
+  it('ships string-typed Resource.icon as-is', async () => {
     class StringIconResource extends Resource {
       static override label = 'Things'
       static override icon  = 'newspaper'
     }
     const panel = Pilotiq.make('T').path('/admin').resources([StringIconResource])
-    const info  = panelInfo(panel)
-    const r     = info.resources[0]!
+    const info  = await panelInfo(panel)
+    const r     = info.navigation[0]!
     assert.equal(r.icon, 'newspaper')
     assert.equal(r.name, 'StringIconResource')
   })
 
-  it('ships component-typed Resource.icon as { class: ownerName }', () => {
+  it('ships component-typed Resource.icon as { class: ownerName }', async () => {
     const FakeIcon = () => null
     class CmpIconResource extends Resource {
       static override label = 'Things'
       static override icon  = FakeIcon as unknown as string
     }
     const panel = Pilotiq.make('T').path('/admin').resources([CmpIconResource])
-    const info  = panelInfo(panel)
-    const r     = info.resources[0]!
+    const info  = await panelInfo(panel)
+    const r     = info.navigation[0]!
     assert.deepEqual(r.icon, { class: 'CmpIconResource' })
     assert.equal(r.name, 'CmpIconResource')
   })
 
-  it('serializes Global.icon and Page.icon the same way', () => {
+  it('serializes Global.icon and Page.icon the same way', async () => {
     const FakeIcon = () => null
     class CmpIconGlobal extends Global {
       static override label = 'Settings'
       static override icon  = FakeIcon as unknown as string
     }
     const panel = Pilotiq.make('T').path('/admin').globals([CmpIconGlobal])
-    const info  = panelInfo(panel)
-    assert.deepEqual(info.globals[0]!.icon, { class: 'CmpIconGlobal' })
+    const info  = await panelInfo(panel)
+    assert.deepEqual(info.navigation[0]!.icon, { class: 'CmpIconGlobal' })
+  })
+})
+
+describe('panelInfo — navigation tree (Plan #9)', () => {
+  it('builds a flat tree when no group / sort / parent metadata is set', async () => {
+    class Articles extends Resource { static override label = 'Articles' }
+    class Users    extends Resource { static override label = 'Users' }
+    const panel = Pilotiq.make('T').path('/admin').resources([Articles, Users])
+    const info  = await panelInfo(panel)
+    assert.equal(info.navigation.length, 2)
+    assert.equal(info.navigation[0]!.name, 'Articles')
+    assert.equal(info.navigation[0]!.url,  '/admin/articles')
+    assert.equal(info.navigation[0]!.group, undefined)
+    assert.equal(info.navigation[0]!.children, undefined)
+    assert.equal(info.navigation[1]!.name, 'Users')
+  })
+
+  it('uses navigationLabel + navigationIcon when set, otherwise label + icon', async () => {
+    const Pencil = () => null
+    class Posts extends Resource {
+      static override label            = 'Articles'
+      static override icon             = 'newspaper'
+      static override navigationLabel  = 'Posts'
+      static override navigationIcon   = Pencil as unknown as string
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Posts]))
+    assert.equal(info.navigation[0]!.label, 'Posts')
+    assert.deepEqual(info.navigation[0]!.icon, { class: 'Posts' })
+  })
+
+  it('Globals default navigationGroup to "Settings"; explicit null opts out', async () => {
+    class Brand extends Global { static override label = 'Brand' }
+    class Site  extends Global {
+      static override label = 'Site'
+      static override navigationGroup = null
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').globals([Brand, Site]))
+    const brand = info.navigation.find(n => n.name === 'Brand')!
+    const site  = info.navigation.find(n => n.name === 'Site')!
+    assert.equal(brand.group, 'Settings')
+    assert.equal(site.group,  undefined)
+  })
+
+  it('preserves group order based on first appearance in registration', async () => {
+    class A extends Resource { static override label = 'A'; static override navigationGroup = 'Beta' }
+    class B extends Resource { static override label = 'B'; static override navigationGroup = 'Alpha' }
+    class C extends Resource { static override label = 'C'; static override navigationGroup = 'Beta' }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([A, B, C]))
+    // Items live flat on the tree carrying `group`; later code groups by it.
+    // Order is A (Beta), B (Alpha), C (Beta) — Beta appeared first.
+    assert.deepEqual(info.navigation.map(n => n.group), ['Beta', 'Alpha', 'Beta'])
+  })
+
+  it('sorts within siblings by navigationSort (asc), then registration order; sorted before unsorted', async () => {
+    class A extends Resource { static override label = 'A'; static override navigationSort = 30 }
+    class B extends Resource { static override label = 'B'; static override navigationSort = 10 }
+    class C extends Resource { static override label = 'C' /* no sort */ }
+    class D extends Resource { static override label = 'D'; static override navigationSort = 20 }
+    class E extends Resource { static override label = 'E' /* no sort, comes after C */ }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([A, B, C, D, E]))
+    assert.deepEqual(info.navigation.map(n => n.name), ['B', 'D', 'A', 'C', 'E'])
+  })
+
+  it('nests under navigationParentItem (class-name reference)', async () => {
+    class Parent extends Resource { static override label = 'Parent' }
+    class Child  extends Resource {
+      static override label = 'Child'
+      static override navigationParentItem = 'Parent'
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Parent, Child]))
+    assert.equal(info.navigation.length, 1)
+    assert.equal(info.navigation[0]!.name, 'Parent')
+    assert.equal(info.navigation[0]!.children?.length, 1)
+    assert.equal(info.navigation[0]!.children![0]!.name, 'Child')
+  })
+
+  it('renders dangling parent references at top level (no console error)', async () => {
+    class Orphan extends Resource {
+      static override label = 'Orphan'
+      static override navigationParentItem = 'DoesNotExist'
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Orphan]))
+    assert.equal(info.navigation.length, 1)
+    assert.equal(info.navigation[0]!.name, 'Orphan')
+    assert.equal(info.navigation[0]!.children, undefined)
+  })
+
+  it('breaks parent cycles: A → B → A both render at top level', async () => {
+    class A extends Resource { static override label = 'A'; static override navigationParentItem = 'B' }
+    class B extends Resource { static override label = 'B'; static override navigationParentItem = 'A' }
+    // Suppress the dev warning.
+    const origWarn = console.warn
+    console.warn = () => {}
+    try {
+      const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([A, B]))
+      const names = info.navigation.map(n => n.name).sort()
+      assert.deepEqual(names, ['A', 'B'])
+    } finally {
+      console.warn = origWarn
+    }
+  })
+
+  it('resolves navigationBadge handlers in parallel and stamps the result', async () => {
+    const order: string[] = []
+    class Slow extends Resource {
+      static override label = 'Slow'
+      static override navigationBadge = async () => {
+        order.push('slow-start')
+        await new Promise(r => setTimeout(r, 10))
+        order.push('slow-end')
+        return 1
+      }
+    }
+    class Fast extends Resource {
+      static override label = 'Fast'
+      static override navigationBadge = async () => {
+        order.push('fast-start')
+        await new Promise(r => setTimeout(r, 5))
+        order.push('fast-end')
+        return 2
+      }
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Slow, Fast]))
+    const slow = info.navigation.find(n => n.name === 'Slow')!
+    const fast = info.navigation.find(n => n.name === 'Fast')!
+    assert.equal(slow.badge, '1')
+    assert.equal(fast.badge, '2')
+    // Both started before either finished — confirms Promise.all parallelism.
+    assert.equal(order.indexOf('slow-start') < order.indexOf('fast-end'), true)
+    assert.equal(order.indexOf('fast-start') < order.indexOf('slow-end'), true)
+  })
+
+  it('swallows badge handler errors so the page still renders', async () => {
+    class Broken extends Resource {
+      static override label = 'Broken'
+      static override navigationBadge = async () => { throw new Error('boom') }
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Broken]))
+    assert.equal(info.navigation[0]!.badge, undefined)
+  })
+
+  it('omits badge when handler returns undefined or null', async () => {
+    class Empty extends Resource {
+      static override label = 'Empty'
+      static override navigationBadge = async () => undefined
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Empty]))
+    assert.equal(info.navigation[0]!.badge, undefined)
+  })
+
+  it('exposes navigationBadgeColor when not "default"', async () => {
+    class Drafty extends Resource {
+      static override label                = 'Drafty'
+      static override navigationBadge      = () => 3
+      static override navigationBadgeColor = 'warning' as const
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Drafty]))
+    assert.equal(info.navigation[0]!.badge,      '3')
+    assert.equal(info.navigation[0]!.badgeColor, 'warning')
   })
 })
