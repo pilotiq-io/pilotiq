@@ -202,32 +202,69 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
     assert.equal(schema[1]!.getType(), 'table')
   })
 
-  it('ListPage injects default Create / Edit / Delete actions on the table', () => {
+  it('ListPage does NOT inject default Create / Edit / Delete actions (Filament-style explicit)', () => {
     class MyList extends ListPage {
       static override getResource() { return ArticleResource }
     }
     const schema = MyList.schema({ basePath: '/admin' }) as Array<{ getType(): string }>
     const table = schema[1] as Table
     const tableActions = (table.getChildren() ?? []).filter((c): c is Action => c instanceof Action)
-    const create = tableActions.find(a => a.name === 'create')
-    const edit   = tableActions.find(a => a.name === 'edit')
-    const del    = tableActions.find(a => a.name === 'delete')
-
-    assert.ok(create, 'Create action should be present')
-    assert.equal(create!.getPlacement(), 'header')
-    assert.equal(create!.getHref(), '/admin/articles/create')
-
-    assert.ok(edit, 'Edit row action should be present')
-    assert.equal(edit!.getPlacement(), 'row')
-    assert.equal(edit!.getHref(), '/admin/articles/:id/edit')
-
-    assert.ok(del, 'Delete row action should be present')
-    assert.equal(del!.getPlacement(), 'row')
-    assert.equal(del!.getMethod(), 'post')
-    assert.equal(del!.getActionUrl(), '/admin/articles/:id/delete')
+    const names = tableActions.map(a => a.name)
+    assert.equal(names.includes('create'), false, 'create header action should NOT auto-inject')
+    assert.equal(names.includes('edit'),   false, 'edit row action should NOT auto-inject')
+    assert.equal(names.includes('delete'), false, 'delete row action should NOT auto-inject')
   })
 
-  it('user-supplied actions in Resource.table() win over the defaults by name', () => {
+  it('Action factories build the same shapes as the old auto-inject', () => {
+    const basePath = '/admin'
+    const create = Action.create(ArticleResource, basePath)
+    const edit   = Action.edit(ArticleResource, basePath)
+    const del    = Action.delete(ArticleResource, basePath)
+    const view   = Action.view(ArticleResource, basePath)
+
+    assert.equal(create.name, 'create')
+    assert.equal(create.getHref(), '/admin/articles/create')
+
+    assert.equal(edit.name, 'edit')
+    assert.equal(edit.getHref(), '/admin/articles/:id/edit')
+
+    assert.equal(view.name, 'view')
+    assert.equal(view.getHref(), '/admin/articles/:id')
+
+    assert.equal(del.name, 'delete')
+    assert.equal(del.getMethod(), 'post')
+    assert.equal(del.getActionUrl(), '/admin/articles/:id/delete')
+  })
+
+  it('Action factories accept an optional recordId for view-page contexts', () => {
+    const editForRow      = Action.edit(ArticleResource, '/admin')
+    const editForViewPage = Action.edit(ArticleResource, '/admin', '42')
+    assert.equal(editForRow.getHref(),      '/admin/articles/:id/edit')
+    assert.equal(editForViewPage.getHref(), '/admin/articles/42/edit')
+  })
+
+  it('subclasses can override getHeaderActions / getRowActions to opt in', () => {
+    class WithActions extends ListPage {
+      static override getResource() { return ArticleResource }
+      static override getHeaderActions(R: typeof ArticleResource, basePath: string) {
+        return [Action.create(R, basePath)]
+      }
+      static override getRowActions(R: typeof ArticleResource, basePath: string) {
+        return [Action.edit(R, basePath), Action.delete(R, basePath)]
+      }
+    }
+    const table = (WithActions.schema({ basePath: '/admin' }) as Array<unknown>)[1] as Table
+    const tableActions = (table.getChildren() ?? []).filter((c): c is Action => c instanceof Action)
+    const names = tableActions.map(a => a.name)
+    assert.ok(names.includes('create'))
+    assert.ok(names.includes('edit'))
+    assert.ok(names.includes('delete'))
+
+    const edit = tableActions.find(a => a.name === 'edit')!
+    assert.equal(edit.getPlacement(), 'row', 'recordActions slot stamps row placement')
+  })
+
+  it('Resource.table() actions win over identically-named page-level overrides', () => {
     class CustomActions extends ArticleResource {
       static override table(t: Table): Table {
         return t.columns([Column.make('title')]).actions([
@@ -237,27 +274,16 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
     }
     class List extends ListPage {
       static override getResource() { return CustomActions }
+      static override getHeaderActions(R: typeof CustomActions, basePath: string) {
+        return [Action.create(R, basePath)]
+      }
     }
     const table = (List.schema({ basePath: '/admin' }) as Array<unknown>)[1] as Table
     const creates = (table.getChildren() ?? [])
       .filter((c): c is Action => c instanceof Action)
       .filter(a => a.name === 'create')
     assert.equal(creates.length, 1, 'only one create action should exist')
-    assert.equal(creates[0]!.getHref(), '/custom/compose', 'user href should win')
-  })
-
-  it('ListPage.getHeaderActions and getRowActions are individually overridable to []', () => {
-    class NoCreate extends ListPage {
-      static override getResource() { return ArticleResource }
-      static override getHeaderActions() { return [] }
-    }
-    const table = (NoCreate.schema() as Array<unknown>)[1] as Table
-    const actionNames = (table.getChildren() ?? [])
-      .filter((c): c is Action => c instanceof Action)
-      .map(a => a.name)
-    assert.equal(actionNames.includes('create'), false)
-    assert.equal(actionNames.includes('edit'),   true)
-    assert.equal(actionNames.includes('delete'), true)
+    assert.equal(creates[0]!.getHref(), '/custom/compose', 'user href in table() should win')
   })
 
   it('CreatePage / EditPage subclasses derive role-suffixed slugs', () => {
@@ -293,23 +319,33 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
     assert.equal(schema[1]!.getType(), 'table')
   })
 
-  it('ViewPage.getActions() returns Edit + Delete by default and is overridable', async () => {
+  it('ViewPage.getActions() returns [] by default and is overridable to add Edit/Delete', async () => {
     class V extends ViewPage { static override getResource() { return ArticleResource } }
     const elements = await V.schema({ recordId: '7', basePath: '/admin' }) as Array<{
       getType(): string
       name?: string
     }>
     const actions = elements.filter(e => e.getType() === 'action')
-    assert.equal(actions.length, 2)
-    assert.equal(actions[0]!.name, 'edit')
-    assert.equal(actions[1]!.name, 'delete')
+    assert.equal(actions.length, 0, 'ViewPage adds no actions by default')
 
-    class NoActions extends ViewPage {
+    class WithActions extends ViewPage {
       static override getResource() { return ArticleResource }
-      static override getActions() { return [] }
+      static override getActions(R: typeof ArticleResource, recordId: string | undefined, basePath: string) {
+        if (!recordId) return []
+        return [Action.edit(R, basePath, recordId), Action.delete(R, basePath, recordId)]
+      }
     }
-    const stripped = await NoActions.schema({ recordId: '7', basePath: '/admin' }) as Array<{ getType(): string }>
-    assert.equal(stripped.filter(e => e.getType() === 'action').length, 0)
+    const filled = await WithActions.schema({ recordId: '7', basePath: '/admin' }) as Array<{
+      getType(): string
+      name?: string
+      getHref?(): string | undefined
+    }>
+    const filledActions = filled.filter(e => e.getType() === 'action')
+    assert.equal(filledActions.length, 2)
+    assert.equal(filledActions[0]!.name, 'edit')
+    assert.equal(filledActions[1]!.name, 'delete')
+    // recordId baked in (not :id) for the view-page context
+    assert.equal(filledActions[0]!.getHref!(), '/admin/articles/7/edit')
   })
 
   it('getResource() throws a helpful error when not overridden', () => {

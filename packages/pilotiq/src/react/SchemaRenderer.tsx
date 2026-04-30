@@ -300,62 +300,95 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
 
 // ─── Action rendering ───────────────────────────────────────
 
-/**
- * Build a `<form method="POST">` (with optional `_method` spoof) and
- * submit it. Used for form-style row/header actions that fire from a
- * non-form context (e.g. a dropdown menu item).
- */
-function submitMethodForm(
-  url:    string,
-  method: 'post' | 'put' | 'patch' | 'delete',
-): void {
-  if (typeof document === 'undefined') return
-  const form = document.createElement('form')
-  form.method = 'POST'
-  form.action = url
-  const spoofed = method === 'put' || method === 'patch' || method === 'delete' ? method : undefined
-  if (spoofed) {
-    const input = document.createElement('input')
-    input.type  = 'hidden'
-    input.name  = '_method'
-    input.value = spoofed
-    form.appendChild(input)
-  }
-  document.body.appendChild(form)
-  form.submit()
+import type { NotificationMeta } from '../notifications/Notification.js'
+
+type Notify    = (n: NotificationMeta | Omit<NotificationMeta, 'id'>) => void
+type Navigate  = (url: string) => void
+type Notif     = NotificationMeta
+
+/** Drain `notifications[]` from a JSON response into `useToast().notify`. */
+function dispatchNotifications(data: unknown, notify: Notify): void {
+  const notifs = (data as { notifications?: Notif[] }).notifications
+  if (!notifs || notifs.length === 0) return
+  for (const n of notifs) notify(n)
 }
 
 /**
- * Build a hidden `<form>` with `ids[]` + arbitrary value fields and
- * submit it. Browsers handle the 303 redirect natively, so this is
- * a one-shot navigation rather than a fetch + manual `location.assign`.
+ * Fetch + JSON dispatch for form-method actions (Delete-style — no
+ * server-rendered <form>, no 303 redirect, no full page reload). Sends
+ * `_method` as a body field so Hono's POST handler dispatches the
+ * intended verb. On success: drain notifications, SPA-navigate to the
+ * server-supplied redirect (or stay on current path if none).
+ *
+ * Failure modes:
+ *   - 4xx/5xx with `{ error }`: surfaced as an error toast.
+ *   - Network errors: error toast with the exception message.
  */
-function submitHandlerAction(
-  url:    string,
-  ids:    string[],
-  values: Record<string, string> = {},
-): void {
-  if (typeof document === 'undefined') return
-  const form = document.createElement('form')
-  form.method = 'POST'
-  form.action = url
-  form.style.display = 'none'
-  for (const id of ids) {
-    const input = document.createElement('input')
-    input.type  = 'hidden'
-    input.name  = 'ids'
-    input.value = id
-    form.appendChild(input)
+async function dispatchMethodAction(
+  url:      string,
+  method:   'post' | 'put' | 'patch' | 'delete',
+  navigate: Navigate,
+  notify:   Notify,
+): Promise<void> {
+  try {
+    const fd = new FormData()
+    if (method !== 'post') fd.append('_method', method)
+    const res = await fetch(url, {
+      method:  'POST',
+      headers: { 'Accept': 'application/json' },
+      body:    fd,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      const message = String((data as { error?: string }).error ?? `Request failed (${res.status})`)
+      notify({ type: 'error', title: 'Action failed', body: message })
+      return
+    }
+    dispatchNotifications(data, notify)
+    const redirect = String((data as { redirect?: string }).redirect ?? '')
+    if (redirect) navigate(redirect)
+    else if (typeof window !== 'undefined') navigate(window.location.pathname + window.location.search)
+  } catch (err) {
+    notify({ type: 'error', title: 'Action failed', body: err instanceof Error ? err.message : String(err) })
   }
-  for (const [k, v] of Object.entries(values)) {
-    const input = document.createElement('input')
-    input.type  = 'hidden'
-    input.name  = k
-    input.value = v
-    form.appendChild(input)
+}
+
+/**
+ * Fetch + JSON dispatch for handler-style actions (no schema, no modal,
+ * just a button). Sends `ids[]` plus arbitrary `values` fields. Server
+ * returns `{ ok, redirect, notifications }` (or `{ ok: false, error }` on
+ * failure). On success: drain notifications, SPA-navigate; on failure:
+ * surface the error as a toast. No full page reload in any case.
+ */
+async function dispatchHandlerAction(
+  url:      string,
+  ids:      string[],
+  navigate: Navigate,
+  notify:   Notify,
+  values:   Record<string, string> = {},
+): Promise<void> {
+  try {
+    const fd = new FormData()
+    for (const id of ids) fd.append('ids', id)
+    for (const [k, v] of Object.entries(values)) fd.append(k, v)
+    const res = await fetch(url, {
+      method:  'POST',
+      headers: { 'Accept': 'application/json' },
+      body:    fd,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      const message = String((data as { error?: string }).error ?? `Request failed (${res.status})`)
+      notify({ type: 'error', title: 'Action failed', body: message })
+      return
+    }
+    dispatchNotifications(data, notify)
+    const redirect = String((data as { redirect?: string }).redirect ?? '')
+    if (redirect) navigate(redirect)
+    else if (typeof window !== 'undefined') navigate(window.location.pathname + window.location.search)
+  } catch (err) {
+    notify({ type: 'error', title: 'Action failed', body: err instanceof Error ? err.message : String(err) })
   }
-  document.body.appendChild(form)
-  form.submit()
 }
 
 /**
@@ -552,6 +585,102 @@ function ConfirmActionDialog({
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+/**
+ * Button + optional confirm dialog for a form-method action (Delete and
+ * the like). Click → fetch + JSON dispatch via `dispatchMethodAction` —
+ * no full page reload, no server-rendered form. Confirm dialog gates the
+ * dispatch when configured.
+ */
+function MethodActionButton({
+  url,
+  method,
+  confirm,
+  destructive,
+  className,
+  name,
+  ariaLabel,
+  tooltip,
+  inner,
+}: {
+  url:         string | undefined
+  method:      'post' | 'put' | 'patch' | 'delete'
+  confirm:     { title?: string; message: string } | undefined
+  destructive: boolean
+  className:   string
+  name:        string
+  ariaLabel:   string | undefined
+  tooltip:     string | undefined
+  inner:       React.ReactNode
+}) {
+  const navigate = useNavigate()
+  const { notify } = useToast()
+  const dispatch = (): void => {
+    if (!url) return
+    void dispatchMethodAction(url, method, navigate, notify)
+  }
+
+  if (confirm) {
+    return (
+      <ConfirmActionDialog
+        title={confirm.title}
+        message={confirm.message}
+        destructive={destructive}
+        onConfirm={dispatch}
+        trigger={(open) => withTooltip(
+          <button type="button" onClick={open} className={className} data-action-name={name} aria-label={ariaLabel}>
+            {inner}
+          </button>,
+          tooltip,
+        )}
+      />
+    )
+  }
+  return withTooltip(
+    <button type="button" onClick={dispatch} className={className} data-action-name={name} aria-label={ariaLabel}>
+      {inner}
+    </button>,
+    tooltip,
+  )
+}
+
+/**
+ * Button for a handler-style action without confirm/modal. Click →
+ * fetch + JSON via `dispatchHandlerAction`, then SPA-navigate +
+ * show notifications. No full page reload.
+ */
+function HandlerActionButton({
+  url,
+  ids,
+  className,
+  name,
+  ariaLabel,
+  tooltip,
+  inner,
+}: {
+  url:       string
+  ids:       string[]
+  className: string
+  name:      string
+  ariaLabel: string | undefined
+  tooltip:   string | undefined
+  inner:     React.ReactNode
+}) {
+  const navigate = useNavigate()
+  const { notify } = useToast()
+  return withTooltip(
+    <button
+      type="button"
+      onClick={() => void dispatchHandlerAction(url, ids, navigate, notify)}
+      className={className}
+      data-action-name={name}
+      aria-label={ariaLabel}
+    >
+      {inner}
+    </button>,
+    tooltip,
   )
 }
 
@@ -769,63 +898,26 @@ function renderAction(
     )
   }
 
-  // Form-style action (POST/PUT/PATCH/DELETE) — server-rendered <form>.
+  // Form-style action (POST/PUT/PATCH/DELETE) — fetch + JSON, no full reload.
   if (method) {
-    const httpMethod = 'post' // hono accepts POST + _method spoof for non-POST
-    const spoofed = method === 'put' || method === 'patch' || method === 'delete' ? method : undefined
     const resolvedUrl = resolveTemplate(actionUrl)
-    if (confirm) {
-      // Build + submit the form on confirm. No server-rendered <form>, so
-      // accidental Enter-key submit can't bypass the dialog.
-      return (
-        <ConfirmActionDialog
-          key={index}
-          title={confirm.title}
-          message={confirm.message}
-          destructive={destructive}
-          onConfirm={() => {
-            if (!resolvedUrl) return
-            submitMethodForm(resolvedUrl, method)
-          }}
-          trigger={(open) => withTooltip(
-            <button
-              type="button"
-              onClick={open}
-              className={className}
-              data-action-name={name}
-              aria-label={ariaLabel}
-            >
-              {inner}
-            </button>,
-            tooltip,
-          )}
-        />
-      )
-    }
     return (
-      <form
+      <MethodActionButton
         key={index}
-        method={httpMethod}
-        action={resolvedUrl}
-        className="inline-block"
-      >
-        {spoofed && <input type="hidden" name="_method" value={spoofed} />}
-        {withTooltip(
-          <button
-            type="submit"
-            className={className}
-            data-action-name={name}
-            aria-label={ariaLabel}
-          >
-            {inner}
-          </button>,
-          tooltip,
-        )}
-      </form>
+        url={resolvedUrl}
+        method={method}
+        confirm={confirm}
+        destructive={destructive}
+        className={className}
+        name={name}
+        ariaLabel={ariaLabel}
+        tooltip={tooltip}
+        inner={inner}
+      />
     )
   }
 
-  // Handler-style action — POSTs to `dispatchUrl` with `ids[]` body.
+  // Handler-style action — fetch + JSON dispatch with `ids[]` body.
   if (dispatchUrl) {
     const ids = opts.ids ?? []
     const modal = el['modal']
@@ -850,18 +942,17 @@ function renderAction(
         />
       )
     }
-    return withTooltip(
-      <button
+    return (
+      <HandlerActionButton
         key={index}
-        type="button"
-        onClick={() => submitHandlerAction(dispatchUrl, ids)}
+        url={dispatchUrl}
+        ids={ids}
         className={className}
-        data-action-name={name}
-        aria-label={ariaLabel}
-      >
-        {inner}
-      </button>,
-      tooltip,
+        name={name}
+        ariaLabel={ariaLabel}
+        tooltip={tooltip}
+        inner={inner}
+      />
     )
   }
 
@@ -940,170 +1031,45 @@ function FilterPopover({ filters }: { filters: ElementMeta[] }) {
 }
 
 /**
- * Collapses all row-level actions into a single MoreHorizontal dropdown
- * trigger. Each action becomes a DropdownMenuItem; on click we either:
- *   - link-style: navigate to href (template `:id` substituted for rowId)
- *   - form-style: POST a synthetic <form> via submitMethodForm
- *   - handler-style: POST the dispatchUrl via submitHandlerAction
- *   - any of the above with `confirm`: open a Dialog at the row level,
- *     dispatch on confirm. The dropdown closes first (shadcn pattern —
- *     single visible popup at a time), then the dialog opens.
+ * Render row actions inline. Each Action becomes a small button next to
+ * the others; an `ActionGroup` placed in row position keeps its dropdown
+ * via `ActionGroupTrigger` (the dropdown UX is opt-in via grouping, not
+ * a default). Per-row visibility and disabled state come from the
+ * server-side eval inside `dispatchTable` (`_visibleActions` /
+ * `_disabledActions` keys on the row).
+ *
+ * Each Action's dispatch (link / fetch+JSON / modal / confirm) is handled
+ * by `renderActionLike` → `renderAction`, same path as header / inline /
+ * bulk placements. The `:id` substitution comes from `opts.ids = [rowId]`.
  */
-function RowActionsMenu({
-  rowId,
-  rowRecord,
-  actions,
-}: {
-  rowId:      string
-  rowRecord?: Record<string, unknown>
-  actions:    ElementMeta[]
-}) {
-  const [pending, setPending] = useState<ElementMeta | null>(null)
-
-  // Per-row visibility/disabled comes from the server-side eval inside
-  // dispatchTable. Only conditional actions (those with `.visible(...)`,
-  // `.hidden(...)`, or `.disabled(...)` rules) are listed; static actions
-  // render unconditionally.
+function renderRowActions(
+  rowId:     string,
+  rowRecord: Record<string, unknown> | undefined,
+  actions:   ElementMeta[],
+): React.ReactNode {
   const rowVisibleSet  = new Set((rowRecord?.['_visibleActions']  as string[] | undefined) ?? [])
   const rowDisabledSet = new Set((rowRecord?.['_disabledActions'] as string[] | undefined) ?? [])
-  const visibleActions = actions.filter(a => {
+
+  const visible = actions.filter(a => {
     if (!a['conditional']) return true
     return rowVisibleSet.has(String(a['name'] ?? ''))
   })
 
-  const resolveTemplate = (s: string | undefined): string | undefined =>
-    s && rowId ? s.replace(':id', rowId) : s
-
-  const dispatchAction = (action: ElementMeta): void => {
-    const href        = action['href']        as string | undefined
-    const method      = action['method']      as 'post' | 'put' | 'patch' | 'delete' | undefined
-    const actionUrl   = action['action']      as string | undefined
-    const dispatchUrl = action['dispatchUrl'] as string | undefined
-    if (href) {
-      const url = resolveTemplate(href)
-      if (url && typeof window !== 'undefined') window.location.href = url
-      return
+  const decorate = (a: ElementMeta): ElementMeta => {
+    const name = String(a['name'] ?? '')
+    if (rowDisabledSet.has(name)) {
+      return { ...a, disabled: true }
     }
-    if (method) {
-      const url = resolveTemplate(actionUrl)
-      if (url) submitMethodForm(url, method)
-      return
-    }
-    if (dispatchUrl) {
-      submitHandlerAction(dispatchUrl, [rowId])
-      return
-    }
+    return a
   }
-
-  const onClick = (action: ElementMeta): void => {
-    // Modal-form actions OR confirm-only actions queue up — the dropdown
-    // closes first (shadcn pattern: single visible popup at a time), then
-    // the dialog opens via the `pending` state.
-    if (action['modal'] || action['confirm']) {
-      setPending(action)
-      return
-    }
-    dispatchAction(action)
-  }
-
-  // Modal/handler-style pending dialog — uses ActionModalDialog with the
-  // row's record values as initial form data so edit-in-place works.
-  const pendingHandler = pending && pending['dispatchUrl']
-  // Form-method (Delete) or no-dispatchUrl confirm path keeps the simpler
-  // confirm dialog that runs `dispatchAction(pending)` on confirm.
-  const pendingConfirmOnly = pending && !pendingHandler && pending['confirm'] as { title?: string; message: string } | undefined
-  const pendingConfirm = pendingConfirmOnly || (pending?.['confirm'] as { title?: string; message: string } | undefined)
 
   return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={(props) => (
-            <button
-              {...props}
-              type="button"
-              aria-label="Row actions"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            >
-              <MoreHorizontalIcon className="size-4" />
-            </button>
-          )}
-        />
-        <DropdownMenuContent align="end">
-          {visibleActions.map((a, i) => {
-            const label       = String(a['label'] ?? a['name'] ?? '')
-            const destructive = Boolean(a['destructive'])
-            const disabled    = rowDisabledSet.has(String(a['name'] ?? ''))
-            return (
-              <DropdownMenuItem
-                key={i}
-                destructive={destructive}
-                disabled={disabled}
-                onClick={() => { if (!disabled) onClick(a) }}
-              >
-                {label}
-              </DropdownMenuItem>
-            )
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {/* Modal-form / handler-style pending action — uses fetch+JSON
-          dispatch via ActionModalDialog. */}
-      {pendingHandler && pending && (
-        <ActionModalDialog
-          meta={pending}
-          ids={[rowId]}
-          {...(rowRecord ? { initialValues: rowRecord } : {})}
-          open={true}
-          onOpenChange={(o) => { if (!o) setPending(null) }}
-        />
-      )}
-
-      {/* Form-method (Delete) confirm — keeps native form-post + 303 flow. */}
-      <Dialog
-        open={Boolean(pendingConfirmOnly)}
-        onOpenChange={(o) => { if (!o) setPending(null) }}
-      >
-        <DialogContent>
-          {pendingConfirmOnly && pendingConfirm && (
-            <>
-              <DialogHeader>
-                <DialogTitle>{pendingConfirm.title ?? 'Are you sure?'}</DialogTitle>
-                <DialogDescription>{pendingConfirm.message}</DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <button
-                  type="button"
-                  onClick={() => setPending(null)}
-                  className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 h-9 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  autoFocus
-                  onClick={() => {
-                    const action = pending
-                    setPending(null)
-                    if (action) dispatchAction(action)
-                  }}
-                  className={
-                    pending && pending['destructive']
-                      ? 'inline-flex items-center justify-center rounded-md bg-destructive px-3 h-9 text-sm font-medium text-destructive-foreground hover:bg-destructive/90'
-                      : 'inline-flex items-center justify-center rounded-md bg-primary px-3 h-9 text-sm font-medium text-primary-foreground hover:bg-primary/90'
-                  }
-                >
-                  {pending && pending['destructive'] ? 'Delete' : 'Confirm'}
-                </button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-    </>
+    <div className="flex items-center justify-end gap-1">
+      {visible.map((a, i) => renderActionLike(decorate(a), i, { ids: [rowId], size: 'sm' }))}
+    </div>
   )
 }
+
 
 /**
  * Trigger button + dropdown menu for an `ActionGroup` meta. Reuses the
@@ -1121,6 +1087,8 @@ function ActionGroupTrigger({
   ids?: string[]
 }) {
   const [pending, setPending] = useState<ElementMeta | null>(null)
+  const navigate = useNavigate()
+  const { notify } = useToast()
 
   const name        = String(el['name'] ?? '')
   const label       = String(el['label'] ?? name)
@@ -1140,15 +1108,15 @@ function ActionGroupTrigger({
     const actionUrl   = action['action']      as string | undefined
     const dispatchUrl = action['dispatchUrl'] as string | undefined
     if (href) {
-      if (typeof window !== 'undefined') window.location.href = href
+      navigate(href)
       return
     }
     if (method && actionUrl) {
-      submitMethodForm(actionUrl, method)
+      void dispatchMethodAction(actionUrl, method, navigate, notify)
       return
     }
     if (dispatchUrl) {
-      submitHandlerAction(dispatchUrl, ids)
+      void dispatchHandlerAction(dispatchUrl, ids, navigate, notify)
       return
     }
   }
@@ -1211,7 +1179,7 @@ function ActionGroupTrigger({
         />
       )}
 
-      {/* Form-method confirm — keeps native form-post + 303 flow. */}
+      {/* Form-method confirm — fetch+JSON dispatch via dispatchMethodAction; SPA-navigates on success. */}
       <Dialog
         open={Boolean(pendingConfirmOnly)}
         onOpenChange={(o) => { if (!o) setPending(null) }}
@@ -1447,8 +1415,16 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
     case 'actionGroup':
       return <ActionGroupTrigger key={index} el={el} />
 
-    case 'form':
-      return <FormRenderer key={index} el={el} />
+    case 'form': {
+      // Key on formId so SPA navigation between pages with different
+      // forms (list → edit, edit → edit-of-different-record, etc.)
+      // forces a fresh React mount. Form fields are uncontrolled
+      // (`defaultValue`), so without remount, prop updates wouldn't
+      // propagate into the rendered <input>s — the form would render
+      // with stale or empty values.
+      const formId = String(el['formId'] ?? index)
+      return <FormRenderer key={formId} el={el} />
+    }
 
     case 'table':
       return <TableRenderer key={index} el={el} />
@@ -1875,12 +1851,14 @@ function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
 }
 
 function TableRenderer({ el }: { el: ElementMeta }) {
+  const navigate = useNavigate()
   const children = el.children ?? []
   const columns  = children.filter(c => c.type === 'column')
   // Actions and ActionGroups share placement — both show up in the
   // header/bulk/row toolbars depending on their `placement` field.
   const actionLike = children.filter(c => c.type === 'action' || c.type === 'actionGroup')
   const filters    = children.filter(c => c.type === 'filter')
+  const hasRecordUrl = Boolean(el['recordUrl'])
 
   // Group actions by placement. `inline` defaults to header so it shows up
   // somewhere visible — explicit placements always win.
@@ -2092,12 +2070,32 @@ function TableRenderer({ el }: { el: ElementMeta }) {
               </TableRow>
             ) : rows.map((row, ri) => {
               const id = visibleIds[ri]!
+              const recordObj = row as Record<string, unknown>
               const isSelected = selected.has(id)
               const stripedClass = striped && ri % 2 === 1 ? 'bg-muted/30' : ''
+              // Per-row navigation URL stamped server-side by
+              // `Table.recordUrl(fn)` → `loadTableRecords` → `_recordUrl`.
+              // Cells with their own interactive content (bulk checkbox,
+              // actions menu) carry `data-no-row-nav` so clicks there
+              // don't double-fire as a row navigation.
+              const recordUrl = hasRecordUrl ? (recordObj['_recordUrl'] as string | undefined) : undefined
+              const rowClickable = recordUrl !== undefined
+              const rowClassName = `${stripedClass}${rowClickable ? ' cursor-pointer' : ''}`.trim()
+              const onRowClick: React.MouseEventHandler<HTMLTableRowElement> | undefined = rowClickable
+                ? (e) => {
+                    if ((e.target as HTMLElement).closest('[data-no-row-nav]')) return
+                    navigate(recordUrl)
+                  }
+                : undefined
               return (
-                <TableRow key={id} data-state={isSelected ? 'selected' : undefined} className={stripedClass}>
+                <TableRow
+                  key={id}
+                  data-state={isSelected ? 'selected' : undefined}
+                  className={rowClassName || undefined}
+                  onClick={onRowClick}
+                >
                   {hasBulkActions && (
-                    <TableCell className="w-9 px-3">
+                    <TableCell className="w-9 px-3" data-no-row-nav>
                       <Checkbox
                         aria-label={`Select row ${id}`}
                         checked={isSelected}
@@ -2107,7 +2105,6 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                   )}
                   {columns.map((col, ci) => {
                     const name = String(col['name'] ?? '')
-                    const recordObj = row as Record<string, unknown>
                     const value = recordObj[name]
                     const align = col['alignment'] === 'center' ? 'text-center'
                                 : col['alignment'] === 'end'    ? 'text-right'
@@ -2122,8 +2119,8 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                     )
                   })}
                   {hasRowActions && (
-                    <TableCell className="w-px text-right">
-                      <RowActionsMenu rowId={id} rowRecord={row as Record<string, unknown>} actions={rowActions} />
+                    <TableCell className="w-px text-right" data-no-row-nav>
+                      {renderRowActions(id, recordObj, rowActions)}
                     </TableCell>
                   )}
                 </TableRow>

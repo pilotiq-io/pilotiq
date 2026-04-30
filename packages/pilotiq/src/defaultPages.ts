@@ -128,41 +128,38 @@ export class ListPage extends ResourcePage {
   }
 
   /**
-   * Header actions rendered in the table's top bar (e.g. "New Article").
-   * Defaults to a single Create link pointing at the resource's create
-   * page. Override and return `[]` to suppress.
+   * Header actions rendered in the table's top bar. Returns `[]` by
+   * default — Filament-style explicit. Override to add a Create button:
+   *
+   * @example
+   * static override getHeaderActions(R, basePath) {
+   *   return [Action.create(R, basePath)]
+   * }
+   *
+   * Or call it explicitly inside `Resource.table()` via
+   * `table.headerActions([Action.create(R, basePath)])`.
    */
-  static getHeaderActions(R: ResourceClass, basePath: string): Action[] {
-    const slug = R.getSlug()
-    return [
-      Action.make('create')
-        .label(`New ${R.labelSingular}`)
-        .header()
-        .href(`${basePath}/${slug}/create`),
-    ]
+  static getHeaderActions(_R: ResourceClass, _basePath: string): Action[] {
+    return []
   }
 
   /**
-   * Row actions rendered in a per-row Actions column. Defaults: Edit
-   * (link) + Delete (form-post). URLs use the `:id` template — the
-   * renderer substitutes the row's id at render time. Override and
-   * return `[]` to suppress.
+   * Row actions rendered in a per-row Actions column. Returns `[]` by
+   * default — Filament-style explicit. Override to add Edit/Delete:
+   *
+   * @example
+   * static override getRowActions(R, basePath) {
+   *   return [Action.edit(R, basePath), Action.delete(R, basePath)]
+   * }
+   *
+   * Or call them explicitly inside `Resource.table()` via
+   * `table.recordActions([Action.edit(R, basePath), Action.delete(R, basePath)])`.
+   *
+   * Per-row `:id` substitution still happens automatically — factories
+   * use the `:id` template; the renderer fills it in for each row.
    */
-  static getRowActions(R: ResourceClass, basePath: string): Action[] {
-    const slug = R.getSlug()
-    return [
-      Action.make('edit')
-        .label('Edit')
-        .row()
-        .href(`${basePath}/${slug}/:id/edit`),
-      Action.make('delete')
-        .label('Delete')
-        .destructive()
-        .row()
-        .method('post')
-        .action(`${basePath}/${slug}/:id/delete`)
-        .confirm(`Delete this ${R.labelSingular.toLowerCase()}?`),
-    ]
+  static getRowActions(_R: ResourceClass, _basePath: string): Action[] {
+    return []
   }
 }
 
@@ -409,23 +406,21 @@ export class ViewPage extends ResourcePage {
   }
 
   /**
-   * Override to customize the action row above the detail content.
-   * Default: Edit (link) + Delete (form-post) when a record is loaded.
+   * Override to set the action row above the detail content. Returns
+   * `[]` by default — Filament-style explicit. Wire Edit/Delete with
+   * the `:id`-substituted factories:
+   *
+   * @example
+   * static override getActions(R, recordId, basePath) {
+   *   if (!recordId) return []
+   *   return [Action.edit(R, basePath), Action.delete(R, basePath)]
+   * }
+   *
+   * The renderer fills the `:id` placeholder using the page's
+   * `recordId`, so the same factory works for row + view contexts.
    */
-  static getActions(R: ResourceClass, recordId: string | undefined, basePath: string): Element[] {
-    if (!recordId) return []
-    const slug = R.getSlug()
-    return [
-      Action.make('edit')
-        .label('Edit')
-        .href(`${basePath}/${slug}/${recordId}/edit`),
-      Action.make('delete')
-        .label('Delete')
-        .destructive()
-        .method('post')
-        .action(`${basePath}/${slug}/${recordId}/delete`)
-        .confirm(`Delete this ${R.labelSingular.toLowerCase()}?`),
-    ]
+  static getActions(_R: ResourceClass, _recordId: string | undefined, _basePath: string): Element[] {
+    return []
   }
 }
 

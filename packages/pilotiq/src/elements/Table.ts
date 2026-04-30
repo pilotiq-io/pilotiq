@@ -43,6 +43,17 @@ export interface TableEmptyState {
   icon?:        string
 }
 
+/**
+ * Per-row URL function. Returns the destination for a row click — the
+ * row renders as a clickable surface that SPA-navigates to the URL.
+ * Return `undefined` for rows that shouldn't be clickable.
+ *
+ * Filament-style ergonomics: `Table.recordUrl(r => `${slug}/${r.id}/edit`)`
+ * — most lists want "click row to edit", and pairs cleanly with the
+ * Filament-style explicit row actions for power users.
+ */
+export type RecordUrlHandler<R = unknown> = (record: R) => string | undefined
+
 export interface TableMeta extends ElementMeta {
   type:        'table'
   defaultSort?: { column: string; direction: SortDirection }
@@ -54,6 +65,14 @@ export interface TableMeta extends ElementMeta {
   description?: string
   striped?:     boolean
   emptyState?:  TableEmptyState
+
+  /**
+   * Per-row URL stamped onto each row's data under the reserved
+   * `_recordUrl` key (alongside the existing `_visibleActions` /
+   * `_disabledActions` / `_formatted` keys). The renderer reads from
+   * the row, not the table meta — `RecordUrlHandler` is server-side only.
+   */
+  recordUrl?:   true
 
   // Render-time state — populated by the framework after `records()` runs.
   rows?:        unknown[]
@@ -93,6 +112,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _currentSearch?: string
   private _currentPage?:  number
   private _currentPath?:  string
+  private _recordUrl?:    RecordUrlHandler<R>
 
   private constructor() { super() }
 
@@ -183,6 +203,22 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
+  /**
+   * Make each row clickable. The handler receives the row and returns
+   * the URL to navigate to (or `undefined` to skip). Click navigates
+   * SPA via `useNavigate()`. Pairs with Filament-style explicit row
+   * actions: most users want "click row to edit", with Edit/Delete
+   * buttons still available inline for clarity.
+   *
+   * The URL is stamped onto each row under the reserved `_recordUrl`
+   * key during `loadTableRecords` — same convention as
+   * `_visibleActions` / `_formatted`.
+   */
+  recordUrl(fn: RecordUrlHandler<R>): this {
+    this._recordUrl = fn
+    return this
+  }
+
   // ─── Render-time state ────────────────────────────────
 
   /** Attach loaded rows + total. Called by the framework after `records()` runs. */
@@ -213,6 +249,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   getCurrentSearch(): string | undefined { return this._currentSearch }
   getCurrentPage(): number | undefined { return this._currentPage }
   getCurrentPath(): string | undefined { return this._currentPath }
+  getRecordUrl(): RecordUrlHandler<R> | undefined { return this._recordUrl }
 
   /** Convenience: the `Column` children only. */
   getColumns(): Column[] {
@@ -239,6 +276,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
       ...(this._description  !== undefined ? { description: this._description  } : {}),
       ...(this._striped                    ? { striped:     true               } : {}),
       ...(this._emptyState   !== undefined ? { emptyState:  this._emptyState   } : {}),
+      ...(this._recordUrl    !== undefined ? { recordUrl:   true as const      } : {}),
       ...(this._rows         !== undefined ? { rows:        this._rows }        : {}),
       ...(this._total        !== undefined ? { total:       this._total }       : {}),
       ...(this._currentSort  !== undefined ? { currentSort: this._currentSort } : {}),

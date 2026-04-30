@@ -43,6 +43,13 @@ export const ArticlesTable = {
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
+      // Filament-style row click → view page. Pairs with the explicit
+      // Edit/Delete row actions wired in ListArticles.getRowActions —
+      // the buttons stay clickable independently (data-no-row-nav).
+      .recordUrl((r) => {
+        const id = (r as { id?: string })?.id
+        return id ? `/new-admin/articles/${id}` : undefined
+      })
       .headerActions([
         ActionGroup.make('manage')
           .label('Manage')

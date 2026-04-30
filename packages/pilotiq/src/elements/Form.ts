@@ -8,6 +8,13 @@ export interface FormContext<R = unknown> {
   values: Record<string, unknown>
   record?: R
   request?: unknown
+  /**
+   * The panel's mount path (e.g. `/admin`, `/new-admin`). Populated by
+   * the framework's POST handlers so user-supplied callbacks
+   * (`redirectAfterSave` / page `getRedirectUrl`) can build absolute
+   * URLs without hardcoding the base.
+   */
+  basePath?: string
   [key: string]: unknown
 }
 

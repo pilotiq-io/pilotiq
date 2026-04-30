@@ -130,11 +130,14 @@ export class EditArticle extends EditPage {
 export class ViewArticle extends ViewPage {
   static override getResource() { return ArticleResource }
 
-  // Replace the default Edit + Delete row with custom actions
+  // Add Edit + Delete + a custom Publish action above the detail content.
+  // ViewPage.getActions returns [] by default — Filament-style explicit.
   static override getActions(R, recordId, basePath) {
+    if (!recordId) return []
     return [
       Action.make('publish').label('Publish').handler(async () => {/* … */}),
-      ...super.getActions(R, recordId, basePath), // keep default Edit + Delete
+      Action.edit(R, basePath, recordId),
+      Action.delete(R, basePath, recordId),
     ]
   }
 }
@@ -175,7 +178,7 @@ Each Resource auto-generates four `Page` subclasses via `defaultPages(R)`. The U
 | `index`  | `${base}/${slug}`          | Heading + `Table` from `R.table()`. Sort/search/page query string round-trips.  |
 | `create` | `${base}/${slug}/create`   | Heading + `Form` from `R.form()`. POST runs the dispatch lifecycle.             |
 | `edit`   | `${base}/${slug}/:id/edit` | `loadRecord(id)` → fill values → render. POST upserts via `save()`.             |
-| `view`   | `${base}/${slug}/:id`      | Heading + Edit (link) + Delete (form-post) + `R.detail(record)` elements.       |
+| `view`   | `${base}/${slug}/:id`      | Heading + `R.detail(record)` elements. Edit/Delete are opt-in via `ViewPage.getActions()`. |
 
 The 3-segment URL `${slug}/:id` doesn't conflict with `${slug}/create` because Hono's literal-over-param routing matches `/create` first.
 
@@ -404,17 +407,43 @@ The hook receives the running `ModelQuery` plus the active string value and must
 
 ### Built-in CRUD actions
 
-The base page classes inject default actions to fill in the common pieces. They only appear when you haven't already added an action with the same name.
+The base page classes don't auto-inject any actions. Filament-style: explicit. Pre-built factories ship the standard CRUD shapes:
 
-**`ListPage` table actions:**
+```ts
+import { Action } from '@pilotiq/pilotiq'
 
-| Default      | Placement | Behavior                                                          |
-| ------------ | --------- | ----------------------------------------------------------------- |
-| `create`     | header    | Link → `${basePath}/${slug}/create` (label: "New ${labelSingular}") |
-| `edit`       | row       | Link → `${basePath}/${slug}/:id/edit`                             |
-| `delete`     | row       | Form-post → `${basePath}/${slug}/:id/delete` (with confirm prompt) |
+Action.create(R, basePath)              // → "New ${R.labelSingular}", links to ${slug}/create
+Action.edit(R, basePath, recordId?)     // → links to ${slug}/${id}/edit
+Action.view(R, basePath, recordId?)     // → links to ${slug}/${id}
+Action.delete(R, basePath, recordId?)   // → POSTs to ${slug}/${id}/delete with confirm prompt
+```
 
-The `:id` placeholder in row-action URLs is substituted at render time with the actual row's id. Override `ListPage.getHeaderActions()` / `ListPage.getRowActions()` to customize or `return []` to suppress.
+`recordId` is optional. Pass it for view-page contexts to bake the URL at config time. Omit it for row contexts — the URL keeps the `:id` template and the renderer substitutes per row.
+
+**Wire them in two places:**
+
+```ts
+// 1. Inline on the table (simplest — no page subclass needed)
+static override table(table: Table): Table {
+  return table
+    .columns([…])
+    .headerActions([Action.create(this, this.getBasePath())])  // basePath via plugin / context
+    .recordActions([Action.edit(this, basePath), Action.delete(this, basePath)])
+}
+
+// 2. On the ListPage subclass (preferred when you need basePath from the schema context)
+class ListArticles extends ListPage {
+  static override getResource() { return ArticleResource }
+  static override getHeaderActions(R, basePath) {
+    return [Action.create(R, basePath)]
+  }
+  static override getRowActions(R, basePath) {
+    return [Action.edit(R, basePath), Action.delete(R, basePath)]
+  }
+}
+```
+
+The page-subclass path is usually the right choice because `Resource.table()` doesn't have a `basePath` argument — it doesn't know which panel it's mounted on.
 
 **`CreatePage` / `EditPage` form submit:**
 

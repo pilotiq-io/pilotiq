@@ -6,13 +6,17 @@ import { Notification, type NotificationMeta } from '../notifications/Notificati
 
 /**
  * Walk an Element tree and return every `Action` instance in document
- * order. Mirrors `findForms` / `findTables`.
+ * order. Mirrors `findForms`. Uses a structural `getType()` check
+ * instead of `instanceof Action` for the same reason as `findForms` —
+ * Vite's SSR module cache can load the package via two paths during a
+ * single dev session, and `instanceof` returns false across module
+ * copies.
  */
 export function findActions(elements: ReadonlyArray<Element>): Action[] {
   const actions: Action[] = []
   const walk = (els: ReadonlyArray<Element>): void => {
     for (const el of els) {
-      if (el instanceof Action) actions.push(el)
+      if (el.getType() === 'action') actions.push(el as Action)
       const children = el.getChildren()
       if (children && children.length > 0) walk(children)
     }

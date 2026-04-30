@@ -394,7 +394,31 @@ Override hooks available per page:
 | `ListPage` | `getHeader(R)`, `getHeaderActions(R, basePath)`, `getRowActions(R, basePath)` |
 | `CreatePage` | `getHeader(R)`, `getFormActions(R)` |
 | `EditPage` | `getHeader(R)`, `getFormActions(R)` |
-| `ViewPage` | `getHeader(R)`, `getActions(R, recordId, basePath)` |
+| `ViewPage` | `getHeader(R, record)`, `getActions(R, recordId, basePath)` |
+
+`getHeaderActions` / `getRowActions` / `getActions` all return `[]` by default — Filament-style explicit. Use the pre-built factories to opt in:
+
+```ts
+class ListArticles extends ListPage {
+  static override getResource() { return ArticleResource }
+  static override getHeaderActions(R, basePath) {
+    return [Action.create(R, basePath)]
+  }
+  static override getRowActions(R, basePath) {
+    return [Action.edit(R, basePath), Action.delete(R, basePath)]
+  }
+}
+
+class ViewArticle extends ViewPage {
+  static override getResource() { return ArticleResource }
+  static override getActions(R, recordId, basePath) {
+    if (!recordId) return []
+    return [Action.edit(R, basePath, recordId), Action.delete(R, basePath, recordId)]
+  }
+}
+```
+
+Factory shapes: `Action.create(R, base)`, `Action.edit(R, base, recordId?)`, `Action.view(R, base, recordId?)`, `Action.delete(R, base, recordId?)`. `recordId` baked at config time (view-page context) vs `:id` template (row context).
 
 ---
 

@@ -50,6 +50,26 @@ async function readFormBody(req: AppRequest): Promise<Record<string, unknown>> {
   return {}
 }
 
+/**
+ * Normalize a user-supplied redirect URL. Returns absolute URLs and
+ * scheme-prefixed URLs unchanged. Bare relative paths (no leading `/`)
+ * are joined under the panel's `basePath` — without this, the browser
+ * resolves the redirect against the current request URL and produces
+ * paths like `/admin/articles/{id}/articles/{id}/edit`.
+ *
+ * `getRedirectUrl` page hooks and `Form.redirectAfterSave` callbacks
+ * are user-authored; this protects the framework against the common
+ * authoring slip while keeping absolute URLs (the documented form)
+ * working as-is.
+ */
+function normalizeRedirect(url: string | undefined, basePath: string): string | undefined {
+  if (!url) return undefined
+  if (url.startsWith('/')) return url
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url   // http(s):, mailto:, etc.
+  const trimmedBase = basePath.replace(/\/$/, '')
+  return `${trimmedBase}/${url}`
+}
+
 /** Strip framework meta keys (`_formId`, `_method`) from a parsed body. */
 function splitMeta(body: Record<string, unknown>): {
   values: Record<string, unknown>
@@ -118,7 +138,7 @@ export function registerPilotiqRoutes(
           res.status(500)
           return res.send(result.error)
         }
-        const redirect = result.redirect ?? indexUrl
+        const redirect = normalizeRedirect(result.redirect, base) ?? indexUrl
         if (json) {
           return res.json({
             ok: true,
@@ -155,7 +175,7 @@ export function registerPilotiqRoutes(
           return res.send('No form found on page')
         }
 
-        const result = await dispatchFormSubmit(form, values, { values })
+        const result = await dispatchFormSubmit(form, values, { values, basePath: base })
 
         if (!result.ok) {
           // Re-render through the same builder so the page is identical to GET,
@@ -168,7 +188,7 @@ export function registerPilotiqRoutes(
         const recordId = (result.record as { id?: unknown })?.id
         const fallback = recordId !== undefined ? `${base}/${slug}/${String(recordId)}/edit` : `${base}/${slug}`
         flashNotifications(req, result.notifications)
-        return res.redirect(result.redirect ?? fallback, 303)
+        return res.redirect(normalizeRedirect(result.redirect, base) ?? fallback, 303)
       })
     }
 
@@ -187,13 +207,30 @@ export function registerPilotiqRoutes(
       // Delete — POST ${base}/${slug}/:id/delete
       router.post(`${base}/${slug}/:id/delete`, async (req, res) => {
         const recordId = req.params['id']!
+        const json = wantsJson(req)
+        const indexUrl = `${base}/${slug}`
         try {
           await R.deleteRecord(recordId)
         } catch (err) {
+          const message = err instanceof Error ? err.message : 'Delete failed'
+          if (json) {
+            res.status(500)
+            return res.json({ ok: false, error: message })
+          }
           res.status(500)
-          return res.send(err instanceof Error ? err.message : 'Delete failed')
+          return res.send(message)
         }
-        return res.redirect(`${base}/${slug}`, 303)
+        if (json) {
+          // Build a synthetic deletion notification so the SPA path gets
+          // the same toast UX as a JSON-dispatched action handler. The
+          // form-method 303 path doesn't have the form-lifecycle toast
+          // pipeline, so we surface confirmation here.
+          const notifications = [
+            { id: `n-delete-${recordId}-${Date.now()}`, type: 'success', title: `${R.labelSingular} deleted` },
+          ]
+          return res.json({ ok: true, redirect: indexUrl, notifications })
+        }
+        return res.redirect(indexUrl, 303)
       })
     }
 
@@ -232,7 +269,7 @@ export function registerPilotiqRoutes(
         const result = await dispatchFormSubmit(
           form,
           values,
-          record !== undefined ? { values, record } : { values },
+          record !== undefined ? { values, record, basePath: base } : { values, basePath: base },
         )
 
         if (!result.ok) {
@@ -242,7 +279,7 @@ export function registerPilotiqRoutes(
         }
 
         flashNotifications(req, result.notifications)
-        return res.redirect(result.redirect ?? editUrl, 303)
+        return res.redirect(normalizeRedirect(result.redirect, base) ?? editUrl, 303)
       })
     }
   }
@@ -284,7 +321,7 @@ export function registerPilotiqRoutes(
         const result = await dispatchFormSubmit(
           form,
           values,
-          record !== undefined ? { values, record } : { values },
+          record !== undefined ? { values, record, basePath: base } : { values, basePath: base },
         )
 
         if (!result.ok) {
@@ -294,7 +331,7 @@ export function registerPilotiqRoutes(
         }
 
         flashNotifications(req, result.notifications)
-        return res.redirect(result.redirect ?? editUrl, 303)
+        return res.redirect(normalizeRedirect(result.redirect, base) ?? editUrl, 303)
       })
     }
 
@@ -343,7 +380,7 @@ export function registerPilotiqRoutes(
         res.status(500)
         return res.send(result.error)
       }
-      const redirect = result.redirect ?? pageUrl
+      const redirect = normalizeRedirect(result.redirect, base) ?? pageUrl
       if (json) {
         return res.json({
           ok: true,
@@ -369,7 +406,7 @@ export function registerPilotiqRoutes(
         return res.send('No form found on page')
       }
 
-      const result = await dispatchFormSubmit(form, values, { values })
+      const result = await dispatchFormSubmit(form, values, { values, basePath: base })
 
       if (!result.ok) {
         form.withValues(values).withErrors(result.errors)
@@ -387,7 +424,7 @@ export function registerPilotiqRoutes(
       }
 
       flashNotifications(req, result.notifications)
-      return res.redirect(result.redirect ?? pageUrl, 303)
+      return res.redirect(normalizeRedirect(result.redirect, base) ?? pageUrl, 303)
     })
   }
 

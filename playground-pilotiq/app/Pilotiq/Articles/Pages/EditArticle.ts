@@ -16,8 +16,13 @@ export class EditArticle extends EditPage {
   }
 
   // Stay on the edit page after save instead of redirecting to the list.
-  static override getRedirectUrl = (record: unknown) => {
+  // ctx.basePath is the panel's mount path (e.g. `/new-admin`); pilotiq
+  // also normalizes bare relative URLs against the panel base, so a path
+  // like `articles/${id}/edit` would also work — but absolute is the
+  // canonical form.
+  static override getRedirectUrl = (record: unknown, ctx: { basePath?: string }) => {
     const id = (record as { id?: unknown }).id
-    return id !== undefined ? `articles/${String(id)}/edit` : 'articles'
+    const base = ctx.basePath ?? ''
+    return id !== undefined ? `${base}/articles/${String(id)}/edit` : `${base}/articles`
   }
 }

@@ -208,4 +208,45 @@ describe('loadTableRecords', () => {
       assert.equal(rows[0]!['_disabledActions'], undefined)
     })
   })
+
+  describe('Table.recordUrl', () => {
+    it('stamps _recordUrl on each row when a recordUrl handler is set', async () => {
+      const t = Table.make<{ id: string }>()
+        .columns([Column.make('id')])
+        .records(async () => [{ id: 'a' }, { id: 'b' }])
+        .recordUrl((r) => `/admin/posts/${r.id}/edit`)
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['recordUrl'], true, 'meta.recordUrl flag set')
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_recordUrl'], '/admin/posts/a/edit')
+      assert.equal(rows[1]!['_recordUrl'], '/admin/posts/b/edit')
+    })
+
+    it('skips _recordUrl when handler returns undefined for that row', async () => {
+      const t = Table.make<{ id: string; status?: string }>()
+        .columns([Column.make('id')])
+        .records(async () => [{ id: 'a', status: 'archived' }, { id: 'b' }])
+        .recordUrl((r) => r.status === 'archived' ? undefined : `/admin/posts/${r.id}`)
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_recordUrl'], undefined)
+      assert.equal(rows[1]!['_recordUrl'], '/admin/posts/b')
+    })
+
+    it('does not stamp recordUrl flag or _recordUrl when handler is unset', async () => {
+      const t = Table.make()
+        .columns([Column.make('id')])
+        .records(async () => [{ id: 'a' }])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['recordUrl'], undefined)
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_recordUrl'], undefined)
+    })
+  })
 })

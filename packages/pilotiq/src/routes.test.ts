@@ -175,8 +175,9 @@ describe('registerPilotiqRoutes — handler → schema round-trip', () => {
     const actions = tableChildren.filter(c => c.type === 'action')
     assert.equal(cols.length, 1)
     assert.equal(cols[0]!.name, 'title')
-    // ListPage injects default Create header + Edit/Delete row actions.
-    assert.deepEqual(actions.map(a => a.name).sort(), ['create', 'delete', 'edit'])
+    // Filament-style: no auto-injected Create / Edit / Delete actions.
+    // Users opt in via getHeaderActions / getRowActions or Resource.table().
+    assert.equal(actions.length, 0)
   })
 
   it('create handler resolves a Form schema with mode=create', async () => {
@@ -314,12 +315,11 @@ describe('registerPilotiqRoutes — POST submit lifecycle', () => {
     assert.equal(result.props['recordId'], '7')
 
     const schemaData = result.props['schemaData'] as Array<{ type: string; content?: string }>
-    // [page-heading, edit-action, delete-action, detail-heading]
-    assert.equal(schemaData.length, 4)
-    assert.equal(schemaData[0]!.type, 'heading')           // labelSingular heading
-    assert.equal(schemaData[1]!.type, 'action')
-    assert.equal(schemaData[2]!.type, 'action')
-    assert.equal(schemaData[3]!.content, 'Detail: Article 7') // detail() heading
+    // Filament-style: no auto-injected Edit/Delete on the view page.
+    // [page-heading, detail-heading]
+    assert.equal(schemaData.length, 2)
+    assert.equal(schemaData[0]!.type, 'heading')              // labelSingular heading
+    assert.equal(schemaData[1]!.content, 'Detail: Article 7') // detail() heading
   })
 
   it('delete POST calls Resource.deleteRecord and 303-redirects to list', async () => {
@@ -507,6 +507,57 @@ describe('registerPilotiqRoutes — POST submit lifecycle', () => {
     const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/create')!
     const { res } = await callHandlerCapturing(post.handler, fakeReq({ body: { title: 'x' } }))
     assert.equal(res.redirectedTo?.url, '/elsewhere')
+  })
+
+  it('normalizes relative redirect URLs against the panel basePath', async () => {
+    class RelRedirect extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title')])
+          .save(async () => ({ id: '99' }))
+          // bare relative path — would be browser-resolved against current URL,
+          // producing /admin/articles/.../articles/99/edit. Framework should
+          // join under the panel basePath instead.
+          .redirectAfterSave((rec) => `articles/${(rec as { id: string }).id}/edit`)
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(RelRedirect))
+
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/create')!
+    const { res } = await callHandlerCapturing(post.handler, fakeReq({ body: { title: 'x' } }))
+    assert.equal(res.redirectedTo?.url, '/admin/articles/99/edit')
+  })
+
+  it('absolute redirect URLs pass through unchanged', async () => {
+    class AbsRedirect extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title')])
+          .save(async () => ({ id: '99' }))
+          .redirectAfterSave(() => '/somewhere/else')
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(AbsRedirect))
+
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/create')!
+    const { res } = await callHandlerCapturing(post.handler, fakeReq({ body: { title: 'x' } }))
+    assert.equal(res.redirectedTo?.url, '/somewhere/else')
+  })
+
+  it('forwards basePath through FormContext so callbacks can build absolute URLs', async () => {
+    let seenBasePath: unknown = null
+    class BaseAware extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title')])
+          .save(async (_d, ctx) => { seenBasePath = ctx.basePath; return { id: '1' } })
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(BaseAware))
+
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/create')!
+    await callHandlerCapturing(post.handler, fakeReq({ body: { title: 'x' } }))
+    assert.equal(seenBasePath, '/admin')
   })
 })
 

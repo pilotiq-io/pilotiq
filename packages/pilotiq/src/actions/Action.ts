@@ -215,6 +215,62 @@ export class Action extends Element {
     return new Action(name)
   }
 
+  // ─── Resource-aware factories ─────────────────────────
+  //
+  // Pre-configured Action shapes that target a Resource's standard CRUD
+  // pages. Drop into `Table.recordActions([…])`, `headerActions([…])`,
+  // or `ViewPage.getActions(...)` — placement is stamped by the slot.
+  // Filament-style: explicit, but ergonomic.
+  //
+  // Each factory uses `:id` template substitution for row context; the
+  // renderer fills in the row's id when rendering. Header / view actions
+  // ignore the template (no `:id` needed for create / list URLs).
+
+  /** Create-action factory — link to `${basePath}/${R.slug}/create`. */
+  static create(R: { labelSingular: string; getSlug(): string }, basePath: string): Action {
+    return Action.make('create')
+      .label(`New ${R.labelSingular}`)
+      .href(`${basePath}/${R.getSlug()}/create`)
+  }
+
+  /**
+   * Edit-action factory — link to the resource's edit page.
+   *
+   * Pass `recordId` when building actions for a single-record context
+   * (e.g. `ViewPage.getActions()`); the URL is baked at config time.
+   * Omit `recordId` for row context (`Table.recordActions(...)`); the
+   * URL keeps the `:id` template and the renderer substitutes per-row.
+   */
+  static edit(R: { getSlug(): string }, basePath: string, recordId?: string): Action {
+    const id = recordId ?? ':id'
+    return Action.make('edit')
+      .label('Edit')
+      .href(`${basePath}/${R.getSlug()}/${id}/edit`)
+  }
+
+  /** View-action factory — link to the resource's view page. See `Action.edit` for the `recordId` semantics. */
+  static view(R: { getSlug(): string }, basePath: string, recordId?: string): Action {
+    const id = recordId ?? ':id'
+    return Action.make('view')
+      .label('View')
+      .href(`${basePath}/${R.getSlug()}/${id}`)
+  }
+
+  /**
+   * Delete-action factory — POSTs to the resource's delete route,
+   * destructive style, with a confirmation prompt referencing the
+   * resource label. Same `recordId` semantics as `Action.edit`.
+   */
+  static delete(R: { labelSingular: string; getSlug(): string }, basePath: string, recordId?: string): Action {
+    const id = recordId ?? ':id'
+    return Action.make('delete')
+      .label('Delete')
+      .destructive()
+      .method('post')
+      .action(`${basePath}/${R.getSlug()}/${id}/delete`)
+      .confirm(`Delete this ${R.labelSingular.toLowerCase()}?`)
+  }
+
   label(l: string): this { this._label = l; return this }
   icon(i: string): this  { this._icon  = i; return this }
 

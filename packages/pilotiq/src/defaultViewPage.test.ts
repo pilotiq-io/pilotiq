@@ -39,31 +39,17 @@ describe('defaultViewPage', () => {
     assert.equal(ViewArticle.getSlug(), 'articles/view')
   })
 
-  it('schema(ctx) loads the record via the form loader and renders detail()', async () => {
+  it('schema(ctx) loads the record via the form loader and renders detail() — no auto Edit/Delete', async () => {
     const ViewArticle = defaultViewPage(ArticleResource)
     const elements = await Promise.resolve(ViewArticle.schema({ recordId: '42', basePath: '/admin' }))
-    // [Heading, EditAction, DeleteAction, Section]
-    assert.equal(elements.length, 4)
-    const [heading, editAction, delAction, body] = elements
+    // [Heading, Section] — Filament-style: no auto-injected Edit/Delete
+    assert.equal(elements.length, 2)
+    const [heading, body] = elements
     assert.equal(heading!.getType(), 'heading')
-    assert.equal(editAction!.getType(), 'action')
-    assert.equal((editAction as Action).name, 'edit')
-    assert.equal(delAction!.getType(), 'action')
-    assert.equal((delAction as Action).name, 'delete')
     assert.equal(body!.getType(), 'section')
 
     const sectionMeta = body!.toMeta() as { title?: string }
     assert.equal(sectionMeta.title, 'Body')
-
-    const editMeta = editAction!.toMeta() as { href?: string; method?: string }
-    assert.equal(editMeta.href, '/admin/articles/42/edit')
-    assert.equal(editMeta.method, undefined)
-
-    const delMeta = delAction!.toMeta() as { method?: string; action?: string; destructive?: boolean; confirm?: unknown }
-    assert.equal(delMeta.method, 'post')
-    assert.equal(delMeta.action, '/admin/articles/42/delete')
-    assert.equal(delMeta.destructive, true)
-    assert.ok(delMeta.confirm)
   })
 
   it('handles missing record gracefully (loader returns null/throws)', async () => {
@@ -77,8 +63,9 @@ describe('defaultViewPage', () => {
     }
     const View = defaultViewPage(NoLoad)
     const elements = await Promise.resolve(View.schema({ recordId: '1', basePath: '' }))
-    // Heading + Edit + Delete + detail Text
-    const detailMeta = elements[3]!.toMeta() as { content?: string }
+    // Heading + detail Text (no auto Edit/Delete)
+    assert.equal(elements.length, 2)
+    const detailMeta = elements[1]!.toMeta() as { content?: string }
     assert.equal(detailMeta.content, 'EMPTY')
   })
 

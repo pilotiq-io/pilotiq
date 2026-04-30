@@ -196,12 +196,22 @@ function walkFields(elements: Element[], visit: (f: Field) => void): void {
  * Walk an Element tree and return every `Form` instance, in document order.
  * Used by route handlers to locate the form being submitted on a page that
  * may declare more than one.
+ *
+ * Uses a structural `getType() === 'form'` check rather than `instanceof
+ * Form`. Vite's SSR module cache can load the package through two
+ * different module paths during a single dev session — the path used by
+ * the rudder SSR route and the path used by Vike's `+data` hook for SPA
+ * navigations end up importing different `Form` classes, so `instanceof`
+ * silently returns false and the form goes "missing" on SPA nav while
+ * SSR keeps working. The structural check is robust to that and matches
+ * the convention used elsewhere in the codebase (see Filter, Column,
+ * Action — all keyed on the serialized type, not class identity).
  */
 export function findForms(elements: ReadonlyArray<Element>): Form[] {
   const forms: Form[] = []
   const walk = (els: ReadonlyArray<Element>): void => {
     for (const el of els) {
-      if (el instanceof Form) forms.push(el)
+      if (el.getType() === 'form') forms.push(el as Form)
       const children = el.getChildren()
       if (children && children.length > 0) walk(children)
     }

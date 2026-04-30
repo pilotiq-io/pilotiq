@@ -162,8 +162,12 @@ export async function loadTableRecords(
       const columnsWithFormatter = (table.getChildren() ?? [])
         .filter((c): c is Column => c instanceof Column && c.hasFormatter())
 
+      const recordUrlFn = table.getRecordUrl()
+
       const needsRowMutation =
-        rowActionsWithRules.length > 0 || columnsWithFormatter.length > 0
+        rowActionsWithRules.length > 0 ||
+        columnsWithFormatter.length > 0 ||
+        recordUrlFn !== undefined
 
       const rows = !needsRowMutation
         ? rawRows
@@ -196,6 +200,16 @@ export async function loadTableRecords(
                 }
               }
               out['_formatted'] = formatted
+            }
+
+            if (recordUrlFn !== undefined) {
+              try {
+                const url = recordUrlFn(row)
+                if (url !== undefined) out['_recordUrl'] = url
+              } catch {
+                // Per-row recordUrl errors stay silent; rows without a URL
+                // simply aren't clickable.
+              }
             }
 
             return out
