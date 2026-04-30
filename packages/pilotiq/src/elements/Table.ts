@@ -1,7 +1,13 @@
 import { Element, type ElementMeta } from '../schema/Element.js'
 import { Column } from '../Column.js'
 import { Action } from '../actions/Action.js'
+import { ActionGroup } from '../actions/ActionGroup.js'
 import { Filter } from '../filters/Filter.js'
+
+/** Either a plain `Action` or an `ActionGroup` (a labelled dropdown of
+ * actions). Both can sit in any of the table action slots — the slot
+ * stamps the placement automatically on whichever shape arrives. */
+type ActionOrGroup = Action | ActionGroup
 
 export type SortDirection = 'asc' | 'desc'
 
@@ -148,11 +154,12 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
-  /** Shorthand: append actions to the children. Placement on each action is
-   * preserved as-is; use the slot variants below (`recordActions`,
-   * `headerActions`, `bulkActions`) when you want the table to assign
-   * placement automatically. */
-  actions(acts: Action[]): this {
+  /** Shorthand: append actions to the children. Placement on each action /
+   * group is preserved as-is; use the slot variants below
+   * (`recordActions`, `headerActions`, `bulkActions`) when you want the
+   * table to assign placement automatically. Both `Action` and
+   * `ActionGroup` are accepted — groups render as dropdown triggers. */
+  actions(acts: ActionOrGroup[]): this {
     const existing = this._children ?? []
     this._children = [...existing, ...acts]
     return this
@@ -161,17 +168,17 @@ export class Table<R = unknown, Q = unknown> extends Element {
   /** Per-row actions slot — rendered in a DropdownMenu on each row.
    * Stamps `placement: 'row'` on each action so callers don't need
    * `Action.make(...).row()` boilerplate. */
-  recordActions(acts: Action[]): this {
+  recordActions(acts: ActionOrGroup[]): this {
     return this.actions(acts.map(a => a.placement('row')))
   }
 
   /** Header actions slot — rendered top-right of the table. */
-  headerActions(acts: Action[]): this {
+  headerActions(acts: ActionOrGroup[]): this {
     return this.actions(acts.map(a => a.placement('header')))
   }
 
   /** Bulk actions slot — shown in a toolbar when rows are selected. */
-  bulkActions(acts: Action[]): this {
+  bulkActions(acts: ActionOrGroup[]): this {
     return this.actions(acts.map(a => a.placement('bulk')))
   }
 
