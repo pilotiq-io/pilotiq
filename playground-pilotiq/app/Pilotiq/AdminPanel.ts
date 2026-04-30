@@ -52,6 +52,10 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .path('/new-admin')
   .branding({ title: 'Pilotiq' })
   .use(themeEditor())
+  // Plan #10 demo — pretend everyone is an admin so the canDelete()
+  // check on `ArticleResource` shows the Delete row action. Real apps
+  // would pass `req => Auth.user()` (from `@rudderjs/auth`).
+  .user(() => ({ role: 'admin', name: 'Demo Admin' }))
   .resources([ArticleResource])
   .globals([SiteSettings])
   .pages([SimplePage, ElementsShowcase])

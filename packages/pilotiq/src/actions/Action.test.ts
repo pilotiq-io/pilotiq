@@ -164,43 +164,54 @@ describe('Action variants & cosmetics', () => {
 })
 
 describe('Action visibility evaluation', () => {
-  it('default — no rules → visible:true, disabled:false', () => {
+  it('default — no rules → visible:true, disabled:false', async () => {
     const a = Action.make('a')
-    assert.deepEqual(a.evaluate(), { visible: true, disabled: false })
+    assert.deepEqual(await a.evaluate(), { visible: true, disabled: false })
     assert.equal(a.hasVisibilityRules(), false)
   })
 
-  it('visible(false) hides the action', () => {
-    assert.equal(Action.make('a').visible(false).evaluate().visible, false)
+  it('visible(false) hides the action', async () => {
+    assert.equal((await Action.make('a').visible(false).evaluate()).visible, false)
   })
 
-  it('hidden(true) hides the action', () => {
-    assert.equal(Action.make('a').hidden(true).evaluate().visible, false)
+  it('hidden(true) hides the action', async () => {
+    assert.equal((await Action.make('a').hidden(true).evaluate()).visible, false)
   })
 
-  it('visible(fn) receives the context', () => {
+  it('visible(fn) receives the context', async () => {
     const a = Action.make('a').visible(({ record }) => Boolean((record as { active?: boolean })?.active))
-    assert.equal(a.evaluate({ record: { active: true } }).visible, true)
-    assert.equal(a.evaluate({ record: { active: false } }).visible, false)
-    assert.equal(a.evaluate({ record: undefined }).visible, false)
+    assert.equal((await a.evaluate({ record: { active: true } })).visible, true)
+    assert.equal((await a.evaluate({ record: { active: false } })).visible, false)
+    assert.equal((await a.evaluate({ record: undefined })).visible, false)
   })
 
-  it('disabled(fn) receives the context', () => {
+  it('disabled(fn) receives the context', async () => {
     const a = Action.make('a').disabled(({ record }) => Boolean((record as { locked?: boolean })?.locked))
-    assert.equal(a.evaluate({ record: { locked: true } }).disabled, true)
-    assert.equal(a.evaluate({ record: { locked: false } }).disabled, false)
+    assert.equal((await a.evaluate({ record: { locked: true } })).disabled, true)
+    assert.equal((await a.evaluate({ record: { locked: false } })).disabled, false)
   })
 
-  it('combines visible and hidden via AND (visible && !hidden)', () => {
+  it('combines visible and hidden via AND (visible && !hidden)', async () => {
     const a = Action.make('a').visible(true).hidden(({ record }) => (record as { trashed?: boolean })?.trashed === true)
-    assert.equal(a.evaluate({ record: { trashed: false } }).visible, true)
-    assert.equal(a.evaluate({ record: { trashed: true  } }).visible, false)
+    assert.equal((await a.evaluate({ record: { trashed: false } })).visible, true)
+    assert.equal((await a.evaluate({ record: { trashed: true  } })).visible, false)
   })
 
-  it('authorize() is an alias for visible()', () => {
+  it('authorize() is an alias for visible()', async () => {
     const a = Action.make('a').authorize(({ user }) => Boolean((user as { admin?: boolean })?.admin))
-    assert.equal(a.evaluate({ user: { admin: true  } }).visible, true)
-    assert.equal(a.evaluate({ user: { admin: false } }).visible, false)
+    assert.equal((await a.evaluate({ user: { admin: true  } })).visible, true)
+    assert.equal((await a.evaluate({ user: { admin: false } })).visible, false)
+  })
+
+  it('async visibility rule resolves a Promise<boolean>', async () => {
+    const a = Action.make('a').visible(async ({ user }) => Boolean((user as { admin?: boolean })?.admin))
+    assert.equal((await a.evaluate({ user: { admin: true  } })).visible, true)
+    assert.equal((await a.evaluate({ user: { admin: false } })).visible, false)
+  })
+
+  it('throwing visibility rule fails closed (not visible)', async () => {
+    const a = Action.make('a').visible(() => { throw new Error('boom') })
+    assert.equal((await a.evaluate()).visible, false)
   })
 
   it('hasVisibilityRules returns true when any rule is set', () => {

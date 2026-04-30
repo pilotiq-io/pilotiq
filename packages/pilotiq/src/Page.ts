@@ -96,6 +96,12 @@ export class Page {
     return this._schemaDef !== undefined || this.schema !== Page.schema
   }
 
+  /** Plan #10: authorization. Custom pages get a single `canAccess` gate
+   * (no per-record predicates — pages are too freeform to assume a
+   * record concept). Resource-bound default page subclasses can still
+   * read their owning resource's predicates via `getResource()`. */
+  static async canAccess(_user: unknown): Promise<boolean> { return true }
+
   /**
    * Optional back-reference to the owning Resource. Auto-generated default
    * pages set this; user subclasses may override for breadcrumb / title

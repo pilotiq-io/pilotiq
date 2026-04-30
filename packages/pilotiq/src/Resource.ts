@@ -104,6 +104,39 @@ export abstract class Resource {
    */
   static model?: ModelLike
 
+  // ─── Plan #10: authorization predicates ────────────────────
+  // All async, all default `true`. Routes call them with the resolved
+  // user (from `Pilotiq.user(fn)`); the renderer threads the same user
+  // into nav-tree filtering and `Action.create/edit/view/delete`
+  // factories. Override per-resource with role/policy logic. The user
+  // argument is whatever `Pilotiq.user(req => …)` returns — opaque to
+  // pilotiq, your shape.
+
+  /** Coarse "should this resource exist for this user at all" gate.
+   * Failing `canAccess` drops the resource from the nav tree entirely
+   * and 403s every route under it. */
+  static async canAccess(_user: unknown): Promise<boolean> { return true }
+
+  /** Allowed to load the index/list page. Item still appears in nav
+   * when `canAccess` passes but `canViewAny` fails — the URL just 403s. */
+  static async canViewAny(_user: unknown): Promise<boolean> { return true }
+
+  /** Allowed to load the read-only view page for a given record. */
+  static async canView(_user: unknown, _record: unknown): Promise<boolean> { return true }
+
+  /** Allowed to access the create page + invoke the create form.
+   * Auto-hides `Action.create(R, …)` triggers that haven't set an
+   * explicit `.visible()` rule. */
+  static async canCreate(_user: unknown): Promise<boolean> { return true }
+
+  /** Allowed to edit a given record. Auto-hides `Action.edit(R, …)`
+   * triggers without an explicit `.visible()` rule. */
+  static async canEdit(_user: unknown, _record: unknown): Promise<boolean> { return true }
+
+  /** Allowed to delete a given record. Auto-hides `Action.delete(R, …)`
+   * triggers without an explicit `.visible()` rule. */
+  static async canDelete(_user: unknown, _record: unknown): Promise<boolean> { return true }
+
   /**
    * Configure the form used by `create` and `edit` pages by default.
    * Receives a fresh `Form` instance; return the configured form.

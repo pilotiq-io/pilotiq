@@ -52,19 +52,26 @@ export interface NavItem {
  *
  * Pipeline:
  *   1. flatten resources + globals + pages into raw NavItem records
- *   2. resolve `navigationParentItem` references → nest under parents
+ *   2. drop items whose `canAccess(user)` (Plan #10) returns false
+ *   3. resolve `navigationParentItem` references → nest under parents
  *      (cycles broken with a console warn; dangling parents render at top level)
- *   3. sort within each grouping (top-level *and* every parent's children)
+ *   4. sort within each grouping (top-level *and* every parent's children)
  *      by `navigationSort` ascending → registration order
- *   4. resolve every `navigationBadge()` in parallel via `Promise.all`;
+ *   5. resolve every `navigationBadge()` in parallel via `Promise.all`;
  *      handler errors are swallowed (badge omitted) so a flaky count
  *      never blanks the page
+ *
+ * `req` is the active request; pilotiq calls `pilotiq.resolveUser(req)`
+ * once and threads the user into every Resource/Global/Page `canAccess`
+ * check. When `Pilotiq.user(fn)` isn't configured, user is `null` and the
+ * default `canAccess` returns true → no items dropped.
  */
-export async function panelInfo(pilotiq: Pilotiq) {
+export async function panelInfo(pilotiq: Pilotiq, req?: unknown) {
   const cfg = pilotiq.getConfig()
   const merged = pilotiq.getMergedTheme()
   const theme: ThemeMeta | undefined = merged ? resolveTheme(merged) : undefined
-  const navigation = await buildNavigation(pilotiq)
+  const user = await pilotiq.resolveUser(req)
+  const navigation = await buildNavigation(pilotiq, user)
   return {
     name: cfg.name,
     branding: cfg.branding,
@@ -83,7 +90,27 @@ interface RawNavItem extends NavItem {
   _idx: number
 }
 
-async function buildNavigation(pilotiq: Pilotiq): Promise<NavItem[]> {
+/** Run a `canAccess` check, swallowing throws as `false`. Used by
+ *  `buildNavigation` to fail-closed on flaky auth predicates without
+ *  blanking the page. */
+async function safeAccess(fn: () => boolean | Promise<boolean>): Promise<boolean> {
+  try {
+    return Boolean(await fn())
+  } catch {
+    return false
+  }
+}
+
+/** Plan #10 — stamp the resolved user onto a SchemaContext so action
+ *  visibility predicates can see it during `resolveSchema`. The `user`
+ *  field is opaque (whatever `Pilotiq.user(req => …)` returns); skipped
+ *  when null/undefined to keep ctx tidy. */
+function userCtx<C extends SchemaContext>(ctx: C, user: unknown): C {
+  if (user === null || user === undefined) return ctx
+  return { ...ctx, user: user as NonNullable<SchemaContext['user']> }
+}
+
+async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<NavItem[]> {
   const cfg = pilotiq.getConfig()
   const base = cfg.path
 
@@ -95,7 +122,19 @@ async function buildNavigation(pilotiq: Pilotiq): Promise<NavItem[]> {
 
   const pushBadge: Array<{ item: RawNavItem; handler: () => unknown }> = []
 
-  for (const R of cfg.resources) {
+  // Plan #10 — pre-evaluate canAccess for every owner in parallel so we
+  // can drop forbidden items before flattening. Failed predicates fail
+  // closed (treated as `false`) so a thrown auth check doesn't accidentally
+  // expose nav items.
+  const [resourceAccess, globalAccess, pageAccess] = await Promise.all([
+    Promise.all(cfg.resources.map(R => safeAccess(() => R.canAccess(user)))),
+    Promise.all(cfg.globals.map(G => safeAccess(() => G.canAccess(user)))),
+    Promise.all(cfg.pages.map(P => safeAccess(() => P.canAccess(user)))),
+  ])
+
+  for (let i = 0; i < cfg.resources.length; i++) {
+    if (!resourceAccess[i]) continue
+    const R = cfg.resources[i]!
     const item: RawNavItem = {
       name:  R.name,
       label: R.getNavigationLabel(),
@@ -111,7 +150,9 @@ async function buildNavigation(pilotiq: Pilotiq): Promise<NavItem[]> {
     raw.push(item)
   }
 
-  for (const G of cfg.globals) {
+  for (let i = 0; i < cfg.globals.length; i++) {
+    if (!globalAccess[i]) continue
+    const G = cfg.globals[i]!
     // Globals default `navigationGroup` to `'Settings'`. Allow `null` as
     // an explicit opt-out → render at top level.
     const group = G.navigationGroup === null ? undefined : G.navigationGroup
@@ -130,7 +171,9 @@ async function buildNavigation(pilotiq: Pilotiq): Promise<NavItem[]> {
     raw.push(item)
   }
 
-  for (const P of cfg.pages) {
+  for (let i = 0; i < cfg.pages.length; i++) {
+    if (!pageAccess[i]) continue
+    const P = cfg.pages[i]!
     const item: RawNavItem = {
       name:  P.name,
       label: P.getNavigationLabel(),
@@ -280,7 +323,7 @@ export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Re
   const cfg = pilotiq.getConfig()
   const schemaData = await resolveSchema(cfg.schema, {})
   return {
-    panel:    await panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq, req),
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
@@ -303,7 +346,8 @@ export async function resourceIndexData(
   const PageClass = pages.index
 
   const indexUrl = `${cfg.path}/${slug}`
-  const ctx: SchemaContext = { mode: 'table', basePath: cfg.path }
+  const user = await pilotiq.resolveUser(req)
+  const ctx: SchemaContext = userCtx({ mode: 'table', basePath: cfg.path }, user)
   const elements = await callPageSchema(PageClass, ctx)
   tagActionDispatch(elements, indexUrl)
   // Mark the active tab + parallel-eval badges + stamp per-tab URLs
@@ -311,12 +355,12 @@ export async function resourceIndexData(
   // for the active tab and splices its `modifyQuery` predicate into the
   // ORM chain alongside filters.
   await resolveActiveTab(elements, query, indexUrl)
-  await loadTableRecords(elements, query, indexUrl)
+  await loadTableRecords(elements, query, indexUrl, user)
   const schemaData = await resolveSchema(elements, ctx)
 
   return {
     pageType: 'resource',
-    panel:    await panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq, req),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.label, labelSingular: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     basePath: cfg.path,
@@ -423,7 +467,8 @@ export async function resourceCreateData(
   const PageClass = pages.create
 
   const createUrl = `${cfg.path}/${slug}/create`
-  const ctx: SchemaContext = { mode: 'create', basePath: cfg.path }
+  const user = await pilotiq.resolveUser(req)
+  const ctx: SchemaContext = userCtx({ mode: 'create', basePath: cfg.path }, user)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, createUrl)
   if (prefill) {
@@ -436,7 +481,7 @@ export async function resourceCreateData(
   const schemaData = await resolveSchema(elements, ctx)
 
   return {
-    panel:    await panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq, req),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'create' as const,
@@ -463,7 +508,8 @@ export async function resourceEditData(
   const PageClass = pages.edit
 
   const editUrl = `${cfg.path}/${slug}/${recordId}/edit`
-  const ctx: SchemaContext = { mode: 'edit', recordId, basePath: cfg.path }
+  const user = await pilotiq.resolveUser(req)
+  const ctx: SchemaContext = userCtx({ mode: 'edit', recordId, basePath: cfg.path }, user)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
 
@@ -491,7 +537,7 @@ export async function resourceEditData(
   )
 
   return {
-    panel:    await panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq, req),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'edit' as const,
@@ -517,12 +563,24 @@ export async function resourceViewData(
   if (!pages.view) return null
   const PageClass = pages.view
 
-  const ctx: SchemaContext = { mode: 'view', recordId, basePath: cfg.path }
+  const user = await pilotiq.resolveUser(req)
+  const ctx: SchemaContext = userCtx({ mode: 'view', recordId, basePath: cfg.path }, user)
   const elements = await callPageSchema(PageClass, ctx)
-  const schemaData = await resolveSchema(elements, ctx)
+  // For the view page we want the record threaded into resolveSchema so
+  // factory-attached visibility predicates see it. Resource.detail()
+  // already runs against the loaded record in user code; here we mirror
+  // that into ctx.record for the action eval pass.
+  let record: unknown = undefined
+  if (R.model) {
+    try { record = await R.model.find(recordId) } catch { /* ignore */ }
+  }
+  const schemaData = await resolveSchema(
+    elements,
+    record !== undefined ? { ...ctx, record } : ctx,
+  )
 
   return {
-    panel:    await panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq, req),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'view' as const,
@@ -548,7 +606,8 @@ export async function globalEditData(
   const PageClass = pages.edit
 
   const editUrl = `${cfg.path}/${slug}`
-  const ctx: SchemaContext = { mode: 'edit', basePath: cfg.path }
+  const user = await pilotiq.resolveUser(req)
+  const ctx: SchemaContext = userCtx({ mode: 'edit', basePath: cfg.path }, user)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
 
@@ -572,7 +631,7 @@ export async function globalEditData(
 
   return {
     pageType: 'global',
-    panel:    await panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq, req),
     page:     PageClass.toMeta(),
     global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
@@ -595,12 +654,13 @@ export async function globalViewData(
   if (!pages.view) return null
   const PageClass = pages.view
 
-  const ctx: SchemaContext = { mode: 'view', basePath: cfg.path }
+  const user = await pilotiq.resolveUser(req)
+  const ctx: SchemaContext = userCtx({ mode: 'view', basePath: cfg.path }, user)
   const elements = await callPageSchema(PageClass, ctx)
   const schemaData = await resolveSchema(elements, ctx)
 
   return {
-    panel:    await panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq, req),
     page:     PageClass.toMeta(),
     global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
@@ -620,7 +680,8 @@ export async function customPageData(
   if (!PageClass) return null
 
   const pageUrl = `${cfg.path}/${pageSlug}`
-  const ctx: SchemaContext = {}
+  const user = await pilotiq.resolveUser(req)
+  const ctx: SchemaContext = userCtx({}, user)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, pageUrl)
   tagActionDispatch(elements, pageUrl)
@@ -628,7 +689,7 @@ export async function customPageData(
 
   return {
     pageType: 'page',
-    panel:    await panelInfo(pilotiq),
+    panel:    await panelInfo(pilotiq, req),
     page:     PageClass.toMeta(),
     schemaData,
     basePath: cfg.path,

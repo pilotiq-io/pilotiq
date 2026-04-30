@@ -13,6 +13,19 @@ export interface PilotiqPlugin {
   register(panel: Pilotiq): void
 }
 
+/**
+ * User resolver — receives the request and returns the current user (or
+ * null). Pilotiq treats the user object as opaque; whatever the resolver
+ * returns is forwarded into `Resource.canX(user, …)` / `Global.canX(...)` /
+ * `Page.canAccess(user)` and into `Action` visibility rules. Sync or async.
+ *
+ * Apps using `@rudderjs/auth` typically pass `req => Auth.user()`. The
+ * resolver is optional — when unset, every `can*` predicate runs with
+ * `user === null` and the defaults (which return `true`) keep the panel
+ * working with no auth wired up.
+ */
+export type UserResolver = (req: unknown) => unknown | null | Promise<unknown | null>
+
 export interface PilotiqConfig {
   name:          string
   path:          string
@@ -25,6 +38,7 @@ export interface PilotiqConfig {
   theme?:        ThemeConfig
   themeEditor?:  boolean
   guard?:        (req: unknown) => boolean | Promise<boolean>
+  user?:         UserResolver
   /** @internal Runtime theme overrides from DB. */
   _themeOverrides?: Partial<ThemeConfig>
 }
@@ -92,6 +106,42 @@ export class Pilotiq {
   guard(fn: (req: unknown) => boolean | Promise<boolean>): this {
     this.config.guard = fn
     return this
+  }
+
+  /**
+   * Configure the current-user resolver. Pilotiq calls `fn(req)` once per
+   * request and forwards the return value into every `Resource.canX(...)`,
+   * `Global.canX(...)`, `Page.canAccess(...)`, and `Action.visible(({ user })
+   * => ...)` callback. The user object is opaque to pilotiq.
+   *
+   * Apps using `@rudderjs/auth`:
+   *
+   *   import { Auth } from '@rudderjs/auth'
+   *   Pilotiq.make('admin').user(() => Auth.user())
+   *
+   * Apps with custom auth pass whatever resolves their user. When unset,
+   * `resolveUser` returns `null` and the default `can*` predicates (which
+   * ignore `user`) all resolve `true`.
+   */
+  user(fn: UserResolver): this {
+    this.config.user = fn
+    return this
+  }
+
+  /**
+   * Resolve the current user for a request. Internal helper called by
+   * routes + `panelInfo()`. Returns `null` when the resolver is unset or
+   * throws. Errors are swallowed deliberately — a failing user resolver
+   * should fail closed (no user) rather than 500 the page.
+   */
+  async resolveUser(req?: unknown): Promise<unknown | null> {
+    if (!this.config.user) return null
+    try {
+      const u = await this.config.user(req)
+      return u ?? null
+    } catch {
+      return null
+    }
   }
 
   use(plugin: PilotiqPlugin): this {

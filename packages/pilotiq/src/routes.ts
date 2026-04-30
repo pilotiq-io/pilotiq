@@ -1,5 +1,5 @@
 import type { Router } from '@rudderjs/router'
-import type { AppRequest } from '@rudderjs/contracts'
+import type { AppRequest, AppResponse } from '@rudderjs/contracts'
 import { view } from '@rudderjs/view'
 import type { Pilotiq } from './Pilotiq.js'
 import type { Form } from './elements/Form.js'
@@ -82,6 +82,24 @@ function splitMeta(body: Record<string, unknown>): {
   }
 }
 
+/** Plan #10 — send a 403 response. Branches on `Accept: application/json`
+ * the same way the action / form dispatch paths do. Used by every route
+ * after a `Resource.canX(...)` check fails. We deliberately do NOT
+ * redirect to login: 403 means "authenticated but not allowed"; the
+ * 401-unauthenticated case is `Pilotiq.guard()`'s job. */
+function forbidden(res: AppResponse, json: boolean): unknown {
+  res.status(403)
+  if (json) return res.json({ ok: false, error: 'Forbidden' })
+  return res.send('Forbidden')
+}
+
+/** Run a `canX(...)` predicate, treating throws as `false`. The predicate
+ * is user-authored and we want a flaky check to fail closed (deny) rather
+ * than 500 the page. */
+async function checkPolicy(fn: () => boolean | Promise<boolean>): Promise<boolean> {
+  try { return Boolean(await fn()) } catch { return false }
+}
+
 export function registerPilotiqRoutes(
   router: Router,
   pilotiq: Pilotiq,
@@ -103,19 +121,25 @@ export function registerPilotiqRoutes(
     if (pages.index) {
       const PageClass = pages.index
       const indexUrl  = `${base}/${slug}`
-      router.get(indexUrl, async (req) => {
+      router.get(indexUrl, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user)))  return forbidden(res, wantsJson(req))
+        if (!await checkPolicy(() => R.canViewAny(user))) return forbidden(res, wantsJson(req))
         const data = await resourceIndexData(pilotiq, slug, req.query, req)
         return view('pilotiq.slug', data ?? {})
       })
 
       // Action dispatch — POST ${base}/${slug}/_action/:actionName
       router.post(`${indexUrl}/_action/:actionName`, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+
         const actionName = req.params['actionName']!
         const json = wantsJson(req)
         const body  = await readFormBody(req)
         const input = parseActionBody(body)
 
-        const ctx: SchemaContext = { mode: 'table', basePath: base }
+        const ctx: SchemaContext = { mode: 'table', basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
         const elements = await callPageSchema(PageClass, ctx)
         tagActionDispatch(elements, indexUrl)
         const action = findActions(elements).find(a => a.name === actionName)
@@ -156,18 +180,25 @@ export function registerPilotiqRoutes(
       const PageClass = pages.create
       const createUrl = `${base}/${slug}/create`
 
-      router.get(createUrl, async (req) => {
+      router.get(createUrl, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, wantsJson(req))
         const data = await resourceCreateData(pilotiq, slug, undefined, req)
         return view('pilotiq.resource-create', data ?? {})
       })
 
       // Create — POST ${base}/${slug}/create
       router.post(createUrl, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, wantsJson(req))
+
         const body = await readFormBody(req)
         const { values, formId } = splitMeta(body)
         const json = wantsJson(req)
 
-        const ctx: SchemaContext = { mode: 'create', basePath: base }
+        const ctx: SchemaContext = { mode: 'create', basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
         const elements = await callPageSchema(PageClass, ctx)
         tagFormActions(elements, createUrl)
         const form = selectForm(findForms(elements), formId)
@@ -209,11 +240,20 @@ export function registerPilotiqRoutes(
     // View — GET ${base}/${slug}/:id (literal `create` matches first via
     // Hono's literal-over-param routing, so `:id` only catches everything else.)
     if (pages.view) {
-      router.get(`${base}/${slug}/:id`, async (req) => {
+      router.get(`${base}/${slug}/:id`, async (req, res) => {
         const recordId = req.params['id']!
         // Hono routes both `/create` and `/:id` against this slot; only the
         // literal `create` segment hits the create route. Defensive guard:
         if (recordId === 'create') return // handled by create route
+
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        // Load the record once so canView can inspect it. Stub `{ id }`
+        // when the resource has no model wired — the user-authored
+        // predicate gets to decide what to do with it.
+        const record = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        if (!await checkPolicy(() => R.canView(user, record))) return forbidden(res, wantsJson(req))
+
         const data = await resourceViewData(pilotiq, slug, recordId, req)
         return view('pilotiq.resource-view', data ?? {})
       })
@@ -223,6 +263,12 @@ export function registerPilotiqRoutes(
         const recordId = req.params['id']!
         const json = wantsJson(req)
         const indexUrl = `${base}/${slug}`
+
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, json)
+        const record = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        if (!await checkPolicy(() => R.canDelete(user, record))) return forbidden(res, json)
+
         try {
           await R.deleteRecord(recordId)
         } catch (err) {
@@ -252,8 +298,13 @@ export function registerPilotiqRoutes(
     if (pages.edit) {
       const PageClass = pages.edit
 
-      router.get(`${base}/${slug}/:id/edit`, async (req) => {
+      router.get(`${base}/${slug}/:id/edit`, async (req, res) => {
         const recordId = req.params['id']!
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        const record = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        if (!await checkPolicy(() => R.canEdit(user, record))) return forbidden(res, wantsJson(req))
+
         const data = await resourceEditData(pilotiq, slug, recordId, undefined, req)
         return view('pilotiq.resource-edit', data ?? {})
       })
@@ -266,7 +317,12 @@ export function registerPilotiqRoutes(
         const { values, formId } = splitMeta(body)
         const json = wantsJson(req)
 
-        const ctx: SchemaContext = { mode: 'edit', recordId, basePath: base }
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, json)
+        const policyRecord = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, json)
+
+        const ctx: SchemaContext = { mode: 'edit', recordId, basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
         const elements = await callPageSchema(PageClass, ctx)
         tagFormActions(elements, editUrl)
         const form = selectForm(findForms(elements), formId)
@@ -321,7 +377,13 @@ export function registerPilotiqRoutes(
     if (pages.edit) {
       const PageClass = pages.edit
 
-      router.get(editUrl, async (req) => {
+      router.get(editUrl, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, wantsJson(req))
+        // Globals carry their record on the singleton form's `loadRecord`;
+        // we don't pre-load here — pass a stub so canEdit's signature is
+        // honored, and let user code decide whether to consult it.
+        if (!await checkPolicy(() => G.canEdit(user, undefined))) return forbidden(res, wantsJson(req))
         const data = await globalEditData(pilotiq, slug, undefined, req)
         return view('pilotiq.slug', data ?? {})
       })
@@ -331,7 +393,11 @@ export function registerPilotiqRoutes(
         const { values, formId } = splitMeta(body)
         const json = wantsJson(req)
 
-        const ctx: SchemaContext = { mode: 'edit', basePath: base }
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, json)
+        if (!await checkPolicy(() => G.canEdit(user, undefined))) return forbidden(res, json)
+
+        const ctx: SchemaContext = { mode: 'edit', basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
         const elements = await callPageSchema(PageClass, ctx)
         tagFormActions(elements, editUrl)
         const form = selectForm(findForms(elements), formId)
@@ -379,7 +445,10 @@ export function registerPilotiqRoutes(
 
     // Optional view page when the user opts in via pages().view
     if (pages.view) {
-      router.get(`${base}/${slug}/view`, async (req) => {
+      router.get(`${base}/${slug}/view`, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await checkPolicy(() => G.canView(user, undefined))) return forbidden(res, wantsJson(req))
         const data = await globalViewData(pilotiq, slug, req)
         return view('pilotiq.resource-view', data ?? {})
       })
@@ -391,19 +460,24 @@ export function registerPilotiqRoutes(
     const pageSlug = PageClass.getSlug()
     const pageUrl  = `${base}/${pageSlug}`
 
-    router.get(pageUrl, async (req) => {
+    router.get(pageUrl, async (req, res) => {
+      const user = await pilotiq.resolveUser(req)
+      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, wantsJson(req))
       const data = await customPageData(pilotiq, pageSlug, req)
       return view('pilotiq.slug', data ?? {})
     })
 
     // Action dispatch — POST ${base}/${pageSlug}/_action/:actionName
     router.post(`${pageUrl}/_action/:actionName`, async (req, res) => {
+      const user = await pilotiq.resolveUser(req)
+      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, wantsJson(req))
+
       const actionName = req.params['actionName']!
       const json = wantsJson(req)
       const body  = await readFormBody(req)
       const input = parseActionBody(body)
 
-      const ctx: SchemaContext = {}
+      const ctx: SchemaContext = user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}
       const elements = await callPageSchema(PageClass, ctx)
       tagActionDispatch(elements, pageUrl)
       const action = findActions(elements).find(a => a.name === actionName)
@@ -440,7 +514,10 @@ export function registerPilotiqRoutes(
       const { values, formId } = splitMeta(body)
       const json = wantsJson(req)
 
-      const ctx: SchemaContext = {}
+      const user = await pilotiq.resolveUser(req)
+      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, json)
+
+      const ctx: SchemaContext = user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}
       const elements = await callPageSchema(PageClass, ctx)
       tagFormActions(elements, pageUrl)
       const form = selectForm(findForms(elements), formId)
@@ -462,7 +539,7 @@ export function registerPilotiqRoutes(
         res.status(422)
         return view('pilotiq.slug', {
           pageType:  'page',
-          panel:     await panelInfo(pilotiq),
+          panel:     await panelInfo(pilotiq, req),
           page:      PageClass.toMeta(),
           schemaData,
           basePath:  base,
@@ -486,9 +563,9 @@ export function registerPilotiqRoutes(
 
   // ── Theme editor ──────────────────────────────────────
   if (cfg.themeEditor) {
-    router.get(`${base}/theme`, async () => {
+    router.get(`${base}/theme`, async (req) => {
       return view('pilotiq.theme', {
-        panel:       await panelInfo(pilotiq),
+        panel:       await panelInfo(pilotiq, req),
         basePath:    base,
         layout:      cfg.layout,
         themeConfig: pilotiq.getMergedTheme() ?? {},

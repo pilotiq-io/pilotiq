@@ -110,6 +110,7 @@ export async function loadTableRecords(
   elements: ReadonlyArray<Element>,
   query:    QueryParams = {},
   pathname?: string,
+  user?:    unknown,
 ): Promise<void> {
   const tables = findTables(elements)
   if (tables.length === 0) return
@@ -193,18 +194,23 @@ export async function loadTableRecords(
 
       const rows = !needsRowMutation
         ? rawRows
-        : rawRows.map(row => {
+        : await Promise.all(rawRows.map(async row => {
             const recordObj = row as Record<string, unknown>
             const out: Record<string, unknown> = { ...recordObj }
 
             if (rowActionsWithRules.length > 0) {
               const visibleActions: string[] = []
               const disabledActions: string[] = []
-              for (const a of rowActionsWithRules) {
-                const { visible, disabled } = a.evaluate({ record: row })
+              const evals = await Promise.all(
+                rowActionsWithRules.map(a =>
+                  a.evaluate(user !== undefined ? { record: row, user } : { record: row }),
+                ),
+              )
+              rowActionsWithRules.forEach((a, i) => {
+                const { visible, disabled } = evals[i]!
                 if (visible)  visibleActions.push(a.name)
                 if (disabled) disabledActions.push(a.name)
-              }
+              })
               out['_visibleActions']  = visibleActions
               out['_disabledActions'] = disabledActions
             }
@@ -250,7 +256,7 @@ export async function loadTableRecords(
             }
 
             return out
-          })
+          }))
 
       table.withRows(rows, total)
     }

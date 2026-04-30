@@ -115,15 +115,21 @@ export class ActionGroup extends Element {
   disabled(rule: VisibilityRule): this { this._isDisabled = rule; return this }
   authorize(rule: VisibilityRule): this { return this.visible(rule) }
 
-  evaluate(ctx: ActionVisibilityContext = {}): { visible: boolean; disabled: boolean } {
-    const evalRule = (rule: VisibilityRule | undefined, fallback: boolean): boolean => {
+  async evaluate(ctx: ActionVisibilityContext = {}): Promise<{ visible: boolean; disabled: boolean }> {
+    const evalRule = async (rule: VisibilityRule | undefined, fallback: boolean): Promise<boolean> => {
       if (rule === undefined) return fallback
-      if (typeof rule === 'function') return rule(ctx)
-      return rule
+      if (typeof rule !== 'function') return rule
+      try {
+        return await rule(ctx)
+      } catch {
+        return !fallback
+      }
     }
-    const visibleRaw  = evalRule(this._visible, true)
-    const hiddenRaw   = evalRule(this._hidden, false)
-    const disabledRaw = evalRule(this._isDisabled, false)
+    const [visibleRaw, hiddenRaw, disabledRaw] = await Promise.all([
+      evalRule(this._visible, true),
+      evalRule(this._hidden, false),
+      evalRule(this._isDisabled, false),
+    ])
     return {
       visible:  visibleRaw && !hiddenRaw,
       disabled: disabledRaw,

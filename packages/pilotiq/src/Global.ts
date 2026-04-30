@@ -77,6 +77,21 @@ export abstract class Global {
   /** Optional model identifier. Phase 3 ORM adapters use this. */
   static model?: string
 
+  // ─── Plan #10: authorization predicates ────────────────────
+  // Subset of `Resource`'s predicates — globals have no list / create /
+  // delete, so they only carry `canAccess` + `canView` + `canEdit`.
+
+  /** Coarse "should this global exist for this user at all" gate.
+   * Failing `canAccess` drops the global from the nav tree and 403s
+   * the edit/view routes. */
+  static async canAccess(_user: unknown): Promise<boolean> { return true }
+
+  /** Allowed to load the optional read-only view page. */
+  static async canView(_user: unknown, _record: unknown): Promise<boolean> { return true }
+
+  /** Allowed to load and submit the edit page. */
+  static async canEdit(_user: unknown, _record: unknown): Promise<boolean> { return true }
+
   /**
    * Configure the form used by the edit page. Receives a fresh `Form`
    * instance; return the configured form. Wire `loadRecord` (no id needed)

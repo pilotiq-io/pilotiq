@@ -24,6 +24,14 @@ export class ArticleResource extends Resource {
   static override navigationBadgeColor  = 'warning' as const
   static override recordTitleAttribute  = 'title'
 
+  // ── Authorization (Plan #10) ──────────────────────────────
+  // Demo only — real apps would derive the role from the resolved user
+  // (see `AdminPanel.ts`, `Pilotiq.user(...)`). Here we hard-gate
+  // delete on a `role === 'admin'` shape.
+  static override async canDelete(user: unknown, _record: unknown): Promise<boolean> {
+    return (user as { role?: string })?.role === 'admin'
+  }
+
   static override form(form: Form): Form {
     return ArticleForm.configure(form)
   }

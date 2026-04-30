@@ -81,11 +81,44 @@ export interface ActionVisibilityContext {
 
 /** Boolean-or-callback rule used by `.visible()` / `.hidden()` /
  * `.disabled()`. Boolean values short-circuit; functions receive the
- * evaluation context and return the result. */
-export type VisibilityRule = boolean | ((ctx: ActionVisibilityContext) => boolean)
+ * evaluation context and return the result (sync or async).
+ *
+ * Async support landed with Plan #10 authorization — `Resource.canEdit`
+ * etc. return Promise<boolean>, and the `Action.create/edit/view/delete`
+ * factories install those predicates as visibility rules. Sync rules
+ * keep working unchanged; the awaiter coerces both. */
+export type VisibilityRule =
+  | boolean
+  | ((ctx: ActionVisibilityContext) => boolean | Promise<boolean>)
 
 /** Modal width preset — maps to a max-width class on the Dialog popup. */
 export type ActionModalWidth = 'sm' | 'md' | 'lg' | 'xl'
+
+/** Structural shape of a Resource class for the factory functions —
+ * matches `Resource.ts` exactly but keeps Action.ts free of an import
+ * cycle. The optional fields are the Plan #10 policy predicates; their
+ * defaults (return `true`) mean missing methods are equivalent to
+ * "always allowed." */
+interface ResourceLike {
+  labelSingular: string
+  getSlug(): string
+  canCreate?(user: unknown): boolean | Promise<boolean>
+  canEdit?(user: unknown, record: unknown): boolean | Promise<boolean>
+  canView?(user: unknown, record: unknown): boolean | Promise<boolean>
+  canDelete?(user: unknown, record: unknown): boolean | Promise<boolean>
+}
+
+/** Call a (possibly undefined) Resource predicate. When unset, the
+ * predicate is treated as "allowed" (returns true) so the factory
+ * doesn't hide actions on Resources that haven't opted into Plan #10. */
+function callPredicate(
+  fn: ((user: unknown, record?: unknown) => boolean | Promise<boolean>) | undefined,
+  user: unknown,
+  record?: unknown,
+): boolean | Promise<boolean> {
+  if (!fn) return true
+  return fn(user, record)
+}
 
 /** Render-time meta for an action that opens a modal (with or without a
  * form schema). When `meta.children` is also populated by the resolver,
@@ -225,12 +258,20 @@ export class Action extends Element {
   // Each factory uses `:id` template substitution for row context; the
   // renderer fills in the row's id when rendering. Header / view actions
   // ignore the template (no `:id` needed for create / list URLs).
+  //
+  // Plan #10 — each factory auto-attaches a visibility rule that
+  // delegates to the Resource's matching policy method (`R.canCreate`
+  // for `Action.create`, etc). When `R.canX` is unset (default returns
+  // `true`) the action stays visible. Pass an explicit `.visible(...)`
+  // after the factory to override.
 
-  /** Create-action factory — link to `${basePath}/${R.slug}/create`. */
-  static create(R: { labelSingular: string; getSlug(): string }, basePath: string): Action {
+  /** Create-action factory — link to `${basePath}/${R.slug}/create`.
+   * Auto-hides when `R.canCreate(user)` returns false. */
+  static create(R: ResourceLike, basePath: string): Action {
     return Action.make('create')
       .label(`New ${R.labelSingular}`)
       .href(`${basePath}/${R.getSlug()}/create`)
+      .visible(({ user }) => callPredicate(R.canCreate, user))
   }
 
   /**
@@ -240,28 +281,37 @@ export class Action extends Element {
    * (e.g. `ViewPage.getActions()`); the URL is baked at config time.
    * Omit `recordId` for row context (`Table.recordActions(...)`); the
    * URL keeps the `:id` template and the renderer substitutes per-row.
+   *
+   * Auto-hides when `R.canEdit(user, record)` returns false. For row
+   * context the per-row record threads in via `loadTableRecords`'s
+   * per-row eval; for view-page context, `resolveSchema` provides the
+   * resolved record on the eval context.
    */
-  static edit(R: { getSlug(): string }, basePath: string, recordId?: string): Action {
+  static edit(R: ResourceLike, basePath: string, recordId?: string): Action {
     const id = recordId ?? ':id'
     return Action.make('edit')
       .label('Edit')
       .href(`${basePath}/${R.getSlug()}/${id}/edit`)
+      .visible(({ user, record }) => callPredicate(R.canEdit, user, record))
   }
 
-  /** View-action factory — link to the resource's view page. See `Action.edit` for the `recordId` semantics. */
-  static view(R: { getSlug(): string }, basePath: string, recordId?: string): Action {
+  /** View-action factory — link to the resource's view page. See `Action.edit` for the `recordId` semantics.
+   * Auto-hides when `R.canView(user, record)` returns false. */
+  static view(R: ResourceLike, basePath: string, recordId?: string): Action {
     const id = recordId ?? ':id'
     return Action.make('view')
       .label('View')
       .href(`${basePath}/${R.getSlug()}/${id}`)
+      .visible(({ user, record }) => callPredicate(R.canView, user, record))
   }
 
   /**
    * Delete-action factory — POSTs to the resource's delete route,
    * destructive style, with a confirmation prompt referencing the
    * resource label. Same `recordId` semantics as `Action.edit`.
+   * Auto-hides when `R.canDelete(user, record)` returns false.
    */
-  static delete(R: { labelSingular: string; getSlug(): string }, basePath: string, recordId?: string): Action {
+  static delete(R: ResourceLike, basePath: string, recordId?: string): Action {
     const id = recordId ?? ':id'
     return Action.make('delete')
       .label('Delete')
@@ -269,6 +319,7 @@ export class Action extends Element {
       .method('post')
       .action(`${basePath}/${R.getSlug()}/${id}/delete`)
       .confirm(`Delete this ${R.labelSingular.toLowerCase()}?`)
+      .visible(({ user, record }) => callPredicate(R.canDelete, user, record))
   }
 
   label(l: string): this { this._label = l; return this }
@@ -337,16 +388,27 @@ export class Action extends Element {
   /** Evaluate the visibility / disabled rules with the given context.
    * Defaults: visible = true, disabled = false. Both `visible` and
    * `hidden` are folded in: `visible: visible !== false && hidden !== true`.
-   */
-  evaluate(ctx: ActionVisibilityContext = {}): { visible: boolean; disabled: boolean } {
-    const evalRule = (rule: VisibilityRule | undefined, fallback: boolean): boolean => {
+   *
+   * Async to support Plan #10 — visibility rules can return Promise<bool>
+   * (for `Resource.canX(user, record)` integration). Throwing rules are
+   * treated as fail-closed (`visible: false` / `disabled: true`). */
+  async evaluate(ctx: ActionVisibilityContext = {}): Promise<{ visible: boolean; disabled: boolean }> {
+    const evalRule = async (rule: VisibilityRule | undefined, fallback: boolean): Promise<boolean> => {
       if (rule === undefined) return fallback
-      if (typeof rule === 'function') return rule(ctx)
-      return rule
+      if (typeof rule !== 'function') return rule
+      try {
+        return await rule(ctx)
+      } catch {
+        // Fail closed — a throwing rule shouldn't accidentally show a
+        // destructive action.
+        return !fallback
+      }
     }
-    const visibleRaw  = evalRule(this._visible, true)
-    const hiddenRaw   = evalRule(this._hidden, false)
-    const disabledRaw = evalRule(this._isDisabled, false)
+    const [visibleRaw, hiddenRaw, disabledRaw] = await Promise.all([
+      evalRule(this._visible, true),
+      evalRule(this._hidden, false),
+      evalRule(this._isDisabled, false),
+    ])
     return {
       visible:  visibleRaw && !hiddenRaw,
       disabled: disabledRaw,

@@ -102,7 +102,7 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
     const evalCtx: { record?: unknown; user?: unknown } = {}
     if (ctx.record !== undefined) evalCtx.record = ctx.record
     if (ctx.user   !== undefined) evalCtx.user   = ctx.user
-    const { visible } = el.evaluate(evalCtx)
+    const { visible } = await el.evaluate(evalCtx)
     if (!visible) return null
   }
 
@@ -114,7 +114,7 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
       const evalCtx: { record?: unknown; user?: unknown } = {}
       if (ctx.record !== undefined) evalCtx.record = ctx.record
       if (ctx.user   !== undefined) evalCtx.user   = ctx.user
-      const { visible } = el.evaluate(evalCtx)
+      const { visible } = await el.evaluate(evalCtx)
       if (!visible) return null
     }
   }
@@ -137,7 +137,7 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
     const evalCtx: { record?: unknown; user?: unknown } = {}
     if (ctx.record !== undefined) evalCtx.record = ctx.record
     if (ctx.user   !== undefined) evalCtx.user   = ctx.user
-    const { disabled } = el.evaluate(evalCtx)
+    const { disabled } = await el.evaluate(evalCtx)
     if (disabled) meta['disabled'] = true
   }
 
@@ -146,7 +146,7 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
     const evalCtx: { record?: unknown; user?: unknown } = {}
     if (ctx.record !== undefined) evalCtx.record = ctx.record
     if (ctx.user   !== undefined) evalCtx.user   = ctx.user
-    const { disabled } = el.evaluate(evalCtx)
+    const { disabled } = await el.evaluate(evalCtx)
     if (disabled) meta['disabled'] = true
   }
 

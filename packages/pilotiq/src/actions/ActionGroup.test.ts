@@ -57,10 +57,10 @@ describe('ActionGroup builder', () => {
     assert.equal(ActionGroup.make('a').visible(true).hasVisibilityRules(), true)
   })
 
-  it('evaluate combines visible and hidden via AND', () => {
+  it('evaluate combines visible and hidden via AND', async () => {
     const g = ActionGroup.make('a').visible(true).hidden(({ user }) => (user as { admin?: boolean })?.admin === false)
-    assert.equal(g.evaluate({ user: { admin: true  } }).visible, true)
-    assert.equal(g.evaluate({ user: { admin: false } }).visible, false)
+    assert.equal((await g.evaluate({ user: { admin: true  } })).visible, true)
+    assert.equal((await g.evaluate({ user: { admin: false } })).visible, false)
   })
 
   it('toMeta emits conditional:true when rules exist', () => {
