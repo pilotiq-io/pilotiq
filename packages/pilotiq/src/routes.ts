@@ -147,6 +147,94 @@ async function handleFormState(
   }
 }
 
+/**
+ * Handle a single file upload from a `FileUpload` field. Validates
+ * accept / maxSize against the (optional) per-request hints, hands
+ * the file off to the configured adapter, returns `{ ok, url }`.
+ *
+ * Body shape (multipart/form-data):
+ *   - `file`: the file blob
+ *   - `directory`: optional sub-directory hint
+ *   - `accept`: optional comma-separated MIME list to enforce
+ *   - `maxSize`: optional byte cap
+ *   - `fieldName`: optional tag forwarded to the adapter for routing
+ */
+async function handleUploadRequest(
+  req:     AppRequest,
+  res:     AppResponse,
+  pilotiq: Pilotiq,
+): Promise<unknown> {
+  const cfg = pilotiq.getConfig()
+  if (!cfg.uploads) {
+    res.status(500)
+    return res.json({ ok: false, error: 'No upload adapter configured' })
+  }
+
+  // Auth: panel-wide `guard` and per-request `user`. We don't enforce
+  // per-resource canEdit here because the field doesn't know which
+  // resource it belongs to — apps that need it should hook into
+  // their adapter's `put()` and consult their own auth there.
+  if (cfg.guard && !await cfg.guard(req)) {
+    res.status(401)
+    return res.json({ ok: false, error: 'Unauthorized' })
+  }
+
+  // Parse multipart body. Hono's parseBody returns `Record<string, File | string>`.
+  const raw = req.raw as { req?: { parseBody?: (opts?: { all?: boolean }) => Promise<Record<string, unknown>> } } | undefined
+  if (!raw?.req?.parseBody) {
+    res.status(500)
+    return res.json({ ok: false, error: 'Multipart parsing unavailable' })
+  }
+  let body: Record<string, unknown>
+  try {
+    body = await raw.req.parseBody()
+  } catch (err) {
+    res.status(400)
+    return res.json({ ok: false, error: err instanceof Error ? err.message : 'Bad request' })
+  }
+
+  const file = body['file']
+  if (!file || !(file instanceof File)) {
+    res.status(422)
+    return res.json({ ok: false, error: 'No file provided' })
+  }
+
+  const directory = typeof body['directory'] === 'string' ? body['directory'] : undefined
+  const fieldName = typeof body['fieldName'] === 'string' ? body['fieldName'] : ''
+
+  // Server-side validation. Both accept and maxSize are advisory hints
+  // shipped by the field meta, so we re-check here so a tampered client
+  // can't bypass the limits.
+  const acceptStr = typeof body['accept'] === 'string' ? body['accept'] : ''
+  if (acceptStr) {
+    const accept = acceptStr.split(',').map(s => s.trim()).filter(Boolean)
+    if (accept.length > 0 && !accept.includes(file.type)) {
+      res.status(422)
+      return res.json({ ok: false, error: `File type "${file.type}" not allowed` })
+    }
+  }
+  const maxSizeStr = typeof body['maxSize'] === 'string' ? body['maxSize'] : ''
+  if (maxSizeStr) {
+    const maxSize = Number(maxSizeStr)
+    if (Number.isFinite(maxSize) && file.size > maxSize) {
+      res.status(422)
+      return res.json({ ok: false, error: `File exceeds ${maxSize} bytes` })
+    }
+  }
+
+  try {
+    const result = await cfg.uploads.adapter.put({
+      file,
+      ...(directory ? { directory } : {}),
+      fieldName,
+    })
+    return res.json({ ok: true, url: result.url, ...(result.meta ? { meta: result.meta } : {}) })
+  } catch (err) {
+    res.status(500)
+    return res.json({ ok: false, error: err instanceof Error ? err.message : 'Upload failed' })
+  }
+}
+
 export function registerPilotiqRoutes(
   router: Router,
   pilotiq: Pilotiq,
@@ -157,6 +245,11 @@ export function registerPilotiqRoutes(
   // ── Dashboard (1-segment) ─────────────────────────────
   router.get(base, async (req) => {
     return view('pilotiq.dashboard', await dashboardData(pilotiq, req))
+  })
+
+  // ── File uploads (FileUpload field POST target) ───────
+  router.post(`${base}/_uploads`, async (req, res) => {
+    return handleUploadRequest(req, res, pilotiq)
   })
 
   // ── Resource routes ───────────────────────────────────

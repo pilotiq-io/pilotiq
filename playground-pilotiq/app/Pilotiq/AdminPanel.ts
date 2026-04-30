@@ -11,6 +11,7 @@ import { ArticleResource } from './Articles/ArticleResource.js'
 import { SimplePage } from './pages/SimplePage.js'
 import { ElementsShowcase } from './pages/ElementsShowcase.js'
 import { ReactiveDemo } from './pages/ReactiveDemo.js'
+import { FieldTypesDemo } from './pages/FieldTypesDemo.js'
 
 // Register the curated lucide baseline so string-typed icons
 // (Action.icon('check'), Column.icon('star'), etc.) resolve at render time.
@@ -57,9 +58,12 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   // check on `ArticleResource` shows the Delete row action. Real apps
   // would pass `req => Auth.user()` (from `@rudderjs/auth`).
   .user(() => ({ role: 'admin', name: 'Demo Admin' }))
+  // Note: `.uploads(...)` is wired in `bootstrap/providers.ts` (server-only)
+  // because `localUpload` imports `node:fs/promises` and the panel module
+  // is read on the client through the auto-gen `_components.ts` manifest.
   .resources([ArticleResource])
   .globals([SiteSettings])
-  .pages([SimplePage, ElementsShowcase, ReactiveDemo])
+  .pages([SimplePage, ElementsShowcase, ReactiveDemo, FieldTypesDemo])
   .schema(async () => [
     Heading.make('Welcome to Pilotiq').description('Here\'s a quick overview of your content.'),
     Alert.make('This is a demo of the new schema system.').info().title('Schema Demo'),

@@ -40,6 +40,13 @@ export interface RenderContext extends SchemaContext {
    * initial GET render.
    */
   changed?: string
+  /**
+   * URL the FileUpload field should POST to. Stamped onto every
+   * page-data ctx by the route handlers / page-data builders so the
+   * field's `toMeta` doesn't need to know the panel base path. Single
+   * panel-level URL — no per-field variation.
+   */
+  uploadUrl?: string
 }
 
 export type SchemaDefinition =

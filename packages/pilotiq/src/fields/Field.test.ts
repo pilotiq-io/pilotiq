@@ -303,6 +303,114 @@ describe('Field.afterStateUpdated (Plan #5)', () => {
   })
 })
 
+describe('Field cross-field plumbing (Plan #6)', () => {
+  describe('prefix / suffix / helperText', () => {
+    it('emits prefix as a plain string', () => {
+      const meta = TextField.make('price').prefix('$').toMeta()
+      assert.equal(meta.prefix, '$')
+    })
+
+    it('emits suffix as a plain string', () => {
+      const meta = TextField.make('domain').suffix('.com').toMeta()
+      assert.equal(meta.suffix, '.com')
+    })
+
+    it('emits prefix as an icon descriptor', () => {
+      const meta = TextField.make('search').prefix({ icon: 'search' }).toMeta()
+      assert.deepEqual(meta.prefix, { icon: 'search' })
+    })
+
+    it('emits helperText when set', () => {
+      const meta = TextField.make('slug').helperText('Lowercase, hyphens only').toMeta()
+      assert.equal(meta.helperText, 'Lowercase, hyphens only')
+    })
+
+    it('omits prefix / suffix / helperText when unset', () => {
+      const meta = TextField.make('x').toMeta()
+      assert.equal('prefix'     in meta, false)
+      assert.equal('suffix'     in meta, false)
+      assert.equal('helperText' in meta, false)
+    })
+  })
+
+  describe('default()', () => {
+    it('emits defaultValue on meta when set', () => {
+      const meta = TextField.make('x').default('hello').toMeta()
+      assert.equal(meta.defaultValue, 'hello')
+    })
+
+    it('emits defaultValue with non-string types untouched', () => {
+      assert.equal(NumberField.make('n').default(42).toMeta().defaultValue,        42)
+      assert.equal(ToggleField.make('b').default(true).toMeta().defaultValue,      true)
+    })
+
+    it('omits defaultValue when unset', () => {
+      const meta = TextField.make('x').toMeta()
+      assert.equal('defaultValue' in meta, false)
+    })
+  })
+
+  describe('dehydrated()', () => {
+    it('defaults to true', () => {
+      assert.equal(TextField.make('x').isDehydrated(), true)
+    })
+
+    it('dehydrated(false) marks field for body-skip', () => {
+      assert.equal(TextField.make('x').dehydrated(false).isDehydrated(), false)
+    })
+
+    it('dehydrated(true) restores default', () => {
+      assert.equal(TextField.make('x').dehydrated(false).dehydrated(true).isDehydrated(), true)
+    })
+  })
+
+  describe('formatStateUsing()', () => {
+    it('emits formattedValue when value is in record', () => {
+      const meta = TextField.make('price')
+        .formatStateUsing(v => `$${Number(v).toFixed(2)}`)
+        .toMeta({ record: { price: 12.5 } })
+      assert.equal(meta.formattedValue, '$12.50')
+    })
+
+    it('prefers values map over record', () => {
+      const meta = TextField.make('price')
+        .formatStateUsing(v => `$${v}`)
+        .toMeta({ record: { price: 1 }, values: { price: 99 } })
+      assert.equal(meta.formattedValue, '$99')
+    })
+
+    it('falls back to default() when neither record nor values supply the value', () => {
+      const meta = TextField.make('price')
+        .default(7)
+        .formatStateUsing(v => `$${v}`)
+        .toMeta()
+      assert.equal(meta.formattedValue, '$7')
+    })
+
+    it('omits formattedValue when no source value is available', () => {
+      const meta = TextField.make('price')
+        .formatStateUsing(v => `$${v}`)
+        .toMeta()
+      assert.equal('formattedValue' in meta, false)
+    })
+
+    it('swallows thrown formatters with a warning + omits the key', () => {
+      const original = console.warn
+      const calls: unknown[] = []
+      console.warn = (...args: unknown[]) => { calls.push(args) }
+      try {
+        const meta = TextField.make('x')
+          .formatStateUsing(() => { throw new Error('boom') })
+          .toMeta({ record: { x: 'something' } })
+        assert.equal('formattedValue' in meta, false)
+        assert.equal(calls.length, 1)
+      } finally {
+        console.warn = original
+      }
+    })
+  })
+})
+
 describe('resolveField', () => {
   it('returns the meta when not hidden', async () => {
     const meta = await resolveField(TextField.make('title'), { mode: 'edit' })

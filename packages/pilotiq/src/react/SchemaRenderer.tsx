@@ -1,13 +1,24 @@
 import React, { useState } from 'react'
 import type { ElementMeta } from '../schema/Element.js'
 import { getFieldRenderer } from './registry.js'
-import { FormStateProvider, useFieldState, useFormState } from './FormStateContext.js'
-import { Input } from './ui/input.js'
-import { Textarea } from './ui/textarea.js'
-import { Switch } from './ui/switch.js'
+import { FormStateProvider, useFormState } from './FormStateContext.js'
 import { Checkbox } from './ui/checkbox.js'
-import { Calendar } from './ui/calendar.js'
+import { Input } from './ui/input.js'
 import { Popover, PopoverTrigger, PopoverContent } from './ui/popover.js'
+import { FieldShell } from './fields/FieldShell.js'
+import { TextLikeInput }     from './fields/TextLikeInput.js'
+import { SelectFieldInput }  from './fields/SelectFieldInput.js'
+import { ToggleFieldInput }  from './fields/ToggleFieldInput.js'
+import { DateFieldInput }    from './fields/DateFieldInput.js'
+import { HiddenInput }       from './fields/HiddenInput.js'
+import { CheckboxInput }     from './fields/CheckboxInput.js'
+import { RadioInput }        from './fields/RadioInput.js'
+import { CheckboxListInput } from './fields/CheckboxListInput.js'
+import { SliderInput }       from './fields/SliderInput.js'
+import { ColorInput }        from './fields/ColorInput.js'
+import { DateTimeInput }     from './fields/DateTimeInput.js'
+import { KeyValueInput }     from './fields/KeyValueInput.js'
+import { FileUploadInput }   from './fields/FileUploadInput.js'
 import {
   Dialog,
   DialogContent,
@@ -71,202 +82,10 @@ const alertStyles: Record<string, string> = {
 }
 
 // ─── Field rendering ────────────────────────────────────────
-
-function ToggleFieldInput({
-  name, defaultChecked, disabled,
-}: { name: string; defaultChecked: boolean; disabled: boolean }) {
-  const fs = useFieldState(name)
-  const [localChecked, setLocalChecked] = useState(defaultChecked)
-  // Inside a controlled form (live fields enabled), bind to context. Coerce
-  // anything that isn't strictly a boolean — server may ship `'true'` /
-  // `'1'` strings, especially after a partial-resolve roundtrip.
-  const checked = fs.controlled
-    ? (fs.value === true || fs.value === 'true' || fs.value === 1 || fs.value === '1')
-    : localChecked
-  const onChange = (next: boolean): void => {
-    if (fs.controlled) { fs.setValue(next); fs.triggerLive() }
-    else setLocalChecked(next)
-  }
-  return (
-    <div className="flex items-center gap-2">
-      {/* Hidden input is the source of truth for form POST. Always present
-          (even when unchecked) so coerceFormValues sees a definitive value. */}
-      <input type="hidden" name={name} value={checked ? 'true' : 'false'} />
-      <Switch
-        id={name}
-        checked={checked}
-        onCheckedChange={onChange}
-        disabled={disabled}
-      />
-    </div>
-  )
-}
-
-function SelectFieldInput({
-  name, defaultValue, disabled, required, placeholder, options,
-}: {
-  name:         string
-  defaultValue: string | undefined
-  disabled:     boolean
-  required:     boolean
-  placeholder:  string | undefined
-  options:      Array<{ value: string; label: string }>
-}) {
-  const fs = useFieldState(name)
-  // Always-controlled. Initialize to '' (not undefined) so Base UI's Select
-  // doesn't see the value flip from undefined → string when the user picks
-  // an option (warns: "changing the uncontrolled value state to controlled").
-  const [localValue, setLocalValue] = useState<string>(defaultValue ?? '')
-  const value = fs.controlled
-    ? (fs.value !== undefined && fs.value !== null ? String(fs.value) : '')
-    : localValue
-  const onValueChange = (v: string | null): void => {
-    const next = v ?? ''
-    if (fs.controlled) { fs.setValue(next); fs.triggerLive() }
-    else setLocalValue(next)
-  }
-  return (
-    <>
-      <input type="hidden" name={name} value={value} />
-      <Select
-        value={value}
-        onValueChange={(v) => onValueChange(v as string)}
-        disabled={disabled}
-        required={required}
-      >
-        <SelectTrigger className="w-full" id={name}>
-          <SelectValue placeholder={placeholder ?? 'Select…'} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </>
-  )
-}
-
-function DateFieldInput({
-  name, defaultValue, disabled, placeholder,
-}: {
-  name:         string
-  defaultValue: string | undefined
-  disabled:     boolean
-  placeholder:  string | undefined
-}) {
-  const fs = useFieldState(name)
-  const initial = defaultValue ? new Date(defaultValue) : undefined
-  const [localDate, setLocalDate] = useState<Date | undefined>(
-    initial && !isNaN(initial.getTime()) ? initial : undefined,
-  )
-  // Controlled path: parse the YYYY-MM-DD (or ISO) string from context.
-  let date: Date | undefined
-  if (fs.controlled) {
-    const ctxStr = fs.value !== undefined && fs.value !== null && fs.value !== '' ? String(fs.value) : ''
-    if (ctxStr) {
-      const parsed = new Date(ctxStr)
-      date = isNaN(parsed.getTime()) ? undefined : parsed
-    }
-  } else {
-    date = localDate
-  }
-  const onSelect = (next: Date | undefined): void => {
-    if (fs.controlled) {
-      fs.setValue(next ? next.toISOString().slice(0, 10) : '')
-      fs.triggerLive()
-    } else {
-      setLocalDate(next)
-    }
-  }
-  const formatted = date ? date.toISOString().slice(0, 10) : ''
-  const display   = date
-    ? date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-    : (placeholder ?? 'Pick a date')
-
-  return (
-    <>
-      <input type="hidden" name={name} value={formatted} />
-      <Popover>
-        <PopoverTrigger
-          render={
-            <button
-              type="button"
-              id={name}
-              disabled={disabled}
-              className={`flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 ${
-                date ? 'text-foreground' : 'text-muted-foreground'
-              }`}
-            >
-              <span>{display}</span>
-              <CalendarIcon className="size-4 opacity-60" />
-            </button>
-          }
-        />
-        <PopoverContent className="w-auto p-0" align="start">
-          <Calendar mode="single" selected={date} onSelect={onSelect} initialFocus />
-        </PopoverContent>
-      </Popover>
-    </>
-  )
-}
-
-/**
- * Bridge between controlled (FormStateProvider) and uncontrolled
- * (defaultValue) modes for text-style inputs. When inside a form with
- * `live()` fields, the input is bound to the context's values map and
- * fires the live trigger on change/blur according to the field's `live`
- * config. Outside a controlled form, falls back to plain `defaultValue`.
- */
-function TextLikeInput({
-  el, name, common, type, extraProps, multiline,
-}: {
-  el:         ElementMeta
-  name:       string
-  common:     Record<string, unknown>
-  type:       string
-  extraProps: Record<string, unknown>
-  multiline:  boolean
-}): React.ReactElement {
-  const fs = useFieldState(name)
-  const liveCfg = el['live']
-  // Resolve trigger style for live fields. `onBlur:true` defers the
-  // trigger to blur; otherwise we fire on each change (debounce handled
-  // inside the provider). Non-live fields: triggerLive is a no-op.
-  const liveOpts = (typeof liveCfg === 'object' && liveCfg !== null
-    ? liveCfg as { onBlur?: boolean; debounce?: number }
-    : {})
-  const onBlurMode = liveOpts.onBlur === true
-
-  if (fs.controlled) {
-    const ctxValue = fs.value !== undefined && fs.value !== null ? String(fs.value) : ''
-    const onChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
-      fs.setValue(e.target.value)
-      if (!onBlurMode) fs.triggerLive()
-    }
-    const onBlur = (): void => {
-      if (onBlurMode) fs.triggerLive()
-    }
-    const props = {
-      ...common,
-      ...extraProps,
-      // Drop defaultValue — controlled mode uses `value`.
-      defaultValue: undefined,
-      value:        ctxValue,
-      onChange,
-      onBlur,
-    }
-    if (multiline) return <Textarea {...(props as React.ComponentProps<typeof Textarea>)} />
-    return <Input {...(props as React.ComponentProps<typeof Input>)} type={type} />
-  }
-
-  // Uncontrolled fallback — preserves the legacy zero-cost path for
-  // forms with no live fields.
-  if (multiline) return <Textarea {...(common as React.ComponentProps<typeof Textarea>)} {...extraProps} />
-  return <Input {...(common as React.ComponentProps<typeof Input>)} type={type} {...extraProps} />
-}
+//
+// Each input lives in its own file under `react/fields/`. This file
+// stays a thin dispatcher: parse meta → pick component → wrap in
+// `<FieldShell>`.
 
 function renderField(el: ElementMeta, index: number): React.ReactNode {
   const fieldType   = String(el['fieldType'] ?? 'text')
@@ -278,11 +97,11 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
   const defaultValue = el['defaultValue']
   const defaultStr = defaultValue !== undefined && defaultValue !== null ? String(defaultValue) : undefined
 
-  const labelEl = (
-    <label htmlFor={name} className="text-sm font-medium leading-none">
-      {label}{required && <span className="text-destructive ml-0.5">*</span>}
-    </label>
-  )
+  // Hidden fields render bare — no label, no shell, no chrome. Bail
+  // before the renderField switch + FieldShell wrap.
+  if (fieldType === 'hidden') {
+    return <HiddenInput key={index} name={name} defaultValue={defaultValue} />
+  }
 
   const common = {
     id: name,
@@ -299,8 +118,7 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
   const Custom = getFieldRenderer(fieldType)
   if (Custom) {
     return (
-      <div key={index} className="flex flex-col gap-1.5">
-        {labelEl}
+      <FieldShell key={index} el={el} name={name} label={label} required={required}>
         <Custom
           el={el}
           name={name}
@@ -309,14 +127,33 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
           disabled={disabled}
           placeholder={placeholder}
         />
-      </div>
+      </FieldShell>
     )
   }
 
-  let input: React.ReactNode
+  const input = renderFieldInput(fieldType, el, name, defaultValue, defaultStr, common, disabled, required, placeholder)
+
+  return (
+    <FieldShell key={index} el={el} name={name} label={label} required={required}>
+      {input}
+    </FieldShell>
+  )
+}
+
+function renderFieldInput(
+  fieldType:    string,
+  el:           ElementMeta,
+  name:         string,
+  defaultValue: unknown,
+  defaultStr:   string | undefined,
+  common:       Record<string, unknown>,
+  disabled:     boolean,
+  required:     boolean,
+  placeholder:  string | undefined,
+): React.ReactNode {
   switch (fieldType) {
     case 'textarea':
-      input = (
+      return (
         <TextLikeInput
           el={el}
           name={name}
@@ -326,11 +163,10 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
           multiline
         />
       )
-      break
 
     case 'select': {
       const options = (el['options'] as Array<{ value: string; label: string }>) ?? []
-      input = (
+      return (
         <SelectFieldInput
           name={name}
           defaultValue={defaultStr}
@@ -340,13 +176,119 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
           options={options}
         />
       )
-      break
     }
 
     case 'toggle': {
       const initialChecked = defaultValue === true || defaultValue === 'true' || defaultValue === 1 || defaultValue === '1'
-      input = <ToggleFieldInput name={name} defaultChecked={initialChecked} disabled={disabled} />
-      break
+      return <ToggleFieldInput name={name} defaultChecked={initialChecked} disabled={disabled} />
+    }
+
+    case 'checkbox': {
+      const initialChecked = defaultValue === true || defaultValue === 'true' || defaultValue === 1 || defaultValue === '1'
+      return <CheckboxInput name={name} defaultChecked={initialChecked} disabled={disabled} />
+    }
+
+    case 'radio': {
+      const options = (el['options'] as Array<{ value: string; label: string }>) ?? []
+      const inline  = Boolean(el['inline'])
+      return (
+        <RadioInput
+          name={name}
+          defaultValue={defaultStr}
+          disabled={disabled}
+          options={options}
+          inline={inline}
+        />
+      )
+    }
+
+    case 'checkboxList': {
+      const options = (el['options'] as Array<{ value: string; label: string }>) ?? []
+      const columns = Number(el['columns']) || 1
+      return (
+        <CheckboxListInput
+          name={name}
+          defaultValue={defaultValue}
+          disabled={disabled}
+          options={options}
+          columns={columns}
+        />
+      )
+    }
+
+    case 'slider': {
+      return (
+        <SliderInput
+          name={name}
+          defaultValue={defaultValue}
+          disabled={disabled}
+          min={Number(el['min'])  ||   0}
+          max={Number(el['max'])  || 100}
+          step={Number(el['step']) || 1}
+          showValue={Boolean(el['showValue'])}
+        />
+      )
+    }
+
+    case 'color': {
+      return (
+        <ColorInput
+          name={name}
+          defaultValue={defaultValue}
+          disabled={disabled}
+        />
+      )
+    }
+
+    case 'keyValue': {
+      return (
+        <KeyValueInput
+          name={name}
+          defaultValue={defaultValue}
+          disabled={disabled}
+          keyLabel={String(el['keyLabel'] ?? 'Key')}
+          valueLabel={String(el['valueLabel'] ?? 'Value')}
+          addLabel={String(el['addLabel'] ?? 'Add row')}
+          reorderable={Boolean(el['reorderable'])}
+        />
+      )
+    }
+
+    case 'fileUpload': {
+      return (
+        <FileUploadInput
+          name={name}
+          defaultValue={defaultValue}
+          disabled={disabled}
+          accept={el['accept'] as string[] | undefined}
+          maxSize={typeof el['maxSize'] === 'number' ? el['maxSize'] : undefined}
+          multiple={Boolean(el['multiple'])}
+          preview={el['preview'] !== false}
+          directory={typeof el['directory'] === 'string' ? el['directory'] : undefined}
+          uploadUrl={typeof el['uploadUrl'] === 'string' ? el['uploadUrl'] : undefined}
+        />
+      )
+    }
+
+    case 'dateTime': {
+      // Normalize various input shapes to YYYY-MM-DDTHH:mm.
+      let local: string | undefined
+      if (defaultValue instanceof Date) {
+        local = isNaN(defaultValue.getTime())
+          ? undefined
+          : defaultValue.toISOString().slice(0, 16)
+      } else if (typeof defaultValue === 'string' && defaultValue) {
+        const parsed = new Date(defaultValue)
+        local = isNaN(parsed.getTime()) ? undefined : parsed.toISOString().slice(0, 16)
+      }
+      return (
+        <DateTimeInput
+          name={name}
+          defaultValue={local}
+          disabled={disabled}
+          placeholder={placeholder}
+        />
+      )
     }
 
     case 'number': {
@@ -354,7 +296,7 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
       if (el['min']  !== undefined) numProps['min']  = Number(el['min'])
       if (el['max']  !== undefined) numProps['max']  = Number(el['max'])
       if (el['step'] !== undefined) numProps['step'] = Number(el['step'])
-      input = (
+      return (
         <TextLikeInput
           el={el}
           name={name}
@@ -364,11 +306,10 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
           multiline={false}
         />
       )
-      break
     }
 
     case 'email':
-      input = (
+      return (
         <TextLikeInput
           el={el}
           name={name}
@@ -378,7 +319,6 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
           multiline={false}
         />
       )
-      break
 
     case 'date': {
       // SSR may hand us a JS Date object directly; SPA JSON nav arrives as
@@ -396,7 +336,7 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
           ? undefined
           : parsed.toISOString().slice(0, 10)
       }
-      input = (
+      return (
         <DateFieldInput
           name={name}
           defaultValue={iso}
@@ -404,7 +344,6 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
           placeholder={placeholder}
         />
       )
-      break
     }
 
     case 'slug':
@@ -412,7 +351,7 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
     default: {
       const textExtra: Record<string, unknown> = {}
       if (el['maxLength'] !== undefined) textExtra['maxLength'] = Number(el['maxLength'])
-      input = (
+      return (
         <TextLikeInput
           el={el}
           name={name}
@@ -424,13 +363,6 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
       )
     }
   }
-
-  return (
-    <div key={index} className="flex flex-col gap-1.5">
-      {labelEl}
-      {input}
-    </div>
-  )
 }
 
 // ─── Action rendering ───────────────────────────────────────
@@ -1742,8 +1674,11 @@ function renderFormChild(
 }
 
 function renderFieldWithValue(el: ElementMeta, index: number, value: unknown): React.ReactNode {
-  // Spread the original meta so renderField sees defaultValue.
-  const enriched: ElementMeta = { ...el, defaultValue: value }
+  // The form-state value (from `withValues` / record-fill) wins when present;
+  // otherwise the meta's own `defaultValue` (Plan #6 `Field.default()`) survives.
+  const enriched: ElementMeta = value !== undefined
+    ? { ...el, defaultValue: value }
+    : el
   return renderField(enriched, index)
 }
 

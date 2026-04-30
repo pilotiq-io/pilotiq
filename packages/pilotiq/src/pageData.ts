@@ -111,6 +111,16 @@ function userCtx<C extends SchemaContext>(ctx: C, user: unknown): C {
   return { ...ctx, user: user as NonNullable<SchemaContext['user']> }
 }
 
+/** Plan #6 — stamp the panel-wide upload URL so `FileUpload` fields
+ *  emit it on their meta. Single URL for the whole panel; no per-field
+ *  variation. The route is always registered (see `_uploads` in
+ *  `routes.ts`) — meta is stamped regardless of whether an adapter is
+ *  configured so the renderer can show a clear error rather than
+ *  silently breaking. */
+function uploadCtx<C extends SchemaContext>(ctx: C, basePath: string): C {
+  return { ...ctx, uploadUrl: `${basePath}/_uploads` }
+}
+
 async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<NavItem[]> {
   const cfg = pilotiq.getConfig()
   const base = cfg.path
@@ -384,7 +394,7 @@ export async function resourceIndexData(
 
   const indexUrl = `${cfg.path}/${slug}`
   const user = await pilotiq.resolveUser(req)
-  const ctx: SchemaContext = userCtx({ mode: 'table', basePath: cfg.path }, user)
+  const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'table', basePath: cfg.path }, user), cfg.path)
   const elements = await callPageSchema(PageClass, ctx)
   tagActionDispatch(elements, indexUrl)
   // Mark the active tab + parallel-eval badges + stamp per-tab URLs
@@ -505,7 +515,7 @@ export async function resourceCreateData(
 
   const createUrl = `${cfg.path}/${slug}/create`
   const user = await pilotiq.resolveUser(req)
-  const ctx: SchemaContext = userCtx({ mode: 'create', basePath: cfg.path }, user)
+  const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'create', basePath: cfg.path }, user), cfg.path)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, createUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/state`)
@@ -547,7 +557,7 @@ export async function resourceEditData(
 
   const editUrl = `${cfg.path}/${slug}/${recordId}/edit`
   const user = await pilotiq.resolveUser(req)
-  const ctx: SchemaContext = userCtx({ mode: 'edit', recordId, basePath: cfg.path }, user)
+  const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'edit', recordId, basePath: cfg.path }, user), cfg.path)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/${recordId}/_form/${formId}/state`)
@@ -684,7 +694,7 @@ export async function formStateData(
 
   if (!PageClass) return null
 
-  const baseCtx: SchemaContext = userCtx({ mode, basePath: cfg.path, ...baseCtxExtras }, user)
+  const baseCtx: SchemaContext = uploadCtx(userCtx({ mode, basePath: cfg.path, ...baseCtxExtras }, user), cfg.path)
   const elements = await callPageSchema(PageClass, baseCtx)
   const form = selectFormById(findForms(elements), body.formId)
   if (!form) return { ok: false, status: 404, error: `Form "${body.formId}" not found on page` }
@@ -745,7 +755,7 @@ export async function resourceViewData(
   const PageClass = pages.view
 
   const user = await pilotiq.resolveUser(req)
-  const ctx: SchemaContext = userCtx({ mode: 'view', recordId, basePath: cfg.path }, user)
+  const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'view', recordId, basePath: cfg.path }, user), cfg.path)
   const elements = await callPageSchema(PageClass, ctx)
   // For the view page we want the record threaded into resolveSchema so
   // factory-attached visibility predicates see it. Resource.detail()
@@ -788,7 +798,7 @@ export async function globalEditData(
 
   const editUrl = `${cfg.path}/${slug}`
   const user = await pilotiq.resolveUser(req)
-  const ctx: SchemaContext = userCtx({ mode: 'edit', basePath: cfg.path }, user)
+  const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'edit', basePath: cfg.path }, user), cfg.path)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/state`)
@@ -837,7 +847,7 @@ export async function globalViewData(
   const PageClass = pages.view
 
   const user = await pilotiq.resolveUser(req)
-  const ctx: SchemaContext = userCtx({ mode: 'view', basePath: cfg.path }, user)
+  const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'view', basePath: cfg.path }, user), cfg.path)
   const elements = await callPageSchema(PageClass, ctx)
   const schemaData = await resolveSchema(elements, ctx)
 
@@ -863,7 +873,7 @@ export async function customPageData(
 
   const pageUrl = `${cfg.path}/${pageSlug}`
   const user = await pilotiq.resolveUser(req)
-  const ctx: SchemaContext = userCtx({}, user)
+  const ctx: SchemaContext = uploadCtx(userCtx({}, user), cfg.path)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, pageUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/state`)

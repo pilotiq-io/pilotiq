@@ -37,6 +37,10 @@
     "./icons/lucide": {
       "import": "./dist/icons/lucide.js",
       "types": "./dist/icons/lucide.d.ts"
+    },
+    "./uploads": {
+      "import": "./dist/uploads/index.js",
+      "types": "./dist/uploads/index.d.ts"
     }
   },
   "scripts": {

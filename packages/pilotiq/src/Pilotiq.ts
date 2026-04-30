@@ -3,6 +3,7 @@ import type { GlobalClass } from './Global.js'
 import type { Page } from './Page.js'
 import type { SchemaDefinition } from './schema/resolveSchema.js'
 import type { ThemeConfig } from './theme/types.js'
+import type { UploadAdapter } from './uploads/UploadAdapter.js'
 
 export type PilotiqLayout = 'sidebar' | 'topbar'
 
@@ -26,6 +27,16 @@ export interface PilotiqPlugin {
  */
 export type UserResolver = (req: unknown) => unknown | null | Promise<unknown | null>
 
+/**
+ * Upload configuration. Apps register an adapter via `Pilotiq.uploads({
+ * adapter })`; the `_uploads` route hands every incoming file to it.
+ * Without an adapter, `FileUpload` fields render but the upload POST
+ * fails with a clear "no upload adapter configured" error.
+ */
+export interface UploadConfig {
+  adapter: UploadAdapter
+}
+
 export interface PilotiqConfig {
   name:          string
   path:          string
@@ -39,6 +50,7 @@ export interface PilotiqConfig {
   themeEditor?:  boolean
   guard?:        (req: unknown) => boolean | Promise<boolean>
   user?:         UserResolver
+  uploads?:      UploadConfig
   /** @internal Runtime theme overrides from DB. */
   _themeOverrides?: Partial<ThemeConfig>
 }
@@ -125,6 +137,22 @@ export class Pilotiq {
    */
   user(fn: UserResolver): this {
     this.config.user = fn
+    return this
+  }
+
+  /**
+   * Configure file uploads. Pass an adapter implementing
+   * `UploadAdapter`; `localUpload({ root, urlPrefix })` is bundled for
+   * disk-backed storage. Apps using S3 / R2 / `@pilotiq/media` provide
+   * their own adapter conforming to the same interface.
+   *
+   *   import { localUpload } from '@pilotiq/pilotiq/uploads'
+   *   Pilotiq.make('admin').uploads({
+   *     adapter: localUpload({ root: 'public/uploads', urlPrefix: '/uploads' })
+   *   })
+   */
+  uploads(config: UploadConfig): this {
+    this.config.uploads = config
     return this
   }
 

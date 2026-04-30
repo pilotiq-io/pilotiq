@@ -1,5 +1,11 @@
 // ─── Panel core ───────────────────────────────────────
-export { Pilotiq, type PilotiqConfig, type PilotiqPlugin } from './Pilotiq.js'
+export {
+  Pilotiq,
+  type PilotiqConfig,
+  type PilotiqPlugin,
+  type UserResolver,
+  type UploadConfig,
+} from './Pilotiq.js'
 export { PilotiqRegistry } from './PilotiqRegistry.js'
 export { pilotiq } from './PilotiqServiceProvider.js'
 export { registerPilotiqRoutes } from './routes.js'
@@ -163,6 +169,8 @@ export {
   type LiveOptions,
   type AfterStateUpdatedHandler,
   type AfterStateUpdatedContext,
+  type FieldDecoration,
+  type FormatStateUsingHandler,
 } from './fields/Field.js'
 export { resolveField, resolveFields } from './fields/resolveField.js'
 export { TextField } from './fields/TextField.js'
@@ -173,6 +181,32 @@ export { SelectField } from './fields/SelectField.js'
 export { ToggleField } from './fields/ToggleField.js'
 export { DateField } from './fields/DateField.js'
 export { SlugField } from './fields/SlugField.js'
+export { HiddenField, Hidden }     from './fields/HiddenField.js'
+export { CheckboxField, Checkbox } from './fields/CheckboxField.js'
+export { RadioField, Radio }       from './fields/RadioField.js'
+export { CheckboxListField, CheckboxList } from './fields/CheckboxListField.js'
+export { SliderField, Slider }             from './fields/SliderField.js'
+export { ColorPickerField, ColorPicker }   from './fields/ColorPickerField.js'
+export { DateTimePickerField, DateTimePicker } from './fields/DateField.js'
+export { KeyValueField, KeyValue }         from './fields/KeyValueField.js'
+export { FileUploadField, FileUpload }     from './fields/FileUploadField.js'
+
+// ─── Uploads ──────────────────────────────────────────
+// `localUpload` (and any future Node-only adapters) live under the
+// `@pilotiq/pilotiq/uploads` subpath so client bundles don't drag in
+// `node:fs/promises` / `node:crypto` via the Vite plugin's manifest
+// crawl. Types are safe to re-export from the root since TS strips
+// them at build time.
+export type {
+  UploadAdapter,
+  UploadRequest,
+  UploadResult,
+} from './uploads/index.js'
+export {
+  type SelectOption,
+  type OptionsResolver,
+  resolveOptions,
+} from './fields/optionsResolver.js'
 
 // ─── Actions ──────────────────────────────────────────
 export {

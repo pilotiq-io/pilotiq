@@ -20,8 +20,8 @@ Land in this order. Each step is independently shippable; later steps build on e
 | 2 | ✅ `column-types.md` DONE | ~2 days | TextColumn formatters + Badge/Icon/Boolean/ImageColumn + Table chrome (heading/description/striped/emptyState) shipped 2026-04-29. |
 | 3 | ✅ `notifications.md` DONE | ~1 day | Notification builder + Toaster + JSON-response wiring shipped 2026-04-29. Flash across 303 redirects via `@rudderjs/session` shipped 2026-04-30 (`flash-notifications.md`). |
 | 4 | ✅ `page-lifecycle-hooks.md` DONE | ~1 day | Form lifecycle split (create/update), fill-side hooks, page-class overrides, default success toasts shipped 2026-04-30. |
-| 5 | `reactive-fields.md` | ~3 days | `live()` + `$get/$set` + dependent fields. Foundation for Wizard, conditional schemas. |
-| 6 | `field-types-expansion.md` | ~3 days | Checkbox, Radio, CheckboxList, ColorPicker, FileUpload, Hidden, KeyValue, Slider. Skip Repeater/Builder for now. |
+| 5 | ✅ `reactive-fields.md` DONE | ~3 days | `live()` + `$get/$set` + `afterStateUpdated` + dependent options + reactive visibility shipped 2026-04-30 (server) and 2026-05-01 (client + demo). |
+| 6 | ✅ `field-types-expansion.md` DONE | ~3 days | Hidden / Checkbox / Radio / CheckboxList / Slider / ColorPicker / DateTimePicker / KeyValue / FileUpload + Field cross-field plumbing (prefix/suffix/helperText/default/dehydrated/formatStateUsing) + UploadAdapter contract + localUpload + `_uploads` route shipped 2026-05-01. Demo at `/new-admin/field-types-demo`. |
 | 7 | `list-page-tabs.md` | ~1 day | High value (every "Drafts / Published / Archived" view), small scope, layers on existing Tabs primitive. |
 | 8 | `schema-layouts.md` | ~2 days | Wizard, Fieldset, Split/Flex, Group, columnSpan/columnStart. Cleanup in existing schema folder. |
 | 8.5 | ✅ `icon-system.md` DONE | ~1 day | Component-typed `Resource.icon = Newspaper` via Vite-plugin manifest + string registry for schema-time icons. Multi-library (lucide / tabler / heroicons / phosphor). Shipped 2026-04-30 as a prereq for #9. |
@@ -306,7 +306,7 @@ This audit refines but doesn't replace the Phase 3 status:
   - **Scaffolder CLI** — separate. Audit doesn't change this.
   - **Pro packages (collab/AI)** — separate. Audit doesn't change this.
 
-- The audit's tier-1 items (#2 column types, #3 notifications, #4 page lifecycle, #5 reactive fields, #6 field types, #7 list-page tabs) were under-represented in the Phase 3 plan. Pulling them forward.
+- The audit's tier-1 items (#2 column types ✅, #3 notifications ✅, #4 page lifecycle ✅, #5 reactive fields ✅, #6 field types ✅, #7 list-page tabs ✅) all shipped in Phase 3. #8 schema-layouts is the next plan in the sequence.
 
 - `actions-tier-1.md` stays as planned and ships alongside #2 onwards.
 

@@ -138,9 +138,20 @@ export function coerceFormValues(
   const out: Record<string, unknown> = { ...body }
   walkFields(elements, field => {
     const name = field.name
+
+    // Plan #6 — `dehydrated(false)` fields are decorative / computed;
+    // their value never enters the persisted record. Drop the body key
+    // before any coercion or validation runs so downstream code can't
+    // see it.
+    if (field.isDehydrated() === false) {
+      delete out[name]
+      return
+    }
+
     const raw  = out[name]
     switch (field.fieldType) {
-      case 'toggle': {
+      case 'toggle':
+      case 'checkbox': {
         if (raw === undefined || raw === null || raw === '' || raw === 'false' || raw === '0' || raw === false) {
           out[name] = false
         } else {
@@ -148,7 +159,8 @@ export function coerceFormValues(
         }
         break
       }
-      case 'number': {
+      case 'number':
+      case 'slider': {
         if (raw === undefined || raw === null || raw === '') {
           out[name] = null
         } else if (typeof raw === 'string') {
@@ -156,12 +168,90 @@ export function coerceFormValues(
         }
         break
       }
-      case 'date': {
+      case 'date':
+      case 'dateTime': {
+        // Both 'date' and 'dateTime' accept ISO strings and
+        // YYYY-MM-DD(THH:mm) shapes — `new Date()` handles both.
         if (raw === undefined || raw === null || raw === '') {
           out[name] = null
         } else if (typeof raw === 'string') {
           out[name] = new Date(raw)
         }
+        break
+      }
+      case 'checkboxList': {
+        // HTML form bodies post checkbox-lists as either an array (when
+        // multiple boxes are checked) or a single string (one checked) or
+        // undefined (none). Normalize all three to `string[]`.
+        if (raw === undefined || raw === null) {
+          out[name] = []
+        } else if (Array.isArray(raw)) {
+          out[name] = raw.map(v => String(v))
+        } else {
+          out[name] = [String(raw)]
+        }
+        break
+      }
+      case 'color': {
+        // Empty string → null so DB nullable columns accept it. Otherwise
+        // pass the hex string through verbatim.
+        if (raw === undefined || raw === null || raw === '') {
+          out[name] = null
+        }
+        break
+      }
+      case 'fileUpload': {
+        // The browser already turned uploaded files into URLs via the
+        // `_uploads` route; what arrives here is either a string, a
+        // string[] (multi-mode), or a JSON-encoded array (when the
+        // client serialized through a hidden input). Normalize to the
+        // declared shape: array bodies → string[], string body → string.
+        if (raw === undefined || raw === null || raw === '') {
+          out[name] = null
+        } else if (Array.isArray(raw)) {
+          out[name] = raw.map(v => String(v))
+        } else if (typeof raw === 'string') {
+          // Try JSON-decode for multi-file fields encoded as JSON; otherwise pass through.
+          if (raw.startsWith('[')) {
+            try {
+              const parsed = JSON.parse(raw)
+              if (Array.isArray(parsed)) { out[name] = parsed.map(v => String(v)); break }
+            } catch { /* fall through */ }
+          }
+          out[name] = raw
+        }
+        break
+      }
+      case 'keyValue': {
+        // Client serializes the row map as a JSON string in a hidden
+        // input. Parse back into a Record<string,string>; filter empty
+        // rows (`{ "": "" }`) before yielding so the persisted record
+        // doesn't carry placeholder noise. Already-object values pass
+        // through (e.g. when the `live()` partial-resolve already shipped
+        // structured data).
+        let parsed: Record<string, string> = {}
+        if (raw === undefined || raw === null || raw === '') {
+          parsed = {}
+        } else if (typeof raw === 'string') {
+          try {
+            const obj = JSON.parse(raw)
+            if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+              for (const [k, v] of Object.entries(obj)) {
+                parsed[String(k)] = v == null ? '' : String(v)
+              }
+            }
+          } catch { parsed = {} }
+        } else if (typeof raw === 'object' && !Array.isArray(raw)) {
+          for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+            parsed[String(k)] = v == null ? '' : String(v)
+          }
+        }
+        const filtered: Record<string, string> = {}
+        for (const [k, v] of Object.entries(parsed)) {
+          if (k === '' && v === '') continue
+          filtered[k] = v
+        }
+        out[name] = filtered
         break
       }
       case 'richtext': {

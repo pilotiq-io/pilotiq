@@ -38,6 +38,15 @@ export interface LiveOptions {
   debounce?: number
 }
 
+/**
+ * Decoration content for `Field.prefix()` / `Field.suffix()`. Either a
+ * literal string (e.g. `"$"`, `".com"`) or an icon descriptor mirroring
+ * the icon system (`{ icon: 'name' }` looks up the registry; `{ icon:
+ * Component }` ships the class identity for the renderer to resolve at
+ * render time).
+ */
+export type FieldDecoration = string | { icon: string }
+
 export interface FieldMeta extends ElementMeta {
   type:         'field'
   fieldType:    FieldType
@@ -54,6 +63,22 @@ export interface FieldMeta extends ElementMeta {
    * onBlur sub-options.
    */
   live?:        true | LiveOptions
+  /** Plan #6 cross-field plumbing. */
+  prefix?:      FieldDecoration
+  suffix?:      FieldDecoration
+  helperText?:  string
+  /**
+   * Default value for create-mode (no record). Display-time wins over
+   * this when a record / values map is present (see `renderFormChild`
+   * — values from the form state override meta defaults).
+   */
+  defaultValue?: unknown
+  /**
+   * Result of `formatStateUsing(fn)` evaluated at meta-build. Renderers
+   * prefer this over the raw value when present (mirrors
+   * `Column.formatStateUsing` from Plan #2).
+   */
+  formattedValue?: string
 }
 
 /**
@@ -93,6 +118,17 @@ export type AfterStateUpdatedHandler = (
   ctx:   AfterStateUpdatedContext,
 ) => void | Promise<void>
 
+/**
+ * Display-time transform passed to `Field.formatStateUsing(fn)`. Receives
+ * the resolved value plus the record context, returns the string that
+ * the renderer should display. Parallel to `Column.formatStateUsing` so
+ * the same shape applies in tables and forms.
+ */
+export type FormatStateUsingHandler = (
+  value: unknown,
+  ctx:   { record?: unknown },
+) => string
+
 export abstract class Field extends Element {
   readonly name: string
   readonly fieldType: FieldType
@@ -125,6 +161,14 @@ export abstract class Field extends Element {
   // is applied but before the schema is re-resolved.
   protected _live?: true | LiveOptions
   protected _afterStateUpdated?: AfterStateUpdatedHandler
+
+  // Plan #6 cross-field plumbing. All optional, all serialized only when set.
+  protected _prefix?: FieldDecoration
+  protected _suffix?: FieldDecoration
+  protected _helperText?: string
+  protected _default?: unknown
+  protected _dehydrated = true
+  protected _formatStateUsing?: FormatStateUsingHandler
 
   constructor(name: string, type: FieldType) {
     super()
@@ -187,6 +231,55 @@ export abstract class Field extends Element {
   isLive(): boolean { return this._live !== undefined }
   getLiveOptions(): true | LiveOptions | undefined { return this._live }
   getAfterStateUpdated(): AfterStateUpdatedHandler | undefined { return this._afterStateUpdated }
+
+  // ─── Cross-field plumbing (Plan #6) ───────────────────
+
+  /**
+   * Decoration before the input — currency mark, protocol, etc. Pass a
+   * plain string for text or `{ icon: 'name' }` to use the icon registry.
+   * Serialized verbatim onto `FieldMeta.prefix`.
+   */
+  prefix(content: FieldDecoration): this { this._prefix = content; return this }
+
+  /** Decoration after the input — domain suffix, unit, etc. */
+  suffix(content: FieldDecoration): this { this._suffix = content; return this }
+
+  /** Helper text rendered below the input — typically a constraint hint. */
+  helperText(text: string): this { this._helperText = text; return this }
+
+  /**
+   * Default value for create-mode (no record). On edit, the loaded
+   * record's value wins. Stored opaquely; the renderer reads it via
+   * `FieldMeta.defaultValue`.
+   */
+  default(value: unknown): this { this._default = value; return this }
+
+  /**
+   * Toggle whether this field round-trips its value on submit. Default
+   * `true` (dehydrated — value is included in the POST body). Pass
+   * `false` for purely-display fields, computed values, or wizard
+   * scratch state. Dehydrated-false fields are filtered out by
+   * `coerceFormValues` before validation runs.
+   */
+  dehydrated(value: boolean = true): this { this._dehydrated = value; return this }
+
+  /**
+   * Display-time transform — receives `(value, { record })` and returns
+   * a string. Result lands on `FieldMeta.formattedValue`; renderers
+   * prefer it over the raw value when present. Parallels
+   * `Column.formatStateUsing` from Plan #2.
+   */
+  formatStateUsing(fn: FormatStateUsingHandler): this {
+    this._formatStateUsing = fn
+    return this
+  }
+
+  isDehydrated(): boolean { return this._dehydrated }
+  getDefault(): unknown { return this._default }
+  getPrefix(): FieldDecoration | undefined { return this._prefix }
+  getSuffix(): FieldDecoration | undefined { return this._suffix }
+  getHelperText(): string | undefined { return this._helperText }
+  getFormatStateUsing(): FormatStateUsingHandler | undefined { return this._formatStateUsing }
 
   // ─── Validation ───────────────────────────────────────
 
@@ -332,6 +425,29 @@ export abstract class Field extends Element {
    */
   protected buildMeta(ctx?: RenderContext): FieldMeta {
     const rules = this.getSerializedRules()
+
+    // formatStateUsing: prefer the record-mapped value when available,
+    // otherwise the seeded default. Skip entirely when no source value
+    // exists — calling the formatter with `undefined` is rarely useful
+    // and would force every formatter to defensively guard.
+    let formattedValue: string | undefined
+    if (this._formatStateUsing) {
+      const recordValue = ctx?.record !== undefined && ctx.record !== null && typeof ctx.record === 'object'
+        ? (ctx.record as Record<string, unknown>)[this.name]
+        : undefined
+      const valuesValue = ctx?.values?.[this.name]
+      const sourceValue = valuesValue !== undefined ? valuesValue
+        : recordValue !== undefined ? recordValue
+        : this._default
+      if (sourceValue !== undefined) {
+        try {
+          formattedValue = this._formatStateUsing(sourceValue, { record: ctx?.record })
+        } catch (err) {
+          console.warn(`[pilotiq] formatStateUsing for "${this.name}" threw:`, err)
+        }
+      }
+    }
+
     return {
       type:        'field',
       fieldType:   this.fieldType,
@@ -342,6 +458,11 @@ export abstract class Field extends Element {
       ...(this._placeholder ? { placeholder: this._placeholder } : {}),
       ...(rules.length > 0 ? { rules } : {}),
       ...(this._live !== undefined ? { live: this._live } : {}),
+      ...(this._prefix !== undefined ? { prefix: this._prefix } : {}),
+      ...(this._suffix !== undefined ? { suffix: this._suffix } : {}),
+      ...(this._helperText !== undefined ? { helperText: this._helperText } : {}),
+      ...(this._default !== undefined ? { defaultValue: this._default } : {}),
+      ...(formattedValue !== undefined ? { formattedValue } : {}),
     }
   }
 

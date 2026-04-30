@@ -2,8 +2,9 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { Form } from './Form.js'
-import { applyStateUpdate, dispatchFormSubmit, findForms, selectForm } from './dispatchForm.js'
+import { applyStateUpdate, coerceFormValues, dispatchFormSubmit, findForms, selectForm } from './dispatchForm.js'
 import { TextField } from '../fields/TextField.js'
+import { NumberField } from '../fields/NumberField.js'
 import { ToggleField } from '../fields/ToggleField.js'
 import { Section } from '../schema/Section.js'
 import { makeValidator, required } from '../validation/index.js'
@@ -323,5 +324,31 @@ describe('applyStateUpdate (Plan #5)', () => {
     await applyStateUpdate(form, { a: 'x' }, 'a', { record: { id: 1 }, user: { name: 'sue' } })
     assert.deepEqual(seen.record, { id: 1 })
     assert.deepEqual(seen.user,   { name: 'sue' })
+  })
+})
+
+describe('coerceFormValues — dehydrated(false) (Plan #6)', () => {
+  it('drops the body key for dehydrated-false fields before validation', () => {
+    const elements = [
+      TextField.make('title'),
+      TextField.make('computed').dehydrated(false),
+    ]
+    const out = coerceFormValues(elements, { title: 'Hello', computed: 'should-not-survive' })
+    assert.equal(out['title'],    'Hello')
+    assert.equal('computed' in out, false)
+  })
+
+  it('leaves dehydrated-true fields untouched (default behaviour)', () => {
+    const elements = [TextField.make('title')]
+    const out = coerceFormValues(elements, { title: 'Hello' })
+    assert.equal(out['title'], 'Hello')
+  })
+
+  it('skips coercion for dehydrated-false even when the type would coerce', () => {
+    // NumberField normally coerces strings → numbers. Dehydrated-false
+    // should drop the value entirely, not coerce it first.
+    const elements = [NumberField.make('decoy').dehydrated(false)]
+    const out = coerceFormValues(elements, { decoy: '42' })
+    assert.equal('decoy' in out, false)
   })
 })
