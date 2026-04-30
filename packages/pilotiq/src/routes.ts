@@ -165,12 +165,14 @@ export function registerPilotiqRoutes(
       router.post(createUrl, async (req, res) => {
         const body = await readFormBody(req)
         const { values, formId } = splitMeta(body)
+        const json = wantsJson(req)
 
         const ctx: SchemaContext = { mode: 'create', basePath: base }
         const elements = await callPageSchema(PageClass, ctx)
         tagFormActions(elements, createUrl)
         const form = selectForm(findForms(elements), formId)
         if (!form) {
+          if (json) { res.status(404); return res.json({ ok: false, error: 'No form found on page' }) }
           res.status(404)
           return res.send('No form found on page')
         }
@@ -178,6 +180,10 @@ export function registerPilotiqRoutes(
         const result = await dispatchFormSubmit(form, values, { values, basePath: base })
 
         if (!result.ok) {
+          if (json) {
+            res.status(422)
+            return res.json({ ok: false, errors: result.errors })
+          }
           // Re-render through the same builder so the page is identical to GET,
           // just with values + errors prefilled.
           const data = await resourceCreateData(pilotiq, slug, { values, errors: result.errors })
@@ -187,8 +193,16 @@ export function registerPilotiqRoutes(
 
         const recordId = (result.record as { id?: unknown })?.id
         const fallback = recordId !== undefined ? `${base}/${slug}/${String(recordId)}/edit` : `${base}/${slug}`
+        const redirect = normalizeRedirect(result.redirect, base) ?? fallback
+        if (json) {
+          return res.json({
+            ok: true,
+            redirect,
+            ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
+          })
+        }
         flashNotifications(req, result.notifications)
-        return res.redirect(normalizeRedirect(result.redirect, base) ?? fallback, 303)
+        return res.redirect(redirect, 303)
       })
     }
 
@@ -250,12 +264,14 @@ export function registerPilotiqRoutes(
         const editUrl  = `${base}/${slug}/${recordId}/edit`
         const body = await readFormBody(req)
         const { values, formId } = splitMeta(body)
+        const json = wantsJson(req)
 
         const ctx: SchemaContext = { mode: 'edit', recordId, basePath: base }
         const elements = await callPageSchema(PageClass, ctx)
         tagFormActions(elements, editUrl)
         const form = selectForm(findForms(elements), formId)
         if (!form) {
+          if (json) { res.status(404); return res.json({ ok: false, error: 'No form found on page' }) }
           res.status(404)
           return res.send('No form found on page')
         }
@@ -273,13 +289,25 @@ export function registerPilotiqRoutes(
         )
 
         if (!result.ok) {
+          if (json) {
+            res.status(422)
+            return res.json({ ok: false, errors: result.errors })
+          }
           const data = await resourceEditData(pilotiq, slug, recordId, { values, errors: result.errors })
           res.status(422)
           return view('pilotiq.resource-edit', data ?? {})
         }
 
+        const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
+        if (json) {
+          return res.json({
+            ok: true,
+            redirect,
+            ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
+          })
+        }
         flashNotifications(req, result.notifications)
-        return res.redirect(normalizeRedirect(result.redirect, base) ?? editUrl, 303)
+        return res.redirect(redirect, 303)
       })
     }
   }
@@ -301,12 +329,14 @@ export function registerPilotiqRoutes(
       router.post(editUrl, async (req, res) => {
         const body = await readFormBody(req)
         const { values, formId } = splitMeta(body)
+        const json = wantsJson(req)
 
         const ctx: SchemaContext = { mode: 'edit', basePath: base }
         const elements = await callPageSchema(PageClass, ctx)
         tagFormActions(elements, editUrl)
         const form = selectForm(findForms(elements), formId)
         if (!form) {
+          if (json) { res.status(404); return res.json({ ok: false, error: 'No form found on page' }) }
           res.status(404)
           return res.send('No form found on page')
         }
@@ -325,13 +355,25 @@ export function registerPilotiqRoutes(
         )
 
         if (!result.ok) {
+          if (json) {
+            res.status(422)
+            return res.json({ ok: false, errors: result.errors })
+          }
           const data = await globalEditData(pilotiq, slug, { values, errors: result.errors })
           res.status(422)
           return view('pilotiq.slug', data ?? {})
         }
 
+        const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
+        if (json) {
+          return res.json({
+            ok: true,
+            redirect,
+            ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
+          })
+        }
         flashNotifications(req, result.notifications)
-        return res.redirect(normalizeRedirect(result.redirect, base) ?? editUrl, 303)
+        return res.redirect(redirect, 303)
       })
     }
 
@@ -396,12 +438,14 @@ export function registerPilotiqRoutes(
     router.post(pageUrl, async (req, res) => {
       const body = await readFormBody(req)
       const { values, formId } = splitMeta(body)
+      const json = wantsJson(req)
 
       const ctx: SchemaContext = {}
       const elements = await callPageSchema(PageClass, ctx)
       tagFormActions(elements, pageUrl)
       const form = selectForm(findForms(elements), formId)
       if (!form) {
+        if (json) { res.status(404); return res.json({ ok: false, error: 'No form found on page' }) }
         res.status(404)
         return res.send('No form found on page')
       }
@@ -409,6 +453,10 @@ export function registerPilotiqRoutes(
       const result = await dispatchFormSubmit(form, values, { values, basePath: base })
 
       if (!result.ok) {
+        if (json) {
+          res.status(422)
+          return res.json({ ok: false, errors: result.errors })
+        }
         form.withValues(values).withErrors(result.errors)
         const schemaData = await resolveSchema(elements, ctx)
         res.status(422)
@@ -423,8 +471,16 @@ export function registerPilotiqRoutes(
         })
       }
 
+      const redirect = normalizeRedirect(result.redirect, base) ?? pageUrl
+      if (json) {
+        return res.json({
+          ok: true,
+          redirect,
+          ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
+        })
+      }
       flashNotifications(req, result.notifications)
-      return res.redirect(normalizeRedirect(result.redirect, base) ?? pageUrl, 303)
+      return res.redirect(redirect, 303)
     })
   }
 

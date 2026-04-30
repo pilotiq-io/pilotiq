@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import {
   CheckCircle2Icon, AlertTriangleIcon, AlertCircleIcon, InfoIcon, XIcon,
   type LucideIcon,
@@ -100,16 +100,24 @@ export function ToasterProvider({
   initialNotifications?: NotificationMeta[]
 }) {
   const [items, setItems] = useState<NotificationMeta[]>([])
-  const [flashed, setFlashed] = useState(false)
+  // Ref instead of useState: React 18 Strict Mode (dev) intentionally
+  // runs effects twice on the same component instance to surface mount-
+  // time bugs. With a useState flag the second run sees the stale closure
+  // value (state setters are async; the second effect's closure was
+  // captured at the same render as the first), so it would re-add the
+  // notifications and the user gets duplicate toasts. A ref updates
+  // synchronously and is shared across both effect invocations of the
+  // same render.
+  const flashedRef = useRef(false)
 
   // Flash server-provided notifications on first mount only.
   useEffect(() => {
-    if (flashed) return
+    if (flashedRef.current) return
+    flashedRef.current = true
     if (initialNotifications && initialNotifications.length > 0) {
       setItems(prev => [...prev, ...initialNotifications])
     }
-    setFlashed(true)
-  }, [flashed, initialNotifications])
+  }, [initialNotifications])
 
   const notify = useCallback<ToasterContextValue['notify']>((n) => {
     const id = (n as NotificationMeta).id ?? clientId()

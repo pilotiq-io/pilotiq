@@ -1444,15 +1444,80 @@ function FormRenderer({ el }: { el: ElementMeta }) {
   const formId = String(el['formId'] ?? '')
   const method = String(el['method'] ?? 'post').toLowerCase()
   const action = el['action'] ? String(el['action']) : undefined
-  const values = (el['values'] as Record<string, unknown> | undefined) ?? {}
-  const errors = (el['errors'] as Record<string, string[]> | undefined) ?? {}
+  const serverValues = (el['values'] as Record<string, unknown> | undefined) ?? {}
+  const serverErrors = (el['errors'] as Record<string, string[]> | undefined) ?? {}
 
   // Methods other than GET/POST are spoofed via _method, mirroring Laravel.
   const httpMethod = method === 'get' ? 'get' : 'post'
   const spoofedMethod = method !== 'get' && method !== 'post' ? method : undefined
 
+  const navigate = useNavigate()
+  const { notify } = useToast()
+
+  // Client-side errors override server-rendered ones after a fetch-mode
+  // 422 response. Field values stay uncontrolled — the inputs in the DOM
+  // still hold whatever the user typed, so we don't need to mirror them.
+  const [clientErrors, setClientErrors] = useState<Record<string, string[]> | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const errors = clientErrors ?? serverErrors
+
   const formErrors = errors['_form'] ?? []
   const hasFieldErrors = Object.keys(errors).some(k => k !== '_form')
+
+  const onSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    if (!action) return                       // no action URL → fall through to native submit
+    e.preventDefault()
+    if (submitting) return
+    setSubmitting(true)
+    setClientErrors(null)
+
+    try {
+      const fd = new FormData(e.currentTarget)
+      const res = await fetch(action, {
+        method:  'POST',
+        headers: { 'Accept': 'application/json' },
+        body:    fd,
+      })
+      const data = await res.json().catch(() => ({}))
+
+      if (res.status === 422) {
+        const next = (data as { errors?: Record<string, string[]> }).errors ?? {}
+        setClientErrors(next)
+        // Surface a banner-level message if no field errors were returned
+        // — the form-level _form key lights up the existing banner.
+        setSubmitting(false)
+        return
+      }
+      if (!res.ok) {
+        const message = String((data as { error?: string }).error ?? `Request failed (${res.status})`)
+        notify({ type: 'error', title: 'Save failed', body: message })
+        setSubmitting(false)
+        return
+      }
+
+      // Success — drain notifications and SPA-navigate to the redirect.
+      const notifs = (data as { notifications?: NotificationMeta[] }).notifications
+      if (notifs && notifs.length > 0) for (const n of notifs) notify(n)
+      const redirect = String((data as { redirect?: string }).redirect ?? '')
+      // Skip navigate when the redirect is the current URL — re-fetching
+      // the same page would force a form remount (formId changes per
+      // server render) and reset scroll. The user's input is already on
+      // screen; the toast confirms the save. Only navigate when the URL
+      // actually differs (e.g. create → redirect to /edit/{newId}).
+      const currentUrl = typeof window !== 'undefined'
+        ? window.location.pathname + window.location.search
+        : ''
+      if (redirect && redirect !== currentUrl) {
+        navigate(redirect)
+        // Don't reset submitting on success — the navigation will unmount us.
+      } else {
+        setSubmitting(false)
+      }
+    } catch (err) {
+      notify({ type: 'error', title: 'Save failed', body: err instanceof Error ? err.message : String(err) })
+      setSubmitting(false)
+    }
+  }
 
   return (
     <form
@@ -1460,6 +1525,7 @@ function FormRenderer({ el }: { el: ElementMeta }) {
       data-form-id={formId || undefined}
       method={httpMethod}
       action={action}
+      onSubmit={onSubmit}
       className="flex flex-col gap-6"
     >
       {formId && <input type="hidden" name="_formId" value={formId} />}
@@ -1475,7 +1541,7 @@ function FormRenderer({ el }: { el: ElementMeta }) {
           )}
         </div>
       )}
-      {(el.children ?? []).map((child, i) => renderFormChild(child, i, values, errors))}
+      {(el.children ?? []).map((child, i) => renderFormChild(child, i, serverValues, errors))}
     </form>
   )
 }
