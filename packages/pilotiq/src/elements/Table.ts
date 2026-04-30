@@ -44,13 +44,16 @@ export interface TableEmptyState {
 }
 
 /**
- * Per-row URL function. Returns the destination for a row click — the
- * row renders as a clickable surface that SPA-navigates to the URL.
- * Return `undefined` for rows that shouldn't be clickable.
+ * Per-row URL function. Returns the destination URL for clicks on a
+ * row's data cells — each data column wraps its content in a real
+ * `<a href>` (Filament-style), so right-click / cmd-click / middle-click
+ * "open in new tab" all work natively. Plain left-clicks are intercepted
+ * for SPA navigation. Return `undefined` for rows that shouldn't be
+ * clickable. Action and bulk-select cells are never wrapped.
  *
- * Filament-style ergonomics: `Table.recordUrl(r => `${slug}/${r.id}/edit`)`
- * — most lists want "click row to edit", and pairs cleanly with the
- * Filament-style explicit row actions for power users.
+ * Per-column overrides: `Column.recordUrl(fn)` swaps in a different URL
+ * for that column's cell, and `Column.recordUrl(false)` opts a column
+ * out entirely.
  */
 export type RecordUrlHandler<R = unknown> = (record: R) => string | undefined
 
@@ -204,15 +207,19 @@ export class Table<R = unknown, Q = unknown> extends Element {
   }
 
   /**
-   * Make each row clickable. The handler receives the row and returns
-   * the URL to navigate to (or `undefined` to skip). Click navigates
-   * SPA via `useNavigate()`. Pairs with Filament-style explicit row
-   * actions: most users want "click row to edit", with Edit/Delete
-   * buttons still available inline for clarity.
+   * Set a per-row URL — each data cell renders as a real `<a href>` so
+   * "open in new tab" works natively (right-click / cmd-click / middle-
+   * click). Plain left-clicks SPA-navigate via `useNavigate()`. Action
+   * and bulk-select cells stay unwrapped, so clicking a row action only
+   * fires the action — there's no overlapping row-level click handler.
    *
    * The URL is stamped onto each row under the reserved `_recordUrl`
    * key during `loadTableRecords` — same convention as
    * `_visibleActions` / `_formatted`.
+   *
+   * Per-column overrides: pair with `Column.recordUrl(fn)` to swap a
+   * column-specific URL, or `Column.recordUrl(false)` to opt a column
+   * out (e.g. a column whose cell content has its own click affordance).
    */
   recordUrl(fn: RecordUrlHandler<R>): this {
     this._recordUrl = fn

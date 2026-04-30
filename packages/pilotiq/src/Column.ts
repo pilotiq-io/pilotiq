@@ -29,6 +29,11 @@ export type ColumnFormat =
  * isn't serializable to the client). */
 export type FormatStateHandler = (value: unknown, record: Record<string, unknown>) => string
 
+/** Per-row record-URL callback. Returns the destination URL for clicks
+ * on this column's cell, or `undefined` to skip linking that row. Runs
+ * server-side inside `loadTableRecords`. */
+export type ColumnRecordUrlHandler = (record: Record<string, unknown>) => string | undefined
+
 export interface ColumnMeta extends ElementMeta {
   type:        'column'
   name:        string
@@ -49,6 +54,14 @@ export interface ColumnMeta extends ElementMeta {
    * formatted values out of `row._formatted[columnName]` instead of
    * re-applying the column's format spec. */
   hasFormatter?: boolean
+  /**
+   * Per-column record-URL behavior. The default (absent) means the cell
+   * inherits the table's `recordUrl` for click navigation. `false` opts
+   * the column out — clicks on this column's cell don't navigate anywhere.
+   * `true` means the column has its own URL handler; the resolved URL
+   * is stamped onto each row under `row._columnRecordUrls[columnName]`.
+   */
+  recordUrl?: boolean
   // Subclass-specific extras land in `_extra` to keep the meta typed.
   // BadgeColumn — value-to-color map.
   badgeColors?: Record<string, string>
@@ -86,6 +99,11 @@ export class Column extends Element {
   // Formatters
   protected _format?: ColumnFormat
   protected _formatState?: FormatStateHandler
+
+  // Per-column record-URL override / opt-out. `false` disables linking
+  // for this column; a function overrides the table's URL with a
+  // column-specific one. Unset = inherit the table's recordUrl.
+  protected _recordUrl?: false | ColumnRecordUrlHandler
 
   protected constructor(name: string) {
     super()
@@ -170,6 +188,21 @@ export class Column extends Element {
     return this
   }
 
+  /**
+   * Per-column record-URL behavior. Pass `false` to opt this column out
+   * of the table's row-level `recordUrl` — clicks on this column's cell
+   * won't navigate. Pass a function to override with a column-specific
+   * URL. Without calling this, the column inherits the table's
+   * `recordUrl`.
+   *
+   * Filament parity: matches `Tables\Columns\Column::url(...)` and
+   * `->recordUrl(false)` semantics.
+   */
+  recordUrl(target: false | ColumnRecordUrlHandler): this {
+    this._recordUrl = target
+    return this
+  }
+
   // ─── Column-type setter (subclass internal) ───────────
 
   protected setColumnType(t: ColumnType): this {
@@ -187,6 +220,11 @@ export class Column extends Element {
   getColumnType(): ColumnType { return this._columnType }
   getFormatStateHandler(): FormatStateHandler | undefined { return this._formatState }
   hasFormatter(): boolean { return this._formatState !== undefined }
+  getRecordUrlHandler(): ColumnRecordUrlHandler | undefined {
+    return typeof this._recordUrl === 'function' ? this._recordUrl : undefined
+  }
+  hasRecordUrlHandler(): boolean { return typeof this._recordUrl === 'function' }
+  isRecordUrlDisabled(): boolean { return this._recordUrl === false }
 
   // ─── Serialization ────────────────────────────────────
 
@@ -212,6 +250,8 @@ export class Column extends Element {
     if (this._color     !== undefined) meta.color     = this._color
     if (this._format    !== undefined) meta.format    = this._format
     if (this._formatState !== undefined) meta.hasFormatter = true
+    if (this._recordUrl === false)        meta.recordUrl = false
+    else if (typeof this._recordUrl === 'function') meta.recordUrl = true
     this.serializeExtras(meta)
     return meta
   }

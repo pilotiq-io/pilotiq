@@ -249,4 +249,85 @@ describe('loadTableRecords', () => {
       assert.equal(rows[0]!['_recordUrl'], undefined)
     })
   })
+
+  describe('Column.recordUrl per-column override', () => {
+    it('stamps _columnRecordUrls[name] when a column has its own recordUrl handler', async () => {
+      const t = Table.make<{ id: string; slug: string }>()
+        .columns([
+          Column.make('title').recordUrl((r) => `/posts/${(r as { id?: string }).id}/edit`),
+          Column.make('slug').recordUrl((r) => `/posts/${(r as { slug?: string }).slug}`),
+        ])
+        .records(async () => [
+          { id: '1', slug: 'one' },
+          { id: '2', slug: 'two' },
+        ])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.deepEqual(rows[0]!['_columnRecordUrls'], {
+        title: '/posts/1/edit',
+        slug:  '/posts/one',
+      })
+      assert.deepEqual(rows[1]!['_columnRecordUrls'], {
+        title: '/posts/2/edit',
+        slug:  '/posts/two',
+      })
+    })
+
+    it('skips a column-specific URL when its handler returns undefined for that row', async () => {
+      const t = Table.make<{ id: string; status?: string }>()
+        .columns([
+          Column.make('title').recordUrl((r) =>
+            (r as { status?: string }).status === 'archived'
+              ? undefined
+              : `/posts/${(r as { id?: string }).id}/edit`),
+        ])
+        .records(async () => [
+          { id: '1', status: 'archived' },
+          { id: '2' },
+        ])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.deepEqual(rows[0]!['_columnRecordUrls'], {})
+      assert.deepEqual(rows[1]!['_columnRecordUrls'], { title: '/posts/2/edit' })
+    })
+
+    it('swallows errors thrown by a column recordUrl handler', async () => {
+      const t = Table.make<{ id: string }>()
+        .columns([
+          Column.make('title').recordUrl(() => { throw new Error('oops') }),
+        ])
+        .records(async () => [{ id: '1' }])
+
+      await loadTableRecords([t], {})  // no throw
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      // Bucket exists but the broken column's key is absent.
+      assert.deepEqual(rows[0]!['_columnRecordUrls'], {})
+    })
+
+    it('Column.recordUrl(false) leaves the column meta marked as opted-out (no per-row stamp needed)', async () => {
+      const t = Table.make<{ id: string }>()
+        .columns([
+          Column.make('id'),
+          Column.make('actions').recordUrl(false),
+        ])
+        .records(async () => [{ id: 'a' }])
+        .recordUrl((r) => `/posts/${(r as { id?: string }).id}`)
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const cols = (meta['children'] as ElementMetaLike[] | undefined) ?? []
+      const actions = cols.find(c => c['name'] === 'actions')
+      assert.equal(actions?.['recordUrl'], false)
+      // Table still has its own recordUrl stamped on the row data.
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_recordUrl'], '/posts/a')
+    })
+  })
 })
+
+type ElementMetaLike = Record<string, unknown>

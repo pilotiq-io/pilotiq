@@ -50,7 +50,7 @@ import {
   EyeIcon, EyeOffIcon, InboxIcon, BellIcon, MailIcon,
   type LucideIcon,
 } from 'lucide-react'
-import { useNavigate } from './navigate.js'
+import { useNavigate, type NavigateFn } from './navigate.js'
 import { useToast } from './Toaster.js'
 
 const alertStyles: Record<string, string> = {
@@ -1916,6 +1916,56 @@ function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
   )
 }
 
+/**
+ * Resolve the record URL for a single data cell. Column-level override
+ * (`Column.recordUrl(fn)` → `_columnRecordUrls[name]`) wins over the
+ * table-level `Table.recordUrl(fn)` (`_recordUrl`). Explicit per-column
+ * opt-out (`Column.recordUrl(false)` → `meta.recordUrl === false`)
+ * suppresses the link entirely. Returns `undefined` when the cell is
+ * not linkable, in which case the renderer leaves it unwrapped.
+ */
+function resolveColumnUrl(
+  col:      ElementMeta,
+  tableUrl: string | undefined,
+  colUrls:  Record<string, string>,
+): string | undefined {
+  if (col['recordUrl'] === false) return undefined
+  const own = colUrls[String(col['name'] ?? '')]
+  if (own !== undefined) return own
+  return tableUrl
+}
+
+/**
+ * Cell-level link wrapper. Renders a real `<a href>` so right-click /
+ * cmd-click / middle-click "open in new tab" works, but intercepts plain
+ * left-clicks for SPA navigation via `useNavigate()`. Modified clicks
+ * (cmd / ctrl / shift / alt / non-primary buttons) fall through to the
+ * browser's default link behavior.
+ */
+function RecordCellLink({
+  href, navigate, children,
+}: {
+  href:     string
+  navigate: NavigateFn
+  children: React.ReactNode
+}) {
+  const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (e.button !== 0) return
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    e.preventDefault()
+    void navigate(href)
+  }
+  return (
+    <a
+      href={href}
+      onClick={onClick}
+      className="block px-2 py-2 text-inherit no-underline hover:text-inherit focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+    >
+      {children}
+    </a>
+  )
+}
+
 function TableRenderer({ el }: { el: ElementMeta }) {
   const navigate = useNavigate()
   const children = el.children ?? []
@@ -2139,29 +2189,25 @@ function TableRenderer({ el }: { el: ElementMeta }) {
               const recordObj = row as Record<string, unknown>
               const isSelected = selected.has(id)
               const stripedClass = striped && ri % 2 === 1 ? 'bg-muted/30' : ''
-              // Per-row navigation URL stamped server-side by
-              // `Table.recordUrl(fn)` → `loadTableRecords` → `_recordUrl`.
-              // Cells with their own interactive content (bulk checkbox,
-              // actions menu) carry `data-no-row-nav` so clicks there
-              // don't double-fire as a row navigation.
-              const recordUrl = hasRecordUrl ? (recordObj['_recordUrl'] as string | undefined) : undefined
-              const rowClickable = recordUrl !== undefined
-              const rowClassName = `${stripedClass}${rowClickable ? ' cursor-pointer' : ''}`.trim()
-              const onRowClick: React.MouseEventHandler<HTMLTableRowElement> | undefined = rowClickable
-                ? (e) => {
-                    if ((e.target as HTMLElement).closest('[data-no-row-nav]')) return
-                    navigate(recordUrl)
-                  }
-                : undefined
+              // Filament-style per-cell linking. Each data cell wraps
+              // its content in a real `<a href>` when the column resolves
+              // to a record URL — column override (`Column.recordUrl(fn)`)
+              // beats inheritance from the table (`Table.recordUrl(fn)`),
+              // and `Column.recordUrl(false)` opts out. Action and bulk
+              // cells are never wrapped, so clicks there fire only their
+              // own handlers — no event-bubbling gymnastics.
+              const tableUrl = hasRecordUrl ? (recordObj['_recordUrl'] as string | undefined) : undefined
+              const colUrls = (recordObj['_columnRecordUrls'] as Record<string, string> | undefined) ?? {}
+              const rowHasAnyLink = tableUrl !== undefined || Object.keys(colUrls).length > 0
+              const rowClassName = `${stripedClass}${rowHasAnyLink ? ' cursor-pointer' : ''}`.trim()
               return (
                 <TableRow
                   key={id}
                   data-state={isSelected ? 'selected' : undefined}
                   className={rowClassName || undefined}
-                  onClick={onRowClick}
                 >
                   {hasBulkActions && (
-                    <TableCell className="w-9 px-3" data-no-row-nav>
+                    <TableCell className="w-9 px-3">
                       <Checkbox
                         aria-label={`Select row ${id}`}
                         checked={isSelected}
@@ -2178,14 +2224,18 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                     const widthStyle = col['width']
                       ? { width: String(col['width']) }
                       : undefined
+                    const cellContent = formatCell(value, col, recordObj)
+                    const colUrl = resolveColumnUrl(col, tableUrl, colUrls)
                     return (
-                      <TableCell key={ci} className={`text-sm text-foreground ${align}`} style={widthStyle}>
-                        {formatCell(value, col, recordObj)}
+                      <TableCell key={ci} className={`text-sm text-foreground ${align} p-0`} style={widthStyle}>
+                        {colUrl !== undefined
+                          ? <RecordCellLink href={colUrl} navigate={navigate}>{cellContent}</RecordCellLink>
+                          : <div className="px-2 py-2">{cellContent}</div>}
                       </TableCell>
                     )
                   })}
                   {hasRowActions && (
-                    <TableCell className="w-px text-right" data-no-row-nav>
+                    <TableCell className="w-px text-right">
                       {renderRowActions(id, recordObj, rowActions)}
                     </TableCell>
                   )}

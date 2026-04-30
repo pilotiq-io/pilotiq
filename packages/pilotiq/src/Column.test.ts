@@ -110,4 +110,31 @@ describe('Column', () => {
       assert.equal(typeof col.getFormatStateHandler(), 'function')
     })
   })
+
+  describe('recordUrl per-column override / opt-out', () => {
+    it('absent by default — column inherits the table-level recordUrl', () => {
+      const col = Column.make('title')
+      const meta = col.toMeta()
+      assert.equal(meta.recordUrl, undefined)
+      assert.equal(col.isRecordUrlDisabled(), false)
+      assert.equal(col.hasRecordUrlHandler(), false)
+    })
+
+    it('recordUrl(false) emits recordUrl:false on meta', () => {
+      const col = Column.make('actions').recordUrl(false)
+      const meta = col.toMeta()
+      assert.equal(meta.recordUrl, false)
+      assert.equal(col.isRecordUrlDisabled(), true)
+      assert.equal(col.hasRecordUrlHandler(), false)
+    })
+
+    it('recordUrl(fn) emits recordUrl:true on meta and exposes the handler', () => {
+      const col = Column.make('title').recordUrl((r) => `/posts/${(r as { id?: string }).id}`)
+      const meta = col.toMeta()
+      assert.equal(meta.recordUrl, true)
+      assert.equal(col.hasRecordUrlHandler(), true)
+      assert.equal(col.isRecordUrlDisabled(), false)
+      assert.equal(typeof col.getRecordUrlHandler(), 'function')
+    })
+  })
 })

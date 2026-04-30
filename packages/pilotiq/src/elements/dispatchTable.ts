@@ -162,11 +162,17 @@ export async function loadTableRecords(
       const columnsWithFormatter = (table.getChildren() ?? [])
         .filter((c): c is Column => c instanceof Column && c.hasFormatter())
 
+      // Columns with their own per-row recordUrl handler — overrides
+      // the table-level `Table.recordUrl` for clicks on that column.
+      const columnsWithRecordUrl = (table.getChildren() ?? [])
+        .filter((c): c is Column => c instanceof Column && c.hasRecordUrlHandler())
+
       const recordUrlFn = table.getRecordUrl()
 
       const needsRowMutation =
         rowActionsWithRules.length > 0 ||
         columnsWithFormatter.length > 0 ||
+        columnsWithRecordUrl.length > 0 ||
         recordUrlFn !== undefined
 
       const rows = !needsRowMutation
@@ -210,6 +216,21 @@ export async function loadTableRecords(
                 // Per-row recordUrl errors stay silent; rows without a URL
                 // simply aren't clickable.
               }
+            }
+
+            if (columnsWithRecordUrl.length > 0) {
+              const colUrls: Record<string, string> = {}
+              for (const col of columnsWithRecordUrl) {
+                const fn = col.getRecordUrlHandler()
+                if (!fn) continue
+                try {
+                  const url = fn(recordObj)
+                  if (url !== undefined) colUrls[col.name] = url
+                } catch {
+                  // Same as table-level: per-cell URL errors stay silent.
+                }
+              }
+              out['_columnRecordUrls'] = colUrls
             }
 
             return out

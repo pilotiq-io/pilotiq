@@ -43,9 +43,10 @@ export const ArticlesTable = {
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
-      // Filament-style row click → view page. Pairs with the explicit
-      // Edit/Delete row actions wired in ListArticles.getRowActions —
-      // the buttons stay clickable independently (data-no-row-nav).
+      // Filament-style per-cell links → view page. Each data cell wraps
+      // its content in `<a href>`; the row-actions cell stays unwrapped
+      // so clicking an action only fires the action (no overlapping
+      // row-level click handler).
       .recordUrl((r) => {
         const id = (r as { id?: string })?.id
         return id ? `/new-admin/articles/${id}` : undefined
