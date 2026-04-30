@@ -10,6 +10,8 @@ import {
   type FillMutator,
 } from './elements/Form.js'
 import { Table } from './elements/Table.js'
+import { ListTabs } from './elements/ListTabs.js'
+import type { ListTab } from './Tab.js'
 import { Heading } from './schema/Heading.js'
 import { Action } from './actions/Action.js'
 import type { Element } from './schema/Element.js'
@@ -116,10 +118,19 @@ export class ListPage extends ResourcePage {
     if (headers.length > 0) table.headerActions(headers)
     if (rows.length    > 0) table.recordActions(rows)
 
-    return [
-      ...this.getHeader(R),
-      table,
-    ]
+    // Wrap the user's `getTabs()` array (if any) in a ListTabs container
+    // and slot it between the heading and the Table. The page-data
+    // pipeline activates the right tab and resolves badges before
+    // serialization — the schema-build path here just sets the structure.
+    const tabs = this.getTabs(R)
+    const listTabs = tabs.length > 0
+      ? ListTabs.make().tabs(tabs)
+      : undefined
+
+    const elements: Element[] = [...this.getHeader(R)]
+    if (listTabs) elements.push(listTabs)
+    elements.push(table)
+    return elements
   }
 
   /** Override to customize the heading rendered above the table. */
@@ -159,6 +170,28 @@ export class ListPage extends ResourcePage {
    * use the `:id` template; the renderer fills it in for each row.
    */
   static getRowActions(_R: ResourceClass, _basePath: string): Action[] {
+    return []
+  }
+
+  /**
+   * List-page tabs rendered above the table — Filament-style query
+   * shortcuts ("All / Drafts / Published / Archived"). Returns `[]` by
+   * default. Each tab has a label + optional icon + optional count badge
+   * + a `modifyQuery` predicate that narrows the table. Active tab is
+   * carried through `?tab=name` in the URL.
+   *
+   * @example
+   * static override getTabs() {
+   *   return [
+   *     ListTab.make('all').label('All'),
+   *     ListTab.make('drafts')
+   *       .label('Drafts')
+   *       .badge(() => prisma.article.count({ where: { status: 'draft' } }))
+   *       .modifyQuery(q => q.where('status', 'draft')),
+   *   ]
+   * }
+   */
+  static getTabs(_R?: ResourceClass): ListTab[] {
     return []
   }
 }

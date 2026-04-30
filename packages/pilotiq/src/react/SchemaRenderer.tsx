@@ -1389,6 +1389,13 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
       // Tabs are rendered by their parent `tabs` element; standalone Tab is a no-op.
       return null
 
+    case 'listTabs':
+      return <ListTabsRenderer key={index} el={el} />
+
+    case 'listTab':
+      // List tabs are rendered by their parent `listTabs` strip; standalone is a no-op.
+      return null
+
     case 'grid': {
       const columns = Math.max(1, Math.min(12, Number(el['columns'] ?? 2)))
       const gapPx   = el['gap'] !== undefined ? `${Number(el['gap'])}px` : undefined
@@ -1963,6 +1970,73 @@ function RecordCellLink({
     >
       {children}
     </a>
+  )
+}
+
+/**
+ * List-page tab strip — Filament-style query shortcuts above the table
+ * ("All / Drafts / Published / Archived"). Each trigger is a real `<a>`
+ * (right-click / cmd-click "open in new tab" works); plain left-click is
+ * intercepted for SPA navigation. Active tab carries `data-active`.
+ *
+ * The server stamps `active` + per-tab `url` + resolved badge string on
+ * each `listTab` meta entry — this component just renders.
+ */
+function ListTabsRenderer({ el }: { el: ElementMeta }) {
+  const navigate = useNavigate()
+  const tabs = (el.children ?? []).filter(c => c.type === 'listTab')
+  if (tabs.length === 0) return null
+
+  return (
+    <div className="border-b border-border">
+      <nav className="flex items-center gap-1 -mb-px overflow-x-auto" role="tablist">
+        {tabs.map((t, i) => {
+          const name   = String(t['name']  ?? '')
+          const label  = String(t['label'] ?? name)
+          const active = Boolean(t['active'])
+          const url    = String(t['url']   ?? `?tab=${encodeURIComponent(name)}`)
+          const iconKey  = t['icon'] ? String(t['icon']) : undefined
+          const Icon     = iconKey ? (ICON_REGISTRY[iconKey] ?? CircleIcon) : undefined
+          const badge    = t['badge'] !== undefined ? String(t['badge']) : undefined
+          const badgeKey = t['badgeColor'] ? String(t['badgeColor']) : (active ? 'primary' : 'gray')
+          const badgeCls = BADGE_COLOR_CLASSES[badgeKey] ?? BADGE_COLOR_CLASSES['gray']
+
+          const triggerCls = [
+            'inline-flex items-center gap-1.5 px-3 py-2 text-sm border-b-2 transition-colors whitespace-nowrap',
+            active
+              ? 'border-primary text-foreground font-medium'
+              : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border',
+          ].join(' ')
+
+          const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+            if (e.button !== 0) return
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+            e.preventDefault()
+            void navigate(url)
+          }
+
+          return (
+            <a
+              key={i}
+              href={url}
+              onClick={onClick}
+              role="tab"
+              aria-selected={active}
+              data-active={active || undefined}
+              className={triggerCls}
+            >
+              {Icon && <Icon className="size-4" aria-hidden="true" />}
+              <span>{label}</span>
+              {badge !== undefined && (
+                <span className={`ml-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${badgeCls}`}>
+                  {badge}
+                </span>
+              )}
+            </a>
+          )
+        })}
+      </nav>
+    </div>
   )
 }
 

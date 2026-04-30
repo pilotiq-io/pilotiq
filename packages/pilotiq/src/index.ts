@@ -116,6 +116,17 @@ export {
   type QueryParams,
 } from './elements/dispatchTable.js'
 
+// List-page tabs (Filament-style query-shortcut strips above the table)
+export {
+  ListTab,
+  type ListTabMeta,
+  type TabBadgeColor,
+  type TabBadgeHandler,
+  type TabQueryHandler,
+  type TabContextHandler,
+} from './Tab.js'
+export { ListTabs } from './elements/ListTabs.js'
+
 // ─── Filters ──────────────────────────────────────────
 export {
   Filter, type FilterKind, type FilterMeta, type FilterQueryHandler,

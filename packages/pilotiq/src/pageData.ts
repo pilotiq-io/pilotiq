@@ -16,8 +16,10 @@ import type { Element } from './schema/Element.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { Form } from './elements/Form.js'
 import { findForms } from './elements/dispatchForm.js'
-import { loadTableRecords } from './elements/dispatchTable.js'
+import { loadTableRecords, type QueryParams } from './elements/dispatchTable.js'
 import { findActions } from './elements/dispatchAction.js'
+import { ListTabs } from './elements/ListTabs.js'
+import { ListTab } from './Tab.js'
 import { resolveTheme } from './theme/resolve.js'
 import type { ThemeMeta } from './theme/types.js'
 import { consumeFlashedNotifications } from './notifications/flash.js'
@@ -125,6 +127,11 @@ export async function resourceIndexData(
   const ctx: SchemaContext = { mode: 'table', basePath: cfg.path }
   const elements = await callPageSchema(PageClass, ctx)
   tagActionDispatch(elements, indexUrl)
+  // Mark the active tab + parallel-eval badges + stamp per-tab URLs
+  // before the table records run — `loadTableRecords` walks the schema
+  // for the active tab and splices its `modifyQuery` predicate into the
+  // ORM chain alongside filters.
+  await resolveActiveTab(elements, query, indexUrl)
   await loadTableRecords(elements, query, indexUrl)
   const schemaData = await resolveSchema(elements, ctx)
 
@@ -138,6 +145,89 @@ export async function resourceIndexData(
     schemaData,
     notifications: consumeFlashedNotifications(req),
   }
+}
+
+/**
+ * Walk the schema for `ListTabs` containers, pick the active tab from
+ * `?tab=…` (defaulting to the tab marked `.default()` or the first one),
+ * stamp render-time state (`active` flag, per-tab `?tab=` URL, and
+ * resolved badge counts) onto each tab. The active tab's query/context
+ * modifier is NOT applied here — `loadTableRecords` walks for the active
+ * tab and splices in its modifier when it builds the records-handler
+ * `TableContext`.
+ *
+ * No-op when the page has no `ListTabs`.
+ */
+export async function resolveActiveTab(
+  elements:    ReadonlyArray<Element>,
+  query:       Record<string, string>,
+  currentPath: string,
+): Promise<void> {
+  const listTabs = findListTabs(elements)
+  if (listTabs.length === 0) return
+
+  for (const container of listTabs) {
+    const children = (container.getChildren() ?? []).filter((c): c is ListTab => c instanceof ListTab)
+    if (children.length === 0) continue
+
+    // Active tab: explicit `?tab=name` → tab marked `.default()` → first.
+    const wanted = typeof query['tab'] === 'string' ? query['tab'] : undefined
+    const active =
+      (wanted && children.find(t => t.name === wanted)) ||
+      children.find(t => t.isDefault()) ||
+      children[0]!
+
+    // Stamp render-time state on each tab.
+    children.forEach(t => {
+      t.withActive(t === active)
+      t.withUrl(buildTabUrl(currentPath, query, t.name))
+    })
+
+    // Resolve every tab's badge in parallel — failed handlers swallow
+    // silently (badge omitted) so a flaky count never blanks the page.
+    await Promise.all(children.map(async (tab) => {
+      const handler = tab.getBadgeHandler()
+      if (!handler) return
+      try {
+        const v = await handler()
+        if (v === undefined || v === null) return
+        tab.withResolvedBadge(String(v))
+      } catch {
+        // Per-tab badge errors stay silent.
+      }
+    }))
+  }
+}
+
+function findListTabs(elements: ReadonlyArray<Element>): ListTabs[] {
+  const out: ListTabs[] = []
+  const walk = (els: ReadonlyArray<Element>): void => {
+    for (const el of els) {
+      if (el instanceof ListTabs) out.push(el)
+      const children = el.getChildren()
+      if (children) walk(children)
+    }
+  }
+  walk(elements)
+  return out
+}
+
+function buildTabUrl(
+  pathname: string,
+  query:    Record<string, string>,
+  tabName:  string,
+): string {
+  // Carry forward search/sort/perPage + any filter values; reset page to 1
+  // (tab change reshapes the result set, page numbers don't translate).
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(query)) {
+    if (v === undefined || v === '' || v === null) continue
+    if (k === 'tab' || k === 'page') continue
+    params.set(k, String(v))
+  }
+  params.set('tab', tabName)
+  const qs = params.toString()
+  return qs ? `${pathname}?${qs}` : pathname
 }
 
 export async function resourceCreateData(

@@ -323,9 +323,62 @@ describe('loadTableRecords', () => {
       const cols = (meta['children'] as ElementMetaLike[] | undefined) ?? []
       const actions = cols.find(c => c['name'] === 'actions')
       assert.equal(actions?.['recordUrl'], false)
-      // Table still has its own recordUrl stamped on the row data.
       const rows = meta['rows'] as Array<Record<string, unknown>>
       assert.equal(rows[0]!['_recordUrl'], '/posts/a')
+    })
+  })
+
+  describe('list-page tabs (active tab → TableContext)', () => {
+    it('passes ctx.tab + ctx.tabQuery through when the active tab has modifyQuery', async () => {
+      const { ListTab }  = await import('../Tab.js')
+      const { ListTabs } = await import('./ListTabs.js')
+
+      const queryFn = (q: { _filters: string[] }) => ({ ...q, _filters: [...q._filters, 'status=draft'] })
+
+      const drafts = ListTab.make('drafts').modifyQuery(queryFn as never)
+      drafts.withActive()
+
+      let seenTab:      string | undefined
+      let seenTabQuery: unknown
+      const t = Table.make()
+        .columns([Column.make('id')])
+        .records(async (ctx) => {
+          seenTab      = ctx.tab
+          seenTabQuery = ctx.tabQuery
+          return []
+        })
+
+      await loadTableRecords([t, ListTabs.make().tabs([drafts])], {})
+      assert.equal(seenTab,      'drafts')
+      assert.equal(seenTabQuery, queryFn)
+    })
+
+    it('runs the active tab modifyContext as a final transform on the TableContext', async () => {
+      const { ListTab }  = await import('../Tab.js')
+      const { ListTabs } = await import('./ListTabs.js')
+
+      const drafts = ListTab.make('drafts').modifyContext((ctx) => ({ ...ctx, customFlag: 42 }))
+      drafts.withActive()
+
+      let seen: Record<string, unknown> | null = null
+      const t = Table.make()
+        .columns([Column.make('id')])
+        .records(async (ctx) => { seen = { ...ctx }; return [] })
+
+      await loadTableRecords([t, ListTabs.make().tabs([drafts])], {})
+      assert.equal(seen!['customFlag'], 42)
+      assert.equal(seen!['tab'],        'drafts')
+    })
+
+    it('does not set ctx.tab / tabQuery when no tab is active', async () => {
+      let seen: Record<string, unknown> | null = null
+      const t = Table.make()
+        .columns([Column.make('id')])
+        .records(async (ctx) => { seen = { ...ctx }; return [] })
+
+      await loadTableRecords([t], {})
+      assert.equal(seen!['tab'],      undefined)
+      assert.equal(seen!['tabQuery'], undefined)
     })
   })
 })

@@ -469,6 +469,49 @@ Active values come from URL query keys matching the filter name. Custom logic vi
 
 ---
 
+## List-page tabs
+
+Pilotiq adds a Filament-style query-shortcut strip above resource list pages — "All / Drafts / Published / Archived"-style tabs, each narrowing the table query and showing an optional count badge. Tabs are the primary axis (status/type); filters refine within the active tab.
+
+Override `getTabs()` on a `ListPage` subclass:
+
+```ts
+import { ListPage, ListTab, Action } from '@pilotiq/pilotiq'
+import { ArticleResource } from './ArticleResource.js'
+
+export class ListArticles extends ListPage {
+  static override getResource() { return ArticleResource }
+
+  static override getTabs() {
+    return [
+      ListTab.make('all').label('All'),
+      ListTab.make('drafts')
+        .label('Drafts')
+        .badgeColor('warning')
+        .badge(async () => prisma.article.count({ where: { status: 'draft' } }))
+        .modifyQuery(q => q.where('status', 'draft')),
+      ListTab.make('published')
+        .label('Published')
+        .badgeColor('success')
+        .badge(async () => prisma.article.count({ where: { status: 'published' } }))
+        .modifyQuery(q => q.where('status', 'published')),
+    ]
+  }
+}
+```
+
+Builder surface: `.label()`, `.icon()`, `.badge(string | () => Promise<string|number|undefined>)`, `.badgeColor()`, `.default()`, `.modifyQuery((q: ModelQuery) => q)`, `.modifyContext((ctx: TableContext) => ctx)` (escape hatch for non-model `Table.records()` handlers).
+
+- The active tab is carried in the URL as `?tab=name`; switching SPA-navigates and resets `page` to 1 while preserving `search`/`sort`/filter values.
+- Default tab: `ListTab.default()` wins; otherwise the first tab.
+- Badges resolve in parallel server-side (`Promise.all`); a thrown handler silently omits its badge rather than blanking the page.
+- `modifyQuery` plugs into `modelTableRecords` next to `Filter.query()`, so tab predicates compose with active filters and search.
+- The form-side `Tab` (under `Tabs.make().tabs([Tab.make('Profile')…])`) is a different class — it holds form children. List-page tabs use `ListTab` to disambiguate.
+
+> Panels had no equivalent — list pages were unstructured and you'd build status filters by hand. The tab strip is a new affordance, not a 1:1 port.
+
+---
+
 ## Actions
 
 The `Action` primitive in pilotiq has four mutually-exclusive modes:

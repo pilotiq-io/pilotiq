@@ -3,6 +3,7 @@ import { Table, type TableContext, type SortDirection } from './Table.js'
 import type { Filter } from '../filters/Filter.js'
 import { Action } from '../actions/Action.js'
 import { Column } from '../Column.js'
+import { ListTab } from '../Tab.js'
 
 export interface QueryParams {
   search?: string
@@ -131,17 +132,32 @@ export async function loadTableRecords(
       if (v !== undefined) filter.withValue(v)
     }
 
+    // Thread the active list-page tab + its query modifier through to the
+    // records handler. The active tab was marked by `pageData.resolveActiveTab`
+    // (`tab.withActive(true)`) before `loadTableRecords` was called, so we
+    // just walk the schema for it. User-defined `Table.records(fn)`
+    // handlers can branch on `ctx.tab`; the model adapter consults
+    // `ctx.tabQuery` to splice the predicate into its ORM query chain.
+    const activeTab = findActiveTab(elements)
+
     const ctx: TableContext = {
       ...(search !== undefined           ? { search }                       : {}),
       ...(effectiveSort !== undefined    ? { sort: effectiveSort }          : {}),
       ...(effectivePerPage !== undefined ? { perPage: effectivePerPage }    : {}),
       ...(Object.keys(filterValues).length > 0 ? { filters: filterValues } : {}),
+      ...(activeTab            ? { tab: activeTab.name }                    : {}),
+      ...(activeTab?.getQuery() ? { tabQuery: activeTab.getQuery()! }       : {}),
       page: effectivePage,
     }
 
+    // Apply the tab's TableContext customizer last (escape hatch — wins
+    // over filters/tab/etc. that we just set above).
+    const ctxFn = activeTab?.getContextFn()
+    const finalCtx = ctxFn ? ctxFn(ctx) : ctx
+
     const handler = table.getRecords()
     if (handler) {
-      const result = await handler(ctx)
+      const result = await handler(finalCtx)
       const rawRows = Array.isArray(result) ? result : result.rows
       const total   = Array.isArray(result) ? rawRows.length : (result.total ?? rawRows.length)
 
@@ -246,4 +262,27 @@ export async function loadTableRecords(
     table.withPage(effectivePage)
     if (pathname) table.withCurrentPath(pathname)
   }))
+}
+
+/**
+ * Locate the currently-active list-page tab in the schema. The active tab
+ * is the `ListTab` whose `_active` flag was set by
+ * `pageData.resolveActiveTab` during the page-data pass — the tab strip
+ * lives in the page schema (above the Table), so this just walks the
+ * tree until it finds the matching tab. Returns `undefined` when the
+ * page has no ListTabs (most non-resource pages).
+ */
+function findActiveTab(elements: ReadonlyArray<Element>): ListTab | undefined {
+  const walk = (els: ReadonlyArray<Element>): ListTab | undefined => {
+    for (const el of els) {
+      if (el instanceof ListTab && el.isActive()) return el
+      const children = el.getChildren()
+      if (children) {
+        const found = walk(children)
+        if (found) return found
+      }
+    }
+    return undefined
+  }
+  return walk(elements)
 }

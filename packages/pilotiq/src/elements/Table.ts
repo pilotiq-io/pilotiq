@@ -15,6 +15,15 @@ export interface TableContext<R = unknown> {
   /** Active filter values keyed by filter name (e.g. `{ status: 'published' }`).
    * Empty / unsupplied filters are absent. */
   filters?: Record<string, string>
+  /** Active list-page tab name (e.g. `'drafts'`). Set by
+   * `pageData.resourceIndexData` from `?tab=` before records run. User-
+   * supplied `Table.records(fn)` handlers can branch on this for custom
+   * narrowing; the model adapter consults `tabQuery` instead. */
+  tab?: string
+  /** Active list-page tab's `modifyQuery` chain — applied alongside
+   * filter `where` clauses in `modelTableRecords`. Set by the framework;
+   * users configure it via `ListTab.modifyQuery(fn)`. */
+  tabQuery?: (q: import('../orm/modelDefaults.js').ModelQuery) => import('../orm/modelDefaults.js').ModelQuery
   [key: string]: unknown
 }
 

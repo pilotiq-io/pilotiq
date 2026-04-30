@@ -118,6 +118,13 @@ export function modelTableRecords(M: ModelLike, table: Table): TableRecordsHandl
       }
     }
 
+    // Apply the active list-page tab's query modifier (from
+    // `ListTab.modifyQuery(fn)`). Tabs are the primary axis (status,
+    // type) and filters are secondary refinements within a tab — running
+    // the tab's predicate after filters keeps that mental model intact
+    // and lets a tab's narrower `where` win on collision.
+    if (ctx.tabQuery) q = ctx.tabQuery(q)
+
     if (ctx.sort) {
       q = q.orderBy(ctx.sort.column, ctx.sort.direction === 'desc' ? 'DESC' : 'ASC')
     }
