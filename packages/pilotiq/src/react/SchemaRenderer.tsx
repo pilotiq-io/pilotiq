@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import type { ElementMeta } from '../schema/Element.js'
 import { getFieldRenderer } from './registry.js'
+import { FormStateProvider, useFieldState, useFormState } from './FormStateContext.js'
 import { Input } from './ui/input.js'
 import { Textarea } from './ui/textarea.js'
 import { Switch } from './ui/switch.js'
@@ -74,7 +75,18 @@ const alertStyles: Record<string, string> = {
 function ToggleFieldInput({
   name, defaultChecked, disabled,
 }: { name: string; defaultChecked: boolean; disabled: boolean }) {
-  const [checked, setChecked] = useState(defaultChecked)
+  const fs = useFieldState(name)
+  const [localChecked, setLocalChecked] = useState(defaultChecked)
+  // Inside a controlled form (live fields enabled), bind to context. Coerce
+  // anything that isn't strictly a boolean — server may ship `'true'` /
+  // `'1'` strings, especially after a partial-resolve roundtrip.
+  const checked = fs.controlled
+    ? (fs.value === true || fs.value === 'true' || fs.value === 1 || fs.value === '1')
+    : localChecked
+  const onChange = (next: boolean): void => {
+    if (fs.controlled) { fs.setValue(next); fs.triggerLive() }
+    else setLocalChecked(next)
+  }
   return (
     <div className="flex items-center gap-2">
       {/* Hidden input is the source of truth for form POST. Always present
@@ -83,7 +95,7 @@ function ToggleFieldInput({
       <Switch
         id={name}
         checked={checked}
-        onCheckedChange={(next) => setChecked(next)}
+        onCheckedChange={onChange}
         disabled={disabled}
       />
     </div>
@@ -100,16 +112,25 @@ function SelectFieldInput({
   placeholder:  string | undefined
   options:      Array<{ value: string; label: string }>
 }) {
+  const fs = useFieldState(name)
   // Always-controlled. Initialize to '' (not undefined) so Base UI's Select
   // doesn't see the value flip from undefined → string when the user picks
   // an option (warns: "changing the uncontrolled value state to controlled").
-  const [value, setValue] = useState<string>(defaultValue ?? '')
+  const [localValue, setLocalValue] = useState<string>(defaultValue ?? '')
+  const value = fs.controlled
+    ? (fs.value !== undefined && fs.value !== null ? String(fs.value) : '')
+    : localValue
+  const onValueChange = (v: string | null): void => {
+    const next = v ?? ''
+    if (fs.controlled) { fs.setValue(next); fs.triggerLive() }
+    else setLocalValue(next)
+  }
   return (
     <>
       <input type="hidden" name={name} value={value} />
       <Select
         value={value}
-        onValueChange={(v) => setValue(v as string)}
+        onValueChange={(v) => onValueChange(v as string)}
         disabled={disabled}
         required={required}
       >
@@ -136,10 +157,30 @@ function DateFieldInput({
   disabled:     boolean
   placeholder:  string | undefined
 }) {
+  const fs = useFieldState(name)
   const initial = defaultValue ? new Date(defaultValue) : undefined
-  const [date, setDate] = useState<Date | undefined>(
+  const [localDate, setLocalDate] = useState<Date | undefined>(
     initial && !isNaN(initial.getTime()) ? initial : undefined,
   )
+  // Controlled path: parse the YYYY-MM-DD (or ISO) string from context.
+  let date: Date | undefined
+  if (fs.controlled) {
+    const ctxStr = fs.value !== undefined && fs.value !== null && fs.value !== '' ? String(fs.value) : ''
+    if (ctxStr) {
+      const parsed = new Date(ctxStr)
+      date = isNaN(parsed.getTime()) ? undefined : parsed
+    }
+  } else {
+    date = localDate
+  }
+  const onSelect = (next: Date | undefined): void => {
+    if (fs.controlled) {
+      fs.setValue(next ? next.toISOString().slice(0, 10) : '')
+      fs.triggerLive()
+    } else {
+      setLocalDate(next)
+    }
+  }
   const formatted = date ? date.toISOString().slice(0, 10) : ''
   const display   = date
     ? date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
@@ -165,11 +206,66 @@ function DateFieldInput({
           }
         />
         <PopoverContent className="w-auto p-0" align="start">
-          <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+          <Calendar mode="single" selected={date} onSelect={onSelect} initialFocus />
         </PopoverContent>
       </Popover>
     </>
   )
+}
+
+/**
+ * Bridge between controlled (FormStateProvider) and uncontrolled
+ * (defaultValue) modes for text-style inputs. When inside a form with
+ * `live()` fields, the input is bound to the context's values map and
+ * fires the live trigger on change/blur according to the field's `live`
+ * config. Outside a controlled form, falls back to plain `defaultValue`.
+ */
+function TextLikeInput({
+  el, name, common, type, extraProps, multiline,
+}: {
+  el:         ElementMeta
+  name:       string
+  common:     Record<string, unknown>
+  type:       string
+  extraProps: Record<string, unknown>
+  multiline:  boolean
+}): React.ReactElement {
+  const fs = useFieldState(name)
+  const liveCfg = el['live']
+  // Resolve trigger style for live fields. `onBlur:true` defers the
+  // trigger to blur; otherwise we fire on each change (debounce handled
+  // inside the provider). Non-live fields: triggerLive is a no-op.
+  const liveOpts = (typeof liveCfg === 'object' && liveCfg !== null
+    ? liveCfg as { onBlur?: boolean; debounce?: number }
+    : {})
+  const onBlurMode = liveOpts.onBlur === true
+
+  if (fs.controlled) {
+    const ctxValue = fs.value !== undefined && fs.value !== null ? String(fs.value) : ''
+    const onChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
+      fs.setValue(e.target.value)
+      if (!onBlurMode) fs.triggerLive()
+    }
+    const onBlur = (): void => {
+      if (onBlurMode) fs.triggerLive()
+    }
+    const props = {
+      ...common,
+      ...extraProps,
+      // Drop defaultValue — controlled mode uses `value`.
+      defaultValue: undefined,
+      value:        ctxValue,
+      onChange,
+      onBlur,
+    }
+    if (multiline) return <Textarea {...(props as React.ComponentProps<typeof Textarea>)} />
+    return <Input {...(props as React.ComponentProps<typeof Input>)} type={type} />
+  }
+
+  // Uncontrolled fallback — preserves the legacy zero-cost path for
+  // forms with no live fields.
+  if (multiline) return <Textarea {...(common as React.ComponentProps<typeof Textarea>)} {...extraProps} />
+  return <Input {...(common as React.ComponentProps<typeof Input>)} type={type} {...extraProps} />
 }
 
 function renderField(el: ElementMeta, index: number): React.ReactNode {
@@ -220,7 +316,16 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
   let input: React.ReactNode
   switch (fieldType) {
     case 'textarea':
-      input = <Textarea {...common} rows={Number(el['rows']) || 4} />
+      input = (
+        <TextLikeInput
+          el={el}
+          name={name}
+          common={common}
+          type="text"
+          extraProps={{ rows: Number(el['rows']) || 4 }}
+          multiline
+        />
+      )
       break
 
     case 'select': {
@@ -244,20 +349,35 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
       break
     }
 
-    case 'number':
+    case 'number': {
+      const numProps: Record<string, unknown> = {}
+      if (el['min']  !== undefined) numProps['min']  = Number(el['min'])
+      if (el['max']  !== undefined) numProps['max']  = Number(el['max'])
+      if (el['step'] !== undefined) numProps['step'] = Number(el['step'])
       input = (
-        <Input
-          {...common}
+        <TextLikeInput
+          el={el}
+          name={name}
+          common={common}
           type="number"
-          {...(el['min']  !== undefined ? { min:  Number(el['min'])  } : {})}
-          {...(el['max']  !== undefined ? { max:  Number(el['max'])  } : {})}
-          {...(el['step'] !== undefined ? { step: Number(el['step']) } : {})}
+          extraProps={numProps}
+          multiline={false}
         />
       )
       break
+    }
 
     case 'email':
-      input = <Input {...common} type="email" />
+      input = (
+        <TextLikeInput
+          el={el}
+          name={name}
+          common={common}
+          type="email"
+          extraProps={{}}
+          multiline={false}
+        />
+      )
       break
 
     case 'date': {
@@ -289,14 +409,20 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
 
     case 'slug':
     case 'text':
-    default:
+    default: {
+      const textExtra: Record<string, unknown> = {}
+      if (el['maxLength'] !== undefined) textExtra['maxLength'] = Number(el['maxLength'])
       input = (
-        <Input
-          {...common}
+        <TextLikeInput
+          el={el}
+          name={name}
+          common={common}
           type="text"
-          {...(el['maxLength'] !== undefined ? { maxLength: Number(el['maxLength']) } : {})}
+          extraProps={textExtra}
+          multiline={false}
         />
       )
+    }
   }
 
   return (
@@ -1462,6 +1588,7 @@ function FormRenderer({ el }: { el: ElementMeta }) {
   const formId = String(el['formId'] ?? '')
   const method = String(el['method'] ?? 'post').toLowerCase()
   const action = el['action'] ? String(el['action']) : undefined
+  const stateUrl = el['stateUrl'] ? String(el['stateUrl']) : undefined
   const serverValues = (el['values'] as Record<string, unknown> | undefined) ?? {}
   const serverErrors = (el['errors'] as Record<string, string[]> | undefined) ?? {}
 
@@ -1559,9 +1686,37 @@ function FormRenderer({ el }: { el: ElementMeta }) {
           )}
         </div>
       )}
-      {(el.children ?? []).map((child, i) => renderFormChild(child, i, serverValues, errors))}
+      {stateUrl ? (
+        <FormStateProvider initialMeta={el} initialErrors={errors}>
+          <FormBody fallbackChildren={el.children ?? []} fallbackValues={serverValues} fallbackErrors={errors} />
+        </FormStateProvider>
+      ) : (
+        (el.children ?? []).map((child, i) => renderFormChild(child, i, serverValues, errors))
+      )}
     </form>
   )
+}
+
+/**
+ * Renders the controlled-form's children, sourcing them from the
+ * `FormStateProvider`'s current `formMeta` (which gets replaced after
+ * each live POST). Falls back to the props if (somehow) used outside a
+ * provider — the shell only mounts this when `stateUrl` is set so the
+ * fallback path is dead code in practice, but keeping it defensive.
+ */
+function FormBody({
+  fallbackChildren, fallbackValues, fallbackErrors,
+}: {
+  fallbackChildren: ElementMeta[]
+  fallbackValues:   Record<string, unknown>
+  fallbackErrors:   Record<string, string[]>
+}): React.ReactElement {
+  const ctx = useFormState()
+  if (!ctx) {
+    return <>{fallbackChildren.map((child, i) => renderFormChild(child, i, fallbackValues, fallbackErrors))}</>
+  }
+  const children = (ctx.formMeta.children ?? []) as ElementMeta[]
+  return <>{children.map((child, i) => renderFormChild(child, i, ctx.values, ctx.errors))}</>
 }
 
 function renderFormChild(

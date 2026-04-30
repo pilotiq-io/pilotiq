@@ -12,6 +12,41 @@ re-resolve the schema mid-edit." This is the foundation Filament uses
 for dependent dropdowns, conditional sections, computed defaults, and
 multi-step Wizard branching.
 
+## Status
+
+| Step | Status | Notes |
+|---|---|---|
+| 1. Widen `RenderContext` | ✅ DONE | `values / $get / $set / changed`; `Field.isHiddenIn / isDisabledIn / toMeta` take ctx |
+| 2. `Field.live()` + `afterStateUpdated()` | ✅ DONE | `LiveOptions { onBlur?, debounce? }`; emitted on `FieldMeta.live` |
+| 3. `SelectField.options(fn)` | ✅ DONE | `OptionsResolver` async; `toMeta` async-aware (Element + resolveSchema + resolveField) |
+| 4. Widen condition signatures | ✅ DONE | `FieldCondition = (ctx: ConditionContext) => bool`; existing code destructures `record` |
+| 5. `applyStateUpdate` helper | ✅ DONE | `dispatchForm.ts`; runs the changed field's `afterStateUpdated` with bound `$get / $set` |
+| 6. `formStateData` builder | ✅ DONE | `pageData.ts`; `tagFormStateUrls` stamps `Form.stateUrl` when descendant has `live()` |
+| 7. POST `_form/:formId/state` endpoints | ✅ DONE | Four — resource-create / resource-edit / global-edit / custom-page; all run policy prelude |
+| 8. `Form.toMeta()` emits `stateUrl` | ✅ DONE | `withStateUrl()` setter; meta omits when unset |
+| 9. `FormStateContext` + `useFieldState` | ✅ DONE | `react/FormStateContext.tsx`; provider + hook; `useFormState` for advanced consumers; exported from `@pilotiq/pilotiq/react` |
+| 10. Field renderers use `useFieldState` | ✅ DONE | `TextLikeInput` bridge for text/email/number/textarea/slug; controlled paths added to `Toggle`/`Select`/`Date` field inputs; all fall back to `defaultValue` when outside provider |
+| 11. Live triggers per-field | ✅ DONE | `onChange` (immediate or debounced via `setTimeout`) / `onBlur` POST to `stateUrl`; `requestSeqRef` + `latestSeenRef` (refs, not state — see `feedback_strict_mode_double_flash.md`) drop stale responses; per-name pending tracking |
+| 12. Playground demo | ✅ DONE | `playground-pilotiq/app/Pilotiq/pages/ReactiveDemo.ts` — title → auto-slug (debounced live), country → state dependent SelectField, conditional shipping fields gated by ToggleField. Pinned `formId('reactive-demo')` because the auto-incrementing form-id counter doesn't survive cross-request renders. |
+
+**Tests at client-side checkpoint:** 593/593 (was 584 server-only). +9 covering `collectFieldDefaults` and `findFieldMeta` helpers. The provider itself is exercised end-to-end via the playground (live curl below); React-DOM tests would need jsdom which isn't yet wired into the test harness.
+
+**Server can be exercised via curl** (route handler unchanged, but the demo is the easiest target):
+```bash
+curl -X POST http://localhost:3003/new-admin/reactive-demo/_form/reactive-demo/state \
+  -H 'Content-Type: application/json' \
+  -d '{"changed":"country","values":{"country":"US","state":"","title":"","slug":"","hasShipping":false}}'
+# → { ok, form: { ..., children: [..., state field with US options, ...] }, dirty: ['country'] }
+```
+
+**Browser flow** (Plan #5 client wiring):
+1. GET render → `Form.toMeta()` includes `stateUrl` because the form has live fields.
+2. `FormRenderer` sees `stateUrl` and wraps children in `FormStateProvider`.
+3. Each field renderer calls `useFieldState(name)` — controlled mode binds `value`/`onChange`/`onBlur` to the provider's values map.
+4. On change/blur of a `live()` field, the provider POSTs `{ changed, values }` to `stateUrl`. Out-of-order responses are dropped via the in-flight-id counter.
+5. The response replaces `formMeta` wholesale; React reconciles the children and the values map gets overlaid with any `$set` mutations.
+6. Forms with NO live fields get `stateUrl: undefined`, the provider isn't mounted, and inputs stay uncontrolled — zero perf cost for the legacy path.
+
 Estimated effort: ~3 days. Touches `Field.ts` (new flag + setter +
 widened condition signature), `SelectField.ts` (options-as-function),
 `Form.ts` (state-resolve endpoint URL setter), `routes.ts` (new

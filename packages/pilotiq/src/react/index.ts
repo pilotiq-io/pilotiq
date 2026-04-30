@@ -9,6 +9,15 @@ export {
 export { SchemaRenderer, type SchemaRendererProps } from './SchemaRenderer.js'
 export { registerFieldRenderer, getFieldRenderer, type FieldRendererProps } from './registry.js'
 
+export {
+  FormStateProvider,
+  useFieldState,
+  useFormState,
+  type FormStateApi,
+  type FormStateProviderProps,
+  type UseFieldStateResult,
+} from './FormStateContext.js'
+
 export { NavigateProvider, useNavigate, type NavigateFn } from './navigate.js'
 
 export { ToasterProvider, useToast } from './Toaster.js'
