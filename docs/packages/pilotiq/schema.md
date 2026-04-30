@@ -208,28 +208,52 @@ Form.make()
     Action.make('save').label('Save'),
   ])
   .validate(passwordsMatch)               // form-level validators (run after field-level)
-  .mutateData(d => ({ ...d, slug: slugify(d.title) }))
-  .beforeSave(async (data, ctx) => { /* hooks */ })
-  .save(async (data, ctx) => prisma.article.create({ data }))
+  .mutateData(d => ({ ...d, slug: slugify(d.title) }))                  // both modes
+  .mutateDataBeforeCreate(d => ({ ...d, createdBy: 'system' }))         // create-only
+  .beforeSave(async (data, ctx) => { /* hooks */ })                     // both modes
+  .beforeUpdate(async (data, ctx) => { /* update-only */ })
+  .save(async (data, ctx) => prisma.article.create({ data }))           // shared persistence
+  .handleCreate(async (data) => prisma.article.create({ data }))        // create-only override
+  .handleUpdate(async (data, ctx) =>
+    prisma.article.update({ where: { id: ctx.record.id }, data }))      // update-only override
   .afterSave(async (record, ctx) => { /* hooks */ })
   .redirectAfterSave(rec => `/admin/articles/${rec.id}/edit`)
+  .savedNotification('Saved')               // string | Notification | NotificationMeta | fn | null
+  .createdNotification('Created')           // create-mode override; falls back to savedNotification
   .loadRecord(async (id) => prisma.article.findUnique({ where: { id } }))
-  .fillFromRecord(record => ({ ...record }))   // optional — defaults to spread
+  .mutateFormDataBeforeFill((values, ctx) => values)  // edit-mode load path
+  .fillFromRecord(record => ({ ...record }))          // optional — defaults to spread
+  .mutateFormDataAfterFill((values, ctx) => values)
 ```
 
 ### Lifecycle order
 
+Mode is inferred from `ctx.record` (undefined → create, set → update). Generic hooks fire in both modes; mode-specific hooks fire only on their matching mode and run AFTER the generic counterpart so cross-cutting logic (auth stamping, audit fields) lives above mode-specific business rules.
+
 ```
-validateSchema(form.children, body)    // walks every Field, runs validators
-  → form-level validators              // for cross-field rules; errors land under `_form`
-  → mutateData(data, ctx)
-  → beforeSave(data, ctx)
-  → save(data, ctx) → record           // user-implemented persistence
-  → afterSave(record, ctx)
+validateSchema(form.children, body)        // walks every Field, runs validators
+  → form-level validators                  // cross-field rules; errors land under `_form`
+  → mutateData(data, ctx)                  // both modes
+  → mutateDataBeforeCreate / BeforeUpdate  // mode-specific
+  → beforeSave(data, ctx)                  // both modes
+  → beforeCreate / beforeUpdate            // mode-specific
+  → handleCreate || handleUpdate || save   // persistence; mode override wins over save()
+  → afterCreate / afterUpdate              // mode-specific
+  → afterSave(record, ctx)                 // both modes
   → redirectAfterSave(record, ctx) → url
 ```
 
-`dispatchFormSubmit(form, body, ctx)` runs this end-to-end and returns either `{ ok: false, errors }` (validation failure) or `{ ok: true, record, redirect }` (success). The route handler decides what to do with the result — typically re-render with errors / 422 or redirect 303.
+The edit-mode load path also runs through hooks:
+
+```
+loadRecord(id, ctx)
+  → mutateFormDataBeforeFill(values, ctx)  // edit-mode only
+  → fillFromRecord(record)                 // defaults to { ...record }
+  → mutateFormDataAfterFill(values, ctx)
+  → form.withValues(...)
+```
+
+`dispatchFormSubmit(form, body, ctx)` runs the submit pipeline end-to-end and returns either `{ ok: false, errors }` (validation failure) or `{ ok: true, record, redirect, notifications }` (success). On success the result includes any resolved `NotificationMeta[]` from `savedNotification` / `createdNotification` (default: a success toast titled `"${R.labelSingular} created/saved"` — opt out via `disableSavedNotification()` or by returning `null` from the page-class title hook). The route handler decides what to do with the result — typically re-render with errors / 422, or redirect 303 with notifications flashed via `@rudderjs/session`.
 
 ### Render-time state
 

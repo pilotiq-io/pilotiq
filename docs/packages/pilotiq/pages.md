@@ -1,13 +1,13 @@
 # Pages
 
-A Page is "anything with a `schema()`" — the unit of routing, content, and lifecycle in pilotiq. There's **one** Page class. Custom standalone pages, resource pages (list/create/edit/view), and global pages all extend it directly. No `ResourcePage` / `ListPage` / `CreatePage` hierarchy.
+A Page is "anything with a `schema()`" — the unit of routing, content, and lifecycle in pilotiq. The base `Page` class is the route-dispatch unit; resource-bound pages can additionally extend the optional bases `ListPage`, `CreatePage`, `EditPage`, or `ViewPage`, which provide ergonomic override hooks (`getHeader`, `getFormActions`, lifecycle methods like `beforeCreate` / `afterUpdate`, etc.) on top of `Page`.
 
 The same `Page` covers two callers:
 
 - **Custom pages** registered via `panel.pages([AnalyticsPage])` — anything you want; full schema control.
-- **Resource pages** registered automatically via `defaultPages(R)` and overridable via `Resource.pages()` — the framework auto-generates ones that wrap `R.form()` / `R.table()` / `R.detail()` for you.
+- **Resource pages** registered automatically via `defaultPages(R)` and overridable via `Resource.pages()` — the framework auto-generates ones that wrap `R.form()` / `R.table()` / `R.detail()` for you, optionally subclassing `ListPage` / `CreatePage` / `EditPage` / `ViewPage` for the override surface.
 
-The two are interchangeable: a resource page is just a `Page` subclass with a non-`'custom'` mode and an optional `getResource()` back-reference.
+The two are interchangeable: a resource page is just a `Page` subclass (often via one of the role-specific bases) with a non-`'custom'` mode and a `getResource()` back-reference.
 
 ---
 
@@ -164,6 +164,33 @@ function defaultPages(R: ResourceClass): { index, create, edit, view } {
 Each default page sets `getResource() = R` and the appropriate `getMode()`. Sentinel handlers (for `save` / `loadRecord`) only fire when the user hasn't configured them on `R.form()` — that's why wiring `loadRecord` + `save` on the form alone is enough to make the auto-generated edit page persist.
 
 For singletons, `defaultGlobalPages(G)` returns `{ edit }` only; `view` is opt-in.
+
+### `ListPage` / `CreatePage` / `EditPage` / `ViewPage` base classes
+
+For resources that need page-level customization, extend the role-specific bases instead of `Page` directly. Each base class derives slug/label/icon from `getResource()`, calls the resource's `form()` / `table()` / `detail()`, and exposes ergonomic override hooks:
+
+```ts
+class EditArticle extends EditPage {
+  static override getResource() { return ArticleResource }
+
+  // Override the heading (still keeps the form below + page-header save action)
+  static override getHeader(R) { return [Heading.make(`Editing ${R.labelSingular}`)] }
+
+  // Lifecycle hooks (install onto the form during schema())
+  static override beforeUpdate = async (data) => { data.editedAt = new Date() }
+  static override getSavedNotificationTitle() { return 'Article updated' }
+}
+```
+
+Override surface:
+- **`ListPage`**: `getHeader(R)`, `getHeaderActions(R, basePath)`, `getRowActions(R, basePath)`.
+- **`CreatePage`**: `getHeader(R)`, `getFormActions(R)` plus form lifecycle (`mutateFormDataBefore/AfterFill`, `mutateData`, `mutateDataBeforeCreate`, `beforeSave`, `beforeCreate`, `afterCreate`, `afterSave`, `handleCreate`, `getRedirectUrl`, `getCreatedNotificationTitle`).
+- **`EditPage`**: same surface but with `…BeforeUpdate / handleUpdate / getSavedNotificationTitle`.
+- **`ViewPage`**: `getHeader(R, record)`, `getActions(R, recordId, basePath)`.
+
+The `defaultListPage(R)` / `defaultCreatePage(R)` / etc. factories return anonymous subclasses of the matching base bound to `R`, so they're equivalent to a one-line `class extends ListPage { static override getResource() { return R } }`.
+
+For the full lifecycle hook surface and ordering, see [Resources › Submit lifecycle](./resources.md#submit-lifecycle) and [docs/guide/migrating-from-panels.md › Form lifecycle hooks](../../guide/migrating-from-panels.md#form-lifecycle-hooks).
 
 ---
 

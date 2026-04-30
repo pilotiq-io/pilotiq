@@ -461,17 +461,36 @@ For confirmation, `Action.confirm('Are you sure?')` triggers `window.confirm()` 
 
 ## Submit lifecycle
 
-`POST ${base}/${slug}/create` and `POST ${base}/${slug}/:id/edit` run the same pipeline through `dispatchFormSubmit(form, body, ctx)`:
+`POST ${base}/${slug}/create` and `POST ${base}/${slug}/:id/edit` run the same pipeline through `dispatchFormSubmit(form, body, ctx)`. Mode is inferred from `ctx.record` (undefined → create, set → update); generic hooks fire on both modes, mode-specific ones only on their mode:
 
 ```
-validateSchema(form.children, body)   ← Field-level validators (Phase 1.5)
-  → form-level validators            ← cross-field rules; errors under `_form`
-  → mutateData(data, ctx)
-  → beforeSave(data, ctx)
-  → save(data, ctx) → record         ← required; throws if not configured
-  → afterSave(record, ctx)
+validateSchema(form.children, body)            ← field-level validators
+  → form-level validators                      ← cross-field rules; errors under `_form`
+  → mutateData(data, ctx)                      ← both modes
+  → mutateDataBeforeCreate / BeforeUpdate      ← mode-specific
+  → beforeSave(data, ctx)                      ← both modes
+  → beforeCreate / beforeUpdate(data, ctx)     ← mode-specific
+  → handleCreate || handleUpdate || save(...)  ← persistence; required (mode override wins over save())
+  → afterCreate / afterUpdate(record, ctx)     ← mode-specific
+  → afterSave(record, ctx)                     ← both modes
   → redirectAfterSave(record, ctx) → url
 ```
+
+The edit-mode load path also has hooks:
+
+```
+loadRecord(id, ctx)
+  → mutateFormDataBeforeFill(values, ctx)
+  → fillFromRecord(record)                     ← defaults to { ...record }
+  → mutateFormDataAfterFill(values, ctx)
+  → form.withValues(...)
+```
+
+Configure the hooks at either layer:
+- **`Resource.form(form)`** — call `.beforeCreate(...)`, `.savedNotification(...)`, etc. on the `Form` directly.
+- **Page subclass static methods** — `class EditArticle extends EditPage { static override beforeUpdate = async data => {...} }`. The page wires its statics onto the form during `schema()`.
+
+See `docs/guide/migrating-from-panels.md#form-lifecycle-hooks` for the full setter inventory.
 
 On validation failure: re-renders the page with `form.withValues(body).withErrors(errors)` and returns 422.
 
@@ -479,6 +498,8 @@ On success: 303-redirects to the URL returned by `redirectAfterSave()`. Defaults
 
 - create → `/${base}/${slug}/${record.id}/edit`
 - edit   → stays on the edit URL
+
+A success notification is auto-emitted (default `"${R.labelSingular} created"` on create, `"… saved"` on edit). Override via `Form.savedNotification(...)` / `createdNotification(...)` or page static `getCreatedNotificationTitle()` / `getSavedNotificationTitle()`. Returning `null` suppresses the toast. Notifications persist across the 303 redirect via `@rudderjs/session`'s flash primitive — install the session provider in the host app to enable delivery; without it, the 303 path silently drops toasts.
 
 ---
 

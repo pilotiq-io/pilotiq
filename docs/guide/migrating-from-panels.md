@@ -266,10 +266,15 @@ A successful submit auto-emits a success toast unless you opt out:
 - Return `null` from the page hook (or call `Form.disableSavedNotification()`)
   to suppress the toast for that mode.
 
-> **Limitation:** the form-post 303 redirect path drops notifications
-> until a flash mechanism lands. Notifications fire reliably from the
-> action-modal JSON path; for now success toasts on the create/edit
-> form-post path are wired but not delivered.
+> **Note:** delivery uses two paths depending on the request style.
+> Action-modal submits (fetch + `Accept: application/json`) carry
+> notifications inline in the JSON response. Browser-style form-post
+> submits (303 redirect) persist them across the redirect via
+> `@rudderjs/session`'s flash primitive — pilotiq writes
+> `req.session.flash('pilotiq:notifications', ...)` on POST, reads on
+> the next GET, and merges into `viewProps.notifications`. If the host
+> app hasn't installed `@rudderjs/session`, the 303 path silently drops
+> the toast (no error); add the session provider to enable delivery.
 
 ### Mapping from panels
 

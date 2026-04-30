@@ -90,19 +90,24 @@ Returning `null` or `{}` produces an empty form on first visit; subsequent saves
 
 ## Save lifecycle
 
-`POST ${base}/${slug}` runs the same dispatch pipeline as a resource form via `dispatchFormSubmit(form, body, ctx)`:
+`POST ${base}/${slug}` runs the same dispatch pipeline as a resource form via `dispatchFormSubmit(form, body, ctx)`. Globals always run in update mode (the singleton record is loaded into `ctx.record` first), so the create-side hooks never fire here:
 
 ```
 validateSchema(form.children, body)
   → form-level validators
-  → mutateData(data, ctx)
+  → mutateData(data, ctx)               ← both modes
+  → mutateDataBeforeUpdate(data, ctx)   ← update-only (always fires for globals)
   → beforeSave(data, ctx)
-  → save(data, ctx) → record         ← user-implemented upsert
+  → beforeUpdate(data, ctx)
+  → handleUpdate || save                ← user-implemented upsert
+  → afterUpdate(record, ctx)
   → afterSave(record, ctx)
   → redirectAfterSave(record, ctx) → url   ← defaults to the same edit URL
 ```
 
 `save()` is responsible for upsert semantics — typically `prisma.foo.upsert()` keyed by a fixed slug or singleton row id. Validation failures re-render the form with errors + 422, just like resources.
+
+A success toast is auto-emitted (default `"${G.labelSingular} saved"`); customize via `Form.savedNotification(...)`. Notifications persist across the 303 redirect via `@rudderjs/session`'s flash primitive — see `docs/packages/pilotiq/resources.md#submit-lifecycle` for full details.
 
 ---
 
