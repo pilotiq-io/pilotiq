@@ -4,10 +4,20 @@ import assert from 'node:assert/strict'
 import { Form } from './elements/Form.js'
 import { ListTab } from './Tab.js'
 import { ListTabs } from './elements/ListTabs.js'
-import { applyFillPipeline, panelInfo, resolveActiveTab } from './pageData.js'
+import {
+  applyFillPipeline,
+  formStateData,
+  panelInfo,
+  resolveActiveTab,
+  tagFormStateUrls,
+} from './pageData.js'
 import { Pilotiq } from './Pilotiq.js'
 import { Resource } from './Resource.js'
 import { Global } from './Global.js'
+import { Page } from './Page.js'
+import { TextField } from './fields/TextField.js'
+import { ToggleField } from './fields/ToggleField.js'
+import { Section } from './schema/Section.js'
 
 describe('applyFillPipeline', () => {
   it('defaults to a shallow record copy when nothing is configured', async () => {
@@ -370,5 +380,102 @@ describe('panelInfo — navigation tree (Plan #9)', () => {
     const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Drafty]))
     assert.equal(info.navigation[0]!.badge,      '3')
     assert.equal(info.navigation[0]!.badgeColor, 'warning')
+  })
+})
+
+describe('tagFormStateUrls (Plan #5)', () => {
+  it('stamps stateUrl on forms that have at least one live() field', () => {
+    const form = Form.make().formId('f1').schema([
+      TextField.make('a'),
+      TextField.make('b').live(),
+    ])
+    tagFormStateUrls([form], (id) => `/admin/x/_form/${id}/state`)
+    assert.equal(form.getStateUrl(), '/admin/x/_form/f1/state')
+  })
+
+  it('skips forms whose descendants are not live', () => {
+    const form = Form.make().formId('f2').schema([TextField.make('a')])
+    tagFormStateUrls([form], (id) => `/admin/x/_form/${id}/state`)
+    assert.equal(form.getStateUrl(), undefined)
+  })
+
+  it('walks nested containers to detect live fields', () => {
+    const form = Form.make().formId('f3').schema([
+      Section.make('s').schema([ToggleField.make('flag').live()]),
+    ])
+    tagFormStateUrls([form], (id) => `/admin/x/_form/${id}/state`)
+    assert.equal(form.getStateUrl(), '/admin/x/_form/f3/state')
+  })
+
+  it('handles multiple forms independently', () => {
+    const live   = Form.make().formId('live').schema([TextField.make('a').live()])
+    const inert  = Form.make().formId('inert').schema([TextField.make('b')])
+    tagFormStateUrls([live, inert], (id) => `/x/${id}`)
+    assert.equal(live.getStateUrl(),  '/x/live')
+    assert.equal(inert.getStateUrl(), undefined)
+  })
+})
+
+describe('formStateData (Plan #5)', () => {
+  it('returns null when the page-scope is unknown', async () => {
+    class Articles extends Resource {
+      static override label = 'Articles'
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([Articles])
+    const result = await formStateData(panel, { kind: 'resource-edit', slug: 'missing', recordId: '1' }, { formId: 'f', changed: 'x', values: {} })
+    assert.equal(result, null)
+  })
+
+  it('returns 404 when the form id is not on the page', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([TextField.make('x').live()])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+    const result = await formStateData(panel, { kind: 'page', pageSlug: 'demo' }, { formId: 'wrong-id', changed: 'x', values: { x: 'v' } })
+    assert.notEqual(result, null)
+    assert.equal((result as { ok: false; status: number }).ok, false)
+    assert.equal((result as { ok: false; status: number }).status, 404)
+  })
+
+  it('returns 422 when the changed field does not exist on the form', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([TextField.make('x').live()])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+    const result = await formStateData(panel, { kind: 'page', pageSlug: 'demo' }, { formId: 'the-form', changed: 'missing', values: {} })
+    assert.notEqual(result, null)
+    assert.equal((result as { ok: false; status: number }).ok, false)
+    assert.equal((result as { ok: false; status: number }).status, 422)
+  })
+
+  it('runs afterStateUpdated and returns the resolved form meta', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([
+          TextField.make('title').live().afterStateUpdated((value, { $set }) => {
+            $set('slug', String(value).toLowerCase().replace(/\s+/g, '-'))
+          }),
+          TextField.make('slug'),
+        ])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+    const result = await formStateData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', changed: 'title', values: { title: 'Hello World', slug: 'old' } },
+    )
+    assert.notEqual(result, null)
+    if (result === null || !result.ok) throw new Error('expected ok result')
+    assert.deepEqual(result.dirty.sort(), ['slug', 'title'])
+    const formMeta = result.form as { values?: Record<string, unknown> }
+    assert.equal(formMeta.values?.['slug'], 'hello-world')
   })
 })

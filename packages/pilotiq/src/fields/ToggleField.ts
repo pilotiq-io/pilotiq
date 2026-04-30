@@ -1,4 +1,5 @@
-import { Field } from './Field.js'
+import { Field, type FieldMeta } from './Field.js'
+import type { RenderContext } from '../schema/resolveSchema.js'
 
 export class ToggleField extends Field {
   private constructor(name: string) {
@@ -7,5 +8,9 @@ export class ToggleField extends Field {
 
   static make(name: string): ToggleField {
     return new ToggleField(name)
+  }
+
+  override toMeta(ctx?: RenderContext): FieldMeta {
+    return this.buildMeta(ctx)
   }
 }

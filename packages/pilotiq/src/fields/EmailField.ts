@@ -1,4 +1,5 @@
-import { Field } from './Field.js'
+import { Field, type FieldMeta } from './Field.js'
+import type { RenderContext } from '../schema/resolveSchema.js'
 
 export class EmailField extends Field {
   private constructor(name: string) {
@@ -7,5 +8,9 @@ export class EmailField extends Field {
 
   static make(name: string): EmailField {
     return new EmailField(name)
+  }
+
+  override toMeta(ctx?: RenderContext): FieldMeta {
+    return this.buildMeta(ctx)
   }
 }

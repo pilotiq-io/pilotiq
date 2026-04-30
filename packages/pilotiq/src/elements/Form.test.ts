@@ -202,4 +202,22 @@ describe('Form Element', () => {
       assert.equal('createdNotification' in meta, false)
     })
   })
+
+  describe('stateUrl (Plan #5)', () => {
+    it('toMeta omits stateUrl when not set', () => {
+      const meta = Form.make().toMeta()
+      assert.equal('stateUrl' in meta, false)
+    })
+
+    it('toMeta emits stateUrl when set', () => {
+      const meta = Form.make().withStateUrl('/admin/articles/_form/form-1/state').toMeta()
+      assert.equal(meta.stateUrl, '/admin/articles/_form/form-1/state')
+    })
+
+    it('withStateUrl(undefined) clears the value', () => {
+      const form = Form.make().withStateUrl('/x').withStateUrl(undefined)
+      assert.equal(form.getStateUrl(), undefined)
+      assert.equal('stateUrl' in form.toMeta(), false)
+    })
+  })
 })

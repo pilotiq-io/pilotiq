@@ -140,7 +140,7 @@ describe('Field-as-Element (unified resolver)', () => {
     const tree = [
       Section.make('Settings').schema([
         TextField.make('always'),
-        TextField.make('conditional').showWhen(r => (r as { ok: boolean }).ok),
+        TextField.make('conditional').showWhen(({ record }) => (record as { ok: boolean }).ok),
       ]),
     ]
     const result = await resolveSchema(tree, { mode: 'edit', record: { ok: false } })
@@ -150,7 +150,7 @@ describe('Field-as-Element (unified resolver)', () => {
 
   it('Fields disabledWhen evaluates against context.record', async () => {
     const tree = [
-      TextField.make('locked').disabledWhen(r => (r as { locked: boolean }).locked),
+      TextField.make('locked').disabledWhen(({ record }) => (record as { locked: boolean }).locked),
     ]
     const a = await resolveSchema(tree, { mode: 'edit', record: { locked: false } })
     const b = await resolveSchema(tree, { mode: 'edit', record: { locked: true } })

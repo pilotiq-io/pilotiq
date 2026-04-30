@@ -1,5 +1,5 @@
 import { Element } from '../schema/Element.js'
-import { Field } from '../fields/Field.js'
+import { Field, type AfterStateUpdatedContext } from '../fields/Field.js'
 import { Form, type FormContext } from './Form.js'
 import { validateSchema, type ValidationErrors } from '../validation/index.js'
 import { resolveSavedNotification, type NotificationMeta } from '../notifications/index.js'
@@ -231,4 +231,90 @@ export function selectForm(forms: ReadonlyArray<Form>, submittedId: unknown): Fo
     if (match) return match
   }
   return forms[0]
+}
+
+// ─── Plan #5: applyStateUpdate ────────────────────────────
+
+export interface StateUpdateContext<R = unknown> {
+  record?: R
+  user?:   unknown
+  request?: unknown
+}
+
+export interface StateUpdateResult {
+  /**
+   * Updated values map after coercing the changed field and running
+   * its `afterStateUpdated` hook. The same object the client should
+   * rebind to its inputs on the next render.
+   */
+  values: Record<string, unknown>
+  /**
+   * Field names whose value was written via `$set` during this resolve.
+   * Includes the changed field itself. The client uses this to decide
+   * which inputs to update without disrupting focus on others.
+   */
+  dirty:  string[]
+}
+
+/**
+ * Apply a partial-resolve update from the client. Coerces the changed
+ * field's value (other fields keep whatever the client sent), runs the
+ * field's `afterStateUpdated` hook with bound `$get / $set` helpers,
+ * and returns the updated values + names of fields whose values were
+ * mutated. The caller (the partial-resolve route handler) feeds the
+ * resulting values into `resolveSchema` to produce a fresh form meta.
+ *
+ * Returns `null` when the changed field name doesn't correspond to a
+ * field on the form — the route handler turns this into a 404.
+ */
+export async function applyStateUpdate<R = unknown>(
+  form:    Form<R>,
+  values:  Record<string, unknown>,
+  changed: string,
+  ctx:     StateUpdateContext<R> = {},
+): Promise<StateUpdateResult | null> {
+  const children = (form.getChildren() ?? []) as Element[]
+  const target = findFieldByName(children, changed)
+  if (!target) return null
+
+  // Coerce the changed field only — other fields may have been mid-edit
+  // on the client and we don't want to clobber their in-flight state.
+  const coerced = { ...values }
+  const subset: Record<string, unknown> = { [changed]: values[changed] }
+  const after  = coerceFormValues([target], subset)
+  coerced[changed] = after[changed]
+
+  const dirty = new Set<string>([changed])
+
+  const hook = target.getAfterStateUpdated()
+  if (hook) {
+    const $get = (name: string): unknown => coerced[name]
+    const $set = (name: string, v: unknown): void => {
+      coerced[name] = v
+      dirty.add(name)
+    }
+    const hookCtx: AfterStateUpdatedContext = {
+      $get,
+      $set,
+      values: coerced,
+      ...(ctx.record  !== undefined ? { record:  ctx.record  } : {}),
+      ...(ctx.user    !== undefined ? { user:    ctx.user    } : {}),
+      ...(ctx.request !== undefined ? { request: ctx.request } : {}),
+    }
+    await hook(coerced[changed], hookCtx)
+  }
+
+  return { values: coerced, dirty: Array.from(dirty) }
+}
+
+function findFieldByName(elements: Element[], name: string): Field | undefined {
+  for (const el of elements) {
+    if (el instanceof Field && el.name === name) return el
+    const children = el.getChildren()
+    if (children && children.length > 0) {
+      const hit = findFieldByName(children as Element[], name)
+      if (hit) return hit
+    }
+  }
+  return undefined
 }

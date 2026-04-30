@@ -22,6 +22,24 @@ export type RenderMode = 'table' | 'create' | 'edit' | 'view'
 export interface RenderContext extends SchemaContext {
   mode?: RenderMode
   record?: unknown
+  /**
+   * Current form values for the in-progress resolve cycle. Populated by
+   * the partial-resolve endpoint (Plan #5) and by edit/create page
+   * builders that prefill from a record. When present, `$get / $set`
+   * are framework-bound so field condition callbacks and reactive
+   * `options(fn)` handlers can read/write sibling values.
+   */
+  values?: Record<string, unknown>
+  /** Read a sibling field's current value from the resolve cycle's values map. */
+  $get?: (name: string) => unknown
+  /** Mutate a sibling field's value during this resolve cycle. */
+  $set?: (name: string, value: unknown) => void
+  /**
+   * Name of the field whose change triggered this resolve, if any.
+   * Populated only by the partial-resolve endpoint; undefined on
+   * initial GET render.
+   */
+  changed?: string
 }
 
 export type SchemaDefinition =
@@ -90,7 +108,7 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
   // Field visibility — drop the entire element if hidden in the current
   // render context. Done before custom resolvers so plugins can't accidentally
   // resurrect a hidden field.
-  if (el instanceof Field && el.isHiddenIn(ctx.mode, ctx.record)) {
+  if (el instanceof Field && el.isHiddenIn(ctx)) {
     return null
   }
 
@@ -127,8 +145,12 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
   }
 
   // Default resolution: toMeta() + recurse children if container. Fields
-  // get their record-aware overload so disabledWhen evaluates correctly.
-  const meta = (el instanceof Field ? el.toMeta(ctx.record) : el.toMeta()) as ElementMeta
+  // get their ctx-aware overload so disabledWhen and reactive subclasses
+  // (Plan #5) see the full RenderContext. Async toMeta is awaited —
+  // SelectField with a resolver-style `options(fn)` may be async.
+  const meta = await Promise.resolve(
+    el instanceof Field ? el.toMeta(ctx) : el.toMeta(),
+  ) as ElementMeta
   meta.type = type // ensure type is always set, even if toMeta forgot
 
   // Stamp the page-level disabled state on non-row Actions so the renderer

@@ -2,8 +2,9 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { Form } from './Form.js'
-import { dispatchFormSubmit, findForms, selectForm } from './dispatchForm.js'
+import { applyStateUpdate, dispatchFormSubmit, findForms, selectForm } from './dispatchForm.js'
 import { TextField } from '../fields/TextField.js'
+import { ToggleField } from '../fields/ToggleField.js'
 import { Section } from '../schema/Section.js'
 import { makeValidator, required } from '../validation/index.js'
 
@@ -252,5 +253,75 @@ describe('findForms / selectForm', () => {
     assert.equal(selectForm([a, b, c], undefined), a)
     assert.equal(selectForm([a, b, c], 'missing'), a)
     assert.equal(selectForm([], undefined), undefined)
+  })
+})
+
+describe('applyStateUpdate (Plan #5)', () => {
+  it('returns null when the changed field is unknown', async () => {
+    const form = Form.make().schema([TextField.make('title').live()])
+    const result = await applyStateUpdate(form, { title: 'x' }, 'missing')
+    assert.equal(result, null)
+  })
+
+  it('coerces the changed field but leaves others untouched', async () => {
+    const form = Form.make().schema([
+      TextField.make('title'),
+      ToggleField.make('featured').live(),
+    ])
+    const result = await applyStateUpdate(form, { title: '  unsaved  ', featured: 'true' }, 'featured')
+    assert.equal(result?.values['featured'], true)
+    // title stayed exactly as the client sent it (no trim, no mutate).
+    assert.equal(result?.values['title'], '  unsaved  ')
+    assert.deepEqual(result?.dirty, ['featured'])
+  })
+
+  it('runs afterStateUpdated and exposes $get / $set', async () => {
+    const form = Form.make().schema([
+      TextField.make('title').live().afterStateUpdated((value, { $set, $get }) => {
+        const t = String(value).toLowerCase().replace(/\s+/g, '-')
+        $set('slug', t)
+        // $get sees the just-mutated value
+        assert.equal($get('slug'), t)
+      }),
+      TextField.make('slug'),
+    ])
+    const result = await applyStateUpdate(form, { title: 'Hello World', slug: 'old' }, 'title')
+    assert.equal(result?.values['slug'], 'hello-world')
+    assert.deepEqual(result?.dirty.sort(), ['slug', 'title'])
+  })
+
+  it('walks nested containers to find the changed field', async () => {
+    const form = Form.make().schema([
+      Section.make('s').schema([TextField.make('nested').live()]),
+    ])
+    const result = await applyStateUpdate(form, { nested: 'v' }, 'nested')
+    assert.notEqual(result, null)
+  })
+
+  it('async afterStateUpdated is awaited', async () => {
+    let resolved = false
+    const form = Form.make().schema([
+      TextField.make('a').live().afterStateUpdated(async (_v, { $set }) => {
+        await new Promise(r => setTimeout(r, 1))
+        $set('b', 'derived')
+        resolved = true
+      }),
+      TextField.make('b'),
+    ])
+    const result = await applyStateUpdate(form, { a: 'x', b: '' }, 'a')
+    assert.equal(resolved, true)
+    assert.equal(result?.values['b'], 'derived')
+  })
+
+  it('threads record/user/request through hookCtx', async () => {
+    let seen: { record?: unknown; user?: unknown } = {}
+    const form = Form.make().schema([
+      TextField.make('a').live().afterStateUpdated((_v, ctx) => {
+        seen = { record: ctx.record, user: ctx.user }
+      }),
+    ])
+    await applyStateUpdate(form, { a: 'x' }, 'a', { record: { id: 1 }, user: { name: 'sue' } })
+    assert.deepEqual(seen.record, { id: 1 })
+    assert.deepEqual(seen.user,   { name: 'sue' })
   })
 })

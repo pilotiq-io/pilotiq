@@ -14,10 +14,11 @@ import { PilotiqRegistry } from './PilotiqRegistry.js'
 import type { Page } from './Page.js'
 import type { ResourceClass, NavigationBadgeColor } from './Resource.js'
 import type { GlobalClass } from './Global.js'
-import type { Element } from './schema/Element.js'
+import { Element } from './schema/Element.js'
+import { Field } from './fields/Field.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { Form } from './elements/Form.js'
-import { findForms } from './elements/dispatchForm.js'
+import { applyStateUpdate, findForms } from './elements/dispatchForm.js'
 import { loadTableRecords, type QueryParams } from './elements/dispatchTable.js'
 import { findActions } from './elements/dispatchAction.js'
 import { ListTabs } from './elements/ListTabs.js'
@@ -281,6 +282,42 @@ export function tagFormActions(elements: ReadonlyArray<Element>, action: string)
 }
 
 /**
+ * Plan #5 — stamp the partial-resolve endpoint URL on every form whose
+ * descendants include at least one `live()` field. The client uses
+ * `FormMeta.stateUrl` to flip into controlled-state mode; forms without
+ * any live fields stay uncontrolled (zero-cost legacy path).
+ *
+ * `urlBuilder(formId)` lets the caller compose a per-form URL — the
+ * endpoint shape is `${base}/${slug}/_form/${formId}/state` so each
+ * form on a multi-form page gets its own route segment.
+ */
+export function tagFormStateUrls(
+  elements:   ReadonlyArray<Element>,
+  urlBuilder: (formId: string) => string,
+): void {
+  for (const form of findForms(elements)) {
+    if (formHasLiveField(form)) {
+      form.withStateUrl(urlBuilder(form.getFormId()))
+    }
+  }
+}
+
+function formHasLiveField(form: Form): boolean {
+  let found = false
+  const visit = (els: ReadonlyArray<Element>): void => {
+    for (const el of els) {
+      if (found) return
+      if (el instanceof Field && el.isLive()) { found = true; return }
+      const children = el.getChildren()
+      if (children) visit(children)
+    }
+  }
+  const children = form.getChildren()
+  if (children) visit(children)
+  return found
+}
+
+/**
  * Run the edit-mode fill pipeline on a loaded record:
  *   mutateFormDataBeforeFill  →  fillFromRecord  →  mutateFormDataAfterFill
  *
@@ -471,6 +508,7 @@ export async function resourceCreateData(
   const ctx: SchemaContext = userCtx({ mode: 'create', basePath: cfg.path }, user)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, createUrl)
+  tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/state`)
   if (prefill) {
     const form = findForms(elements)[0]
     if (form) {
@@ -512,6 +550,7 @@ export async function resourceEditData(
   const ctx: SchemaContext = userCtx({ mode: 'edit', recordId, basePath: cfg.path }, user)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
+  tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/${recordId}/_form/${formId}/state`)
 
   // Locate the primary form, load the record, fill values.
   const form = findForms(elements)[0]
@@ -548,6 +587,148 @@ export async function resourceEditData(
     notifications: consumeFlashedNotifications(req),
     ...(prefill?.errors ? { hasErrors: true } : {}),
   }
+}
+
+// ─── Plan #5 partial-resolve data builder ────────────────────
+
+export type FormStateScope =
+  | { kind: 'resource-create'; slug: string }
+  | { kind: 'resource-edit';   slug: string; recordId: string }
+  | { kind: 'global-edit';     slug: string }
+  | { kind: 'page';            pageSlug: string }
+
+export interface FormStateRequest {
+  formId:  string
+  changed: string
+  values:  Record<string, unknown>
+}
+
+export interface FormStateResult {
+  ok:    true
+  form:  Record<string, unknown>      // resolved FormMeta
+  dirty: string[]
+}
+
+export interface FormStateError {
+  ok:     false
+  status: 404 | 422
+  error:  string
+}
+
+/**
+ * Plan #5 — handle a partial-resolve roundtrip from a `live()` field.
+ *
+ * Locates the page's schema, finds the targeted form by `formId`, runs
+ * `applyStateUpdate` to apply the changed value + run
+ * `afterStateUpdated`, then re-resolves the form's children with the
+ * mutated values + bound `$get / $set` so dependent options /
+ * conditional visibility re-evaluate. Returns the resolved FormMeta the
+ * client uses to replace its rendered form.
+ *
+ * Returns `null` when the route prefix doesn't resolve to a real
+ * resource/global/page — the route handler turns this into a 404. The
+ * inner `{ status: 422 }` failure is for "form found but `changed`
+ * field doesn't exist on it" — also a client-side bug.
+ */
+export async function formStateData(
+  pilotiq: Pilotiq,
+  scope:   FormStateScope,
+  body:    FormStateRequest,
+  req?:    unknown,
+): Promise<FormStateResult | FormStateError | null> {
+  const cfg = pilotiq.getConfig()
+  const user = await pilotiq.resolveUser(req)
+
+  let PageClass: typeof Page | undefined
+  let mode: 'create' | 'edit'
+  let record: unknown = undefined
+  let recordId: string | undefined
+  let baseCtxExtras: Record<string, unknown> = {}
+
+  if (scope.kind === 'resource-create' || scope.kind === 'resource-edit') {
+    const R = cfg.resources.find(r => r.getSlug() === scope.slug)
+    if (!R) return null
+    const pages = R.resolvePages()
+    if (scope.kind === 'resource-create') {
+      if (!pages.create) return null
+      PageClass = pages.create
+      mode = 'create'
+    } else {
+      if (!pages.edit) return null
+      PageClass = pages.edit
+      mode = 'edit'
+      recordId = scope.recordId
+      baseCtxExtras = { recordId }
+      if (R.model) {
+        try { record = await R.model.find(scope.recordId) } catch { /* ignore */ }
+      } else if (recordId) {
+        record = { id: recordId }
+      }
+    }
+  } else if (scope.kind === 'global-edit') {
+    const G = cfg.globals.find(g => g.getSlug() === scope.slug)
+    if (!G) return null
+    const pages = G.resolvePages()
+    if (!pages.edit) return null
+    PageClass = pages.edit
+    mode = 'edit'
+  } else {
+    const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
+    if (!P) return null
+    PageClass = P
+    // Custom pages don't have a record/edit-mode concept — pass mode
+    // 'edit' so resolveSchema treats fields as form inputs (not table
+    // cells / view-mode read-only).
+    mode = 'edit'
+  }
+
+  if (!PageClass) return null
+
+  const baseCtx: SchemaContext = userCtx({ mode, basePath: cfg.path, ...baseCtxExtras }, user)
+  const elements = await callPageSchema(PageClass, baseCtx)
+  const form = selectFormById(findForms(elements), body.formId)
+  if (!form) return { ok: false, status: 404, error: `Form "${body.formId}" not found on page` }
+
+  const update = await applyStateUpdate(form, body.values, body.changed, {
+    ...(record  !== undefined ? { record } : {}),
+    ...(user    !== null      ? { user   } : {}),
+    request: req,
+  })
+  if (!update) {
+    return { ok: false, status: 422, error: `Field "${body.changed}" not found on form "${body.formId}"` }
+  }
+
+  // Re-resolve the form with the mutated values bound. We bind
+  // `$get / $set` against the post-update values map so further
+  // resolve-time logic (SelectField.options(fn), reactive
+  // visibility) reads current state.
+  const $get = (name: string): unknown => update.values[name]
+  // $set on the resolve pass is a no-op — only afterStateUpdated
+  // mutations survive into the response. Resolve-time `$set` would
+  // race against the client's view of the world.
+  const $set = (_name: string, _v: unknown): void => { /* intentional no-op */ }
+
+  const resolveCtx = {
+    ...baseCtx,
+    values: update.values,
+    $get,
+    $set,
+    changed: body.changed,
+    ...(record !== undefined ? { record } : {}),
+  }
+  // Snapshot values onto the form so its FormMeta carries them.
+  form.withValues(update.values)
+  const resolved = await resolveSchema([form], resolveCtx)
+  const formMeta = resolved[0]
+  if (!formMeta || formMeta.type !== 'form') {
+    return { ok: false, status: 422, error: 'Form re-resolved to non-form meta' }
+  }
+
+  return { ok: true, form: formMeta, dirty: update.dirty }
+}
+
+function selectFormById(forms: ReadonlyArray<Form>, id: string): Form | undefined {
+  return forms.find(f => f.getFormId() === id)
 }
 
 export async function resourceViewData(
@@ -610,6 +791,7 @@ export async function globalEditData(
   const ctx: SchemaContext = userCtx({ mode: 'edit', basePath: cfg.path }, user)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
+  tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/state`)
 
   const form = findForms(elements)[0]
   let record: unknown = undefined
@@ -684,6 +866,7 @@ export async function customPageData(
   const ctx: SchemaContext = userCtx({}, user)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, pageUrl)
+  tagFormStateUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/state`)
   tagActionDispatch(elements, pageUrl)
   const schemaData = await resolveSchema(elements, ctx)
 

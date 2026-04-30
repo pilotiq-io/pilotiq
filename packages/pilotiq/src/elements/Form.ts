@@ -82,6 +82,13 @@ export interface FormMeta extends ElementMeta {
   action?: string
   values?: Record<string, unknown>
   errors?: ValidationErrors
+  /**
+   * Plan #5 partial-resolve endpoint URL. Emitted only when at least
+   * one descendant field has `live()` set; the client uses its presence
+   * to decide whether to switch into controlled-state mode and POST on
+   * `live` field changes.
+   */
+  stateUrl?: string
 }
 
 let _formIdSeq = 0
@@ -137,6 +144,12 @@ export class Form<R = unknown> extends Element {
 
   private _values?: Record<string, unknown>
   private _errors?: ValidationErrors
+
+  // Plan #5 — partial-resolve endpoint. Stamped by the route handler at
+  // render time when any descendant field is `live()`; emits as
+  // `stateUrl` on FormMeta. Undefined when no live fields → client
+  // skips the controlled-state path entirely.
+  private _stateUrl?: string
 
   private constructor() { super() }
 
@@ -293,6 +306,23 @@ export class Form<R = unknown> extends Element {
     return this
   }
 
+  /**
+   * Plan #5 — set the partial-resolve endpoint URL. Stamped at
+   * render-time by the route handler; the client POSTs `live` field
+   * changes here and receives a fresh re-resolved FormMeta back. Pass
+   * `undefined` to clear (e.g. forms with no live fields).
+   */
+  withStateUrl(url: string | undefined): this {
+    if (url === undefined) {
+      delete this._stateUrl
+    } else {
+      this._stateUrl = url
+    }
+    return this
+  }
+
+  getStateUrl(): string | undefined { return this._stateUrl }
+
   // ─── Getters (used by route handlers) ────────────────
 
   getFormId(): string { return this._formId }
@@ -329,9 +359,10 @@ export class Form<R = unknown> extends Element {
       type:   'form',
       formId: this._formId,
       method: this._method,
-      ...(this._action !== undefined ? { action: this._action } : {}),
-      ...(this._values !== undefined ? { values: this._values } : {}),
-      ...(this._errors !== undefined ? { errors: this._errors } : {}),
+      ...(this._action   !== undefined ? { action:   this._action   } : {}),
+      ...(this._values   !== undefined ? { values:   this._values   } : {}),
+      ...(this._errors   !== undefined ? { errors:   this._errors   } : {}),
+      ...(this._stateUrl !== undefined ? { stateUrl: this._stateUrl } : {}),
     }
   }
 }

@@ -154,7 +154,16 @@ export {
 } from './elements/dispatchAction.js'
 
 // ─── Fields ───────────────────────────────────────────
-export { Field, type FieldType, type FieldMeta, type FieldCondition } from './fields/Field.js'
+export {
+  Field,
+  type FieldType,
+  type FieldMeta,
+  type FieldCondition,
+  type ConditionContext,
+  type LiveOptions,
+  type AfterStateUpdatedHandler,
+  type AfterStateUpdatedContext,
+} from './fields/Field.js'
 export { resolveField, resolveFields } from './fields/resolveField.js'
 export { TextField } from './fields/TextField.js'
 export { TextareaField } from './fields/TextareaField.js'

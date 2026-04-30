@@ -1,4 +1,5 @@
 import { Field, type FieldMeta } from './Field.js'
+import type { RenderContext } from '../schema/resolveSchema.js'
 
 export class TextField extends Field {
   private _maxLength?: number
@@ -14,9 +15,9 @@ export class TextField extends Field {
   maxLength(n: number): this { this._maxLength = n; return this }
   getMaxLength(): number | undefined { return this._maxLength }
 
-  override toMeta(record?: unknown): FieldMeta {
+  override toMeta(ctx?: RenderContext): FieldMeta {
     return {
-      ...super.toMeta(record),
+      ...this.buildMeta(ctx),
       ...(this._maxLength !== undefined ? { maxLength: this._maxLength } : {}),
     }
   }

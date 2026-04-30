@@ -19,8 +19,12 @@ export abstract class Element {
   /**
    * Serialize this element's own state (excluding children) to a JSON-safe
    * object. Children are handled by the resolver — do NOT inline them here.
+   *
+   * May return a Promise — reactive Field subclasses (Plan #5) compute
+   * dependent options asynchronously by awaiting a user-supplied function.
+   * The resolver awaits before merging children meta.
    */
-  abstract toMeta(): Record<string, unknown>
+  abstract toMeta(): Record<string, unknown> | Promise<Record<string, unknown>>
 
   /**
    * Children of a container element, or `undefined` for leaves. The resolver
