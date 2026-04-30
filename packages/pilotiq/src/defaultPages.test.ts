@@ -337,3 +337,113 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
     assert.equal(resolved.view!.getMode(), 'view')
   })
 })
+
+describe('CreatePage / EditPage lifecycle override surface', () => {
+  function getForm(PageClass: { schema(): unknown }): Form {
+    const schema = PageClass.schema() as unknown[]
+    return schema[1] as Form
+  }
+
+  it('static beforeCreate / afterCreate are installed onto the form', () => {
+    const beforeCreate = async () => {}
+    const afterCreate  = async () => {}
+    class Create extends CreatePage {
+      static override getResource() { return ArticleResource }
+      static override beforeCreate = beforeCreate
+      static override afterCreate  = afterCreate
+    }
+    const form = getForm(Create)
+    assert.equal(typeof form.getBeforeCreate(), 'function')
+    assert.equal(typeof form.getAfterCreate(),  'function')
+  })
+
+  it('static handleCreate replaces the save handler in create mode', () => {
+    const handleCreate = async () => ({ id: 99 })
+    class Create extends CreatePage {
+      static override getResource() { return ArticleResource }
+      static override handleCreate = handleCreate
+    }
+    const form = getForm(Create)
+    assert.equal(typeof form.getHandleCreate(), 'function')
+  })
+
+  it('EditPage.beforeUpdate / handleUpdate / afterUpdate land on the form', () => {
+    const beforeUpdate = async () => {}
+    const afterUpdate  = async () => {}
+    const handleUpdate = async () => ({ id: 1 })
+    class Edit extends EditPage {
+      static override getResource() { return ArticleResource }
+      static override beforeUpdate = beforeUpdate
+      static override afterUpdate  = afterUpdate
+      static override handleUpdate = handleUpdate
+    }
+    const form = getForm(Edit)
+    assert.equal(typeof form.getBeforeUpdate(), 'function')
+    assert.equal(typeof form.getAfterUpdate(),  'function')
+    assert.equal(typeof form.getHandleUpdate(), 'function')
+  })
+
+  it('static mutateFormDataBeforeFill / AfterFill land on the form', () => {
+    class Edit extends EditPage {
+      static override getResource() { return ArticleResource }
+      static override mutateFormDataBeforeFill = (v: Record<string, unknown>) => v
+      static override mutateFormDataAfterFill  = (v: Record<string, unknown>) => v
+    }
+    const form = getForm(Edit)
+    assert.equal(typeof form.getMutateFormDataBeforeFill(), 'function')
+    assert.equal(typeof form.getMutateFormDataAfterFill(),  'function')
+  })
+
+  it('static getRedirectUrl wires through to redirectAfterSave', () => {
+    class Create extends CreatePage {
+      static override getResource() { return ArticleResource }
+      static override getRedirectUrl = (record: unknown) => `/x/${(record as { id: number }).id}`
+    }
+    const form = getForm(Create)
+    const fn = form.getRedirectAfterSave()!
+    const url = fn({ id: 7 } as never, { values: {} } as never)
+    assert.equal(url, '/x/7')
+  })
+
+  it('framework default toast titles are installed when nothing is configured', () => {
+    class Create extends CreatePage { static override getResource() { return ArticleResource } }
+    class Edit   extends EditPage   { static override getResource() { return ArticleResource } }
+    assert.equal(getForm(Create).getCreatedNotification(), 'Article created')
+    assert.equal(getForm(Edit).getSavedNotification(),     'Article saved')
+  })
+
+  it('getCreatedNotificationTitle override wins over the default', () => {
+    class Create extends CreatePage {
+      static override getResource() { return ArticleResource }
+      static override getCreatedNotificationTitle() { return 'Custom create' }
+    }
+    assert.equal(getForm(Create).getCreatedNotification(), 'Custom create')
+  })
+
+  it('getSavedNotificationTitle returning null suppresses the saved toast', () => {
+    class Edit extends EditPage {
+      static override getResource() { return ArticleResource }
+      static override getSavedNotificationTitle() { return null }
+    }
+    assert.equal(getForm(Edit).getSavedNotification(), null)
+  })
+
+  it('Resource.form() configuration coexists with page-level overrides', () => {
+    const userMutate = (d: Record<string, unknown>) => d
+    class WithFormConfig extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title').required()])
+          .mutateData(userMutate)
+      }
+    }
+    class Create extends CreatePage {
+      static override getResource() { return WithFormConfig }
+      static override beforeCreate = async () => {}
+    }
+    const form = getForm(Create)
+    // Resource.form() set mutateData; the page override added beforeCreate.
+    assert.equal(form.getMutateData(), userMutate)
+    assert.equal(typeof form.getBeforeCreate(), 'function')
+  })
+})

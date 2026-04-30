@@ -2,11 +2,19 @@ import { Element } from '../schema/Element.js'
 import { Field } from '../fields/Field.js'
 import { Form, type FormContext } from './Form.js'
 import { validateSchema, type ValidationErrors } from '../validation/index.js'
+import { resolveSavedNotification, type NotificationMeta } from '../notifications/index.js'
 
 export interface DispatchSuccess<R> {
-  ok:       true
-  record:   R
-  redirect: string | undefined
+  ok:            true
+  record:        R
+  redirect:      string | undefined
+  /**
+   * Resolved success notifications to flash to the client. Empty when the
+   * form has `disableSavedNotification()` or no spec configured. Currently
+   * only delivered through the JSON action-modal path; the form-post 303
+   * path drops them until a flash mechanism lands.
+   */
+  notifications: NotificationMeta[]
 }
 
 export interface DispatchFailure {
@@ -17,10 +25,23 @@ export interface DispatchFailure {
 export type DispatchResult<R> = DispatchSuccess<R> | DispatchFailure
 
 /**
- * Run the full form submit lifecycle on a `Form` element:
+ * Run the full form submit lifecycle on a `Form` element. Mode is inferred
+ * from `ctx.record`: undefined → create, set → update. Mode-specific hooks
+ * fire after their generic counterparts so cross-cutting logic (auth
+ * stamping, audit fields) lives above mode-specific business rules.
  *
- *   validateSchema → form-level validators → mutateData → beforeSave →
- *   save → afterSave → redirectAfterSave
+ * Order:
+ *
+ *   validateSchema
+ *     → form-level validators
+ *     → mutateData (both modes)
+ *     → mutateDataBeforeCreate / mutateDataBeforeUpdate
+ *     → beforeSave (both modes)
+ *     → beforeCreate / beforeUpdate
+ *     → handleCreate || handleUpdate || save     ← persistence
+ *     → afterCreate / afterUpdate
+ *     → afterSave (both modes)
+ *     → redirectAfterSave
  *
  * Validation failures short-circuit and return `{ ok: false, errors }`. On
  * success the result includes the saved record and the resolved redirect URL
@@ -35,6 +56,7 @@ export async function dispatchFormSubmit<R = unknown>(
   ctx:   FormContext<R>,
 ): Promise<DispatchResult<R>> {
   const children = form.getChildren() ?? []
+  const isCreate = ctx.record === undefined
 
   const fieldErrors = validateSchema(children as Element[], body, ctx.record)
 
@@ -54,19 +76,29 @@ export async function dispatchFormSubmit<R = unknown>(
   }
 
   let data: Record<string, unknown> = coerceFormValues(children as Element[], body)
+
   const mutate = form.getMutateData()
   if (mutate) data = await mutate(data, { ...ctx, values: data })
+
+  const modeMutate = isCreate ? form.getMutateDataBeforeCreate() : form.getMutateDataBeforeUpdate()
+  if (modeMutate) data = await modeMutate(data, { ...ctx, values: data })
 
   const before = form.getBeforeSave()
   if (before) await before(data, { ...ctx, values: data })
 
-  const save = form.getSave()
-  if (!save) {
+  const modeBefore = isCreate ? form.getBeforeCreate() : form.getBeforeUpdate()
+  if (modeBefore) await modeBefore(data, { ...ctx, values: data })
+
+  const persist = (isCreate ? form.getHandleCreate() : form.getHandleUpdate()) ?? form.getSave()
+  if (!persist) {
     throw new Error(
-      '[Pilotiq] Form has no save() handler. Configure Form.save() on the page schema, or override Resource.pages() with a Page that supplies one.',
+      '[Pilotiq] Form has no save() handler. Configure Form.save() (or handleCreate/handleUpdate) on the page schema, or override Resource.pages() with a Page that supplies one.',
     )
   }
-  const record = await save(data, { ...ctx, values: data })
+  const record = await persist(data, { ...ctx, values: data })
+
+  const modeAfter = isCreate ? form.getAfterCreate() : form.getAfterUpdate()
+  if (modeAfter) await modeAfter(record, { ...ctx, record, values: data })
 
   const after = form.getAfterSave()
   if (after) await after(record, { ...ctx, record, values: data })
@@ -74,7 +106,15 @@ export async function dispatchFormSubmit<R = unknown>(
   const redirectFn = form.getRedirectAfterSave()
   const redirect = redirectFn ? redirectFn(record, { ...ctx, record, values: data }) : undefined
 
-  return { ok: true, record, redirect }
+  const notification = resolveSavedNotification(
+    form,
+    isCreate ? 'create' : 'update',
+    record,
+    { ...ctx, record, values: data },
+  )
+  const notifications = notification ? [notification] : []
+
+  return { ok: true, record, redirect, notifications }
 }
 
 /**

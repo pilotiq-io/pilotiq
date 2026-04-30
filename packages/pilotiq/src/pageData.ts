@@ -55,6 +55,33 @@ export function tagFormActions(elements: ReadonlyArray<Element>, action: string)
   }
 }
 
+/**
+ * Run the edit-mode fill pipeline on a loaded record:
+ *   mutateFormDataBeforeFill  →  fillFromRecord  →  mutateFormDataAfterFill
+ *
+ * `fillFromRecord` defaults to `{ ...record }` when not configured. Both
+ * mutators are optional and may be async. `ctx.record` is the loaded
+ * record so mutators can read from fields the form doesn't surface.
+ */
+export async function applyFillPipeline<R>(
+  form:   Form<R>,
+  record: R,
+): Promise<Record<string, unknown>> {
+  const recordObj = record as unknown as Record<string, unknown>
+  let values: Record<string, unknown> = { ...recordObj }
+
+  const before = form.getMutateFormDataBeforeFill()
+  if (before) values = await before(values, { values, record })
+
+  const fill = form.getFillFromRecord()
+  if (fill) values = fill(record)
+
+  const after = form.getMutateFormDataAfterFill()
+  if (after) values = await after(values, { values, record })
+
+  return values
+}
+
 /** Stamp dispatchUrl on every handler-style Action so the client knows where to POST. */
 export function tagActionDispatch(elements: ReadonlyArray<Element>, baseUrl: string): void {
   for (const action of findActions(elements)) {
@@ -174,8 +201,7 @@ export async function resourceEditData(
       // sentinel/missing record — fall through
     }
     if (!prefill?.values && record != null) {
-      const fill = form.getFillFromRecord()
-      const values = fill ? fill(record) : { ...(record as Record<string, unknown>) }
+      const values = await applyFillPipeline(form, record)
       form.withValues(values)
     } else if (prefill?.values) {
       form.withValues(prefill.values)
@@ -251,8 +277,7 @@ export async function globalEditData(
   if (form?.getLoadRecord()) {
     try { record = await form.getLoadRecord()!('', { values: prefill?.values ?? {} }) } catch { /* ignore */ }
     if (!prefill?.values && record != null) {
-      const fill = form.getFillFromRecord()
-      const values = fill ? fill(record) : { ...(record as Record<string, unknown>) }
+      const values = await applyFillPipeline(form, record)
       form.withValues(values)
     } else if (prefill?.values) {
       form.withValues(prefill.values)

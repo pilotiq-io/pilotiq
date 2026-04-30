@@ -1,5 +1,14 @@
 import { Page } from './Page.js'
-import { Form } from './elements/Form.js'
+import {
+  Form,
+  type SavedNotificationHandler,
+  type LifecycleHandler,
+  type AfterSaveHandler,
+  type SaveHandler,
+  type RedirectHandler,
+  type MutateDataHandler,
+  type FillMutator,
+} from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import { Heading } from './schema/Heading.js'
 import { Action } from './actions/Action.js'
@@ -182,6 +191,68 @@ function buildHeader(
   return header
 }
 
+/**
+ * Install lifecycle overrides defined as static methods on a form-bearing
+ * page subclass onto the freshly-built `Form`. Called by `CreatePage` and
+ * `EditPage` after `R.form(...)` runs so user `Resource.form()` config
+ * stays the canonical seam, with page subclasses layering on top.
+ *
+ * Mode-specific hooks (`beforeCreate` etc.) only fire on the matching mode.
+ * Generic ones (`mutateData`, `beforeSave`, `afterSave`) fire on both. The
+ * page methods get `.bind(PageClass)` so `this` inside the override resolves
+ * to the page class — useful when an override delegates to another static.
+ */
+function installLifecycleHooks(
+  PageClass: typeof CreatePage | typeof EditPage,
+  form:      Form,
+  mode:      'create' | 'edit',
+): void {
+  // Coerce to a record-typed view so we can probe optional statics through
+  // a single property bag without writing a wide intersection.
+  const P = PageClass as unknown as Record<string, unknown>
+  const bind = <T extends (...args: never[]) => unknown>(fn: T): T => fn.bind(PageClass) as T
+
+  if (typeof P['mutateFormDataBeforeFill'] === 'function') form.mutateFormDataBeforeFill(bind(P['mutateFormDataBeforeFill'] as never))
+  if (typeof P['mutateFormDataAfterFill']  === 'function') form.mutateFormDataAfterFill (bind(P['mutateFormDataAfterFill']  as never))
+  if (typeof P['mutateData']               === 'function') form.mutateData              (bind(P['mutateData']               as never))
+  if (typeof P['mutateDataBeforeCreate']   === 'function') form.mutateDataBeforeCreate  (bind(P['mutateDataBeforeCreate']   as never))
+  if (typeof P['mutateDataBeforeUpdate']   === 'function') form.mutateDataBeforeUpdate  (bind(P['mutateDataBeforeUpdate']   as never))
+  if (typeof P['beforeSave']               === 'function') form.beforeSave              (bind(P['beforeSave']               as never))
+  if (typeof P['afterSave']                === 'function') form.afterSave               (bind(P['afterSave']                as never))
+  if (typeof P['beforeCreate']             === 'function') form.beforeCreate            (bind(P['beforeCreate']             as never))
+  if (typeof P['afterCreate']              === 'function') form.afterCreate             (bind(P['afterCreate']              as never))
+  if (typeof P['beforeUpdate']             === 'function') form.beforeUpdate            (bind(P['beforeUpdate']             as never))
+  if (typeof P['afterUpdate']              === 'function') form.afterUpdate             (bind(P['afterUpdate']              as never))
+  if (typeof P['handleCreate']             === 'function') form.handleCreate            (bind(P['handleCreate']             as never))
+  if (typeof P['handleUpdate']             === 'function') form.handleUpdate            (bind(P['handleUpdate']             as never))
+  if (typeof P['getRedirectUrl']           === 'function') form.redirectAfterSave       (bind(P['getRedirectUrl']           as never))
+
+  // Notifications: page hook returns string | null. `null` disables. A
+  // string installs the spec for the matching mode. The framework default
+  // (resource-aware "Created"/"Saved") is layered in here unless the
+  // user overrode it; passing `null` from the override suppresses it.
+  const R = PageClass.getResource()
+  const getCreatedTitle = P['getCreatedNotificationTitle'] as (() => string | null | undefined) | undefined
+  const getSavedTitle   = P['getSavedNotificationTitle']   as (() => string | null | undefined) | undefined
+
+  // Explicit `null` from the override means "suppress this toast" — keep
+  // it; only fall through to the framework default when the override was
+  // omitted or returned undefined.
+  const explicitCreated = getCreatedTitle?.()
+  const createdTitle = explicitCreated !== undefined
+    ? explicitCreated
+    : (mode === 'create' ? `${R.labelSingular} created` : undefined)
+  if (createdTitle === null) form.createdNotification(null)
+  else if (createdTitle !== undefined) form.createdNotification(createdTitle as SavedNotificationHandler)
+
+  const explicitSaved = getSavedTitle?.()
+  const savedTitle = explicitSaved !== undefined
+    ? explicitSaved
+    : (mode === 'edit' ? `${R.labelSingular} saved` : undefined)
+  if (savedTitle === null) form.savedNotification(null)
+  else if (savedTitle !== undefined) form.savedNotification(savedTitle as SavedNotificationHandler)
+}
+
 export class CreatePage extends ResourcePage {
   static override getMode() { return 'create' as const }
 
@@ -197,6 +268,7 @@ export class CreatePage extends ResourcePage {
     const R = this.getResource()
     const form = R.form(Form.make())
     applyFormDefaults(R, form, 'create')
+    installLifecycleHooks(this, form, 'create')
     const header = buildHeader(this.getHeader(R), this.getFormActions(R), form.getFormId())
     return [...header, form]
   }
@@ -217,6 +289,27 @@ export class CreatePage extends ResourcePage {
       Action.make('submit').label(`Create ${R.labelSingular}`).submit(),
     ]
   }
+
+  // ─── Optional lifecycle overrides ─────────────────────
+  // Subclasses may override any of these. They install onto the form
+  // during `schema()` via `installLifecycleHooks`. Signatures match the
+  // matching `Form.*` setter parameter type.
+  static mutateFormDataBeforeFill?: FillMutator
+  static mutateFormDataAfterFill?:  FillMutator
+  static mutateData?:               MutateDataHandler
+  static mutateDataBeforeCreate?:   MutateDataHandler
+  static beforeSave?:               LifecycleHandler
+  static afterSave?:                AfterSaveHandler
+  static beforeCreate?:             LifecycleHandler
+  static afterCreate?:              AfterSaveHandler
+  static handleCreate?:             SaveHandler
+  static getRedirectUrl?:           RedirectHandler
+  /**
+   * Return the toast title for the post-create success notification.
+   * Returning `null` suppresses the toast; `undefined` or omission falls
+   * back to the framework default `"${R.labelSingular} created"`.
+   */
+  static getCreatedNotificationTitle?: () => string | null | undefined
 }
 
 export class EditPage extends ResourcePage {
@@ -234,6 +327,7 @@ export class EditPage extends ResourcePage {
     const R = this.getResource()
     const form = R.form(Form.make())
     applyFormDefaults(R, form, 'edit')
+    installLifecycleHooks(this, form, 'edit')
     const header = buildHeader(this.getHeader(R), this.getFormActions(R), form.getFormId())
     return [...header, form]
   }
@@ -253,6 +347,25 @@ export class EditPage extends ResourcePage {
       Action.make('submit').label('Save changes').submit(),
     ]
   }
+
+  // ─── Optional lifecycle overrides ─────────────────────
+  // Same surface as CreatePage but for update mode.
+  static mutateFormDataBeforeFill?: FillMutator
+  static mutateFormDataAfterFill?:  FillMutator
+  static mutateData?:               MutateDataHandler
+  static mutateDataBeforeUpdate?:   MutateDataHandler
+  static beforeSave?:               LifecycleHandler
+  static afterSave?:                AfterSaveHandler
+  static beforeUpdate?:             LifecycleHandler
+  static afterUpdate?:              AfterSaveHandler
+  static handleUpdate?:             SaveHandler
+  static getRedirectUrl?:           RedirectHandler
+  /**
+   * Return the toast title for the post-save success notification.
+   * Returning `null` suppresses the toast; `undefined` or omission falls
+   * back to the framework default `"${R.labelSingular} saved"`.
+   */
+  static getSavedNotificationTitle?: () => string | null | undefined
 }
 
 export class ViewPage extends ResourcePage {

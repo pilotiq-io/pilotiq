@@ -170,6 +170,120 @@ export const adminPanel = Pilotiq.make('Admin')
 
 ---
 
+## Form lifecycle hooks
+
+The lifecycle for a form submit runs in a fixed order. Mode-specific hooks
+(create vs update) layer on top of the generic ones, so cross-cutting logic
+(audit fields, auth stamping) can sit above mode-specific business rules.
+
+```
+validateSchema
+  → form-level validators
+  → mutateData (both modes)
+  → mutateDataBeforeCreate / mutateDataBeforeUpdate
+  → beforeSave (both modes)
+  → beforeCreate / beforeUpdate
+  → handleCreate || handleUpdate || save     ← persistence
+  → afterCreate / afterUpdate
+  → afterSave (both modes)
+  → redirectAfterSave
+```
+
+The edit-mode load path runs:
+
+```
+loadRecord
+  → mutateFormDataBeforeFill
+  → fillFromRecord
+  → mutateFormDataAfterFill
+  → form.withValues(...)
+```
+
+You can configure hooks at either of two layers — they compose the same
+form internally, so pick whichever fits the resource.
+
+### Layer 1: `Resource.form()` (programmatic)
+
+```ts
+static form(form: Form): Form {
+  return form
+    .schema([…])
+    .mutateFormDataBeforeFill((values, ctx) => {
+      // ctx.record is the loaded record
+      return { ...values, tagsCsv: (ctx.record.tags ?? []).join(', ') }
+    })
+    .beforeUpdate(async (data, ctx) => {
+      data.editedBy = ctx.user?.id
+    })
+    .afterUpdate(async (record) => { await invalidateCache(record.id) })
+    .savedNotification('Article saved')
+}
+```
+
+All `Form` setters: `mutateData / mutateDataBeforeCreate / mutateDataBeforeUpdate`,
+`beforeSave / beforeCreate / beforeUpdate`, `save / handleCreate / handleUpdate`,
+`afterSave / afterCreate / afterUpdate`, `redirectAfterSave`,
+`loadRecord / fillFromRecord / mutateFormDataBeforeFill / mutateFormDataAfterFill`,
+`savedNotification / createdNotification / disableSavedNotification`.
+
+### Layer 2: page-class overrides (Filament-style)
+
+`CreatePage` and `EditPage` expose the same hooks as static methods. They
+install onto the form during `schema()`, layering on top of whatever
+`Resource.form()` configured.
+
+```ts
+class EditArticle extends EditPage {
+  static override getResource() { return ArticleResource }
+
+  static override beforeUpdate = async (data) => {
+    data.updatedAt = new Date()
+  }
+
+  static override getSavedNotificationTitle() {
+    return 'Article updated'   // overrides the default "Article saved"
+  }
+
+  static override getRedirectUrl = (record) => `articles/${record.id}/edit`
+}
+```
+
+Override surface on `CreatePage`: `mutateFormDataBeforeFill / AfterFill`,
+`mutateData / mutateDataBeforeCreate`, `beforeSave / beforeCreate`,
+`afterSave / afterCreate`, `handleCreate`, `getRedirectUrl`,
+`getCreatedNotificationTitle`. `EditPage` mirrors with `…BeforeUpdate`,
+`handleUpdate`, `getSavedNotificationTitle`.
+
+### Notifications
+
+A successful submit auto-emits a success toast unless you opt out:
+
+- `Resource.labelSingular` "created" on the create page (default)
+- `Resource.labelSingular` "saved" on the edit page (default)
+- Override the title with `getCreatedNotificationTitle()` /
+  `getSavedNotificationTitle()` on the page, or
+  `Form.createdNotification(...)` / `savedNotification(...)`.
+- Return `null` from the page hook (or call `Form.disableSavedNotification()`)
+  to suppress the toast for that mode.
+
+> **Limitation:** the form-post 303 redirect path drops notifications
+> until a flash mechanism lands. Notifications fire reliably from the
+> action-modal JSON path; for now success toasts on the create/edit
+> form-post path are wired but not delivered.
+
+### Mapping from panels
+
+| Panels                                | Pilotiq                                          |
+|---|---|
+| `mutateData(data)`                    | `Form.mutateData(fn)` or `static mutateData = fn` |
+| `beforeSave(data)`                    | `Form.beforeSave(fn)` / page `beforeSave`         |
+| `afterSave(record)`                   | `Form.afterSave(fn)` / page `afterSave`           |
+| `redirectAfterSave(record)`           | `Form.redirectAfterSave(fn)` / page `getRedirectUrl` |
+| `mutateFormDataBeforeFill(values)`    | `Form.mutateFormDataBeforeFill(fn)` / page hook   |
+| (no separate create/update hooks)     | `beforeCreate / beforeUpdate / handleCreate / handleUpdate` |
+
+---
+
 ## Field type mapping
 
 Most field types carry over with the same API. The `Field` builder, `.required()`, `.placeholder()`, `.label()`, etc. are unchanged.

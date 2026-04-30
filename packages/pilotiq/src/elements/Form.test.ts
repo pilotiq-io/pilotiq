@@ -122,5 +122,84 @@ describe('Form Element', () => {
       assert.equal('mutateData' in meta, false)
       assert.equal('redirectAfterSave' in meta, false)
     })
+
+    it('mode-specific lifecycle setters round-trip via getters', () => {
+      const beforeCreate = async () => {}
+      const beforeUpdate = async () => {}
+      const afterCreate  = async () => {}
+      const afterUpdate  = async () => {}
+      const handleCreate = async () => ({ id: 1 })
+      const handleUpdate = async () => ({ id: 2 })
+      const mutateBeforeCreate = (d: Record<string, unknown>) => d
+      const mutateBeforeUpdate = (d: Record<string, unknown>) => d
+
+      const form = Form.make()
+        .beforeCreate(beforeCreate).beforeUpdate(beforeUpdate)
+        .afterCreate(afterCreate).afterUpdate(afterUpdate)
+        .handleCreate(handleCreate).handleUpdate(handleUpdate)
+        .mutateDataBeforeCreate(mutateBeforeCreate)
+        .mutateDataBeforeUpdate(mutateBeforeUpdate)
+
+      assert.equal(form.getBeforeCreate(), beforeCreate)
+      assert.equal(form.getBeforeUpdate(), beforeUpdate)
+      assert.equal(form.getAfterCreate(), afterCreate)
+      assert.equal(form.getAfterUpdate(), afterUpdate)
+      assert.equal(form.getHandleCreate(), handleCreate)
+      assert.equal(form.getHandleUpdate(), handleUpdate)
+      assert.equal(form.getMutateDataBeforeCreate(), mutateBeforeCreate)
+      assert.equal(form.getMutateDataBeforeUpdate(), mutateBeforeUpdate)
+    })
+
+    it('fill-side mutators round-trip via getters', () => {
+      const before = (v: Record<string, unknown>) => v
+      const after  = (v: Record<string, unknown>) => v
+      const form = Form.make()
+        .mutateFormDataBeforeFill(before)
+        .mutateFormDataAfterFill(after)
+      assert.equal(form.getMutateFormDataBeforeFill(), before)
+      assert.equal(form.getMutateFormDataAfterFill(), after)
+    })
+
+    it('savedNotification accepts string / fn / null and getter passes through', () => {
+      const a = Form.make().savedNotification('Saved')
+      assert.equal(a.getSavedNotification(), 'Saved')
+
+      const fn = () => 'Saved'
+      const b = Form.make().savedNotification(fn)
+      assert.equal(b.getSavedNotification(), fn)
+
+      const c = Form.make().savedNotification(null)
+      assert.equal(c.getSavedNotification(), null)
+    })
+
+    it('createdNotification stores separately from savedNotification', () => {
+      const form = Form.make()
+        .savedNotification('Saved')
+        .createdNotification('Created')
+      assert.equal(form.getSavedNotification(), 'Saved')
+      assert.equal(form.getCreatedNotification(), 'Created')
+    })
+
+    it('disableSavedNotification flips the flag', () => {
+      const form = Form.make().disableSavedNotification()
+      assert.equal(form.isSavedNotificationDisabled(), true)
+    })
+
+    it('new lifecycle handlers are not serialized in toMeta', () => {
+      const meta = Form.make()
+        .beforeCreate(async () => {})
+        .afterUpdate(async () => {})
+        .handleCreate(async () => ({}))
+        .mutateFormDataBeforeFill(v => v)
+        .savedNotification('Saved')
+        .createdNotification('Created')
+        .toMeta()
+      assert.equal('beforeCreate' in meta, false)
+      assert.equal('afterUpdate' in meta, false)
+      assert.equal('handleCreate' in meta, false)
+      assert.equal('mutateFormDataBeforeFill' in meta, false)
+      assert.equal('savedNotification' in meta, false)
+      assert.equal('createdNotification' in meta, false)
+    })
   })
 })

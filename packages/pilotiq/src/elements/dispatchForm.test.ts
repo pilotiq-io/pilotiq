@@ -105,6 +105,131 @@ describe('dispatchFormSubmit', () => {
     assert.equal(seen.saveRecord, existing)        // record present during save
     assert.deepEqual(seen.afterRecord, { id: 'r1' }) // record updated to saved entity in afterSave ctx
   })
+
+  describe('create vs update mode-routing', () => {
+    function instrument() {
+      const order: string[] = []
+      const form = Form.make<{ id: number }>()
+        .schema([TextField.make('title')])
+        .mutateData(d => { order.push('mutateData'); return d })
+        .mutateDataBeforeCreate(d => { order.push('mutateDataBeforeCreate'); return d })
+        .mutateDataBeforeUpdate(d => { order.push('mutateDataBeforeUpdate'); return d })
+        .beforeSave(() => { order.push('beforeSave') })
+        .beforeCreate(() => { order.push('beforeCreate') })
+        .beforeUpdate(() => { order.push('beforeUpdate') })
+        .save(async () => { order.push('save'); return { id: 0 } })
+        .afterCreate(() => { order.push('afterCreate') })
+        .afterUpdate(() => { order.push('afterUpdate') })
+        .afterSave(() => { order.push('afterSave') })
+      return { form, order }
+    }
+
+    it('create mode runs only the create-side hooks, in correct order', async () => {
+      const { form, order } = instrument()
+      const r = await dispatchFormSubmit(form, { title: 't' }, { values: { title: 't' } })
+      assert.equal(r.ok, true)
+      assert.deepEqual(order, [
+        'mutateData',
+        'mutateDataBeforeCreate',
+        'beforeSave',
+        'beforeCreate',
+        'save',
+        'afterCreate',
+        'afterSave',
+      ])
+    })
+
+    it('update mode runs only the update-side hooks, in correct order', async () => {
+      const { form, order } = instrument()
+      const r = await dispatchFormSubmit(form, { title: 't' }, { values: { title: 't' }, record: { id: 7 } })
+      assert.equal(r.ok, true)
+      assert.deepEqual(order, [
+        'mutateData',
+        'mutateDataBeforeUpdate',
+        'beforeSave',
+        'beforeUpdate',
+        'save',
+        'afterUpdate',
+        'afterSave',
+      ])
+    })
+
+    it('handleCreate replaces save() in create mode only', async () => {
+      const calls: string[] = []
+      const form = Form.make<{ id: number }>()
+        .schema([TextField.make('x')])
+        .save(async () => { calls.push('save'); return { id: 0 } })
+        .handleCreate(async () => { calls.push('handleCreate'); return { id: 1 } })
+        .handleUpdate(async () => { calls.push('handleUpdate'); return { id: 2 } })
+
+      const a = await dispatchFormSubmit(form, { x: '' }, { values: { x: '' } })
+      assert.equal(a.ok, true)
+      if (a.ok) assert.deepEqual(a.record, { id: 1 })
+
+      const b = await dispatchFormSubmit(form, { x: '' }, { values: { x: '' }, record: { id: 99 } })
+      assert.equal(b.ok, true)
+      if (b.ok) assert.deepEqual(b.record, { id: 2 })
+
+      assert.deepEqual(calls, ['handleCreate', 'handleUpdate'])
+    })
+
+    it('falls back to save() when only save() is configured', async () => {
+      const calls: string[] = []
+      const form = Form.make<{ id: number }>()
+        .schema([TextField.make('x')])
+        .save(async () => { calls.push('save'); return { id: 1 } })
+
+      const a = await dispatchFormSubmit(form, { x: '' }, { values: { x: '' } })
+      assert.equal(a.ok, true)
+      const b = await dispatchFormSubmit(form, { x: '' }, { values: { x: '' }, record: { id: 99 } })
+      assert.equal(b.ok, true)
+      assert.deepEqual(calls, ['save', 'save'])
+    })
+
+    it('throws when neither save() nor a mode-specific handler is configured', async () => {
+      const form = Form.make().schema([TextField.make('x')])
+      await assert.rejects(
+        () => dispatchFormSubmit(form, {}, { values: {} }),
+        /no save\(\) handler/i,
+      )
+    })
+  })
+
+  describe('saved-notification on the success result', () => {
+    it('returns an empty notifications array when nothing is configured', async () => {
+      const form = Form.make()
+        .schema([TextField.make('x')])
+        .save(async () => ({ id: 1 }))
+      const r = await dispatchFormSubmit(form, { x: '' }, { values: {} })
+      assert.equal(r.ok, true)
+      if (r.ok) assert.deepEqual(r.notifications, [])
+    })
+
+    it('returns a single success notification when configured', async () => {
+      const form = Form.make()
+        .schema([TextField.make('x')])
+        .save(async () => ({ id: 1 }))
+        .savedNotification('Saved')
+      const r = await dispatchFormSubmit(form, { x: '' }, { values: {} })
+      assert.equal(r.ok, true)
+      if (r.ok) {
+        assert.equal(r.notifications.length, 1)
+        assert.equal(r.notifications[0]!.title, 'Saved')
+        assert.equal(r.notifications[0]!.type, 'success')
+      }
+    })
+
+    it('uses createdNotification in create mode', async () => {
+      const form = Form.make()
+        .schema([TextField.make('x')])
+        .save(async () => ({ id: 1 }))
+        .savedNotification('Saved')
+        .createdNotification('Created')
+      const r = await dispatchFormSubmit(form, { x: '' }, { values: {} })
+      assert.equal(r.ok, true)
+      if (r.ok) assert.equal(r.notifications[0]!.title, 'Created')
+    })
+  })
 })
 
 describe('findForms / selectForm', () => {
