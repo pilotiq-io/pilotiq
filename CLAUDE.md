@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working in this repository.
+Guidance for Claude Code when working in this repository. Deep, package-specific notes live in `packages/<name>/CLAUDE.md` and are auto-loaded when working in that subtree.
 
 ---
 
@@ -8,12 +8,21 @@ This file provides guidance to Claude Code when working in this repository.
 
 **Pilotiq** is an open-source admin panel builder for RudderJS — a polished, schema-driven admin runtime for the Node.js ecosystem.
 
-- **Monorepo**: pnpm workspaces + Turborepo
-- **Language**: TypeScript (strict, ESM, NodeNext)
-- **npm scope**: `@pilotiq/*`
-- **Packages**: panels, pilotiq, lexical, media
-- **Status**: Early development
-- **Pro extensions**: `@pilotiq-pro/{ai,collab,workspaces}` in the pilotiq-pro repo
+- **Monorepo:** pnpm workspaces + Turborepo
+- **Language:** TypeScript (strict, ESM, NodeNext)
+- **npm scope:** `@pilotiq/*`
+- **Status:** Early development
+- **Pro extensions:** `@pilotiq-pro/{ai,collab,workspaces}` in the `pilotiq-pro` repo
+
+### Packages
+
+| Package | Description |
+|---|---|
+| `@pilotiq/pilotiq` | View-based admin panel using `@rudderjs/view` controller routes. Auto-generates Vike pages via Vite plugin. **The active product** — see `packages/pilotiq/CLAUDE.md`. |
+| `@pilotiq/tiptap` | Tiptap rich-text adapter (`@pilotiq/pilotiq` companion). Replaces `@pilotiq/lexical`. |
+| `@pilotiq/media` | Media library — file browser, uploads, preview, image conversions, MediaPickerField. |
+| `@pilotiq/panels` | **Legacy.** Resource builder with vendored Vike pages. **Scheduled for deletion** once the `@pilotiq/pilotiq` migration is complete. Don't extend, don't extract — see "Legacy panels" below. |
+| `@pilotiq/lexical` | **Legacy.** Lexical editor adapter — sunsets with panels. |
 
 ---
 
@@ -30,7 +39,7 @@ pnpm clean        # Remove all dist/ directories
 
 Running the playgrounds:
 ```bash
-cd playground              # panels demo
+cd playground              # panels (legacy) demo
 pnpm dev                   # vike dev on :3001 (HMR :24679)
 
 cd playground-pilotiq      # pilotiq demo
@@ -45,187 +54,7 @@ pnpm exec prisma generate --schema prisma/schema
 pnpm exec prisma db push  --schema prisma/schema
 ```
 
-Both playgrounds ship the **same Prisma schema files** so the hoisted `@prisma/client` (shared via pnpm) stays consistent between them. Each has its own `dev.db` (via `DATABASE_URL=file:./dev.db`). If schemas drift, whichever playground runs `prisma generate` last wins and clobbers the other's client — see pitfalls.
-
----
-
-## Architecture
-
-### Packages
-
-| Package | Description |
-|---|---|
-| `@pilotiq/pilotiq` | **New** — View-based admin panel using `@rudderjs/view` controller routes. Auto-generates Vike pages via Vite plugin. Will replace `@pilotiq/panels`. |
-| `@pilotiq/panels` | **Legacy** — Resource builder with vendored Vike pages + metadata pipeline. Being migrated to `@pilotiq/pilotiq`. |
-| `@pilotiq/lexical` | Lexical rich-text editor adapter — RichContentField, block editor, local-only by default |
-| `@pilotiq/media` | Media library — file browser, uploads, preview, image conversions, MediaPickerField |
-
-### @pilotiq/pilotiq Architecture
-
-```
-Pilotiq.make() builder → pilotiq([panels]) provider → registerPilotiqRoutes() → @rudderjs/view
-                         pilotiq() Vite plugin → auto-generates pages/(pilotiq)/ stubs
-```
-
-**Setup (two lines):**
-1. `vite.config.ts` — `import { pilotiq } from '@pilotiq/pilotiq/vite'` → `plugins: [pilotiq(), ...]`
-2. `bootstrap/providers.ts` — `import { pilotiq } from '@pilotiq/pilotiq'` → `pilotiq([adminPanel])`
-
-**Key files** (deep notes live in `~/.claude/projects/-Users-sleman-Projects-pilotiq/memory/`):
-
-- `src/Pilotiq.ts` — Builder: `.path / .branding / .theme / .layout / .resources / .globals / .pages / .schema / .guard / .user(req=>userOrNull) / .use`. Exposes `pilotiq.resolveUser(req)` for routes.
-- `src/RelationManager.ts` — **Plan #11** abstract base for parent-scoped projections. Required `static relationship` (matches a key on the parent model's `static relations` map; doubles as URL segment). Optional `label / labelSingular / icon / recordTitleAttribute / relatedResource`. Static `form(form, ctx) / table(table, ctx) / detail(record, parent)` configurators (mirror Resource shape minus URL ownership — no `slug`, no `pages()`). `ctx: RelationManagerContext` carries `basePath / parentSlug / parentId / relationship / parentRecord / related?` so user code can wire `Action.relationCreate / relationEdit / relationDelete(M, ctx)` factories from inside `static table()` without threading basePath / parentId by hand. Overrides may drop the trailing `ctx` parameter (TS allows narrower override signatures). Form lifecycle hooks (`mutateDataBefore*`, `before/after*`, `save / handleCreate / handleUpdate`) — same shape as `Resource.form()`. Five `can*` async predicates — `canViewAny / canView / canCreate / canEdit / canDelete`, defaults all return `true`; the page-data builder defers to the related Resource's matching predicate when the manager hasn't overridden (reference-equality check on the prototype). The same fall-through is exposed as `safeManagerPolicy(M, method, Related, user, parent, child?)` — lives in RelationManager.ts so `Action.ts` can reuse it cycle-free; pageData re-exports for back-compat. Reserved relationship tokens (`edit / delete / _form / _action / _search / _uploads`) validated at panel boot. `src/schema/RelationTabs.ts` — schema element built by `buildRelationTabs(R, recordId, base, activeKey, mode)`; auto-mounted on EditPage / ViewPage when `R.relations().length > 0`, plus on the three relation page roles for parent-context continuity.
-- `src/orm/modelDefaults.ts` — Plan #11 additions: `ModelLike.relatedQuery?(parent, name)` optional override; default reads `parent.related(name)` (rudder ORM convention). `defaultRelatedQuery / resolveRelatedQuery / modelRelationTableRecords` helpers feed `Table.records()` for managers.
-- `src/Resource.ts` — abstract class with **static** methods `label / labelSingular / slug / icon / model / form / table / detail / deleteRecord / pages / resolvePages / relations / getSlug`. Resources register as classes. `model?: ModelLike` opts into auto-wired CRUD. **Nav metadata (Plan #9):** `navigationGroup / navigationSort / navigationLabel / navigationIcon / navigationBadge / navigationBadgeColor / navigationParentItem` (parent ref by JS class name, not slug). Plus `recordTitleAttribute`. **Authorization (Plan #10):** six async predicates default `true` — `canAccess / canViewAny / canView / canCreate / canEdit / canDelete`. Throwing → fail closed. Opaque user. **Global search (Plan #12):** `globalSearch` toggle (default `false` — opt-in), `globallySearchableAttributes()` defaults to `recordTitleAttribute` + every `Column.searchable()` from the configured table, `getGlobalSearchResultTitle / Subtitle / Url(record, base)` with sensible defaults (record[recordTitleAttribute] → name → title → id; URL = `${base}/${slug}/${id}`), `getGlobalSearchQuery(needle)` override returns a `ModelQuery` for joined / FTS / non-LIKE backends. **Soft deletes (Plan #13):** `softDeletes = false` opt-in flag + `deletedAtColumn = 'deletedAt'` column-name override. Two new async predicates: `canRestore(user, record)` (default `true`) and `canForceDelete(user, record)` (default delegates to `canDelete` via `this.canDelete(user, record)` for fail-closed inheritance). Both flags must opt in (rudder side `Model.softDeletes = true` AND pilotiq `Resource.softDeletes = true`); routes throw a clear boot error when only one side is set or when `model.restore / forceDelete` are missing. Wires up: `TrashedFilter` auto-injection on the list page; `Action.restore / forceDelete / bulkRestore / bulkForceDelete` factories; "moved to trash" framing on the standard delete success notification; auto-visibility on `Action.delete` (hides on already-trashed rows) / `Action.restore` + `forceDelete` (show only on trashed rows). Two new routes per soft-delete resource: `POST /:slug/:id/restore` and `POST /:slug/:id/force-delete` (both look up records via `query.withTrashed()` to bypass default scope).
-- `src/orm/modelDefaults.ts` — `ModelLike / ModelQuery` structural interfaces + `modelSave / modelLoadRecord / modelTableRecords` helpers. `defaultPages(R)` installs them as Form/Table sentinels when `R.model` is set. Pilotiq has zero runtime dep on `@rudderjs/orm`.
-- `src/Global.ts` — singleton resource. Same shape as `Resource` minus list/create/delete. `navigationGroup` defaults to `'Settings'`. Authorization subset: `canAccess / canView / canEdit`.
-- `src/Page.ts` — page class: `static slug/label/icon`, `static schema(ctx)`, `static getResource()`, `static getMode() → 'list'|'create'|'edit'|'view'|'custom'`. Carries nav metadata. Single `canAccess(user)` gate.
-- `src/defaultPages.ts` — Four base classes `ListPage / CreatePage / EditPage / ViewPage`. Subclass via `static override getResource()`. Factories `defaultListPage(R) / defaultPages(R)`. **Filament-style explicit actions:** `getHeaderActions / getRowActions / getActions` return `[]` by default; users opt in via override or `Resource.table().headerActions(...) / .recordActions(...) / .bulkActions(...) / .actions(...)`. Slots accept `Array<Action | ActionGroup>`. Pre-built factories `Action.create / .edit / .view / .delete(R, base, recordId?)`. **Plan #10 auto-visibility:** factories auto-attach a `.visible(...)` rule consulting matching policy. `CreatePage / EditPage` expose form lifecycle as optional static fields (`beforeCreate, afterUpdate, handleCreate/Update, mutateFormData*, mutateData*, getRedirectUrl, getCreatedNotificationTitle, getSavedNotificationTitle`); `installLifecycleHooks` wires them on. **List-page tabs:** `ListPage.getTabs() → ListTab[]` wraps in a `ListTabs` container.
-- `src/Tab.ts` + `src/elements/ListTabs.ts` — `ListTab.make(name).label().icon().badge(s|fn).badgeColor().default().modifyQuery(fn).modifyContext(fn)`. Distinct from the form-side `Tab` (under `Tabs.make()`).
-- `src/defaultGlobalPages.ts` — same factory pattern for `Global`; default returns `{ edit }`.
-- `src/Column.ts` — `Column.make(name).label().sortable().searchable()`. Cosmetic builders + built-in formatters (`.dateTime, .since, .money, .numeric, .limit`). Server-side `.formatStateUsing((value, record) => string)` stashes per-row results on `row._formatted[name]`.
-- `src/columns/` — `BadgeColumn / IconColumn / BooleanColumn / ImageColumn`. Each sets `columnType` via `setColumnType()`; renderer branches on it.
-- `src/PilotiqRegistry.ts` — globalThis-backed singleton, `findByPath()` for route matching.
-- `src/PilotiqServiceProvider.ts` — Provider + `pilotiq()` factory.
-- `src/search.ts` — Plan #12 `searchAllResources(pilotiq, query, user, opts?) → GlobalSearchResult[]`. Walks `cfg.resources` filtered by `globalSearch=true`, runs `canAccess + canViewAny` in parallel, builds a per-resource `ModelQuery` (override-or-default LIKE chain on `globallySearchableAttributes()`), `paginate(1, limitPerResource)`. Returns `[]` for queries shorter than 2 chars. Throws on a single resource silently drop its results; others still resolve. No new ORM contract — reuses the existing `paginate` from Plan #2/#6.
-- `src/pageData.ts` — Per-page-role data builders (`dashboardData, resourceIndexData, resourceCreateData, resourceEditData, resourceViewData, globalEditData, globalViewData, customPageData, formStateData, formWizardData, searchData`) + `dispatchPageData(pageContext)` switchboard. **Plan #5 `formStateData(pilotiq, scope, body, req?)`** drives partial-resolve — runs `applyStateUpdate`, re-resolves form with bound read-only `$get` (resolve-time `$set` is a no-op closure; only `afterStateUpdated` writes survive), returns `{ ok, form: FormMeta, dirty }` or 404/422. **`tagFormStateUrls(elements, urlBuilder)`** stamps `Form.withStateUrl()` only on forms with at least one `live()` descendant. **Plan #8 `formWizardData(pilotiq, scope, body, req?)`** runs `validateSchema` over the requested step's children only — returns `{ ok }` (200) or `{ ok:false, status:422, errors }`. **`tagFormWizardUrls(elements, urlBuilder)`** stamps `Form.withWizardUrl()` only on forms with a `Wizard` descendant. **Navigation tree:** `panelInfo(pilotiq, req?)` is async — flattens resources/globals/pages, resolves `navigationParentItem` refs, sorts by `navigationSort`, parallel-resolves `navigationBadge()` via `Promise.all` (errors swallow). `buildNavigation` pre-evaluates `canAccess(user)` in parallel; failed items dropped. Both rudder GET handlers AND the auto-gen Vike `+data` hook call these so SSR + SPA-nav serve identical data; renderers read from `(ctx.data ?? ctx.viewProps)`. `resolveActiveTab(elements, query, currentPath)` stamps active tab + per-tab URL + parallel-resolved badge counts before `loadTableRecords`.
-- `src/routes.ts` — `registerPilotiqRoutes()` using `view()`. Each GET handler delegates to `pageData.ts`; POST handlers stay here. **Plan #10 wiring:** every handler runs `checkPolicy(() => R.canX(user, …))`; failure → `forbidden(res, json)` (403 JSON or HTML). Record-aware predicates load via `R.model.find(id)` when set. 403 ≠ 401 — `Pilotiq.guard()` is the 401 layer. Routes:
-  - `GET ${base}` → dashboard
-  - `GET ${base}/${slug}` → resource list
-  - `GET/POST ${base}/${slug}/create` → create
-  - `GET ${base}/${slug}/:id` → view
-  - `GET/POST ${base}/${slug}/:id/edit` → edit
-  - `POST ${base}/${slug}/:id/delete` → delete
-  - `POST ${base}/${slug}/_action/:actionName` → resource action dispatch
-  - `POST ${base}/${pageSlug}/_action/:actionName` → custom-page action dispatch
-  - `GET/POST ${base}/${slug}` (Global) → singleton edit
-  - `GET ${base}/${pageSlug}` → custom page
-  - **Plan #5 partial-resolve endpoints** — `POST {…}/_form/:formId/state` (resource-create / resource-edit / global-edit / custom-page). Body `{ changed, values }`; `handleFormState(req, res, pilotiq, scope, formId)` shared helper.
-  - **Plan #8 wizard step-validate endpoints** — `POST {…}/_form/:formId/wizard` (same four scopes). Body `{ step, values }`; `handleFormWizard` shared helper. 200 → advance; 422 → `{ errors }` for inline display; 404 → step out of range or no Wizard on form. Reuses the same policy prelude as the form-state endpoint.
-  - **Plan #11 relation manager routes** — six handlers per registered `(Resource, RelationManager)` pair. `GET ${base}/${slug}/:id/${rel}` (list), `GET/POST ${base}/${slug}/:id/${rel}/create` (create), `GET/POST ${base}/${slug}/:id/${rel}/:childId/edit` (edit), `POST ${base}/${slug}/:id/${rel}/:childId/delete` (delete). Two-layer auth (parent `canAccess + canEdit`, then manager-scope `canX` with fall-through to related Resource). IDOR check (`childBelongsToParent`) re-runs the relation query before edit/delete. `FormContext` stamped with `parent / parentId / parentRecord / relationship`. Reserved-token guard at panel boot.
-  - **Plan #12 global search** — `GET ${base}/_search?q=…` returns `{ ok, results: GlobalSearchResult[] }`. Panel-level (one route per panel, not per-resource). Per-resource filtering happens inside `searchData`. No 403 on the route — empty results when nothing's accessible. Query length capped at 200 chars; min 2 to fetch; results capped at 25 total / 5 per resource by default.
-- `src/vite.ts` — `pilotiq()` Vite plugin: generates `(pilotiq)/` pages + `+Layout.tsx` + `+Head.tsx`. Reads `app/Pilotiq/AdminPanel.ts` (override via `pilotiq({ panels })`) using **jiti**. Emits `pages/(pilotiq)/_components.ts` — manifest with `componentRegistry: { ClassName: ClassRef }` so component-typed icons resolve at render. Re-runs in `configureServer` on panel changes. Panel files must be import-safe.
-- `src/icons/` — User-extensible icon registry. `registerIcons({ name: Component })` + `getIcon(name)`. Icon static fields accept string (registry key) or component (lucide / tabler / heroicons / phosphor). `panelInfo()`'s `serializeIcon(value, ownerClassName)` ships strings as-is and components as `{ class: ownerClassName }`. `useIconFor()` resolves at render. `@pilotiq/pilotiq/icons/lucide` exports a baseline. Component detection accepts `function` and `object` (forwardRef / memo).
-- `src/schema/` — Unified `Element` model:
-  - `Element.ts` — abstract base. Contract: `getType(), toMeta()`, optional `_children: Element[]`. **Plan #8 layout-level state:** `visible(rule) / hidden(rule)` accept `boolean | (ctx: LayoutContext) => bool | Promise<bool>` — resolver drops hidden non-Field/non-Action layouts. `columnSpan(n) / columnStart(n) / columnOrder(n)` emit under `meta._layout` and map to Tailwind `col-span-* / col-start-* / order-*` (1..12 clamp).
-  - **Display:** `Text, Heading, Alert, Divider`. **Containers:** `Card, Section, Tabs/Tab, Grid, Group, Fieldset, Split, Wizard/Step` (Plan #8). **Section polish (Plan #8):** `icon(name) / badge(text) / aside(v=true) / compact(v=true) / persistCollapsed(key?)` (key auto-derived from page slug + title). `aside()` flips into right-rail when nested in `Split`. `persistCollapsed` writes `pilotiq.section.<key>` to localStorage on toggle.
-  - `Wizard.ts` — `Wizard.make().steps([Step.make(label).icon(name).description(d).schema([…])]).skippable().startOnStep(n).persist(false)`. All steps' children resolve every cycle so cross-step `$get` works; client renderer hides inactive steps via `display:none` so controlled inputs survive transitions. Active step persists to `pilotiq.wizard.<formId>.step` localStorage key. Next button POSTs `{ step, values }` to `Form.wizardUrl` — 200 advances, 422 stamps inline errors, missing url advances immediately.
-  - `Split.ts` — two-column layout. `.from('left' \| 'right').gap(n).schema([main, aside])`. Aside child detected via `Section.aside()` marker; falls back to second child. Renders `flex flex-col @md:flex-row` with `@container` query so nested Splits behave.
-  - `Fieldset.ts` — labeled border container. `.columns(1\|2\|3).schema([…])`. `<fieldset><legend>` semantics, lighter than Section.
-  - `Group.ts` — chrome-less container. Pass-through `<div>`. Useful for visibility gating without imposing border/heading.
-  - `resolveSchema()` — async recursive walker. `RenderContext { mode?, record?, basePath?, recordId?, values?, $get?, $set?, changed?, user? }`. **Plan #5:** when `values` is present, conditional callbacks and `SelectField.options(fn)` see `$get/$set`. **Plan #8:** layout elements (anything not Field/Action/ActionGroup) with a `visible(rule)` are evaluated against a `LayoutContext` (same shape as `ConditionContext`); throwing → fail-closed (hidden + warn). `Element.toMeta()` may return `Record | Promise<Record>`. After `toMeta()`, `meta._layout = { columnSpan?, columnStart?, columnOrder? }` is stamped when any positioning method was used.
-- `src/elements/` — first-class container Elements:
-  - `Form.ts` — `Form.make().schema([...])` + lifecycle setters (`validate, mutateData*, before*, save, handleCreate/Update, after*, redirectAfterSave, loadRecord, fillFromRecord, mutateFormData*, savedNotification, createdNotification, disableSavedNotification`). Render-time setters `withValues / withErrors / withStateUrl / withWizardUrl`. `toMeta()` emits `formId / method / action / values / errors / stateUrl / wizardUrl`. Auto-generated `formId`; multi-form pages discriminate via hidden `_formId` input.
-  - `Table.ts` — `Table.make().columns([...]).records(fn).defaultSort.paginate`. `records(ctx) → { rows, total }` or bare row array. Render setters `withRows / withSort / withSearch / withPage`.
-  - `dispatchForm.ts` — `dispatchFormSubmit(form, body, ctx)` runs full lifecycle. Form-level validator errors land under `_form` key. `findForms / selectForm` for multi-form. **Plan #5:** `applyStateUpdate(form, values, changed, ctx)` finds the changed field, coerces only that one, runs `afterStateUpdated`, returns `{ values, dirty }`. **Plan #8:** `findWizardStepFields(formChildren, stepIndex)` walks the form's tree, returns the children of the requested step (or `undefined` when no Wizard / step out of range).
-  - `dispatchTable.ts` — `parseTableQuery / loadTableRecords`. Walks tree, calls every `Table.records(ctx)` in parallel, mirrors state back.
-  - `dispatchAction.ts` — `findActions / parseActionBody / dispatchAction`. Routes auto-stamp `Action.dispatchUrl()`.
-- `src/fields/` — `Field` base + 18 subclasses (`TextField, EmailField, NumberField, SelectField, TextareaField, ToggleField, DateField, SlugField`, **Plan #6:** `HiddenField/Hidden, CheckboxField/Checkbox, RadioField/Radio, CheckboxListField/CheckboxList, SliderField/Slider, ColorPickerField/ColorPicker, DateTimePickerField/DateTimePicker, KeyValueField/KeyValue, FileUploadField/FileUpload`, **Plan #14:** `RepeaterField/Repeater`). Visibility flags + condition callbacks (`showWhen, hideWhen, disabledWhen`), validators via `.validate(v|v[])`. **Plan #5:** `Field.live(opts?: boolean | { onBlur?: boolean; debounce?: number })` marks re-resolve trigger; `Field.afterStateUpdated((value, ctx) => …)` server hook; `SelectField.options(fnOrArray)` async-aware; `FieldCondition` widened from `(record) => bool` to `(ctx: ConditionContext) => bool`. Conditions skip when both `record` and `values` are undefined. **Plan #6 cross-field plumbing on `Field`:** `prefix(string|{icon}) / suffix(...) / helperText(text) / default(value) / dehydrated(false) / formatStateUsing(fn)`. `dehydrated(false)` drops the field from the POST body before validation. `OptionsResolver` extracted to `fields/optionsResolver.ts` and shared by SelectField/Radio/CheckboxList. FileUpload reads `ctx.uploadUrl` (panel-level URL stamped by `pageData.uploadCtx`). New coerce branches: `checkbox` (toggle-like), `slider` (number-like), `dateTime`, `checkboxList` (string[]), `color`, `keyValue` (JSON-string → object), `fileUpload` (URL string or string[]). **Plan #14 `RepeaterField`:** array-of-subschema field; `.schema([...]) / .columns(n) / .defaultItems(n) / .min/maxItems / .reorderable() / .collapsible().collapsed() / .cloneable() / .itemLabel(row=>str) / .addActionLabel(text)`. Server-resolved `meta.rows: { id, children, itemLabel? }[]` + `meta.template`. `coerceFormValues` runs a Repeater pass before generic field coercion (handles JSON + flat-key bodies, trims trailing untouched rows, recurses into nested Repeaters). `validateSchema` recurses; per-row errors keyed `items.<i>.<name>`; `min/maxItems` under bare key. `applyStateUpdate` resolves dotted paths; row-scoped `$get/$set` + `ctx.row` exposed to `afterStateUpdated`; cross-row reads via dotted paths. Inner `Section.visible(({ values }) => …)` sees row-scoped values. Walkers (`findForms / findActions / findTables / findFieldByName / validation walk / coerce walkFields`) STOP at Repeater boundary via structural `isRepeaterField` helper. Client renderer `react/fields/RepeaterInput.tsx` uses `FormIdContext` for localStorage keying; uncontrolled inputs with name-prefixing per row preserve typed values across reorder/clone/collapse. v1 limitations: no DnD (Up/Down buttons only), no inner-field live re-resolve roundtrip (server has the plumbing, client v1.1).
-- `src/filters/` — `Filter` base + `SelectFilter / BooleanFilter`. Lives as children of `Table` via `.filters([...])`. URL keys; reserved keys are `search/sort/page/perPage`. `Filter.query(fn)` overrides default where-clause.
-- `src/actions/` — `Action` primitive. Placement: `inline | bulk | row | header`. Four mutually-exclusive dispatch modes: `Action.href(url) / .method(m).action(url) / .handler(ctx=>…) / .submit()`. Submit can target outside form via `.form(formId)` (HTML `form=` attribute). Handler actions get `dispatchUrl` stamped at render time.
-
-  **Form-modal actions** (`Action.schema([Field, ...]).handler(...)` or `.modal*()` chrome) — trigger renders Dialog with schema as form. Submit fetches with `Accept: application/json`; server returns `{ ok, redirect, notifications }` (200) / `{ ok: false, errors }` (422) / `{ ok: false, error }` (500). **Form-method actions stay on 303-redirect form-post for back-compat** (Delete-row).
-
-  **Variants & cosmetics**: `.color('primary'|'destructive'|'success'|'warning'|'info'|'ghost') / .size / .tooltip / .outlined / .iconButton / .badge / .badgeColor`. `.destructive()` is sugar.
-
-  **Conditional visibility**: `.visible / .hidden / .disabled / .authorize` — rule is `boolean | (ctx) => boolean | Promise<boolean>` with `ActionVisibilityContext { record?, records?, user? }`. `Action.evaluate(ctx)` async; throws → `visible: false`. Non-row placements eval at schema-resolve. Row-placement actions defer to per-row eval in `loadTableRecords`, stamping `_visibleActions` / `_disabledActions`.
-
-- `src/actions/ActionGroup.ts` — `ActionGroup.make(name).label().icon().tooltip().actions([Action, ...])`. Renders as DropdownMenu. Same trigger styling + visibility rules as Action. Nested groups flatten. Bulk placement unsupported.
-- `src/schema/Heading.ts` — `Heading.actions([Action…])` — title left + actions right. Used by `CreatePage / EditPage` to put Save in header.
-- `src/validation/` — `Validator = (value, ctx?) => string|null` + optional `serialized: SerializedRule` mirrored to `FieldMeta.rules`. Built-ins: `required, email, minLength, maxLength, min, max, pattern`. `validateSchema(elements, values, record?) → { name → string[] }`. `Field.required()` auto-contributes a check unless an explicit `required()` is present.
-- `src/notifications/` — `Notification.make(title).body().success/error/warning/info().icon().duration()`. Action handlers return `{ notify }`. `dispatchAction` normalizes to `NotificationMeta[]`. Form-post 303 path uses `@rudderjs/session` flash via duck-typed `req.session`; silently no-ops when absent.
-- `src/theme/` — Theme engine: types, presets (default/nova/maia/lyra), base-colors, accent-colors, chart-palettes, radius, icon-map, `resolveTheme / generateThemeCSS`.
-- `src/react/AppShell.tsx` — Picks layout mode (sidebar / topbar). Wraps in `ToasterProvider` + `CommandPaletteProvider` (Plan #12 — palette open state lives here so the trigger pill in the layout header and the dialog share via context). `panel.navigation` from `panelInfo()`; `currentPath` from auto-gen `+Layout.tsx`.
-- `src/react/CommandPalette.tsx` — Plan #12 Cmd+K palette. Hand-rolled on Dialog primitive (no `cmdk` dep). Global Cmd/Ctrl+K listener; debounced fetch (150ms) to `${basePath}/_search` with in-flight seq cancellation (mirrors Plan #5 pattern). Empty input → flattens `panel.navigation` into a quick-nav list. Keyboard nav (↑/↓/Enter/Esc). Exports `useCommandPaletteOpener()` for triggers.
-- `src/react/SearchTrigger.tsx` — Plan #12 "Search… ⌘K" pill mounted inside SidebarLayout + TopbarLayout headers. macOS-aware shortcut hint. Renders nothing outside an AppShell (defensive — opener returns null without provider).
-- `src/react/Toaster.tsx` — `<ToasterProvider initialNotifications={...}>` + `useToast()`. Hand-built. Stack fixed bottom-right, auto-dismiss after 5s.
-- `src/react/ThemeProvider.tsx` — Light/dark/system context, localStorage, CSS var injection.
-- `src/react/ThemeToggle.tsx` — Sun/moon toggle.
-- `src/react/layouts/SidebarLayout.tsx` — shadcn Sidebar. `<SidebarGroup>` per nav group, `<SidebarMenuSub>` for children, `<SidebarMenuBadge>` for badges. Active = longest URL prefix.
-- `src/react/layouts/TopbarLayout.tsx` — horizontal nav variant. Group label → dropdown trigger.
-- `src/react/ThemeSettingsPage.tsx` — Theme editor: controls + live iframe preview.
-- `src/react/SchemaRenderer.tsx` — Renders resolved schema. `TableRenderer` segregates actions by placement (header/inline top bar; bulk toolbar shown when rows selected; row inline). Heading/description/striped/emptyState chrome via Table builders. **Row click navigation:** `Table.recordUrl(r => …)` stamps `_recordUrl`; each *data cell* wraps content in a real `<a href>` (`RecordCellLink`). Plain left-clicks SPA-nav via `useNavigate()`; modified clicks fall through. Action and bulk-select cells stay unwrapped. Per-column overrides: `Column.recordUrl(fn|false)`. `formatCell` switches on `col.columnType`, applies built-in `format` spec, reads `row._formatted[colName]` first.
-
-  **All non-modal action triggers SPA-update:** `dispatchHandlerAction / dispatchMethodAction` fetch with `Accept: application/json`, drain notifications via `useToast()`, then `useNavigate()` to redirect. Handler actions WITH confirm/modal → `ActionModalDialog` (controlled or uncontrolled). Confirm-only modals reuse same dialog.
-
-  **Row-data convention** — server-side eval results land on each row under reserved keys: `_visibleActions, _disabledActions, _formatted, _recordUrl, _columnRecordUrls`. `renderRowActions` filters `conditional: true` actions through `_visibleActions`.
-
-  **Form submit dispatch (Save).** `FormRenderer` intercepts onSubmit, fetches with `Accept: application/json`. On success: drain notifications, then `useNavigate(redirect)` — but skips when `redirect === current URL` so scroll preservation kicks in. On 422: parses errors into client state. On 5xx: error toast. Native form-post 303 path preserved as fallback. All POST handlers honor `Accept: application/json`.
-
-  **Walkers use structural type checks, not `instanceof`.** `findForms / findActions` match on `el.getType() === 'form' | 'action'` — Vite SSR module-cache duplication breaks `instanceof`. See `feedback_vite_ssr_module_dup_instanceof.md`.
-
-  **Plan #5 reactive fields (client).** `react/FormStateContext.tsx` ships `FormStateProvider` + `useFieldState(name)` + `useFormState()`. `FormRenderer` is dual-path: with `stateUrl` set it wraps children in the provider (controlled inputs); without it, falls back to today's uncontrolled `defaultValue` path. Each field renderer (`TextLikeInput` for text/email/number/textarea/slug; specialized inputs for toggle/select/date) consults `useFieldState` first, falls back to `defaultValue` when outside the provider — so non-live forms cost nothing. `triggerLive(name)` reads each field's `live` config and POSTs `{ changed, values }` to `stateUrl` (immediate / debounced via `setTimeout` / on blur). In-flight race handling via `requestSeqRef + latestSeenRef` (refs, not state — StrictMode trap). 422 → inline errors; other failures → toast. **Live forms must pin `Form.make().formId('stable-id')`** — see `feedback_pilotiq_live_forms_pin_formid.md`. Public exports: `FormStateProvider`, `useFieldState`, `useFormState` from `@pilotiq/pilotiq/react`.
-- `src/react/ui/` — shadcn primitives (sidebar, button, sheet, separator, tooltip, skeleton, input, checkbox, calendar, dialog, dropdown-menu, popover, select, switch, table, tabs, textarea, **slider** added in Plan #6).
-- `src/react/fields/` — extracted per-fieldtype renderers (`FieldShell`, `TextLikeInput`, `SelectFieldInput`, `ToggleFieldInput`, `DateFieldInput`, `HiddenInput`, `CheckboxInput`, `RadioInput`, `CheckboxListInput`, `SliderInput`, `ColorInput`, `DateTimeInput`, `KeyValueInput`, `FileUploadInput`). `FieldShell` wraps every input with the label / required asterisk / prefix / suffix / helperText chrome — `SchemaRenderer` is now a thin dispatcher.
-- `src/uploads/` — `UploadAdapter` interface + `localUpload({ root, urlPrefix })` adapter for FileUpload. Apps register via `Pilotiq.uploads({ adapter })`; route `POST {base}/_uploads` (multipart) hands the file off to the adapter and returns `{ ok, url }`. `_uploads` route validates `accept` + `maxSize` server-side from the field meta (re-checked even though the client also enforces, so a tampered client can't bypass). Adapter contract is storage-agnostic — disk / S3 / R2 / `@pilotiq/media` all implement the same shape.
-- `src/plugins/themeEditor.ts` — `themeEditor()` plugin.
-
-**Pilotiq page generation:**
-- `pages/(pilotiq)/+Head.tsx` — FOUC prevention script (reads localStorage, sets `.dark` before hydration) + Google Fonts preload
-- `pages/(pilotiq)/+Layout.tsx` — wraps pages in ThemeProvider + AppShell, injects theme CSS inline for SSR
-- `pages/(pilotiq)/+config.ts` — `passToClient: ['viewProps']`
-- `pages/(pilotiq)/dashboard/` — Dashboard (1-segment URL)
-- `pages/(pilotiq)/slug/` — **Single route** for 2-segment URLs (resource index, Global edit, custom page). Server sets `pageType: 'resource' | 'global' | 'page'` in viewProps; the renderer just renders `schemaData` uniformly via `<SchemaRenderer />`.
-- `pages/(pilotiq)/resource-create/` — 3-segment with `parts[2] === 'create'`
-- `pages/(pilotiq)/resource-view/` — 3-segment with `parts[2] !== 'create'` and `parts[1] !== 'theme'` (catches `${slug}/:id` for resource view AND `${global-slug}/view`)
-- `pages/(pilotiq)/resource-edit/` — 4-segment with `parts[3] === 'edit'`
-- `pages/(pilotiq)/relation-list/` — 4-segment relation list (`{slug}/:id/{rel}`); excludes `parts[3] === 'edit'` (resource-edit) and `parts[2] === 'create'` (resource-create)
-- `pages/(pilotiq)/relation-create/` — 5-segment with `parts[4] === 'create'`
-- `pages/(pilotiq)/relation-edit/` — 6-segment with `parts[5] === 'edit'`
-- `pages/(pilotiq)/theme/` — Theme editor page (only when `.use(themeEditor())`); slug route excludes `parts[1] === 'theme'`
-- Every `+Page.tsx` stub is just `<SchemaRenderer elements={vp.schemaData ?? []} />` — server resolves, client renders.
-- Route functions check `PilotiqRegistry` on server, tentatively match on client for SPA nav
-
-**Plugin system:**
-- `PilotiqPlugin` interface: `{ name: string, register(panel): void }`
-- `.use(plugin)` on builder — calls `plugin.register(panel)`
-- `@pilotiq/pilotiq/plugins` export path for built-in plugins
-
-**Theme system:**
-- `Pilotiq.theme({ preset, baseColor, accentColor, chartPalette, radius, fonts, iconLibrary, cssVariables })` configures theme
-- `resolveTheme()` layers: preset → base color → accent color → chart palette → raw CSS vars
-- `generateThemeCSS()` outputs `:root { ... } .dark { ... }` with `!important` for Tailwind override
-- ThemeProvider manages light/dark/system state, persists to `localStorage['pilotiq-theme']`
-- ThemeToggle renders in both SidebarLayout and TopbarLayout headers
-- FOUC prevention: inline `<script>` in +Head.tsx + inline `<style>` in +Layout.tsx
-- **Default preset: Pilotiq brand** — paper (white) page bg, cream (`oklch(0.979 0.008 78)`) sidebar, terracotta (`#d97757`) primary, ink (`#1a1a1a`) text, Satoshi font via Fontshare CDN. Matches the pilotiq.io marketing site tokens.
-- 4 presets (default, nova, maia, lyra), 7 base colors (`default` sentinel + 6 scales including `cream`), 17 accent colors (incl. `terracotta`), 6 chart palettes (incl. `terracotta`, `default` is a no-op sentinel), 5 radii
-- `resolveTheme()` fallbacks: body/heading font → `'Satoshi'`, radius → `'medium'` (10px)
-- All colors in OKLCH format for perceptual uniformity
-- `themeEditor` works without `.theme()` — the editor seeds an empty config so the built-in default preset + DB overrides still resolve; API routes mount on `hasThemeEditor()`, not on `getTheme()`
-
-**Fontshare for Satoshi:** the `+Head.tsx` font loader (and the theme editor preview iframe) detects `Satoshi` by name and loads it from `https://api.fontshare.com/v2/css?f[]=satoshi@300,500,700&display=swap`. Everything else falls back to Google Fonts. The loader reads from `resolved.fonts` (post-defaults) so Satoshi's stylesheet is always requested when it's the resolved heading or body font, even if the user only overrode the other side.
-
-**themeEditor() plugin:**
-- `import { themeEditor } from '@pilotiq/pilotiq/plugins'` → `.use(themeEditor())`
-- Adds "Theme" nav link in sidebar footer / topbar
-- ThemeSettingsPage: controls sidebar + live iframe preview (srcDoc, client-only via mounted guard)
-- API routes: GET/PUT/DELETE `{base}/api/_theme` persisted to `panelGlobal` table
-- `applyToParent()` updates `<style id="pilotiq-theme">` for instant visual feedback on save
-- Service provider loads saved overrides from DB on boot via `panel.setThemeOverrides()`
-- `getMergedTheme()` merges code defaults + DB overrides at runtime
-- Generated page passes `vike/client/router` `navigate` via `onNavigate` prop for server data re-fetch
-- `@pilotiq/pilotiq` must be in `optimizeDeps.exclude` in app's `vite.config.ts`
-
-### @pilotiq/panels Architecture (Legacy)
-
-```
-@rudderjs/* (framework — linked via pnpm.overrides)
-  └── @pilotiq/panels
-       ├── @pilotiq/lexical   (Panel.use(panelsLexical()))
-       └── @pilotiq/media     (Panel.use(media(config)))
-```
-
-**Requires**: `@rudderjs/{core,router,orm,auth}` + optional packages (cache, localization, storage).
-
-Panels ships React pages that apps vendor via:
-```bash
-pnpm rudder vendor:publish --tag=pilotiq-pages --force
-```
-
-Source: `packages/panels/pages/` → Target: `playground/pages/(panels)/`
-
-**After EVERY edit to `packages/panels/pages/`, re-run vendor:publish.**
+Both playgrounds ship the **same Prisma schema files** so the hoisted `@prisma/client` (shared via pnpm) stays consistent. Each has its own `dev.db` (via `DATABASE_URL=file:./dev.db`). If schemas drift, whichever playground runs `prisma generate` last wins and clobbers the other's client — see pitfalls.
 
 ---
 
@@ -237,7 +66,7 @@ All `@rudderjs/*` packages resolve to `link:../rudder/packages/<name>` via `pnpm
 ~/Projects/
 ├── rudder/         # Framework
 ├── pilotiq/        # This repo (free panels)
-└── pilotiq-pro/    # Pro extensions (AI, collab)
+└── pilotiq-pro/    # Pro extensions (AI, collab, workspaces)
 ```
 
 ---
@@ -247,18 +76,17 @@ All `@rudderjs/*` packages resolve to `link:../rudder/packages/<name>` via `pnpm
 | Playground | Port | HMR | Purpose |
 |---|---|---|---|
 | `rudderjs/playground` | 3000 | 24678 | Framework demo — zero pilotiq deps |
-| `pilotiq/playground` | 3001 | 24679 | **Panels** demo — panels + lexical + media (auth, articles, categories, users, media) |
-| `pilotiq/playground-pilotiq` | 3003 | 24680 | **Pilotiq** demo — view-based panel (pilotiqAdmin + pilotiqSimple, themeEditor) |
+| `pilotiq/playground` | 3001 | 24679 | **Panels** demo (legacy) — panels + lexical + media |
+| `pilotiq/playground-pilotiq` | 3003 | 24680 | **Pilotiq** demo — view-based panel + themeEditor |
 | `pilotiq-pro/playground` | 3002 | 24680 | Full stack — framework + panels + AI + collab |
 
-The two pilotiq playgrounds were split in April 2026 because the `@panel/@page` parametric route in panels kept tentatively matching pilotiq URLs on the client, breaking SPA nav. Each package now gets its own isolated dev environment.
+Split in April 2026 because the panels `@panel/@page` parametric route kept tentatively matching pilotiq URLs on the client, breaking SPA nav. Each package now gets its own isolated dev environment.
 
-### Playground providers
-
+**Providers:**
 - `playground/` (panels): log, database, session, hash, cache, auth, storage, localization, panels
 - `playground-pilotiq/` (pilotiq): log, orm-prisma, session, cache, pilotiq
 
-No AI, no live, no queue, no mail, no monitoring — those are framework demos in rudderjs/playground.
+No AI / live / queue / mail / monitoring — those are framework demos in `rudderjs/playground`.
 
 ---
 
@@ -271,16 +99,22 @@ No AI, no live, no queue, no mail, no monitoring — those are framework demos i
 
 ---
 
-## Common Pitfalls
+## Legacy panels (scheduled for deletion)
 
-- **Vike ignores gitignored pages**: NEVER add `pages/` subdirectories to `.gitignore`. Vike respects `.gitignore` when scanning — gitignored page directories are invisible to routing, causing silent 404s.
-- **Pilotiq route functions + SPA nav**: Route functions in `pages/(pilotiq)/` must tentatively match on the client (`import.meta.env.SSR` check only gates the registry lookup, not the entire match). Returning `false` on client breaks SPA navigation and causes full page reloads.
-- **Pilotiq page stubs**: `pages/(pilotiq)/` is auto-generated by the `pilotiq()` Vite plugin. Don't edit manually — changes are overwritten. To customize rendering, create `app/Views/` files with matching `export const route` (static routes beat route functions).
-- **Pilotiq layout persistence**: AppShell lives in `+Layout.tsx`, NOT in individual `+Page.tsx`. Vike keeps layouts mounted across navigations — putting the shell in pages causes sidebar to remount/reset on every nav.
-- **Stale vendored pages** (panels only): Re-run `pnpm rudder vendor:publish --tag=pilotiq-pages --force` after every edit to `packages/panels/pages/`
-- **Stale `dist/`**: Run `pnpm build` from rudderjs root, then pilotiq root. Edits to `packages/pilotiq/src/**` require a rebuild to show up in the playground — run `pnpm -F @pilotiq/pilotiq build`, or `cd packages/pilotiq && pnpm dev` for watch mode.
-- **Prisma hoisted client is shared**: pnpm hoists `@prisma/client` into the root `node_modules/.pnpm/`. Both playgrounds share a single generated client. If their `prisma/schema/*.prisma` files diverge, `prisma generate` in one clobbers the other's client. Keep schemas identical (each has its own `dev.db`, so data is still isolated).
-- **Prisma client wrong repo**: `config/database.ts` passes `PrismaClient: PrismaClient as any` to fix cross-repo resolution
-- **Port in use**: `lsof -ti :24679 -ti :3001 | xargs kill -9` (panels) or `lsof -ti :24680 -ti :3003 | xargs kill -9` (pilotiq)
-- **Panels server handlers**: `pnpm dev` hot-reloads frontend only; server handlers need `pnpm build` + restart
-- **playground-pilotiq needs Tailwind**: `@pilotiq/pilotiq` ships components with Tailwind class names in `className`. The playground's `src/index.css` must `@import "tailwindcss"` with `@source "../../packages/pilotiq/src"` so Tailwind scans pilotiq's components. Without this, the UI renders unstyled.
+`@pilotiq/panels` is being replaced by `@pilotiq/pilotiq` and will be **deleted** once the new package is ready. Implications:
+
+- **Don't preserve the panels API for back-compat.** No compatibility shims, no shared-package extraction — the migration target is a clean cut.
+- **Don't add features.** Bug fixes only, and only when blocking the playground demo.
+- Panels architecture (vendored pages, framework dependencies, vendor:publish workflow) lives entirely in `packages/panels/` — read its source if you need to touch it.
+- After every edit to `packages/panels/pages/`, re-run `pnpm rudder vendor:publish --tag=pilotiq-pages --force`.
+- `pnpm dev` hot-reloads panels frontend only; server handlers need `pnpm build` + restart.
+
+---
+
+## Common Pitfalls (cross-cutting)
+
+- **Stale `dist/`:** Run `pnpm build` from rudderjs root, then pilotiq root. Per-package: `pnpm -F <name> build` or `cd packages/<name> && pnpm dev` for watch mode.
+- **Prisma hoisted client is shared:** pnpm hoists `@prisma/client` into root `node_modules/.pnpm/`. Both playgrounds share one generated client. If `prisma/schema/*.prisma` files diverge, `prisma generate` in one clobbers the other's. Keep schemas identical (each has its own `dev.db`, so data is still isolated).
+- **Prisma client cross-repo resolution:** `config/database.ts` passes `PrismaClient: PrismaClient as any` to fix it.
+- **Port in use:** `lsof -ti :24679 -ti :3001 | xargs kill -9` (panels) or `lsof -ti :24680 -ti :3003 | xargs kill -9` (pilotiq).
+- **Pilotiq-specific pitfalls** (Vite plugin, page generation, layout persistence, Tailwind setup) live in `packages/pilotiq/CLAUDE.md`.
