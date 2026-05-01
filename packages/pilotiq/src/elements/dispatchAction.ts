@@ -133,7 +133,7 @@ export async function dispatchAction(
   if (action.hasModal()) {
     const schema = action.getSchema()
     if (schema.length > 0) {
-      const errors = validateSchema(schema, input.values, ctx.record)
+      const errors = await validateSchema(schema, input.values, ctx.record)
       if (Object.keys(errors).length > 0) {
         return { ok: false, error: 'validation', errors }
       }

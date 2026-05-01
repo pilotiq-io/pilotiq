@@ -21,40 +21,51 @@ export interface ValidationErrors {
  * Per-row errors are flat-keyed as `${fieldName}.${i}.${childName}` so the
  * client can surface them inline on the right row. `minItems` / `maxItems`
  * land under the bare repeater name.
+ *
+ * Async — `Field.runValidators` is awaited per field, so async validators
+ * (e.g. `unique()` probing the DB) work transparently. The walker is still
+ * sequential per field within the same scope to preserve declaration order
+ * in the error output; cross-field parallelism would only matter on forms
+ * with many DB-probing validators and is left for a future profile.
  */
-export function validateSchema(
+export async function validateSchema(
   elements: Element[],
-  values: Record<string, unknown>,
-  record?: unknown,
-): ValidationErrors {
+  values:   Record<string, unknown>,
+  record?:  unknown,
+): Promise<ValidationErrors> {
   const errors: ValidationErrors = {}
+  const fields:    Field[]         = []
+  const repeaters: RepeaterField[] = []
+
+  // Two-pass to preserve order: collect first (sync walk), then await each.
   walk(elements, el => {
-    if (el instanceof RepeaterField) {
-      // Reconstruct array shape from flat keys when the body arrived
-      // form-encoded (`items.0.product=…`). Validation runs before
-      // coercion in `dispatchFormSubmit`, so without this fold the
-      // Repeater would always look empty on flat-key submits.
-      const raw = values[el.name]
-      const rows = Array.isArray(raw) ? raw : foldFlatRepeaterRows(values, el.name)
-      validateRepeater(el, rows, record, errors)
-      return
-    }
-    if (!(el instanceof Field)) return
+    if (el instanceof RepeaterField) { repeaters.push(el); return }
+    if (el instanceof Field) fields.push(el)
+  })
+
+  for (const el of fields) {
     const value = values[el.name]
     const ctx: { values: Record<string, unknown>; record?: unknown } = { values }
     if (record !== undefined) ctx.record = record
-    const fieldErrors = el.runValidators(value, ctx)
+    const fieldErrors = await el.runValidators(value, ctx)
     if (fieldErrors.length > 0) errors[el.name] = fieldErrors
-  })
+  }
+
+  for (const rep of repeaters) {
+    const raw = values[rep.name]
+    const rows = Array.isArray(raw) ? raw : foldFlatRepeaterRows(values, rep.name)
+    await validateRepeater(rep, rows, record, errors)
+  }
+
   return errors
 }
 
-function validateRepeater(
+async function validateRepeater(
   field:  RepeaterField,
   raw:    unknown,
   record: unknown,
   errors: ValidationErrors,
-): void {
+): Promise<void> {
   const rows = Array.isArray(raw) ? raw : []
   const baseErrors: string[] = []
 
@@ -75,14 +86,15 @@ function validateRepeater(
   if (baseErrors.length > 0) errors[field.name] = baseErrors
 
   const inner = field.getInnerSchema()
-  rows.forEach((row, i) => {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) return
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
     const rowValues = row as Record<string, unknown>
-    const rowErrors = validateSchema(inner, rowValues, record)
+    const rowErrors = await validateSchema(inner, rowValues, record)
     for (const [childName, msgs] of Object.entries(rowErrors)) {
       errors[`${field.name}.${i}.${childName}`] = msgs
     }
-  })
+  }
 }
 
 /** True when no field returned any error. */

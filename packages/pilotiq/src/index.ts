@@ -301,9 +301,11 @@ export {
 export {
   makeValidator,
   required, email, minLength, maxLength, min, max, pattern,
+  unique,
   validateSchema, isValid,
   type Validator, type ValidatorFn, type ValidatorContext,
   type SerializedRule, type ValidationErrors,
+  type UniqueOptions,
 } from './validation/index.js'
 
 // ─── Theme ────────────────────────────────────────────

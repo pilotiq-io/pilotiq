@@ -639,16 +639,16 @@ describe('RepeaterField', () => {
       ])
     }
 
-    it('valid rows produce no errors', () => {
-      const errors = validateSchema(
+    it('valid rows produce no errors', async () => {
+      const errors = await validateSchema(
         [repeater()],
         { items: [{ product: 'Widget', quantity: 1 }] },
       )
       assert.equal(isValid(errors), true)
     })
 
-    it('inner field errors are flat-keyed by row index', () => {
-      const errors = validateSchema(
+    it('inner field errors are flat-keyed by row index', async () => {
+      const errors = await validateSchema(
         [repeater()],
         { items: [{ product: '' }, { product: 'OK' }, { product: '' }] },
       )
@@ -657,52 +657,52 @@ describe('RepeaterField', () => {
       assert.deepEqual(errors['items.2.product'], ['This field is required'])
     })
 
-    it('minItems violation lands on the bare repeater name', () => {
+    it('minItems violation lands on the bare repeater name', async () => {
       const f = RepeaterField.make('items')
         .schema([TextField.make('product')])
         .minItems(1)
-      const errors = validateSchema([f], { items: [] })
+      const errors = await validateSchema([f], { items: [] })
       assert.deepEqual(errors['items'], ['At least 1 item is required'])
     })
 
-    it('minItems > 1 uses plural messaging', () => {
+    it('minItems > 1 uses plural messaging', async () => {
       const f = RepeaterField.make('items')
         .schema([TextField.make('product')])
         .minItems(3)
-      const errors = validateSchema([f], { items: [{ product: 'A' }] })
+      const errors = await validateSchema([f], { items: [{ product: 'A' }] })
       assert.deepEqual(errors['items'], ['At least 3 items are required'])
     })
 
-    it('maxItems violation lands on the bare repeater name', () => {
+    it('maxItems violation lands on the bare repeater name', async () => {
       const f = RepeaterField.make('items')
         .schema([TextField.make('product')])
         .maxItems(2)
-      const errors = validateSchema(
+      const errors = await validateSchema(
         [f],
         { items: [{ product: 'A' }, { product: 'B' }, { product: 'C' }] },
       )
       assert.deepEqual(errors['items'], ['At most 2 items are allowed'])
     })
 
-    it('missing items field treated as empty array', () => {
+    it('missing items field treated as empty array', async () => {
       const f = RepeaterField.make('items')
         .schema([TextField.make('product')])
         .minItems(1)
-      const errors = validateSchema([f], {})
+      const errors = await validateSchema([f], {})
       assert.deepEqual(errors['items'], ['At least 1 item is required'])
     })
 
-    it('non-array items value treated as empty array', () => {
+    it('non-array items value treated as empty array', async () => {
       const f = RepeaterField.make('items')
         .schema([TextField.make('product')])
         .minItems(1)
-      const errors = validateSchema([f], { items: 'not-an-array' })
+      const errors = await validateSchema([f], { items: 'not-an-array' })
       assert.deepEqual(errors['items'], ['At least 1 item is required'])
     })
 
-    it('does not validate inner fields against the parent values', () => {
+    it('does not validate inner fields against the parent values', async () => {
       // Parent has `product` key, but the inner field shouldn't see it.
-      const errors = validateSchema(
+      const errors = await validateSchema(
         [TextField.make('product').required(), repeater()],
         { product: 'parent', items: [{ product: '' }] },
       )
@@ -710,7 +710,7 @@ describe('RepeaterField', () => {
       assert.deepEqual(errors['items.0.product'], ['This field is required'])
     })
 
-    it('nested Repeater — inner row errors flat-keyed through both levels', () => {
+    it('nested Repeater — inner row errors flat-keyed through both levels', async () => {
       const inner = RepeaterField.make('modifiers').schema([
         TextField.make('name').required(),
       ])
@@ -718,7 +718,7 @@ describe('RepeaterField', () => {
         TextField.make('product'),
         inner,
       ])
-      const errors = validateSchema(
+      const errors = await validateSchema(
         [outer],
         { items: [
           { product: 'A', modifiers: [{ name: '' }, { name: 'Cheese' }] },
@@ -728,11 +728,11 @@ describe('RepeaterField', () => {
       assert.equal('items.0.modifiers.1.name' in errors, false)
     })
 
-    it('combines bare-key min violation with per-row errors', () => {
+    it('combines bare-key min violation with per-row errors', async () => {
       const f = RepeaterField.make('items')
         .schema([TextField.make('product').required()])
         .minItems(2)
-      const errors = validateSchema([f], { items: [{ product: '' }] })
+      const errors = await validateSchema([f], { items: [{ product: '' }] })
       assert.deepEqual(errors['items'], ['At least 2 items are required'])
       assert.deepEqual(errors['items.0.product'], ['This field is required'])
     })

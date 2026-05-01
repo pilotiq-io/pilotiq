@@ -21,3 +21,8 @@ export {
   isValid,
   type ValidationErrors,
 } from './runValidators.js'
+
+export {
+  unique,
+  type UniqueOptions,
+} from './uniqueValidator.js'

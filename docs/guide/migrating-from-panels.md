@@ -307,7 +307,7 @@ Most field types carry over with the same API. The `Field` builder, `.required()
 
 **Visibility flags** (`hideFromTable`, `hideFromCreate`, `hideFromEdit`, `hideFromView`, `showWhen`, `hideWhen`, `disabledWhen`) work the same way.
 
-**Validation** is now via `.validate(rule | rule[])` with built-in helpers (`required()`, `email()`, `minLength()`, `maxLength()`, `min()`, `max()`, `pattern()`). `Field.required()` still works as a shorthand and auto-contributes a `required()` validator.
+**Validation** is now via `.validate(rule | rule[])` with built-in helpers (`required()`, `email()`, `minLength()`, `maxLength()`, `min()`, `max()`, `pattern()`, and the async `unique({ model, where?, caseInsensitive? })`). `Field.required()` still works as a shorthand and auto-contributes a `required()` validator. Custom validators may be sync OR async — return a `Promise<string | null>` for rules that probe the database.
 
 ### Rich text
 

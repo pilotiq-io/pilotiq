@@ -397,8 +397,14 @@ export abstract class Field extends Element {
    * required check unless the validator list already includes one (matched
    * by `serialized.rule === 'required'`) — keeps `.required()` and
    * `.validate(required())` from double-firing.
+   *
+   * Async-aware: validators returning a `Promise<string | null>` (e.g.
+   * `unique()` probing the DB) are awaited in declaration order. Errors
+   * thrown by an async validator propagate to the caller — the pipeline
+   * does NOT swallow them, since DB failures should surface as 500s
+   * rather than silently invalidating the field.
    */
-  runValidators(value: unknown, ctx?: ValidatorContext): string[] {
+  async runValidators(value: unknown, ctx?: ValidatorContext): Promise<string[]> {
     const errors: string[] = []
 
     if (this._required && !this.hasRequiredValidator()) {
@@ -408,7 +414,7 @@ export abstract class Field extends Element {
     }
 
     for (const v of this._validators) {
-      const result = v(value, ctx)
+      const result = await v(value, ctx)
       if (result) errors.push(result)
     }
     return errors

@@ -126,7 +126,7 @@ EmailField.make('email').required().validate(email())
 
 ### Custom validators
 
-`makeValidator(fn, serialized?)` is the only thing you need:
+`makeValidator(fn, serialized?)` is the only thing you need. Validators may be sync OR async — return a `Promise<string | null>` for rules that probe the database, hit a service, etc.:
 
 ```ts
 import { makeValidator } from '@pilotiq/pilotiq'
@@ -142,14 +142,50 @@ const profanityFree = makeValidator(
 TextField.make('comment').validate(profanityFree)
 ```
 
-Omit the `serialized` argument to keep the validator server-only.
+Omit the `serialized` argument to keep the validator server-only. Async validators are typically server-only — the `serialized` descriptor is for client-side mirroring, which doesn't apply to roundtrips.
+
+### `unique()` — async DB probe
+
+Built-in async validator that rejects when another row already has the same value. Pairs with any `Resource.model = …` ORM:
+
+```ts
+import { unique } from '@pilotiq/pilotiq'
+
+EmailField.make('email')
+  .required()
+  .validate(unique({ model: User, caseInsensitive: true }))
+
+TextField.make('slug')
+  .validate(unique({ model: Post }))                    // column = field name
+
+TextField.make('name')
+  .validate(unique({
+    model: Project,
+    where: ({ values }) => ({ tenantId: values.tenantId }),  // scoped uniqueness
+    message: 'That project name is already taken',
+  }))
+```
+
+| Option            | Default                | Notes                                                                                            |
+| ----------------- | ---------------------- | ------------------------------------------------------------------------------------------------ |
+| `model`           | required               | Any `ModelLike` with `query().where(col, value).paginate(1, 2)`.                                  |
+| `column`          | `'name-of-field-from-ctx'` | Column to match. Falls back to scanning `ctx.values` for a key whose value matches — explicit is recommended. |
+| `ignoreRecord`    | `true`                 | On edit, skip the row whose primary key matches `ctx.record`. Set `false` to forbid all matches even when editing the same row. |
+| `where(ctx)`      | `undefined`            | Extra equality clauses for scoped uniqueness. Receives `{ values, record }`. Entries with `undefined` value skip. |
+| `caseInsensitive` | `false`                | Uses SQL `LIKE` on the value with `%` / `_` / `\` escaped — works on SQLite (default `NOCASE` for ASCII) and MySQL (default collation). Postgres is collation-dependent; use a `citext` column or a custom `where(fn)` against a lower-cased generated column for locale-aware folding. |
+| `message`         | `'Already taken'`      | Override the rejection message.                                                                  |
+
+Limitations:
+- Empty values pass — pair with `required()` if the field is mandatory.
+- Inside a `Repeater`, the probe checks the database but **not** unsaved sibling rows in the same submit.
+- A thrown error (e.g. DB connection drop) propagates as a 500 — `unique()` never silently fails as "invalid".
 
 ### Running validators
 
 Per field:
 
 ```ts
-field.runValidators(value, { values, record })  // → string[]
+const errors = await field.runValidators(value, { values, record })  // → string[]
 ```
 
 Across an entire Element tree:
@@ -157,11 +193,11 @@ Across an entire Element tree:
 ```ts
 import { validateSchema, isValid } from '@pilotiq/pilotiq'
 
-const errors = validateSchema(form.schema, submittedValues, currentRecord)
+const errors = await validateSchema(form.schema, submittedValues, currentRecord)
 if (!isValid(errors)) { /* errors is { fieldName: string[] } */ }
 ```
 
-`validateSchema()` walks every Element (including containers' children), runs each Field's validators, and returns a `{ name → errors[] }` map. Fields that pass are omitted from the map.
+`validateSchema()` walks every Element (including containers' children), runs each Field's validators (awaiting async ones), and returns a `{ name → errors[] }` map. Fields that pass are omitted from the map.
 
 The `.required()` flag implicitly contributes a `required` check (and serialized rule) — it doesn't double-fire when an explicit `required()` validator is also added.
 

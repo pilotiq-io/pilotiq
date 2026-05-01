@@ -113,49 +113,63 @@ describe('built-in validators', () => {
 })
 
 describe('Field.validate / runValidators', () => {
-  it('accumulates validators across calls', () => {
+  it('accumulates validators across calls', async () => {
     const f = TextField.make('x').validate(minLength(3)).validate(maxLength(5))
-    assert.equal(f.runValidators('a').length,     1) // minLength
-    assert.equal(f.runValidators('abcdef').length, 1) // maxLength
-    assert.equal(f.runValidators('abcd').length,  0)
+    assert.equal((await f.runValidators('a')).length,     1) // minLength
+    assert.equal((await f.runValidators('abcdef')).length, 1) // maxLength
+    assert.equal((await f.runValidators('abcd')).length,  0)
   })
 
-  it('reports every error, not just the first', () => {
+  it('reports every error, not just the first', async () => {
     const f = EmailField.make('x').validate([minLength(20), email()])
-    const errors = f.runValidators('a@b')
+    const errors = await f.runValidators('a@b')
     assert.equal(errors.length, 2)
   })
 
-  it('honors validator order', () => {
+  it('honors validator order', async () => {
     const f = TextField.make('x').validate([minLength(5), maxLength(2)])
-    const errors = f.runValidators('abc')
+    const errors = await f.runValidators('abc')
     // both fail; order is [minLength, maxLength]
     assert.match(errors[0]!, /at least 5/)
     assert.match(errors[1]!, /at most 2/)
   })
 
-  it('passes ctx through to validators', () => {
+  it('passes ctx through to validators', async () => {
     const seenValues: unknown[] = []
     const v = makeValidator((_value, ctx) => {
       seenValues.push(ctx?.values)
       return null
     })
     const f = TextField.make('x').validate(v)
-    f.runValidators('a', { values: { other: 1 } })
+    await f.runValidators('a', { values: { other: 1 } })
     assert.deepEqual(seenValues, [{ other: 1 }])
   })
 
-  it('required() flag implicitly adds a required check', () => {
+  it('required() flag implicitly adds a required check', async () => {
     const f = TextField.make('x').required()
-    assert.deepEqual(f.runValidators(''), ['This field is required'])
-    assert.deepEqual(f.runValidators('ok'), [])
+    assert.deepEqual(await f.runValidators(''), ['This field is required'])
+    assert.deepEqual(await f.runValidators('ok'), [])
   })
 
-  it('does not double-fire required when both flag and validator are set', () => {
+  it('does not double-fire required when both flag and validator are set', async () => {
     const f = TextField.make('x').required().validate(required('Custom required'))
-    const errors = f.runValidators('')
+    const errors = await f.runValidators('')
     assert.equal(errors.length, 1)
     assert.equal(errors[0], 'Custom required')
+  })
+
+  it('awaits async validators in declaration order', async () => {
+    const seen: string[] = []
+    const slow = makeValidator(async _v => {
+      await new Promise(r => setTimeout(r, 5))
+      seen.push('slow')
+      return 'slow-error'
+    })
+    const fast = makeValidator(_v => { seen.push('fast'); return 'fast-error' })
+    const f = TextField.make('x').validate([slow, fast])
+    const errors = await f.runValidators('hi')
+    assert.deepEqual(seen, ['slow', 'fast'])
+    assert.deepEqual(errors, ['slow-error', 'fast-error'])
   })
 })
 
@@ -192,7 +206,7 @@ describe('Field.toMeta serialized rules', () => {
 })
 
 describe('validateSchema (tree-level runner)', () => {
-  it('walks containers and gathers errors keyed by field name', () => {
+  it('walks containers and gathers errors keyed by field name', async () => {
     const schema = [
       Section.make('Profile').schema([
         TextField.make('name').required(),
@@ -202,14 +216,14 @@ describe('validateSchema (tree-level runner)', () => {
         NumberField.make('age').validate(min(0)),
       ]),
     ]
-    const errors = validateSchema(schema, { name: '', email: 'bad', age: -1 })
+    const errors = await validateSchema(schema, { name: '', email: 'bad', age: -1 })
     assert.deepEqual(errors['name'],  ['This field is required'])
     assert.deepEqual(errors['email'], ['Must be a valid email'])
     assert.deepEqual(errors['age'],   ['Must be at least 0'])
     assert.equal(isValid(errors), false)
   })
 
-  it('walks deeply-nested Tabs/Tab containers', () => {
+  it('walks deeply-nested Tabs/Tab containers', async () => {
     const schema = [
       Tabs.make().tabs([
         Tab.make('Settings').schema([
@@ -217,28 +231,38 @@ describe('validateSchema (tree-level runner)', () => {
         ]),
       ]),
     ]
-    const errors = validateSchema(schema, { alias: '' })
+    const errors = await validateSchema(schema, { alias: '' })
     assert.deepEqual(errors['alias'], ['This field is required'])
   })
 
-  it('returns empty map and isValid=true when everything passes', () => {
+  it('returns empty map and isValid=true when everything passes', async () => {
     const schema = [TextField.make('a').required(), TextField.make('b')]
-    const errors = validateSchema(schema, { a: 'hello', b: undefined })
+    const errors = await validateSchema(schema, { a: 'hello', b: undefined })
     assert.deepEqual(errors, {})
     assert.equal(isValid(errors), true)
   })
 
-  it('passes record through to validator ctx', () => {
+  it('passes record through to validator ctx', async () => {
     let captured: unknown
     const v = makeValidator((_value, ctx) => { captured = ctx?.record; return null })
     const schema = [TextField.make('x').validate(v)]
-    validateSchema(schema, { x: 'hi' }, { id: 42 })
+    await validateSchema(schema, { x: 'hi' }, { id: 42 })
     assert.deepEqual(captured, { id: 42 })
   })
 
-  it('readonly fields still validate', () => {
+  it('readonly fields still validate', async () => {
     const schema = [TextField.make('x').readonly().required()]
-    const errors = validateSchema(schema, { x: '' })
+    const errors = await validateSchema(schema, { x: '' })
     assert.deepEqual(errors['x'], ['This field is required'])
+  })
+
+  it('awaits async field validators', async () => {
+    const v = makeValidator(async _v => {
+      await new Promise(r => setTimeout(r, 1))
+      return 'async-error'
+    })
+    const schema = [TextField.make('x').validate(v)]
+    const errors = await validateSchema(schema, { x: 'hi' })
+    assert.deepEqual(errors['x'], ['async-error'])
   })
 })

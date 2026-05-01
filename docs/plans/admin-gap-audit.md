@@ -220,7 +220,7 @@ Skip `ColorColumn`, `SelectColumn`/`ToggleColumn`/`TextInputColumn` (inline-edit
 | `dehydrated(false)` (don't submit) | 1 | |
 | `dehydrateStateUsing(fn)` (transform on submit) | 1 | We have `mutateData` form-level; field-level finer-grained. |
 | `formatStateUsing(fn)` (display transform) | 1 | |
-| `unique()` validator with DB check | 2 | |
+| `unique()` validator with DB check | ✅ | `unique({ model, column?, ignoreRecord=true, where?, caseInsensitive?, message? })` — async validator awaited by `validateSchema`. Uses `M.query().where(col, value).paginate(1, 2)` (no new ORM contract). Ignores own record on edit. (2026-05-04 cont'd) |
 | `validationAttribute()` (label override in errors) | 1 | Trivial. |
 | `autofocus()` | 1 | Trivial. |
 

@@ -1449,7 +1449,7 @@ export async function formWizardData(
   const stepFields = findWizardStepFields(formChildren, body.step)
   if (!stepFields) return { ok: false, status: 404, error: `Step ${body.step} not found on form "${body.formId}"` }
 
-  const errors = validateSchema(stepFields, body.values, record)
+  const errors = await validateSchema(stepFields, body.values, record)
   if (Object.keys(errors).length > 0) {
     return { ok: false, status: 422, errors }
   }

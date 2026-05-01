@@ -1,5 +1,6 @@
 import {
   Resource, Column, TextField, EmailField, SelectField,
+  unique,
   type Form, type Table,
 } from '@pilotiq/pilotiq'
 import { User } from '../../Models/User.js'
@@ -27,7 +28,9 @@ export class UserResource extends Resource {
   static override form(form: Form): Form {
     return form.schema([
       TextField.make('name').required(),
-      EmailField.make('email').required(),
+      EmailField.make('email')
+        .required()
+        .validate(unique({ model: User, caseInsensitive: true })),
       SelectField.make('role').default('user').options([
         { value: 'user',  label: 'User' },
         { value: 'admin', label: 'Admin' },

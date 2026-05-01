@@ -59,11 +59,11 @@ export async function dispatchFormSubmit<R = unknown>(
   const children = form.getChildren() ?? []
   const isCreate = ctx.record === undefined
 
-  const fieldErrors = validateSchema(children as Element[], body, ctx.record)
+  const fieldErrors = await validateSchema(children as Element[], body, ctx.record)
 
   const formValidatorErrors: string[] = []
   for (const v of form.getFormValidators()) {
-    const msg = v(body, { values: body, ...(ctx.record !== undefined ? { record: ctx.record } : {}) })
+    const msg = await v(body, { values: body, ...(ctx.record !== undefined ? { record: ctx.record } : {}) })
     if (msg) formValidatorErrors.push(msg)
   }
 
