@@ -8,7 +8,8 @@ import { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
 import { TextField } from './fields/TextField.js'
-import { findRelatedResource, relationManagerData } from './pageData.js'
+import { findRelatedResource, relationManagerData, dispatchPageData } from './pageData.js'
+import { PilotiqRegistry } from './PilotiqRegistry.js'
 import type { ModelLike, ModelQuery } from './orm/modelDefaults.js'
 
 // ── Test doubles ───────────────────────────────────────────────────
@@ -415,5 +416,97 @@ describe('relationManagerData (Plan #11)', () => {
       assert.deepEqual((formMeta['errors'] as Record<string, string[]>)['title'], ['Too short'])
       assert.equal(data['hasErrors'], true)
     })
+  })
+})
+
+// ── Plan #11 — dispatchPageData wiring (Vike +data SPA path) ────────
+
+describe('dispatchPageData → relation pages (Plan #11)', () => {
+  function buildPanel() {
+    const postRows: QueryRow[] = [{ id: 'p1', parentId: 'u1', title: 'Post One' }]
+    const PostModel = stubModel({ rows: postRows })
+    const parents = new Map([
+      ['u1', makeParentWithChildren('u1', postRows)],
+    ])
+    const ParentModel: ModelLike = {
+      async find(id) { return parents.get(String(id)) ?? null },
+      async create() { throw new Error('not used') },
+      async update() { throw new Error('not used') },
+      async delete() { /* no-op */ },
+      query() { throw new Error('not used') },
+    }
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+      static override form(form: Form): Form { return form.schema([TextField.make('title').required()]) }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+      static override form(f: Form): Form  { return f.schema([TextField.make('title').required()]) }
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override relations() { return [PostsManager] }
+    }
+
+    PilotiqRegistry.reset()
+    const panel = Pilotiq.make('TestPanel-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+    PilotiqRegistry.register(panel)
+    return panel
+  }
+
+  it('routes relation-list page id through to relationManagerData', async () => {
+    buildPanel()
+    const out = await dispatchPageData({
+      pageId: '/pages/(pilotiq)/relation-list',
+      routeParams: { basePath: 'admin', slug: 'users', id: 'u1', relationship: 'posts' },
+      urlParsed: { search: {} },
+    })
+    assert.notEqual(out, null)
+    assert.equal((out as Record<string, unknown>)['pageType'], 'relation-list')
+  })
+
+  it('routes relation-create page id through', async () => {
+    buildPanel()
+    const out = await dispatchPageData({
+      pageId: '/pages/(pilotiq)/relation-create',
+      routeParams: { basePath: 'admin', slug: 'users', id: 'u1', relationship: 'posts' },
+      urlParsed: { search: {} },
+    })
+    assert.equal((out as Record<string, unknown>)['pageType'], 'relation-create')
+  })
+
+  it('routes relation-edit page id through', async () => {
+    buildPanel()
+    const out = await dispatchPageData({
+      pageId: '/pages/(pilotiq)/relation-edit',
+      routeParams: { basePath: 'admin', slug: 'users', id: 'u1', relationship: 'posts', childId: 'p1' },
+      urlParsed: { search: {} },
+    })
+    assert.equal((out as Record<string, unknown>)['pageType'], 'relation-edit')
+  })
+
+  it('returns null when the panel base path is unknown', async () => {
+    PilotiqRegistry.reset()
+    const out = await dispatchPageData({
+      pageId: '/pages/(pilotiq)/relation-list',
+      routeParams: { basePath: 'nonexistent', slug: 'users', id: 'u1', relationship: 'posts' },
+      urlParsed: { search: {} },
+    })
+    assert.equal(out, null)
+  })
+
+  it('returns null when route params are incomplete', async () => {
+    buildPanel()
+    const out = await dispatchPageData({
+      pageId: '/pages/(pilotiq)/relation-edit',
+      routeParams: { basePath: 'admin', slug: 'users', id: 'u1' },   // missing relationship + childId
+      urlParsed: { search: {} },
+    })
+    assert.equal(out, null)
   })
 })

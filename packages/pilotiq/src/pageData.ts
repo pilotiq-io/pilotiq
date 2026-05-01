@@ -1527,6 +1527,45 @@ export async function dispatchPageData(pageContext: PageContextLike): Promise<un
       return resourceViewData(panel, slug, id)
     }
 
+    case '/pages/(pilotiq)/relation-list': {
+      const slug         = routeParams['slug']
+      const id           = routeParams['id']
+      const relationship = routeParams['relationship']
+      if (!slug || !id || !relationship) return null
+      const out = await relationManagerData(panel, {
+        kind: 'relation-list', slug, recordId: id, relationship,
+        query: search as Record<string, string>,
+      })
+      // Tagged failure shapes (`{ ok: false, status: 403 }`) leak straight
+      // through to the +Page renderer, which can branch on the shape.
+      // For Plan #11 we let null short-circuit the SPA render the same
+      // way the resource builders do.
+      return out === null ? null : (out as Record<string, unknown>)
+    }
+
+    case '/pages/(pilotiq)/relation-create': {
+      const slug         = routeParams['slug']
+      const id           = routeParams['id']
+      const relationship = routeParams['relationship']
+      if (!slug || !id || !relationship) return null
+      const out = await relationManagerData(panel, {
+        kind: 'relation-create', slug, recordId: id, relationship,
+      })
+      return out === null ? null : (out as Record<string, unknown>)
+    }
+
+    case '/pages/(pilotiq)/relation-edit': {
+      const slug         = routeParams['slug']
+      const id           = routeParams['id']
+      const relationship = routeParams['relationship']
+      const childId      = routeParams['childId']
+      if (!slug || !id || !relationship || !childId) return null
+      const out = await relationManagerData(panel, {
+        kind: 'relation-edit', slug, recordId: id, relationship, childId,
+      })
+      return out === null ? null : (out as Record<string, unknown>)
+    }
+
     default:
       return null
   }
