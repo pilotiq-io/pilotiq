@@ -1,6 +1,11 @@
 import { Element, type ElementMeta } from '../schema/Element.js'
 import type { ValidationErrors } from '../validation/index.js'
 import type { Notification, NotificationMeta } from '../notifications/Notification.js'
+import {
+  safeManagerPolicy,
+  type RelationManager,
+  type RelationManagerContext,
+} from '../RelationManager.js'
 
 /**
  * Where an Action renders. `inline` is the default — appears wherever the
@@ -320,6 +325,87 @@ export class Action extends Element {
       .action(`${basePath}/${R.getSlug()}/${id}/delete`)
       .confirm(`Delete this ${R.labelSingular.toLowerCase()}?`)
       .visible(({ user, record }) => callPredicate(R.canDelete, user, record))
+  }
+
+  // ─── Relation-manager factories (Plan #11 polish) ─────────────
+  //
+  // Mirror `Action.create / edit / delete` but build URLs under the
+  // parent record: `${base}/${parentSlug}/${parentId}/${rel}/...`.
+  // Designed to be called inside `RelationManager.static table()` —
+  // the page-data builder pipes `RelationManagerContext` into that
+  // configurator so users get `basePath`, `parentId`, and the
+  // discovered Related resource without threading them by hand.
+  //
+  // Visibility predicates use `safeManagerPolicy` so the manager's
+  // `canX` (when overridden) wins, otherwise falls through to the
+  // related Resource's `canX`. Throws absorb as `false`.
+  //
+  // `:id` template substitution still happens at render time for row
+  // context — the same mechanism that drives `Action.edit / delete`.
+  // The parent's id is baked into the URL at config time (it's known
+  // upfront from `ctx.parentId`), so `:id` unambiguously refers to
+  // the row's *child* id.
+
+  /** Relation create-action factory — link to
+   * `${base}/${parentSlug}/${parentId}/${relationship}/create`.
+   *
+   * Visibility delegates to `M.canCreate(user, parentRecord)` (or the
+   * related Resource's `canCreate(user)` when the manager hasn't
+   * overridden). Drop into `headerActions([...])` from inside
+   * `RelationManager.table(table, ctx)`.
+   */
+  static relationCreate(
+    M:   typeof RelationManager,
+    ctx: RelationManagerContext,
+  ): Action {
+    const labelSingular = M.getLabelSingular()
+    return Action.make('create')
+      .label(`New ${labelSingular}`)
+      .href(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/create`)
+      .visible(({ user }) => safeManagerPolicy(M, 'canCreate', ctx.related, user, ctx.parentRecord))
+  }
+
+  /** Relation edit-action factory — link to
+   * `${base}/${parentSlug}/${parentId}/${relationship}/${recordId ?? ':id'}/edit`.
+   *
+   * Same `recordId` semantics as `Action.edit`: omit for row context
+   * so the renderer substitutes `:id` per row; pass explicitly when
+   * building actions for a single-record context. Visibility delegates
+   * to `M.canEdit(user, child, parentRecord)` with fall-through to the
+   * related Resource's `canEdit(user, record)`.
+   */
+  static relationEdit(
+    M:        typeof RelationManager,
+    ctx:      RelationManagerContext,
+    recordId?: string,
+  ): Action {
+    const id = recordId ?? ':id'
+    return Action.make('edit')
+      .label('Edit')
+      .href(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}/edit`)
+      .visible(({ user, record }) => safeManagerPolicy(M, 'canEdit', ctx.related, user, ctx.parentRecord, record))
+  }
+
+  /** Relation delete-action factory — POST to
+   * `${base}/${parentSlug}/${parentId}/${relationship}/${recordId ?? ':id'}/delete`,
+   * destructive style with a labeled confirmation. Visibility delegates
+   * to `M.canDelete(user, child, parentRecord)` with fall-through to the
+   * related Resource's `canDelete(user, record)`.
+   */
+  static relationDelete(
+    M:        typeof RelationManager,
+    ctx:      RelationManagerContext,
+    recordId?: string,
+  ): Action {
+    const id = recordId ?? ':id'
+    const singular = M.getLabelSingular().toLowerCase()
+    return Action.make('delete')
+      .label('Delete')
+      .destructive()
+      .method('post')
+      .action(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}/delete`)
+      .confirm(`Delete this ${singular}?`)
+      .visible(({ user, record }) => safeManagerPolicy(M, 'canDelete', ctx.related, user, ctx.parentRecord, record))
   }
 
   label(l: string): this { this._label = l; return this }

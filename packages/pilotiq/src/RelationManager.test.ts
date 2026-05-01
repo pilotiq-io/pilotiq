@@ -1,19 +1,32 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { RelationManager, RESERVED_RELATIONSHIP_TOKENS } from './RelationManager.js'
+import {
+  RelationManager,
+  RESERVED_RELATIONSHIP_TOKENS,
+  type RelationManagerContext,
+} from './RelationManager.js'
 import { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
 import { TextField } from './fields/TextField.js'
+
+/** Stub manager-context for tests that don't care about URL templating. */
+const stubCtx: RelationManagerContext = {
+  basePath:     '/admin',
+  parentSlug:   'users',
+  parentId:     '1',
+  relationship: 'posts',
+  parentRecord: { id: '1' },
+}
 
 describe('RelationManager (static API)', () => {
   it('default form/table/detail are no-ops', () => {
     class M extends RelationManager {
       static override relationship = 'posts'
     }
-    const f = M.form(Form.make())
-    const t = M.table(Table.make())
+    const f = M.form(Form.make(), stubCtx)
+    const t = M.table(Table.make(), stubCtx)
     assert.equal(f.getChildren(), undefined)
     assert.equal(t.getChildren(), undefined)
     assert.deepEqual(M.detail({}, {}), [])
@@ -32,10 +45,34 @@ describe('RelationManager (static API)', () => {
       }
     }
 
+    // Subclass overrides may drop trailing parameters they don't need —
+    // TypeScript narrows the call signature to the override's, so callers
+    // through the subclass type pass only `(form)` / `(table)`. The
+    // framework calls via `typeof RelationManager`, which sees the base
+    // signature including `ctx`.
     const f = PostsManager.form(Form.make())
     const t = PostsManager.table(Table.make())
     assert.equal(f.getChildren()?.length, 1)
     assert.equal(t.getChildren()?.length, 1)
+  })
+
+  it('subclass overrides may consume the context to configure the builder', () => {
+    let capturedCtx: RelationManagerContext | undefined
+
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+
+      static override table(table: Table, ctx: RelationManagerContext): Table {
+        capturedCtx = ctx
+        return table.columns([Column.make('title').sortable()])
+      }
+    }
+
+    PostsManager.table(Table.make(), stubCtx)
+    assert.equal(capturedCtx?.basePath,     '/admin')
+    assert.equal(capturedCtx?.parentSlug,   'users')
+    assert.equal(capturedCtx?.parentId,     '1')
+    assert.equal(capturedCtx?.relationship, 'posts')
   })
 
   it('getRelationship throws when the subclass forgot to set it', () => {

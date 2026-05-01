@@ -30,7 +30,14 @@ export {
   type PageContextLike,
 } from './pageData.js'
 export { Resource, type ResourcePages, type ResourceClass } from './Resource.js'
-export { RelationManager, RESERVED_RELATIONSHIP_TOKENS } from './RelationManager.js'
+export {
+  RelationManager,
+  RESERVED_RELATIONSHIP_TOKENS,
+  safeManagerPolicy,
+  isManagerCanOverridden,
+  type RelationManagerContext,
+  type ManagerCanMethod,
+} from './RelationManager.js'
 export { Global, type GlobalPages, type GlobalClass } from './Global.js'
 export { Page, type PageMeta, type PageMode } from './Page.js'
 export {

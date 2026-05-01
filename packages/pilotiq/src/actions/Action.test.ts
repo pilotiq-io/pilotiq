@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { Action } from './Action.js'
 import { resolveSchema, _resetResolverRegistry } from '../schema/resolveSchema.js'
 import { Card } from '../schema/Card.js'
+import { RelationManager, type RelationManagerContext } from '../RelationManager.js'
 
 beforeEach(() => _resetResolverRegistry())
 
@@ -224,6 +225,112 @@ describe('Action visibility evaluation', () => {
   it('toMeta emits conditional:true when rules exist', () => {
     assert.equal(Action.make('a').toMeta().conditional, undefined)
     assert.equal(Action.make('a').visible(true).toMeta().conditional, true)
+  })
+})
+
+describe('Action.relation* factories (Plan #11 polish)', () => {
+  /** Bare manager + ctx pair shared across the tests below. */
+  class Posts extends RelationManager {
+    static override relationship  = 'posts'
+    static override label         = 'Posts'
+    static override labelSingular = 'Post'
+  }
+
+  const ctx: RelationManagerContext = {
+    basePath:     '/admin',
+    parentSlug:   'users',
+    parentId:     '42',
+    relationship: 'posts',
+    parentRecord: { id: '42' },
+  }
+
+  describe('relationCreate', () => {
+    it('builds the create URL under the parent record', () => {
+      const meta = Action.relationCreate(Posts, ctx).toMeta()
+      assert.equal(meta.href, '/admin/users/42/posts/create')
+      assert.equal(meta.label, 'New Post')
+      assert.equal(meta.method, undefined)  // link-style, not form-post
+    })
+
+    it('label uses the manager singular fallback when not pinned', () => {
+      class Comments extends RelationManager { static override relationship = 'comments' }
+      const meta = Action.relationCreate(Comments, { ...ctx, relationship: 'comments' }).toMeta()
+      assert.equal(meta.label, 'New Comment')
+    })
+
+    it('visibility delegates to manager.canCreate when overridden', async () => {
+      class Forbidden extends RelationManager {
+        static override relationship = 'posts'
+        static override async canCreate(): Promise<boolean> { return false }
+      }
+      const result = await Action.relationCreate(Forbidden, ctx).evaluate({})
+      assert.equal(result.visible, false)
+    })
+
+    it('falls through to related Resource canCreate when manager unset', async () => {
+      const Related = { canCreate: async () => false } as unknown as RelationManagerContext['related']
+      const result = await Action.relationCreate(Posts, { ...ctx, related: Related }).evaluate({})
+      assert.equal(result.visible, false)
+    })
+
+    it('allows when neither manager nor related Resource opts in', async () => {
+      const result = await Action.relationCreate(Posts, ctx).evaluate({})
+      assert.equal(result.visible, true)
+    })
+  })
+
+  describe('relationEdit', () => {
+    it('builds the edit URL with :id template for row context', () => {
+      const meta = Action.relationEdit(Posts, ctx).toMeta()
+      assert.equal(meta.href, '/admin/users/42/posts/:id/edit')
+      assert.equal(meta.label, 'Edit')
+    })
+
+    it('bakes in an explicit recordId when provided', () => {
+      const meta = Action.relationEdit(Posts, ctx, '7').toMeta()
+      assert.equal(meta.href, '/admin/users/42/posts/7/edit')
+    })
+
+    it('visibility receives both the row record and the parentRecord via ctx', async () => {
+      let seenChild: unknown
+      let seenParent: unknown
+      class WithEdit extends RelationManager {
+        static override relationship = 'posts'
+        static override async canEdit(_user: unknown, child: unknown, parent: unknown): Promise<boolean> {
+          seenChild = child
+          seenParent = parent
+          return true
+        }
+      }
+      const a = Action.relationEdit(WithEdit, ctx)
+      await a.evaluate({ record: { id: '7', title: 'A' } })
+      assert.deepEqual(seenChild, { id: '7', title: 'A' })
+      assert.deepEqual(seenParent, { id: '42' })
+    })
+  })
+
+  describe('relationDelete', () => {
+    it('builds a destructive POST to the delete URL with confirm prompt', () => {
+      const meta = Action.relationDelete(Posts, ctx).toMeta()
+      assert.equal(meta.method, 'post')
+      assert.equal(meta.action, '/admin/users/42/posts/:id/delete')
+      assert.equal(meta.destructive, true)
+      assert.match(meta.confirm?.message ?? '', /post/)
+    })
+
+    it('honors an explicit recordId at config time', () => {
+      const meta = Action.relationDelete(Posts, ctx, '7').toMeta()
+      assert.equal(meta.action, '/admin/users/42/posts/7/delete')
+    })
+
+    it('visibility absorbs predicate throws as false (fail-closed)', async () => {
+      class Throwing extends RelationManager {
+        static override relationship = 'posts'
+        static override async canDelete(): Promise<boolean> { throw new Error('boom') }
+      }
+      const result = await Action.relationDelete(Throwing, ctx).evaluate({ record: { id: '7' } })
+      assert.equal(result.visible, false)
+    })
   })
 })
 

@@ -1,7 +1,8 @@
 import {
-  RelationManager, Column, BadgeColumn,
+  RelationManager, Column, BadgeColumn, Action,
   TextField, TextareaField, SelectField,
   type Form, type Table,
+  type RelationManagerContext,
 } from '@pilotiq/pilotiq'
 
 /**
@@ -14,15 +15,10 @@ import {
  *   ORM convention — `User.relations.posts` declares the hasMany).
  * - `mutateDataBeforeCreate` defaults the foreign key from the parent
  *   record so the create form doesn't surface `authorId`.
- *
- * Header/row action buttons are intentionally omitted — `Resource.form/table`
- * have access to `basePath` via the page lifecycle, but `RelationManager`
- * statics don't (yet). For now the demo navigates via direct URLs:
- *   - List:   /new-admin/users/:userId/posts
- *   - Create: /new-admin/users/:userId/posts/create
- *   - Edit:   /new-admin/users/:userId/posts/:postId/edit
- * Click a post row to drill into its top-level `PostResource` view at
- * /new-admin/posts/:postId.
+ * - Header/row action buttons use `Action.relation*(M, ctx)` factories
+ *   — the framework pipes `RelationManagerContext` (basePath /
+ *   parentId / relationship) into `static table()` so URLs are
+ *   templated automatically.
  */
 export class PostsManager extends RelationManager {
   static override relationship         = 'posts'
@@ -51,7 +47,7 @@ export class PostsManager extends RelationManager {
       })
   }
 
-  static override table(table: Table): Table {
+  static override table(table: Table, ctx: RelationManagerContext): Table {
     return table
       .columns([
         Column.make('title').sortable().searchable().weight('semibold'),
@@ -65,6 +61,13 @@ export class PostsManager extends RelationManager {
         const id = (r as { id?: string })?.id
         return id ? `/new-admin/posts/${id}` : undefined
       })
+      .headerActions([
+        Action.relationCreate(PostsManager, ctx),
+      ])
+      .recordActions([
+        Action.relationEdit(PostsManager, ctx),
+        Action.relationDelete(PostsManager, ctx),
+      ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
       .emptyState({

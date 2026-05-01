@@ -32,9 +32,10 @@ Define the manager:
 
 ```ts
 // app/Pilotiq/Users/relations/PostsManager.ts
-import { RelationManager, Column, BadgeColumn,
+import { RelationManager, Column, BadgeColumn, Action,
          TextField, TextareaField, SelectField,
-         type Form, type Table } from '@pilotiq/pilotiq'
+         type Form, type Table,
+         type RelationManagerContext } from '@pilotiq/pilotiq'
 
 export class PostsManager extends RelationManager {
   static override relationship         = 'posts'   // matches User.relations.posts
@@ -59,7 +60,7 @@ export class PostsManager extends RelationManager {
       })
   }
 
-  static override table(table: Table): Table {
+  static override table(table: Table, ctx: RelationManagerContext): Table {
     return table
       .columns([
         Column.make('title').sortable().searchable(),
@@ -67,6 +68,13 @@ export class PostsManager extends RelationManager {
         Column.make('createdAt').sortable().since(),
       ])
       .recordUrl(r => `/admin/posts/${(r as { id: string }).id}`)
+      .headerActions([
+        Action.relationCreate(PostsManager, ctx),
+      ])
+      .recordActions([
+        Action.relationEdit(PostsManager, ctx),
+        Action.relationDelete(PostsManager, ctx),
+      ])
       .defaultSort('createdAt', 'desc')
   }
 }
@@ -205,12 +213,14 @@ Plan #11:
 - **Polymorphic relations** (`morphMany / morphTo`) — same blocker.
 - **`RelationGroup`** — tabbing multiple managers under one label. Each
   manager already gets its own tab; grouping is a Tier-2 polish.
-- **Auto-wired Edit / Delete row actions on the manager table.** The
-  manager's `static table()` doesn't have access to `basePath` /
-  `parentRecordId` at config time, so URLs to the manager's edit/delete
-  routes can't be templated from inside `table()`. Workaround for now:
-  navigate via the bare URL or stash the parent id in a custom data builder.
-  Auto-wiring is a follow-up.
+- **Implicit row actions.** The manager's `static table()` does *not*
+  auto-inject Edit / Delete buttons — placement stays Filament-style
+  explicit. Use the `Action.relationCreate / relationEdit /
+  relationDelete(M, ctx)` factories shown in the quick example to wire
+  them. The `ctx` argument carries `basePath / parentSlug / parentId /
+  relationship / parentRecord / related` so URLs are templated for you,
+  and visibility predicates fall through to the related Resource's
+  `canX` when the manager hasn't overridden.
 
 ## Custom resource discovery
 

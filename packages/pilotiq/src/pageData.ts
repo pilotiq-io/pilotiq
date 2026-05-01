@@ -30,7 +30,12 @@ import { resolveTheme } from './theme/resolve.js'
 import type { ThemeMeta } from './theme/types.js'
 import { consumeFlashedNotifications } from './notifications/flash.js'
 import { serializeIcon, type SerializedIcon, type IconValue } from './icons/types.js'
-import { RelationManager } from './RelationManager.js'
+import {
+  RelationManager,
+  safeManagerPolicy as safeManagerPolicyImpl,
+  type ManagerCanMethod as ManagerCanMethodType,
+  type RelationManagerContext,
+} from './RelationManager.js'
 import { RelationTabs, relationTab, type RelationTabMeta } from './schema/RelationTabs.js'
 import {
   modelSave, modelLoadRecord, modelRelationTableRecords, getPrimaryKey,
@@ -783,58 +788,14 @@ async function safePolicy(fn: () => Promise<boolean> | boolean): Promise<boolean
   try { return Boolean(await fn()) } catch { return false }
 }
 
-/** Plan #11 — authorization predicate names a `RelationManager` carries. */
-export type ManagerCanMethod = 'canViewAny' | 'canView' | 'canCreate' | 'canEdit' | 'canDelete'
+/** Plan #11 — authorization predicate names a `RelationManager` carries.
+ *  Re-exported from `RelationManager.ts`. */
+export type ManagerCanMethod = ManagerCanMethodType
 
-/** Plan #11 — compare a manager's static `canX` against `RelationManager`'s
- *  default to detect whether the subclass overrode it. Class statics are
- *  inherited via the constructor prototype chain, so an un-overridden
- *  subclass returns `RelationManager`'s function by reference. */
-function isManagerCanOverridden(M: typeof RelationManager, method: ManagerCanMethod): boolean {
-  return (M as unknown as Record<string, unknown>)[method]
-       !== (RelationManager as unknown as Record<string, unknown>)[method]
-}
-
-/**
- * Plan #11 — authorize a relation-manager action with sensible defaults.
- *
- * - If the manager overrode `canX`: run that predicate (parent-aware
- *   shape; gets `parent` as the last argument so user code can scope
- *   per-parent).
- * - Otherwise, when a related Resource is registered: fall through to
- *   the Resource's own `canX` (drops the parent argument since
- *   Resource policies don't carry parent context). Avoids users
- *   redefining the same policy on both sides.
- * - Otherwise: allow. Both the manager and the Resource opted out of
- *   restricting this action.
- *
- * Throws are absorbed as `false` (fail-closed) — same convention as
- * the resource-side `checkPolicy`.
- */
-export async function safeManagerPolicy(
-  M:        typeof RelationManager,
-  method:   ManagerCanMethod,
-  Related:  ResourceClass | undefined,
-  user:     unknown,
-  parent:   unknown,
-  child?:   unknown,
-): Promise<boolean> {
-  const isRecordScoped = method === 'canView' || method === 'canEdit' || method === 'canDelete'
-
-  if (isManagerCanOverridden(M, method)) {
-    return safePolicy(() => isRecordScoped
-      ? (M as unknown as Record<ManagerCanMethod, (u: unknown, c: unknown, p: unknown) => Promise<boolean>>)[method](user, child, parent)
-      : (M as unknown as Record<ManagerCanMethod, (u: unknown, p: unknown) => Promise<boolean>>)[method](user, parent),
-    )
-  }
-  if (Related) {
-    return safePolicy(() => isRecordScoped
-      ? (Related as unknown as Record<ManagerCanMethod, (u: unknown, r: unknown) => Promise<boolean>>)[method](user, child)
-      : (Related as unknown as Record<ManagerCanMethod, (u: unknown) => Promise<boolean>>)[method](user),
-    )
-  }
-  return true
-}
+/** Plan #11 — authorize a relation-manager action with sensible defaults.
+ *  Re-exported from `RelationManager.ts` so external callers (route
+ *  handlers, third-party plugins) keep their existing import path. */
+export const safeManagerPolicy = safeManagerPolicyImpl
 
 /**
  * Plan #11 — render data for the three relation-manager URL scopes.
@@ -924,8 +885,19 @@ async function buildRelationListData(
   const base = cfg.path
   const listUrl = `${base}/${scope.slug}/${scope.recordId}/${scope.relationship}`
 
-  // Build a single Table by piping a fresh Table through M.table(table).
-  const table = M.table(Table.make())
+  // Build a single Table by piping a fresh Table through M.table(table, ctx).
+  // Context lets the user wire `Action.relationCreate / relationEdit /
+  // relationDelete(M, ctx)` factories inside `static table()` to template
+  // URLs without threading basePath / parentId by hand.
+  const managerCtx: RelationManagerContext = {
+    basePath:     base,
+    parentSlug:   scope.slug,
+    parentId:     scope.recordId,
+    relationship: scope.relationship,
+    parentRecord,
+    related:      Related,
+  }
+  const table = M.table(Table.make(), managerCtx)
   autoWireManagerTable(table, R.model as ModelLike, parentRecord, scope.relationship)
 
   const ctx: SchemaContext = uploadCtx(userCtx({
@@ -982,7 +954,15 @@ async function buildRelationCreateData(
   const base = cfg.path
   const createUrl = `${base}/${scope.slug}/${scope.recordId}/${scope.relationship}/create`
 
-  const form = M.form(Form.make())
+  const managerCtx: RelationManagerContext = {
+    basePath:     base,
+    parentSlug:   scope.slug,
+    parentId:     scope.recordId,
+    relationship: scope.relationship,
+    parentRecord,
+    related:      Related,
+  }
+  const form = M.form(Form.make(), managerCtx)
   if (Related.model) autoWireManagerForm(form, Related.model)
 
   const elements: Element[] = [form]
@@ -1063,7 +1043,15 @@ async function buildRelationEditData(
   const base = cfg.path
   const editUrl = `${base}/${scope.slug}/${scope.recordId}/${scope.relationship}/${scope.childId}/edit`
 
-  const form = M.form(Form.make())
+  const managerCtx: RelationManagerContext = {
+    basePath:     base,
+    parentSlug:   scope.slug,
+    parentId:     scope.recordId,
+    relationship: scope.relationship,
+    parentRecord,
+    related:      Related,
+  }
+  const form = M.form(Form.make(), managerCtx)
   autoWireManagerForm(form, Related.model)
 
   const elements: Element[] = [form]

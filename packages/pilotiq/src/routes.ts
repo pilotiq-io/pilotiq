@@ -707,7 +707,14 @@ export function registerPilotiqRoutes(
 
         const createUrl = `${parentBase}/create`.replace(':id', pre.recordId)
         const listUrl   = parentBase.replace(':id', pre.recordId)
-        const form = M.form(Form.make())
+        const form = M.form(Form.make(), {
+          basePath:     base,
+          parentSlug:   slug,
+          parentId:     pre.recordId,
+          relationship: rel,
+          parentRecord: pre.parent,
+          related:      Related,
+        })
         if (Related.model) {
           if (!form.getSave())       form.save(modelSave(Related.model))
           if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related.model))
@@ -786,7 +793,14 @@ export function registerPilotiqRoutes(
         const { values } = splitMeta(body)
 
         const editUrl = `${parentBase}/${childId}/edit`.replace(':id', pre.recordId)
-        const form = M.form(Form.make())
+        const form = M.form(Form.make(), {
+          basePath:     base,
+          parentSlug:   slug,
+          parentId:     pre.recordId,
+          relationship: rel,
+          parentRecord: pre.parent,
+          related:      Related,
+        })
         if (!form.getSave())       form.save(modelSave(Related.model))
         if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related.model))
 

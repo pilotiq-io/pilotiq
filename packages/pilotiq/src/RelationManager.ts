@@ -5,6 +5,37 @@ import type { IconValue } from './icons/types.js'
 import type { ResourceClass } from './Resource.js'
 
 /**
+ * Plan #11 polish — context handed to a manager's `static table()` /
+ * `static form()` at config time so user code can template URLs to the
+ * manager's own routes without threading basePath / parentId by hand.
+ *
+ * The page-data builder constructs this once per request (after the
+ * parent record has loaded and the related Resource has been
+ * discovered) and pipes it into the configurators. Use it to wire
+ * `Action.relationCreate / relationEdit / relationDelete` factories
+ * inside `static table()` so embedded tables get proper row actions.
+ */
+export interface RelationManagerContext {
+  /** Panel base path, e.g. `'/admin'`. */
+  basePath:     string
+  /** Slug of the parent Resource (the one that registered this
+   *  manager). */
+  parentSlug:   string
+  /** Stringified primary key of the parent record being viewed. */
+  parentId:     string
+  /** Relationship key (matches `M.relationship` and the URL segment). */
+  relationship: string
+  /** The hydrated parent record. Useful for visibility predicates that
+   *  scope by parent state. */
+  parentRecord: unknown
+  /** Related Resource, when discovered. Undefined when the manager
+   *  isn't backed by a registered Resource (rare — usually you'd
+   *  register one). Action visibility predicates fall through to the
+   *  related Resource's policy when the manager hasn't overridden. */
+  related?:     ResourceClass | undefined
+}
+
+/**
  * Plan #11 — RelationManager abstract base class.
  *
  * A RelationManager is a parent-scoped projection of a related resource:
@@ -88,8 +119,14 @@ export abstract class RelationManager {
    * builder stamps the parent context onto the `FormContext` before
    * invoking dispatch, so user hooks can read `ctx.parent`,
    * `ctx.parentRecord`, and `ctx.relationship`.
+   *
+   * `ctx` carries the live basePath / parentId / relationship so user
+   * code can template URLs (rare on a form, but symmetric with
+   * `table()`). Overrides may omit it: `static override form(form)
+   * { … }` is legal because TypeScript permits dropping trailing
+   * parameters on overrides.
    */
-  static form(form: Form): Form { return form }
+  static form(form: Form, _ctx: RelationManagerContext): Form { return form }
 
   /**
    * Configure the table used by the manager's list page. Receives a
@@ -98,8 +135,16 @@ export abstract class RelationManager {
    * `Table.records()` against `parent.related(relationship)` when the
    * parent's `ModelLike` is set and the table has no explicit
    * `records()` handler.
+   *
+   * `ctx` carries the live basePath / parentSlug / parentId /
+   * relationship / parentRecord — wire `Action.relationCreate /
+   * relationEdit / relationDelete(M, ctx)` factories into
+   * `headerActions` / `recordActions` to template URLs to the
+   * manager's own create / edit / delete routes. The framework
+   * always passes ctx; overrides that don't need it can drop the
+   * parameter.
    */
-  static table(table: Table): Table { return table }
+  static table(table: Table, _ctx: RelationManagerContext): Table { return table }
 
   /**
    * Schema for the read-only view page of a child record under this
@@ -175,6 +220,82 @@ export abstract class RelationManager {
 export const RESERVED_RELATIONSHIP_TOKENS: ReadonlySet<string> = new Set([
   'edit', 'delete', '_form', '_action', '_search', '_uploads',
 ])
+
+// ─── Authorization helpers (Plan #11) ────────────────────────────
+// Shared by the route-side data builder (`pageData.relationManagerData`)
+// and the action-factory side (`Action.relation*`). Lives here — not in
+// pageData — so `Action.ts` can reuse the fall-through logic without
+// importing pageData (cycle: pageData → Action → pageData).
+
+/** Names of the predicate methods a `RelationManager` carries. */
+export type ManagerCanMethod =
+  | 'canViewAny' | 'canView' | 'canCreate' | 'canEdit' | 'canDelete'
+
+/** True when the subclass replaces the inherited base implementation.
+ * Class statics are inherited via the constructor prototype chain, so
+ * an un-overridden subclass returns `RelationManager`'s function by
+ * reference. */
+export function isManagerCanOverridden(
+  M:      typeof RelationManager,
+  method: ManagerCanMethod,
+): boolean {
+  return (M as unknown as Record<string, unknown>)[method]
+       !== (RelationManager as unknown as Record<string, unknown>)[method]
+}
+
+/** Structural shape we need from the related Resource for fall-through.
+ * Matches `Resource.canX` predicate signatures without importing the
+ * full class (keeps Action.ts cycle-free). */
+interface RelatedResourceLike {
+  canViewAny?(user: unknown): boolean | Promise<boolean>
+  canView?(user: unknown, record: unknown): boolean | Promise<boolean>
+  canCreate?(user: unknown): boolean | Promise<boolean>
+  canEdit?(user: unknown, record: unknown): boolean | Promise<boolean>
+  canDelete?(user: unknown, record: unknown): boolean | Promise<boolean>
+}
+
+/**
+ * Authorize a manager-scoped action with sensible defaults.
+ *
+ * - If the manager overrode `method`: run that predicate. The manager
+ *   shape carries `parent` (and, for record-scoped methods, `child`)
+ *   so user code can scope per-parent.
+ * - Otherwise, when a related Resource is registered: fall through to
+ *   the Resource's own `canX`. The Resource side doesn't see `parent`
+ *   — that's the trade-off for inheriting Resource-level rules.
+ * - Otherwise: allow.
+ *
+ * Throws are absorbed as `false` (fail-closed), matching the
+ * resource-side `checkPolicy` convention.
+ */
+export async function safeManagerPolicy(
+  M:        typeof RelationManager,
+  method:   ManagerCanMethod,
+  Related:  RelatedResourceLike | undefined,
+  user:     unknown,
+  parent:   unknown,
+  child?:   unknown,
+): Promise<boolean> {
+  const isRecordScoped =
+    method === 'canView' || method === 'canEdit' || method === 'canDelete'
+
+  try {
+    if (isManagerCanOverridden(M, method)) {
+      const fn = (M as unknown as Record<ManagerCanMethod, (...args: unknown[]) => unknown>)[method]
+      const result = isRecordScoped ? fn(user, child, parent) : fn(user, parent)
+      return Boolean(await (result as boolean | Promise<boolean>))
+    }
+    if (Related) {
+      const fn = (Related as unknown as Record<ManagerCanMethod, ((...args: unknown[]) => unknown) | undefined>)[method]
+      if (!fn) return true
+      const result = isRecordScoped ? fn(user, child) : fn(user)
+      return Boolean(await (result as boolean | Promise<boolean>))
+    }
+    return true
+  } catch {
+    return false
+  }
+}
 
 function sentenceCase(s: string): string {
   if (s.length === 0) return s
