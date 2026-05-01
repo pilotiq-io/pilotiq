@@ -90,6 +90,40 @@ describe('loadTableRecords', () => {
     assert.deepEqual(seenSort, { column: 'createdAt', direction: 'desc' })
   })
 
+  it('falls back to (reorderableColumn, asc) when reorderable is set and no defaultSort', async () => {
+    let seenSort: unknown = null
+    const t = Table.make()
+      .columns([Column.make('sort')])
+      .reorderable('sort')
+      .records(async (ctx) => { seenSort = ctx.sort; return [] })
+
+    await loadTableRecords([t], {})
+    assert.deepEqual(seenSort, { column: 'sort', direction: 'asc' })
+  })
+
+  it('explicit defaultSort wins over reorderable fallback', async () => {
+    let seenSort: unknown = null
+    const t = Table.make()
+      .columns([Column.make('createdAt')])
+      .reorderable('rank')
+      .defaultSort('createdAt', 'desc')
+      .records(async (ctx) => { seenSort = ctx.sort; return [] })
+
+    await loadTableRecords([t], {})
+    assert.deepEqual(seenSort, { column: 'createdAt', direction: 'desc' })
+  })
+
+  it('URL ?sort= still wins over the reorderable fallback', async () => {
+    let seenSort: unknown = null
+    const t = Table.make()
+      .columns([Column.make('title').sortable()])
+      .reorderable('sort')
+      .records(async (ctx) => { seenSort = ctx.sort; return [] })
+
+    await loadTableRecords([t], { sort: 'title:desc' })
+    assert.deepEqual(seenSort, { column: 'title', direction: 'desc' })
+  })
+
   it('attaches rows + total to the table for serialization', async () => {
     const t = Table.make().columns([Column.make('id')])
       .records(async () => ({ rows: [{ id: 'a' }, { id: 'b' }], total: 42 }))

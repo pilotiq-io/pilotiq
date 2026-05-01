@@ -405,6 +405,39 @@ SelectFilter.make('age')
 
 The hook receives the running `ModelQuery` plus the active string value and must return the modified query.
 
+### Reorderable rows
+
+Drag-to-reorder is opt-in per table. Pass the model column the new order is written back to:
+
+```ts
+table
+  .reorderable('sort')
+  .columns([
+    Column.make('title').sortable(),
+    Column.make('status'),
+  ])
+```
+
+Default column name is `'sort'` (Filament parity). When set, the table renders sorted `(sort, asc)` so the visible order matches the persisted column — `defaultSort()` still wins if you set both. Each row gets a leftmost grip handle; native HTML5 drag-and-drop posts `{ ids }` to `POST {base}/{slug}/_reorder` on drop. The renderer reorders optimistically and rolls back if the POST fails.
+
+The bound model must implement `async reorder(ids)` — pilotiq throws a clear boot error otherwise. The handler re-stamps the configured column 1..n in array order:
+
+```ts
+class Post extends Model {
+  static override async reorder(ids: Array<string | number>): Promise<void> {
+    await Promise.all(ids.map((id, i) =>
+      Post.update(id, { sort: i + 1 } as Partial<Post>),
+    ))
+  }
+}
+```
+
+Production code should run this in a transaction.
+
+**Drag is locked off when the visible rows aren't the canonical sort.** The grip column greys out when any of these is true: `?search=…` is set, any filter has a value, sort isn't `(reorderColumn, asc)`, or pagination is past page 1. Clear filters / search and sort by the reorder column to re-enable drag.
+
+The `_reorder` route gates on `Resource.canAccess(user)` + `Resource.canEdit(user, undefined)` (record-less, list-level) — your `canEdit` override can branch on `record === undefined` for table-wide reorder vs row-specific edit checks.
+
 ### Built-in CRUD actions
 
 The base page classes don't auto-inject any actions. Filament-style: explicit. Pre-built factories ship the standard CRUD shapes:

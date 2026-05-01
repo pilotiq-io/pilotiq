@@ -59,7 +59,7 @@ import {
 } from './ui/tooltip.js'
 import {
   CalendarIcon, FilterIcon, MoreHorizontalIcon,
-  CircleIcon, InboxIcon,
+  CircleIcon, InboxIcon, GripVerticalIcon,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { useNavigate, type NavigateFn } from './navigate.js'
@@ -2883,14 +2883,23 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   const bulkActions   = actionLike.filter(a => placementOf(a) === 'bulk')
   const rowActions    = actionLike.filter(a => placementOf(a) === 'row')
 
-  const rows        = (el['rows'] as unknown[] | undefined) ?? []
-  const total       = (el['total'] as number | undefined) ?? rows.length
+  const rawRows     = (el['rows'] as unknown[] | undefined) ?? []
+  const total       = (el['total'] as number | undefined) ?? rawRows.length
   const search      = el['search'] as string | undefined
   const currentSort = el['currentSort'] as { column: string; direction: 'asc' | 'desc' } | undefined
   const currentPage = (el['currentPage'] as number | undefined) ?? 1
   const perPage     = el['perPage'] as number | undefined
   const searchable  = Boolean(el['searchable'])
   const currentPath = (el['currentPath'] as string | undefined) ?? ''
+
+  // Reorderable rows — grip column + HTML5 DnD wiring. Rows live in
+  // local state during a drag so the optimistic reorder happens
+  // immediately; on POST failure we roll back to the server's order.
+  const reorderableColumn = typeof el['reorderableColumn'] === 'string' ? el['reorderableColumn'] as string : undefined
+  const reorderUrl        = typeof el['reorderUrl']        === 'string' ? el['reorderUrl']        as string : undefined
+  const [reorderRowsLocal, setReorderRowsLocal] = useState<unknown[] | null>(null)
+  const rows = reorderRowsLocal ?? rawRows
+  const { notify } = useToast()
 
   const state: TableUrlState = {
     ...(search       !== undefined ? { search }      : {}),
@@ -2934,6 +2943,63 @@ function TableRenderer({ el }: { el: ElementMeta }) {
     })
   }
 
+  // ── Reorder DnD state + handlers ──────────────────────
+  // dragId — the row currently being dragged (string id), or null.
+  // dropAt — the boundary the cursor is hovering (0..rows.length), or null.
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dropAt, setDropAt] = useState<number | null>(null)
+  const onRowDragStart = (id: string) => (e: React.DragEvent<HTMLTableRowElement>): void => {
+    if (!reorderEnabled) return
+    setDragId(id)
+    e.dataTransfer.effectAllowed = 'move'
+    try { e.dataTransfer.setData('text/plain', id) } catch { /* IE quirk */ }
+  }
+  const onRowDragOver = (idx: number) => (e: React.DragEvent<HTMLTableRowElement>): void => {
+    if (!reorderEnabled || dragId === null) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect      = e.currentTarget.getBoundingClientRect()
+    const aboveHalf = e.clientY < rect.top + rect.height / 2
+    setDropAt(aboveHalf ? idx : idx + 1)
+  }
+  const onRowDrop = async (e: React.DragEvent<HTMLTableRowElement>): Promise<void> => {
+    if (!reorderEnabled || dragId === null || dropAt === null || !reorderUrl) {
+      setDragId(null); setDropAt(null); return
+    }
+    e.preventDefault()
+    const fromIdx = visibleIds.findIndex(id => id === dragId)
+    setDragId(null); setDropAt(null)
+    if (fromIdx < 0) return
+    const target = dropAt > fromIdx ? dropAt - 1 : dropAt
+    if (target === fromIdx) return
+    const reordered = rows.slice()
+    const moved = reordered.splice(fromIdx, 1)[0]
+    reordered.splice(target, 0, moved)
+    const newIds = reordered.map((row, i) => rowId(row, i))
+    const previousLocal = reorderRowsLocal
+    setReorderRowsLocal(reordered)
+    try {
+      const res = await fetch(reorderUrl, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body:    JSON.stringify({ ids: newIds }),
+      })
+      if (!res.ok) throw new Error(`Reorder failed (${res.status})`)
+    } catch (err) {
+      // Roll back to server order. The toast surfaces the failure;
+      // next page render fetches the persisted column.
+      setReorderRowsLocal(previousLocal)
+      notify({
+        type:  'error',
+        title: 'Could not save new order',
+        body:  err instanceof Error ? err.message : 'Reorder failed',
+      })
+    }
+  }
+  const onRowDragEnd = (): void => {
+    setDragId(null); setDropAt(null)
+  }
+
   if (columns.length === 0) {
     return (
       <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
@@ -2948,7 +3014,30 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   const showHeaderBar  = searchable || headerActions.length > 0 || hasFilters
   const hasBulkActions = bulkActions.length > 0
   const hasRowActions  = rowActions.length > 0
-  const totalCols      = columns.length + (hasBulkActions ? 1 : 0) + (hasRowActions ? 1 : 0)
+
+  // Drag-to-reorder is enabled only when the visible rows ARE the
+  // canonical sort. Filters / search / non-default sort / pagination
+  // beyond page 1 all break that invariant; we render the grip column
+  // greyed-out instead of letting the user reorder a slice that won't
+  // round-trip cleanly. `reorderableColumn` is set server-side when
+  // `Table.reorderable()` opts in.
+  const sortMatchesReorder =
+    currentSort?.column === reorderableColumn &&
+    currentSort?.direction === 'asc'
+  const filtersActive = Object.keys(activeFilters).length > 0
+  const searchActive  = typeof search === 'string' && search !== ''
+  const reorderEnabled =
+    reorderableColumn !== undefined &&
+    reorderUrl        !== undefined &&
+    sortMatchesReorder              &&
+    !filtersActive                  &&
+    !searchActive                   &&
+    currentPage === 1
+  const reorderColumnVisible = reorderableColumn !== undefined
+  const totalCols = columns.length
+                  + (hasBulkActions      ? 1 : 0)
+                  + (hasRowActions       ? 1 : 0)
+                  + (reorderColumnVisible ? 1 : 0)
 
   // Top-bar chrome (heading / description / striped / emptyState).
   const tableHeading     = el['heading']     as string | undefined
@@ -3023,6 +3112,9 @@ function TableRenderer({ el }: { el: ElementMeta }) {
         <DataTable>
           <TableHeader className="bg-muted">
             <TableRow>
+              {reorderColumnVisible && (
+                <TableHead className="w-9 px-2" aria-label="Reorder" />
+              )}
               {hasBulkActions && (
                 <TableHead className="w-9 px-3">
                   <Checkbox
@@ -3133,8 +3225,31 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                 )}
                 <TableRow
                   data-state={isSelected ? 'selected' : undefined}
-                  className={rowClassName || undefined}
+                  className={[
+                    rowClassName,
+                    dragId === id ? 'opacity-50' : '',
+                    dropAt === ri && dragId !== null ? 'border-t-2 border-t-primary' : '',
+                  ].filter(Boolean).join(' ') || undefined}
+                  draggable={reorderEnabled || undefined}
+                  onDragStart={reorderEnabled ? onRowDragStart(id) : undefined}
+                  onDragOver={reorderEnabled  ? onRowDragOver(ri)  : undefined}
+                  onDrop={reorderEnabled      ? onRowDrop          : undefined}
+                  onDragEnd={reorderEnabled   ? onRowDragEnd       : undefined}
                 >
+                  {reorderColumnVisible && (
+                    <TableCell className="w-9 px-2">
+                      <span
+                        aria-label={reorderEnabled ? 'Drag to reorder' : 'Reorder paused — clear filters and sort to enable'}
+                        className={
+                          reorderEnabled
+                            ? 'inline-flex cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing'
+                            : 'inline-flex cursor-not-allowed text-muted-foreground/40'
+                        }
+                      >
+                        <GripVerticalIcon className="size-4" />
+                      </span>
+                    </TableCell>
+                  )}
                   {hasBulkActions && (
                     <TableCell className="w-9 px-3">
                       <Checkbox
@@ -3176,6 +3291,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
           {summaries && Object.keys(summaries).length > 0 && (
             <TableFooter>
               <TableRow>
+                {reorderColumnVisible && <TableCell />}
                 {hasBulkActions && <TableCell />}
                 {columns.map((col, ci) => {
                   const name  = String(col['name'] ?? '')

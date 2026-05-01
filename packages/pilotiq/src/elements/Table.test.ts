@@ -179,6 +179,42 @@ describe('Table Element', () => {
       assert.deepEqual(t.toMeta().summaries, { amount: [{ kind: 'sum', value: '42' }] })
     })
 
+    it('reorderable() emits reorderable=true + reorderableColumn on meta', () => {
+      const meta = Table.make().reorderable('position').toMeta()
+      assert.equal(meta.reorderable, true)
+      assert.equal(meta.reorderableColumn, 'position')
+    })
+
+    it('reorderable() defaults the column name to "sort"', () => {
+      const meta = Table.make().reorderable().toMeta()
+      assert.equal(meta.reorderable, true)
+      assert.equal(meta.reorderableColumn, 'sort')
+    })
+
+    it('reorderable meta keys are absent until reorderable() is called', () => {
+      const meta = Table.make().toMeta()
+      assert.equal(meta.reorderable,        undefined)
+      assert.equal(meta.reorderableColumn,  undefined)
+      assert.equal(Table.make().isReorderable(), false)
+    })
+
+    it('isReorderable + getReorderableColumn round-trip', () => {
+      const t = Table.make().reorderable('rank')
+      assert.equal(t.isReorderable(), true)
+      assert.equal(t.getReorderableColumn(), 'rank')
+    })
+
+    it('withReorderUrl stamps the meta and the getter', () => {
+      const t = Table.make().reorderable('sort').withReorderUrl('/admin/posts/_reorder')
+      assert.equal(t.getReorderUrl(), '/admin/posts/_reorder')
+      assert.equal(t.toMeta().reorderUrl, '/admin/posts/_reorder')
+    })
+
+    it('reorderUrl meta is absent until tagged', () => {
+      const meta = Table.make().reorderable('sort').toMeta()
+      assert.equal(meta.reorderUrl, undefined)
+    })
+
     it('slots compose with .columns() and .filters() without clobbering', () => {
       const t = Table.make()
         .columns([Column.make('a')])

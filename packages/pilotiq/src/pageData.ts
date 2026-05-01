@@ -22,7 +22,7 @@ import { Table } from './elements/Table.js'
 import { applyStateUpdate, findForms, findWizardStepFields, selectFormById } from './elements/dispatchForm.js'
 import { validateSchema } from './validation/index.js'
 import { searchAllResources, type GlobalSearchResult } from './search.js'
-import { loadTableRecords, type QueryParams } from './elements/dispatchTable.js'
+import { loadTableRecords, findTables, type QueryParams } from './elements/dispatchTable.js'
 import { findActions } from './elements/dispatchAction.js'
 import { Filter } from './filters/Filter.js'
 import { TrashedFilter } from './filters/TrashedFilter.js'
@@ -329,6 +329,24 @@ export function tagFormStateUrls(
 }
 
 /**
+ * Reorderable rows — stamp the POST-reorder URL on every `Table` that
+ * has `Table.reorderable()` set. The renderer reads `TableMeta.reorderUrl`
+ * to wire the drop handler; tables that aren't reorderable skip wiring
+ * entirely. Same shape as `tagFormStateUrls` so the call site stays
+ * consistent.
+ */
+export function tagTableReorderUrls(
+  elements: ReadonlyArray<Element>,
+  url:      string,
+): void {
+  for (const table of findTables(elements)) {
+    if (table.isReorderable() && !table.getReorderUrl()) {
+      table.withReorderUrl(url)
+    }
+  }
+}
+
+/**
  * Plan #8 — stamp the wizard step-validate endpoint URL on every form
  * whose descendants include a `Wizard` element. `FormMeta.wizardUrl` is
  * what the client posts to on Next-button clicks; forms without a wizard
@@ -451,6 +469,7 @@ export async function resourceIndexData(
   // ORM chain alongside filters.
   await resolveActiveTab(elements, query, indexUrl)
   await loadTableRecords(elements, query, indexUrl, user)
+  tagTableReorderUrls(elements, `${indexUrl}/_reorder`)
   const schemaData = await resolveSchema(elements, ctx)
 
   return {

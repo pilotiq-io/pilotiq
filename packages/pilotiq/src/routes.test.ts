@@ -1084,3 +1084,146 @@ describe('Plan #13 soft-delete routes', () => {
     assert.match(body.notifications[0]!.title, /trash/i)
   })
 })
+
+describe('Reorderable rows — POST /:slug/_reorder', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  function panelWith(R: any) { return Pilotiq.make('T').path('/admin').resources([R]) }
+
+  function makeStubReorderModel(initial: Array<{ id: string; sort: number }> = []) {
+    const calls = { reorder: [] as Array<Array<string | number>> }
+    const M = {
+      primaryKey: 'id',
+      find:   async (id: string) => initial.find(r => r.id === id) ?? null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => undefined,
+      query:  () => ({} as any),
+      reorder: async (ids: Array<string | number>) => {
+        calls.reorder.push(ids)
+      },
+    }
+    return { M, calls }
+  }
+
+  it('throws at boot when reorderable() is set but model.reorder is missing', () => {
+    class Bad extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = {
+        primaryKey: 'id',
+        find:   async () => null,
+        create: async () => ({}),
+        update: async () => ({}),
+        delete: async () => undefined,
+        query:  () => ({} as any),
+      } as any
+      static override table(t: Table): Table {
+        return t.reorderable('sort').columns([Column.make('id')])
+      }
+    }
+    assert.throws(() => registerPilotiqRoutes(router, panelWith(Bad)),
+      /reorderable\("sort"\) but the bound model has no reorder\(ids\) method/)
+  })
+
+  it('does NOT register the _reorder route when reorderable() is not called', () => {
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.equal(paths.includes('POST /admin/posts/_reorder'), false)
+  })
+
+  it('registers POST /:slug/_reorder when reorderable() is opted in', () => {
+    const { M } = makeStubReorderModel()
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table {
+        return t.reorderable('sort').columns([Column.make('id')])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.ok(paths.includes('POST /admin/posts/_reorder'))
+  })
+
+  it('reorder POST forwards ids to model.reorder and returns { ok: true }', async () => {
+    const { M, calls } = makeStubReorderModel()
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table {
+        return t.reorderable('sort').columns([Column.make('id')])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/posts/_reorder')!
+    const req: any = fakeReq({ body: { ids: ['3', '1', '2'] } })
+    const { res } = await callHandlerCapturing(route.handler, req)
+    assert.deepEqual(calls.reorder, [['3', '1', '2']])
+    assert.deepEqual(res.sentBody, { ok: true })
+  })
+
+  it('reorder POST returns 400 on missing / empty ids', async () => {
+    const { M } = makeStubReorderModel()
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table { return t.reorderable('sort').columns([Column.make('id')]) }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/posts/_reorder')!
+    const a = await callHandlerCapturing(route.handler, fakeReq({ body: {} }))
+    assert.equal(a.res.statusCode, 400)
+    const b = await callHandlerCapturing(route.handler, fakeReq({ body: { ids: [] } }))
+    assert.equal(b.res.statusCode, 400)
+  })
+
+  it('reorder POST returns 403 when canEdit returns false', async () => {
+    const { M, calls } = makeStubReorderModel()
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override async canEdit() { return false }
+      static override table(t: Table): Table { return t.reorderable('sort').columns([Column.make('id')]) }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/posts/_reorder')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({ body: { ids: ['1'] } }))
+    assert.equal(res.statusCode, 403)
+    assert.equal(calls.reorder.length, 0, 'model.reorder skipped when policy denies')
+  })
+
+  it('reorder POST returns 422 when model.reorder throws', async () => {
+    const M = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => undefined,
+      query:  () => ({} as any),
+      reorder: async () => { throw new Error('row 7 missing') },
+    }
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table { return t.reorderable('sort').columns([Column.make('id')]) }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/posts/_reorder')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({ body: { ids: ['7', '8'] } }))
+    assert.equal(res.statusCode, 422)
+    const body = res.sentBody as { ok: boolean; error: string }
+    assert.equal(body.ok, false)
+    assert.match(body.error, /row 7 missing/)
+  })
+})

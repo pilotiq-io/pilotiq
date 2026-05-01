@@ -132,6 +132,23 @@ export interface TableMeta extends ElementMeta {
    * `<tfoot>` row when this is present. */
   summaries?: Record<string, SummaryResult[]>
 
+  /** Drag-to-reorder is enabled on this table. The renderer adds a grip
+   * handle column and binds HTML5 DnD on each `<tr>`. The actual sort
+   * column the order is written back to lives on `reorderableColumn`. */
+  reorderable?: true
+
+  /** Name of the column the persisted order is written to. Defaults to
+   * `'sort'` when `Table.reorderable()` is called without an argument.
+   * Pilotiq's default `Table.records()` adapter uses this as the default
+   * sort column when the URL doesn't override `?sort=…`. */
+  reorderableColumn?: string
+
+  /** Stamped server-side at render time. The renderer POSTs the new id
+   * order here when a row is dropped. Absent when the route handler
+   * hasn't tagged the table (panel boot will throw before that point if
+   * `reorderable()` is set without a corresponding `model.reorder`). */
+  reorderUrl?: string
+
   // Render-time state — populated by the framework after `records()` runs.
   rows?:        unknown[]
   total?:       number
@@ -175,6 +192,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _pollInterval?: number
   private _defaultGroup?: string
   private _summaries?:    Record<string, SummaryResult[]>
+  private _reorderableColumn?: string
+  private _reorderUrl?:   string
 
   private constructor() { super() }
 
@@ -321,6 +340,23 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
+  /**
+   * Enable drag-to-reorder. `column` names the model attribute the new
+   * order is written back to (defaults to `'sort'`, matching Filament).
+   * The route registers `POST {base}/{slug}/_reorder` — the renderer
+   * POSTs `{ ids }` there on every drop. Boot panics when this is set
+   * but `Resource.model.reorder` is missing.
+   *
+   * The reorder column also doubles as the default sort: when no
+   * `defaultSort()` is configured and reorder is on, rows render
+   * `(reorderColumn, asc)` so the visible order matches the persisted
+   * order. URL `?sort=…` still wins.
+   */
+  reorderable(column: string = 'sort'): this {
+    this._reorderableColumn = column
+    return this
+  }
+
   // ─── Render-time state ────────────────────────────────
 
   /** Attach loaded rows + total. Called by the framework after `records()` runs. */
@@ -343,6 +379,13 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
+  /** Stamp the reorder POST URL. Called by `tagTableReorderUrls` during
+   * `resourceIndexData` so the renderer knows where to send drops. */
+  withReorderUrl(url: string): this {
+    this._reorderUrl = url
+    return this
+  }
+
   // ─── Getters ──────────────────────────────────────────
 
   getQuery(): TableQueryHandler<Q> | undefined { return this._query }
@@ -360,6 +403,9 @@ export class Table<R = unknown, Q = unknown> extends Element {
   getPollInterval(): number | undefined { return this._pollInterval }
   getDefaultGroup(): string | undefined { return this._defaultGroup }
   getSummaries(): Record<string, SummaryResult[]> | undefined { return this._summaries }
+  getReorderableColumn(): string | undefined { return this._reorderableColumn }
+  isReorderable(): boolean { return this._reorderableColumn !== undefined }
+  getReorderUrl(): string | undefined { return this._reorderUrl }
 
   /** Convenience: the `Column` children only. */
   getColumns(): Column[] {
@@ -391,6 +437,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
       ...(this._pollInterval !== undefined ? { pollInterval: this._pollInterval } : {}),
       ...(this._defaultGroup !== undefined ? { defaultGroup: this._defaultGroup } : {}),
       ...(this._summaries    !== undefined ? { summaries:    this._summaries    } : {}),
+      ...(this._reorderableColumn !== undefined ? { reorderable: true as const, reorderableColumn: this._reorderableColumn } : {}),
+      ...(this._reorderUrl   !== undefined ? { reorderUrl:  this._reorderUrl  } : {}),
       ...(this._rows         !== undefined ? { rows:        this._rows }        : {}),
       ...(this._total        !== undefined ? { total:       this._total }       : {}),
       ...(this._currentSort  !== undefined ? { currentSort: this._currentSort } : {}),

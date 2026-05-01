@@ -331,6 +331,11 @@ interface TableMeta extends ElementMeta {
   defaultSort?: { column: string; direction: 'asc' | 'desc' }
   perPage?:    number
 
+  // Reorderable rows (Table.reorderable):
+  reorderable?:       true
+  reorderableColumn?: string                     // model column the new order writes back to
+  reorderUrl?:        string                     // POST target stamped server-side
+
   // Render-time state (set by loadTableRecords):
   rows?:        unknown[]
   total?:       number

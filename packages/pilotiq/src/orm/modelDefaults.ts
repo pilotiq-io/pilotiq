@@ -81,6 +81,16 @@ export interface ModelLike {
    * Optional on the structural shape; same boot-time check as `restore`.
    */
   forceDelete?(id: string | number): Promise<void>
+
+  /**
+   * Reorderable rows — write a new explicit ordering for the rows whose
+   * primary keys are in `ids`. The implementation overwrites the
+   * configured sort column (`Table.reorderable(col)`) so each id's value
+   * matches its position in the array (1..n). Optional on the structural
+   * shape; pilotiq throws a clear boot error when `Table.reorderable()`
+   * is set but this is missing.
+   */
+  reorder?(ids: Array<string | number>): Promise<void>
 }
 
 /** Read the configured primary key (default `'id'`) off a `ModelLike`. */

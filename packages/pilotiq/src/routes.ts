@@ -18,6 +18,7 @@ import {
 } from './pageData.js'
 import { RelationManager, RESERVED_RELATIONSHIP_TOKENS } from './RelationManager.js'
 import { modelSave, modelLoadRecord, getPrimaryKey } from './orm/modelDefaults.js'
+import { Table } from './elements/Table.js'
 import type { ThemeConfig } from './theme/types.js'
 import { presets } from './theme/presets.js'
 import { baseColors } from './theme/base-colors.js'
@@ -313,6 +314,28 @@ export function registerPilotiqRoutes(
     }
   }
 
+  // Reorderable rows — fail fast at boot when a Resource declares
+  // `Table.reorderable()` but the bound model can't actually persist a
+  // new order. We invoke `R.table(Table.make())` once per resource (the
+  // same call shape `defaultPages` uses at request time) and inspect
+  // `_reorderableColumn`. The model.reorder check is symmetric with
+  // Plan #13's restore/forceDelete guards. Result is cached per-resource
+  // so the route loop below can decide whether to mount `_reorder`.
+  const reorderEnabled = new Map<string, string>() // slug → column
+  for (const R of cfg.resources) {
+    let probeColumn: string | undefined
+    try { probeColumn = R.table(Table.make()).getReorderableColumn() }
+    catch { continue }   // user-side throw — not a reorder concern
+    if (probeColumn === undefined) continue
+    if (!R.model || typeof R.model.reorder !== 'function') {
+      throw new Error(
+        `[Pilotiq] ${R.name}.table() calls reorderable("${probeColumn}") but the bound model has no reorder(ids) method. ` +
+        `Implement \`async reorder(ids)\` on the rudder Model (or remove the .reorderable() call).`,
+      )
+    }
+    reorderEnabled.set(R.getSlug(), probeColumn)
+  }
+
   // ── Dashboard (1-segment) ─────────────────────────────
   router.get(base, async (req) => {
     return view('pilotiq.dashboard', await dashboardData(pilotiq, req))
@@ -396,6 +419,48 @@ export function registerPilotiqRoutes(
         flashNotifications(req, result.notifications)
         return res.redirect(redirect, 303)
       })
+
+      // Reorderable rows — POST ${base}/${slug}/_reorder { ids: [] }
+      // Only mounted when `Resource.table()` opts in (boot-time probe
+      // populates `reorderEnabled`).
+      if (reorderEnabled.has(slug)) {
+        router.post(`${indexUrl}/_reorder`, async (req, res) => {
+          const user = await pilotiq.resolveUser(req)
+          if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+          // List-level edit gate. The drop affects many rows at once;
+          // there's no single record to authorize against, so we pass
+          // `undefined` and let user-supplied `canEdit` overrides branch
+          // on `record === undefined` if they want row-level granularity.
+          if (!await checkPolicy(() => R.canEdit(user, undefined))) return forbidden(res, true)
+
+          const body = await readFormBody(req)
+          const raw  = (body as { ids?: unknown }).ids
+          if (!Array.isArray(raw) || raw.length === 0) {
+            res.status(400)
+            return res.json({ ok: false, error: 'Missing or empty ids array' })
+          }
+          const ids = raw.filter((id): id is string | number =>
+            typeof id === 'string' || typeof id === 'number',
+          )
+          if (ids.length !== raw.length) {
+            res.status(400)
+            return res.json({ ok: false, error: 'ids must contain only strings or numbers' })
+          }
+
+          try {
+            // Boot already verified `R.model?.reorder` exists; the `!`
+            // assertions are safe.
+            await R.model!.reorder!(ids)
+            return res.json({ ok: true })
+          } catch (err) {
+            res.status(422)
+            return res.json({
+              ok:    false,
+              error: err instanceof Error ? err.message : 'Reorder failed',
+            })
+          }
+        })
+      }
     }
 
     // Plan #5 — partial-resolve endpoint for create-mode forms.

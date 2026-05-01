@@ -48,4 +48,8 @@ model Post {
   // Plan #13 — soft-delete column. PostResource.softDeletes = true;
   // Post.softDeletes = true on the rudder Model side.
   deletedAt   DateTime?
+  // Reorderable rows demo — column the drag handler writes back to.
+  // PostResource.table().reorderable('sort') opts in; Post.reorder(ids)
+  // re-stamps this column 1..n in array order.
+  sort        Int       @default(0)
 }

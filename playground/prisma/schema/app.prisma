@@ -49,4 +49,8 @@ model Post {
   // per `feedback_prisma_hoist_shared_schema.md`; the hoisted
   // @prisma/client must agree across playgrounds).
   deletedAt   DateTime?
+  // Reorderable rows demo — mirrored from playground-pilotiq for the
+  // hoisted client (panels playground doesn't surface it). See
+  // `feedback_prisma_hoist_shared_schema.md`.
+  sort        Int       @default(0)
 }

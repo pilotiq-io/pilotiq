@@ -125,7 +125,13 @@ export async function loadTableRecords(
 
   await Promise.all(tables.map(async (table) => {
     // Carry per-table defaults forward when the URL didn't override them.
-    const effectiveSort    = sort    ?? table.getDefaultSort()
+    // Reorderable tables fall back to `(reorderableColumn, asc)` when no
+    // explicit `defaultSort` is set, so the visible order matches the
+    // persisted column even before the user clicks a header.
+    const reorderFallback = table.isReorderable() && !table.getDefaultSort()
+      ? { column: table.getReorderableColumn()!, direction: 'asc' as const }
+      : undefined
+    const effectiveSort    = sort    ?? table.getDefaultSort() ?? reorderFallback
     const effectivePerPage = perPage ?? table.getPerPage()
     const effectivePage    = page    ?? 1
 

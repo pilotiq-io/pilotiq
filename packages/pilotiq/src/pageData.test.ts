@@ -10,7 +10,10 @@ import {
   panelInfo,
   resolveActiveTab,
   tagFormStateUrls,
+  tagTableReorderUrls,
 } from './pageData.js'
+import { Table } from './elements/Table.js'
+import { Column } from './Column.js'
 import { Pilotiq } from './Pilotiq.js'
 import { Resource } from './Resource.js'
 import { Global } from './Global.js'
@@ -439,6 +442,26 @@ describe('tagFormStateUrls (Plan #5)', () => {
     tagFormStateUrls([live, inert], (id) => `/x/${id}`)
     assert.equal(live.getStateUrl(),  '/x/live')
     assert.equal(inert.getStateUrl(), undefined)
+  })
+})
+
+describe('tagTableReorderUrls (reorderable rows)', () => {
+  it('stamps reorderUrl on tables with reorderable() opted in', () => {
+    const t = Table.make().reorderable('sort').columns([Column.make('id')])
+    tagTableReorderUrls([t], '/admin/posts/_reorder')
+    assert.equal(t.getReorderUrl(), '/admin/posts/_reorder')
+  })
+
+  it('skips tables without reorderable()', () => {
+    const t = Table.make().columns([Column.make('id')])
+    tagTableReorderUrls([t], '/admin/posts/_reorder')
+    assert.equal(t.getReorderUrl(), undefined)
+  })
+
+  it('preserves a previously stamped URL (idempotent)', () => {
+    const t = Table.make().reorderable('sort').withReorderUrl('/x/_reorder')
+    tagTableReorderUrls([t], '/y/_reorder')
+    assert.equal(t.getReorderUrl(), '/x/_reorder')
   })
 })
 

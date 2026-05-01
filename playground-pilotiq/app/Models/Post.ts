@@ -22,4 +22,15 @@ export class Post extends Model {
   createdAt!:   Date
   updatedAt!:   Date
   deletedAt!:   Date | null
+  sort!:        number
+
+  /** Reorderable rows — pilotiq's `Table.reorderable('sort')` POSTs the
+   * new id order here. We re-stamp the `sort` column 1..n in array
+   * order. A real app should run this inside a transaction and drop
+   * any unknown ids; the demo keeps it simple. */
+  static async reorder(ids: Array<string | number>): Promise<void> {
+    await Promise.all(ids.map((id, i) =>
+      Post.update(id, { sort: i + 1 } as Partial<Post>),
+    ))
+  }
 }

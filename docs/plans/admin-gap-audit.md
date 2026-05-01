@@ -48,7 +48,7 @@ Penciled for later (Tier 3): widgets/dashboards, Repeater/Builder fields, Wizard
 | Column types (TextColumn, IconColumn, ImageColumn, BadgeColumn, BooleanColumn, ColorColumn, etc.) | **1** | We render every cell as bare text. **Plan #2.** |
 | ✅ `defaultGroup` (group-by row banding) DONE | 2 | Shipped 2026-05-04 — server-side stable-sort + `_groupValue` per row + banded heading row. Rich `groups([...])` (collapsible/labeled) deferred. |
 | ✅ `summaries()` (Sum/Avg/Count/Range row at footer) DONE | 2 | Shipped 2026-05-04 — `Column.summarize([Sum/Average/Count/Range])`; per-page only; `<tfoot>` row. Cross-page aggregation deferred. |
-| `reorderable(column)` (drag-to-reorder rows) | 2 | Needs `R.model.reorder` ORM contract. |
+| ✅ `reorderable(column)` (drag-to-reorder rows) DONE | 2 | Shipped 2026-05-04 — `Table.reorderable('sort')` + optional `ModelLike.reorder?(ids)` contract + `POST {base}/{slug}/_reorder` + grip-handle column with native HTML5 DnD. Drag locks off when filters/search/non-default-sort/page>1 are active so only the canonical order round-trips. |
 | ✅ `poll(interval)` (auto-refresh) DONE | 2 | Shipped 2026-05-04 — SPA-friendly via vike navigate; pauses on hidden tab. |
 | `recordUrl(fn)` (entire row clickable) | 2 | One-liner in renderer. |
 | `striped()` | 1 | Trivial. Roll into #2. |

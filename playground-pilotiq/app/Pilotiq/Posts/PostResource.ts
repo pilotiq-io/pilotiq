@@ -45,6 +45,7 @@ export class PostResource extends Resource {
 
   static override table(table: Table): Table {
     return table
+      .reorderable('sort')
       .columns([
         Column.make('title').sortable().searchable().weight('semibold'),
         BadgeColumn.make('status').colors({
@@ -81,7 +82,9 @@ export class PostResource extends Resource {
         Action.bulkRestore    (PostResource, ADMIN),
         Action.bulkForceDelete(PostResource, ADMIN),
       ])
-      .defaultSort('createdAt', 'desc')
+      // No `defaultSort()` — `reorderable('sort')` falls back to
+      // `(sort, asc)` so the visible order matches the persisted column
+      // and drag is enabled out of the box.
       .paginate(10)
   }
 }
