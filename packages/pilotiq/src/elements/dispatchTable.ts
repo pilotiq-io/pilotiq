@@ -282,11 +282,16 @@ export async function loadTableRecords(
  * lives in the page schema (above the Table), so this just walks the
  * tree until it finds the matching tab. Returns `undefined` when the
  * page has no ListTabs (most non-resource pages).
+ *
+ * Uses a structural `getType() === 'listTab'` check rather than
+ * `instanceof ListTab` for the same reason as `findForms / findActions`
+ * — Vite SSR module-cache duplication can load the package through
+ * two paths during a dev session and silently break `instanceof`.
  */
 function findActiveTab(elements: ReadonlyArray<Element>): ListTab | undefined {
   const walk = (els: ReadonlyArray<Element>): ListTab | undefined => {
     for (const el of els) {
-      if (el instanceof ListTab && el.isActive()) return el
+      if (el.getType() === 'listTab' && (el as ListTab).isActive()) return el as ListTab
       const children = el.getChildren()
       if (children) {
         const found = walk(children)

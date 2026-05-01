@@ -485,20 +485,21 @@ export async function resolveActiveTab(
   if (listTabs.length === 0) return
 
   for (const container of listTabs) {
-    const children = (container.getChildren() ?? []).filter((c): c is ListTab => c instanceof ListTab)
+    const children = (container.getChildren() ?? []).filter((c): c is ListTab => c.getType() === 'listTab')
     if (children.length === 0) continue
 
-    // Active tab: explicit `?tab=name` → tab marked `.default()` → first.
+    // Default tab (used both for `?tab=` fallback and to omit the param
+    // from the canonical URL of that tab — see `buildTabUrl`).
+    const defaultTab = children.find(t => t.isDefault()) ?? children[0]!
+
+    // Active tab: explicit `?tab=name` → default tab.
     const wanted = typeof query['tab'] === 'string' ? query['tab'] : undefined
-    const active =
-      (wanted && children.find(t => t.name === wanted)) ||
-      children.find(t => t.isDefault()) ||
-      children[0]!
+    const active = (wanted && children.find(t => t.name === wanted)) || defaultTab
 
     // Stamp render-time state on each tab.
     children.forEach(t => {
       t.withActive(t === active)
-      t.withUrl(buildTabUrl(currentPath, query, t.name))
+      t.withUrl(buildTabUrl(currentPath, query, t.name, defaultTab.name))
     })
 
     // Resolve every tab's badge in parallel — failed handlers swallow
@@ -521,7 +522,7 @@ function findListTabs(elements: ReadonlyArray<Element>): ListTabs[] {
   const out: ListTabs[] = []
   const walk = (els: ReadonlyArray<Element>): void => {
     for (const el of els) {
-      if (el instanceof ListTabs) out.push(el)
+      if (el.getType() === 'listTabs') out.push(el as ListTabs)
       const children = el.getChildren()
       if (children) walk(children)
     }
@@ -531,19 +532,23 @@ function findListTabs(elements: ReadonlyArray<Element>): ListTabs[] {
 }
 
 function buildTabUrl(
-  pathname: string,
-  query:    Record<string, string>,
-  tabName:  string,
+  pathname:       string,
+  query:          Record<string, string>,
+  tabName:        string,
+  defaultTabName: string,
 ): string {
   // Carry forward search/sort/perPage + any filter values; reset page to 1
   // (tab change reshapes the result set, page numbers don't translate).
+  // The default tab gets the canonical, paramless URL — visiting that URL
+  // already lands on the default, so emitting `?tab=default` would just be
+  // noise that bookmarks/share-links pick up.
   const params = new URLSearchParams()
   for (const [k, v] of Object.entries(query)) {
     if (v === undefined || v === '' || v === null) continue
     if (k === 'tab' || k === 'page') continue
     params.set(k, String(v))
   }
-  params.set('tab', tabName)
+  if (tabName !== defaultTabName) params.set('tab', tabName)
   const qs = params.toString()
   return qs ? `${pathname}?${qs}` : pathname
 }

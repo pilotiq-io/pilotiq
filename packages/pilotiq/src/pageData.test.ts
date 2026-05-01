@@ -135,8 +135,34 @@ describe('resolveActiveTab', () => {
       assert.ok(url.includes('status=published'),   'filter values carry forward')
       assert.ok(!url.includes('page='),             'page resets on tab change')
     }
-    assert.ok(allUrl.includes('tab=all'))
-    assert.ok(draftsUrl.includes('tab=drafts'))
+    // `all` is the implicit default tab (first, none marked `.default()`)
+    // — its canonical URL omits `?tab=`. Non-default tabs include it.
+    assert.ok(!allUrl.includes('tab='),         'default tab URL omits ?tab=')
+    assert.ok(draftsUrl.includes('tab=drafts'), 'non-default tab URL includes ?tab=')
+  })
+
+  it('default tab URL is the bare path when no other params are present', async () => {
+    const all    = ListTab.make('all')
+    const drafts = ListTab.make('drafts')
+    const tabs   = ListTabs.make().tabs([all, drafts])
+
+    await resolveActiveTab([tabs], {}, '/admin/articles')
+
+    // Default tab → no query string at all.
+    assert.equal(all.toMeta().url, '/admin/articles')
+    // Non-default still names itself.
+    assert.equal(drafts.toMeta().url, '/admin/articles?tab=drafts')
+  })
+
+  it('explicitly-marked .default() tab gets the paramless URL even when not first', async () => {
+    const all     = ListTab.make('all')
+    const drafts  = ListTab.make('drafts').default()
+    const tabs    = ListTabs.make().tabs([all, drafts])
+
+    await resolveActiveTab([tabs], {}, '/admin/articles')
+
+    assert.equal(drafts.toMeta().url, '/admin/articles', 'marked-default tab → bare path')
+    assert.equal(all.toMeta().url,    '/admin/articles?tab=all')
   })
 
   it('resolves badge handlers in parallel and stamps the result on each tab', async () => {
