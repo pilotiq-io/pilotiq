@@ -18,6 +18,7 @@ import { Element } from './schema/Element.js'
 import { Field } from './fields/Field.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { Form } from './elements/Form.js'
+import { Table } from './elements/Table.js'
 import { applyStateUpdate, findForms, findWizardStepFields, selectFormById } from './elements/dispatchForm.js'
 import { validateSchema } from './validation/index.js'
 import { searchAllResources, type GlobalSearchResult } from './search.js'
@@ -29,6 +30,11 @@ import { resolveTheme } from './theme/resolve.js'
 import type { ThemeMeta } from './theme/types.js'
 import { consumeFlashedNotifications } from './notifications/flash.js'
 import { serializeIcon, type SerializedIcon } from './icons/types.js'
+import type { RelationManager } from './RelationManager.js'
+import {
+  modelSave, modelLoadRecord, modelRelationTableRecords, getPrimaryKey,
+  type ModelLike, type ModelQuery,
+} from './orm/modelDefaults.js'
 
 // ─── Shared helpers ──────────────────────────────────────────
 
@@ -633,6 +639,427 @@ export async function resourceEditData(
     notifications: consumeFlashedNotifications(req),
     ...(prefill?.errors ? { hasErrors: true } : {}),
   }
+}
+
+// ─── Plan #11 relation-manager data builder ─────────────────
+
+/**
+ * Plan #11 — three scopes a single relation-manager URL space resolves to:
+ *
+ *   list:    GET    {base}/{slug}/:id/{rel}
+ *   create:  GET    {base}/{slug}/:id/{rel}/create
+ *   edit:    GET    {base}/{slug}/:id/{rel}/{childId}/edit
+ *
+ * Each carries enough state for `relationManagerData` to load the right
+ * parent + (for edit) child + form/table context. Submit-side handlers
+ * live in `routes.ts` and reuse `dispatchFormSubmit`.
+ */
+export type RelationManagerScope =
+  | { kind: 'relation-list';   slug: string; recordId: string; relationship: string; query?: Record<string, string> }
+  | { kind: 'relation-create'; slug: string; recordId: string; relationship: string; prefill?: { values?: Record<string, unknown>; errors?: Record<string, string[]> } }
+  | { kind: 'relation-edit';   slug: string; recordId: string; relationship: string; childId: string; prefill?: { values?: Record<string, unknown>; errors?: Record<string, string[]> } }
+
+/**
+ * Failure outcomes the data builder discriminates back to the route
+ * handler, which decides between 403 / 404 / HTML / JSON shapes.
+ *
+ *   `null`            — unknown panel / parent / manager / child;
+ *                        route returns 404
+ *   `{ ok: false, status: 403 }` — policy denied; route returns 403
+ *
+ * Success returns the schemaData payload directly (a record, not
+ * tagged) for parity with `resourceIndexData / resourceCreateData`.
+ */
+export type RelationManagerResult =
+  | Record<string, unknown>
+  | { ok: false; status: 403 }
+  | null
+
+/**
+ * Discover the related Resource for a manager. Order:
+ *   1. `M.relatedResource` explicit override (skip discovery).
+ *   2. Rudder ORM convention: walk
+ *      `R.model.relations[manager.relationship].model()` and find
+ *      `cfg.resources[i].model === relatedModel`.
+ *   3. Otherwise undefined — caller must error or fall back.
+ *
+ * A returned Resource is the one whose `model` backs the related
+ * table. Callers use it for `Related.model.find(childId)`,
+ * `Related.canEdit(user, child)`, and the auto-wired form save handler.
+ */
+export function findRelatedResource(
+  M:   typeof RelationManager,
+  R:   ResourceClass,
+  cfg: ReturnType<Pilotiq['getConfig']>,
+): ResourceClass | undefined {
+  if (M.relatedResource) return M.relatedResource
+  const ParentModel = R.model as unknown as { relations?: Record<string, { model?: () => unknown }> } | undefined
+  if (!ParentModel) return undefined
+  const def = ParentModel.relations?.[M.getRelationship()]
+  const RelatedModel = typeof def?.model === 'function' ? def.model() : undefined
+  if (!RelatedModel) return undefined
+  return cfg.resources.find(r => (r.model as unknown) === RelatedModel)
+}
+
+/** Find a registered manager on a Resource by its relationship key.
+ *  Throws on unknown manager — so the route can 404 cleanly. */
+function findManager(
+  R:            ResourceClass,
+  relationship: string,
+): typeof RelationManager | undefined {
+  return R.relations().find(M => {
+    try { return M.getRelationship() === relationship } catch { return false }
+  })
+}
+
+/**
+ * Verify a child record actually belongs to the given parent under the
+ * declared relationship. Anti-IDOR — without this an attacker can swap
+ * the `:childId` segment to load any related-model row regardless of
+ * whether it's actually owned by the parent.
+ *
+ * Strategy: re-resolve the parent's relation query and check whether
+ * the child's primary key shows up in `where(pk, '=', childId).paginate(1, 1)`.
+ * Yes, it's a second round-trip — but it's the single point of trust
+ * for IDOR safety, and it fits naturally into the same query path
+ * `modelRelationTableRecords` uses.
+ */
+async function childBelongsToParent(
+  parentModel:  ModelLike,
+  parent:       unknown,
+  relationship: string,
+  childPk:      string,
+  childId:      string,
+): Promise<boolean> {
+  try {
+    const q: ModelQuery = (parentModel.relatedQuery
+      ? parentModel.relatedQuery(parent, relationship)
+      : (parent as { related: (n: string) => ModelQuery }).related(relationship))
+    const result = await q.where(childPk, '=', childId).paginate(1, 1)
+    return result.total > 0
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Auto-wire the manager's table records loader against the parent's
+ * relation query when the user didn't set `Table.records()` themselves.
+ * Mirrors `defaultPages`'s wiring of `Table.records()` from `R.model`
+ * for the resource list page.
+ */
+function autoWireManagerTable(
+  table:        Table,
+  parentModel:  ModelLike,
+  parent:       unknown,
+  relationship: string,
+): void {
+  if (table.getRecords()) return  // user wired it explicitly
+  table.records(modelRelationTableRecords(parentModel, parent, relationship, table))
+}
+
+/**
+ * Auto-wire the manager's form save + loadRecord handlers against the
+ * **related** Resource's `model` when the user didn't set them. The
+ * route handler is responsible for stamping the parent context
+ * (parent, parentRecord, parentId, relationship) onto the
+ * `FormContext` so user-supplied `mutateDataBeforeCreate` etc. can
+ * read them.
+ */
+function autoWireManagerForm(form: Form, RelatedModel: ModelLike): void {
+  if (!form.getSave())       form.save(modelSave(RelatedModel))
+  if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(RelatedModel))
+}
+
+async function safePolicy(fn: () => Promise<boolean> | boolean): Promise<boolean> {
+  try { return Boolean(await fn()) } catch { return false }
+}
+
+/**
+ * Plan #11 — render data for the three relation-manager URL scopes.
+ * Mirrors the resource* builders' shape so routes and Vike +data hooks
+ * consume identical props. Authorization runs inline (parent
+ * `canAccess + canEdit(parent)` then manager-scoped predicate); IDOR
+ * check on `relation-edit` runs against the parent's relation query.
+ *
+ * Returns:
+ *   - `null` when panel / parent / manager / child don't exist.
+ *   - `{ ok: false, status: 403 }` when authorization denies.
+ *   - the props record on success (route picks SSR view / SPA prop
+ *     downstream).
+ */
+export async function relationManagerData(
+  pilotiq: Pilotiq,
+  scope:   RelationManagerScope,
+  req?:    unknown,
+): Promise<RelationManagerResult> {
+  const cfg = pilotiq.getConfig()
+
+  const R = cfg.resources.find(r => r.getSlug() === scope.slug)
+  if (!R) return null
+
+  const M = findManager(R, scope.relationship)
+  if (!M) return null
+
+  const user = await pilotiq.resolveUser(req)
+
+  // Layer 1: parent access. canAccess gates the resource entirely;
+  // canEdit gates managing its relations (managers are read-write
+  // surfaces — read-only inline views opt in by overriding the
+  // manager's can*).
+  if (!await safePolicy(() => R.canAccess(user))) return { ok: false, status: 403 }
+
+  if (!R.model) {
+    // Without a model on the parent we can't load the parent record,
+    // and without that we can't IDOR-check children. Point users at
+    // the missing wiring rather than silent 500s.
+    throw new Error(
+      `[Pilotiq] Resource "${R.name}" has relations(${M.name}) but no static model. ` +
+      `Set Resource.model = … to enable relation managers, or remove the manager.`,
+    )
+  }
+
+  const parentRecord = await R.model.find(scope.recordId).catch(() => undefined)
+  if (!parentRecord) return null
+
+  if (!await safePolicy(() => R.canEdit(user, parentRecord))) return { ok: false, status: 403 }
+
+  const Related = findRelatedResource(M, R, cfg)
+  // Related Resource is required for: edit/create form auto-wire,
+  // child loading on edit, related URL generation. Throw when missing
+  // *only* if we'd otherwise need it — for `relation-list` it's
+  // optional (the table can be hand-wired by the user).
+  const needRelated = scope.kind !== 'relation-list'
+  if (needRelated && !Related) {
+    throw new Error(
+      `[Pilotiq] RelationManager ${M.name} on ${R.name} could not resolve its related Resource. ` +
+      `Set static relatedResource on the manager, or ensure the parent's model declares relations[${JSON.stringify(M.getRelationship())}].`,
+    )
+  }
+
+  switch (scope.kind) {
+    case 'relation-list':
+      return buildRelationListData(pilotiq, R, M, Related, parentRecord, scope, req, user)
+    case 'relation-create':
+      return buildRelationCreateData(pilotiq, R, M, Related!, parentRecord, scope, req, user)
+    case 'relation-edit':
+      return buildRelationEditData(pilotiq, R, M, Related!, parentRecord, scope, req, user)
+  }
+}
+
+async function buildRelationListData(
+  pilotiq: Pilotiq,
+  R: ResourceClass,
+  M: typeof RelationManager,
+  Related: ResourceClass | undefined,
+  parentRecord: unknown,
+  scope: Extract<RelationManagerScope, { kind: 'relation-list' }>,
+  req: unknown,
+  user: unknown,
+): Promise<RelationManagerResult> {
+  if (!await safePolicy(() => M.canViewAny(user, parentRecord))) return { ok: false, status: 403 }
+
+  const cfg = pilotiq.getConfig()
+  const base = cfg.path
+  const listUrl = `${base}/${scope.slug}/${scope.recordId}/${scope.relationship}`
+
+  // Build a single Table by piping a fresh Table through M.table(table).
+  const table = M.table(Table.make())
+  autoWireManagerTable(table, R.model as ModelLike, parentRecord, scope.relationship)
+
+  const ctx: SchemaContext = uploadCtx(userCtx({
+    mode:     'table',
+    basePath: base,
+    record:   parentRecord,
+  }, user), base)
+
+  const elements: Element[] = [table]
+  tagActionDispatch(elements, listUrl)
+  await loadTableRecords(elements, scope.query ?? {}, listUrl, user)
+  const schemaData = await resolveSchema(elements, ctx)
+
+  return {
+    pageType: 'relation-list',
+    panel:    await panelInfo(pilotiq, req),
+    resource: { name: R.name, label: R.label, labelSingular: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
+    relation: {
+      name:          M.name,
+      label:         M.getLabel(),
+      labelSingular: M.getLabelSingular(),
+      relationship:  scope.relationship,
+      icon:          M.getIcon() ? serializeIcon(M.getIcon()!, M.name) : undefined,
+      relatedSlug:   Related?.getSlug(),
+    },
+    parent: {
+      id:    scope.recordId,
+      title: deriveParentTitle(R, parentRecord),
+    },
+    basePath: base,
+    layout:   cfg.layout,
+    schemaData,
+    notifications: consumeFlashedNotifications(req),
+  }
+}
+
+async function buildRelationCreateData(
+  pilotiq: Pilotiq,
+  R: ResourceClass,
+  M: typeof RelationManager,
+  Related: ResourceClass,
+  parentRecord: unknown,
+  scope: Extract<RelationManagerScope, { kind: 'relation-create' }>,
+  req: unknown,
+  user: unknown,
+): Promise<RelationManagerResult> {
+  if (!await safePolicy(() => M.canCreate(user, parentRecord))) return { ok: false, status: 403 }
+
+  const cfg = pilotiq.getConfig()
+  const base = cfg.path
+  const createUrl = `${base}/${scope.slug}/${scope.recordId}/${scope.relationship}/create`
+
+  const form = M.form(Form.make())
+  if (Related.model) autoWireManagerForm(form, Related.model)
+
+  const elements: Element[] = [form]
+  tagFormActions(elements, createUrl)
+
+  if (scope.prefill) {
+    if (scope.prefill.values) form.withValues(scope.prefill.values)
+    if (scope.prefill.errors) form.withErrors(scope.prefill.errors)
+  }
+
+  const ctx: SchemaContext = uploadCtx(userCtx({
+    mode:     'create',
+    basePath: base,
+    record:   parentRecord,
+  }, user), base)
+
+  const schemaData = await resolveSchema(elements, ctx)
+
+  return {
+    pageType: 'relation-create',
+    panel:    await panelInfo(pilotiq, req),
+    resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
+    relation: {
+      name:          M.name,
+      label:         M.getLabel(),
+      labelSingular: M.getLabelSingular(),
+      relationship:  scope.relationship,
+      icon:          M.getIcon() ? serializeIcon(M.getIcon()!, M.name) : undefined,
+      relatedSlug:   Related.getSlug(),
+    },
+    parent: {
+      id:    scope.recordId,
+      title: deriveParentTitle(R, parentRecord),
+    },
+    mode:     'create' as const,
+    basePath: base,
+    layout:   cfg.layout,
+    schemaData,
+    notifications: consumeFlashedNotifications(req),
+    ...(scope.prefill?.errors ? { hasErrors: true } : {}),
+  }
+}
+
+async function buildRelationEditData(
+  pilotiq: Pilotiq,
+  R: ResourceClass,
+  M: typeof RelationManager,
+  Related: ResourceClass,
+  parentRecord: unknown,
+  scope: Extract<RelationManagerScope, { kind: 'relation-edit' }>,
+  req: unknown,
+  user: unknown,
+): Promise<RelationManagerResult> {
+  if (!Related.model) {
+    throw new Error(
+      `[Pilotiq] Cannot load child record for ${M.name}: Related Resource ${Related.name} has no static model.`,
+    )
+  }
+  const childPk = getPrimaryKey(Related.model)
+
+  // IDOR check first — confirm the child actually belongs to the
+  // parent under this relationship before doing anything else. Guards
+  // against URL tampering swapping `:childId`.
+  const belongs = await childBelongsToParent(
+    R.model as ModelLike, parentRecord, scope.relationship, childPk, scope.childId,
+  )
+  if (!belongs) return null
+
+  const child = await Related.model.find(scope.childId).catch(() => undefined)
+  if (!child) return null
+
+  if (!await safePolicy(() => M.canEdit(user, child, parentRecord))) return { ok: false, status: 403 }
+
+  const cfg = pilotiq.getConfig()
+  const base = cfg.path
+  const editUrl = `${base}/${scope.slug}/${scope.recordId}/${scope.relationship}/${scope.childId}/edit`
+
+  const form = M.form(Form.make())
+  autoWireManagerForm(form, Related.model)
+
+  const elements: Element[] = [form]
+  tagFormActions(elements, editUrl)
+
+  // Prefill values: explicit prefill (re-render after 422) wins,
+  // otherwise pipe the loaded child through Form's fill pipeline.
+  if (scope.prefill?.values) {
+    form.withValues(scope.prefill.values)
+    if (scope.prefill.errors) form.withErrors(scope.prefill.errors)
+  } else if (child != null) {
+    const values = await applyFillPipeline(form, child)
+    form.withValues(values)
+  }
+
+  const ctx: SchemaContext = uploadCtx(userCtx({
+    mode:     'edit',
+    basePath: base,
+    record:   child,
+    recordId: scope.childId,
+  }, user), base)
+
+  const schemaData = await resolveSchema(elements, ctx)
+
+  return {
+    pageType: 'relation-edit',
+    panel:    await panelInfo(pilotiq, req),
+    resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
+    relation: {
+      name:          M.name,
+      label:         M.getLabel(),
+      labelSingular: M.getLabelSingular(),
+      relationship:  scope.relationship,
+      icon:          M.getIcon() ? serializeIcon(M.getIcon()!, M.name) : undefined,
+      relatedSlug:   Related.getSlug(),
+    },
+    parent: {
+      id:    scope.recordId,
+      title: deriveParentTitle(R, parentRecord),
+    },
+    mode:     'edit' as const,
+    childId:  scope.childId,
+    basePath: base,
+    layout:   cfg.layout,
+    schemaData,
+    notifications: consumeFlashedNotifications(req),
+    ...(scope.prefill?.errors ? { hasErrors: true } : {}),
+  }
+}
+
+/** Pull a human-readable title off a parent record for breadcrumb /
+ *  page-title use. Falls back through `recordTitleAttribute` →
+ *  `name` → `title` → primary key value → 'Record'. */
+function deriveParentTitle(R: ResourceClass, record: unknown): string {
+  const r = record as Record<string, unknown>
+  const attr = R.recordTitleAttribute
+  if (attr && r[attr] != null) return String(r[attr])
+  if (r['name']  != null) return String(r['name'])
+  if (r['title'] != null) return String(r['title'])
+  if (R.model) {
+    const pk = getPrimaryKey(R.model)
+    if (r[pk] != null) return String(r[pk])
+  }
+  return 'Record'
 }
 
 // ─── Plan #5 partial-resolve data builder ────────────────────

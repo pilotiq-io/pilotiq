@@ -2,6 +2,7 @@ import type { Element } from './schema/Element.js'
 import type { Form } from './elements/Form.js'
 import type { Table } from './elements/Table.js'
 import type { IconValue } from './icons/types.js'
+import type { ResourceClass } from './Resource.js'
 
 /**
  * Plan #11 — RelationManager abstract base class.
@@ -63,6 +64,20 @@ export abstract class RelationManager {
    * resource's `recordTitleAttribute`, then to the same fallback chain
    * the resource uses (`name → title → id`). */
   static recordTitleAttribute?: string
+
+  /**
+   * Explicit pointer to the related resource class. Optional — when
+   * unset, pilotiq discovers the related resource via the rudder ORM
+   * convention (`parentModel.relations[relationship].model()` matched
+   * against `cfg.resources[i].model`). Override here when:
+   *   - the parent's ORM doesn't follow the rudder relations convention
+   *   - multiple resources share the same model (e.g. `BlogPostResource`
+   *     and `DraftResource` both backed by `Post`) and auto-discovery
+   *     would be ambiguous
+   *   - the manager projects onto a model that's not registered as a
+   *     standalone Resource (rare — usually you'd just register one)
+   */
+  static relatedResource?: ResourceClass
 
   /**
    * Configure the form used by the manager's create + edit pages.
