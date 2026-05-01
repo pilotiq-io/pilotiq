@@ -2,7 +2,7 @@ import type { Router } from '@rudderjs/router'
 import type { AppRequest, AppResponse } from '@rudderjs/contracts'
 import { view } from '@rudderjs/view'
 import type { Pilotiq } from './Pilotiq.js'
-import type { Form } from './elements/Form.js'
+import { Form } from './elements/Form.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { dispatchFormSubmit, findForms, selectForm } from './elements/dispatchForm.js'
 import { dispatchAction, findActions, parseActionBody, type ResolveRecord } from './elements/dispatchAction.js'
@@ -14,7 +14,10 @@ import {
   formStateData, type FormStateScope,
   formWizardData,
   searchData,
+  relationManagerData, findRelatedResource,
 } from './pageData.js'
+import { RelationManager, RESERVED_RELATIONSHIP_TOKENS } from './RelationManager.js'
+import { modelSave, modelLoadRecord, getPrimaryKey } from './orm/modelDefaults.js'
 import type { ThemeConfig } from './theme/types.js'
 import { presets } from './theme/presets.js'
 import { baseColors } from './theme/base-colors.js'
@@ -288,6 +291,21 @@ export function registerPilotiqRoutes(
 ): void {
   const cfg = pilotiq.getConfig()
   const base = cfg.path
+
+  // Plan #11 — fail fast at boot when any relation manager's
+  // `relationship` collides with a reserved URL token. A silent 404 at
+  // request time is much harder to debug.
+  for (const R of cfg.resources) {
+    for (const M of R.relations()) {
+      const rel = M.getRelationship()
+      if (RESERVED_RELATIONSHIP_TOKENS.has(rel)) {
+        throw new Error(
+          `[Pilotiq] RelationManager ${M.name} on ${R.name} uses reserved relationship "${rel}". ` +
+          `Reserved tokens: ${[...RESERVED_RELATIONSHIP_TOKENS].join(', ')}. Rename it.`,
+        )
+      }
+    }
+  }
 
   // ── Dashboard (1-segment) ─────────────────────────────
   router.get(base, async (req) => {
@@ -609,6 +627,246 @@ export function registerPilotiqRoutes(
         }
         flashNotifications(req, result.notifications)
         return res.redirect(redirect, 303)
+      })
+    }
+
+    // ── Plan #11 relation manager routes ───────────────
+    // Per-manager: list, create (GET/POST), edit (GET/POST), delete (POST).
+    // Mounted under ${base}/${slug}/:id/${rel} — the `:id` segment is the
+    // PARENT record id; the `:childId` segment (where present) is the
+    // related record's id. Authorization runs in two layers: parent
+    // canAccess + canEdit(parent), then manager-scoped can*.
+    for (const M of R.relations()) {
+      const rel = M.getRelationship()
+      const parentBase = `${base}/${slug}/:id/${rel}`
+
+      // Common policy prelude: load parent, gate access. Returns the
+      // parent record on success or a thrown 403/404 response. Returns
+      // `undefined` when the route should bail out (response already sent).
+      const requireParent = async (req: AppRequest, res: AppResponse, json: boolean): Promise<{ user: unknown; parent: unknown; recordId: string } | undefined> => {
+        const recordId = req.params['id']!
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) { forbidden(res, json); return undefined }
+        if (!R.model) {
+          res.status(500)
+          if (json) res.json({ ok: false, error: `Resource "${R.name}" has relations but no static model` })
+          else      res.send(`Resource "${R.name}" has relations but no static model`)
+          return undefined
+        }
+        const parent = await R.model.find(recordId).catch(() => undefined)
+        if (!parent) { res.status(404); if (json) res.json({ ok: false, error: 'Parent not found' }); else res.send('Parent not found'); return undefined }
+        if (!await checkPolicy(() => R.canEdit(user, parent))) { forbidden(res, json); return undefined }
+        return { user, parent, recordId }
+      }
+
+      // List — GET ${base}/${slug}/:id/${rel}
+      router.get(parentBase, async (req, res) => {
+        const json = wantsJson(req)
+        const ctx = await requireParent(req, res, json)
+        if (!ctx) return
+        if (!await checkPolicy(() => M.canViewAny(ctx.user, ctx.parent))) return forbidden(res, json)
+        const data = await relationManagerData(pilotiq, {
+          kind: 'relation-list', slug, recordId: ctx.recordId, relationship: rel, query: req.query as Record<string, string>,
+        }, req)
+        if (data === null)                            { res.status(404); return res.send('Not found') }
+        if ('ok' in data && data.ok === false)        return forbidden(res, json)
+        return view('pilotiq.relation-list', data)
+      })
+
+      // Create — GET ${base}/${slug}/:id/${rel}/create
+      router.get(`${parentBase}/create`, async (req, res) => {
+        const json = wantsJson(req)
+        const ctx = await requireParent(req, res, json)
+        if (!ctx) return
+        if (!await checkPolicy(() => M.canCreate(ctx.user, ctx.parent))) return forbidden(res, json)
+        const data = await relationManagerData(pilotiq, {
+          kind: 'relation-create', slug, recordId: ctx.recordId, relationship: rel,
+        }, req)
+        if (data === null)                            { res.status(404); return res.send('Not found') }
+        if ('ok' in data && data.ok === false)        return forbidden(res, json)
+        return view('pilotiq.relation-create', data)
+      })
+
+      // Create submit — POST ${base}/${slug}/:id/${rel}/create
+      router.post(`${parentBase}/create`, async (req, res) => {
+        const json = wantsJson(req)
+        const pre = await requireParent(req, res, json)
+        if (!pre) return
+        if (!await checkPolicy(() => M.canCreate(pre.user, pre.parent))) return forbidden(res, json)
+
+        const Related = findRelatedResource(M, R, cfg)
+        if (!Related) {
+          res.status(500)
+          const msg = `RelationManager ${M.name}: cannot resolve related Resource for create`
+          return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+        }
+
+        const body = await readFormBody(req)
+        const { values } = splitMeta(body)
+
+        const createUrl = `${parentBase}/create`.replace(':id', pre.recordId)
+        const listUrl   = parentBase.replace(':id', pre.recordId)
+        const form = M.form(Form.make())
+        if (Related.model) {
+          if (!form.getSave())       form.save(modelSave(Related.model))
+          if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related.model))
+        }
+
+        // Stamp parent context onto FormContext so user hooks
+        // (mutateDataBeforeCreate, redirectAfterSave, etc.) can default
+        // foreign-key columns or build URLs from the parent.
+        const formCtx = {
+          values,
+          basePath: base,
+          parent: pre.parent,
+          parentId: pre.recordId,
+          relationship: rel,
+        }
+
+        const result = await dispatchFormSubmit(form, values, formCtx)
+        if (!result.ok) {
+          if (json) { res.status(422); return res.json({ ok: false, errors: result.errors }) }
+          const data = await relationManagerData(pilotiq, {
+            kind: 'relation-create', slug, recordId: pre.recordId, relationship: rel,
+            prefill: { values, errors: result.errors ?? {} },
+          }, req)
+          res.status(422)
+          return view('pilotiq.relation-create', data ?? {})
+        }
+
+        const redirect = normalizeRedirect(result.redirect, base) ?? listUrl
+        if (json) {
+          return res.json({
+            ok: true, redirect,
+            ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
+          })
+        }
+        flashNotifications(req, result.notifications)
+        return res.redirect(redirect, 303)
+      })
+
+      // Edit — GET ${base}/${slug}/:id/${rel}/:childId/edit
+      router.get(`${parentBase}/:childId/edit`, async (req, res) => {
+        const json = wantsJson(req)
+        const pre = await requireParent(req, res, json)
+        if (!pre) return
+        const childId = req.params['childId']!
+        const data = await relationManagerData(pilotiq, {
+          kind: 'relation-edit', slug, recordId: pre.recordId, relationship: rel, childId,
+        }, req)
+        if (data === null)                            { res.status(404); return res.send('Not found') }
+        if ('ok' in data && data.ok === false)        return forbidden(res, json)
+        return view('pilotiq.relation-edit', data)
+      })
+
+      // Edit submit — POST ${base}/${slug}/:id/${rel}/:childId/edit
+      router.post(`${parentBase}/:childId/edit`, async (req, res) => {
+        const json = wantsJson(req)
+        const pre = await requireParent(req, res, json)
+        if (!pre) return
+        const childId = req.params['childId']!
+
+        const Related = findRelatedResource(M, R, cfg)
+        if (!Related?.model) {
+          res.status(500)
+          const msg = `RelationManager ${M.name}: cannot resolve related Resource for edit`
+          return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+        }
+
+        // IDOR + load via the data builder's gating: re-use it to verify
+        // the child belongs to this parent, then do the form submit.
+        const childCheck = await relationManagerData(pilotiq, {
+          kind: 'relation-edit', slug, recordId: pre.recordId, relationship: rel, childId,
+        }, req)
+        if (childCheck === null)                       { res.status(404); return res.send('Not found') }
+        if ('ok' in childCheck && childCheck.ok === false) return forbidden(res, json)
+
+        const body = await readFormBody(req)
+        const { values } = splitMeta(body)
+
+        const editUrl = `${parentBase}/${childId}/edit`.replace(':id', pre.recordId)
+        const form = M.form(Form.make())
+        if (!form.getSave())       form.save(modelSave(Related.model))
+        if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related.model))
+
+        // Re-load child for FormContext so cross-field validators see it.
+        let child: unknown = undefined
+        try { child = await Related.model.find(childId) } catch { /* ignore */ }
+        if (!child) { res.status(404); return res.send('Not found') }
+
+        const formCtx = {
+          values,
+          basePath: base,
+          record: child,
+          parent: pre.parent,
+          parentId: pre.recordId,
+          relationship: rel,
+        }
+
+        const result = await dispatchFormSubmit(form, values, formCtx)
+        if (!result.ok) {
+          if (json) { res.status(422); return res.json({ ok: false, errors: result.errors }) }
+          const data = await relationManagerData(pilotiq, {
+            kind: 'relation-edit', slug, recordId: pre.recordId, relationship: rel, childId,
+            prefill: { values, errors: result.errors ?? {} },
+          }, req)
+          res.status(422)
+          return view('pilotiq.relation-edit', data ?? {})
+        }
+
+        const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
+        if (json) {
+          return res.json({
+            ok: true, redirect,
+            ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
+          })
+        }
+        flashNotifications(req, result.notifications)
+        return res.redirect(redirect, 303)
+      })
+
+      // Delete — POST ${base}/${slug}/:id/${rel}/:childId/delete
+      router.post(`${parentBase}/:childId/delete`, async (req, res) => {
+        const json = wantsJson(req)
+        const pre = await requireParent(req, res, json)
+        if (!pre) return
+        const childId = req.params['childId']!
+
+        const Related = findRelatedResource(M, R, cfg)
+        if (!Related?.model) {
+          res.status(500)
+          const msg = `RelationManager ${M.name}: cannot resolve related Resource for delete`
+          return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+        }
+
+        // Anti-IDOR: re-use the data builder's child-belongs check.
+        const childCheck = await relationManagerData(pilotiq, {
+          kind: 'relation-edit', slug, recordId: pre.recordId, relationship: rel, childId,
+        }, req)
+        if (childCheck === null)                       { res.status(404); return res.send('Not found') }
+        if ('ok' in childCheck && childCheck.ok === false) return forbidden(res, json)
+
+        const child = await Related.model.find(childId).catch(() => undefined)
+        if (!child) { res.status(404); return res.send('Not found') }
+
+        if (!await checkPolicy(() => M.canDelete(pre.user, child, pre.parent))) return forbidden(res, json)
+
+        const listUrl = parentBase.replace(':id', pre.recordId)
+        try {
+          await Related.model.delete(childId)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Delete failed'
+          res.status(500)
+          return json ? res.json({ ok: false, error: message }) : res.send(message)
+        }
+
+        if (json) {
+          const notifications = [
+            { id: `n-rdelete-${childId}-${Date.now()}`, type: 'success', title: `${M.getLabelSingular()} deleted` },
+          ]
+          return res.json({ ok: true, redirect: listUrl, notifications })
+        }
+        return res.redirect(listUrl, 303)
       })
     }
   }
