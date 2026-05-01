@@ -1,4 +1,4 @@
-import { Element, type ElementMeta } from '../schema/Element.js'
+import { Element, type ElementMeta, type LayoutContext } from '../schema/Element.js'
 import { Field, type FieldMeta } from './Field.js'
 import type { RenderContext } from '../schema/resolveSchema.js'
 
@@ -11,6 +11,24 @@ import type { RenderContext } from '../schema/resolveSchema.js'
 export type RepeaterItemLabel = (row: Record<string, unknown>) => string
 
 /**
+ * Per-row visibility rule. Either a literal `boolean` or a callback receiving
+ * a row-scoped `LayoutContext`. The context's `values / $get / $set / row` are
+ * row-local; `record / user` mirror the parent form's render context.
+ *
+ * Returning truthy hides the row. The renderer keeps hidden rows mounted with
+ * `display: none` so their inputs (and `__id`) round-trip through FormData
+ * unchanged — visibility is purely UX, never a data filter.
+ *
+ * Throwing predicates fail-closed-as-visible (i.e. row stays visible) and log
+ * a warning. We choose the inverse posture from `Element.evaluateVisibility`
+ * because a misbehaving `itemHidden` should not silently hide rows the user
+ * thinks they're editing.
+ */
+export type RepeaterItemHiddenRule =
+  | boolean
+  | ((ctx: LayoutContext) => boolean | Promise<boolean>)
+
+/**
  * Resolved metadata for a single Repeater row. `id` is a stable identifier
  * scoped to the form render — survives reorder + clone client-side and is
  * round-tripped through a hidden `__id` value on submit so the renderer
@@ -18,11 +36,16 @@ export type RepeaterItemLabel = (row: Record<string, unknown>) => string
  *
  * `children` is the resolved inner schema (resolved with row-scoped values).
  * Renderers iterate `rows` and feed each `children` array to `SchemaRenderer`.
+ *
+ * `hidden` is set when `itemHidden(rule)` resolved truthy for this row; the
+ * renderer keeps the row mounted but hides its chrome + body so values still
+ * round-trip on submit.
  */
 export interface RepeaterRowMeta {
   id:        string
   children:  ElementMeta[]
   itemLabel?: string
+  hidden?:   boolean
 }
 
 export interface RepeaterFieldMeta extends FieldMeta {
@@ -70,6 +93,7 @@ export class RepeaterField extends Field {
   private _cloneable        = false
   private _addActionLabel?:  string
   private _itemLabel?:       RepeaterItemLabel
+  private _itemHidden?:      RepeaterItemHiddenRule
 
   private constructor(name: string) {
     super(name, 'repeater')
@@ -116,6 +140,17 @@ export class RepeaterField extends Field {
    */
   itemLabel(fn: RepeaterItemLabel): this { this._itemLabel = fn; return this }
 
+  /**
+   * Per-row visibility predicate. Evaluated against a row-scoped
+   * `LayoutContext` (`values / $get / $set / row` all row-local). Returning
+   * truthy hides the row from the user; the renderer keeps inputs mounted
+   * via `display: none` so values round-trip through FormData on submit.
+   *
+   * Throwing → row stays visible + warn (inverse of layout `visible()` —
+   * a misbehaving rule shouldn't silently hide data the user is editing).
+   */
+  itemHidden(rule: RepeaterItemHiddenRule): this { this._itemHidden = rule; return this }
+
   /** Custom label for the "Add row" button. Default `'Add'`. */
   addActionLabel(label: string): this { this._addActionLabel = label; return this }
 
@@ -137,6 +172,7 @@ export class RepeaterField extends Field {
   isDefaultCollapsed(): boolean           { return this._defaultCollapsed }
   isCloneable(): boolean                  { return this._cloneable }
   getItemLabel(): RepeaterItemLabel | undefined { return this._itemLabel }
+  getItemHidden(): RepeaterItemHiddenRule | undefined { return this._itemHidden }
   getAddActionLabel(): string | undefined { return this._addActionLabel }
 
   // ─── Meta ──────────────────────────────────────────────

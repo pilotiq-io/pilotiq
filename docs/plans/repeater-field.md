@@ -49,8 +49,20 @@ uncontrolled paths to compensate for callback-style APIs not bubbling
 native change events. Native inputs (TextLikeInput) keep using the
 existing container-level delegate. 1015 tests.
 
-**Remaining v1.2 work:** row-level visibility (`Repeater.itemHidden(row=>…)`)
-+ Builder field (heterogeneous Repeater) — both still open.
+**v1.2 row-level visibility (2026-05-02):** `Repeater.itemHidden(rule)`
+— boolean or `(LayoutContext) => bool | Promise<bool>`. Evaluated
+per-row at resolve time; truthy stamps `RepeaterRowMeta.hidden = true`.
+The renderer keeps hidden rows mounted via `display: none` so inputs
+(and `__id`) round-trip through FormData on submit — visibility is
+purely UX, never a data filter. Move Up/Down skips hidden neighbours;
+empty-state placeholder gates on visible-row count; `isFirstVisible /
+isLastVisible` drive arrow-button disable state. Throwing predicate
+fails-closed-as-visible (inverse of layout `visible()`'s posture, since
+silent hiding of in-progress data would be a worse failure mode).
+1015 → 1024 tests (+9 itemHidden cases).
+
+**Remaining v1.2 work:** Builder field (heterogeneous-row Repeater) —
+its own plan; deferred until at least one consumer needs it.
 
 Estimated effort: **~3 days**. Steps 1-4 are mechanical. Step 5
 (reactive interop) is the conceptual core. Steps 7-8 (drag a11y) are

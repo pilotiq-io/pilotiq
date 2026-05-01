@@ -63,6 +63,7 @@ The submitted body has shape:
 | `.collapsible()` | Per-row collapse chevron — body kept mounted (so values survive collapse) |
 | `.collapsed()` | Default-collapsed when collapsible (typically combined with `itemLabel`) |
 | `.itemLabel(row => string)` | Header text for the collapsed row; falls back to `Item N` |
+| `.itemHidden(rule)` | Per-row visibility — boolean or `(ctx) => bool \| Promise<bool>`. Hidden rows render with `display:none` so values still round-trip on submit |
 | `.addActionLabel(text)` | Label for the Add button (default `'Add'`) |
 
 Inherited from `Field`: `.label() / .required() / .helperText() /
@@ -121,6 +122,47 @@ Repeater.make('faqs').schema([
 
 Each row evaluates the visibility predicate independently against its
 own row values.
+
+## Row-level visibility — `itemHidden` (Plan #14 v1.2)
+
+`Repeater.itemHidden(rule)` accepts a `boolean` or a callback receiving
+a row-scoped `LayoutContext`:
+
+```ts
+Repeater.make('contacts')
+  .itemHidden(({ values }) => values?.['archived'] === true)
+  .schema([
+    TextField.make('name'),
+    TextField.make('email'),
+    ToggleField.make('archived'),
+  ])
+```
+
+Hidden rows render with `display: none` — chrome (drag handle, action
+buttons, label) doesn't render but inputs (and the `__id`) stay mounted
+so values round-trip through FormData on submit. Visibility is purely
+UX: hidden rows still count toward `min/maxItems`.
+
+The predicate context carries:
+- `values` — row-scoped values
+- `$get` / `$set` — row-scoped (dotted paths reach across rows)
+- `row.index` — current row's absolute position
+- `record` / `user` — parent form's render context
+
+Returning a `Promise<boolean>` is supported. A throwing predicate
+fails-closed-as-**visible** (the row stays shown + `console.warn`) —
+the inverse of layout `visible()`'s posture, because a misbehaving rule
+should never silently hide data the user is editing.
+
+> `itemHidden` is evaluated at form-render time (initial SSR and full
+> re-renders after submit). Live state-update re-resolves don't
+> dynamically toggle hide/show on existing rows; the user must submit
+> the form to reapply visibility. Reactive `itemHidden` is tracked for
+> a future revision.
+
+Reorder skips hidden rows: pressing ↑ on the row below a hidden row
+hops the visible row over the hidden one. Drag-and-drop drops only
+between visible rows (hidden rows have no DOM box to target).
 
 ## Nested Repeaters
 
@@ -217,8 +259,13 @@ checkbox, radio — all work.
 
 ## Limitations
 
-- **No row-level visibility / authorization** (`itemVisible`,
-  `itemCanDelete`). Track for v1.1 with a real use case.
+- **`itemHidden` doesn't re-evaluate on live updates.** Currently
+  evaluated only at full form-render. Reactive hide/show is a future
+  revision.
+- **No per-row authorization API yet** (`itemCanDelete` etc.). Action
+  visibility on row buttons is currently row-data-dependent through
+  `Action.visible(({ record }) => …)` on the table-side; an inner
+  Repeater row equivalent is tracked for a later cycle.
 - **`Builder` (heterogeneous-row Repeater)** is its own plan once
   Repeater proves out the shape.
 - **Actions / Forms inside a Repeater row** aren't dispatched in v1

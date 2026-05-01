@@ -326,6 +326,133 @@ describe('RepeaterField', () => {
     })
   })
 
+  describe('itemHidden (v1.2 row-level visibility)', () => {
+    function repeater() {
+      return RepeaterField.make('items').schema([
+        TextField.make('product'),
+        ToggleField.make('archived'),
+      ])
+    }
+
+    function metaOf(m: unknown): RepeaterFieldMeta {
+      return m as RepeaterFieldMeta
+    }
+
+    it('builder stores rule + accessor returns it', () => {
+      const fn = (ctx: { values?: Record<string, unknown> }) => Boolean(ctx.values?.['archived'])
+      const f  = RepeaterField.make('items').itemHidden(fn)
+      assert.equal(f.getItemHidden(), fn)
+    })
+
+    it('rule unset → no row carries hidden flag', async () => {
+      const [raw] = await resolveSchema(
+        [repeater()],
+        { values: { items: [{ product: 'A' }, { product: 'B' }] } },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.hidden, undefined)
+      assert.equal(m.rows[1]?.hidden, undefined)
+    })
+
+    it('static `itemHidden(false)` → no row marked hidden', async () => {
+      const [raw] = await resolveSchema(
+        [repeater().itemHidden(false)],
+        { values: { items: [{ product: 'A' }] } },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.hidden, undefined)
+    })
+
+    it('static `itemHidden(true)` → every row marked hidden', async () => {
+      const [raw] = await resolveSchema(
+        [repeater().itemHidden(true)],
+        { values: { items: [{ product: 'A' }, { product: 'B' }] } },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.hidden, true)
+      assert.equal(m.rows[1]?.hidden, true)
+    })
+
+    it('predicate sees row-scoped values + can hide selectively', async () => {
+      const f = repeater().itemHidden(({ values }) => Boolean(values?.['archived']))
+      const [raw] = await resolveSchema(
+        [f],
+        {
+          values: {
+            items: [
+              { product: 'A', archived: false },
+              { product: 'B', archived: true },
+              { product: 'C', archived: false },
+            ],
+          },
+        },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.hidden, undefined)
+      assert.equal(m.rows[1]?.hidden, true)
+      assert.equal(m.rows[2]?.hidden, undefined)
+    })
+
+    it('predicate sees row.index', async () => {
+      const seen: number[] = []
+      const f = repeater().itemHidden(({ row }) => {
+        if (row) seen.push(row.index)
+        return false
+      })
+      await resolveSchema(
+        [f],
+        { values: { items: [{}, {}, {}] } },
+      )
+      assert.deepEqual(seen, [0, 1, 2])
+    })
+
+    it('async predicate is awaited', async () => {
+      const f = repeater().itemHidden(async ({ values }) => {
+        await Promise.resolve()
+        return values?.['product'] === 'hide-me'
+      })
+      const [raw] = await resolveSchema(
+        [f],
+        { values: { items: [{ product: 'keep' }, { product: 'hide-me' }] } },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.hidden, undefined)
+      assert.equal(m.rows[1]?.hidden, true)
+    })
+
+    it('throwing predicate → row stays visible (fail-closed-as-visible) + warns', async () => {
+      const original = console.warn
+      const warnings: unknown[][] = []
+      console.warn = (...args: unknown[]) => { warnings.push(args) }
+      try {
+        const f = repeater().itemHidden(() => { throw new Error('boom') })
+        const [raw] = await resolveSchema(
+          [f],
+          { values: { items: [{ product: 'A' }] } },
+        )
+        const m = metaOf(raw)
+        assert.equal(m.rows[0]?.hidden, undefined)
+        assert.ok(warnings.length >= 1, 'expected at least one warning')
+        assert.match(String(warnings[0]?.[0]), /itemHidden\(\) on Repeater "items" threw/)
+      } finally {
+        console.warn = original
+      }
+    })
+
+    it('hidden rows still resolve their inner schema (so values round-trip on submit)', async () => {
+      const f = repeater().itemHidden(({ values }) => Boolean(values?.['archived']))
+      const [raw] = await resolveSchema(
+        [f],
+        { values: { items: [{ product: 'A', archived: true }] } },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.hidden, true)
+      // Inner schema is still resolved so the renderer can mount inputs
+      // for FormData round-trip.
+      assert.equal(m.rows[0]?.children.length, 2)
+    })
+  })
+
   describe('coerceFormValues (Step 3)', () => {
     function repeater() {
       return RepeaterField.make('items').schema([

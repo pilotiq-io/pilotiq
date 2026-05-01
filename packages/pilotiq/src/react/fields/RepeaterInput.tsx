@@ -39,6 +39,7 @@ interface RowState {
   id:        string
   children:  ElementMeta[]
   itemLabel?: string
+  hidden?:   boolean
 }
 
 /**
@@ -93,6 +94,7 @@ export function RepeaterInput({
       id:        r.id,
       children:  r.children,
       ...(r.itemLabel !== undefined ? { itemLabel: r.itemLabel } : {}),
+      ...(r.hidden ? { hidden: true } : {}),
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -149,10 +151,19 @@ export function RepeaterInput({
     setRows(prev => {
       const idx = prev.findIndex(r => r.id === id)
       if (idx < 0) return prev
-      // dir = -1 → land before the row above (insertBeforeIdx = idx - 1)
-      // dir =  1 → land after the row below (insertBeforeIdx = idx + 2)
-      const insertBefore = dir === -1 ? idx - 1 : idx + 2
-      return reorderRows(prev, idx, insertBefore)
+      // Skip past hidden neighbours so reorder operates between visible
+      // rows. Hidden rows hold their absolute slot — the visible row hops
+      // over them.
+      if (dir === -1) {
+        let target = idx - 1
+        while (target >= 0 && prev[target]?.hidden) target--
+        if (target < 0) return prev
+        return reorderRows(prev, idx, target)
+      }
+      let target = idx + 1
+      while (target < prev.length && prev[target]?.hidden) target++
+      if (target >= prev.length) return prev
+      return reorderRows(prev, idx, target + 1)
     })
   }
 
@@ -245,13 +256,24 @@ export function RepeaterInput({
     })
   }
 
+  // Visibility computed each render — hidden rows still occupy slots in
+  // `rows` (so values round-trip + reorder-around math stays simple), but
+  // they don't count for the user-facing empty state, drop indicator, or
+  // first/last-visible disable on Up/Down buttons.
+  const hasVisibleRow = rows.some(r => !r.hidden)
+  const firstVisibleIdx = rows.findIndex(r => !r.hidden)
+  const lastVisibleIdx  = (() => {
+    for (let i = rows.length - 1; i >= 0; i--) if (!rows[i]?.hidden) return i
+    return -1
+  })()
+
   return (
     <div
       className="flex flex-col gap-3"
       onChange={onContainerChange}
       onBlur={onContainerBlur}
     >
-      {rows.length === 0 && (
+      {!hasVisibleRow && (
         <div className="rounded-md border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
           No items yet. Click {addLabel} to start.
         </div>
@@ -259,11 +281,12 @@ export function RepeaterInput({
 
       {rows.map((row, i) => (
         <React.Fragment key={row.id}>
-          {dropAt === i && <DropIndicator />}
+          {!row.hidden && dropAt === i && <DropIndicator />}
           <RepeaterRow
             row={row}
             index={i}
-            totalRows={rows.length}
+            isFirstVisible={i === firstVisibleIdx}
+            isLastVisible={i === lastVisibleIdx}
             name={name}
             disabled={disabled}
             collapsible={collapsible}
@@ -304,7 +327,7 @@ export function RepeaterInput({
 }
 
 function RepeaterRow({
-  row, index, totalRows, name, disabled,
+  row, index, isFirstVisible, isLastVisible, name, disabled,
   collapsible, isCollapsed, reorderable, cloneable, atMin, atMax, columns,
   isDragging,
   onMoveUp, onMoveDown, onClone, onRemove, onToggleCollapse,
@@ -312,7 +335,8 @@ function RepeaterRow({
 }: {
   row:               RowState
   index:             number
-  totalRows:         number
+  isFirstVisible:    boolean
+  isLastVisible:     boolean
   name:              string
   disabled:          boolean
   collapsible:       boolean
@@ -339,6 +363,18 @@ function RepeaterRow({
     [row.children, prefix],
   )
   const headerLabel = row.itemLabel ?? `Item ${index + 1}`
+
+  // Hidden rows: render only the inputs (and __id) inside a display:none
+  // wrapper so their values round-trip through FormData on submit. No
+  // chrome, no drag wiring, no labels — `itemHidden` is purely UX.
+  if (row.hidden) {
+    return (
+      <div style={{ display: 'none' }} data-pilotiq-repeater-row="hidden">
+        <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
+        <SchemaRenderer elements={namespaced} />
+      </div>
+    )
+  }
 
   // Native HTML5 DnD only fires `dragstart` from elements with `draggable=true`.
   // We attach it at the row container so the grip handle (and the empty
@@ -391,7 +427,7 @@ function RepeaterRow({
             <button
               type="button"
               onClick={onMoveUp}
-              disabled={disabled || index === 0}
+              disabled={disabled || isFirstVisible}
               aria-label="Move up"
               className="text-muted-foreground hover:text-foreground disabled:opacity-30"
             >
@@ -400,7 +436,7 @@ function RepeaterRow({
             <button
               type="button"
               onClick={onMoveDown}
-              disabled={disabled || index === totalRows - 1}
+              disabled={disabled || isLastVisible}
               aria-label="Move down"
               className="text-muted-foreground hover:text-foreground disabled:opacity-30"
             >
@@ -467,7 +503,7 @@ function DropIndicator(): React.ReactElement {
 }
 
 interface RepeaterMetaShape {
-  rows?:             Array<{ id: string; children: ElementMeta[]; itemLabel?: string }>
+  rows?:             Array<{ id: string; children: ElementMeta[]; itemLabel?: string; hidden?: boolean }>
   template?:         ElementMeta[]
   columns?:          number
   minItems?:         number

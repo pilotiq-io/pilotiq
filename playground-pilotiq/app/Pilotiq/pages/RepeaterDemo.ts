@@ -14,6 +14,8 @@ import {
  *   - `cloneable()` duplicate-row button
  *   - `collapsible()` + `collapsed()` per-row collapse with localStorage
  *   - `itemLabel(row => …)` collapsed-row header
+ *   - `itemHidden(({ values }) => …)` v1.2 row-level visibility — hidden
+ *     rows render with display:none so values still round-trip on submit
  *   - Inner-schema `Section.visible(({ values }) => …)` row-scoped visibility
  *   - Inner-field `live() + afterStateUpdated()` — quantity/unitPrice
  *     updates write a row-scoped subtotal via `ctx.row.$set` (Plan #14 v1.1)
@@ -35,6 +37,14 @@ export class RepeaterDemo extends Page {
 
       Form.make()
         .formId('repeater-demo')
+        .withValues({
+          // Seed itemHidden demo with 3 rows — middle one archived.
+          contactRows: [
+            { name: 'Ada Lovelace',     email: 'ada@example.com',    archived: false },
+            { name: 'Charles Babbage',  email: 'cb@example.com',     archived: true  },
+            { name: 'Alan Turing',      email: 'alan@example.com',   archived: false },
+          ],
+        })
         .schema([
           Section.make('Order line items')
             .description('Add as many line items as you like; reorder, clone, or collapse each.')
@@ -146,6 +156,25 @@ export class RepeaterDemo extends Page {
                       TextField.make('internalNotes').label('Notes for support'),
                     ])
                     .visible(({ values }) => values?.['category'] === 'technical'),
+                ]),
+            ]),
+
+          Section.make('Archived rows (itemHidden)')
+            .description('Rows where `archived = true` are pre-populated but hidden via `itemHidden`. Three rows are seeded below; the middle one is archived and renders with display:none — its inputs (and `__id`) still mount so values round-trip on submit. Toggle archive on a visible row, then submit the form: the row disappears from view but its data is preserved (check the saved JSON in the console).')
+            .schema([
+              Repeater.make('contactRows')
+                .label('Contacts')
+                .reorderable()
+                .cloneable()
+                .itemLabel((row) => String(row['name'] ?? 'New contact'))
+                .itemHidden(({ values }) => values?.['archived'] === true)
+                .addActionLabel('Add contact')
+                .schema([
+                  TextField.make('name').label('Name').required(),
+                  TextField.make('email').label('Email'),
+                  ToggleField.make('archived')
+                    .label('Archive this row')
+                    .helperText('Submit the form to see it disappear from view (data preserved).'),
                 ]),
             ]),
 

@@ -1,6 +1,10 @@
 import { Element, type ElementMeta, type LayoutContext } from './Element.js'
 import { Field } from '../fields/Field.js'
-import { RepeaterField, type RepeaterRowMeta } from '../fields/RepeaterField.js'
+import {
+  RepeaterField,
+  type RepeaterItemHiddenRule,
+  type RepeaterRowMeta,
+} from '../fields/RepeaterField.js'
 import { Action } from '../actions/Action.js'
 import { ActionGroup } from '../actions/ActionGroup.js'
 
@@ -249,7 +253,8 @@ async function resolveRepeaterRows(
     ? submitted.map(coerceRowValues)
     : Array.from({ length: field.getDefaultItems() }, () => ({}))
 
-  const labelFn = field.getItemLabel()
+  const labelFn  = field.getItemLabel()
+  const hiddenFn = field.getItemHidden()
 
   const rows = await Promise.all(rowsInput.map(async (rowValues, index) => {
     const rowCtx: RenderContext = {
@@ -275,6 +280,11 @@ async function resolveRepeaterRows(
         console.warn(`[pilotiq] itemLabel() on Repeater "${field.name}" threw:`, err)
       }
     }
+    if (hiddenFn !== undefined) {
+      const layoutCtx = buildLayoutContext(rowCtx)
+      const hidden    = await evalItemHidden(hiddenFn, layoutCtx, field.name)
+      if (hidden) row.hidden = true
+    }
     return row
   }))
 
@@ -292,6 +302,28 @@ function coerceRowValues(raw: unknown): Record<string, unknown> {
     return { ...(raw as Record<string, unknown>) }
   }
   return {}
+}
+
+/**
+ * Evaluate `Repeater.itemHidden(rule)` against a row's `LayoutContext`.
+ *
+ * Fail-closed-as-visible: when the predicate throws, the row stays visible
+ * and we log a warning. This is the inverse of `Element.evaluateVisibility`
+ * (which fails-closed-as-hidden) — a misbehaving `itemHidden` should never
+ * silently hide data the user is editing.
+ */
+async function evalItemHidden(
+  rule:      RepeaterItemHiddenRule,
+  ctx:       LayoutContext,
+  fieldName: string,
+): Promise<boolean> {
+  if (typeof rule === 'boolean') return rule
+  try {
+    return Boolean(await rule(ctx))
+  } catch (err) {
+    console.warn(`[pilotiq] itemHidden() on Repeater "${fieldName}" threw:`, err)
+    return false
+  }
 }
 
 /**
