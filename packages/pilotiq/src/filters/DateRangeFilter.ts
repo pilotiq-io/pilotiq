@@ -111,6 +111,14 @@ export class DateRangeFilter extends Filter {
 
   override getKind(): FilterKind { return 'dateRange' }
 
+  protected override formatActiveValue(value: string): string {
+    const { from, to } = parseDateRangeValue(value)
+    if (from && to) return `${from} → ${to}`
+    if (from)       return `≥ ${from}`
+    if (to)         return `≤ ${to}`
+    return value
+  }
+
   override toMeta(): FilterMeta {
     return {
       ...super.toMeta(),

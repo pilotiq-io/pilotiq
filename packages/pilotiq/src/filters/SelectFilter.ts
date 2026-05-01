@@ -32,6 +32,10 @@ export class SelectFilter extends Filter {
 
   override getKind(): FilterKind { return 'select' }
 
+  protected override formatActiveValue(value: string): string {
+    return this._options.find(o => o.value === value)?.label ?? value
+  }
+
   override toMeta(): FilterMeta {
     return {
       ...super.toMeta(),

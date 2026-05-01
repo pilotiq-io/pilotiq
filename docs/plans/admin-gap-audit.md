@@ -93,11 +93,11 @@ Skip `ColorColumn`, `SelectColumn`/`ToggleColumn`/`TextInputColumn` (inline-edit
 |---|---|---|
 | ✅ `TernaryFilter` (true/false/blank — distinct from Boolean) DONE | 1 | Shipped 2026-05-03 — see `filter-expansion.md`. |
 | Filter with arbitrary form schema (multi-field filters) | 2 | Pairs naturally with `actions-tier-1.md` form-modal pattern. |
-| Filter `indicator()` (pill in active-filters bar) | 2 | UX nicety. |
+| ✅ Filter `indicator()` (pill in active-filters bar) DONE | 2 | Shipped 2026-05-02 — Batch C. `Filter.indicator(string\|fn)` + `<ActiveFiltersBar>` pill row above the table. |
 | `persistFiltersInSession` | 3 | |
 | `QueryBuilder` filter (advanced AND/OR/grouped) | 3 | Big. |
 | ✅ Date-range filter DONE | 2 | Shipped 2026-05-03 — see `filter-expansion.md`. |
-| Multi-select filter | 2 | Mentioned in Phase 3 memory; deferred until a consumer needs it. |
+| ✅ Multi-select filter DONE | 2 | Shipped 2026-05-02 — Batch C. `MultiSelectFilter.make().options([...])`, comma-separated URL value, `where(name,'IN',values)`. |
 
 ### 4. Resources (`Resource.ts`)
 

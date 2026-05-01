@@ -67,6 +67,10 @@ import {
   parseDateRangeValue,
   encodeDateRangeValue,
 } from '../filters/DateRangeFilter.js'
+import {
+  parseMultiSelectValue,
+  encodeMultiSelectValue,
+} from '../filters/MultiSelectFilter.js'
 import { useIconFor } from './icon-context.js'
 import type { SerializedIcon } from '../icons/types.js'
 import { useToast } from './Toaster.js'
@@ -1102,6 +1106,71 @@ function renderChildren(children: ElementMeta[] | undefined, gap = 'gap-4'): Rea
 }
 
 // ─── Tabs (stateful — needs useState) ────────────────────────
+
+/**
+ * Active-filters bar — pill row above the table summarising every filter
+ * with a current value. Each pill shows the filter's `indicator` text
+ * (server-formatted via `Filter.indicator()` / per-subclass defaults) and
+ * an `×` button that clears that filter's URL key in place. Clicking ×
+ * also drops `?page` so users land on the first page of the relaxed set.
+ *
+ * Renders nothing when no filter has an indicator.
+ */
+function ActiveFiltersBar({ filters }: { filters: ElementMeta[] }) {
+  const navigate = useNavigate()
+  const active   = filters.filter(f => typeof f['indicator'] === 'string' && f['indicator'] !== '')
+  if (active.length === 0) return null
+
+  const clear = (name: string): void => {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    url.searchParams.delete(name)
+    url.searchParams.delete('page')
+    void navigate(url.pathname + url.search)
+  }
+
+  const clearAll = (): void => {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    for (const f of active) url.searchParams.delete(String(f['name'] ?? ''))
+    url.searchParams.delete('page')
+    void navigate(url.pathname + url.search)
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      {active.map((f, i) => {
+        const name      = String(f['name']      ?? '')
+        const indicator = String(f['indicator'] ?? '')
+        return (
+          <span
+            key={i}
+            className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 pl-2.5 pr-1 py-0.5"
+          >
+            <span>{indicator}</span>
+            <button
+              type="button"
+              onClick={() => clear(name)}
+              aria-label={`Clear filter ${indicator}`}
+              className="inline-flex size-4 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              ×
+            </button>
+          </span>
+        )
+      })}
+      {active.length > 1 && (
+        <button
+          type="button"
+          onClick={clearAll}
+          className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+        >
+          Clear all
+        </button>
+      )}
+    </div>
+  )
+}
 
 /**
  * Filter icon button + Popover containing every filter control.
@@ -2431,6 +2500,64 @@ function FilterDateRange({
   )
 }
 
+/**
+ * Multi-value filter for `kind === 'multiSelect'`. Renders a checkbox
+ * stack inside the popover; toggling a box patches the comma-separated
+ * URL value for the filter's name. Empty selection drops the URL key.
+ */
+function FilterMultiSelect({
+  name, label, defaultValue, options,
+}: {
+  name:         string
+  label:        string
+  defaultValue: string
+  options:      Array<{ value: string; label: string }>
+}) {
+  const [selected, setSelected] = useState<string[]>(() => parseMultiSelectValue(defaultValue))
+  const navigate                = useNavigate()
+
+  const apply = (next: string[]): void => {
+    setSelected(next)
+    if (typeof window === 'undefined') return
+    const url     = new URL(window.location.href)
+    const encoded = encodeMultiSelectValue(next)
+    if (encoded === '') url.searchParams.delete(name)
+    else                url.searchParams.set(name, encoded)
+    url.searchParams.delete('page')
+    void navigate(url.pathname + url.search)
+  }
+
+  const toggle = (value: string, checked: boolean): void => {
+    const next = checked
+      ? [...selected.filter(v => v !== value), value]
+      : selected.filter(v => v !== value)
+    apply(next)
+  }
+
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <div className="flex flex-col gap-1.5">
+        {options.map(o => {
+          const checked = selected.includes(o.value)
+          return (
+            <label
+              key={o.value}
+              className="flex items-center gap-2 text-sm cursor-pointer"
+            >
+              <Checkbox
+                checked={checked}
+                onCheckedChange={(c: boolean | 'indeterminate') => toggle(o.value, c === true)}
+              />
+              <span>{o.label}</span>
+            </label>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
   const name        = String(el['name'] ?? '')
   const label       = String(el['label'] ?? name)
@@ -2447,6 +2574,19 @@ function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
         defaultValue={value}
         placeholder={placeholder}
         options={[{ value: '1', label: 'Yes' }, { value: '0', label: 'No' }]}
+      />
+    )
+  }
+
+  if (kind === 'multiSelect') {
+    const options = (el['options'] as Array<{ value: string; label: string }> | undefined) ?? []
+    return (
+      <FilterMultiSelect
+        key={index}
+        name={name}
+        label={label}
+        defaultValue={value}
+        options={options}
       />
     )
   }
@@ -2836,6 +2976,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
           )}
         </div>
       )}
+      {hasFilters && <ActiveFiltersBar filters={filters} />}
       {hasBulkActions && someChecked && (
         <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
           <span className="text-muted-foreground">

@@ -48,6 +48,13 @@ export class TernaryFilter extends Filter {
 
   override getKind(): FilterKind { return 'ternary' }
 
+  protected override formatActiveValue(value: string): string {
+    if (value === 'yes')   return this._trueLabel
+    if (value === 'no')    return this._falseLabel
+    if (value === 'blank') return this._blankLabel
+    return value
+  }
+
   override toMeta(): FilterMeta {
     const options = [
       { value: 'yes', label: this._trueLabel  },

@@ -17,6 +17,10 @@ export class BooleanFilter extends Filter {
 
   override getKind(): FilterKind { return 'boolean' }
 
+  protected override formatActiveValue(value: string): string {
+    return coerceBooleanFilterValue(value) ? 'Yes' : 'No'
+  }
+
   override toMeta(): FilterMeta {
     return {
       ...super.toMeta(),

@@ -1,7 +1,7 @@
 import {
   Column, BadgeColumn, BooleanColumn,
   Action, ActionGroup,
-  SelectFilter, BooleanFilter,
+  BooleanFilter, MultiSelectFilter,
   TextField, SelectField,
   Notification,
   Sum, Count,
@@ -38,7 +38,9 @@ export const ArticlesTable = {
       ])
       .defaultGroup('status')
       .filters([
-        SelectFilter.make('status').options([
+        // Multi-select: comma-separated URL value (?status=draft,published)
+        // contributes a where('status','IN',[...]) clause.
+        MultiSelectFilter.make('status').options([
           { value: 'draft',     label: 'Draft' },
           { value: 'published', label: 'Published' },
           { value: 'archived',  label: 'Archived' },

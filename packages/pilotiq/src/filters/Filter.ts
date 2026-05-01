@@ -4,14 +4,15 @@ import type { ModelQuery } from '../orm/modelDefaults.js'
 /**
  * Discriminator for the renderer to pick a control.
  *
- * - `'select'`     — single-value dropdown (`SelectFilter`, `TrashedFilter`).
- * - `'boolean'`    — three-state yes/no/any.
- * - `'ternary'`    — three-state with a meaningful "blank" (NULL) bucket.
- * - `'dateRange'`  — pair of date / datetime inputs encoded as `from..to`.
+ * - `'select'`      — single-value dropdown (`SelectFilter`, `TrashedFilter`).
+ * - `'multiSelect'` — checkbox list; URL value is comma-separated.
+ * - `'boolean'`     — three-state yes/no/any.
+ * - `'ternary'`     — three-state with a meaningful "blank" (NULL) bucket.
+ * - `'dateRange'`   — pair of date / datetime inputs encoded as `from..to`.
  *
- * Extends naturally — future kinds may include `'multiSelect'`, `'numberRange'`.
+ * Extends naturally — future kinds may include `'numberRange'`.
  */
-export type FilterKind = 'select' | 'boolean' | 'ternary' | 'dateRange'
+export type FilterKind = 'select' | 'multiSelect' | 'boolean' | 'ternary' | 'dateRange'
 
 export interface FilterMeta extends ElementMeta {
   type:        'filter'
@@ -22,7 +23,7 @@ export interface FilterMeta extends ElementMeta {
   value?:      string
   /** Placeholder shown when no value is selected (e.g. "All", "Any"). */
   placeholder?: string
-  /** Options for `kind === 'select'` and `kind === 'ternary'`. Boolean uses fixed yes/no. */
+  /** Options for `kind === 'select' | 'multiSelect' | 'ternary'`. Boolean uses fixed yes/no. */
   options?:    Array<{ value: string; label: string }>
   /** `kind === 'dateRange'` — true switches the inputs to `datetime-local`. */
   includesTime?: boolean
@@ -30,6 +31,12 @@ export interface FilterMeta extends ElementMeta {
   minDate?:    string
   /** `kind === 'dateRange'` — clamp the inputs' `max` attribute. */
   maxDate?:    string
+  /**
+   * Active-filter indicator pill text. Present only when the filter has an
+   * active value. Default format is `"<label>: <displayValue>"`; users can
+   * override via `Filter.indicator(string | (value, filter) => string)`.
+   */
+  indicator?:  string
 }
 
 /**
@@ -38,6 +45,14 @@ export interface FilterMeta extends ElementMeta {
  * `Filter.query(fn)` overrides the default `where(name, value)` clause.
  */
 export type FilterQueryHandler = (query: ModelQuery, value: string) => ModelQuery
+
+/**
+ * User-supplied indicator-pill formatter. Receives the active value plus
+ * the filter so callbacks can read its label / option set. The default
+ * indicator is `"<label>: <displayValue>"` where `displayValue` comes from
+ * each subclass's `formatActiveValue` hook.
+ */
+export type FilterIndicatorHandler = (value: string, filter: Filter) => string
 
 /**
  * Base class for table filters. Filters live as children of `Table` and
@@ -51,6 +66,7 @@ export abstract class Filter extends Element {
   protected _value?: string
   protected _queryFn?: FilterQueryHandler
   protected _placeholder?: string
+  protected _indicatorFn?: FilterIndicatorHandler
 
   protected constructor(name: string) {
     super()
@@ -69,6 +85,18 @@ export abstract class Filter extends Element {
    */
   query(fn: FilterQueryHandler): this { this._queryFn = fn; return this }
 
+  /**
+   * Override the active-filter indicator pill text. Accepts either a
+   * literal string or a `(value, filter) => string` callback. The default
+   * indicator is `"<label>: <displayValue>"`, where `<displayValue>` comes
+   * from each subclass's `formatActiveValue(value)` hook (e.g. SelectFilter
+   * maps `'draft'` → its option label `'Draft'`).
+   */
+  indicator(fn: string | FilterIndicatorHandler): this {
+    this._indicatorFn = typeof fn === 'function' ? fn : () => fn
+    return this
+  }
+
   /** Render-time setter: framework calls this with the URL-supplied value. */
   withValue(v: string): this { this._value = v; return this }
 
@@ -83,11 +111,32 @@ export abstract class Filter extends Element {
 
   abstract getKind(): FilterKind
 
+  /**
+   * Subclass hook — render the active value as a human-readable string for
+   * the indicator pill. Default is the raw value; SelectFilter/TernaryFilter
+   * map to option labels, BooleanFilter to "Yes"/"No", DateRangeFilter to a
+   * `from → to` range. Override when the URL value isn't user-friendly.
+   */
+  protected formatActiveValue(value: string): string { return value }
+
+  /**
+   * Render the indicator pill text. Returns `undefined` when no value is
+   * active so the renderer can skip the pill entirely. Honours the user's
+   * `indicator(fn)` override when supplied.
+   */
+  getIndicator(): string | undefined {
+    const value = this._value
+    if (value === undefined || value === '') return undefined
+    if (this._indicatorFn) return this._indicatorFn(value, this)
+    return `${this.getLabel()}: ${this.formatActiveValue(value)}`
+  }
+
   // ─── Element contract ────────────────────────────────
 
   getType(): string { return 'filter' }
 
   override toMeta(): FilterMeta {
+    const indicator = this.getIndicator()
     return {
       type:  'filter',
       name:  this.name,
@@ -95,6 +144,7 @@ export abstract class Filter extends Element {
       kind:  this.getKind(),
       ...(this._value       !== undefined ? { value:       this._value       } : {}),
       ...(this._placeholder !== undefined ? { placeholder: this._placeholder } : {}),
+      ...(indicator         !== undefined ? { indicator                      } : {}),
     }
   }
 }

@@ -166,9 +166,19 @@ export { ListTabs } from './elements/ListTabs.js'
 
 // ─── Filters ──────────────────────────────────────────
 export {
-  Filter, type FilterKind, type FilterMeta, type FilterQueryHandler,
+  Filter,
+  type FilterKind,
+  type FilterMeta,
+  type FilterQueryHandler,
+  type FilterIndicatorHandler,
 } from './filters/Filter.js'
 export { SelectFilter, type SelectFilterOption } from './filters/SelectFilter.js'
+export {
+  MultiSelectFilter,
+  type MultiSelectFilterOption,
+  parseMultiSelectValue,
+  encodeMultiSelectValue,
+} from './filters/MultiSelectFilter.js'
 export { BooleanFilter, coerceBooleanFilterValue } from './filters/BooleanFilter.js'
 export { TrashedFilter } from './filters/TrashedFilter.js'
 export { TernaryFilter } from './filters/TernaryFilter.js'

@@ -5,6 +5,8 @@ import { Table } from '../elements/Table.js'
 import { Column } from '../Column.js'
 import { SelectFilter } from './SelectFilter.js'
 import { BooleanFilter, coerceBooleanFilterValue } from './BooleanFilter.js'
+import { TernaryFilter } from './TernaryFilter.js'
+import { DateRangeFilter } from './DateRangeFilter.js'
 import { parseFilterValues, loadTableRecords } from '../elements/dispatchTable.js'
 import { modelTableRecords } from '../orm/modelDefaults.js'
 import type { ModelLike, ModelQuery } from '../orm/modelDefaults.js'
@@ -47,6 +49,65 @@ describe('SelectFilter / BooleanFilter shape', () => {
     assert.equal(coerceBooleanFilterValue('0'),     false)
     assert.equal(coerceBooleanFilterValue('false'), false)
     assert.equal(coerceBooleanFilterValue(''),      false)
+  })
+})
+
+describe('Filter.indicator + active-value formatting', () => {
+  it('omits indicator when no value is set', () => {
+    const meta = SelectFilter.make('status').toMeta()
+    assert.equal(meta.indicator, undefined)
+  })
+
+  it('SelectFilter formats active value via option label', () => {
+    const meta = SelectFilter.make('status')
+      .options([{ value: 'draft', label: 'Draft' }, { value: 'published', label: 'Published' }])
+      .withValue('published')
+      .toMeta()
+    assert.equal(meta.indicator, 'Status: Published')
+  })
+
+  it('SelectFilter falls back to raw value when option missing', () => {
+    const meta = SelectFilter.make('status').withValue('mystery').toMeta()
+    assert.equal(meta.indicator, 'Status: mystery')
+  })
+
+  it('BooleanFilter renders Yes / No', () => {
+    assert.equal(BooleanFilter.make('featured').withValue('1').toMeta().indicator,  'Featured: Yes')
+    assert.equal(BooleanFilter.make('featured').withValue('0').toMeta().indicator,  'Featured: No')
+  })
+
+  it('TernaryFilter maps yes / no / blank through the configured labels', () => {
+    const f = TernaryFilter.make('verified')
+      .trueLabel('Verified').falseLabel('Unverified').blankLabel('Pending')
+    assert.equal(f.withValue('yes').toMeta().indicator,   'Verified: Verified')
+    assert.equal(f.withValue('no').toMeta().indicator,    'Verified: Unverified')
+    assert.equal(f.withValue('blank').toMeta().indicator, 'Verified: Pending')
+  })
+
+  it('DateRangeFilter formats both / one-sided ranges', () => {
+    const f = DateRangeFilter.make('publishedAt')
+    assert.equal(f.withValue('2026-01-01..2026-12-31').toMeta().indicator, 'PublishedAt: 2026-01-01 → 2026-12-31')
+    assert.equal(f.withValue('2026-01-01..').toMeta().indicator,           'PublishedAt: ≥ 2026-01-01')
+    assert.equal(f.withValue('..2026-12-31').toMeta().indicator,           'PublishedAt: ≤ 2026-12-31')
+  })
+
+  it('Filter.indicator(string) is a literal override', () => {
+    const meta = SelectFilter.make('status')
+      .options([{ value: 'draft', label: 'Draft' }])
+      .indicator('Filtered')
+      .withValue('draft')
+      .toMeta()
+    assert.equal(meta.indicator, 'Filtered')
+  })
+
+  it('Filter.indicator(fn) receives value + filter for custom formatting', () => {
+    const meta = SelectFilter.make('status')
+      .label('Publish state')
+      .options([{ value: 'draft', label: 'Draft' }])
+      .indicator((v, f) => `${f.getLabel()} = ${v}`)
+      .withValue('draft')
+      .toMeta()
+    assert.equal(meta.indicator, 'Publish state = draft')
   })
 })
 
