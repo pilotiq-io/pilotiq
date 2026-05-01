@@ -503,6 +503,7 @@ export class ListArticles extends ListPage {
 Builder surface: `.label()`, `.icon()`, `.badge(string | () => Promise<string|number|undefined>)`, `.badgeColor()`, `.default()`, `.modifyQuery((q: ModelQuery) => q)`, `.modifyContext((ctx: TableContext) => ctx)` (escape hatch for non-model `Table.records()` handlers).
 
 - The active tab is carried in the URL as `?tab=name`; switching SPA-navigates and resets `page` to 1 while preserving `search`/`sort`/filter values.
+- The **default tab** uses the canonical paramless URL (`/articles`, not `/articles?tab=all`) — visiting the bare path already lands on it, so `?tab=` would be noise. Non-default tabs still include the param.
 - Default tab: `ListTab.default()` wins; otherwise the first tab.
 - Badges resolve in parallel server-side (`Promise.all`); a thrown handler silently omits its badge rather than blanking the page.
 - `modifyQuery` plugs into `modelTableRecords` next to `Filter.query()`, so tab predicates compose with active filters and search.

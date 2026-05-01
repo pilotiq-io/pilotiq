@@ -7,6 +7,14 @@ strips, each tab narrowing the table query and optionally showing a count badge.
 Estimated effort: ~1 day. Layers on top of the existing `Tabs` primitive,
 `ListPage` base class, and `loadTableRecords` pipeline.
 
+**Status: shipped 2026-05-01; polish 2026-05-03.** v1 lives in `Tab.ts` /
+`elements/ListTabs.ts` per the implementation map below. Two follow-ups
+landed in the polish pass: walkers (`findActiveTab`, `findListTabs`,
+`resolveActiveTab` child filter) switched from `instanceof` to structural
+`getType()` checks for Vite SSR module-cache safety; `buildTabUrl` now
+emits the canonical paramless URL for the default tab (no `?tab=name`
+when the tab is the default).
+
 ## Why we want it
 
 The "primary axis" of most resource lists is a status enum (draft/published,
