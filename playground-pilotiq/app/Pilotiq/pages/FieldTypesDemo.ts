@@ -3,7 +3,7 @@ import {
   Form,
   TextField, NumberField,
   Hidden, Checkbox, Radio, CheckboxList, ToggleButtons,
-  Slider, ColorPicker, KeyValue,
+  Slider, ColorPicker, KeyValue, TagsInput,
   DateTimePicker, FileUpload,
   Notification,
 } from '@pilotiq/pilotiq'
@@ -24,7 +24,7 @@ export class FieldTypesDemo extends Page {
   static schema() {
     return [
       Heading.make('Field types')
-        .description('Plan #6 — Hidden / Checkbox / Radio / CheckboxList / Slider / ColorPicker / KeyValue / DateTimePicker / FileUpload + cross-field plumbing (prefix, suffix, helperText, default, dehydrated, formatStateUsing).'),
+        .description('Plan #6 — Hidden / Checkbox / Radio / CheckboxList / ToggleButtons / Slider / ColorPicker / KeyValue / TagsInput / DateTimePicker / FileUpload + cross-field plumbing (prefix, suffix, helperText, default, dehydrated, formatStateUsing).'),
 
       Form.make()
         .formId('field-types-demo')
@@ -133,6 +133,14 @@ export class FieldTypesDemo extends Page {
                 .valueLabel('Value')
                 .addLabel('Add header')
                 .reorderable(),
+
+              TagsInput.make('tags')
+                .label('Tags')
+                .placeholder('Add tag…')
+                .helperText('Press Enter or "," to commit; Backspace pops the last chip.')
+                .suggestions(['admin', 'beta', 'featured', 'internal', 'launch', 'roadmap'])
+                .splitKeys(['Enter', 'Tab'])
+                .default(['featured']),
 
               DateTimePicker.make('scheduledAt')
                 .label('Scheduled at')

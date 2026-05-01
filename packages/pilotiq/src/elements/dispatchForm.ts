@@ -213,6 +213,32 @@ export function coerceFormValues(
         }
         break
       }
+      case 'tagsInput': {
+        // Client serializes the chip set as a JSON-encoded string in a
+        // single hidden input. Parse back into `string[]`. Already-array
+        // values pass through (e.g. when a `live()` partial-resolve has
+        // already shipped structured data, or when a server-side default
+        // landed pre-coerce). Empty / null / unparseable → `[]`.
+        if (raw === undefined || raw === null || raw === '') {
+          out[name] = []
+        } else if (Array.isArray(raw)) {
+          out[name] = raw.map(v => String(v))
+        } else if (typeof raw === 'string') {
+          try {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed)) {
+              out[name] = parsed.map(v => String(v))
+            } else {
+              out[name] = []
+            }
+          } catch {
+            out[name] = []
+          }
+        } else {
+          out[name] = []
+        }
+        break
+      }
       case 'color': {
         // Empty string → null so DB nullable columns accept it. Otherwise
         // pass the hex string through verbatim.

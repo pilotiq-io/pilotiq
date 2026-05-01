@@ -19,6 +19,7 @@ import { SliderInput }       from './fields/SliderInput.js'
 import { ColorInput }        from './fields/ColorInput.js'
 import { DateTimeInput }     from './fields/DateTimeInput.js'
 import { KeyValueInput }     from './fields/KeyValueInput.js'
+import { TagsInput }         from './fields/TagsInput.js'
 import { FileUploadInput }   from './fields/FileUploadInput.js'
 import { RepeaterInput }     from './fields/RepeaterInput.js'
 import {
@@ -275,6 +276,28 @@ function renderFieldInput(
           valueLabel={String(el['valueLabel'] ?? 'Value')}
           addLabel={String(el['addLabel'] ?? 'Add row')}
           reorderable={Boolean(el['reorderable'])}
+        />
+      )
+    }
+
+    case 'tagsInput': {
+      const suggestions = (el['suggestions'] as string[] | undefined) ?? []
+      // separator: omitted → ',' (default); explicit null → null (disabled).
+      const separator = 'separator' in el
+        ? (el['separator'] as string | null)
+        : ','
+      const splitKeys = (el['splitKeys'] as string[] | undefined) ?? ['Enter']
+      const maxTags   = typeof el['maxTags'] === 'number' ? el['maxTags'] as number : null
+      return (
+        <TagsInput
+          name={name}
+          defaultValue={defaultValue}
+          disabled={disabled}
+          placeholder={placeholder}
+          suggestions={suggestions}
+          separator={separator}
+          splitKeys={splitKeys}
+          maxTags={maxTags}
         />
       )
     }

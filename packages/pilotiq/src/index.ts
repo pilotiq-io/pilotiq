@@ -240,6 +240,7 @@ export { SliderField, Slider }             from './fields/SliderField.js'
 export { ColorPickerField, ColorPicker }   from './fields/ColorPickerField.js'
 export { DateTimePickerField, DateTimePicker } from './fields/DateField.js'
 export { KeyValueField, KeyValue }         from './fields/KeyValueField.js'
+export { TagsInputField, TagsInput, type TagsSuggestionsResolver } from './fields/TagsInputField.js'
 export { FileUploadField, FileUpload }     from './fields/FileUploadField.js'
 export {
   RepeaterField,

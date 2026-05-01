@@ -7,6 +7,7 @@ import { Wizard, Step } from '../schema/Wizard.js'
 import { TextField } from '../fields/TextField.js'
 import { NumberField } from '../fields/NumberField.js'
 import { ToggleField } from '../fields/ToggleField.js'
+import { TagsInputField } from '../fields/TagsInputField.js'
 import { Section } from '../schema/Section.js'
 import { makeValidator, required } from '../validation/index.js'
 
@@ -348,6 +349,40 @@ describe('applyStateUpdate (Plan #5)', () => {
     await applyStateUpdate(form, { a: 'x' }, 'a', { record: { id: 1 }, user: { name: 'sue' } })
     assert.deepEqual(seen.record, { id: 1 })
     assert.deepEqual(seen.user,   { name: 'sue' })
+  })
+})
+
+describe('coerceFormValues — tagsInput', () => {
+  it('parses a JSON-encoded string array into string[]', () => {
+    const elements = [TagsInputField.make('tags')]
+    const out = coerceFormValues(elements, { tags: '["react","vue"]' })
+    assert.deepEqual(out['tags'], ['react', 'vue'])
+  })
+
+  it('passes a real array through verbatim', () => {
+    const elements = [TagsInputField.make('tags')]
+    const out = coerceFormValues(elements, { tags: ['a', 'b'] })
+    assert.deepEqual(out['tags'], ['a', 'b'])
+  })
+
+  it('coerces to [] for empty / null / undefined / unparseable JSON', () => {
+    const elements = [TagsInputField.make('tags')]
+    assert.deepEqual(coerceFormValues(elements, { tags: '' }).tags,        [])
+    assert.deepEqual(coerceFormValues(elements, { tags: null }).tags,      [])
+    assert.deepEqual(coerceFormValues(elements, {}).tags,                  [])
+    assert.deepEqual(coerceFormValues(elements, { tags: 'not-json' }).tags, [])
+  })
+
+  it('coerces non-array JSON to []', () => {
+    const elements = [TagsInputField.make('tags')]
+    const out = coerceFormValues(elements, { tags: '{"a":1}' })
+    assert.deepEqual(out['tags'], [])
+  })
+
+  it('coerces non-string array entries to strings', () => {
+    const elements = [TagsInputField.make('tags')]
+    const out = coerceFormValues(elements, { tags: [1, 2, 'three'] })
+    assert.deepEqual(out['tags'], ['1', '2', 'three'])
   })
 })
 

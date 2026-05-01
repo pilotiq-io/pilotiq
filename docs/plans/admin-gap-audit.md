@@ -189,7 +189,7 @@ Skip `ColorColumn`, `SelectColumn`/`ToggleColumn`/`TextInputColumn` (inline-edit
 | `MarkdownEditor` | 2 | We have RichTextField; markdown variant for users who prefer plain. |
 | `CodeEditor` | 2 | Monaco / CodeMirror. |
 | `KeyValue` (dynamic key-value list) | 2 | |
-| `TagsInput` | 2 | |
+| ✅ `TagsInput` DONE | 2 | Shipped 2026-05-04 — `TagsInput.make().suggestions([...]|fn) / .separator(',') / .splitKeys(['Enter']) / .reorderable() / .maxTags(n)`. `string[]` value, JSON-encoded in a single hidden input; new `tagsInput` coerce branch parses back. Backspace pops last chip; suggestion popover filters by typed prefix. |
 | `ColorPicker` | 2 | |
 | `Slider` | 2 | |
 | `Hidden` | 1 | Trivial. |
