@@ -61,6 +61,8 @@ import {
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { useNavigate, type NavigateFn } from './navigate.js'
+import { useIconFor } from './icon-context.js'
+import type { SerializedIcon } from '../icons/types.js'
 import { useToast } from './Toaster.js'
 import { getIcon } from '../icons/registry.js'
 
@@ -1735,6 +1737,9 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
     case 'listTabs':
       return <ListTabsRenderer key={index} el={el} />
 
+    case 'relation-tabs':
+      return <RelationTabsRenderer key={index} el={el} />
+
     case 'listTab':
       // List tabs are rendered by their parent `listTabs` strip; standalone is a no-op.
       return null
@@ -2461,6 +2466,69 @@ function ListTabsRenderer({ el }: { el: ElementMeta }) {
       </nav>
     </div>
   )
+}
+
+interface RelationTabMetaShape {
+  key:    string
+  label:  string
+  url:    string
+  active: boolean
+  icon?:  unknown
+}
+
+/** Plan #11 — relation manager nav strip. Renders one anchor per tab;
+ *  the active tab gets the same border-primary styling as ListTabs.
+ *  SPA-navigates on plain left-click; cmd/ctrl/shift/middle-click fall
+ *  through so users can open a manager in a new tab. */
+function RelationTabsRenderer({ el }: { el: ElementMeta }) {
+  const navigate = useNavigate()
+  const tabs = (el['tabs'] as RelationTabMetaShape[] | undefined) ?? []
+  if (tabs.length === 0) return null
+
+  return (
+    <div className="border-b border-border">
+      <nav className="flex items-center gap-1 -mb-px overflow-x-auto" role="tablist">
+        {tabs.map((t, i) => {
+          const triggerCls = [
+            'inline-flex items-center gap-1.5 px-3 py-2 text-sm border-b-2 transition-colors whitespace-nowrap',
+            t.active
+              ? 'border-primary text-foreground font-medium'
+              : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border',
+          ].join(' ')
+
+          const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+            if (e.button !== 0) return
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+            e.preventDefault()
+            void navigate(t.url)
+          }
+
+          return (
+            <a
+              key={t.key + ':' + i}
+              href={t.url}
+              onClick={onClick}
+              role="tab"
+              aria-selected={t.active}
+              data-active={t.active || undefined}
+              className={triggerCls}
+            >
+              <RelationTabIcon icon={t.icon} />
+              <span>{t.label}</span>
+            </a>
+          )
+        })}
+      </nav>
+    </div>
+  )
+}
+
+function RelationTabIcon({ icon }: { icon: unknown }) {
+  // SerializedIcon is `string | { class: string }`. Use useIconFor to
+  // resolve component-typed icons through the Vite plugin's manifest.
+  const Icon = useIconFor(icon as SerializedIcon | undefined)
+  if (!Icon) return null
+  return <Icon className="size-4" aria-hidden="true" />
 }
 
 function TableRenderer({ el }: { el: ElementMeta }) {

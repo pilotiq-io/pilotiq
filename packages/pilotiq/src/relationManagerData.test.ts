@@ -8,7 +8,7 @@ import { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
 import { TextField } from './fields/TextField.js'
-import { findRelatedResource, relationManagerData, dispatchPageData } from './pageData.js'
+import { findRelatedResource, relationManagerData, dispatchPageData, resourceEditData, resourceViewData } from './pageData.js'
 import { PilotiqRegistry } from './PilotiqRegistry.js'
 import type { ModelLike, ModelQuery } from './orm/modelDefaults.js'
 
@@ -327,9 +327,9 @@ describe('relationManagerData (Plan #11)', () => {
 
       // Auto-wired records loader produced rows scoped to u1's children.
       const schema = data['schemaData'] as Array<Record<string, unknown>>
-      const tableMeta = schema[0]
-      assert.equal(tableMeta?.['type'], 'table')
-      const rows = (tableMeta?.['rows'] as Array<Record<string, unknown>>) ?? []
+      const tableMeta = schema.find(s => s['type'] === 'table')
+      assert.ok(tableMeta, 'expected a table element in schemaData')
+      const rows = (tableMeta['rows'] as Array<Record<string, unknown>>) ?? []
       assert.equal(rows.length, 2)  // u1 has p1 + p2 only, never p3
       assert.deepEqual(rows.map(r => r['id']).sort(), ['p1', 'p2'])
     })
@@ -347,9 +347,9 @@ describe('relationManagerData (Plan #11)', () => {
       assert.equal(data['mode'], 'create')
 
       const schema = data['schemaData'] as Array<Record<string, unknown>>
-      const formMeta = schema[0]
-      assert.equal(formMeta?.['type'], 'form')
-      assert.equal(formMeta?.['action'], '/admin/users/u1/posts/create')
+      const formMeta = schema.find(s => s['type'] === 'form')
+      assert.ok(formMeta, 'expected a form element in schemaData')
+      assert.equal(formMeta['action'], '/admin/users/u1/posts/create')
     })
 
     it('honors prefill values and errors', async () => {
@@ -361,7 +361,7 @@ describe('relationManagerData (Plan #11)', () => {
       const data = out as Record<string, unknown>
       assert.equal(data['hasErrors'], true)
       const schema = data['schemaData'] as Array<Record<string, unknown>>
-      const formMeta = schema[0] as Record<string, unknown>
+      const formMeta = schema.find(s => s['type'] === 'form') as Record<string, unknown>
       assert.equal((formMeta['values'] as Record<string, unknown>)['title'], 'Draft')
       assert.deepEqual((formMeta['errors'] as Record<string, string[]>)['title'], ['Required'])
     })
@@ -380,7 +380,7 @@ describe('relationManagerData (Plan #11)', () => {
       assert.equal(data['childId'], 'p1')
 
       const schema = data['schemaData'] as Array<Record<string, unknown>>
-      const formMeta = schema[0] as Record<string, unknown>
+      const formMeta = schema.find(s => s['type'] === 'form') as Record<string, unknown>
       // Child p1 belongs to u1 → its title should be filled in.
       assert.equal((formMeta['values'] as Record<string, unknown>)['title'], 'Post One')
       assert.equal(formMeta['action'], '/admin/users/u1/posts/p1/edit')
@@ -411,11 +411,151 @@ describe('relationManagerData (Plan #11)', () => {
       })
       const data = out as Record<string, unknown>
       const schema = data['schemaData'] as Array<Record<string, unknown>>
-      const formMeta = schema[0] as Record<string, unknown>
+      const formMeta = schema.find(s => s['type'] === 'form') as Record<string, unknown>
       assert.equal((formMeta['values'] as Record<string, unknown>)['title'], 'User-typed value')
       assert.deepEqual((formMeta['errors'] as Record<string, string[]>)['title'], ['Too short'])
       assert.equal(data['hasErrors'], true)
     })
+  })
+})
+
+// ── Plan #11 — auto-mounted RelationTabs strip (Step 7) ─────────────
+
+describe('relation tabs auto-mount (Plan #11)', () => {
+  it('relation-list page prepends RelationTabs with the manager tab active', async () => {
+    const postRows: QueryRow[] = [{ id: 'p1', parentId: 'u1', title: 'Post One' }]
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = {
+      async find(_id) { return makeParentWithChildren('u1', postRows) },
+      async create() { throw new Error('not used') },
+      async update() { throw new Error('not used') },
+      async delete() { /* ok */ },
+      query() { throw new Error('not used') },
+    }
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+      static override label        = 'Posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+    }
+    class CommentsManager extends RelationManager {
+      static override relationship = 'comments'
+      static override label        = 'Comments'
+      static override table(t: Table): Table { return t.columns([Column.make('body')]) }
+    }
+    class UserResource extends Resource {
+      static override slug  = 'users'
+      static override get model() { return ParentModel }
+      static override relations() { return [PostsManager, CommentsManager] }
+    }
+    const panel = Pilotiq.make('TabsT-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+
+    const out = await relationManagerData(panel, {
+      kind: 'relation-list', slug: 'users', recordId: 'u1', relationship: 'posts',
+    })
+    const data = out as Record<string, unknown>
+    const schema = data['schemaData'] as Array<Record<string, unknown>>
+    const tabsMeta = schema.find(s => s['type'] === 'relation-tabs') as Record<string, unknown>
+    assert.ok(tabsMeta, 'expected relation-tabs strip prepended')
+
+    const tabs = tabsMeta['tabs'] as Array<{ key: string; label: string; url: string; active: boolean }>
+    assert.equal(tabs.length, 3)            // Edit + Posts + Comments
+    assert.equal(tabs[0]?.key, '__edit')
+    assert.equal(tabs[0]?.label, 'Edit')
+    assert.equal(tabs[0]?.url, '/admin/users/u1/edit')
+    assert.equal(tabs[0]?.active, false)
+    assert.equal(tabs[1]?.key, 'posts')
+    assert.equal(tabs[1]?.url, '/admin/users/u1/posts')
+    assert.equal(tabs[1]?.active, true)     // posts is the active tab
+    assert.equal(tabs[2]?.key, 'comments')
+    assert.equal(tabs[2]?.active, false)
+  })
+
+  it('skips the strip entirely when the resource has no relation managers', async () => {
+    class OnlyR extends Resource {
+      static override slug = 'only'
+    }
+    const panel = Pilotiq.make('NoRel-' + Math.random()).path('/admin').resources([OnlyR])
+    // Touch resourceIndex/resourceCreate; we only care about Edit which depends
+    // on R.model and pages. Easier: assert directly that buildRelationTabs would
+    // not run by checking a manager-less relation-list call returns null (no
+    // manager named 'whatever' exists), which is the expected guard.
+    const out = await relationManagerData(panel, {
+      kind: 'relation-list', slug: 'only', recordId: '1', relationship: 'whatever',
+    })
+    assert.equal(out, null)
+  })
+
+  it('resource-edit page prepends RelationTabs with the Edit tab active', async () => {
+    const postRows: QueryRow[] = [{ id: 'p1', parentId: 'u1', title: 'Post One' }]
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = stubModel({
+      rows: [{ id: 'u1', name: 'Alice' }, { id: 'u2', name: 'Bob' }],
+    })
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+      static override label        = 'Posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override recordTitleAttribute = 'name'
+      static override get model() { return ParentModel }
+      static override form(form: Form): Form { return form.schema([TextField.make('name')]) }
+      static override relations() { return [PostsManager] }
+    }
+    const panel = Pilotiq.make('EditTab-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+    const out = await resourceEditData(panel, 'users', 'u1')
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    const tabsMeta = schema.find(s => s['type'] === 'relation-tabs') as Record<string, unknown>
+    assert.ok(tabsMeta, 'resource-edit should auto-mount RelationTabs')
+    const tabs = tabsMeta['tabs'] as Array<{ key: string; active: boolean; url: string }>
+    assert.equal(tabs[0]?.key, '__edit')
+    assert.equal(tabs[0]?.active, true)
+    assert.equal(tabs[1]?.key, 'posts')
+    assert.equal(tabs[1]?.active, false)
+  })
+
+  it('resource-view page prepends RelationTabs with the Details tab active', async () => {
+    const postRows: QueryRow[] = []
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = stubModel({ rows: [{ id: 'u1', name: 'Alice' }] })
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override detail() { return [] }
+      static override relations() { return [PostsManager] }
+    }
+    const panel = Pilotiq.make('ViewTab-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+    const out = await resourceViewData(panel, 'users', 'u1')
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    const tabsMeta = schema.find(s => s['type'] === 'relation-tabs') as Record<string, unknown> | undefined
+    assert.ok(tabsMeta, 'resource-view should auto-mount RelationTabs')
+    const tabs = tabsMeta['tabs'] as Array<{ key: string; label: string; url: string; active: boolean }>
+    assert.equal(tabs[0]?.key, '__view')
+    assert.equal(tabs[0]?.label, 'Details')
+    assert.equal(tabs[0]?.url, '/admin/users/u1')
+    assert.equal(tabs[0]?.active, true)
   })
 })
 

@@ -175,8 +175,9 @@ describe('relation routes — list handler', () => {
     const view = result as { id: string; props: Record<string, unknown> }
     assert.equal(view.id, 'pilotiq.relation-list')
     const schema = view.props['schemaData'] as Array<Record<string, unknown>>
-    assert.equal(schema[0]?.['type'], 'table')
-    const rows = schema[0]?.['rows'] as Array<Record<string, unknown>>
+    const tableMeta = schema.find(s => s['type'] === 'table')
+    assert.ok(tableMeta, 'expected a table element')
+    const rows = tableMeta['rows'] as Array<Record<string, unknown>>
     assert.deepEqual(rows.map(r => r['id']).sort(), ['p1', 'p2'])
   })
 

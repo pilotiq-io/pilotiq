@@ -29,8 +29,9 @@ import { ListTab } from './Tab.js'
 import { resolveTheme } from './theme/resolve.js'
 import type { ThemeMeta } from './theme/types.js'
 import { consumeFlashedNotifications } from './notifications/flash.js'
-import { serializeIcon, type SerializedIcon } from './icons/types.js'
+import { serializeIcon, type SerializedIcon, type IconValue } from './icons/types.js'
 import type { RelationManager } from './RelationManager.js'
+import { RelationTabs, relationTab, type RelationTabMeta } from './schema/RelationTabs.js'
 import {
   modelSave, modelLoadRecord, modelRelationTableRecords, getPrimaryKey,
   type ModelLike, type ModelQuery,
@@ -622,6 +623,13 @@ export async function resourceEditData(
     if (prefill?.errors) form.withErrors(prefill.errors)
   }
 
+  // Plan #11 — when the resource has relation managers, prepend a
+  // navigation strip so users can drill into each manager's table
+  // without leaving the parent record context. The "Edit" tab is
+  // active here.
+  const relationTabsEl = buildRelationTabs(R, recordId, cfg.path, '__edit', 'edit')
+  if (relationTabsEl) elements.unshift(relationTabsEl)
+
   const schemaData = await resolveSchema(
     elements,
     record !== undefined ? { ...ctx, record } : ctx,
@@ -876,6 +884,10 @@ async function buildRelationListData(
   const elements: Element[] = [table]
   tagActionDispatch(elements, listUrl)
   await loadTableRecords(elements, scope.query ?? {}, listUrl, user)
+
+  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship, 'edit')
+  if (tabs) elements.unshift(tabs)
+
   const schemaData = await resolveSchema(elements, ctx)
 
   return {
@@ -927,6 +939,9 @@ async function buildRelationCreateData(
     if (scope.prefill.values) form.withValues(scope.prefill.values)
     if (scope.prefill.errors) form.withErrors(scope.prefill.errors)
   }
+
+  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship, 'edit')
+  if (tabs) elements.unshift(tabs)
 
   const ctx: SchemaContext = uploadCtx(userCtx({
     mode:     'create',
@@ -1011,6 +1026,9 @@ async function buildRelationEditData(
     form.withValues(values)
   }
 
+  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship, 'edit')
+  if (tabs) elements.unshift(tabs)
+
   const ctx: SchemaContext = uploadCtx(userCtx({
     mode:     'edit',
     basePath: base,
@@ -1044,6 +1062,59 @@ async function buildRelationEditData(
     notifications: consumeFlashedNotifications(req),
     ...(scope.prefill?.errors ? { hasErrors: true } : {}),
   }
+}
+
+/**
+ * Plan #11 — build the `RelationTabs` strip for a parent record. The
+ * first tab is the parent's Edit (or View) page, followed by one tab
+ * per `R.relations()` manager. `activeKey` selects which tab the
+ * renderer highlights; pass `'__edit'` / `'__view'` for the parent
+ * tabs or the manager's relationship key for a manager tab.
+ *
+ * Returns `undefined` when the resource has no relation managers — the
+ * caller can then skip the prepend entirely so resources without
+ * relations stay shape-compatible with their existing schemaData.
+ */
+function buildRelationTabs(
+  R:         ResourceClass,
+  recordId:  string,
+  basePath:  string,
+  activeKey: string,
+  mode:      'edit' | 'view' = 'edit',
+): RelationTabs | undefined {
+  const managers = R.relations()
+  if (managers.length === 0) return undefined
+
+  const slug = R.getSlug()
+  const tabs: RelationTabMeta[] = []
+
+  // Parent tab — always first. URL depends on mode (Edit vs View).
+  const parentKey = mode === 'view' ? '__view' : '__edit'
+  tabs.push(relationTab({
+    key:       parentKey,
+    label:     mode === 'view' ? 'Details' : 'Edit',
+    url:       mode === 'view'
+                  ? `${basePath}/${slug}/${recordId}`
+                  : `${basePath}/${slug}/${recordId}/edit`,
+    active:    activeKey === parentKey,
+    icon:      R.icon as IconValue | undefined,
+    iconOwner: R.name,
+  }))
+
+  for (const M of managers) {
+    let rel = ''
+    try { rel = M.getRelationship() } catch { continue }
+    const icon = M.getIcon()
+    tabs.push(relationTab({
+      key:    rel,
+      label:  M.getLabel(),
+      url:    `${basePath}/${slug}/${recordId}/${rel}`,
+      active: activeKey === rel,
+      ...(icon !== undefined ? { icon, iconOwner: M.name } : {}),
+    }))
+  }
+
+  return RelationTabs.make(tabs)
 }
 
 /** Pull a human-readable title off a parent record for breadcrumb /
@@ -1317,6 +1388,12 @@ export async function resourceViewData(
   if (R.model) {
     try { record = await R.model.find(recordId) } catch { /* ignore */ }
   }
+
+  // Plan #11 — prepend the relation tabs strip with the "Details" tab
+  // active when the resource has relation managers configured.
+  const relationTabsEl = buildRelationTabs(R, recordId, cfg.path, '__view', 'view')
+  if (relationTabsEl) elements.unshift(relationTabsEl)
+
   const schemaData = await resolveSchema(
     elements,
     record !== undefined ? { ...ctx, record } : ctx,
