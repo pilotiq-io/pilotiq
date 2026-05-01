@@ -5,6 +5,7 @@ import { Table } from './Table.js'
 import { Column } from '../Column.js'
 import { Section } from '../schema/Section.js'
 import { resolveSchema } from '../schema/resolveSchema.js'
+import { Sum, Average, Count, Range } from '../summarizers/Summarizer.js'
 import {
   parseTableQuery,
   findTables,
@@ -247,6 +248,125 @@ describe('loadTableRecords', () => {
       assert.equal(meta['recordUrl'], undefined)
       const rows = meta['rows'] as Array<Record<string, unknown>>
       assert.equal(rows[0]!['_recordUrl'], undefined)
+    })
+  })
+
+  describe('Table.defaultGroup + summaries', () => {
+    it('stamps _groupValue on each row when defaultGroup(col) is set', async () => {
+      const t = Table.make<{ id: string; status: string }>()
+        .columns([Column.make('status'), Column.make('id')])
+        .records(async () => [
+          { id: '1', status: 'draft' },
+          { id: '2', status: 'published' },
+          { id: '3', status: 'draft' },
+        ])
+        .defaultGroup('status')
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['defaultGroup'], 'status')
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      // Stable sort clusters drafts together.
+      assert.deepEqual(rows.map(r => r['id']), ['1', '3', '2'])
+      assert.equal(rows[0]!['_groupValue'], 'draft')
+      assert.equal(rows[1]!['_groupValue'], 'draft')
+      assert.equal(rows[2]!['_groupValue'], 'published')
+    })
+
+    it('preserves original sub-order within each group (stable sort)', async () => {
+      const t = Table.make<{ id: string; team: string }>()
+        .columns([Column.make('team'), Column.make('id')])
+        .records(async () => [
+          { id: 'a', team: 'red' },
+          { id: 'b', team: 'blue' },
+          { id: 'c', team: 'red' },
+          { id: 'd', team: 'blue' },
+        ])
+        .defaultGroup('team')
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.deepEqual(rows.map(r => r['id']), ['b', 'd', 'a', 'c'])
+    })
+
+    it('moves rows with empty/null group values to the end', async () => {
+      const t = Table.make<{ id: string; status: string | null }>()
+        .columns([Column.make('status')])
+        .records(async () => [
+          { id: '1', status: null },
+          { id: '2', status: 'active' },
+          { id: '3', status: '' },
+        ])
+        .defaultGroup('status')
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.deepEqual(rows.map(r => r['id']), ['2', '1', '3'])
+      assert.equal(rows[1]!['_groupValue'], '')
+      assert.equal(rows[2]!['_groupValue'], '')
+    })
+
+    it('computes per-column summaries over the rendered rows', async () => {
+      const t = Table.make<{ amount: number; tax: number }>()
+        .columns([
+          Column.make('amount').summarize([
+            Sum.make().label('Total'),
+            Average.make().label('Avg'),
+          ]),
+          Column.make('tax').summarize([
+            Range.make(),
+            Count.make().label('Rows'),
+          ]),
+        ])
+        .records(async () => [
+          { amount: 100, tax: 10 },
+          { amount: 200, tax: 25 },
+          { amount: 300, tax: 5  },
+        ])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const summaries = meta['summaries'] as Record<string, Array<{ kind: string; value: string; label?: string }>>
+      assert.deepEqual(summaries['amount'], [
+        { kind: 'sum',     label: 'Total', value: '600' },
+        { kind: 'average', label: 'Avg',   value: '200' },
+      ])
+      assert.deepEqual(summaries['tax'], [
+        { kind: 'range',                  value: '5..25' },
+        { kind: 'count', label: 'Rows',   value: '3' },
+      ])
+    })
+
+    it('skips summaries when no column has summarizers', async () => {
+      const t = Table.make()
+        .columns([Column.make('id')])
+        .records(async () => [{ id: '1' }])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['summaries'], undefined)
+    })
+
+    it('summaries respect the grouped row order (compute over final rendered rows)', async () => {
+      const t = Table.make<{ amount: number; status: string }>()
+        .columns([
+          Column.make('status'),
+          Column.make('amount').summarize([Sum.make()]),
+        ])
+        .records(async () => [
+          { amount: 50,  status: 'draft' },
+          { amount: 100, status: 'published' },
+        ])
+        .defaultGroup('status')
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const summaries = meta['summaries'] as Record<string, Array<{ kind: string; value: string }>>
+      // Sum is order-independent; this also confirms grouping doesn't
+      // accidentally drop rows from the summary input.
+      assert.equal(summaries['amount']![0]!.value, '150')
     })
   })
 

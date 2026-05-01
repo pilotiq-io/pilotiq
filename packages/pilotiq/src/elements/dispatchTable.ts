@@ -5,6 +5,7 @@ import { Action } from '../actions/Action.js'
 import { Column } from '../Column.js'
 import { ListTab } from '../Tab.js'
 import { isRepeaterField } from '../fields/RepeaterField.js'
+import type { SummaryResult } from '../summarizers/Summarizer.js'
 
 export interface QueryParams {
   search?: string
@@ -191,13 +192,15 @@ export async function loadTableRecords(
 
       const recordUrlFn     = table.getRecordUrl()
       const recordClassesFn = table.getRecordClasses()
+      const groupColumn     = table.getDefaultGroup()
 
       const needsRowMutation =
         rowActionsWithRules.length > 0 ||
         columnsWithFormatter.length > 0 ||
         columnsWithRecordUrl.length > 0 ||
         recordUrlFn !== undefined ||
-        recordClassesFn !== undefined
+        recordClassesFn !== undefined ||
+        groupColumn !== undefined
 
       const rows = !needsRowMutation
         ? rawRows
@@ -256,6 +259,11 @@ export async function loadTableRecords(
               }
             }
 
+            if (groupColumn !== undefined) {
+              const raw = recordObj[groupColumn]
+              out['_groupValue'] = raw == null || raw === '' ? '' : String(raw)
+            }
+
             if (columnsWithRecordUrl.length > 0) {
               const colUrls: Record<string, string> = {}
               for (const col of columnsWithRecordUrl) {
@@ -274,7 +282,31 @@ export async function loadTableRecords(
             return out
           }))
 
-      table.withRows(rows, total)
+      // Group banding: stable-sort by _groupValue so all rows with the
+      // same value cluster together. The user's sort still applies
+      // (records came in pre-sorted from `records()`); we just shuffle
+      // those clusters so groups are contiguous. Empty/null group values
+      // bubble to the bottom under the empty-string key.
+      const finalRows = groupColumn === undefined
+        ? rows
+        : sortRowsByGroupValue(rows as Array<Record<string, unknown>>)
+
+      // Per-column summaries. Compute over the rows we just rendered
+      // (per-page only in v1; cross-page aggregation is deferred). Pulls
+      // raw column values — summarizers coerce to numbers internally.
+      const columnsWithSummaries = (table.getChildren() ?? [])
+        .filter((c): c is Column => c instanceof Column && c.hasSummarizers())
+      if (columnsWithSummaries.length > 0) {
+        const summaries: Record<string, SummaryResult[]> = {}
+        for (const col of columnsWithSummaries) {
+          const values = (finalRows as Array<Record<string, unknown>>)
+            .map(r => r[col.name])
+          summaries[col.name] = col.getSummarizers().map(s => s.toResult(values))
+        }
+        table.withSummaries(summaries)
+      }
+
+      table.withRows(finalRows as unknown[], total)
     }
 
     // Mirror the resolved context back onto the table so the renderer can
@@ -299,6 +331,27 @@ export async function loadTableRecords(
  * — Vite SSR module-cache duplication can load the package through
  * two paths during a dev session and silently break `instanceof`.
  */
+/**
+ * Stable-sort rows by their stamped `_groupValue` so all rows with the
+ * same group are contiguous. Preserves original order within groups
+ * (ties broken by original index). Empty / unstamped group values sort
+ * to the end so the "ungrouped" band appears last.
+ */
+function sortRowsByGroupValue(
+  rows: ReadonlyArray<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const indexed = rows.map((r, i) => ({ r, i, key: String(r['_groupValue'] ?? '') }))
+  indexed.sort((a, b) => {
+    const aEmpty = a.key === ''
+    const bEmpty = b.key === ''
+    if (aEmpty && !bEmpty) return 1
+    if (!aEmpty && bEmpty) return -1
+    if (a.key === b.key) return a.i - b.i
+    return a.key < b.key ? -1 : 1
+  })
+  return indexed.map(({ r }) => r)
+}
+
 function findActiveTab(elements: ReadonlyArray<Element>): ListTab | undefined {
   const walk = (els: ReadonlyArray<Element>): ListTab | undefined => {
     for (const el of els) {

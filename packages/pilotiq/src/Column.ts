@@ -1,4 +1,5 @@
 import { Element, type ElementMeta } from './schema/Element.js'
+import { Summarizer, type SummarizerMeta } from './summarizers/Summarizer.js'
 
 /** Cell content alignment. Maps to text-{start|center|end} on the cell. */
 export type ColumnAlignment = 'start' | 'center' | 'end'
@@ -54,6 +55,10 @@ export interface ColumnMeta extends ElementMeta {
    * formatted values out of `row._formatted[columnName]` instead of
    * re-applying the column's format spec. */
   hasFormatter?: boolean
+  /** Per-column footer summarizers — kind + optional label. The actual
+   * computed values for each summarizer land on the table meta under
+   * `summaries[columnName]` (`SummaryResult[]`), not on the column. */
+  summaries?: SummarizerMeta[]
   /**
    * Per-column record-URL behavior. The default (absent) means the cell
    * inherits the table's `recordUrl` for click navigation. `false` opts
@@ -104,6 +109,11 @@ export class Column extends Element {
   // for this column; a function overrides the table's URL with a
   // column-specific one. Unset = inherit the table's recordUrl.
   protected _recordUrl?: false | ColumnRecordUrlHandler
+
+  // Footer summarizers (Sum / Average / Count / Range). Computed by
+  // `loadTableRecords` over the rendered rows; values land on the
+  // table-level summaries map keyed by column name.
+  protected _summarizers: Summarizer[] = []
 
   protected constructor(name: string) {
     super()
@@ -203,6 +213,17 @@ export class Column extends Element {
     return this
   }
 
+  /**
+   * Attach summarizers (Sum / Average / Count / Range) to this column.
+   * They render in a `<tfoot>` row under the column. Values are computed
+   * server-side over the rows currently on screen — per-page only in
+   * v1; cross-page aggregation is deferred.
+   */
+  summarize(summarizers: Summarizer[]): this {
+    this._summarizers = summarizers
+    return this
+  }
+
   // ─── Column-type setter (subclass internal) ───────────
 
   protected setColumnType(t: ColumnType): this {
@@ -225,6 +246,8 @@ export class Column extends Element {
   }
   hasRecordUrlHandler(): boolean { return typeof this._recordUrl === 'function' }
   isRecordUrlDisabled(): boolean { return this._recordUrl === false }
+  getSummarizers(): ReadonlyArray<Summarizer> { return this._summarizers }
+  hasSummarizers(): boolean { return this._summarizers.length > 0 }
 
   // ─── Serialization ────────────────────────────────────
 
@@ -250,6 +273,7 @@ export class Column extends Element {
     if (this._color     !== undefined) meta.color     = this._color
     if (this._format    !== undefined) meta.format    = this._format
     if (this._formatState !== undefined) meta.hasFormatter = true
+    if (this._summarizers.length > 0) meta.summaries = this._summarizers.map(s => s.toMeta())
     if (this._recordUrl === false)        meta.recordUrl = false
     else if (typeof this._recordUrl === 'function') meta.recordUrl = true
     this.serializeExtras(meta)

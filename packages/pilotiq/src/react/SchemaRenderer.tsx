@@ -40,6 +40,7 @@ import {
   Table as DataTable,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -2674,6 +2675,14 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   const hasRecordUrl     = Boolean(el['recordUrl'])
   const hasRecordClasses = Boolean(el['recordClasses'])
   const pollInterval     = typeof el['pollInterval'] === 'number' ? el['pollInterval'] as number : undefined
+  const defaultGroup     = typeof el['defaultGroup'] === 'string' ? el['defaultGroup'] as string : undefined
+  const summaries        = el['summaries'] as Record<string, Array<{ kind: string; value: string; label?: string }>> | undefined
+  const groupColumnLabel = defaultGroup
+    ? (() => {
+        const col = columns.find(c => c['name'] === defaultGroup)
+        return col ? String(col['label'] ?? defaultGroup) : defaultGroup
+      })()
+    : undefined
 
   // Auto-refresh: re-visit current URL on a timer so sort/filter/pagination
   // state survives. Pause while the document is hidden — background tabs
@@ -2917,6 +2926,17 @@ function TableRenderer({ el }: { el: ElementMeta }) {
               const recordObj = row as Record<string, unknown>
               const isSelected = selected.has(id)
               const stripedClass = striped && ri % 2 === 1 ? 'bg-muted/30' : ''
+              // Group banding — emit a heading row whenever `_groupValue`
+              // differs from the previous row. The first row in any group
+              // gets the heading; rows within keep their normal chrome.
+              const groupValue = defaultGroup
+                ? String(recordObj['_groupValue'] ?? '')
+                : undefined
+              const prevGroupValue = defaultGroup && ri > 0
+                ? String(((rows[ri - 1] as Record<string, unknown>)['_groupValue'] ?? ''))
+                : undefined
+              const showGroupHeader =
+                defaultGroup !== undefined && groupValue !== prevGroupValue
               // Filament-style per-cell linking. Each data cell wraps
               // its content in a real `<a href>` when the column resolves
               // to a record URL — column override (`Column.recordUrl(fn)`)
@@ -2935,8 +2955,19 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                 .join(' ')
                 .trim()
               return (
+                <React.Fragment key={id}>
+                {showGroupHeader && (
+                  <TableRow key={`group-${id}`} className="bg-muted/40 hover:bg-muted/40">
+                    <TableCell
+                      colSpan={totalCols}
+                      className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                    >
+                      <span className="text-muted-foreground/70">{groupColumnLabel}: </span>
+                      <span className="text-foreground">{groupValue || 'Ungrouped'}</span>
+                    </TableCell>
+                  </TableRow>
+                )}
                 <TableRow
-                  key={id}
                   data-state={isSelected ? 'selected' : undefined}
                   className={rowClassName || undefined}
                 >
@@ -2974,9 +3005,35 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                     </TableCell>
                   )}
                 </TableRow>
+                </React.Fragment>
               )
             })}
           </TableBody>
+          {summaries && Object.keys(summaries).length > 0 && (
+            <TableFooter>
+              <TableRow>
+                {hasBulkActions && <TableCell />}
+                {columns.map((col, ci) => {
+                  const name  = String(col['name'] ?? '')
+                  const align = col['alignment'] === 'center' ? 'text-center'
+                              : col['alignment'] === 'end'    ? 'text-right'
+                              : 'text-left'
+                  const items = summaries[name]
+                  return (
+                    <TableCell key={ci} className={`text-sm font-medium ${align}`}>
+                      {items?.map((s, i) => (
+                        <div key={i} className="leading-tight">
+                          {s.label && <span className="text-muted-foreground">{s.label}: </span>}
+                          <span>{s.value}</span>
+                        </div>
+                      ))}
+                    </TableCell>
+                  )
+                })}
+                {hasRowActions && <TableCell />}
+              </TableRow>
+            </TableFooter>
+          )}
         </DataTable>
       </div>
       {showPagination && (

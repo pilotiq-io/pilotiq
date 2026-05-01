@@ -3,6 +3,7 @@ import { Column } from '../Column.js'
 import { Action } from '../actions/Action.js'
 import { ActionGroup } from '../actions/ActionGroup.js'
 import { Filter } from '../filters/Filter.js'
+import type { SummaryResult } from '../summarizers/Summarizer.js'
 
 /** Either a plain `Action` or an `ActionGroup` (a labelled dropdown of
  * actions). Both can sit in any of the table action slots — the slot
@@ -119,6 +120,18 @@ export interface TableMeta extends ElementMeta {
    */
   pollInterval?: number
 
+  /** Column name to band rows by. Server-side stable-sorts the rendered
+   * rows so all rows with the same value are adjacent, stamps each row
+   * with `_groupValue`, and the renderer inserts a heading row whenever
+   * the value changes. */
+  defaultGroup?: string
+
+  /** Per-column summary results — keyed by column name, each entry is the
+   * computed `SummaryResult[]` for that column's `summarize([…])`. Filled
+   * in by `loadTableRecords` after `records()` runs. Renderer emits a
+   * `<tfoot>` row when this is present. */
+  summaries?: Record<string, SummaryResult[]>
+
   // Render-time state — populated by the framework after `records()` runs.
   rows?:        unknown[]
   total?:       number
@@ -160,6 +173,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _recordUrl?:    RecordUrlHandler<R>
   private _recordClasses?: RecordClassesHandler<R>
   private _pollInterval?: number
+  private _defaultGroup?: string
+  private _summaries?:    Record<string, SummaryResult[]>
 
   private constructor() { super() }
 
@@ -295,6 +310,17 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
+  /**
+   * Band rows by a column's value. Stable-sorts the rendered rows so
+   * shared values cluster together, then stamps each row's `_groupValue`
+   * — the renderer inserts a heading row whenever the value changes.
+   * v1 takes a column name only (no labels / collapsibility yet).
+   */
+  defaultGroup(column: string): this {
+    this._defaultGroup = column
+    return this
+  }
+
   // ─── Render-time state ────────────────────────────────
 
   /** Attach loaded rows + total. Called by the framework after `records()` runs. */
@@ -312,6 +338,10 @@ export class Table<R = unknown, Q = unknown> extends Element {
   withSearch(query: string): this { this._currentSearch = query; return this }
   withPage(page: number): this { this._currentPage = page; return this }
   withCurrentPath(path: string): this { this._currentPath = path; return this }
+  withSummaries(summaries: Record<string, SummaryResult[]>): this {
+    this._summaries = summaries
+    return this
+  }
 
   // ─── Getters ──────────────────────────────────────────
 
@@ -328,6 +358,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
   getRecordUrl(): RecordUrlHandler<R> | undefined { return this._recordUrl }
   getRecordClasses(): RecordClassesHandler<R> | undefined { return this._recordClasses }
   getPollInterval(): number | undefined { return this._pollInterval }
+  getDefaultGroup(): string | undefined { return this._defaultGroup }
+  getSummaries(): Record<string, SummaryResult[]> | undefined { return this._summaries }
 
   /** Convenience: the `Column` children only. */
   getColumns(): Column[] {
@@ -357,6 +389,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
       ...(this._recordUrl    !== undefined ? { recordUrl:   true as const      } : {}),
       ...(this._recordClasses !== undefined ? { recordClasses: true as const   } : {}),
       ...(this._pollInterval !== undefined ? { pollInterval: this._pollInterval } : {}),
+      ...(this._defaultGroup !== undefined ? { defaultGroup: this._defaultGroup } : {}),
+      ...(this._summaries    !== undefined ? { summaries:    this._summaries    } : {}),
       ...(this._rows         !== undefined ? { rows:        this._rows }        : {}),
       ...(this._total        !== undefined ? { total:       this._total }       : {}),
       ...(this._currentSort  !== undefined ? { currentSort: this._currentSort } : {}),

@@ -74,6 +74,19 @@ export {
   ImageColumn,
 } from './columns/index.js'
 
+// ─── Column summarizers (footer aggregates) ───────────
+export {
+  Summarizer,
+  Sum,
+  Average,
+  Count,
+  Range,
+  type SummarizerKind,
+  type SummarizerMeta,
+  type SummaryResult,
+  type SummaryFormatter,
+} from './summarizers/index.js'
+
 // ─── ORM model wiring ─────────────────────────────────
 export {
   modelSave, modelLoadRecord, modelTableRecords, getPrimaryKey,

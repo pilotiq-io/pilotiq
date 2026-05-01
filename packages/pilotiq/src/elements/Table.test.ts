@@ -167,6 +167,18 @@ describe('Table Element', () => {
       assert.equal(Table.make().toMeta().pollInterval, undefined)
     })
 
+    it('defaultGroup(column) round-trips on the meta', () => {
+      assert.equal(Table.make().defaultGroup('status').toMeta().defaultGroup, 'status')
+      assert.equal(Table.make().toMeta().defaultGroup, undefined)
+    })
+
+    it('summaries meta is undefined until withSummaries() is called', () => {
+      const t = Table.make()
+      assert.equal(t.toMeta().summaries, undefined)
+      t.withSummaries({ amount: [{ kind: 'sum', value: '42' }] })
+      assert.deepEqual(t.toMeta().summaries, { amount: [{ kind: 'sum', value: '42' }] })
+    })
+
     it('slots compose with .columns() and .filters() without clobbering', () => {
       const t = Table.make()
         .columns([Column.make('a')])

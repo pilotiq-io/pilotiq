@@ -4,6 +4,7 @@ import {
   SelectFilter, BooleanFilter,
   TextField, SelectField,
   Notification,
+  Sum, Count,
   type Table,
 } from '@pilotiq/pilotiq'
 import { app } from '@rudderjs/core'
@@ -22,17 +23,20 @@ export const ArticlesTable = {
         icon:        'inbox',
       })
       .columns([
-        Column.make('title').label('Title').sortable().searchable().weight('semibold'),
+        Column.make('title').label('Title').sortable().searchable().weight('semibold')
+          .summarize([Count.make().label('Articles')]),
         Column.make('slug').label('Slug').searchable().color('muted').lineClamp(1),
         BadgeColumn.make('status').label('Status').sortable().colors({
           draft:     'gray',
           published: 'success',
           archived:  'warning',
         }),
-        BooleanColumn.make('featured').label('Featured').sortable().alignment('center'),
+        BooleanColumn.make('featured').label('Featured').sortable().alignment('center')
+          .summarize([Sum.make().label('Featured')]),
         Column.make('publishedAt').label('Published').sortable().dateTime(),
         Column.make('createdAt').label('Created').sortable().since(),
       ])
+      .defaultGroup('status')
       .filters([
         SelectFilter.make('status').options([
           { value: 'draft',     label: 'Draft' },
