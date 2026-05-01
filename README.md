@@ -76,7 +76,7 @@ export const admin = Pilotiq.make('Admin')
 
 **What you get from this:**
 
-- **Working CRUD pages** — list (with sort, search, pagination, per-row Edit/Delete), create form, edit form, view page. URLs `${base}/${slug}`, `/create`, `/:id`, `/:id/edit`.
+- **Working CRUD pages** — list (sort, search, pagination, group banding via `defaultGroup`, footer summaries via `Column.summarize([Sum/Average/Count/Range])`, auto-refresh via `Table.poll(seconds)`, per-row CSS via `Table.recordClasses(fn)`, per-row Edit/Delete), create form, edit form, view page. URLs `${base}/${slug}`, `/create`, `/:id`, `/:id/edit`.
 - **Auto-wired persistence** — `Resource.model = Article` (a `@rudderjs/orm` Model) plumbs save / loadRecord / records / delete through the ORM. Override per-method when you need custom logic.
 - **Filters** — `SelectFilter` / `BooleanFilter` / `TernaryFilter` (3-state with NULL bucket) / `DateRangeFilter` (`from..to` URL value) render in the table header; values ride in the URL query and feed the ORM `where` clauses. Auto-submit on change.
 - **Filament-style page header** — title left, Save button right (`<button form="…">` driving the form below). Override hooks: `getHeader / getHeaderActions / getRowActions / getFormActions`.
