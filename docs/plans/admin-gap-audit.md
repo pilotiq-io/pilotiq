@@ -132,7 +132,7 @@ Skip `ColorColumn`, `SelectColumn`/`ToggleColumn`/`TextInputColumn` (inline-edit
 | `handleRecordCreation` / `handleRecordUpdate` (override the save itself) | 1 | We already support this via `Form.save()`. Document. |
 | `getRedirectUrl()` / customizable post-save redirect | 1 | We have `redirectAfterSave`. Document the override surface. |
 | `getCreatedNotificationTitle` / `getSavedNotificationTitle` / disable notifications | 1 | Needs Plan #3 (notifications) first, then #4. |
-| "Create & create another" submit | 2 | Adds a second submit button + redirect logic. |
+| ✅ "Create & create another" submit DONE | 2 | Shipped 2026-05-03 — secondary outlined submit on `CreatePage` posts `_continueCreate=1`; create POST routes redirect back to `/create` and JSON includes `force:true` so SPA-nav remounts a fresh form on the same URL. |
 | `getHeaderActions` on EditPage (delete/view/replicate buttons in header) | 1 | Already supported via override; document. |
 | Wizard creation (`HasWizard` trait equivalent) | 2 | Tied to Plan #8 (Wizard layout). |
 | `infolist()` distinction on ViewPage (entries vs disabled form) | 2 | Currently `Resource.detail()` returns Elements; need entry components (= primes-as-display, see Schemas section). |
@@ -150,7 +150,7 @@ Skip `ColorColumn`, `SelectColumn`/`ToggleColumn`/`TextInputColumn` (inline-edit
 | `Split` / `Flex` (horizontal flex layout) | 2 | Useful for two-column forms. |
 | `Group` (logical grouping w/o visual chrome) | 1 | Trivial wrapper. |
 | `columnSpan` / `columnStart` / `columnOrder` (positional control inside Grid) | 1 | Schema layouts feel cramped without these. Roll into #8. |
-| `dense()` / `gap(false)` | 2 | |
+| ✅ `Section.dense()` DONE | 2 | Shipped 2026-05-03 — orthogonal to `compact()`: tightens inner grid gap (gap-2 vs gap-4) without changing outer padding. |
 | Container queries (`gridContainer()`, `@md:`) | 3 | |
 | `aside()` / `compact()` / `collapsed()` / `collapsible()` / `persistCollapsed` on Section | 2 | Section is currently inert; usability win. |
 | Section `description()` / `icon()` / `badge()` | 1 | Trivial. Roll into #8. |
