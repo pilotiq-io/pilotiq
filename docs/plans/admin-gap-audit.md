@@ -58,7 +58,7 @@ Penciled for later (Tier 3): widgets/dashboards, Repeater/Builder fields, Wizard
 | `queryStringIdentifier()` (multi-table on one page) | 3 | Currently we'd collide on `?sort=...`. |
 | Editable columns (SelectColumn, ToggleColumn, TextInputColumn) | 3 | Inline-edit. Big UX feature; defer until form-modals settle. |
 | ✅ `TernaryFilter` (true/false/blank) DONE | 1 | Shipped 2026-05-03 alongside `DateRangeFilter` — see `filter-expansion.md`. |
-| `Filter` with custom schema (form fields per filter) | 2 | Needs schema in filter UI. |
+| ✅ `Filter` with custom schema (form fields per filter) DONE | 2 | Shipped 2026-05-04 — `FormFilter.make().form([fields…]).handle((q, values) => q).formIndicator(values => string)`. JSON-encoded single URL key. Inner schema resolved with the surrounding `RenderContext` via `resolveSchema`; field `defaultValue`s pre-hydrated from the parsed URL value so the popover round-trips. `parseFormFilterValue / encodeFormFilterValue` exported. |
 | `persistFiltersInSession()` | 3 | Stateful behavior; defer. |
 | Tabs on list page (filter-by-tab) | **1** | **Plan #7.** Layers on existing Tabs primitive. |
 | `emptyStateHeading/Description/Icon/Actions` | 1 | We render bare "No records yet." Easy. Roll into #2. |
@@ -92,7 +92,7 @@ Skip `ColorColumn`, `SelectColumn`/`ToggleColumn`/`TextInputColumn` (inline-edit
 | Feature | Tier | Notes |
 |---|---|---|
 | ✅ `TernaryFilter` (true/false/blank — distinct from Boolean) DONE | 1 | Shipped 2026-05-03 — see `filter-expansion.md`. |
-| Filter with arbitrary form schema (multi-field filters) | 2 | Pairs naturally with `actions-tier-1.md` form-modal pattern. |
+| ✅ Filter with arbitrary form schema (multi-field filters) DONE | 2 | Shipped 2026-05-04 — `FormFilter.make().form([fields…]).handle((q, values) => q)`. JSON-encoded URL key, async `toMeta(ctx)` resolves the inner schema with the same `RenderContext` as the surrounding table. |
 | ✅ Filter `indicator()` (pill in active-filters bar) DONE | 2 | Shipped 2026-05-02 — Batch C. `Filter.indicator(string\|fn)` + `<ActiveFiltersBar>` pill row above the table. |
 | `persistFiltersInSession` | 3 | |
 | `QueryBuilder` filter (advanced AND/OR/grouped) | 3 | Big. |

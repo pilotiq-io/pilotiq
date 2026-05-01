@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { TrashedFilter } from './TrashedFilter.js'
+import type { FilterMeta } from './Filter.js'
 import { Table } from '../elements/Table.js'
 import { Resource } from '../Resource.js'
 import { applyTableDefaults } from '../defaultPages.js'
@@ -112,7 +113,8 @@ describe('applyTableDefaults — TrashedFilter auto-injection', () => {
     applyTableDefaults(R, table)
     const filters = table.getFilters()
     assert.equal(filters.length, 1)
-    assert.equal(filters[0]!.toMeta().label, 'Custom label',
+    const meta = filters[0]!.toMeta() as FilterMeta
+    assert.equal(meta.label, 'Custom label',
       'user-supplied filter wins over the auto-injected one')
   })
 

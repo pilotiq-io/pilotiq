@@ -38,7 +38,7 @@ export class SelectFilter extends Filter {
 
   override toMeta(): FilterMeta {
     return {
-      ...super.toMeta(),
+      ...this.buildBaseMeta(),
       options: this._options,
       placeholder: this.getPlaceholder() ?? 'All',
     }

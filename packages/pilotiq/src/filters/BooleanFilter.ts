@@ -23,7 +23,7 @@ export class BooleanFilter extends Filter {
 
   override toMeta(): FilterMeta {
     return {
-      ...super.toMeta(),
+      ...this.buildBaseMeta(),
       placeholder: this.getPlaceholder() ?? 'Any',
     }
   }

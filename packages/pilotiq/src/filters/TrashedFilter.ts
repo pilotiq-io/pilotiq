@@ -41,7 +41,7 @@ export class TrashedFilter extends Filter {
 
   override toMeta(): FilterMeta {
     return {
-      ...super.toMeta(),
+      ...this.buildBaseMeta(),
       // Default-scope value (empty / "active only") is implicit — no
       // option needed. Users select withTrashed / onlyTrashed to
       // broaden; clearing the select returns to active-only.

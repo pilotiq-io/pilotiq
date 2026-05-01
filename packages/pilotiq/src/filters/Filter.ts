@@ -1,5 +1,6 @@
 import { Element, type ElementMeta } from '../schema/Element.js'
 import type { ModelQuery } from '../orm/modelDefaults.js'
+import type { RenderContext } from '../schema/resolveSchema.js'
 
 /**
  * Discriminator for the renderer to pick a control.
@@ -9,10 +10,12 @@ import type { ModelQuery } from '../orm/modelDefaults.js'
  * - `'boolean'`     — three-state yes/no/any.
  * - `'ternary'`     — three-state with a meaningful "blank" (NULL) bucket.
  * - `'dateRange'`   — pair of date / datetime inputs encoded as `from..to`.
+ * - `'form'`        — arbitrary-schema multi-field popover; URL value is
+ *                     a JSON-encoded object keyed by inner-field name.
  *
  * Extends naturally — future kinds may include `'numberRange'`.
  */
-export type FilterKind = 'select' | 'multiSelect' | 'boolean' | 'ternary' | 'dateRange'
+export type FilterKind = 'select' | 'multiSelect' | 'boolean' | 'ternary' | 'dateRange' | 'form'
 
 export interface FilterMeta extends ElementMeta {
   type:        'filter'
@@ -31,6 +34,12 @@ export interface FilterMeta extends ElementMeta {
   minDate?:    string
   /** `kind === 'dateRange'` — clamp the inputs' `max` attribute. */
   maxDate?:    string
+  /**
+   * `kind === 'form'` — resolved schema for the popover sub-form. Each
+   * field's `defaultValue` is pre-hydrated from the active URL value so
+   * the inputs round-trip across navigations.
+   */
+  formSchema?: ElementMeta[]
   /**
    * Active-filter indicator pill text. Present only when the filter has an
    * active value. Default format is `"<label>: <displayValue>"`; users can
@@ -135,7 +144,24 @@ export abstract class Filter extends Element {
 
   getType(): string { return 'filter' }
 
-  override toMeta(): FilterMeta {
+  /**
+   * Sync by default — `kind: 'form'` filters override to async because they
+   * need to resolve their inner schema. The optional `_ctx` parameter is
+   * threaded by `resolveSchema` so subclasses can read the active user /
+   * record / values when building their meta. Existing typed filters
+   * (Select / Boolean / Ternary / DateRange / MultiSelect / Trashed)
+   * ignore the parameter.
+   */
+  override toMeta(_ctx?: RenderContext): FilterMeta | Promise<FilterMeta> {
+    return this.buildBaseMeta()
+  }
+
+  /**
+   * Shared meta construction for `Filter` subclasses — exposed as a
+   * protected helper so async subclasses (e.g. `FormFilter`) can pull
+   * the same shape without spreading a `Promise<FilterMeta>` union.
+   */
+  protected buildBaseMeta(): FilterMeta {
     const indicator = this.getIndicator()
     return {
       type:  'filter',

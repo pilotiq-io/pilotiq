@@ -73,6 +73,7 @@ import {
   parseMultiSelectValue,
   encodeMultiSelectValue,
 } from '../filters/MultiSelectFilter.js'
+import { encodeFormFilterValue } from '../filters/FormFilter.js'
 import { useIconFor } from './icon-context.js'
 import type { SerializedIcon } from '../icons/types.js'
 import { useToast } from './Toaster.js'
@@ -2617,12 +2618,109 @@ function FilterMultiSelect({
   )
 }
 
+/**
+ * Multi-field filter for `kind === 'form'`. The popover renders an inner
+ * sub-form with the user-declared schema; submitting bundles all named
+ * inputs into a `Record<string, unknown>`, JSON-encodes the non-empty
+ * subset under the filter's URL key, and SPA-navigates. Empty submit
+ * drops the URL key entirely.
+ *
+ * The fields' `defaultValue` were pre-hydrated server-side from the
+ * active URL value (see `FormFilter.toMeta`), so an existing filter
+ * round-trips into the form on render. Inputs are uncontrolled — we
+ * read state via `new FormData(form)` on submit, matching how the
+ * outer page-level Form works on full submit.
+ */
+function FilterForm({
+  name, label, defaultValue, formSchema,
+}: {
+  name:         string
+  label:        string
+  defaultValue: string
+  formSchema:   ElementMeta[]
+}) {
+  const formRef = useRef<HTMLFormElement>(null)
+  const navigate = useNavigate()
+  const hasValue = defaultValue !== '' && defaultValue !== '{}'
+
+  const onApply = (e?: React.FormEvent | React.MouseEvent): void => {
+    e?.preventDefault()
+    if (!formRef.current) return
+    const fd = new FormData(formRef.current)
+    const values: Record<string, unknown> = {}
+    for (const [key, val] of fd.entries()) {
+      const existing = values[key]
+      if (existing === undefined) {
+        values[key] = val
+      } else if (Array.isArray(existing)) {
+        (existing as unknown[]).push(val)
+      } else {
+        values[key] = [existing, val]
+      }
+    }
+    if (typeof window === 'undefined') return
+    const url     = new URL(window.location.href)
+    const encoded = encodeFormFilterValue(values)
+    if (encoded === '') url.searchParams.delete(name)
+    else                url.searchParams.set(name, encoded)
+    url.searchParams.delete('page')
+    void navigate(url.pathname + url.search)
+  }
+
+  const onClear = (): void => {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    url.searchParams.delete(name)
+    url.searchParams.delete('page')
+    void navigate(url.pathname + url.search)
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <form ref={formRef} onSubmit={onApply} className="flex flex-col gap-2">
+        {formSchema.map((child, i) => renderFormChild(child, i, {}, {}))}
+        <div className="flex gap-2 pt-1">
+          <button
+            type="submit"
+            className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Apply
+          </button>
+          {hasValue && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="inline-flex h-8 items-center justify-center rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </form>
+    </div>
+  )
+}
+
 function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
   const name        = String(el['name'] ?? '')
   const label       = String(el['label'] ?? name)
   const kind        = String(el['kind'] ?? 'select')
   const value       = el['value'] ? String(el['value']) : ''
   const placeholder = el['placeholder'] ? String(el['placeholder']) : 'All'
+
+  if (kind === 'form') {
+    const formSchema = (el['formSchema'] as ElementMeta[] | undefined) ?? []
+    return (
+      <FilterForm
+        key={index}
+        name={name}
+        label={label}
+        defaultValue={value}
+        formSchema={formSchema}
+      />
+    )
+  }
 
   if (kind === 'boolean') {
     return (

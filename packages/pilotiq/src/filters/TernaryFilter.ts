@@ -64,7 +64,7 @@ export class TernaryFilter extends Filter {
         : []),
     ]
     return {
-      ...super.toMeta(),
+      ...this.buildBaseMeta(),
       options,
       placeholder: this.getPlaceholder() ?? 'Any',
     }

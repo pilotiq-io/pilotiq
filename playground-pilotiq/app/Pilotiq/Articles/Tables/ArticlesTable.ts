@@ -1,7 +1,7 @@
 import {
   Column, BadgeColumn, BooleanColumn,
   Action, ActionGroup,
-  BooleanFilter, MultiSelectFilter,
+  BooleanFilter, MultiSelectFilter, FormFilter,
   TextField, SelectField,
   Notification,
   Sum, Count,
@@ -46,6 +46,31 @@ export const ArticlesTable = {
           { value: 'archived',  label: 'Archived' },
         ]),
         BooleanFilter.make('featured').label('Featured'),
+        // Multi-field: title-LIKE + slug-LIKE bundled into one URL key as
+        // `?advanced={"titleContains":"…","slugContains":"…"}`. Empty
+        // sub-fields drop out of the encoded payload, so a partial fill
+        // doesn't bloat the URL.
+        FormFilter.make('advanced')
+          .label('Advanced')
+          .form([
+            TextField.make('titleContains').label('Title contains').placeholder('e.g. tutorial'),
+            TextField.make('slugContains').label('Slug contains').placeholder('e.g. blog-'),
+          ])
+          .handle((q, { titleContains, slugContains }) => {
+            if (typeof titleContains === 'string' && titleContains !== '') {
+              q = q.where('title', 'LIKE', `%${titleContains}%`)
+            }
+            if (typeof slugContains === 'string' && slugContains !== '') {
+              q = q.where('slug', 'LIKE', `%${slugContains}%`)
+            }
+            return q
+          })
+          .formIndicator(({ titleContains, slugContains }) => {
+            const parts: string[] = []
+            if (titleContains) parts.push(`title~"${titleContains}"`)
+            if (slugContains)  parts.push(`slug~"${slugContains}"`)
+            return parts.length > 0 ? `Advanced: ${parts.join(', ')}` : 'Advanced'
+          }),
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)

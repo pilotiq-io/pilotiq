@@ -189,6 +189,14 @@ export {
   type DateRangeValue,
 } from './filters/DateRangeFilter.js'
 export {
+  FormFilter,
+  parseFormFilterValue,
+  encodeFormFilterValue,
+  type FormFilterValue,
+  type FormFilterQueryHandler,
+  type FormFilterIndicatorHandler,
+} from './filters/FormFilter.js'
+export {
   dispatchFormSubmit,
   findForms,
   selectForm,

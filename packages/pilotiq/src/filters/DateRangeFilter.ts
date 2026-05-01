@@ -121,7 +121,7 @@ export class DateRangeFilter extends Filter {
 
   override toMeta(): FilterMeta {
     return {
-      ...super.toMeta(),
+      ...this.buildBaseMeta(),
       includesTime: this._includesTime,
       ...(this._minDate !== undefined ? { minDate: this._minDate } : {}),
       ...(this._maxDate !== undefined ? { maxDate: this._maxDate } : {}),

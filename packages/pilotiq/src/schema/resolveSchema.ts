@@ -7,6 +7,7 @@ import {
 } from '../fields/RepeaterField.js'
 import { Action } from '../actions/Action.js'
 import { ActionGroup } from '../actions/ActionGroup.js'
+import { Filter } from '../filters/Filter.js'
 
 export interface SchemaContext {
   user?: { name?: string; email?: string; [key: string]: unknown }
@@ -186,8 +187,11 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
   // get their ctx-aware overload so disabledWhen and reactive subclasses
   // (Plan #5) see the full RenderContext. Async toMeta is awaited —
   // SelectField with a resolver-style `options(fn)` may be async.
+  // Filters receive ctx too so subclasses like FormFilter can resolve
+  // their inner form schemas with the same render context (e.g. the
+  // active user, for option resolvers inside a filter form).
   const meta = await Promise.resolve(
-    el instanceof Field ? el.toMeta(ctx) : el.toMeta(),
+    el instanceof Field || el instanceof Filter ? el.toMeta(ctx) : el.toMeta(),
   ) as ElementMeta
   meta.type = type // ensure type is always set, even if toMeta forgot
 
