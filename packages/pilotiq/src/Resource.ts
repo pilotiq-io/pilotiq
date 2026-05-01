@@ -5,6 +5,7 @@ import type { Page } from './Page.js'
 import type { ModelLike, ModelQuery } from './orm/modelDefaults.js'
 import type { IconValue } from './icons/types.js'
 import { defaultPages } from './defaultPages.js'
+import type { RelationManager } from './RelationManager.js'
 
 /** Map of resource page roles to Page subclasses. */
 export interface ResourcePages {
@@ -13,9 +14,6 @@ export interface ResourcePages {
   edit?:   typeof Page
   view?:   typeof Page
 }
-
-/** Placeholder until Phase 3+ relations work lands. */
-export type RelationDef = unknown
 
 /** Pill color tokens for `navigationBadgeColor`. Matches the shared color
  * palette used by `ListTab.badgeColor` so the renderer can re-use the
@@ -273,8 +271,13 @@ export abstract class Resource {
     return { ...defaults, ...overrides }
   }
 
-  /** Phase 3+ relations metadata. */
-  static relations(): RelationDef[] { return [] }
+  /**
+   * Plan #11 — relation managers mounted under this resource's edit /
+   * view pages. Each entry is a `RelationManager` subclass; routes are
+   * registered under `${base}/${slug}/:id/${manager.relationship}`.
+   * Default empty.
+   */
+  static relations(): Array<typeof RelationManager> { return [] }
 
   /** URL slug, derived from `label` when not set explicitly. */
   static getSlug(): string {

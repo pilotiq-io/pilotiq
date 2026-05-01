@@ -32,8 +32,8 @@ ViewPage tabs.
 
 | Step | Status | Notes |
 |---|---|---|
-| 1. `RelationManager` abstract class | ⏳ NOT STARTED | Static shape mirrors `Resource` but parent-scoped: `relationship` (key on parent's relation map), `form()`, `table()`, `recordTitleAttribute`, page overrides, can* policy hooks. No `slug` / `pages()` — managers don't own URL roots. |
-| 2. `Resource.relations()` typed return | ⏳ NOT STARTED | Replace `RelationDef = unknown` with `typeof RelationManager`. Drop the `RelationDef` alias. Update `playground-pilotiq` resources accordingly. |
+| 1. `RelationManager` abstract class | ✅ DONE 2026-05-01 | `relationship`, label/labelSingular/icon/recordTitleAttribute, `form(form) / table(table) / detail(record, parentRecord)` configurators, five `can*` predicates (parity with Plan #10 — defaults true), `getRelationship/Label/LabelSingular/Icon/RecordTitleAttribute` accessors, `RESERVED_RELATIONSHIP_TOKENS` set. 14 tests in `RelationManager.test.ts`. |
+| 2. `Resource.relations()` typed return | ✅ DONE 2026-05-01 | Now `static relations(): Array<typeof RelationManager>`. `RelationDef` alias dropped (no external consumers). |
 | 3. `ModelLike` relation contract | ⏳ NOT STARTED | Add optional `relatedQuery(parent, relationName) → ModelQuery` and `relatedCreate(parent, relationName, data) → Promise<unknown>`. Default impl in `modelDefaults.ts` reads `parent.related(relationName)` (rudder ORM convention) when present. |
 | 4. `relationManagerData(pilotiq, scope, req)` page-data builder | ⏳ NOT STARTED | Loads parent record, resolves matching `RelationManager`, runs its `table()` against the related query, returns the same `{ schemaData, panel, currentPath }` shape edit/view pages already use. Mirrors `resourceIndexData`. |
 | 5. Routes | ⏳ NOT STARTED | `GET ${base}/${slug}/:id/${rel}` (list), `GET/POST ${base}/${slug}/:id/${rel}/create` (create), `GET/POST ${base}/${slug}/:id/${rel}/:childId/edit` (edit), `POST ${base}/${slug}/:id/${rel}/:childId/delete` (delete). Mirrors the resource routes one level deeper. |
@@ -46,6 +46,7 @@ ViewPage tabs.
 | 12. Docs | ⏳ NOT STARTED | New section in `packages/pilotiq/README.md`; CLAUDE.md notes; migration-from-panels addendum. |
 
 **Tests at start:** 755/755. Build clean.
+**Tests after Step 1+2:** 769/769 (+14 in `RelationManager.test.ts`).
 **Target at completion:** ~830 (+75).
 
 Estimated effort: **~2 weeks** (matches the audit estimate). Steps 1-5
