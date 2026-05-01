@@ -795,3 +795,229 @@ describe('registerPilotiqRoutes — flash notifications across the 303 path', ()
     assert.equal(flashed[0]!.title, 'Featured')
   })
 })
+
+describe('Plan #13 soft-delete routes', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  /** Build an in-memory ModelLike that tracks calls. Supports the
+   *  withTrashed / paginate path used by `loadTrashable`. */
+  function makeStubModel(seed: Array<{ id: string; deletedAt?: string | null }> = []) {
+    const rows = [...seed]
+    const calls: { restored: string[]; forceDeleted: string[] } = { restored: [], forceDeleted: [] }
+
+    const makeQuery = (withTrashed: boolean) => ({
+      _id:    undefined as string | undefined,
+      where(_col: string, _opOrVal: unknown, val?: unknown) {
+        // Two-arg or three-arg (col, op, val); accept either.
+        this._id = (val !== undefined ? val : _opOrVal) as string
+        return this
+      },
+      orWhere() { return this },
+      orderBy() { return this },
+      withTrashed() { return makeQuery(true) },
+      onlyTrashed() { return makeQuery(true) },
+      async paginate() {
+        const filtered = rows
+          .filter(r => withTrashed || !r.deletedAt)
+          .filter(r => this._id === undefined || r.id === this._id)
+        return { data: filtered, total: filtered.length }
+      },
+    })
+
+    return {
+      M: {
+        primaryKey: 'id' as const,
+        async find(id: string) {
+          const r = rows.find(x => x.id === id && !x.deletedAt)
+          return r ?? undefined
+        },
+        async create(data: Record<string, unknown>) {
+          const row = { id: 'new', ...data }
+          rows.push(row as never)
+          return row
+        },
+        async update(id: string, data: Record<string, unknown>) {
+          const i = rows.findIndex(r => r.id === id)
+          if (i === -1) return undefined
+          rows[i] = { ...rows[i]!, ...data }
+          return rows[i]
+        },
+        async delete(id: string) {
+          const r = rows.find(x => x.id === id)
+          if (r) r.deletedAt = '2026-05-01'
+        },
+        query() { return makeQuery(false) },
+        async restore(id: string | number) {
+          const r = rows.find(x => x.id === String(id))
+          if (r) { r.deletedAt = null; calls.restored.push(String(id)) }
+          return r
+        },
+        async forceDelete(id: string | number) {
+          const i = rows.findIndex(r => r.id === String(id))
+          if (i !== -1) { rows.splice(i, 1); calls.forceDeleted.push(String(id)) }
+        },
+      },
+      rows,
+      calls,
+    }
+  }
+
+  function panelWith(R: any) {
+    return Pilotiq.make('T').path('/admin').resources([R])
+  }
+
+  it('throws at boot when softDeletes=true but model is missing', () => {
+    class Bad extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override softDeletes = true
+    }
+    assert.throws(() => registerPilotiqRoutes(router, panelWith(Bad)),
+      /softDeletes = true requires a Resource\.model/)
+  })
+
+  it('throws at boot when model.restore is missing', () => {
+    class Bad extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override softDeletes = true
+      static override model = {
+        primaryKey: 'id',
+        find: async () => null,
+        create: async () => ({}),
+        update: async () => ({}),
+        delete: async () => undefined,
+        query: () => ({} as any),
+      } as any
+    }
+    assert.throws(() => registerPilotiqRoutes(router, panelWith(Bad)),
+      /model\.restore \/ model\.forceDelete are missing/)
+  })
+
+  it('registers POST /:slug/:id/restore and POST /:slug/:id/force-delete when softDeletes=true', () => {
+    const { M } = makeStubModel()
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override labelSingular = 'Post'
+      static override softDeletes = true
+      static override model = M as any
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.ok(paths.includes('POST /admin/posts/:id/restore'))
+    assert.ok(paths.includes('POST /admin/posts/:id/force-delete'))
+  })
+
+  it('does NOT register the soft-delete routes when softDeletes=false', () => {
+    const { M } = makeStubModel()
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.equal(paths.includes('POST /admin/posts/:id/restore'), false)
+    assert.equal(paths.includes('POST /admin/posts/:id/force-delete'), false)
+  })
+
+  it('restore POST calls model.restore and 303-redirects to list', async () => {
+    const { M, calls } = makeStubModel([{ id: '7', deletedAt: '2026-01-01' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override labelSingular = 'Post'
+      static override softDeletes = true
+      static override model = M as any
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/posts/:id/restore')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({ params: { id: '7' } }))
+    assert.deepEqual(calls.restored, ['7'])
+    assert.deepEqual(res.redirectedTo, { url: '/admin/posts', code: 303 })
+  })
+
+  it('restore POST returns 404 when the row is not found in withTrashed scope', async () => {
+    const { M } = makeStubModel([{ id: '7', deletedAt: '2026-01-01' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override softDeletes = true
+      static override model = M as any
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/posts/:id/restore')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({ params: { id: '99' } }))
+    assert.equal(res.statusCode, 404)
+  })
+
+  it('restore POST returns 403 when canRestore returns false', async () => {
+    const { M, calls } = makeStubModel([{ id: '7', deletedAt: '2026-01-01' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override softDeletes = true
+      static override model = M as any
+      static override async canRestore() { return false }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/posts/:id/restore')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({ params: { id: '7' } }))
+    assert.equal(res.statusCode, 403)
+    assert.equal(calls.restored.length, 0, 'restore was not called when policy denied')
+  })
+
+  it('force-delete POST calls model.forceDelete and 303-redirects', async () => {
+    const { M, calls } = makeStubModel([{ id: '7', deletedAt: '2026-01-01' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override labelSingular = 'Post'
+      static override softDeletes = true
+      static override model = M as any
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/posts/:id/force-delete')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({ params: { id: '7' } }))
+    assert.deepEqual(calls.forceDeleted, ['7'])
+    assert.deepEqual(res.redirectedTo, { url: '/admin/posts', code: 303 })
+  })
+
+  it('force-delete POST returns 403 when canForceDelete returns false (default = canDelete)', async () => {
+    const { M, calls } = makeStubModel([{ id: '7', deletedAt: '2026-01-01' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override softDeletes = true
+      static override model = M as any
+      static override async canDelete() { return false }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/posts/:id/force-delete')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({ params: { id: '7' } }))
+    assert.equal(res.statusCode, 403)
+    assert.equal(calls.forceDeleted.length, 0)
+  })
+
+  it('delete POST notification reads "moved to trash" on a soft-delete resource (JSON path)', async () => {
+    const { M } = makeStubModel([{ id: '7' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override labelSingular = 'Post'
+      static override softDeletes = true
+      static override model = M as any
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/posts/:id/delete')!
+    const req: any = fakeReq({ params: { id: '7' } })
+    req.headers = { accept: 'application/json' }
+    const res = fakeRes()
+    await (route.handler as any)(req, res)
+    const body = res.sentBody as { ok: boolean; notifications: Array<{ title: string }> }
+    assert.equal(body.ok, true)
+    assert.match(body.notifications[0]!.title, /trash/i)
+  })
+})

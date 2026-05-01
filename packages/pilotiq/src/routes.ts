@@ -547,9 +547,118 @@ export function registerPilotiqRoutes(
           // Build a synthetic deletion notification so the SPA path gets
           // the same toast UX as a JSON-dispatched action handler. The
           // form-method 303 path doesn't have the form-lifecycle toast
-          // pipeline, so we surface confirmation here.
+          // pipeline, so we surface confirmation here. Plan #13: use
+          // "moved to trash" framing on soft-delete resources so users
+          // know the row is recoverable.
+          const title = R.softDeletes
+            ? `${R.labelSingular} moved to trash`
+            : `${R.labelSingular} deleted`
           const notifications = [
-            { id: `n-delete-${recordId}-${Date.now()}`, type: 'success', title: `${R.labelSingular} deleted` },
+            { id: `n-delete-${recordId}-${Date.now()}`, type: 'success', title },
+          ]
+          return res.json({ ok: true, redirect: indexUrl, notifications })
+        }
+        return res.redirect(indexUrl, 303)
+      })
+    }
+
+    // ─── Plan #13 soft-delete routes (restore / force-delete) ─────
+    // Both routes opt-in only when `Resource.softDeletes = true`. They
+    // load the target row through `withTrashed()` so the lookup finds
+    // currently-trashed records (which the default scope hides). The
+    // `restore` route undoes a prior soft-delete; `force-delete`
+    // bypasses soft-delete entirely.
+    if (R.softDeletes) {
+      // Boot-time guard — yell loudly if the rudder ORM model isn't
+      // wired up. Keeps "why didn't restore work?" debug sessions
+      // short. Pilotiq's flag and rudder's flag are deliberately
+      // independent (see plan doc).
+      if (!R.model) {
+        throw new Error(
+          `[Pilotiq] ${R.name}: softDeletes = true requires a Resource.model. Wire one up or unset softDeletes.`,
+        )
+      }
+      if (typeof R.model.restore !== 'function' || typeof R.model.forceDelete !== 'function') {
+        throw new Error(
+          `[Pilotiq] ${R.name}: softDeletes = true but model.restore / model.forceDelete are missing. ` +
+          `Set Model.softDeletes = true on the rudder side, or upgrade @rudderjs/orm.`,
+        )
+      }
+
+      const M = R.model
+      const pk = (M.primaryKey ?? 'id') as string
+
+      // Helper — load a row through `withTrashed` so currently-trashed
+      // records resolve. Returns undefined when the lookup misses (route
+      // converts to 404).
+      const loadTrashable = async (id: string): Promise<unknown> => {
+        const q = M.query()
+        if (typeof q.withTrashed !== 'function') return M.find(id).catch(() => undefined)
+        const result = await q.withTrashed()
+          .where(pk, '=', id)
+          .paginate(1, 1)
+          .catch(() => ({ data: [] as unknown[] }))
+        return Array.isArray(result.data) ? result.data[0] : undefined
+      }
+
+      // Restore — POST ${base}/${slug}/:id/restore
+      router.post(`${base}/${slug}/:id/restore`, async (req, res) => {
+        const recordId = req.params['id']!
+        const json = wantsJson(req)
+        const indexUrl = `${base}/${slug}`
+
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, json)
+        const record = await loadTrashable(recordId)
+        if (!record) {
+          res.status(404)
+          return json ? res.json({ ok: false, error: 'Not found' }) : res.send('Not found')
+        }
+        if (!await checkPolicy(() => R.canRestore(user, record))) return forbidden(res, json)
+
+        try {
+          await M.restore!(recordId)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Restore failed'
+          res.status(500)
+          return json ? res.json({ ok: false, error: message }) : res.send(message)
+        }
+
+        if (json) {
+          const notifications = [
+            { id: `n-restore-${recordId}-${Date.now()}`, type: 'success', title: `${R.labelSingular} restored` },
+          ]
+          return res.json({ ok: true, redirect: indexUrl, notifications })
+        }
+        return res.redirect(indexUrl, 303)
+      })
+
+      // Force-delete — POST ${base}/${slug}/:id/force-delete
+      router.post(`${base}/${slug}/:id/force-delete`, async (req, res) => {
+        const recordId = req.params['id']!
+        const json = wantsJson(req)
+        const indexUrl = `${base}/${slug}`
+
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, json)
+        const record = await loadTrashable(recordId)
+        if (!record) {
+          res.status(404)
+          return json ? res.json({ ok: false, error: 'Not found' }) : res.send('Not found')
+        }
+        if (!await checkPolicy(() => R.canForceDelete(user, record))) return forbidden(res, json)
+
+        try {
+          await M.forceDelete!(recordId)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Force-delete failed'
+          res.status(500)
+          return json ? res.json({ ok: false, error: message }) : res.send(message)
+        }
+
+        if (json) {
+          const notifications = [
+            { id: `n-fdelete-${recordId}-${Date.now()}`, type: 'success', title: `${R.labelSingular} permanently deleted` },
           ]
           return res.json({ ok: true, redirect: indexUrl, notifications })
         }

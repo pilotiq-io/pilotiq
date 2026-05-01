@@ -334,6 +334,240 @@ describe('Action.relation* factories (Plan #11 polish)', () => {
   })
 })
 
+describe('Action soft-delete factories (Plan #13)', () => {
+  /** Minimal ResourceLike satisfying the Action factories. */
+  function makeR(over: Partial<{
+    softDeletes: boolean
+    deletedAtColumn: string
+    canDelete: (...args: unknown[]) => boolean | Promise<boolean>
+    canRestore: (...args: unknown[]) => boolean | Promise<boolean>
+    canForceDelete: (...args: unknown[]) => boolean | Promise<boolean>
+  }> = {}) {
+    return {
+      labelSingular: 'Post',
+      getSlug:       () => 'posts',
+      ...(over.softDeletes !== undefined ? { softDeletes: over.softDeletes } : {}),
+      ...(over.deletedAtColumn !== undefined ? { deletedAtColumn: over.deletedAtColumn } : {}),
+      ...(over.canDelete       ? { canDelete:       over.canDelete       } : {}),
+      ...(over.canRestore      ? { canRestore:      over.canRestore      } : {}),
+      ...(over.canForceDelete  ? { canForceDelete:  over.canForceDelete  } : {}),
+    }
+  }
+
+  describe('Action.delete trashed-row visibility', () => {
+    it('hides on already-trashed rows when softDeletes=true', async () => {
+      const R = makeR({ softDeletes: true })
+      const a = Action.delete(R, '/admin')
+      const r1 = await a.evaluate({ record: { id: '7', deletedAt: '2026-01-01' } })
+      assert.equal(r1.visible, false)
+    })
+
+    it('shows on live rows when softDeletes=true and canDelete allows', async () => {
+      const R = makeR({ softDeletes: true })
+      const a = Action.delete(R, '/admin')
+      const r1 = await a.evaluate({ record: { id: '7' } })
+      assert.equal(r1.visible, true)
+    })
+
+    it('ignores deletedAt entirely when softDeletes is not set', async () => {
+      const R = makeR()
+      const a = Action.delete(R, '/admin')
+      // Even with deletedAt set, the regular delete should show — non-soft-delete
+      // resources don't gate on the column.
+      const r1 = await a.evaluate({ record: { id: '7', deletedAt: '2026-01-01' } })
+      assert.equal(r1.visible, true)
+    })
+
+    it('honors a custom deletedAtColumn', async () => {
+      const R = makeR({ softDeletes: true, deletedAtColumn: 'archivedAt' })
+      const a = Action.delete(R, '/admin')
+      assert.equal((await a.evaluate({ record: { archivedAt: '2026-01-01' } })).visible, false)
+      assert.equal((await a.evaluate({ record: { archivedAt: null } })).visible, true)
+    })
+  })
+
+  describe('Action.restore', () => {
+    it('builds the restore URL with :id template', () => {
+      const meta = Action.restore(makeR({ softDeletes: true }), '/admin').toMeta()
+      assert.equal(meta.method, 'post')
+      assert.equal(meta.action, '/admin/posts/:id/restore')
+      assert.equal(meta.label, 'Restore')
+      assert.equal(meta.color, 'success')
+    })
+
+    it('hides on live rows', async () => {
+      const a = Action.restore(makeR({ softDeletes: true }), '/admin')
+      assert.equal((await a.evaluate({ record: { id: '7' } })).visible, false)
+    })
+
+    it('shows on trashed rows when canRestore allows', async () => {
+      const a = Action.restore(makeR({ softDeletes: true }), '/admin')
+      assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, true)
+    })
+
+    it('hides on trashed rows when canRestore denies', async () => {
+      const a = Action.restore(makeR({ softDeletes: true, canRestore: async () => false }), '/admin')
+      assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, false)
+    })
+
+    it('honors explicit recordId at config time', () => {
+      const meta = Action.restore(makeR({ softDeletes: true }), '/admin', '7').toMeta()
+      assert.equal(meta.action, '/admin/posts/7/restore')
+    })
+  })
+
+  describe('Action.forceDelete', () => {
+    it('builds the force-delete URL with destructive style + permanence confirm', () => {
+      const meta = Action.forceDelete(makeR({ softDeletes: true }), '/admin').toMeta()
+      assert.equal(meta.method, 'post')
+      assert.equal(meta.action, '/admin/posts/:id/force-delete')
+      assert.equal(meta.destructive, true)
+      assert.match(meta.confirm?.message ?? '', /cannot be undone/i)
+    })
+
+    it('hides on live rows', async () => {
+      const a = Action.forceDelete(makeR({ softDeletes: true }), '/admin')
+      assert.equal((await a.evaluate({ record: { id: '7' } })).visible, false)
+    })
+
+    it('shows on trashed rows when canForceDelete allows', async () => {
+      const a = Action.forceDelete(makeR({ softDeletes: true }), '/admin')
+      assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, true)
+    })
+
+    it('hides on trashed rows when canForceDelete denies', async () => {
+      const a = Action.forceDelete(makeR({ softDeletes: true, canForceDelete: async () => false }), '/admin')
+      assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, false)
+    })
+
+    it('label is "Delete forever" — distinguishes from regular delete', () => {
+      assert.equal(Action.forceDelete(makeR({ softDeletes: true }), '/admin').toMeta().label, 'Delete forever')
+    })
+  })
+})
+
+describe('Action bulk soft-delete factories (Plan #13)', () => {
+  it('bulkDelete iterates records and calls deleteRecord, returns count notification', async () => {
+    const deleted: string[] = []
+    const R = {
+      labelSingular:  'Post',
+      getSlug:        () => 'posts',
+      softDeletes:    true,
+      deletedAtColumn: 'deletedAt',
+      async deleteRecord(id: string) { deleted.push(id) },
+    } as never
+    const a = Action.bulkDelete(R, '/admin')
+    const meta = a.toMeta()
+    assert.equal(meta.placement, 'bulk')
+    assert.equal(meta.destructive, true)
+
+    const handler = a.getHandler()!
+    const result = await handler({
+      records: [{ id: '1' }, { id: '2' }, { id: '3' }],
+      user:    null,
+    })
+    assert.deepEqual(deleted.sort(), ['1', '2', '3'])
+    const notify = (result as { notify: { title: string } }).notify
+    assert.match(notify.title, /3 posts moved to trash/i)
+  })
+
+  it('bulkDelete uses "deleted" verb for non-soft-delete resources', async () => {
+    const R = {
+      labelSingular: 'Post',
+      getSlug:       () => 'posts',
+      // softDeletes: false
+      async deleteRecord() { /* no-op */ },
+    } as never
+    const handler = Action.bulkDelete(R, '/admin').getHandler()!
+    const result = await handler({ records: [{ id: '1' }], user: null })
+    assert.match((result as { notify: { title: string } }).notify.title, /1 posts deleted/)
+  })
+
+  it('bulkDelete skips rows whose canDelete returns false', async () => {
+    const deleted: string[] = []
+    const R = {
+      labelSingular:  'Post',
+      getSlug:        () => 'posts',
+      async canDelete(_user: unknown, record: unknown) {
+        return (record as { id: string }).id !== '2'  // deny id 2
+      },
+      async deleteRecord(id: string) { deleted.push(id) },
+    } as never
+    const handler = Action.bulkDelete(R, '/admin').getHandler()!
+    const result = await handler({
+      records: [{ id: '1' }, { id: '2' }, { id: '3' }],
+      user:    null,
+    })
+    assert.deepEqual(deleted.sort(), ['1', '3'])
+    assert.match((result as { notify: { title: string } }).notify.title, /2 posts/)
+  })
+
+  it('bulkRestore calls model.restore on each row', async () => {
+    const restored: string[] = []
+    const R = {
+      labelSingular:   'Post',
+      getSlug:         () => 'posts',
+      softDeletes:     true,
+      deletedAtColumn: 'deletedAt',
+      model: {
+        async restore(id: string | number) { restored.push(String(id)); return {} },
+      },
+    } as never
+    const handler = Action.bulkRestore(R, '/admin').getHandler()!
+    const result = await handler({ records: [{ id: '1' }, { id: '2' }], user: null })
+    assert.deepEqual(restored.sort(), ['1', '2'])
+    assert.match((result as { notify: { title: string } }).notify.title, /2 posts restored/i)
+  })
+
+  it('bulkRestore returns an error notify when model.restore is missing', async () => {
+    const R = {
+      labelSingular: 'Post',
+      getSlug:       () => 'posts',
+      softDeletes:   true,
+      model:         {},
+    } as never
+    const handler = Action.bulkRestore(R, '/admin').getHandler()!
+    const result = await handler({ records: [{ id: '1' }], user: null })
+    const notify = (result as { notify: { title: string; type: string } }).notify
+    assert.match(notify.title, /not configured/i)
+    assert.equal(notify.type, 'error')
+  })
+
+  it('bulkForceDelete calls model.forceDelete on each row', async () => {
+    const purged: string[] = []
+    const R = {
+      labelSingular:   'Post',
+      getSlug:         () => 'posts',
+      softDeletes:     true,
+      deletedAtColumn: 'deletedAt',
+      model: {
+        async forceDelete(id: string | number) { purged.push(String(id)) },
+      },
+    } as never
+    const handler = Action.bulkForceDelete(R, '/admin').getHandler()!
+    const result = await handler({ records: [{ id: '1' }, { id: '2' }], user: null })
+    assert.deepEqual(purged.sort(), ['1', '2'])
+    assert.match((result as { notify: { title: string } }).notify.title, /2 posts permanently deleted/i)
+  })
+
+  it('all three bulk factories ship the correct placement + destructive flags', () => {
+    const R = { labelSingular: 'Post', getSlug: () => 'posts' } as never
+    const del      = Action.bulkDelete(R, '/admin').toMeta()
+    const restore  = Action.bulkRestore(R, '/admin').toMeta()
+    const fdelete  = Action.bulkForceDelete(R, '/admin').toMeta()
+
+    assert.equal(del.placement,     'bulk')
+    assert.equal(restore.placement, 'bulk')
+    assert.equal(fdelete.placement, 'bulk')
+
+    assert.equal(del.destructive,     true)
+    assert.equal(restore.destructive, false)
+    assert.equal(fdelete.destructive, true)
+
+    assert.equal(restore.color, 'success')
+  })
+})
+
 describe('Action visibility through resolveSchema (non-row placements)', () => {
   it('drops a header action when visible() returns false', async () => {
     const tree = [

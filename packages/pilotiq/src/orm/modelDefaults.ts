@@ -24,6 +24,16 @@ export interface ModelQuery {
   orWhere(column: string, operator: ModelWhereOperator, value: unknown): ModelQuery
   orderBy(column: string, direction?: 'ASC' | 'DESC'): ModelQuery
   paginate(page: number, perPage?: number): Promise<{ data: unknown[]; total: number }>
+
+  /**
+   * Plan #13 — soft-delete query scopes. Optional on the structural
+   * shape; the `@rudderjs/orm-prisma` QueryBuilder ships them when
+   * `Model.softDeletes = true`. Pilotiq's `TrashedFilter` checks for
+   * presence at runtime and no-ops when missing (so non-soft-delete
+   * resources don't pay the cost).
+   */
+  withTrashed?(): ModelQuery
+  onlyTrashed?(): ModelQuery
 }
 
 /**
@@ -48,6 +58,20 @@ export interface ModelLike {
    * doesn't follow that convention or when you need a custom join shape.
    */
   relatedQuery?(parent: unknown, relationName: string): ModelQuery
+
+  /**
+   * Plan #13 — restore a soft-deleted record. Optional on the structural
+   * shape; rudder's `Model.restore` ships when `softDeletes = true`. Pilotiq
+   * detects presence at boot when `Resource.softDeletes = true` and throws
+   * a clear error pointing at the rudder upgrade if absent.
+   */
+  restore?(id: string | number): Promise<unknown>
+
+  /**
+   * Plan #13 — permanently delete a record (bypassing soft-delete).
+   * Optional on the structural shape; same boot-time check as `restore`.
+   */
+  forceDelete?(id: string | number): Promise<void>
 }
 
 /** Read the configured primary key (default `'id'`) off a `ModelLike`. */

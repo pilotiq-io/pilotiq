@@ -1,15 +1,23 @@
 import {
-  Resource, Column, BadgeColumn,
+  Resource, Column, BadgeColumn, Action,
   TextField, TextareaField, SelectField,
   type Form, type Table,
 } from '@pilotiq/pilotiq'
 import { Post } from '../../Models/Post.js'
+
+const ADMIN = '/new-admin'
 
 /**
  * Plan #11 demo — top-level Posts resource. The `User → Posts` manager
  * defaults its row links to this resource's view URL
  * (`/new-admin/posts/:id`), so registering it lets the click-through
  * "drill into the full record context" pattern work end-to-end.
+ *
+ * Plan #13 demo — `softDeletes = true` opts in the TrashedFilter,
+ * Restore + ForceDelete actions, and "moved to trash" delete framing.
+ * Row actions wire all four explicitly (Filament-style); per-row
+ * visibility shows Edit + Delete on live rows and Restore +
+ * ForceDelete on trashed rows.
  */
 export class PostResource extends Resource {
   static override label                = 'Posts'
@@ -17,6 +25,7 @@ export class PostResource extends Resource {
   static override icon                 = 'newspaper'
   static override model                = Post
   static override recordTitleAttribute = 'title'
+  static override softDeletes          = true
 
   static override navigationGroup = 'Content'
   static override navigationSort  = 20
@@ -43,6 +52,20 @@ export class PostResource extends Resource {
         }),
         Column.make('authorId').label('Author').color('muted'),
         Column.make('createdAt').sortable().since(),
+      ])
+      .headerActions([
+        Action.create(PostResource, ADMIN),
+      ])
+      .recordActions([
+        Action.edit       (PostResource, ADMIN),
+        Action.delete     (PostResource, ADMIN),
+        Action.restore    (PostResource, ADMIN),
+        Action.forceDelete(PostResource, ADMIN),
+      ])
+      .bulkActions([
+        Action.bulkDelete     (PostResource, ADMIN),
+        Action.bulkRestore    (PostResource, ADMIN),
+        Action.bulkForceDelete(PostResource, ADMIN),
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)

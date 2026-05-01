@@ -45,4 +45,8 @@ model Post {
   publishedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  // Plan #13 — soft-delete column (mirrored across both playgrounds
+  // per `feedback_prisma_hoist_shared_schema.md`; the hoisted
+  // @prisma/client must agree across playgrounds).
+  deletedAt   DateTime?
 }

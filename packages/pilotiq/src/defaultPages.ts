@@ -10,6 +10,8 @@ import {
   type FillMutator,
 } from './elements/Form.js'
 import { Table } from './elements/Table.js'
+import { Filter } from './filters/Filter.js'
+import { TrashedFilter } from './filters/TrashedFilter.js'
 import { ListTabs } from './elements/ListTabs.js'
 import type { ListTab } from './Tab.js'
 import { Heading } from './schema/Heading.js'
@@ -54,6 +56,19 @@ export function applyFormDefaults(R: ResourceClass, form: Form, mode: 'create' |
 
 /** Install model-backed records on a freshly-built table when the user hasn't supplied them. */
 export function applyTableDefaults(R: ResourceClass, table: Table): void {
+  // Plan #13 — auto-inject `TrashedFilter` for soft-delete resources
+  // unless the user already added one. The filter drives `withTrashed /
+  // onlyTrashed` on the model query via its built-in `query(fn)` handler;
+  // matching against the class catches user-renamed instances too.
+  if (R.softDeletes) {
+    const hasTrashedFilter = (table.getChildren() ?? [])
+      .some(c => c instanceof TrashedFilter)
+    if (!hasTrashedFilter) {
+      const existing = (table.getChildren() ?? []).filter(c => c instanceof Filter) as Filter[]
+      table.filters([...existing, TrashedFilter.make()])
+    }
+  }
+
   if (table.getRecords()) return
   const M = R.model
   if (M) table.records(modelTableRecords(M, table))

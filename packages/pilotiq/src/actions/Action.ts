@@ -107,10 +107,30 @@ export type ActionModalWidth = 'sm' | 'md' | 'lg' | 'xl'
 interface ResourceLike {
   labelSingular: string
   getSlug(): string
+  /** Plan #13 — soft-delete opt-in flag. When true, `Action.delete`
+   *  auto-hides on already-trashed rows; `Action.restore` /
+   *  `Action.forceDelete` auto-show on trashed rows. */
+  softDeletes?: boolean
+  /** Plan #13 — column name carrying the soft-delete timestamp.
+   *  Defaults to `'deletedAt'` when undefined. */
+  deletedAtColumn?: string
   canCreate?(user: unknown): boolean | Promise<boolean>
   canEdit?(user: unknown, record: unknown): boolean | Promise<boolean>
   canView?(user: unknown, record: unknown): boolean | Promise<boolean>
   canDelete?(user: unknown, record: unknown): boolean | Promise<boolean>
+  canRestore?(user: unknown, record: unknown): boolean | Promise<boolean>
+  canForceDelete?(user: unknown, record: unknown): boolean | Promise<boolean>
+}
+
+/** Read `record[R.deletedAtColumn ?? 'deletedAt']` and return true when
+ *  the row is currently trashed (soft-deleted). Permissive on shape —
+ *  bare `null` / `undefined` count as live; any other truthy value is
+ *  trashed. */
+function isTrashed(record: unknown, R: ResourceLike): boolean {
+  if (!record || typeof record !== 'object') return false
+  const col = R.deletedAtColumn ?? 'deletedAt'
+  const v = (record as Record<string, unknown>)[col]
+  return v !== null && v !== undefined
 }
 
 /** Call a (possibly undefined) Resource predicate. When unset, the
@@ -315,6 +335,11 @@ export class Action extends Element {
    * destructive style, with a confirmation prompt referencing the
    * resource label. Same `recordId` semantics as `Action.edit`.
    * Auto-hides when `R.canDelete(user, record)` returns false.
+   *
+   * Plan #13 — when `R.softDeletes = true`, additionally hides on
+   * rows whose `deletedAtColumn` is set (already-trashed rows get the
+   * Restore + ForceDelete pair instead, surfaced via the matching
+   * factories below).
    */
   static delete(R: ResourceLike, basePath: string, recordId?: string): Action {
     const id = recordId ?? ':id'
@@ -324,7 +349,143 @@ export class Action extends Element {
       .method('post')
       .action(`${basePath}/${R.getSlug()}/${id}/delete`)
       .confirm(`Delete this ${R.labelSingular.toLowerCase()}?`)
-      .visible(({ user, record }) => callPredicate(R.canDelete, user, record))
+      .visible(async ({ user, record }) => {
+        if (R.softDeletes && isTrashed(record, R)) return false
+        return callPredicate(R.canDelete, user, record)
+      })
+  }
+
+  /**
+   * Plan #13 — Restore factory. POSTs to the resource's restore route,
+   * success-styled, no confirm prompt (restoration is reversible).
+   * Auto-hides on live (non-trashed) rows AND when `R.canRestore(user,
+   * record)` returns false. Same `recordId` semantics as `Action.edit`.
+   */
+  static restore(R: ResourceLike, basePath: string, recordId?: string): Action {
+    const id = recordId ?? ':id'
+    return Action.make('restore')
+      .label('Restore')
+      .color('success')
+      .method('post')
+      .action(`${basePath}/${R.getSlug()}/${id}/restore`)
+      .visible(async ({ user, record }) => {
+        if (!isTrashed(record, R)) return false
+        return callPredicate(R.canRestore, user, record)
+      })
+  }
+
+  /**
+   * Plan #13 — Force-delete factory. POSTs to the resource's
+   * force-delete route, destructive-styled, with a stricter confirm
+   * prompt referencing permanence. Auto-hides on live (non-trashed)
+   * rows AND when `R.canForceDelete(user, record)` returns false.
+   */
+  static forceDelete(R: ResourceLike, basePath: string, recordId?: string): Action {
+    const id = recordId ?? ':id'
+    return Action.make('forceDelete')
+      .label('Delete forever')
+      .destructive()
+      .method('post')
+      .action(`${basePath}/${R.getSlug()}/${id}/force-delete`)
+      .confirm(`Permanently delete this ${R.labelSingular.toLowerCase()}? This cannot be undone.`)
+      .visible(async ({ user, record }) => {
+        if (!isTrashed(record, R)) return false
+        return callPredicate(R.canForceDelete, user, record)
+      })
+  }
+
+  // ─── Bulk factories (Plan #13) ────────────────────────────────
+  //
+  // Handler-style bulk actions that iterate `ctx.records`, run policy
+  // per-row, and call the matching Resource / Model method. No new
+  // routes — the existing `/_action/:actionName` dispatcher already
+  // handles bulk via `ctx.records`. Drop into `bulkActions([...])`
+  // from inside `Resource.table()`.
+  //
+  // Each returns a notification with the count succeeded; rows whose
+  // policy denied (or whose call threw) are silently skipped — surface
+  // them via your own logging if needed.
+
+  /** Bulk delete — calls `R.deleteRecord(id)` per row. On a
+   *  soft-delete resource that hits `Model.delete()` which writes
+   *  `deletedAt`. Notification: "N posts moved to trash" / "N posts
+   *  deleted" depending on `R.softDeletes`. */
+  static bulkDelete(R: ResourceLike, _basePath: string): Action {
+    return Action.make('bulkDelete')
+      .label('Delete selected')
+      .destructive()
+      .bulk()
+      .confirm(`Delete the selected ${R.labelSingular.toLowerCase()}s?`)
+      .handler(async (ctx) => {
+        const records = ctx.records ?? []
+        const Rfull = R as ResourceLike & { deleteRecord(id: string): Promise<void> }
+        let n = 0
+        for (const record of records) {
+          const id = String((record as { id?: unknown }).id ?? '')
+          if (!id) continue
+          const allowed = await callPredicate(R.canDelete, ctx.user, record)
+          if (!allowed) continue
+          try { await Rfull.deleteRecord(id); n++ } catch { /* skip — agg notify shows total */ }
+        }
+        const verb = R.softDeletes ? 'moved to trash' : 'deleted'
+        return { notify: { title: `${n} ${R.labelSingular.toLowerCase()}s ${verb}`, type: 'success' } as never }
+      })
+  }
+
+  /** Bulk restore — calls `R.model.restore(id)` per row. Visible only
+   *  on soft-delete resources (the entire bulk-restore concept is
+   *  specific to them). */
+  static bulkRestore(R: ResourceLike, _basePath: string): Action {
+    return Action.make('bulkRestore')
+      .label('Restore selected')
+      .color('success')
+      .bulk()
+      .confirm(`Restore the selected ${R.labelSingular.toLowerCase()}s?`)
+      .handler(async (ctx) => {
+        const records = ctx.records ?? []
+        const Rfull = R as ResourceLike & { model?: { restore?(id: string | number): Promise<unknown> } }
+        const restore = Rfull.model?.restore
+        if (!restore) {
+          return { notify: { title: 'Restore not configured', type: 'error' } as never }
+        }
+        let n = 0
+        for (const record of records) {
+          const id = String((record as { id?: unknown }).id ?? '')
+          if (!id) continue
+          const allowed = await callPredicate(R.canRestore, ctx.user, record)
+          if (!allowed) continue
+          try { await restore(id); n++ } catch { /* skip */ }
+        }
+        return { notify: { title: `${n} ${R.labelSingular.toLowerCase()}s restored`, type: 'success' } as never }
+      })
+  }
+
+  /** Bulk force-delete — calls `R.model.forceDelete(id)` per row. Same
+   *  destructive confirm as the per-row variant. Visible only on
+   *  soft-delete resources. */
+  static bulkForceDelete(R: ResourceLike, _basePath: string): Action {
+    return Action.make('bulkForceDelete')
+      .label('Delete forever')
+      .destructive()
+      .bulk()
+      .confirm(`Permanently delete the selected ${R.labelSingular.toLowerCase()}s? This cannot be undone.`)
+      .handler(async (ctx) => {
+        const records = ctx.records ?? []
+        const Rfull = R as ResourceLike & { model?: { forceDelete?(id: string | number): Promise<void> } }
+        const forceDelete = Rfull.model?.forceDelete
+        if (!forceDelete) {
+          return { notify: { title: 'Force-delete not configured', type: 'error' } as never }
+        }
+        let n = 0
+        for (const record of records) {
+          const id = String((record as { id?: unknown }).id ?? '')
+          if (!id) continue
+          const allowed = await callPredicate(R.canForceDelete, ctx.user, record)
+          if (!allowed) continue
+          try { await forceDelete(id); n++ } catch { /* skip */ }
+        }
+        return { notify: { title: `${n} ${R.labelSingular.toLowerCase()}s permanently deleted`, type: 'success' } as never }
+      })
   }
 
   // ─── Relation-manager factories (Plan #11 polish) ─────────────

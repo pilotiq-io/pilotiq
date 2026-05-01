@@ -102,6 +102,29 @@ export abstract class Resource {
    */
   static model?: ModelLike
 
+  // ─── Plan #13: soft deletes ────────────────────────────────
+  // Opt-in: when true, pilotiq routes the standard delete action
+  // through `model.delete()` (which writes `deletedAt`), surfaces a
+  // TrashedFilter on the list page, swaps the row-action set on
+  // trashed rows (Restore + Force-delete instead of Edit + Delete),
+  // and exposes two new POST routes: `/:id/restore` and
+  // `/:id/force-delete`. The rudder ORM side must also opt in
+  // (`Model.softDeletes = true`) for the underlying behavior to
+  // engage — pilotiq throws a clear boot error when the flag is
+  // set here but the model lacks `restore` / `forceDelete`.
+
+  /** Enable soft-delete UX (TrashedFilter, Restore action,
+   * Force-delete action, soft-delete-aware row visibility). Default
+   * `false`. Requires `Resource.model` to be set, with
+   * `Model.softDeletes = true` on the rudder side. */
+  static softDeletes: boolean = false
+
+  /** Column name carrying the soft-delete timestamp on each row.
+   * Per-row visibility predicates and the trashed-row branch in
+   * `Action.delete` consult `record[deletedAtColumn]`. Default
+   * matches rudder's `'deletedAt'`. */
+  static deletedAtColumn: string = 'deletedAt'
+
   // ─── Plan #12: global search ───────────────────────────────
   // Opt-in: resources with `globalSearch = false` are skipped by the
   // panel-level Cmd+K palette. Defaults below derive everything from
@@ -219,6 +242,27 @@ export abstract class Resource {
   /** Allowed to delete a given record. Auto-hides `Action.delete(R, …)`
    * triggers without an explicit `.visible()` rule. */
   static async canDelete(_user: unknown, _record: unknown): Promise<boolean> { return true }
+
+  /** Plan #13 — allowed to restore a soft-deleted record. Defaults
+   * `true`; auto-hides `Action.restore(R, …)` when false. Only
+   * checked on resources with `softDeletes = true`. */
+  static async canRestore(_user: unknown, _record: unknown): Promise<boolean> { return true }
+
+  /** Plan #13 — allowed to permanently delete a soft-deleted record.
+   * Defaults to whatever `canDelete` returns when this method is *not*
+   * overridden — soft-delete restore is generally lower-privilege
+   * than force-delete, but force-delete inheriting from delete is the
+   * conservative starting point. Override this to tighten or loosen
+   * independently. Only checked on resources with `softDeletes = true`.
+   *
+   * The `safeForceDeletePolicy` helper (used by routes + `Action.forceDelete`
+   * visibility) detects the un-overridden case via reference equality
+   * against `Resource.canForceDelete` — same trick Plan #11 uses for
+   * `safeManagerPolicy`. Don't reassign `Resource.canForceDelete`
+   * outside of subclass overrides; it'd break the detection globally. */
+  static async canForceDelete(this: ResourceClass, user: unknown, record: unknown): Promise<boolean> {
+    return this.canDelete(user, record)
+  }
 
   /**
    * Configure the form used by `create` and `edit` pages by default.

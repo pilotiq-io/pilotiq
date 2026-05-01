@@ -157,6 +157,7 @@ export {
 } from './filters/Filter.js'
 export { SelectFilter, type SelectFilterOption } from './filters/SelectFilter.js'
 export { BooleanFilter, coerceBooleanFilterValue } from './filters/BooleanFilter.js'
+export { TrashedFilter } from './filters/TrashedFilter.js'
 export {
   dispatchFormSubmit,
   findForms,

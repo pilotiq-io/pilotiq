@@ -29,7 +29,7 @@ Land in this order. Each step is independently shippable; later steps build on e
 | 10 | `authorization.md` | ~2 days | Resource policies (canView/canCreate/canEdit/canDelete). Pairs with @rudderjs/auth wiring. |
 | 11 | ✅ `relations.md` DONE | ~2 weeks | RelationManager. Shipped 2026-05-01: class + ORM contract + data builder + IDOR + routes + Vike stubs + auto-Tabs + auth fall-through + reactive-integration doc + playground demo (`User → Posts`) + guide. 834 tests. Scoped to hasOne/hasMany/belongsTo; pivot/M2M deferred. Manager-row-action ergonomics polish (`RelationManagerContext` threaded into `static table()` + `Action.relation*(M, ctx)` factories) shipped 2026-05-01 as a follow-up. |
 | 12 | ✅ `global-search.md` DONE | ~1 week | `Resource.globalSearch` opt-in + 4 override statics + `searchAllResources` helper + `GET /_search` + Cmd+K palette + sidebar/topbar trigger pill shipped 2026-05-01. |
-| 13 | `soft-deletes.md` | ~1 week | Needs @rudderjs/orm soft-delete support first. |
+| 13 | ✅ `soft-deletes.md` DONE | ~1 week | Resource.softDeletes opt-in + TrashedFilter (auto-inject) + Restore/ForceDelete routes + Action.restore/forceDelete + bulk variants shipped 2026-05-01. Verified rudder ORM already shipped the primitives (Model.softDeletes, restore/forceDelete, withTrashed/onlyTrashed). 885 tests. Two-sided opt-in (Model + Resource) by design. Demo at `playground-pilotiq` PostResource. |
 
 Penciled for later (Tier 3): widgets/dashboards, Repeater/Builder fields, Wizard step validation, resource nesting, sub-navigation, polling/auto-refresh, import/export.
 

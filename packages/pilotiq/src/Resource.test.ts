@@ -171,4 +171,70 @@ describe('Resource (static API)', () => {
     class R extends Resource { static override label = 'Things' }
     assert.equal(R.getGlobalSearchQuery('alice'), undefined)
   })
+
+  describe('soft-delete opt-in (Plan #13)', () => {
+    it('softDeletes defaults to false', () => {
+      class R extends Resource { static override label = 'Things' }
+      assert.equal(R.softDeletes, false)
+    })
+
+    it('deletedAtColumn defaults to "deletedAt"', () => {
+      class R extends Resource { static override label = 'Things' }
+      assert.equal(R.deletedAtColumn, 'deletedAt')
+    })
+
+    it('subclass can opt in by setting softDeletes = true', () => {
+      class R extends Resource {
+        static override label = 'Posts'
+        static override softDeletes = true
+      }
+      assert.equal(R.softDeletes, true)
+    })
+
+    it('subclass can override the column name', () => {
+      class R extends Resource {
+        static override label = 'Posts'
+        static override softDeletes = true
+        static override deletedAtColumn = 'archivedAt'
+      }
+      assert.equal(R.deletedAtColumn, 'archivedAt')
+    })
+  })
+
+  describe('canRestore / canForceDelete predicates (Plan #13)', () => {
+    it('canRestore defaults to true', async () => {
+      class R extends Resource { static override label = 'Posts' }
+      assert.equal(await R.canRestore(null, { id: 1 }), true)
+    })
+
+    it('canForceDelete inherits from canDelete by default', async () => {
+      class R extends Resource {
+        static override label = 'Posts'
+        static override async canDelete(_user: unknown, _record: unknown): Promise<boolean> { return false }
+      }
+      assert.equal(await R.canForceDelete(null, { id: 1 }), false,
+        'force-delete should fall through to canDelete when not overridden')
+    })
+
+    it('canForceDelete override wins independently of canDelete', async () => {
+      class R extends Resource {
+        static override label = 'Posts'
+        static override async canDelete(_user: unknown, _record: unknown): Promise<boolean> { return true }
+        static override async canForceDelete(_user: unknown, _record: unknown): Promise<boolean> { return false }
+      }
+      assert.equal(await R.canForceDelete(null, { id: 1 }), false)
+      assert.equal(await R.canDelete(null, { id: 1 }), true)
+    })
+
+    it('canRestore override wins', async () => {
+      class R extends Resource {
+        static override label = 'Posts'
+        static override async canRestore(_user: unknown, record: unknown): Promise<boolean> {
+          return (record as { ownedBy?: string }).ownedBy === 'me'
+        }
+      }
+      assert.equal(await R.canRestore(null, { ownedBy: 'me' }), true)
+      assert.equal(await R.canRestore(null, { ownedBy: 'other' }), false)
+    })
+  })
 })
