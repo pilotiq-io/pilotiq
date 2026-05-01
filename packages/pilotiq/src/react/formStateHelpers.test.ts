@@ -1,7 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { collectFieldDefaults, findFieldMeta } from './formStateHelpers.js'
+import {
+  collectFieldDefaults,
+  findFieldMeta,
+  parseFormDataToNested,
+  writeNestedValue,
+} from './formStateHelpers.js'
 import type { ElementMeta } from '../schema/Element.js'
 
 const field = (name: string, defaultValue?: unknown): ElementMeta => ({
@@ -96,5 +101,168 @@ describe('findFieldMeta', () => {
     const b = field('dup', 'second')
     const found = findFieldMeta(formMeta([a, b]), 'dup')
     assert.equal(found, a)
+  })
+})
+
+// ─── Plan #14 — dotted-path live for inner Repeater fields ─────────
+
+const repeater = (
+  name:     string,
+  rows:     ElementMeta[][],
+  template: ElementMeta[] = [],
+): ElementMeta => ({
+  type:      'field',
+  fieldType: 'repeater',
+  name,
+  label:     name,
+  required:  false,
+  disabled:  false,
+  rows:      rows.map((children, i) => ({ id: `r${i}`, children })),
+  template,
+} as ElementMeta)
+
+describe('findFieldMeta — dotted paths into Repeater rows', () => {
+  it('finds an inner Repeater field by dotted path', () => {
+    const inner = field('product')
+    ;(inner as Record<string, unknown>)['live'] = true
+    const meta  = formMeta([repeater('items', [[inner, field('qty')]])])
+    const found = findFieldMeta(meta, 'items.0.product')
+    assert.equal(found?.['name'], 'product')
+    assert.equal(found?.['live'], true)
+  })
+
+  it('uses the requested row index when present', () => {
+    const r0 = field('product')
+    const r1 = field('product')
+    ;(r1 as Record<string, unknown>)['live'] = { debounce: 200 }
+    const meta = formMeta([repeater('items', [[r0], [r1]])])
+    assert.deepEqual(findFieldMeta(meta, 'items.1.product')?.['live'], { debounce: 200 })
+  })
+
+  it('falls back to row 0 when index is out of range', () => {
+    const inner = field('product')
+    ;(inner as Record<string, unknown>)['live'] = true
+    const meta  = formMeta([repeater('items', [[inner]])])
+    assert.equal(findFieldMeta(meta, 'items.7.product')?.['live'], true)
+  })
+
+  it('falls back to template when no rows are present', () => {
+    const tpl = field('product')
+    ;(tpl as Record<string, unknown>)['live'] = true
+    const meta = formMeta([repeater('items', [], [tpl])])
+    assert.equal(findFieldMeta(meta, 'items.0.product')?.['live'], true)
+  })
+
+  it('returns undefined when first segment is not a Repeater', () => {
+    const meta = formMeta([field('title')])
+    assert.equal(findFieldMeta(meta, 'title.0.x'), undefined)
+  })
+
+  it('handles nested Repeaters', () => {
+    const inner = field('name')
+    ;(inner as Record<string, unknown>)['live'] = true
+    const mods  = repeater('modifiers', [[inner]])
+    const meta  = formMeta([repeater('items', [[field('product'), mods]])])
+    const found = findFieldMeta(meta, 'items.0.modifiers.0.name')
+    assert.equal(found?.['name'], 'name')
+    assert.equal(found?.['live'], true)
+  })
+})
+
+describe('parseFormDataToNested', () => {
+  function fdFrom(entries: Array<[string, string]>): FormData {
+    const fd = new FormData()
+    for (const [k, v] of entries) fd.append(k, v)
+    return fd
+  }
+
+  it('flat keys round-trip as flat object', () => {
+    const fd = fdFrom([['title', 'Hello'], ['body', 'World']])
+    assert.deepEqual(parseFormDataToNested(fd), { title: 'Hello', body: 'World' })
+  })
+
+  it('dotted keys with numeric segments build arrays of objects', () => {
+    const fd = fdFrom([
+      ['items.0.product', 'A'],
+      ['items.0.qty',     '2'],
+      ['items.1.product', 'B'],
+      ['items.1.qty',     '5'],
+    ])
+    assert.deepEqual(parseFormDataToNested(fd), {
+      items: [
+        { product: 'A', qty: '2' },
+        { product: 'B', qty: '5' },
+      ],
+    })
+  })
+
+  it('handles nested Repeaters', () => {
+    const fd = fdFrom([
+      ['items.0.product',          'A'],
+      ['items.0.modifiers.0.name', 'No onions'],
+      ['items.0.modifiers.1.name', 'Extra cheese'],
+    ])
+    assert.deepEqual(parseFormDataToNested(fd), {
+      items: [{
+        product:   'A',
+        modifiers: [{ name: 'No onions' }, { name: 'Extra cheese' }],
+      }],
+    })
+  })
+
+  it('filters out _formId and _method transport keys', () => {
+    const fd = fdFrom([
+      ['_formId', 'my-form'],
+      ['_method', 'patch'],
+      ['title',   'Hello'],
+    ])
+    assert.deepEqual(parseFormDataToNested(fd), { title: 'Hello' })
+  })
+
+  it('filters out Repeater __id row-identity keys', () => {
+    const fd = fdFrom([
+      ['items.0.__id',    'row-abc'],
+      ['items.0.product', 'A'],
+    ])
+    assert.deepEqual(parseFormDataToNested(fd), {
+      items: [{ product: 'A' }],
+    })
+  })
+
+  it('last value wins for duplicate keys', () => {
+    const fd = fdFrom([['title', 'first'], ['title', 'second']])
+    assert.deepEqual(parseFormDataToNested(fd), { title: 'second' })
+  })
+})
+
+describe('writeNestedValue', () => {
+  it('writes a flat key', () => {
+    const root: Record<string, unknown> = {}
+    writeNestedValue(root, 'title', 'Hello')
+    assert.deepEqual(root, { title: 'Hello' })
+  })
+
+  it('writes a dotted path into a fresh nested structure', () => {
+    const root: Record<string, unknown> = {}
+    writeNestedValue(root, 'items.0.product', 'A')
+    assert.deepEqual(root, { items: [{ product: 'A' }] })
+  })
+
+  it('overwrites an existing nested value without disturbing siblings', () => {
+    const root: Record<string, unknown> = {
+      items: [{ product: 'OLD', qty: '2' }, { product: 'B' }],
+    }
+    writeNestedValue(root, 'items.0.product', 'NEW')
+    assert.deepEqual(root, {
+      items: [{ product: 'NEW', qty: '2' }, { product: 'B' }],
+    })
+  })
+
+  it('extends an array when index is past the end', () => {
+    const root: Record<string, unknown> = { items: [{ product: 'A' }] }
+    writeNestedValue(root, 'items.2.product', 'C')
+    const items = (root['items'] as unknown[])
+    assert.equal(items.length, 3)
+    assert.deepEqual(items[2], { product: 'C' })
   })
 })

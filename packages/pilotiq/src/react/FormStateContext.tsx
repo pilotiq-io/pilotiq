@@ -8,7 +8,12 @@ import React, {
   useState,
 } from 'react'
 import type { ElementMeta } from '../schema/Element.js'
-import { collectFieldDefaults, findFieldMeta } from './formStateHelpers.js'
+import {
+  collectFieldDefaults,
+  findFieldMeta,
+  parseFormDataToNested,
+  writeNestedValue,
+} from './formStateHelpers.js'
 import { useToast } from './Toaster.js'
 
 export type FieldStatus = 'idle' | 'pending'
@@ -16,7 +21,14 @@ export type FieldStatus = 'idle' | 'pending'
 export interface FormStateApi {
   values:        Record<string, unknown>
   setValue:      (name: string, value: unknown) => void
-  triggerLive:   (name: string) => void
+  /** Fire the field's `live()` re-resolve hook. Plan #14 — `valueOverride`
+   *  lets uncontrolled inner-Repeater inputs pass their just-typed value
+   *  through without first writing it to the controlled `values` map.
+   *  When the form has a `formRef`, the latest DOM state of all
+   *  uncontrolled inputs is snapshotted via FormData before posting; the
+   *  override is then layered on top so the leaf carries the most recent
+   *  keystroke even when the snapshot races the input's commit. */
+  triggerLive:   (name: string, valueOverride?: unknown) => void
   errors:        Record<string, string[]>
   /** Plan #8 — replace the errors map. Used by Wizard's step-validate
    *  flow to surface per-field errors returned from the wizard endpoint. */
@@ -46,14 +58,21 @@ export const FormIdContext = createContext<string>('')
 
 export interface UseFieldStateResult {
   /** True when the field is inside a controlled form (live fields enabled).
-   *  Renderers should fall back to their `defaultValue` path when false. */
+   *  Renderers should fall back to their `defaultValue` path when false.
+   *
+   *  Plan #14 — dotted-name fields (inner Repeater rows) always return
+   *  `controlled: false`. Their inputs stay uncontrolled so reorder/clone
+   *  preserves typed values; the live trigger still works (snapshotting
+   *  via the form's FormData at trigger time). */
   controlled:  boolean
   value:       unknown
   setValue:    (v: unknown) => void
   /** Notify the framework that this field's value has changed in a way that
    *  should trigger its `live()` hook (if configured). No-op for non-live
-   *  fields and outside controlled forms. */
-  triggerLive: () => void
+   *  fields and outside controlled forms. `valueOverride` lets uncontrolled
+   *  inputs pass their just-typed value (for dotted-path inner Repeater
+   *  fields). */
+  triggerLive: (valueOverride?: unknown) => void
   /** True while a live re-resolve POST is in flight for this field. */
   pending:     boolean
   errors:      string[]
@@ -74,11 +93,14 @@ export function useFieldState(name: string): UseFieldStateResult {
       errors:      [],
     }
   }
+  // Dotted-path fields (inner Repeater rows) always render uncontrolled
+  // — see UseFieldStateResult.controlled doc for why.
+  const dotted = name.includes('.')
   return {
-    controlled:  true,
-    value:       ctx.values[name],
-    setValue:    (v) => ctx.setValue(name, v),
-    triggerLive: () => ctx.triggerLive(name),
+    controlled:  !dotted,
+    value:       dotted ? undefined : ctx.values[name],
+    setValue:    dotted ? () => {} : (v) => ctx.setValue(name, v),
+    triggerLive: (valueOverride?: unknown) => ctx.triggerLive(name, valueOverride),
     pending:     ctx.fieldStatus(name) === 'pending',
     errors:      ctx.errors[name] ?? [],
   }
@@ -104,6 +126,12 @@ export interface FormStateProviderProps {
   /** Optional callback when the form meta is replaced after a live POST.
    *  Tests use this; production code reads from `useFormState().formMeta`. */
   onMetaUpdate?: (meta: ElementMeta) => void
+  /** Plan #14 — ref to the wrapping `<form>` element. When set, live
+   *  triggers snapshot the form's full DOM state via `FormData` before
+   *  POSTing, which captures uncontrolled inner-Repeater inputs. The
+   *  controlled `values` map is overlaid on top, then any explicit
+   *  `valueOverride` from `triggerLive` wins last. */
+  formRef?:      React.RefObject<HTMLFormElement | null>
 }
 
 /** Provider component for the controlled form path. Holds the values map,
@@ -116,6 +144,7 @@ export function FormStateProvider({
   children,
   fetchImpl,
   onMetaUpdate,
+  formRef,
 }: FormStateProviderProps): React.ReactElement {
   const [formMeta, setFormMeta] = useState<ElementMeta>(initialMeta)
   const [values,   setValuesState] = useState<Record<string, unknown>>(
@@ -161,7 +190,7 @@ export function FormStateProvider({
     })
   }, [])
 
-  const performLivePost = useCallback(async (name: string): Promise<void> => {
+  const performLivePost = useCallback(async (name: string, valueOverride?: unknown): Promise<void> => {
     if (!stateUrl) return
     const seq = ++requestSeqRef.current
     setPendingNames((prev) => {
@@ -174,10 +203,29 @@ export function FormStateProvider({
 
     const doFetch = fetchImpl ?? fetch
     try {
+      // Plan #14 — build the values payload:
+      //   1. Start from controlled values (top-level fields the user has
+      //      typed into via FormStateProvider's setValue path).
+      //   2. If a form ref is set, overlay FormData-derived nested values
+      //      so uncontrolled inputs (including inner Repeater fields)
+      //      contribute their current DOM state.
+      //   3. If a valueOverride is provided, write it through to the
+      //      target field's path — this wins last, so the leaf carries
+      //      the just-typed value even if the snapshot races a debounce.
+      let payloadValues: Record<string, unknown> = { ...valuesRef.current }
+      const formEl = formRef?.current
+      if (formEl) {
+        const snapshot = parseFormDataToNested(new FormData(formEl))
+        payloadValues = { ...payloadValues, ...snapshot }
+      }
+      if (valueOverride !== undefined) {
+        writeNestedValue(payloadValues, name, valueOverride)
+      }
+
       const res = await doFetch(stateUrl, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body:    JSON.stringify({ changed: name, values: valuesRef.current }),
+        body:    JSON.stringify({ changed: name, values: payloadValues }),
       })
 
       // Drop stale responses — a newer request has already been issued.
@@ -232,9 +280,9 @@ export function FormStateProvider({
         return prev
       })
     }
-  }, [stateUrl, fetchImpl, notify, onMetaUpdate])
+  }, [stateUrl, fetchImpl, notify, onMetaUpdate, formRef])
 
-  const triggerLive = useCallback((name: string): void => {
+  const triggerLive = useCallback((name: string, valueOverride?: unknown): void => {
     if (!stateUrl) return
     const fieldMeta = findFieldMeta(formMetaRef.current, name)
     const liveCfg = fieldMeta?.['live']
@@ -251,13 +299,13 @@ export function FormStateProvider({
     if (debounce > 0) {
       const t = setTimeout(() => {
         timers.delete(name)
-        void performLivePost(name)
+        void performLivePost(name, valueOverride)
       }, debounce)
       timers.set(name, t)
       return
     }
 
-    void performLivePost(name)
+    void performLivePost(name, valueOverride)
   }, [stateUrl, performLivePost])
 
   const fieldStatus = useCallback((name: string): FieldStatus => {

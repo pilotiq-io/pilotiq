@@ -185,14 +185,38 @@ The id is a render-time identifier — it's **not** persisted on the
 saved record. If you want stable row identity across reloads, add an
 `IdField` to the inner schema.
 
+## Reactive inner fields
+
+`Field.live()` works inside a Repeater row. The client delegates
+`onChange / onBlur` events at the Repeater container level: when a
+dotted-path field name is detected (e.g. `items.0.quantity`), the
+provider snapshots the form's full DOM state via `FormData` and POSTs
+to the partial-resolve endpoint with the just-typed value layered on
+top. The server's `afterStateUpdated` hook gets a row-scoped `ctx.row`
+with `$get / $set` for same-row reads/writes, plus a top-level `$get /
+$set` that accepts dotted paths for cross-row reads.
+
+Example — a row-scoped subtotal computed live from quantity × unit
+price:
+
+```ts
+NumberField.make('quantity')
+  .live({ debounce: 300 })
+  .afterStateUpdated((value, ctx) => {
+    const qty   = Number(value ?? 0)
+    const price = Number(ctx.row?.$get('unitPrice') ?? 0)
+    ctx.row?.$set('subtotal', qty * price)
+  })
+```
+
+**Limitation:** Switch / Slider and other React-controlled primitives
+that update via callbacks (not native input events) won't bubble
+through the delegated handler, so their inner `live()` won't fire.
+Native inputs — text, number, email, textarea, select, range, date,
+checkbox, radio — all work.
+
 ## Limitations
 
-- **No live re-resolves driven by `live()` on inner fields.** The
-  server has all the plumbing (`applyStateUpdate` resolves dotted
-  paths); the client renderer doesn't yet integrate with
-  `FormStateProvider` for nested-path live updates. Inner `live()`
-  fields render today but the partial-resolve roundtrip doesn't fire.
-  Top-level `live()` fields (outside the Repeater) behave normally.
 - **No row-level visibility / authorization** (`itemVisible`,
   `itemCanDelete`). Track for v1.1 with a real use case.
 - **`Builder` (heterogeneous-row Repeater)** is its own plan once

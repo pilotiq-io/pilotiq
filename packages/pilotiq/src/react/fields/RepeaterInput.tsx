@@ -12,7 +12,8 @@ import {
 import type { ElementMeta } from '../../schema/Element.js'
 import { Button } from '../ui/button.js'
 import { SchemaRenderer } from '../SchemaRenderer.js'
-import { FormIdContext } from '../FormStateContext.js'
+import { FormIdContext, useFormState } from '../FormStateContext.js'
+import { findFieldMeta } from '../formStateHelpers.js'
 
 /**
  * Pure reorder helper — used by both the HTML5 DnD path and the
@@ -197,6 +198,43 @@ export function RepeaterInput({
     setDragId(null); setDropAt(null)
   }
 
+  // ── Inner-field live re-resolve (Plan #14 v1.1) ─────────────
+  // Inner Repeater inputs are uncontrolled (so reorder/clone preserves
+  // typed values). To make `Field.live()` work on them, we delegate
+  // change/blur events at the container level: the dotted-path field
+  // name on `target.name` is enough to find the field meta and decide
+  // whether to fire. `triggerLive` then snapshots the form's full
+  // FormData and POSTs to the partial-resolve endpoint — see
+  // FormStateContext.
+  //
+  // Limitation: Switch/Slider and other React-controlled primitives
+  // that update via callbacks (not native input events) won't bubble
+  // here. Native inputs (text/number/email/textarea/select/range/date)
+  // are covered.
+  const formState = useFormState()
+  const fireLive = (name: string, value: string, eventKind: 'change' | 'blur'): void => {
+    if (!formState) return
+    if (!name.includes('.')) return  // top-level fields handle their own live trigger
+    const fieldMeta = findFieldMeta(formState.formMeta, name)
+    const liveCfg   = fieldMeta?.['live']
+    if (!liveCfg) return
+    const onBlurMode = typeof liveCfg === 'object' && liveCfg !== null
+      && (liveCfg as { onBlur?: boolean }).onBlur === true
+    if (eventKind === 'change' && onBlurMode) return
+    if (eventKind === 'blur'   && !onBlurMode) return
+    formState.triggerLive(name, value)
+  }
+  const onContainerChange = (e: React.ChangeEvent<HTMLDivElement>): void => {
+    const t = e.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    if (!t.name) return
+    fireLive(t.name, t.value, 'change')
+  }
+  const onContainerBlur = (e: React.FocusEvent<HTMLDivElement>): void => {
+    const t = e.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    if (!t.name) return
+    fireLive(t.name, t.value, 'blur')
+  }
+
   const toggleCollapsed = (id: string): void => {
     setCollapsed(prev => {
       const nextValue = !prev[id]
@@ -206,7 +244,11 @@ export function RepeaterInput({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div
+      className="flex flex-col gap-3"
+      onChange={onContainerChange}
+      onBlur={onContainerBlur}
+    >
       {rows.length === 0 && (
         <div className="rounded-md border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
           No items yet. Click {addLabel} to start.

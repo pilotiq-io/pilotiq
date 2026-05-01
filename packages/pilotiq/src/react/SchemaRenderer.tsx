@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import type { ElementMeta } from '../schema/Element.js'
 import { getFieldRenderer } from './registry.js'
 import { FormStateProvider, useFormState, FormIdContext } from './FormStateContext.js'
@@ -1888,6 +1888,12 @@ function FormRenderer({ el }: { el: ElementMeta }) {
   const [submitting, setSubmitting] = useState(false)
   const errors = clientErrors ?? serverErrors
 
+  // Plan #14 — formRef is threaded into FormStateProvider so live triggers
+  // can snapshot the form's full DOM state via FormData (captures
+  // uncontrolled inner-Repeater inputs that don't participate in the
+  // controlled values map).
+  const formRef = useRef<HTMLFormElement | null>(null)
+
   const formErrors = errors['_form'] ?? []
   const hasFieldErrors = Object.keys(errors).some(k => k !== '_form')
 
@@ -1948,6 +1954,7 @@ function FormRenderer({ el }: { el: ElementMeta }) {
 
   return (
     <form
+      ref={formRef}
       id={formId || undefined}
       data-form-id={formId || undefined}
       method={httpMethod}
@@ -1970,7 +1977,7 @@ function FormRenderer({ el }: { el: ElementMeta }) {
       )}
       <FormIdContext.Provider value={formId}>
         {stateUrl ? (
-          <FormStateProvider initialMeta={el} initialErrors={errors}>
+          <FormStateProvider initialMeta={el} initialErrors={errors} formRef={formRef}>
             <FormBody fallbackChildren={el.children ?? []} fallbackValues={serverValues} fallbackErrors={errors} />
           </FormStateProvider>
         ) : (

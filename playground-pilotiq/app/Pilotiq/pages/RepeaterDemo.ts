@@ -15,6 +15,8 @@ import {
  *   - `collapsible()` + `collapsed()` per-row collapse with localStorage
  *   - `itemLabel(row => …)` collapsed-row header
  *   - Inner-schema `Section.visible(({ values }) => …)` row-scoped visibility
+ *   - Inner-field `live() + afterStateUpdated()` — quantity/unitPrice
+ *     updates write a row-scoped subtotal via `ctx.row.$set` (Plan #14 v1.1)
  *   - Nested Repeater (line items → modifiers)
  */
 
@@ -53,8 +55,31 @@ export class RepeaterDemo extends Page {
                 .addActionLabel('Add line item')
                 .schema([
                   TextField.make('product').label('Product').required(),
-                  NumberField.make('quantity').label('Quantity').default(1).required(),
-                  NumberField.make('unitPrice').label('Unit price').prefix('$').required(),
+                  NumberField.make('quantity')
+                    .label('Quantity')
+                    .default(1)
+                    .required()
+                    .live({ debounce: 300 })
+                    .afterStateUpdated((value, ctx) => {
+                      const qty   = Number(value ?? 0)
+                      const price = Number(ctx.row?.$get('unitPrice') ?? 0)
+                      ctx.row?.$set('subtotal', Number.isFinite(qty * price) ? qty * price : 0)
+                    }),
+                  NumberField.make('unitPrice')
+                    .label('Unit price')
+                    .prefix('$')
+                    .required()
+                    .live({ debounce: 300 })
+                    .afterStateUpdated((value, ctx) => {
+                      const price = Number(value ?? 0)
+                      const qty   = Number(ctx.row?.$get('quantity') ?? 0)
+                      ctx.row?.$set('subtotal', Number.isFinite(qty * price) ? qty * price : 0)
+                    }),
+                  NumberField.make('subtotal')
+                    .label('Subtotal')
+                    .prefix('$')
+                    .helperText('Auto-computed from quantity × unit price (live).')
+                    .readonly(),
                   ToggleField.make('discounted').label('Apply discount'),
                 ]),
             ]),
