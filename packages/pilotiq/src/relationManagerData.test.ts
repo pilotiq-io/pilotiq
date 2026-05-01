@@ -787,3 +787,128 @@ describe('dispatchPageData → relation pages (Plan #11)', () => {
     assert.equal(out, null)
   })
 })
+
+// ── Plan #13 polish — manager TrashedFilter auto-injection ──────────
+
+describe('relation-list TrashedFilter auto-inject (Plan #13 polish)', () => {
+  /** Build a User → Posts world where the related Resource opts into
+   *  soft deletes. */
+  function buildSoftDeleteWorld(opts: {
+    relatedSoftDeletes?: boolean
+  } = {}) {
+    const postRows: QueryRow[] = [{ id: 'p1', parentId: 'u1', title: 'Live' }]
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = {
+      async find(_id) { return makeParentWithChildren('u1', postRows) },
+      async create() { throw new Error('not used') },
+      async update() { throw new Error('not used') },
+      async delete() { /* ok */ },
+      query() { throw new Error('not used') },
+    }
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override softDeletes = opts.relatedSoftDeletes ?? false
+      static override get model() { return PostModel }
+    }
+
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')])
+      }
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override relations() { return [PostsManager] }
+    }
+
+    const panel = Pilotiq.make('TF-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+    return { panel, PostsManager, PostResource }
+  }
+
+  /** Helper — pull filter children from a resolved Table meta. Filters
+   *  serialize as children with a `kind` field (Filter.toMeta) so we
+   *  filter on `kind in c` to distinguish them from columns. */
+  function tableFilterChildren(tableMeta: Record<string, unknown>): Array<Record<string, unknown>> {
+    const children = (tableMeta['children'] as Array<Record<string, unknown>>) ?? []
+    return children.filter(c => c['type'] === 'filter')
+  }
+
+  it('auto-injects TrashedFilter when the related Resource has softDeletes=true', async () => {
+    const { panel } = buildSoftDeleteWorld({ relatedSoftDeletes: true })
+    const out = await relationManagerData(panel, {
+      kind: 'relation-list', slug: 'users', recordId: 'u1', relationship: 'posts',
+    })
+    const data = out as Record<string, unknown>
+    const schema = data['schemaData'] as Array<Record<string, unknown>>
+    const tableMeta = schema.find(s => s['type'] === 'table') as Record<string, unknown>
+    const filters = tableFilterChildren(tableMeta)
+    const trashed = filters.find(f => f['name'] === 'trashed')
+    assert.ok(trashed, 'expected an auto-injected TrashedFilter on the manager table')
+    assert.equal(trashed!['kind'], 'select')
+  })
+
+  it('does NOT inject TrashedFilter when the related Resource has softDeletes=false (default)', async () => {
+    const { panel } = buildSoftDeleteWorld({ relatedSoftDeletes: false })
+    const out = await relationManagerData(panel, {
+      kind: 'relation-list', slug: 'users', recordId: 'u1', relationship: 'posts',
+    })
+    const data = out as Record<string, unknown>
+    const schema = data['schemaData'] as Array<Record<string, unknown>>
+    const tableMeta = schema.find(s => s['type'] === 'table') as Record<string, unknown>
+    const filters = tableFilterChildren(tableMeta)
+    const trashed = filters.find(f => f['name'] === 'trashed')
+    assert.equal(trashed, undefined)
+  })
+
+  it('does not double-inject when the manager already attached a TrashedFilter', async () => {
+    const { TrashedFilter } = await import('./filters/TrashedFilter.js')
+
+    const postRows: QueryRow[] = [{ id: 'p1', parentId: 'u1' }]
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = {
+      async find(_id) { return makeParentWithChildren('u1', postRows) },
+      async create() { throw new Error('not used') },
+      async update() { throw new Error('not used') },
+      async delete() { /* ok */ },
+      query() { throw new Error('not used') },
+    }
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override softDeletes = true
+      static override get model() { return PostModel }
+    }
+
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+      static override table(t: Table): Table {
+        return t
+          .columns([Column.make('title')])
+          .filters([TrashedFilter.make().label('Custom trashed label')])
+      }
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override relations() { return [PostsManager] }
+    }
+    const panel = Pilotiq.make('TF2-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+
+    const out = await relationManagerData(panel, {
+      kind: 'relation-list', slug: 'users', recordId: 'u1', relationship: 'posts',
+    })
+    const data = out as Record<string, unknown>
+    const schema = data['schemaData'] as Array<Record<string, unknown>>
+    const tableMeta = schema.find(s => s['type'] === 'table') as Record<string, unknown>
+    const children = (tableMeta['children'] as Array<Record<string, unknown>>) ?? []
+    const trashedFilters = children.filter(c => c['type'] === 'filter' && c['name'] === 'trashed')
+    assert.equal(trashedFilters.length, 1, 'should not double-inject')
+    assert.equal(trashedFilters[0]?.['label'], 'Custom trashed label',
+      'user-supplied filter should win over the auto-injected default')
+  })
+})

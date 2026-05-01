@@ -179,6 +179,20 @@ export abstract class RelationManager {
   /** Allowed to delete a related record. */
   static async canDelete(_user: unknown, _record: unknown, _parentRecord: unknown): Promise<boolean> { return true }
 
+  /** Plan #13 — allowed to restore a soft-deleted related record. Defaults
+   *  to `true`; override per-manager when restoration policy needs to
+   *  differ from the related Resource's. Only consulted when the related
+   *  Resource has `softDeletes = true`. */
+  static async canRestore(_user: unknown, _record: unknown, _parentRecord: unknown): Promise<boolean> { return true }
+
+  /** Plan #13 — allowed to permanently force-delete a related record.
+   *  Inherits from `canDelete` by default (delegating via `this.canDelete`)
+   *  for fail-closed inheritance: a manager that locks down `canDelete`
+   *  also locks down force-delete unless explicitly relaxed. */
+  static async canForceDelete(user: unknown, record: unknown, parentRecord: unknown): Promise<boolean> {
+    return this.canDelete(user, record, parentRecord)
+  }
+
   // ─── Accessors ────────────────────────────────────────────────
 
   /**
@@ -216,9 +230,13 @@ export abstract class RelationManager {
 }
 
 /** Reserved URL tokens that a manager's `relationship` cannot collide
- * with. Validated at panel boot in `PilotiqRegistry.register`. */
+ * with. Validated at panel boot in `PilotiqRegistry.register`. The
+ * soft-delete tokens (`restore`, `force-delete`) entered the set with
+ * Plan #13's relation-manager polish — they're sibling paths to a
+ * resource's `:id/restore` route. */
 export const RESERVED_RELATIONSHIP_TOKENS: ReadonlySet<string> = new Set([
-  'edit', 'delete', '_form', '_action', '_search', '_uploads',
+  'edit', 'delete', 'restore', 'force-delete',
+  '_form', '_action', '_search', '_uploads',
 ])
 
 // ─── Authorization helpers (Plan #11) ────────────────────────────
@@ -230,6 +248,7 @@ export const RESERVED_RELATIONSHIP_TOKENS: ReadonlySet<string> = new Set([
 /** Names of the predicate methods a `RelationManager` carries. */
 export type ManagerCanMethod =
   | 'canViewAny' | 'canView' | 'canCreate' | 'canEdit' | 'canDelete'
+  | 'canRestore' | 'canForceDelete'
 
 /** True when the subclass replaces the inherited base implementation.
  * Class statics are inherited via the constructor prototype chain, so
@@ -252,6 +271,8 @@ interface RelatedResourceLike {
   canCreate?(user: unknown): boolean | Promise<boolean>
   canEdit?(user: unknown, record: unknown): boolean | Promise<boolean>
   canDelete?(user: unknown, record: unknown): boolean | Promise<boolean>
+  canRestore?(user: unknown, record: unknown): boolean | Promise<boolean>
+  canForceDelete?(user: unknown, record: unknown): boolean | Promise<boolean>
 }
 
 /**
@@ -278,6 +299,7 @@ export async function safeManagerPolicy(
 ): Promise<boolean> {
   const isRecordScoped =
     method === 'canView' || method === 'canEdit' || method === 'canDelete'
+    || method === 'canRestore' || method === 'canForceDelete'
 
   try {
     if (isManagerCanOverridden(M, method)) {
@@ -285,9 +307,26 @@ export async function safeManagerPolicy(
       const result = isRecordScoped ? fn(user, child, parent) : fn(user, parent)
       return Boolean(await (result as boolean | Promise<boolean>))
     }
+    // Plan #13 polish — `canForceDelete` defaults to delegating to
+    // `canDelete` (force is "stricter than delete"). When the manager
+    // has overridden `canDelete` but not `canForceDelete`, mirror the
+    // delegation here so the stricter rule propagates. Without this
+    // step we'd fall straight through to Related which loses the
+    // manager-level canDelete restriction.
+    if (method === 'canForceDelete' && isManagerCanOverridden(M, 'canDelete')) {
+      return safeManagerPolicy(M, 'canDelete', Related, user, parent, child)
+    }
     if (Related) {
       const fn = (Related as unknown as Record<ManagerCanMethod, ((...args: unknown[]) => unknown) | undefined>)[method]
-      if (!fn) return true
+      if (!fn) {
+        // Same delegation on the Related side: missing canForceDelete
+        // falls back to canDelete.
+        if (method === 'canForceDelete' && Related.canDelete) {
+          const result = Related.canDelete(user, child)
+          return Boolean(await (result as boolean | Promise<boolean>))
+        }
+        return true
+      }
       const result = isRecordScoped ? fn(user, child) : fn(user)
       return Boolean(await (result as boolean | Promise<boolean>))
     }

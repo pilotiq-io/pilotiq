@@ -24,6 +24,8 @@ import { validateSchema } from './validation/index.js'
 import { searchAllResources, type GlobalSearchResult } from './search.js'
 import { loadTableRecords, type QueryParams } from './elements/dispatchTable.js'
 import { findActions } from './elements/dispatchAction.js'
+import { Filter } from './filters/Filter.js'
+import { TrashedFilter } from './filters/TrashedFilter.js'
 import { ListTabs } from './elements/ListTabs.js'
 import { ListTab } from './Tab.js'
 import { resolveTheme } from './theme/resolve.js'
@@ -772,6 +774,30 @@ function autoWireManagerTable(
 }
 
 /**
+ * Plan #13 polish — auto-inject `TrashedFilter` on a relation manager's
+ * table when the **related** Resource opts into soft deletes. Mirrors the
+ * resource-list pattern in `defaultPages.applyTableDefaults`. The check
+ * is on the related Resource (not the manager), because soft-delete is a
+ * model-level capability — if the child model supports trashing, the
+ * manager's table should expose the toggle.
+ *
+ * No-op when:
+ *   - the related Resource hasn't set `softDeletes = true`
+ *   - the user already attached a `TrashedFilter` in `M.table()`
+ */
+function injectManagerTrashedFilter(
+  table:   Table,
+  Related: ResourceClass | undefined,
+): void {
+  if (!Related?.softDeletes) return
+  const children = table.getChildren() ?? []
+  const hasTrashed = children.some(c => c instanceof TrashedFilter)
+  if (hasTrashed) return
+  const existing = children.filter(c => c instanceof Filter) as Filter[]
+  table.filters([...existing, TrashedFilter.make()])
+}
+
+/**
  * Auto-wire the manager's form save + loadRecord handlers against the
  * **related** Resource's `model` when the user didn't set them. The
  * route handler is responsible for stamping the parent context
@@ -899,6 +925,7 @@ async function buildRelationListData(
   }
   const table = M.table(Table.make(), managerCtx)
   autoWireManagerTable(table, R.model as ModelLike, parentRecord, scope.relationship)
+  injectManagerTrashedFilter(table, Related)
 
   const ctx: SchemaContext = uploadCtx(userCtx({
     mode:     'table',

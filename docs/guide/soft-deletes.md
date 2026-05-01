@@ -193,6 +193,48 @@ fine-grained errors via your own logging if you need to.
 | Click "Delete" but the row stays in the list | Working as intended on a soft-delete resource — the row is now in `?trashed=onlyTrashed` | The success toast says "moved to trash"; surface the TrashedFilter prominently. |
 | Cascade behavior surprises | `Model.deleting / deleted` events handle cascade per-relation, not pilotiq | Document on a per-resource basis; pilotiq doesn't intervene. |
 
+## Relation managers
+
+When the related Resource has `softDeletes = true`, manager-side soft
+deletes wire up automatically:
+
+- **TrashedFilter** is injected into the manager's table — same UX as the
+  resource list page. Override by attaching one yourself in
+  `M.table()` (e.g. `t.filters([TrashedFilter.make().label('Archive')])`)
+  to keep the framework from double-injecting.
+- **Per-row actions** — drop in `Action.relationRestore(M, ctx)` and
+  `Action.relationForceDelete(M, ctx)` from inside `M.table(table, ctx)`
+  alongside `Action.relationDelete(M, ctx)`. Each auto-hides on the
+  rows where it doesn't apply: Restore + ForceDelete only show on
+  trashed rows; Delete hides on already-trashed rows.
+- **Routes** — `POST {base}/{slug}/:id/{rel}/:childId/restore` and
+  `/force-delete` mount automatically. Two-layer auth: parent
+  `canAccess + canEdit`, then manager `canRestore / canForceDelete`
+  with fall-through to the related Resource. IDOR check re-runs the
+  parent's relation query through `withTrashed()` so trashed children
+  resolve.
+- **Authorization** — `RelationManager.canRestore(user, child, parent)`
+  defaults to `true`. `canForceDelete` inherits from `canDelete` by
+  default (delegates via `this.canDelete`) so locking down delete also
+  locks down force-delete. Override either independently when needed.
+
+```ts
+class CommentsManager extends RelationManager {
+  static override relationship = 'comments'
+
+  static override table(t: Table, ctx: RelationManagerContext): Table {
+    return t
+      .columns([Column.make('body')])
+      .recordActions([
+        Action.relationEdit(CommentsManager, ctx),
+        Action.relationDelete(CommentsManager, ctx),
+        Action.relationRestore(CommentsManager, ctx),
+        Action.relationForceDelete(CommentsManager, ctx),
+      ])
+  }
+}
+```
+
 ## Out of scope
 
 - **Per-user trash isolation** — multi-tenant trash isolation lives in
@@ -201,8 +243,3 @@ fine-grained errors via your own logging if you need to.
   belong in pilotiq.
 - **Trash views as separate routes** — no `/posts/trash` URL; the
   TrashedFilter inside the list page is the canonical UX.
-- **Soft-deleted relations in `RelationManager`** — manager queries
-  inherit the related Resource's `getEloquentQuery`, so trashed
-  children drop out of manager lists by default. Showing trashed
-  manager rows behind a filter is a follow-up; pilotiq does not
-  ship a manager-level TrashedFilter today.

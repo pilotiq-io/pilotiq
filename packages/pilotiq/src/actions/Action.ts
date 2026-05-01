@@ -566,7 +566,61 @@ export class Action extends Element {
       .method('post')
       .action(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}/delete`)
       .confirm(`Delete this ${singular}?`)
-      .visible(({ user, record }) => safeManagerPolicy(M, 'canDelete', ctx.related, user, ctx.parentRecord, record))
+      .visible(async ({ user, record }) => {
+        if (ctx.related?.softDeletes && isTrashed(record, ctx.related as ResourceLike)) return false
+        return safeManagerPolicy(M, 'canDelete', ctx.related, user, ctx.parentRecord, record)
+      })
+  }
+
+  /**
+   * Plan #13 polish — Restore factory for relation managers. POSTs to
+   * `${base}/${parentSlug}/${parentId}/${relationship}/${recordId ?? ':id'}/restore`,
+   * success-styled, no confirm prompt. Auto-hides on live (non-trashed)
+   * rows AND when `M.canRestore` (or related Resource fall-through)
+   * denies. Drop into `recordActions([...])` from `RelationManager.table(table, ctx)`.
+   */
+  static relationRestore(
+    M:        typeof RelationManager,
+    ctx:      RelationManagerContext,
+    recordId?: string,
+  ): Action {
+    const id = recordId ?? ':id'
+    return Action.make('restore')
+      .label('Restore')
+      .color('success')
+      .method('post')
+      .action(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}/restore`)
+      .visible(async ({ user, record }) => {
+        if (!ctx.related?.softDeletes) return false
+        if (!isTrashed(record, ctx.related as ResourceLike)) return false
+        return safeManagerPolicy(M, 'canRestore', ctx.related, user, ctx.parentRecord, record)
+      })
+  }
+
+  /**
+   * Plan #13 polish — Force-delete factory for relation managers. POSTs
+   * to `${base}/${parentSlug}/${parentId}/${relationship}/${recordId ?? ':id'}/force-delete`,
+   * destructive style with a permanence-aware confirmation. Auto-hides on
+   * live (non-trashed) rows and when policy denies.
+   */
+  static relationForceDelete(
+    M:        typeof RelationManager,
+    ctx:      RelationManagerContext,
+    recordId?: string,
+  ): Action {
+    const id = recordId ?? ':id'
+    const singular = M.getLabelSingular().toLowerCase()
+    return Action.make('forceDelete')
+      .label('Delete forever')
+      .destructive()
+      .method('post')
+      .action(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}/force-delete`)
+      .confirm(`Permanently delete this ${singular}? This cannot be undone.`)
+      .visible(async ({ user, record }) => {
+        if (!ctx.related?.softDeletes) return false
+        if (!isTrashed(record, ctx.related as ResourceLike)) return false
+        return safeManagerPolicy(M, 'canForceDelete', ctx.related, user, ctx.parentRecord, record)
+      })
   }
 
   label(l: string): this { this._label = l; return this }

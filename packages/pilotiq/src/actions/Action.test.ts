@@ -331,6 +331,134 @@ describe('Action.relation* factories (Plan #11 polish)', () => {
       const result = await Action.relationDelete(Throwing, ctx).evaluate({ record: { id: '7' } })
       assert.equal(result.visible, false)
     })
+
+    it('hides on already-trashed rows when related Resource has softDeletes=true', async () => {
+      const Related = { softDeletes: true } as unknown as RelationManagerContext['related']
+      const a = Action.relationDelete(Posts, { ...ctx, related: Related })
+      assert.equal((await a.evaluate({ record: { id: '7', deletedAt: '2026-01-01' } })).visible, false)
+    })
+
+    it('still shows on live rows when related Resource has softDeletes=true', async () => {
+      const Related = { softDeletes: true } as unknown as RelationManagerContext['related']
+      const a = Action.relationDelete(Posts, { ...ctx, related: Related })
+      assert.equal((await a.evaluate({ record: { id: '7' } })).visible, true)
+    })
+
+    it('honors a custom deletedAtColumn from the related Resource', async () => {
+      const Related = { softDeletes: true, deletedAtColumn: 'archivedAt' } as unknown as RelationManagerContext['related']
+      const a = Action.relationDelete(Posts, { ...ctx, related: Related })
+      assert.equal((await a.evaluate({ record: { archivedAt: '2026-01-01' } })).visible, false)
+      assert.equal((await a.evaluate({ record: { archivedAt: null } })).visible, true)
+    })
+  })
+
+  // ── Plan #13 polish — relationRestore / relationForceDelete ────
+
+  describe('relationRestore', () => {
+    const Related = { softDeletes: true } as unknown as RelationManagerContext['related']
+    const softCtx: RelationManagerContext = { ...ctx, related: Related }
+
+    it('builds the restore URL under the parent record with success color', () => {
+      const meta = Action.relationRestore(Posts, softCtx).toMeta()
+      assert.equal(meta.method, 'post')
+      assert.equal(meta.action, '/admin/users/42/posts/:id/restore')
+      assert.equal(meta.label, 'Restore')
+      assert.equal(meta.color, 'success')
+    })
+
+    it('honors an explicit recordId at config time', () => {
+      const meta = Action.relationRestore(Posts, softCtx, '7').toMeta()
+      assert.equal(meta.action, '/admin/users/42/posts/7/restore')
+    })
+
+    it('hides on live (non-trashed) rows', async () => {
+      const a = Action.relationRestore(Posts, softCtx)
+      assert.equal((await a.evaluate({ record: { id: '7' } })).visible, false)
+    })
+
+    it('shows on trashed rows by default (manager default canRestore = true)', async () => {
+      const a = Action.relationRestore(Posts, softCtx)
+      assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, true)
+    })
+
+    it('hides entirely when the related Resource does not opt into softDeletes', async () => {
+      const NonSoft = { softDeletes: false } as unknown as RelationManagerContext['related']
+      const a = Action.relationRestore(Posts, { ...ctx, related: NonSoft })
+      assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, false)
+    })
+
+    it('respects the manager canRestore override', async () => {
+      class Locked extends RelationManager {
+        static override relationship = 'posts'
+        static override async canRestore(): Promise<boolean> { return false }
+      }
+      const a = Action.relationRestore(Locked, softCtx)
+      assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, false)
+    })
+
+    it('falls through to related Resource canRestore when manager unset', async () => {
+      const RelatedDeny = {
+        softDeletes: true,
+        canRestore: async () => false,
+      } as unknown as RelationManagerContext['related']
+      const a = Action.relationRestore(Posts, { ...ctx, related: RelatedDeny })
+      assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, false)
+    })
+  })
+
+  describe('relationForceDelete', () => {
+    const Related = { softDeletes: true } as unknown as RelationManagerContext['related']
+    const softCtx: RelationManagerContext = { ...ctx, related: Related }
+
+    it('builds a destructive POST to the force-delete URL with permanence confirm', () => {
+      const meta = Action.relationForceDelete(Posts, softCtx).toMeta()
+      assert.equal(meta.method, 'post')
+      assert.equal(meta.action, '/admin/users/42/posts/:id/force-delete')
+      assert.equal(meta.label, 'Delete forever')
+      assert.equal(meta.destructive, true)
+      assert.match(meta.confirm?.message ?? '', /cannot be undone/i)
+    })
+
+    it('honors an explicit recordId at config time', () => {
+      const meta = Action.relationForceDelete(Posts, softCtx, '7').toMeta()
+      assert.equal(meta.action, '/admin/users/42/posts/7/force-delete')
+    })
+
+    it('hides on live (non-trashed) rows', async () => {
+      const a = Action.relationForceDelete(Posts, softCtx)
+      assert.equal((await a.evaluate({ record: { id: '7' } })).visible, false)
+    })
+
+    it('shows on trashed rows by default (canForceDelete inherits canDelete = true)', async () => {
+      const a = Action.relationForceDelete(Posts, softCtx)
+      assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, true)
+    })
+
+    it('hides when the related Resource does not opt into softDeletes', async () => {
+      const NonSoft = { softDeletes: false } as unknown as RelationManagerContext['related']
+      const a = Action.relationForceDelete(Posts, { ...ctx, related: NonSoft })
+      assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, false)
+    })
+
+    it('inherits canDelete denial when canForceDelete is not overridden', async () => {
+      class Locked extends RelationManager {
+        static override relationship = 'posts'
+        static override async canDelete(): Promise<boolean> { return false }
+        // canForceDelete inherits its default which delegates to canDelete
+      }
+      const a = Action.relationForceDelete(Locked, softCtx)
+      assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, false)
+    })
+
+    it('respects an explicit canForceDelete override stricter than canDelete', async () => {
+      class Stricter extends RelationManager {
+        static override relationship = 'posts'
+        // canDelete defaults to true (inherited)
+        static override async canForceDelete(): Promise<boolean> { return false }
+      }
+      const a = Action.relationForceDelete(Stricter, softCtx)
+      assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, false)
+    })
   })
 })
 

@@ -992,6 +992,110 @@ export function registerPilotiqRoutes(
         }
         return res.redirect(listUrl, 303)
       })
+
+      // ── Plan #13 polish — relation restore / force-delete ─────
+      // Mirror the resource-side soft-delete routes, scoped under the
+      // parent record. Both routes opt in only when the related Resource
+      // has `softDeletes = true` AND its model carries `restore` /
+      // `forceDelete`. Two-layer auth: parent canAccess + canEdit, then
+      // manager `canRestore / canForceDelete` (with related-Resource
+      // fall-through). IDOR check re-runs the parent's relation query
+      // through `withTrashed()` so trashed children still resolve.
+      const RelatedForSoft = findRelatedResource(M, R, cfg)
+      if (RelatedForSoft?.softDeletes) {
+        const RM = RelatedForSoft.model
+        if (!RM) {
+          throw new Error(
+            `[Pilotiq] RelationManager ${M.name} on ${R.name}: related Resource ${RelatedForSoft.name} has softDeletes = true but no model. ` +
+            `Wire one up or unset softDeletes.`,
+          )
+        }
+        if (typeof RM.restore !== 'function' || typeof RM.forceDelete !== 'function') {
+          throw new Error(
+            `[Pilotiq] RelationManager ${M.name} on ${R.name}: related Resource ${RelatedForSoft.name} has softDeletes = true but model.restore / model.forceDelete are missing. ` +
+            `Set Model.softDeletes = true on the rudder side, or upgrade @rudderjs/orm.`,
+          )
+        }
+
+        // IDOR-safe load through the parent's relation query, broadened
+        // with `withTrashed()` so currently-trashed children resolve.
+        // Returns undefined when the child doesn't belong to this parent
+        // (under the broadened scope) or the lookup misses.
+        const loadTrashableChild = async (parent: unknown, childId: string): Promise<unknown> => {
+          if (!R.model) return undefined
+          const pk = (RM.primaryKey ?? 'id') as string
+          try {
+            const q: import('./orm/modelDefaults.js').ModelQuery = R.model.relatedQuery
+              ? R.model.relatedQuery(parent, rel)
+              : (parent as { related: (n: string) => import('./orm/modelDefaults.js').ModelQuery }).related(rel)
+            const broadened = typeof q.withTrashed === 'function' ? q.withTrashed() : q
+            const result = await broadened.where(pk, '=', childId).paginate(1, 1)
+            return Array.isArray(result.data) ? result.data[0] : undefined
+          } catch {
+            return undefined
+          }
+        }
+
+        // Restore — POST ${base}/${slug}/:id/${rel}/:childId/restore
+        router.post(`${parentBase}/:childId/restore`, async (req, res) => {
+          const json = wantsJson(req)
+          const pre = await requireParent(req, res, json)
+          if (!pre) return
+          const childId = req.params['childId']!
+
+          const child = await loadTrashableChild(pre.parent, childId)
+          if (!child) { res.status(404); return res.send('Not found') }
+
+          if (!await safeManagerPolicy(M, 'canRestore', RelatedForSoft, pre.user, pre.parent, child)) return forbidden(res, json)
+
+          const listUrl = parentBase.replace(':id', pre.recordId)
+          try {
+            await RM.restore!(childId)
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Restore failed'
+            res.status(500)
+            return json ? res.json({ ok: false, error: message }) : res.send(message)
+          }
+
+          if (json) {
+            const notifications = [
+              { id: `n-rrestore-${childId}-${Date.now()}`, type: 'success', title: `${M.getLabelSingular()} restored` },
+            ]
+            return res.json({ ok: true, redirect: listUrl, notifications })
+          }
+          return res.redirect(listUrl, 303)
+        })
+
+        // Force-delete — POST ${base}/${slug}/:id/${rel}/:childId/force-delete
+        router.post(`${parentBase}/:childId/force-delete`, async (req, res) => {
+          const json = wantsJson(req)
+          const pre = await requireParent(req, res, json)
+          if (!pre) return
+          const childId = req.params['childId']!
+
+          const child = await loadTrashableChild(pre.parent, childId)
+          if (!child) { res.status(404); return res.send('Not found') }
+
+          if (!await safeManagerPolicy(M, 'canForceDelete', RelatedForSoft, pre.user, pre.parent, child)) return forbidden(res, json)
+
+          const listUrl = parentBase.replace(':id', pre.recordId)
+          try {
+            await RM.forceDelete!(childId)
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Force-delete failed'
+            res.status(500)
+            return json ? res.json({ ok: false, error: message }) : res.send(message)
+          }
+
+          if (json) {
+            const notifications = [
+              { id: `n-rforce-${childId}-${Date.now()}`, type: 'success', title: `${M.getLabelSingular()} permanently deleted` },
+            ]
+            return res.json({ ok: true, redirect: listUrl, notifications })
+          }
+          return res.redirect(listUrl, 303)
+        })
+      }
     }
   }
 
