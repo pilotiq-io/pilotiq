@@ -2,10 +2,16 @@ import { Element, type ElementMeta } from '../schema/Element.js'
 import type { ModelQuery } from '../orm/modelDefaults.js'
 
 /**
- * Discriminator for the renderer to pick a control. Extends naturally —
- * future kinds could include `'multiSelect'`, `'dateRange'`, `'numberRange'`.
+ * Discriminator for the renderer to pick a control.
+ *
+ * - `'select'`     — single-value dropdown (`SelectFilter`, `TrashedFilter`).
+ * - `'boolean'`    — three-state yes/no/any.
+ * - `'ternary'`    — three-state with a meaningful "blank" (NULL) bucket.
+ * - `'dateRange'`  — pair of date / datetime inputs encoded as `from..to`.
+ *
+ * Extends naturally — future kinds may include `'multiSelect'`, `'numberRange'`.
  */
-export type FilterKind = 'select' | 'boolean'
+export type FilterKind = 'select' | 'boolean' | 'ternary' | 'dateRange'
 
 export interface FilterMeta extends ElementMeta {
   type:        'filter'
@@ -16,8 +22,14 @@ export interface FilterMeta extends ElementMeta {
   value?:      string
   /** Placeholder shown when no value is selected (e.g. "All", "Any"). */
   placeholder?: string
-  /** Options for `kind === 'select'`. Boolean uses fixed yes/no/any. */
+  /** Options for `kind === 'select'` and `kind === 'ternary'`. Boolean uses fixed yes/no. */
   options?:    Array<{ value: string; label: string }>
+  /** `kind === 'dateRange'` — true switches the inputs to `datetime-local`. */
+  includesTime?: boolean
+  /** `kind === 'dateRange'` — clamp the inputs' `min` attribute. */
+  minDate?:    string
+  /** `kind === 'dateRange'` — clamp the inputs' `max` attribute. */
+  maxDate?:    string
 }
 
 /**

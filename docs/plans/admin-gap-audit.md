@@ -57,7 +57,7 @@ Penciled for later (Tier 3): widgets/dashboards, Repeater/Builder fields, Wizard
 | `deferLoading()` (skeleton on first paint) | 3 | Edge case. |
 | `queryStringIdentifier()` (multi-table on one page) | 3 | Currently we'd collide on `?sort=...`. |
 | Editable columns (SelectColumn, ToggleColumn, TextInputColumn) | 3 | Inline-edit. Big UX feature; defer until form-modals settle. |
-| `TernaryFilter` (true/false/blank) | 1 | Easy add to filters/. |
+| ✅ `TernaryFilter` (true/false/blank) DONE | 1 | Shipped 2026-05-03 alongside `DateRangeFilter` — see `filter-expansion.md`. |
 | `Filter` with custom schema (form fields per filter) | 2 | Needs schema in filter UI. |
 | `persistFiltersInSession()` | 3 | Stateful behavior; defer. |
 | Tabs on list page (filter-by-tab) | **1** | **Plan #7.** Layers on existing Tabs primitive. |
@@ -85,19 +85,19 @@ Skip `ColorColumn`, `SelectColumn`/`ToggleColumn`/`TextInputColumn` (inline-edit
 
 ### 3. Filters (`filters/`)
 
-**We have:** `SelectFilter`, `BooleanFilter`. Active values from URL, `Filter.query(fn)` override, model-aware where-clause application.
+**We have:** `SelectFilter`, `BooleanFilter`, `TernaryFilter`, `DateRangeFilter`, `TrashedFilter`. Active values from URL, `Filter.query(fn)` override, model-aware where-clause application.
 
 **Gap:**
 
 | Feature | Tier | Notes |
 |---|---|---|
-| `TernaryFilter` (true/false/blank — distinct from Boolean) | 1 | Roll into Plan #2 or its own micro-plan. |
+| ✅ `TernaryFilter` (true/false/blank — distinct from Boolean) DONE | 1 | Shipped 2026-05-03 — see `filter-expansion.md`. |
 | Filter with arbitrary form schema (multi-field filters) | 2 | Pairs naturally with `actions-tier-1.md` form-modal pattern. |
 | Filter `indicator()` (pill in active-filters bar) | 2 | UX nicety. |
 | `persistFiltersInSession` | 3 | |
 | `QueryBuilder` filter (advanced AND/OR/grouped) | 3 | Big. |
-| Date-range filter | 2 | We mentioned this in Phase 3 memory. |
-| Multi-select filter | 2 | Same. |
+| ✅ Date-range filter DONE | 2 | Shipped 2026-05-03 — see `filter-expansion.md`. |
+| Multi-select filter | 2 | Mentioned in Phase 3 memory; deferred until a consumer needs it. |
 
 ### 4. Resources (`Resource.ts`)
 

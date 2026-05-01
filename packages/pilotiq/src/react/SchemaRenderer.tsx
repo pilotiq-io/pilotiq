@@ -62,6 +62,10 @@ import {
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { useNavigate, type NavigateFn } from './navigate.js'
+import {
+  parseDateRangeValue,
+  encodeDateRangeValue,
+} from '../filters/DateRangeFilter.js'
 import { useIconFor } from './icon-context.js'
 import type { SerializedIcon } from '../icons/types.js'
 import { useToast } from './Toaster.js'
@@ -2335,6 +2339,97 @@ function FilterSelect({
   )
 }
 
+/**
+ * Pair-of-date-inputs filter for `kind === 'dateRange'`. Each side
+ * navigates the URL on change, encoding the pair as `from..to` keyed
+ * off the filter name. Empty pair drops the URL key.
+ */
+function FilterDateRange({
+  name, label, defaultValue, placeholder, includesTime, minDate, maxDate,
+}: {
+  name:         string
+  label:        string
+  defaultValue: string
+  placeholder:  string
+  includesTime: boolean
+  minDate?:     string
+  maxDate?:     string
+}) {
+  const initial = parseDateRangeValue(defaultValue)
+  const [from, setFrom] = useState(initial.from ?? '')
+  const [to,   setTo]   = useState(initial.to   ?? '')
+  const navigate         = useNavigate()
+
+  const inputType = includesTime ? 'datetime-local' : 'date'
+
+  const navigateTo = (nextFrom: string, nextTo: string): void => {
+    if (typeof window === 'undefined') return
+    const url     = new URL(window.location.href)
+    const encoded = encodeDateRangeValue({ from: nextFrom, to: nextTo })
+    if (encoded === '') url.searchParams.delete(name)
+    else                url.searchParams.set(name, encoded)
+    url.searchParams.delete('page')
+    void navigate(url.pathname + url.search)
+  }
+
+  const onFromChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const v = e.target.value
+    setFrom(v)
+    navigateTo(v, to)
+  }
+  const onToChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const v = e.target.value
+    setTo(v)
+    navigateTo(from, v)
+  }
+  const onClear = (): void => {
+    setFrom('')
+    setTo('')
+    navigateTo('', '')
+  }
+
+  const hasValue = from !== '' || to !== ''
+
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-1">
+        <Input
+          type={inputType}
+          value={from}
+          onChange={onFromChange}
+          placeholder={placeholder}
+          aria-label={`${label} from`}
+          {...(minDate !== undefined ? { min: minDate } : {})}
+          {...(maxDate !== undefined ? { max: maxDate } : {})}
+          className="h-8 text-xs"
+        />
+        <span className="text-muted-foreground">→</span>
+        <Input
+          type={inputType}
+          value={to}
+          onChange={onToChange}
+          placeholder={placeholder}
+          aria-label={`${label} to`}
+          {...(minDate !== undefined ? { min: minDate } : {})}
+          {...(maxDate !== undefined ? { max: maxDate } : {})}
+          className="h-8 text-xs"
+        />
+        {hasValue && (
+          <button
+            type="button"
+            onClick={onClear}
+            aria-label={`Clear ${label}`}
+            className="text-muted-foreground hover:text-foreground px-1"
+          >
+            ×
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
   const name        = String(el['name'] ?? '')
   const label       = String(el['label'] ?? name)
@@ -2355,6 +2450,26 @@ function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
     )
   }
 
+  if (kind === 'dateRange') {
+    const includesTime = Boolean(el['includesTime'])
+    const minDate      = el['minDate'] ? String(el['minDate']) : undefined
+    const maxDate      = el['maxDate'] ? String(el['maxDate']) : undefined
+    return (
+      <FilterDateRange
+        key={index}
+        name={name}
+        label={label}
+        defaultValue={value}
+        placeholder={placeholder}
+        includesTime={includesTime}
+        {...(minDate !== undefined ? { minDate } : {})}
+        {...(maxDate !== undefined ? { maxDate } : {})}
+      />
+    )
+  }
+
+  // 'ternary' and 'select' both render as a single-select dropdown,
+  // differing only in their server-supplied option set.
   const options = (el['options'] as Array<{ value: string; label: string }> | undefined) ?? []
   return (
     <FilterSelect

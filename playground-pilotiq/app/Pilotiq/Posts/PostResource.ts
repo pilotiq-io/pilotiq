@@ -1,6 +1,7 @@
 import {
   Resource, Column, BadgeColumn, Action,
   TextField, TextareaField, SelectField,
+  TernaryFilter, DateRangeFilter,
   type Form, type Table,
 } from '@pilotiq/pilotiq'
 import { Post } from '../../Models/Post.js'
@@ -52,6 +53,19 @@ export class PostResource extends Resource {
         }),
         Column.make('authorId').label('Author').color('muted'),
         Column.make('createdAt').sortable().since(),
+      ])
+      .filters([
+        TernaryFilter.make('publishState')
+          .label('Publish state')
+          .trueLabel('Published')
+          .falseLabel('Unpublished')
+          .nullable(false)
+          .query((q, value) => {
+            if (value === 'yes') return q.where('publishedAt', '!=', null)
+            if (value === 'no')  return q.where('publishedAt', '=',  null)
+            return q
+          }),
+        DateRangeFilter.make('createdAt').label('Created'),
       ])
       .headerActions([
         Action.create(PostResource, ADMIN),

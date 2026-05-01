@@ -158,6 +158,13 @@ export {
 export { SelectFilter, type SelectFilterOption } from './filters/SelectFilter.js'
 export { BooleanFilter, coerceBooleanFilterValue } from './filters/BooleanFilter.js'
 export { TrashedFilter } from './filters/TrashedFilter.js'
+export { TernaryFilter } from './filters/TernaryFilter.js'
+export {
+  DateRangeFilter,
+  parseDateRangeValue,
+  encodeDateRangeValue,
+  type DateRangeValue,
+} from './filters/DateRangeFilter.js'
 export {
   dispatchFormSubmit,
   findForms,

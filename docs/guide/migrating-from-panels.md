@@ -450,11 +450,13 @@ Register via `.globals([SiteSettings])` on the panel builder.
 
 ## Filters
 
-Panels had `SelectFilter` only. Pilotiq adds `BooleanFilter` and the abstract `Filter` base for custom filters.
+Panels had `SelectFilter` only. Pilotiq adds `BooleanFilter`, `TernaryFilter`, `DateRangeFilter`, and the abstract `Filter` base for custom filters.
 
 ```ts
 // pilotiq
-import { SelectFilter, BooleanFilter } from '@pilotiq/pilotiq'
+import {
+  SelectFilter, BooleanFilter, TernaryFilter, DateRangeFilter,
+} from '@pilotiq/pilotiq'
 
 table.filters([
   SelectFilter.make('status').options([
@@ -462,10 +464,25 @@ table.filters([
     { label: 'Published', value: 'published' },
   ]),
   BooleanFilter.make('featured').label('Featured only'),
+
+  // Three-state nullable boolean — yes / no / blank (NULL).
+  TernaryFilter.make('verified')
+    .label('Verification')
+    .trueLabel('Verified')
+    .falseLabel('Unverified')
+    .blankLabel('Pending'),
+  // .nullable(false) drops the third option for non-null columns.
+
+  // Pair of date inputs encoded as `?createdAt=from..to` (either side may be empty).
+  DateRangeFilter.make('createdAt').label('Created'),
+  // .includesTime(true) for datetime-local inputs; .minDate / .maxDate
+  // accept ISO strings or Date objects.
 ])
 ```
 
 Active values come from URL query keys matching the filter name. Custom logic via `Filter.query((query, value) => …)`.
+
+`TernaryFilter` defaults to `where(name, true)` / `where(name, false)` / `whereNull(name)` (falls back to `where(name, null)` when the query builder doesn't expose `whereNull`). `DateRangeFilter` emits `where(name,'>=',from).where(name,'<=',to)` and skips the empty side; the helper `parseDateRangeValue(value) → { from?, to? }` is exported for users writing their own `Filter.query(fn)`.
 
 ---
 

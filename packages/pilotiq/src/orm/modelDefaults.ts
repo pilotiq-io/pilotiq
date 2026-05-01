@@ -34,6 +34,15 @@ export interface ModelQuery {
    */
   withTrashed?(): ModelQuery
   onlyTrashed?(): ModelQuery
+
+  /**
+   * Optional `IS NULL` clause used by `TernaryFilter`'s `'blank'` value.
+   * When absent, `TernaryFilter` falls back to `where(name, null)` —
+   * accurate against rudder's QueryBuilder, less reliable against bare
+   * Knex/raw drivers. The rudder ORM ships this; the structural shape
+   * keeps it optional so test stubs don't need to implement it.
+   */
+  whereNull?(column: string): ModelQuery
 }
 
 /**
