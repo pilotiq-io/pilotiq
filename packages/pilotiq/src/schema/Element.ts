@@ -13,6 +13,18 @@ export interface LayoutContext {
   $get?:   (name: string) => unknown
   $set?:   (name: string, value: unknown) => void
   user?:   unknown
+  /**
+   * Plan #14 — present only when this layout element is being resolved
+   * inside a Repeater row. `row.index` is the row's position; `row.$get
+   * / $set` are row-local. `ctx.values` is automatically scoped to the
+   * row when present, so most callbacks just destructure `values`; `row`
+   * is the explicit access path.
+   */
+  row?: {
+    index: number
+    $get:  (name: string) => unknown
+    $set:  (name: string, value: unknown) => void
+  }
 }
 
 /**

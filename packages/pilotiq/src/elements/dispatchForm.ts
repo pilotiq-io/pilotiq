@@ -1,5 +1,6 @@
 import { Element } from '../schema/Element.js'
 import { Field, type AfterStateUpdatedContext } from '../fields/Field.js'
+import { RepeaterField, isRepeaterField } from '../fields/RepeaterField.js'
 import { Form, type FormContext } from './Form.js'
 import { validateSchema, type ValidationErrors } from '../validation/index.js'
 import { resolveSavedNotification, type NotificationMeta } from '../notifications/index.js'
@@ -136,6 +137,26 @@ export function coerceFormValues(
   body:     Record<string, unknown>,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...body }
+
+  // Plan #14 — Repeater pass. Run BEFORE the regular field coercion so
+  // each row's body is coerced against the inner schema (recursive
+  // `coerceFormValues` call), not against the parent form. Two body
+  // shapes supported: array-valued JSON (`out[name]` already an array)
+  // and flat-keyed form bodies (`name.0.childName=…`). Flat-shape keys
+  // are removed from `out` after the Repeater value is composed so they
+  // don't leak into the persisted record.
+  walkRepeatersTopLevel(elements, repeater => {
+    if (repeater.isDehydrated() === false) {
+      delete out[repeater.name]
+      return
+    }
+    out[repeater.name] = coerceRepeaterValue(repeater, out)
+    const prefix = `${repeater.name}.`
+    for (const key of Object.keys(out)) {
+      if (key.startsWith(prefix)) delete out[key]
+    }
+  })
+
   walkFields(elements, field => {
     const name = field.name
 
@@ -276,10 +297,121 @@ export function coerceFormValues(
 
 function walkFields(elements: Element[], visit: (f: Field) => void): void {
   for (const el of elements) {
-    if (el instanceof Field) visit(el)
+    if (el instanceof Field) {
+      visit(el)
+      // Plan #14 — don't recurse into Repeater children. The inner schema
+      // belongs to row bodies, not the parent form's body, so the parent
+      // walker would coerce siblings against the wrong values map. The
+      // Repeater pass in `coerceFormValues` recurses into rows with the
+      // proper per-row body.
+      if (el instanceof RepeaterField) continue
+    }
     const children = el.getChildren()
     if (children && children.length > 0) walkFields(children as Element[], visit)
   }
+}
+
+/**
+ * Walk an element tree and visit every top-level Repeater — i.e., every
+ * `RepeaterField` that isn't itself nested inside another Repeater. Inner
+ * Repeaters are handled recursively when the outer Repeater coerces its
+ * row bodies against the inner schema (which then enters this walker
+ * again from `coerceFormValues`).
+ */
+function walkRepeatersTopLevel(
+  elements: Element[],
+  visit:    (f: RepeaterField) => void,
+): void {
+  for (const el of elements) {
+    if (el instanceof RepeaterField) {
+      visit(el)
+      continue
+    }
+    const children = el.getChildren()
+    if (children && children.length > 0) walkRepeatersTopLevel(children as Element[], visit)
+  }
+}
+
+/**
+ * Build the coerced array value for a single Repeater field from the
+ * parent form body. Two body shapes are supported:
+ *
+ * 1. **JSON-shape** — `body[name]` is an `unknown[]`. Each element should
+ *    be an object; non-object entries coerce to `{}`. This is the SPA
+ *    `fetch+JSON` path (the default since `feedback_action_dispatch_fetch_vs_303.md`).
+ * 2. **Flat-shape** — body has keys like `${name}.${i}.${childName}`.
+ *    The browser submits these for `application/x-www-form-urlencoded`
+ *    bodies when the form-post 303 fallback path is used. Indices are
+ *    grouped, gaps are filled with `{}`, and the resulting per-row
+ *    bodies feed into the recursive coercion call.
+ *
+ * Empty trailing rows (no entered values, only `__id` carrying through
+ * from the previous render) are trimmed before the coerced array is
+ * returned.
+ */
+function coerceRepeaterValue(
+  field: RepeaterField,
+  body:  Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const inner     = field.getInnerSchema()
+  const fieldName = field.name
+  const raw       = body[fieldName]
+
+  let rowBodies: Array<Record<string, unknown>> = []
+  if (Array.isArray(raw)) {
+    rowBodies = raw.map(coerceRowEntry)
+  } else {
+    const prefix = `${fieldName}.`
+    const grouped = new Map<number, Record<string, unknown>>()
+    let maxIdx = -1
+    for (const key of Object.keys(body)) {
+      if (!key.startsWith(prefix)) continue
+      const rest = key.slice(prefix.length)
+      const dot = rest.indexOf('.')
+      if (dot < 0) continue
+      const idxStr = rest.slice(0, dot)
+      const childKey = rest.slice(dot + 1)
+      const idx = Number(idxStr)
+      if (!Number.isInteger(idx) || idx < 0) continue
+      if (idx > maxIdx) maxIdx = idx
+      let row = grouped.get(idx)
+      if (!row) { row = {}; grouped.set(idx, row) }
+      row[childKey] = body[key]
+    }
+    if (maxIdx >= 0) {
+      rowBodies = Array.from({ length: maxIdx + 1 }, (_, i) => grouped.get(i) ?? {})
+    }
+  }
+
+  // Trim trailing rows where the user didn't enter anything beyond the
+  // round-tripped `__id`. We trim BEFORE coercion so default fills (e.g.
+  // toggle → false, number → null) don't disguise an untouched row as a
+  // touched one. Only trailing emptiness — gaps in the middle survive.
+  while (rowBodies.length > 0 && isRawRowEmpty(rowBodies[rowBodies.length - 1]!)) {
+    rowBodies.pop()
+  }
+
+  return rowBodies.map(rowBody => {
+    const coerced = coerceFormValues(inner, rowBody)
+    if (typeof rowBody['__id'] === 'string') coerced['__id'] = rowBody['__id']
+    return coerced
+  })
+}
+
+function coerceRowEntry(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return { ...(raw as Record<string, unknown>) }
+  }
+  return {}
+}
+
+function isRawRowEmpty(rowBody: Record<string, unknown>): boolean {
+  for (const [k, v] of Object.entries(rowBody)) {
+    if (k === '__id') continue
+    if (v === undefined || v === null || v === '') continue
+    return false
+  }
+  return true
 }
 
 /**
@@ -302,6 +434,12 @@ export function findForms(elements: ReadonlyArray<Element>): Form[] {
   const walk = (els: ReadonlyArray<Element>): void => {
     for (const el of els) {
       if (el.getType() === 'form') forms.push(el as Form)
+      // Plan #14 — don't dive into Repeater children. Forms inside a
+      // Repeater row don't have row context for dispatch, so finding
+      // them at the parent level would mis-route submissions. Use the
+      // structural check (not `instanceof`) per the Vite SSR module
+      // duplication note above.
+      if (isRepeaterField(el)) continue
       const children = el.getChildren()
       if (children && children.length > 0) walk(children)
     }
@@ -420,6 +558,12 @@ export interface StateUpdateResult {
  *
  * Returns `null` when the changed field name doesn't correspond to a
  * field on the form — the route handler turns this into a 404.
+ *
+ * Plan #14 — `changed` may be a dotted path into a Repeater row
+ * (`items.2.quantity` or, for nested Repeaters, `items.0.modifiers.1.name`).
+ * The dotted form routes through `applyRepeaterStateUpdate` which scopes
+ * `$get / $set` to the innermost row by default; cross-row reads / writes
+ * go through the parent `$get / $set` using a full dotted path.
  */
 export async function applyStateUpdate<R = unknown>(
   form:    Form<R>,
@@ -428,6 +572,11 @@ export async function applyStateUpdate<R = unknown>(
   ctx:     StateUpdateContext<R> = {},
 ): Promise<StateUpdateResult | null> {
   const children = (form.getChildren() ?? []) as Element[]
+
+  if (changed.includes('.')) {
+    return applyRepeaterStateUpdate(children, values, changed, ctx)
+  }
+
   const target = findFieldByName(children, changed)
   if (!target) return null
 
@@ -464,6 +613,10 @@ export async function applyStateUpdate<R = unknown>(
 function findFieldByName(elements: Element[], name: string): Field | undefined {
   for (const el of elements) {
     if (el instanceof Field && el.name === name) return el
+    // Plan #14 — don't dive into a Repeater's inner schema when looking
+    // for a top-level field; row-local fields are addressed through
+    // dotted paths via `applyRepeaterStateUpdate`.
+    if (el instanceof RepeaterField) continue
     const children = el.getChildren()
     if (children && children.length > 0) {
       const hit = findFieldByName(children as Element[], name)
@@ -471,4 +624,231 @@ function findFieldByName(elements: Element[], name: string): Field | undefined {
     }
   }
   return undefined
+}
+
+/**
+ * Plan #14 — resolve a dotted-path live-update into a Repeater row.
+ *
+ * `changed` looks like `items.2.quantity` (one level) or
+ * `items.0.modifiers.1.name` (nested). Segments alternate field-name and
+ * row-index. The leaf must be a real Field inside the innermost
+ * Repeater's inner schema. Returns `null` (→ 404) when the path doesn't
+ * resolve.
+ *
+ * Mutates a shallow-cloned `values` so the caller gets a fresh map and
+ * the input isn't aliased. Row arrays + row maps along the path are
+ * cloned to avoid mutating shared state in the input.
+ */
+async function applyRepeaterStateUpdate<R>(
+  children: Element[],
+  values:   Record<string, unknown>,
+  changed:  string,
+  ctx:      StateUpdateContext<R>,
+): Promise<StateUpdateResult | null> {
+  const resolved = resolveRepeaterPath(children, changed)
+  if (!resolved) return null
+  const { field, rowPath } = resolved
+
+  const coerced = { ...values }
+
+  // Clone path-traversed arrays + row maps so we can mutate them without
+  // touching the caller's input. Final row map is the innermost row.
+  let rowMap = ensureRowAtPath(coerced, rowPath)
+
+  // Coerce only the leaf field's value — read raw value from the existing
+  // row map, then run it through `coerceFormValues` against the leaf field
+  // alone, and write the coerced value back.
+  const rawAtPath = rowMap[field.name]
+  const coercedSubset = coerceFormValues([field], { [field.name]: rawAtPath })
+  rowMap[field.name] = coercedSubset[field.name]
+
+  const dirty = new Set<string>([changed])
+
+  const hook = field.getAfterStateUpdated()
+  if (hook) {
+    const innermost = rowPath[rowPath.length - 1]!
+    const rowPrefix = rowPath.map(r => `${r.repeater.name}.${r.index}`).join('.')
+
+    const $get = (name: string): unknown => {
+      if (name.includes('.')) return readDottedPath(coerced, name)
+      return rowMap[name]
+    }
+    const $set = (name: string, v: unknown): void => {
+      if (name.includes('.')) {
+        writeDottedPath(coerced, name, v)
+        dirty.add(name)
+        return
+      }
+      rowMap[name] = v
+      dirty.add(`${rowPrefix}.${name}`)
+    }
+
+    const row = {
+      index: innermost.index,
+      $get:  (name: string): unknown => rowMap[name],
+      $set:  (name: string, v: unknown): void => {
+        rowMap[name] = v
+        dirty.add(`${rowPrefix}.${name}`)
+      },
+    }
+
+    const hookCtx: AfterStateUpdatedContext = {
+      $get,
+      $set,
+      values: coerced,
+      row,
+      ...(ctx.record  !== undefined ? { record:  ctx.record  } : {}),
+      ...(ctx.user    !== undefined ? { user:    ctx.user    } : {}),
+      ...(ctx.request !== undefined ? { request: ctx.request } : {}),
+    }
+
+    await hook(rowMap[field.name], hookCtx)
+  }
+
+  return { values: coerced, dirty: Array.from(dirty) }
+}
+
+interface ResolvedPath {
+  field:   Field
+  rowPath: Array<{ repeater: RepeaterField; index: number }>
+}
+
+/**
+ * Walk a dotted path against an Element tree. Segments alternate
+ * field-name and row-index. Returns the leaf Field plus the chain of
+ * (Repeater, index) hops needed to reach it.
+ */
+function resolveRepeaterPath(elements: Element[], path: string): ResolvedPath | null {
+  const segments = path.split('.')
+  const rowPath: Array<{ repeater: RepeaterField; index: number }> = []
+
+  let currentElements = elements
+  let i = 0
+  while (i < segments.length) {
+    const seg = segments[i]!
+    const field = findFieldDirect(currentElements, seg)
+    if (!field) return null
+
+    if (i === segments.length - 1) {
+      return { field, rowPath }
+    }
+
+    if (!(field instanceof RepeaterField)) return null
+    const idxStr = segments[i + 1]
+    if (idxStr === undefined) return null
+    const idx = Number(idxStr)
+    if (!Number.isInteger(idx) || idx < 0) return null
+
+    rowPath.push({ repeater: field, index: idx })
+    currentElements = field.getInnerSchema()
+    i += 2
+  }
+
+  return null
+}
+
+/**
+ * Find a top-level field by name inside an element tree, walking through
+ * non-Repeater containers but stopping at Repeater boundaries (those need
+ * a dotted path to address inner fields).
+ */
+function findFieldDirect(elements: Element[], name: string): Field | undefined {
+  for (const el of elements) {
+    if (el instanceof Field && el.name === name) return el
+    if (el instanceof RepeaterField) continue
+    const children = el.getChildren()
+    if (children && children.length > 0) {
+      const hit = findFieldDirect(children as Element[], name)
+      if (hit) return hit
+    }
+  }
+  return undefined
+}
+
+/**
+ * Walk + clone the row arrays/maps along `rowPath`, ensuring each row
+ * exists, then return the innermost row map. Mutations on the returned
+ * object propagate up to `coerced` because we replace each step's
+ * container with a fresh clone in the parent.
+ */
+function ensureRowAtPath(
+  coerced: Record<string, unknown>,
+  rowPath: Array<{ repeater: RepeaterField; index: number }>,
+): Record<string, unknown> {
+  let parent: Record<string, unknown> | unknown[] = coerced
+  for (const { repeater, index } of rowPath) {
+    const arrName = repeater.name
+    let arr: unknown[]
+    if (Array.isArray(parent)) {
+      // Should never happen at the outer iteration (parent starts as
+      // `coerced`, an object); guard anyway.
+      arr = (parent as unknown[]).slice()
+    } else {
+      const existing = (parent as Record<string, unknown>)[arrName]
+      arr = Array.isArray(existing) ? existing.slice() : []
+      ;(parent as Record<string, unknown>)[arrName] = arr
+    }
+    while (arr.length <= index) arr.push({})
+    const existingRow = arr[index]
+    const row: Record<string, unknown> = (existingRow && typeof existingRow === 'object' && !Array.isArray(existingRow))
+      ? { ...(existingRow as Record<string, unknown>) }
+      : {}
+    arr[index] = row
+    parent = row
+  }
+  return parent as Record<string, unknown>
+}
+
+function readDottedPath(values: Record<string, unknown>, path: string): unknown {
+  const segments = path.split('.')
+  let cur: unknown = values
+  for (const seg of segments) {
+    if (cur === null || cur === undefined) return undefined
+    if (Array.isArray(cur)) {
+      const idx = Number(seg)
+      if (!Number.isInteger(idx)) return undefined
+      cur = cur[idx]
+    } else if (typeof cur === 'object') {
+      cur = (cur as Record<string, unknown>)[seg]
+    } else {
+      return undefined
+    }
+  }
+  return cur
+}
+
+function writeDottedPath(values: Record<string, unknown>, path: string, value: unknown): void {
+  const segments = path.split('.')
+  let cur: Record<string, unknown> | unknown[] = values
+  for (let i = 0; i < segments.length - 1; i++) {
+    const seg = segments[i]!
+    const nextSeg = segments[i + 1]!
+    const childIsIndex = /^\d+$/.test(nextSeg)
+    if (Array.isArray(cur)) {
+      const idx = Number(seg)
+      if (!Number.isInteger(idx)) return
+      while (cur.length <= idx) cur.push(childIsIndex ? [] : {})
+      let next = cur[idx]
+      if (next === undefined || next === null) {
+        next = childIsIndex ? [] : {}
+        cur[idx] = next
+      }
+      cur = next as Record<string, unknown> | unknown[]
+    } else {
+      let next = (cur as Record<string, unknown>)[seg]
+      if (next === undefined || next === null) {
+        next = childIsIndex ? [] : {}
+        ;(cur as Record<string, unknown>)[seg] = next
+      }
+      cur = next as Record<string, unknown> | unknown[]
+    }
+  }
+  const last = segments[segments.length - 1]!
+  if (Array.isArray(cur)) {
+    const idx = Number(last)
+    if (!Number.isInteger(idx)) return
+    cur[idx] = value
+  } else {
+    (cur as Record<string, unknown>)[last] = value
+  }
 }

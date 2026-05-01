@@ -94,6 +94,19 @@ export interface ConditionContext {
   $get?:   (name: string) => unknown
   $set?:   (name: string, value: unknown) => void
   user?:   unknown
+  /**
+   * Plan #14 row-scoped sugar inside a Repeater. Mirrors `RenderContext.row`
+   * — present only when this field is being resolved as part of a Repeater
+   * row's inner schema. `row.$get / $set` read the row's local values map
+   * (same as `ctx.$get / $set` in this scope); `row.index` is the row's
+   * position. Use it for clarity at call sites that want to be explicit
+   * about row-scoping.
+   */
+  row?: {
+    index: number
+    $get:  (name: string) => unknown
+    $set:  (name: string, value: unknown) => void
+  }
 }
 
 export type FieldCondition = (ctx: ConditionContext) => boolean
@@ -111,6 +124,17 @@ export type AfterStateUpdatedContext = {
   user?:   unknown
   request?: unknown
   values:  Record<string, unknown>
+  /**
+   * Plan #14 — present only when the field is inside a Repeater row.
+   * `$get` / `$set` are row-scoped (mirroring the resolve-time `$get`
+   * inside a row); cross-row reads / writes go through the parent
+   * `$get / $set` with a dotted path (`items.0.quantity`).
+   */
+  row?: {
+    index: number
+    $get:  (name: string) => unknown
+    $set:  (name: string, value: unknown) => void
+  }
 }
 
 export type AfterStateUpdatedHandler = (
@@ -363,6 +387,7 @@ export abstract class Field extends Element {
     if (ctx.$get) condCtx.$get = ctx.$get
     if (ctx.$set) condCtx.$set = ctx.$set
     if (ctx.user !== undefined) condCtx.user = ctx.user
+    if (ctx.row   !== undefined) condCtx.row   = ctx.row
     return condCtx
   }
 

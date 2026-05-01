@@ -210,6 +210,14 @@ export { ColorPickerField, ColorPicker }   from './fields/ColorPickerField.js'
 export { DateTimePickerField, DateTimePicker } from './fields/DateField.js'
 export { KeyValueField, KeyValue }         from './fields/KeyValueField.js'
 export { FileUploadField, FileUpload }     from './fields/FileUploadField.js'
+export {
+  RepeaterField,
+  Repeater,
+  isRepeaterField,
+  type RepeaterFieldMeta,
+  type RepeaterRowMeta,
+  type RepeaterItemLabel,
+} from './fields/RepeaterField.js'
 
 // ─── Uploads ──────────────────────────────────────────
 // `localUpload` (and any future Node-only adapters) live under the

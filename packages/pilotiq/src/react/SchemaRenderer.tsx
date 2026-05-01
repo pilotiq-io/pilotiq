@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import type { ElementMeta } from '../schema/Element.js'
 import { getFieldRenderer } from './registry.js'
-import { FormStateProvider, useFormState } from './FormStateContext.js'
+import { FormStateProvider, useFormState, FormIdContext } from './FormStateContext.js'
 import { Checkbox } from './ui/checkbox.js'
 import { Input } from './ui/input.js'
 import { Popover, PopoverTrigger, PopoverContent } from './ui/popover.js'
@@ -19,6 +19,7 @@ import { ColorInput }        from './fields/ColorInput.js'
 import { DateTimeInput }     from './fields/DateTimeInput.js'
 import { KeyValueInput }     from './fields/KeyValueInput.js'
 import { FileUploadInput }   from './fields/FileUploadInput.js'
+import { RepeaterInput }     from './fields/RepeaterInput.js'
 import {
   Dialog,
   DialogContent,
@@ -271,6 +272,9 @@ function renderFieldInput(
         />
       )
     }
+
+    case 'repeater':
+      return <RepeaterInput el={el} name={name} disabled={disabled} />
 
     case 'dateTime': {
       // Normalize various input shapes to YYYY-MM-DDTHH:mm.
@@ -1964,13 +1968,15 @@ function FormRenderer({ el }: { el: ElementMeta }) {
           )}
         </div>
       )}
-      {stateUrl ? (
-        <FormStateProvider initialMeta={el} initialErrors={errors}>
-          <FormBody fallbackChildren={el.children ?? []} fallbackValues={serverValues} fallbackErrors={errors} />
-        </FormStateProvider>
-      ) : (
-        (el.children ?? []).map((child, i) => renderFormChild(child, i, serverValues, errors))
-      )}
+      <FormIdContext.Provider value={formId}>
+        {stateUrl ? (
+          <FormStateProvider initialMeta={el} initialErrors={errors}>
+            <FormBody fallbackChildren={el.children ?? []} fallbackValues={serverValues} fallbackErrors={errors} />
+          </FormStateProvider>
+        ) : (
+          (el.children ?? []).map((child, i) => renderFormChild(child, i, serverValues, errors))
+        )}
+      </FormIdContext.Provider>
     </form>
   )
 }

@@ -1,5 +1,6 @@
 import { Action, type ActionContext, type NotificationLike } from '../actions/Action.js'
 import type { Element } from '../schema/Element.js'
+import { isRepeaterField } from '../fields/RepeaterField.js'
 import { validateSchema, type ValidationErrors } from '../validation/index.js'
 import { coerceFormValues } from './dispatchForm.js'
 import { Notification, type NotificationMeta } from '../notifications/Notification.js'
@@ -17,6 +18,11 @@ export function findActions(elements: ReadonlyArray<Element>): Action[] {
   const walk = (els: ReadonlyArray<Element>): void => {
     for (const el of els) {
       if (el.getType() === 'action') actions.push(el as Action)
+      // Plan #14 — actions inside a Repeater row aren't supported for
+      // dispatch in v1 (no row context on the handler). Stop the walk
+      // at the Repeater boundary so a misplaced action doesn't
+      // mis-route to the parent dispatcher.
+      if (isRepeaterField(el)) continue
       const children = el.getChildren()
       if (children && children.length > 0) walk(children)
     }

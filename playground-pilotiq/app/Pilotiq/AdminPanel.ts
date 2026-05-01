@@ -15,6 +15,7 @@ import { ElementsShowcase } from './pages/ElementsShowcase.js'
 import { ReactiveDemo } from './pages/ReactiveDemo.js'
 import { FieldTypesDemo } from './pages/FieldTypesDemo.js'
 import { LayoutsDemo } from './pages/LayoutsDemo.js'
+import { RepeaterDemo } from './pages/RepeaterDemo.js'
 
 // Register the curated lucide baseline so string-typed icons
 // (Action.icon('check'), Column.icon('star'), etc.) resolve at render time.
@@ -66,7 +67,7 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   // is read on the client through the auto-gen `_components.ts` manifest.
   .resources([ArticleResource, UserResource, PostResource])
   .globals([SiteSettings])
-  .pages([SimplePage, ElementsShowcase, ReactiveDemo, FieldTypesDemo, LayoutsDemo])
+  .pages([SimplePage, ElementsShowcase, ReactiveDemo, FieldTypesDemo, LayoutsDemo, RepeaterDemo])
   .schema(async () => [
     Heading.make('Welcome to Pilotiq').description('Here\'s a quick overview of your content.'),
     Alert.make('This is a demo of the new schema system.').info().title('Schema Demo'),

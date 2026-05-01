@@ -35,6 +35,15 @@ export function useFormState(): FormStateApi | null {
   return useContext(FormStateContext)
 }
 
+/**
+ * Plan #14 — minimal context that lets nested renderers (e.g. RepeaterInput)
+ * see the parent `<form>`'s `formId` without reaching for `useFormState`
+ * (which is null on uncontrolled forms) or sniffing the DOM. `FormRenderer`
+ * wraps its children in this provider; readers hit the context with
+ * `useContext(FormIdContext)` and fall back to a sentinel when missing.
+ */
+export const FormIdContext = createContext<string>('')
+
 export interface UseFieldStateResult {
   /** True when the field is inside a controlled form (live fields enabled).
    *  Renderers should fall back to their `defaultValue` path when false. */

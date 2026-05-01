@@ -29,7 +29,12 @@ model Post {
 }
 ```
 
-Run `pnpm exec prisma db push --schema prisma/schema` to apply.
+Run `pnpm exec prisma db push --schema prisma/schema` to apply,
+**then** `pnpm exec prisma generate --schema prisma/schema` to refresh
+the hoisted `@prisma/client` types — `db push` updates the database
+schema but does *not* regenerate the client. If you skip generate, the
+restore route 500s with `Unknown argument deletedAt`. Restart the dev
+server after generating; HMR doesn't pick up the new client.
 
 ### 2. Rudder Model
 

@@ -1,5 +1,6 @@
 import { Element, type ElementMeta, type LayoutContext } from './Element.js'
 import { Field } from '../fields/Field.js'
+import { RepeaterField, type RepeaterRowMeta } from '../fields/RepeaterField.js'
 import { Action } from '../actions/Action.js'
 import { ActionGroup } from '../actions/ActionGroup.js'
 
@@ -47,6 +48,19 @@ export interface RenderContext extends SchemaContext {
    * panel-level URL — no per-field variation.
    */
   uploadUrl?: string
+  /**
+   * Plan #14 row-scoped sugar inside a Repeater. When the resolver is
+   * walking a row's inner schema, `row.index` is the row's position and
+   * `row.$get / row.$set` are bound to the row's local values map. The
+   * top-level `ctx.$get / $set` still see the whole form (cross-row
+   * reads via dotted paths like `items.0.title`); `row.$get(name)` is
+   * just sugar for the common case of "read the same row's siblings".
+   */
+  row?: {
+    index: number
+    $get:  (name: string) => unknown
+    $set:  (name: string, value: unknown) => void
+  }
 }
 
 export type SchemaDefinition =
@@ -197,12 +211,101 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
   const layout = el.getLayoutPositioning()
   if (layout) meta._layout = layout
 
+  // Plan #14 — Repeater rows. Skip the generic `getChildren()` recurse
+  // below (the inner schema is rendered per-row, not once on the parent),
+  // and instead populate `meta.rows` + `meta.template` with row-scoped
+  // contexts so each child sees its own row's values via `$get` / `row`.
+  if (el instanceof RepeaterField) {
+    await resolveRepeaterRows(el, ctx, meta)
+    return meta
+  }
+
   const children = el.getChildren()
   if (children && children.length > 0) {
     meta.children = await resolveAll(children, ctx)
   }
 
   return meta
+}
+
+/**
+ * Per-row resolution for `RepeaterField`. Reads submitted row values from
+ * `ctx.values?.[field.name]`, falls back to `defaultItems` empty rows on
+ * fresh renders, resolves the inner schema once per row with a row-scoped
+ * `RenderContext`, and stamps `meta.rows` + `meta.template`.
+ *
+ * `template` is the empty-row blueprint the client clones when the user
+ * presses "Add row" — resolved with `values: {}` so any `default()` /
+ * `defaultValue` on inner fields surfaces correctly.
+ */
+async function resolveRepeaterRows(
+  field: RepeaterField,
+  ctx:   RenderContext,
+  meta:  ElementMeta,
+): Promise<void> {
+  const inner       = field.getInnerSchema()
+  const submitted   = ctx.values?.[field.name]
+  const rowsInput: Array<Record<string, unknown>> = Array.isArray(submitted)
+    ? submitted.map(coerceRowValues)
+    : Array.from({ length: field.getDefaultItems() }, () => ({}))
+
+  const labelFn = field.getItemLabel()
+
+  const rows = await Promise.all(rowsInput.map(async (rowValues, index) => {
+    const rowCtx: RenderContext = {
+      ...ctx,
+      values: rowValues,
+      $get:   (name: string) => rowValues[name],
+      $set:   (name: string, value: unknown) => { rowValues[name] = value },
+      row:    {
+        index,
+        $get: (name: string) => rowValues[name],
+        $set: (name: string, value: unknown) => { rowValues[name] = value },
+      },
+    }
+    delete rowCtx.changed // changed key is parent-scoped; not meaningful inside the row resolve
+    const children = await resolveAll(inner, rowCtx)
+    const id = readRowId(rowValues, field.name, index)
+    const row: RepeaterRowMeta = { id, children }
+    if (labelFn) {
+      try {
+        const label = labelFn(rowValues)
+        if (typeof label === 'string') row.itemLabel = label
+      } catch (err) {
+        console.warn(`[pilotiq] itemLabel() on Repeater "${field.name}" threw:`, err)
+      }
+    }
+    return row
+  }))
+
+  const templateCtx: RenderContext = { ...ctx, values: {} }
+  delete templateCtx.row
+  delete templateCtx.changed
+  const template = await resolveAll(inner, templateCtx)
+
+  meta['rows']     = rows
+  meta['template'] = template
+}
+
+function coerceRowValues(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return { ...(raw as Record<string, unknown>) }
+  }
+  return {}
+}
+
+/**
+ * Stable row id. Prefers a round-tripped `__id` posted from the client
+ * (string-only — anything else is ignored to keep the meta JSON-clean),
+ * otherwise generates a deterministic id from the field name + row index
+ * so server re-renders are idempotent. The client renderer (Step 7)
+ * upgrades fresh rows to crypto-random UUIDs before persisting them
+ * through the form-state map.
+ */
+function readRowId(row: Record<string, unknown>, fieldName: string, index: number): string {
+  const raw = row['__id']
+  if (typeof raw === 'string' && raw.length > 0) return raw
+  return `${fieldName}-${index}`
 }
 
 /**
@@ -217,5 +320,6 @@ function buildLayoutContext(ctx: RenderContext): LayoutContext {
   if (ctx.$get) out.$get = ctx.$get
   if (ctx.$set) out.$set = ctx.$set
   if (ctx.user !== undefined) out.user = ctx.user
+  if (ctx.row   !== undefined) out.row   = ctx.row
   return out
 }
