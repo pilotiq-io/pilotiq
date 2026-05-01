@@ -152,6 +152,7 @@ export {
   dispatchFormSubmit,
   findForms,
   selectForm,
+  selectFormById,
   type DispatchResult,
   type DispatchSuccess,
   type DispatchFailure,

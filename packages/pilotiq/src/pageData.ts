@@ -18,7 +18,7 @@ import { Element } from './schema/Element.js'
 import { Field } from './fields/Field.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { Form } from './elements/Form.js'
-import { applyStateUpdate, findForms, findWizardStepFields } from './elements/dispatchForm.js'
+import { applyStateUpdate, findForms, findWizardStepFields, selectFormById } from './elements/dispatchForm.js'
 import { validateSchema } from './validation/index.js'
 import { searchAllResources, type GlobalSearchResult } from './search.js'
 import { loadTableRecords, type QueryParams } from './elements/dispatchTable.js'
@@ -771,10 +771,6 @@ export async function formStateData(
   }
 
   return { ok: true, form: formMeta, dirty: update.dirty }
-}
-
-function selectFormById(forms: ReadonlyArray<Form>, id: string): Form | undefined {
-  return forms.find(f => f.getFormId() === id)
 }
 
 // ─── Plan #8 wizard step-validate data builder ────────────────

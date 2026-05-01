@@ -426,11 +426,14 @@ describe('formStateData (Plan #5)', () => {
     assert.equal(result, null)
   })
 
-  it('returns 404 when the form id is not on the page', async () => {
+  it('returns 404 when the form id misses on a multi-form page', async () => {
     class TestPage extends Page {
       static override slug   = 'demo'
       static override schema() {
-        return [Form.make().formId('the-form').schema([TextField.make('x').live()])]
+        return [
+          Form.make().formId('one').schema([TextField.make('x').live()]),
+          Form.make().formId('two').schema([TextField.make('y').live()]),
+        ]
       }
     }
     const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
@@ -438,6 +441,21 @@ describe('formStateData (Plan #5)', () => {
     assert.notEqual(result, null)
     assert.equal((result as { ok: false; status: number }).ok, false)
     assert.equal((result as { ok: false; status: number }).status, 404)
+  })
+
+  it('falls back to the only form when the formId misses on a single-form page', async () => {
+    // Removes the auto-counter desync footgun for reactive demos —
+    // see selectFormById in elements/dispatchForm.ts.
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([TextField.make('x').live()])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+    const result = await formStateData(panel, { kind: 'page', pageSlug: 'demo' }, { formId: 'mismatched-counter', changed: 'x', values: { x: 'v' } })
+    assert.notEqual(result, null)
+    assert.equal((result as { ok: true }).ok, true)
   })
 
   it('returns 422 when the changed field does not exist on the form', async () => {

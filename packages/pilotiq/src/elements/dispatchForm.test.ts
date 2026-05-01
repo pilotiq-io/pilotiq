@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { Form } from './Form.js'
-import { applyStateUpdate, coerceFormValues, dispatchFormSubmit, findForms, findWizardStepFields, selectForm } from './dispatchForm.js'
+import { applyStateUpdate, coerceFormValues, dispatchFormSubmit, findForms, findWizardStepFields, selectForm, selectFormById } from './dispatchForm.js'
 import { Wizard, Step } from '../schema/Wizard.js'
 import { TextField } from '../fields/TextField.js'
 import { NumberField } from '../fields/NumberField.js'
@@ -235,7 +235,7 @@ describe('dispatchFormSubmit', () => {
   })
 })
 
-describe('findForms / selectForm', () => {
+describe('findForms / selectForm / selectFormById', () => {
   it('findForms returns every Form in document order, including nested', () => {
     const inner = Form.make().formId('inner')
     const outer = Form.make().formId('outer').schema([
@@ -255,6 +255,29 @@ describe('findForms / selectForm', () => {
     assert.equal(selectForm([a, b, c], undefined), a)
     assert.equal(selectForm([a, b, c], 'missing'), a)
     assert.equal(selectForm([], undefined), undefined)
+  })
+
+  it('selectFormById matches by id, falls back only when one form is present', () => {
+    const a = Form.make().formId('a')
+    const b = Form.make().formId('b')
+    const c = Form.make().formId('c')
+
+    // Direct match always wins.
+    assert.equal(selectFormById([a, b, c], 'b'), b)
+
+    // Multi-form pages: missing/wrong id → undefined (no silent fallback).
+    assert.equal(selectFormById([a, b, c], 'missing'), undefined)
+    assert.equal(selectFormById([a, b, c], ''), undefined)
+
+    // Single-form pages: id mismatch falls back to the only form.
+    // Removes the auto-counter desync footgun for reactive demos.
+    const sole = Form.make().formId('sole')
+    assert.equal(selectFormById([sole], 'mismatched'), sole)
+    assert.equal(selectFormById([sole], 'sole'), sole)
+    assert.equal(selectFormById([sole], ''), sole)
+
+    // Empty page: nothing to return.
+    assert.equal(selectFormById([], 'a'), undefined)
   })
 })
 

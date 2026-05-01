@@ -23,12 +23,12 @@ Land in this order. Each step is independently shippable; later steps build on e
 | 5 | ✅ `reactive-fields.md` DONE | ~3 days | `live()` + `$get/$set` + `afterStateUpdated` + dependent options + reactive visibility shipped 2026-04-30 (server) and 2026-05-01 (client + demo). |
 | 6 | ✅ `field-types-expansion.md` DONE | ~3 days | Hidden / Checkbox / Radio / CheckboxList / Slider / ColorPicker / DateTimePicker / KeyValue / FileUpload + Field cross-field plumbing (prefix/suffix/helperText/default/dehydrated/formatStateUsing) + UploadAdapter contract + localUpload + `_uploads` route shipped 2026-05-01. Demo at `/new-admin/field-types-demo`. |
 | 7 | `list-page-tabs.md` | ~1 day | High value (every "Drafts / Published / Archived" view), small scope, layers on existing Tabs primitive. |
-| 8 | `schema-layouts.md` | ~2 days | Wizard, Fieldset, Split/Flex, Group, columnSpan/columnStart. Cleanup in existing schema folder. |
+| 8 | ✅ `schema-layouts.md` DONE | ~2 days | Wizard / Step, Fieldset, Split, Group, Element-level visibility + columnSpan/columnStart, Section polish (icon/badge/aside/compact/persistCollapsed), wizard step-validate endpoint shipped 2026-05-01. Demo at `/new-admin/layouts-demo`. |
 | 8.5 | ✅ `icon-system.md` DONE | ~1 day | Component-typed `Resource.icon = Newspaper` via Vite-plugin manifest + string registry for schema-time icons. Multi-library (lucide / tabler / heroicons / phosphor). Shipped 2026-04-30 as a prereq for #9. |
 | 9 | `resource-navigation.md` | ~1 day | navigationGroup, navigationSort, navigationBadge, recordTitleAttribute. Cosmetic but expected. Builds on icon-system (above). |
 | 10 | `authorization.md` | ~2 days | Resource policies (canView/canCreate/canEdit/canDelete). Pairs with @rudderjs/auth wiring. |
 | 11 | `relations.md` | ~2 weeks | RelationManager. Big plan; needs its own doc cycle. Already on Phase 3 hot list. |
-| 12 | `global-search.md` | ~1 week | Cmd+K + per-resource recordTitleAttribute + result rendering. |
+| 12 | ✅ `global-search.md` DONE | ~1 week | `Resource.globalSearch` opt-in + 4 override statics + `searchAllResources` helper + `GET /_search` + Cmd+K palette + sidebar/topbar trigger pill shipped 2026-05-01. |
 | 13 | `soft-deletes.md` | ~1 week | Needs @rudderjs/orm soft-delete support first. |
 
 Penciled for later (Tier 3): widgets/dashboards, Repeater/Builder fields, Wizard step validation, resource nesting, sub-navigation, polling/auto-refresh, import/export.
@@ -306,7 +306,7 @@ This audit refines but doesn't replace the Phase 3 status:
   - **Scaffolder CLI** — separate. Audit doesn't change this.
   - **Pro packages (collab/AI)** — separate. Audit doesn't change this.
 
-- The audit's tier-1 items (#2 column types ✅, #3 notifications ✅, #4 page lifecycle ✅, #5 reactive fields ✅, #6 field types ✅, #7 list-page tabs ✅) all shipped in Phase 3. #8 schema-layouts is the next plan in the sequence.
+- The audit's tier-1 items (#1 actions ✅, #2 column types ✅, #3 notifications ✅, #4 page lifecycle ✅, #5 reactive fields ✅, #6 field types ✅, #7 list-page tabs ✅, #8 schema-layouts ✅, #8.5 icon-system ✅, #9 nav metadata ✅, #10 authorization ✅, #12 global search ✅) all shipped in Phase 3. The remaining mainline items are #11 relations (~2 weeks, big enough to need its own planning cycle) and #13 soft-deletes (blocked on @rudderjs/orm support).
 
 - `actions-tier-1.md` stays as planned and ships alongside #2 onwards.
 

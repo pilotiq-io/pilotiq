@@ -341,8 +341,17 @@ export function findWizardStepFields(
 
 /**
  * Pick the `Form` matching the submitted `_formId`, or fall back to the
- * first form on the page when no id was sent. Returns undefined if the page
- * has no forms.
+ * first form on the page when no id was sent OR the submitted id misses.
+ *
+ * Use this on **legacy form-submit paths** (POST create / edit / global-edit
+ * / custom-page) where a single page may host multiple forms and the
+ * fallback to "first form" is a back-compat affordance for submissions that
+ * predate the `_formId` hidden input.
+ *
+ * Do NOT use this on partial-resolve paths (Plan #5 form-state, Plan #8
+ * wizard step-validate) — those must hard-fail on a mismatched id so the
+ * client gets a 404 instead of silently writing the wrong form's state.
+ * Use `selectFormById` there.
  */
 export function selectForm(forms: ReadonlyArray<Form>, submittedId: unknown): Form | undefined {
   if (typeof submittedId === 'string') {
@@ -350,6 +359,32 @@ export function selectForm(forms: ReadonlyArray<Form>, submittedId: unknown): Fo
     if (match) return match
   }
   return forms[0]
+}
+
+/**
+ * ID-match counterpart to `selectForm`, used by partial-resolve endpoints
+ * (Plan #5 form-state, Plan #8 wizard step-validate).
+ *
+ * - If `id` matches a form, return it.
+ * - If there's no match AND the page has exactly one form, return that
+ *   form. This is safe — there's no ambiguity about which form the POST
+ *   meant — and it removes the auto-counter desync footgun: the GET
+ *   render and the partial-resolve POST run through `Form.make()` in
+ *   different requests, so the process-global formId counter ticks
+ *   forward and a strict match would 404. See
+ *   `feedback_pilotiq_live_forms_pin_formid.md`.
+ * - Otherwise return `undefined`. Multi-form pages with a missing/wrong
+ *   id must hard-fail so the client surfaces a 404 instead of writing
+ *   the wrong form's state.
+ *
+ * Pages with multiple reactive forms still need to pin a stable
+ * `Form.make().formId(...)` to disambiguate.
+ */
+export function selectFormById(forms: ReadonlyArray<Form>, id: string): Form | undefined {
+  const match = forms.find(f => f.getFormId() === id)
+  if (match) return match
+  if (forms.length === 1) return forms[0]
+  return undefined
 }
 
 // ─── Plan #5: applyStateUpdate ────────────────────────────
