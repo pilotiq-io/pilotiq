@@ -31,7 +31,7 @@ the first non-trivial CRUD form that needs more than scalar values.
 | 5. Plan #5 reactive interop — partial-resolve over rows | ✅ DONE | `applyRepeaterStateUpdate` resolves dotted paths; row-scoped `$get / $set` + dotted-path bridge; `ctx.row` exposed |
 | 6. Plan #8 visibility interop — row-scoped `LayoutContext` | ✅ DONE | `LayoutContext.row` propagates from `RenderContext.row`; inner `Section.visible(({ values }) => …)` sees row-scoped values |
 | 7. Client renderer — `RepeaterInput` | ✅ DONE | `react/fields/RepeaterInput.tsx`; per-row name prefixing via `prefixFieldNames`; stable `__id` round-trip |
-| 8. Drag-reorder a11y | ✅ DONE (v1: buttons) | Up / Down arrow buttons per row; HTML5 drag deferred to v1.1 |
+| 8. Drag-reorder a11y | ✅ DONE | Native HTML5 drag-and-drop with grip handle + 2px drop indicator; Up / Down arrow buttons retained as keyboard fallback. Both paths route through pure helper `reorderRows()` (unit-tested, 11 cases). |
 | 9. Collapsed-state persistence | ✅ DONE | `pilotiq.repeater.<formId>.<fieldName>.<rowId>` in localStorage via `FormIdContext` |
 | 10. Walker registrations | ✅ DONE | `walkFields / findForms / findActions / findTables / findFieldByName / validateSchema.walk` all stop at Repeater; structural `isRepeaterField` helper for Vite-SSR-dup safety |
 | 11. Playground demo | ✅ DONE | `playground-pilotiq/app/Pilotiq/pages/RepeaterDemo.ts` at `/new-admin/repeater-demo`; pinned `formId('repeater-demo')` |

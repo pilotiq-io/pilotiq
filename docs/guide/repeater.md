@@ -58,7 +58,7 @@ The submitted body has shape:
 | `.defaultItems(n)` | Initial empty rows on a fresh form (default `1`) |
 | `.minItems(n)` | Server-side validator + client-side disable on Remove |
 | `.maxItems(n)` | Server-side validator + client-side disable on Add / Clone |
-| `.reorderable()` | Show ↑ / ↓ buttons per row (keyboard-friendly) |
+| `.reorderable()` | Drag-and-drop via the grip handle on each row, plus ↑ / ↓ buttons as keyboard fallback |
 | `.cloneable()` | Show duplicate-row button |
 | `.collapsible()` | Per-row collapse chevron — body kept mounted (so values survive collapse) |
 | `.collapsed()` | Default-collapsed when collapsible (typically combined with `itemLabel`) |
@@ -185,10 +185,8 @@ The id is a render-time identifier — it's **not** persisted on the
 saved record. If you want stable row identity across reloads, add an
 `IdField` to the inner schema.
 
-## Limitations (v1)
+## Limitations
 
-- **No drag-and-drop.** Reorder is via Up / Down buttons. Native HTML5
-  drag is on the v1.1 list.
 - **No live re-resolves driven by `live()` on inner fields.** The
   server has all the plumbing (`applyStateUpdate` resolves dotted
   paths); the client renderer doesn't yet integrate with

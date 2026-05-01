@@ -5,6 +5,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CopyIcon,
+  GripVerticalIcon,
   PlusIcon,
   Trash2Icon,
 } from 'lucide-react'
@@ -13,6 +14,26 @@ import { Button } from '../ui/button.js'
 import { SchemaRenderer } from '../SchemaRenderer.js'
 import { FormIdContext } from '../FormStateContext.js'
 
+/**
+ * Pure reorder helper — used by both the HTML5 DnD path and the
+ * Up/Down button path. `insertBeforeIdx` is the boundary the dragged
+ * row should land at (range `0..rows.length`); after removing the
+ * source we adjust by -1 when the source sat below the target so the
+ * caller never has to think about post-removal index shifts.
+ *
+ * No-ops when the move would leave the array unchanged.
+ */
+export function reorderRows<T>(rows: T[], fromIdx: number, insertBeforeIdx: number): T[] {
+  if (fromIdx < 0 || fromIdx >= rows.length) return rows
+  if (insertBeforeIdx < 0 || insertBeforeIdx > rows.length) return rows
+  if (fromIdx === insertBeforeIdx || fromIdx + 1 === insertBeforeIdx) return rows
+  const next  = rows.slice()
+  const moved = next.splice(fromIdx, 1)[0] as T
+  const target = insertBeforeIdx > fromIdx ? insertBeforeIdx - 1 : insertBeforeIdx
+  next.splice(target, 0, moved)
+  return next
+}
+
 interface RowState {
   id:        string
   children:  ElementMeta[]
@@ -20,7 +41,7 @@ interface RowState {
 }
 
 /**
- * Repeater renderer (Plan #14 v1).
+ * Repeater renderer (Plan #14).
  *
  * Rows are managed as local React state with stable `id` keys so
  * uncontrolled inner inputs preserve their typed values across
@@ -29,14 +50,17 @@ interface RowState {
  * submitted form bodies are flat-keyed (`items.0.product`, etc.) — the
  * server's `coerceFormValues` re-groups them into an array.
  *
- * Reorder is keyboard-friendly via Up/Down buttons (no drag-and-drop in
- * v1). Collapsed state persists per-row to `localStorage` under
- * `pilotiq.repeater.<formId>.<fieldName>.<rowId>` when collapsible.
+ * Reorder: native HTML5 drag-and-drop on each row, with a 2px drop
+ * indicator showing where the row will land. Up/Down buttons are kept
+ * as a keyboard fallback. Both paths route through `reorderRows()` so
+ * behavior is identical. Collapsed state persists per-row to
+ * `localStorage` under `pilotiq.repeater.<formId>.<fieldName>.<rowId>`
+ * when collapsible.
  *
  * Inner-field reactivity: this component does NOT integrate with
- * `FormStateProvider` for nested-path live updates; that surgery lands
- * in v1.1. Repeaters with `live()` inner fields render today but the
- * `live` trigger doesn't roundtrip.
+ * `FormStateProvider` for nested-path live updates; that surgery is
+ * tracked separately. Repeaters with `live()` inner fields render
+ * today but the `live` trigger doesn't roundtrip.
  */
 export function RepeaterInput({
   el,
@@ -124,14 +148,53 @@ export function RepeaterInput({
     setRows(prev => {
       const idx = prev.findIndex(r => r.id === id)
       if (idx < 0) return prev
-      const target = idx + dir
-      if (target < 0 || target >= prev.length) return prev
-      const next = prev.slice()
-      const tmp = next[idx]!
-      next[idx] = next[target]!
-      next[target] = tmp
-      return next
+      // dir = -1 → land before the row above (insertBeforeIdx = idx - 1)
+      // dir =  1 → land after the row below (insertBeforeIdx = idx + 2)
+      const insertBefore = dir === -1 ? idx - 1 : idx + 2
+      return reorderRows(prev, idx, insertBefore)
     })
+  }
+
+  // ── DnD state ───────────────────────────────────────────
+  // dragId  — the row being dragged, or null when no drag is active.
+  // dropAt  — the boundary slot the cursor is currently over
+  //           (range 0..rows.length); null when not over a valid drop target.
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dropAt, setDropAt] = useState<number | null>(null)
+
+  const onRowDragStart = (id: string) => (e: React.DragEvent<HTMLDivElement>): void => {
+    if (!reorderable || disabled) return
+    setDragId(id)
+    // dataTransfer needs *something* to register the drag in Firefox.
+    e.dataTransfer.effectAllowed = 'move'
+    try { e.dataTransfer.setData('text/plain', id) } catch { /* IE quirk; ignore */ }
+  }
+
+  const onRowDragOver = (idx: number) => (e: React.DragEvent<HTMLDivElement>): void => {
+    if (!reorderable || disabled || dragId === null) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    // Drop above this row when cursor is in its top half, below when in its bottom half.
+    const rect      = e.currentTarget.getBoundingClientRect()
+    const aboveHalf = e.clientY < rect.top + rect.height / 2
+    setDropAt(aboveHalf ? idx : idx + 1)
+  }
+
+  const onRowDrop = (e: React.DragEvent<HTMLDivElement>): void => {
+    if (!reorderable || disabled || dragId === null || dropAt === null) {
+      setDragId(null); setDropAt(null); return
+    }
+    e.preventDefault()
+    setRows(prev => {
+      const fromIdx = prev.findIndex(r => r.id === dragId)
+      if (fromIdx < 0) return prev
+      return reorderRows(prev, fromIdx, dropAt)
+    })
+    setDragId(null); setDropAt(null)
+  }
+
+  const onRowDragEnd = (): void => {
+    setDragId(null); setDropAt(null)
   }
 
   const toggleCollapsed = (id: string): void => {
@@ -151,27 +214,35 @@ export function RepeaterInput({
       )}
 
       {rows.map((row, i) => (
-        <RepeaterRow
-          key={row.id}
-          row={row}
-          index={i}
-          totalRows={rows.length}
-          name={name}
-          disabled={disabled}
-          collapsible={collapsible}
-          isCollapsed={collapsible && (collapsed[row.id] ?? false)}
-          reorderable={reorderable}
-          cloneable={cloneable}
-          atMin={atMin}
-          atMax={atMax}
-          columns={columns}
-          onMoveUp={() => moveRow(row.id, -1)}
-          onMoveDown={() => moveRow(row.id, 1)}
-          onClone={() => cloneRow(row.id)}
-          onRemove={() => removeRow(row.id)}
-          onToggleCollapse={() => toggleCollapsed(row.id)}
-        />
+        <React.Fragment key={row.id}>
+          {dropAt === i && <DropIndicator />}
+          <RepeaterRow
+            row={row}
+            index={i}
+            totalRows={rows.length}
+            name={name}
+            disabled={disabled}
+            collapsible={collapsible}
+            isCollapsed={collapsible && (collapsed[row.id] ?? false)}
+            reorderable={reorderable}
+            cloneable={cloneable}
+            atMin={atMin}
+            atMax={atMax}
+            columns={columns}
+            isDragging={dragId === row.id}
+            onMoveUp={() => moveRow(row.id, -1)}
+            onMoveDown={() => moveRow(row.id, 1)}
+            onClone={() => cloneRow(row.id)}
+            onRemove={() => removeRow(row.id)}
+            onToggleCollapse={() => toggleCollapsed(row.id)}
+            onDragStart={onRowDragStart(row.id)}
+            onDragOver={onRowDragOver(i)}
+            onDrop={onRowDrop}
+            onDragEnd={onRowDragEnd}
+          />
+        </React.Fragment>
       ))}
+      {dropAt === rows.length && <DropIndicator />}
 
       <Button
         type="button"
@@ -191,7 +262,9 @@ export function RepeaterInput({
 function RepeaterRow({
   row, index, totalRows, name, disabled,
   collapsible, isCollapsed, reorderable, cloneable, atMin, atMax, columns,
+  isDragging,
   onMoveUp, onMoveDown, onClone, onRemove, onToggleCollapse,
+  onDragStart, onDragOver, onDrop, onDragEnd,
 }: {
   row:               RowState
   index:             number
@@ -205,11 +278,16 @@ function RepeaterRow({
   atMin:             boolean
   atMax:             boolean
   columns:           number
+  isDragging:        boolean
   onMoveUp:          () => void
   onMoveDown:        () => void
   onClone:           () => void
   onRemove:          () => void
   onToggleCollapse:  () => void
+  onDragStart:       (e: React.DragEvent<HTMLDivElement>) => void
+  onDragOver:        (e: React.DragEvent<HTMLDivElement>) => void
+  onDrop:            (e: React.DragEvent<HTMLDivElement>) => void
+  onDragEnd:         (e: React.DragEvent<HTMLDivElement>) => void
 }): React.ReactElement {
   const prefix     = `${name}.${index}`
   const namespaced = useMemo(
@@ -218,9 +296,36 @@ function RepeaterRow({
   )
   const headerLabel = row.itemLabel ?? `Item ${index + 1}`
 
+  // Native HTML5 DnD only fires `dragstart` from elements with `draggable=true`.
+  // We attach it at the row container so the grip handle (and the empty
+  // header gutter, for forgiving aim) both initiate a drag. The handle's
+  // visual cursor + aria-label tell users where the affordance lives.
+  const dragProps = reorderable && !disabled
+    ? {
+        draggable:     true as const,
+        onDragStart,
+        onDragOver,
+        onDrop,
+        onDragEnd,
+      }
+    : {}
+
   return (
-    <div className="rounded-md border bg-card" data-pilotiq-repeater-row="">
+    <div
+      className={`rounded-md border bg-card transition-opacity ${isDragging ? 'opacity-50' : ''}`}
+      data-pilotiq-repeater-row=""
+      {...dragProps}
+    >
       <div className="flex items-center gap-2 border-b px-3 py-2">
+        {reorderable && (
+          <span
+            aria-hidden="true"
+            className={`text-muted-foreground ${disabled ? 'opacity-30' : 'cursor-grab active:cursor-grabbing'}`}
+            title="Drag to reorder"
+          >
+            <GripVerticalIcon className="size-4" />
+          </span>
+        )}
         {collapsible && (
           <button
             type="button"
@@ -299,6 +404,21 @@ function RepeaterRow({
           : <SchemaRenderer elements={namespaced} />}
       </div>
     </div>
+  )
+}
+
+/**
+ * 2px-tall horizontal accent line rendered between rows when the user
+ * drags a row over a valid drop boundary. Uses `pointer-events: none`
+ * so the underlying row's `dragover` keeps firing — without this, the
+ * indicator would steal events and the drop slot would flicker.
+ */
+function DropIndicator(): React.ReactElement {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none h-0.5 rounded-full bg-primary"
+    />
   )
 }
 

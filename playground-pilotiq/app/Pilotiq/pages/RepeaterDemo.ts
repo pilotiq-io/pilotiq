@@ -10,7 +10,7 @@ import {
  * Exercises:
  *   - Basic Repeater with `defaultItems`, `min/maxItems`
  *   - `columns(2)` for grid-laid inner schema
- *   - `reorderable()` (Up/Down buttons)
+ *   - `reorderable()` — drag the grip handle, or use Up/Down buttons
  *   - `cloneable()` duplicate-row button
  *   - `collapsible()` + `collapsed()` per-row collapse with localStorage
  *   - `itemLabel(row => …)` collapsed-row header
