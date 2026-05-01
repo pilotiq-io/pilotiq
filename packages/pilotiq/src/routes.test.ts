@@ -363,6 +363,69 @@ describe('registerPilotiqRoutes — POST submit lifecycle', () => {
     assert.deepEqual(savedWith, { title: 'Hello' })
   })
 
+  it('"create another" body redirects 303 back to /create instead of /edit', async () => {
+    let savedWith: unknown = null
+    class Saver extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title').required()])
+          .save(async (data) => { savedWith = data; return { id: 'r99' } })
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Saver))
+
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/create')!
+    const { res } = await callHandlerCapturing(post.handler, fakeReq({
+      body: { title: 'Hello', _continueCreate: '1' },
+    }))
+
+    assert.deepEqual(res.redirectedTo, { url: '/admin/articles/create', code: 303 })
+    // The sentinel must be stripped from the persisted payload — saved data carries only declared fields.
+    assert.deepEqual(savedWith, { title: 'Hello' })
+  })
+
+  it('"create another" body wins over a custom redirectAfterSave', async () => {
+    class Saver extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title').required()])
+          .save(async () => ({ id: 'r1' }))
+          .redirectAfterSave(() => '/admin/articles/r1/edit')
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Saver))
+
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/create')!
+    const { res } = await callHandlerCapturing(post.handler, fakeReq({
+      body: { title: 'Hello', _continueCreate: '1' },
+    }))
+
+    // Continue-intent wins — the user explicitly asked for another create.
+    assert.deepEqual(res.redirectedTo, { url: '/admin/articles/create', code: 303 })
+  })
+
+  it('"create another" JSON response includes force:true so the SPA navigates to the same URL', async () => {
+    class Saver extends ArticleResource {
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title').required()])
+          .save(async () => ({ id: 'r1' }))
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Saver))
+
+    const post = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/create')!
+    const req = fakeReq({ body: { title: 'Hello', _continueCreate: '1' } })
+    // Mark the request as wanting JSON so the handler takes the SPA branch.
+    req.headers = { accept: 'application/json' }
+    const { res } = await callHandlerCapturing(post.handler, req)
+
+    const body = res.sentBody as { ok?: boolean; redirect?: string; force?: boolean }
+    assert.equal(body.ok, true)
+    assert.equal(body.redirect, '/admin/articles/create')
+    assert.equal(body.force, true)
+  })
+
   it('validation failure re-renders the create view with errors + values, status 422', async () => {
     class Saver extends ArticleResource {
       static override form(form: Form): Form {

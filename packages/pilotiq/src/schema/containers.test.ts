@@ -49,6 +49,22 @@ describe('Section', () => {
     assert.equal(result[0]!.compact, true)
   })
 
+  it('emits dense flag only when the chainable was called', async () => {
+    const off = Section.make('A').schema([])
+    const on  = Section.make('B').dense().schema([])
+    const ra = (await resolveSchema([off]))[0]!
+    const rb = (await resolveSchema([on ]))[0]!
+    assert.equal(ra['dense'], undefined)
+    assert.equal(rb['dense'], true)
+  })
+
+  it('dense composes with compact (orthogonal flags)', async () => {
+    const tree = [Section.make('A').compact().dense().schema([])]
+    const result = await resolveSchema(tree)
+    assert.equal(result[0]!['compact'], true)
+    assert.equal(result[0]!['dense'],   true)
+  })
+
   it('emits persistCollapsed only when collapsible is also true', async () => {
     const noColl = Section.make('A').persistCollapsed().schema([])
     const both   = Section.make('B').collapsible().persistCollapsed().schema([])

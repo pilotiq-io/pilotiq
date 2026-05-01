@@ -74,7 +74,7 @@ describe('defaultPages factory', () => {
     assert.equal(CreateArticle.getLabel(), 'Create Article')
   })
 
-  it('create page schema returns [Heading-with-submit-action, Form] with sentinel save', () => {
+  it('create page schema returns [Heading-with-submit-actions, Form] with sentinel save', () => {
     const CreateArticle = defaultCreatePage(ArticleResource)
     const schema = CreateArticle.schema() as Array<{ getType(): string; getChildren(): unknown[] | undefined }>
     assert.equal(schema.length, 2)
@@ -86,16 +86,35 @@ describe('defaultPages factory', () => {
     assert.equal(formChildren.length, 1)
     assert.equal((formChildren[0] as { getType(): string }).getType(), 'field')
 
-    // Heading carries the Save submit button as right-aligned action.
+    // Heading carries the primary "Create" submit + the secondary
+    // "Create & create another" submit as right-aligned actions.
     const headingChildren = (schema[0]!.getChildren() ?? []) as Array<{ getType(): string; name?: string }>
-    assert.equal(headingChildren.length, 1)
+    assert.equal(headingChildren.length, 2)
     assert.equal(headingChildren[0]!.getType(), 'action')
     assert.equal(headingChildren[0]!.name, 'submit')
+    assert.equal(headingChildren[1]!.getType(), 'action')
+    assert.equal(headingChildren[1]!.name, 'createAnother')
 
     const save = form.getSave()
     assert.equal(typeof save, 'function')
     // sentinel throws — proves the user must override save
     assert.throws(() => (save as () => unknown)())
+  })
+
+  it('create page secondary action posts the _continueCreate sentinel', () => {
+    const CreateArticle = defaultCreatePage(ArticleResource)
+    const schema = CreateArticle.schema() as Array<{ getChildren(): unknown[] | undefined }>
+    const headingChildren = (schema[0]!.getChildren() ?? []) as Array<{
+      isSubmit?(): boolean
+      getFormField?(): { name: string; value: string } | undefined
+      isOutlined?(): boolean
+      getLabel?(): string
+    }>
+    const createAnother = headingChildren[1]!
+    assert.equal(createAnother.isSubmit?.(), true)
+    assert.equal(createAnother.isOutlined?.(), true)
+    assert.deepEqual(createAnother.getFormField?.(), { name: '_continueCreate', value: '1' })
+    assert.equal(createAnother.getLabel?.(), 'Create & create another')
   })
 
   it('edit page has edit mode + sentinel save and loadRecord', () => {

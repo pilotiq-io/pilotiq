@@ -76,15 +76,21 @@ function normalizeRedirect(url: string | undefined, basePath: string): string | 
   return `${trimmedBase}/${url}`
 }
 
-/** Strip framework meta keys (`_formId`, `_method`) from a parsed body. */
+/** Strip framework meta keys (`_formId`, `_method`, `_continueCreate`)
+ * from a parsed body. `continueCreate` mirrors the secondary
+ * "Create & create another" submit on `CreatePage`: when `'1'`, the
+ * create POST handler routes the redirect back to the create URL
+ * instead of the new record's edit page. */
 function splitMeta(body: Record<string, unknown>): {
-  values: Record<string, unknown>
-  formId: string | undefined
+  values:         Record<string, unknown>
+  formId:         string | undefined
+  continueCreate: boolean
 } {
-  const { _formId, _method: _omitMethod, ...rest } = body
+  const { _formId, _method: _omitMethod, _continueCreate, ...rest } = body
   return {
     values: rest,
     formId: typeof _formId === 'string' ? _formId : undefined,
+    continueCreate: _continueCreate === '1' || _continueCreate === 1 || _continueCreate === true,
   }
 }
 
@@ -458,7 +464,7 @@ export function registerPilotiqRoutes(
         if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, wantsJson(req))
 
         const body = await readFormBody(req)
-        const { values, formId } = splitMeta(body)
+        const { values, formId, continueCreate } = splitMeta(body)
         const json = wantsJson(req)
 
         const ctx: SchemaContext = { mode: 'create', basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
@@ -486,12 +492,25 @@ export function registerPilotiqRoutes(
         }
 
         const recordId = (result.record as { id?: unknown })?.id
-        const fallback = recordId !== undefined ? `${base}/${slug}/${String(recordId)}/edit` : `${base}/${slug}`
-        const redirect = normalizeRedirect(result.redirect, base) ?? fallback
+        // "Create & create another" — when the secondary submit fired,
+        // route back to the create page with a fresh form. Skips any
+        // user-supplied `redirectAfterSave`: the user clicked the
+        // button asking explicitly to create another, so the
+        // continue-intent wins. `force: true` tells the SPA-mode
+        // FormRenderer to navigate even though the redirect URL
+        // matches the current page (otherwise the same-URL skip
+        // would preserve the just-submitted values on screen).
+        const fallback = continueCreate
+          ? createUrl
+          : recordId !== undefined ? `${base}/${slug}/${String(recordId)}/edit` : `${base}/${slug}`
+        const redirect = continueCreate
+          ? createUrl
+          : normalizeRedirect(result.redirect, base) ?? fallback
         if (json) {
           return res.json({
             ok: true,
             redirect,
+            ...(continueCreate ? { force: true } : {}),
             ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
           })
         }

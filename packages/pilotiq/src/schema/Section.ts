@@ -19,6 +19,7 @@ export class Section extends Element {
   private _defaultCollapsed = false
   private _aside = false
   private _compact = false
+  private _dense = false
   private _persistCollapsed = false
   private _persistKey?: string
 
@@ -62,6 +63,14 @@ export class Section extends Element {
   compact(v = true): this { this._compact = v; return this }
 
   /**
+   * Tighter spacing between the section's children. Orthogonal to
+   * `compact()` (which trims the section's outer padding/heading):
+   * `dense()` shrinks the inner grid `gap` so a long form fits more
+   * fields per scroll. Compose both for a settings-page look.
+   */
+  dense(v = true): this { this._dense = v; return this }
+
+  /**
    * Persist the open/closed state to localStorage so user choices survive
    * navigation. Only meaningful when `collapsible` is true. The optional
    * `key` overrides the auto-key (which is built from the page slug +
@@ -97,6 +106,7 @@ export class Section extends Element {
       } : {}),
       ...(this._aside   ? { aside:   true } : {}),
       ...(this._compact ? { compact: true } : {}),
+      ...(this._dense   ? { dense:   true } : {}),
     }
   }
 }

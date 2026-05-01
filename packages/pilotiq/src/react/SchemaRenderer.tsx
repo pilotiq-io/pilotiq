@@ -913,13 +913,20 @@ function renderAction(
   // Submit-style action — renders as <button type="submit">. Optionally
   // targets a specific form via the HTML `form="<id>"` attribute so the
   // button can submit a form it lives outside of (e.g. a page-header
-  // Save button driving a form below).
+  // Save button driving a form below). When `formField` is set, the
+  // button posts a sentinel name/value pair (e.g. `_continueCreate=1`)
+  // so the server can branch on which submit was clicked.
   if (submit) {
     const formTarget = el['form'] as string | undefined
+    const formField  = el['formField'] as { name: string; value: string } | undefined
     if (confirm) {
       // Confirm-gated submit: render as type="button" so click opens the
       // dialog instead of submitting; on confirm, programmatically submit
       // the targeted form (or the closest enclosing form if no formTarget).
+      // `formField` is intentionally not threaded here — programmatic
+      // `requestSubmit()` has no submitter, so the name/value pair would
+      // be lost anyway. Pair `.confirm()` with a hidden input on the form
+      // if you need a sentinel under a confirm flow.
       return (
         <ConfirmActionDialog
           key={index}
@@ -956,6 +963,7 @@ function renderAction(
         className={className}
         data-action-name={name}
         aria-label={ariaLabel}
+        {...(formField ? { name: formField.name, value: formField.value } : {})}
       >
         {inner}
       </button>,
@@ -1461,6 +1469,7 @@ function SectionRenderer({ el, index }: { el: ElementMeta; index: number }) {
   const columns     = Number(el['columns'] ?? 1)
   const collapsible = Boolean(el['collapsible'])
   const compact     = Boolean(el['compact'])
+  const dense       = Boolean(el['dense'])
   const persist     = Boolean(el['persistCollapsed'])
   const persistKey  = el['persistKey']
     ? `pilotiq.section.${String(el['persistKey'])}`
@@ -1490,7 +1499,11 @@ function SectionRenderer({ el, index }: { el: ElementMeta; index: number }) {
     catch { /* ignore */ }
   }, [persist, persistKey, collapsed])
 
-  const gridClass = columns === 2 ? 'grid grid-cols-2 gap-4' : columns === 3 ? 'grid grid-cols-3 gap-4' : 'flex flex-col gap-4'
+  // `dense` tightens the inner spacing between the section's children
+  // (orthogonal to `compact`, which trims the section's outer padding /
+  // heading). gap-2 ≈ 8px vs gap-4 ≈ 16px.
+  const innerGap = dense ? 'gap-2' : 'gap-4'
+  const gridClass = columns === 2 ? `grid grid-cols-2 ${innerGap}` : columns === 3 ? `grid grid-cols-3 ${innerGap}` : `flex flex-col ${innerGap}`
   const padding = compact ? 'p-3' : 'p-4'
   const titleSize = compact ? 'text-sm' : 'text-base'
   const Icon = resolveIcon(iconName)
@@ -1983,7 +1996,15 @@ function FormRenderer({ el }: { el: ElementMeta }) {
     setClientErrors(null)
 
     try {
-      const fd = new FormData(e.currentTarget)
+      // Thread `event.submitter` so the clicked submit button's
+      // name/value pair lands in the FormData. Without this, secondary
+      // submits like "Create & create another" can't signal which
+      // button fired through the body. Supported in all evergreen
+      // browsers since 2022; cast through `as any` because TS lib.dom
+      // hasn't picked up the optional submitter argument on every
+      // version.
+      const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLElement | null
+      const fd = new (FormData as any)(e.currentTarget, submitter ?? undefined) as FormData
       const res = await fetch(action, {
         method:  'POST',
         headers: { 'Accept': 'application/json' },
@@ -2010,15 +2031,17 @@ function FormRenderer({ el }: { el: ElementMeta }) {
       const notifs = (data as { notifications?: NotificationMeta[] }).notifications
       if (notifs && notifs.length > 0) for (const n of notifs) notify(n)
       const redirect = String((data as { redirect?: string }).redirect ?? '')
-      // Skip navigate when the redirect is the current URL — re-fetching
-      // the same page would force a form remount (formId changes per
-      // server render) and reset scroll. The user's input is already on
-      // screen; the toast confirms the save. Only navigate when the URL
-      // actually differs (e.g. create → redirect to /edit/{newId}).
+      // The server may force a navigate even when the redirect equals
+      // the current URL — used by "Create & create another" so the
+      // form remounts with empty defaults instead of preserving the
+      // just-submitted values. Otherwise: skip navigate when the
+      // redirect matches the current URL, since re-fetching the same
+      // page would force a form remount and reset scroll.
+      const force = Boolean((data as { force?: boolean }).force)
       const currentUrl = typeof window !== 'undefined'
         ? window.location.pathname + window.location.search
         : ''
-      if (redirect && redirect !== currentUrl) {
+      if (redirect && (force || redirect !== currentUrl)) {
         navigate(redirect)
         // Don't reset submitting on success — the navigation will unmount us.
       } else {

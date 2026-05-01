@@ -449,11 +449,14 @@ The page-subclass path is usually the right choice because `Resource.table()` do
 
 The submit button renders **in the page header** (right of the title), not at the bottom of the form. The button uses HTML's `form="<id>"` attribute to drive the form below it.
 
-| Default      | Page          | Header button label                                            |
-| ------------ | ------------- | -------------------------------------------------------------- |
-| `submit`     | `CreatePage`  | "Create ${labelSingular}"                                      |
-| `submit`     | `EditPage`    | "Save changes"                                                 |
-| `submit`     | global edit   | "Save changes"                                                 |
+| Default          | Page          | Header button label                                            |
+| ---------------- | ------------- | -------------------------------------------------------------- |
+| `submit`         | `CreatePage`  | "Create ${labelSingular}"                                      |
+| `createAnother`  | `CreatePage`  | "Create & create another" (outlined, secondary)                |
+| `submit`         | `EditPage`    | "Save changes"                                                 |
+| `submit`         | global edit   | "Save changes"                                                 |
+
+`CreatePage` ships **two** submit buttons by default — a primary "Create" and a secondary outlined "Create & create another". The secondary button posts a sentinel (`_continueCreate=1`) that the create POST handler reads to redirect back to `/create` with a fresh form. The behavior wins over `Form.redirectAfterSave` since the user explicitly asked to keep going. Drop the second button by overriding `getFormActions(R)` to return only the primary submit, or build your own pair via `Action.formField(name, value)`.
 
 Override `CreatePage.getFormActions(R)` / `EditPage.getFormActions(R)` to customize the header buttons. Return `[]` to suppress entirely (e.g. if you compose your own action row inside `R.form()`).
 

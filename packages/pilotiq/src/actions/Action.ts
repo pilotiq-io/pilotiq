@@ -195,6 +195,12 @@ export interface ActionMeta extends ElementMeta {
    * the HTML `form="<id>"` attribute so it can submit a form it lives
    * outside of (e.g. a Save action in the page header). */
   form?:        string
+  /** When `submit` is true, attach `name`+`value` to the `<button>` so
+   * the clicked button's pair lands in the form body. Used by the
+   * "Create & create another" pattern: a secondary submit posts a
+   * sentinel like `{ _continueCreate: '1' }` that the server reads to
+   * route the redirect back to the create page. */
+  formField?:   { name: string; value: string }
   /** Modal-style action chrome. Present when `.schema()` and/or any of
    * the `modalXxx` builders ran. The fields themselves arrive on
    * `meta.children` via the schema resolver. */
@@ -251,6 +257,7 @@ export class Action extends Element {
   protected _dispatchUrl?: string
   protected _submit = false
   protected _formTarget?: string
+  protected _formField?: { name: string; value: string }
 
   // Modal chrome — present whenever `.schema()` or any of the modal
   // builders below have been called.
@@ -839,6 +846,20 @@ export class Action extends Element {
     return this
   }
 
+  /**
+   * Attach a `name`+`value` pair to a submit button so it round-trips
+   * through the form body when this specific button is clicked. Wires
+   * the "Create & create another" pattern: the secondary submit posts
+   * `{ _continueCreate: '1' }` and the server routes the redirect back
+   * to the create page. Browsers natively only include the clicked
+   * submit button's name/value in `FormData`; the FormRenderer threads
+   * `event.submitter` into the `FormData` constructor to preserve that.
+   */
+  formField(name: string, value: string = '1'): this {
+    this._formField = { name, value }
+    return this
+  }
+
   // ─── Getters ──────────────────────────────────────────
 
   getLabel():     string             { return this._label }
@@ -851,6 +872,7 @@ export class Action extends Element {
   getDispatchUrl(): string | undefined        { return this._dispatchUrl }
   isSubmit():       boolean                   { return this._submit }
   getFormTarget():  string | undefined        { return this._formTarget }
+  getFormField():   { name: string; value: string } | undefined { return this._formField }
   hasModal():       boolean                   { return this._hasModal }
   /** Schema fields stored as children; `getChildren()` returns the same. */
   getSchema():      Element[]                 { return this._children ?? [] }
@@ -889,6 +911,7 @@ export class Action extends Element {
       ...(this._dispatchUrl ? { dispatchUrl: this._dispatchUrl } : {}),
       ...(this._submit      ? { submit:      true              } : {}),
       ...(this._formTarget  ? { form:        this._formTarget  } : {}),
+      ...(this._formField   ? { formField:   this._formField   } : {}),
       ...(modal             ? { modal                          } : {}),
       ...(this._color       ? { color:       this._color       } : {}),
       ...(this._size        ? { size:        this._size        } : {}),

@@ -360,7 +360,7 @@ A container is any Element that populates `_children`. Built-in containers:
 | Container | Set children with    | Notes                                              |
 | --------- | -------------------- | -------------------------------------------------- |
 | `Card`    | `.schema(elements)`  | Title + description optional                       |
-| `Section` | `.schema(elements)`  | `.columns(1\|2\|3)`, `.collapsible()`              |
+| `Section` | `.schema(elements)`  | `.columns(1\|2\|3)`, `.collapsible()`, `.compact()`, `.dense()` |
 | `Tabs`    | `.tabs([Tab, ...])`  | Each `Tab` has its own `.schema(elements)`        |
 | `Tab`     | `.schema(elements)`  | Children of one tab                                |
 | `Grid`    | `.schema(elements)`  | Multi-column layout                                |

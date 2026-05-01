@@ -326,13 +326,21 @@ export class CreatePage extends ResourcePage {
 
   /**
    * Action buttons rendered to the right of the page heading. Default:
-   * a single submit button. The submit action's HTML `form` attribute is
-   * auto-targeted at the form below so the button submits it. Override
-   * to customize (e.g. add a Cancel link) or return `[]` to suppress.
+   * primary "Create" submit + a secondary "Create & create another"
+   * (outlined) submit. The "create another" button posts a sentinel
+   * (`_continueCreate=1`) so the server routes the redirect back to
+   * `/create` instead of the new record's `/edit` page. Override to
+   * customize (drop the secondary button, add a Cancel link, etc.) or
+   * return `[]` to suppress.
    */
   static getFormActions(R: ResourceClass): Action[] {
     return [
       Action.make('submit').label(`Create ${R.labelSingular}`).submit(),
+      Action.make('createAnother')
+        .label('Create & create another')
+        .submit()
+        .outlined()
+        .formField('_continueCreate', '1'),
     ]
   }
 
