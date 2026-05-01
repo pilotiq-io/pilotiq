@@ -608,7 +608,36 @@ describe('Action bulk soft-delete factories (Plan #13)', () => {
     } as never
     const handler = Action.bulkDelete(R, '/admin').getHandler()!
     const result = await handler({ records: [{ id: '1' }], user: null })
-    assert.match((result as { notify: { title: string } }).notify.title, /1 posts deleted/)
+    // Count-aware singular: 1 → labelSingular, not the naive plural.
+    assert.match((result as { notify: { title: string } }).notify.title, /1 post deleted/)
+  })
+
+  it('bulkDelete uses the count-aware singular form when n=1', async () => {
+    const R = {
+      labelSingular: 'Article',
+      label:         'Articles',  // explicit plural
+      getSlug:       () => 'articles',
+      softDeletes:   true,
+      async deleteRecord() { /* no-op */ },
+    } as never
+    const handler = Action.bulkDelete(R, '/admin').getHandler()!
+    const r1 = await handler({ records: [{ id: '1' }], user: null })
+    assert.match((r1 as { notify: { title: string } }).notify.title, /^1 article moved to trash$/)
+    const r5 = await handler({ records: Array.from({ length: 5 }, (_, i) => ({ id: String(i) })), user: null })
+    assert.match((r5 as { notify: { title: string } }).notify.title, /^5 articles moved to trash$/)
+  })
+
+  it('bulkDelete falls back to naive ${labelSingular}s when no plural label is set', async () => {
+    const R = {
+      labelSingular: 'Post',
+      // No `label` set — uses fallback.
+      getSlug:       () => 'posts',
+      softDeletes:   true,
+      async deleteRecord() { /* no-op */ },
+    } as never
+    const handler = Action.bulkDelete(R, '/admin').getHandler()!
+    const r5 = await handler({ records: Array.from({ length: 5 }, (_, i) => ({ id: String(i) })), user: null })
+    assert.match((r5 as { notify: { title: string } }).notify.title, /5 posts moved to trash/)
   })
 
   it('bulkDelete skips rows whose canDelete returns false', async () => {

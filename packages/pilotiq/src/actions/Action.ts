@@ -106,6 +106,10 @@ export type ActionModalWidth = 'sm' | 'md' | 'lg' | 'xl'
  * "always allowed." */
 interface ResourceLike {
   labelSingular: string
+  /** Plural label. When unset, factories fall back to
+   *  `${labelSingular}s` (naive). Used by bulk-action notification
+   *  copy so "1 Post" / "5 Posts" render correctly. */
+  label?: string
   getSlug(): string
   /** Plan #13 — soft-delete opt-in flag. When true, `Action.delete`
    *  auto-hides on already-trashed rows; `Action.restore` /
@@ -120,6 +124,16 @@ interface ResourceLike {
   canDelete?(user: unknown, record: unknown): boolean | Promise<boolean>
   canRestore?(user: unknown, record: unknown): boolean | Promise<boolean>
   canForceDelete?(user: unknown, record: unknown): boolean | Promise<boolean>
+}
+
+/** Pick the right label form for a count — `labelSingular` for 1,
+ *  `label` (plural, lowercased) for any other count. Fall back to a
+ *  naive `${labelSingular}s` when no plural label is set. Used by bulk
+ *  notification copy so we don't ship "1 posts moved to trash". */
+function labelForCount(R: ResourceLike, n: number): string {
+  if (n === 1) return R.labelSingular.toLowerCase()
+  const plural = R.label?.toLowerCase()
+  return plural ?? `${R.labelSingular.toLowerCase()}s`
 }
 
 /** Read `record[R.deletedAtColumn ?? 'deletedAt']` and return true when
@@ -415,7 +429,7 @@ export class Action extends Element {
       .label('Delete selected')
       .destructive()
       .bulk()
-      .confirm(`Delete the selected ${R.labelSingular.toLowerCase()}s?`)
+      .confirm(`Delete the selected ${labelForCount(R, 0)}?`)
       .handler(async (ctx) => {
         const records = ctx.records ?? []
         const Rfull = R as ResourceLike & { deleteRecord(id: string): Promise<void> }
@@ -428,7 +442,7 @@ export class Action extends Element {
           try { await Rfull.deleteRecord(id); n++ } catch { /* skip — agg notify shows total */ }
         }
         const verb = R.softDeletes ? 'moved to trash' : 'deleted'
-        return { notify: { title: `${n} ${R.labelSingular.toLowerCase()}s ${verb}`, type: 'success' } as never }
+        return { notify: { title: `${n} ${labelForCount(R, n)} ${verb}`, type: 'success' } as never }
       })
   }
 
@@ -440,7 +454,7 @@ export class Action extends Element {
       .label('Restore selected')
       .color('success')
       .bulk()
-      .confirm(`Restore the selected ${R.labelSingular.toLowerCase()}s?`)
+      .confirm(`Restore the selected ${labelForCount(R, 0)}?`)
       .handler(async (ctx) => {
         const records = ctx.records ?? []
         const Rfull = R as ResourceLike & { model?: { restore?(id: string | number): Promise<unknown> } }
@@ -456,7 +470,7 @@ export class Action extends Element {
           if (!allowed) continue
           try { await restore(id); n++ } catch { /* skip */ }
         }
-        return { notify: { title: `${n} ${R.labelSingular.toLowerCase()}s restored`, type: 'success' } as never }
+        return { notify: { title: `${n} ${labelForCount(R, n)} restored`, type: 'success' } as never }
       })
   }
 
@@ -468,7 +482,7 @@ export class Action extends Element {
       .label('Delete forever')
       .destructive()
       .bulk()
-      .confirm(`Permanently delete the selected ${R.labelSingular.toLowerCase()}s? This cannot be undone.`)
+      .confirm(`Permanently delete the selected ${labelForCount(R, 0)}? This cannot be undone.`)
       .handler(async (ctx) => {
         const records = ctx.records ?? []
         const Rfull = R as ResourceLike & { model?: { forceDelete?(id: string | number): Promise<void> } }
@@ -484,7 +498,7 @@ export class Action extends Element {
           if (!allowed) continue
           try { await forceDelete(id); n++ } catch { /* skip */ }
         }
-        return { notify: { title: `${n} ${R.labelSingular.toLowerCase()}s permanently deleted`, type: 'success' } as never }
+        return { notify: { title: `${n} ${labelForCount(R, n)} permanently deleted`, type: 'success' } as never }
       })
   }
 
