@@ -9,6 +9,11 @@ export {
 export { PilotiqRegistry } from './PilotiqRegistry.js'
 export { pilotiq } from './PilotiqServiceProvider.js'
 export { registerPilotiqRoutes } from './routes.js'
+export {
+  searchAllResources,
+  type GlobalSearchResult,
+  type GlobalSearchOptions,
+} from './search.js'
 
 // Per-page-role data builders (consumed by Vike +data hooks for SPA nav).
 export {

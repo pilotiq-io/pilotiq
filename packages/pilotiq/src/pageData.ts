@@ -20,6 +20,7 @@ import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { Form } from './elements/Form.js'
 import { applyStateUpdate, findForms, findWizardStepFields } from './elements/dispatchForm.js'
 import { validateSchema } from './validation/index.js'
+import { searchAllResources, type GlobalSearchResult } from './search.js'
 import { loadTableRecords, type QueryParams } from './elements/dispatchTable.js'
 import { findActions } from './elements/dispatchAction.js'
 import { ListTabs } from './elements/ListTabs.js'
@@ -1019,6 +1020,23 @@ export async function customPageData(
     layout:   cfg.layout,
     notifications: consumeFlashedNotifications(req),
   }
+}
+
+// ─── Plan #12 global search data builder ─────────────────────
+
+/**
+ * Resolve the user via `pilotiq.resolveUser(req)` and run the
+ * panel-wide search. Mirrors the formStateData/formWizardData
+ * shape so the `/_search` route handler stays a thin wrapper.
+ */
+export async function searchData(
+  pilotiq: Pilotiq,
+  query:   string,
+  req?:    unknown,
+): Promise<{ ok: true; results: GlobalSearchResult[] }> {
+  const user = await pilotiq.resolveUser(req)
+  const results = await searchAllResources(pilotiq, query, user)
+  return { ok: true, results }
 }
 
 // ─── Vike +data dispatcher ───────────────────────────────────

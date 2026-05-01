@@ -1,7 +1,8 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { SidebarLayout } from './layouts/SidebarLayout.js'
 import { TopbarLayout } from './layouts/TopbarLayout.js'
 import { ToasterProvider } from './Toaster.js'
+import { CommandPalette, CommandPaletteProvider } from './CommandPalette.js'
 import type { NotificationMeta } from '../notifications/Notification.js'
 import type { ComponentRegistry } from './icon-context.js'
 import { ComponentRegistryProvider } from './icon-context.js'
@@ -35,10 +36,30 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
   const Layout = layout === 'topbar' ? TopbarLayout : SidebarLayout
   // exactOptionalPropertyTypes: only spread `initialNotifications` when set.
   const toasterProps = notifications ? { initialNotifications: notifications } : {}
+
+  // Plan #12 — palette open state lives at AppShell so the trigger pill
+  // (rendered inside the layout's header) and the palette dialog both
+  // observe the same flag via context.
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const paletteProps: {
+    basePath:     string
+    navigation?:  NavItem[]
+    open:         boolean
+    onOpenChange: (open: boolean) => void
+  } = {
+    basePath:     props.basePath,
+    open:         paletteOpen,
+    onOpenChange: setPaletteOpen,
+  }
+  if (props.panel.navigation) paletteProps.navigation = props.panel.navigation
+
   return (
     <ComponentRegistryProvider value={componentRegistry}>
       <ToasterProvider {...toasterProps}>
-        <Layout {...props} />
+        <CommandPaletteProvider setOpen={setPaletteOpen}>
+          <Layout {...props} />
+          <CommandPalette {...paletteProps} />
+        </CommandPaletteProvider>
       </ToasterProvider>
     </ComponentRegistryProvider>
   )

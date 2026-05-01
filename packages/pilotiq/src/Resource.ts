@@ -1,8 +1,8 @@
 import type { Element } from './schema/Element.js'
 import type { Form } from './elements/Form.js'
-import type { Table } from './elements/Table.js'
+import { Table } from './elements/Table.js'
 import type { Page } from './Page.js'
-import type { ModelLike } from './orm/modelDefaults.js'
+import type { ModelLike, ModelQuery } from './orm/modelDefaults.js'
 import type { IconValue } from './icons/types.js'
 import { defaultPages } from './defaultPages.js'
 
@@ -103,6 +103,91 @@ export abstract class Resource {
    * subclasses do so structurally via their static methods.
    */
   static model?: ModelLike
+
+  // ─── Plan #12: global search ───────────────────────────────
+  // Opt-in: resources with `globalSearch = false` are skipped by the
+  // panel-level Cmd+K palette. Defaults below derive everything from
+  // already-shipped surfaces (`recordTitleAttribute`, `Column.searchable()`,
+  // the standard view URL) so the common case needs zero overrides.
+
+  /** Include this resource in Cmd+K palette results. Default `false` —
+   * quiet resources don't pollute results until users opt in. */
+  static globalSearch: boolean = false
+
+  /**
+   * Columns the default search query LIKE-matches against. The default
+   * dedupes `recordTitleAttribute` (Plan #9) with every searchable
+   * column on the resource's table. Override to constrain or extend.
+   * Returning an empty array effectively opts the resource out even
+   * when `globalSearch=true`.
+   */
+  static globallySearchableAttributes(): string[] {
+    const attrs = new Set<string>()
+    if (this.recordTitleAttribute) attrs.add(this.recordTitleAttribute)
+    // Materialise the resource's configured table once and read every
+    // `searchable()` column off it. The Table builder is a pure
+    // configuration call (no DB hits, no I/O), so doing this per
+    // search request is fine; resources that don't want this can
+    // override `globallySearchableAttributes()` directly.
+    try {
+      const table = this.table(Table.make())
+      for (const col of table.getColumns()) {
+        if (col.isSearchable()) attrs.add(col.name)
+      }
+    } catch { /* defensive — bad user table()? skip */ }
+    return [...attrs]
+  }
+
+  /**
+   * Title shown in the palette result row. Default resolution chain:
+   * `record[recordTitleAttribute]` → `record.name` → `record.title` →
+   * `record.id`. Override to customise (e.g. include the id).
+   */
+  static getGlobalSearchResultTitle(record: unknown): string {
+    const r = record as Record<string, unknown> | null | undefined
+    if (!r) return ''
+    if (this.recordTitleAttribute && r[this.recordTitleAttribute] !== undefined) {
+      return String(r[this.recordTitleAttribute])
+    }
+    if (r['name']  !== undefined) return String(r['name'])
+    if (r['title'] !== undefined) return String(r['title'])
+    if (r['id']    !== undefined) return String(r['id'])
+    return ''
+  }
+
+  /**
+   * Optional second-line text under the title. Returning `undefined`
+   * tells the renderer to skip the subtitle row. Useful for status,
+   * timestamps, or category pills.
+   */
+  static getGlobalSearchResultSubtitle(_record: unknown): string | undefined {
+    return undefined
+  }
+
+  /**
+   * URL the palette navigates to on Enter. Default uses the View page
+   * when one exists, else the Edit page, else the resource list. Pass
+   * `base` (the panel base path) so overrides don't have to thread it
+   * through the panel config.
+   */
+  static getGlobalSearchResultUrl(record: unknown, base: string): string {
+    const r = record as Record<string, unknown> | null | undefined
+    const slug = this.getSlug()
+    if (!r) return `${base}/${slug}`
+    const id = r['id']
+    if (id === undefined || id === null) return `${base}/${slug}`
+    return `${base}/${slug}/${String(id)}`
+  }
+
+  /**
+   * Override the default LIKE-on-attributes search query. Return a
+   * `ModelQuery` (still chainable through `paginate(1, limit)`) for
+   * advanced cases — joins, full-text, `pg_trgm`. Returning `undefined`
+   * (the default) falls through to the framework-built query.
+   */
+  static getGlobalSearchQuery(_needle: string): ModelQuery | undefined {
+    return undefined
+  }
 
   // ─── Plan #10: authorization predicates ────────────────────
   // All async, all default `true`. Routes call them with the resolved

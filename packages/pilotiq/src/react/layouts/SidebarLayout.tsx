@@ -21,6 +21,7 @@ import {
 } from '../ui/sidebar.js'
 import { Separator } from '../ui/separator.js'
 import { ThemeToggle } from '../ThemeToggle.js'
+import { SearchTrigger } from '../SearchTrigger.js'
 import type { AppShellProps } from '../AppShell.js'
 import { useIconFor } from '../icon-context.js'
 import type { SerializedIcon } from '../../icons/types.js'
@@ -191,6 +192,7 @@ export function SidebarLayout({ panel, basePath, currentPath, children }: AppShe
           <div className="flex flex-1 items-center gap-2 px-3">
             <SidebarTrigger />
             <Separator orientation="vertical" className="me-2 data-[orientation=vertical]:h-4" />
+            <SearchTrigger />
           </div>
           <div className="flex items-center gap-1 px-3">
             <ThemeToggle />

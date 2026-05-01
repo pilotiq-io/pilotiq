@@ -97,4 +97,78 @@ describe('Resource (static API)', () => {
     }
     assert.equal(R.getNavigationIcon(), 'pencil')
   })
+
+  // ─── Plan #12: global search ───────────────────────────────
+
+  it('globalSearch defaults to false (opt-in)', () => {
+    class R extends Resource { static override label = 'Articles' }
+    assert.equal(R.globalSearch, false)
+  })
+
+  it('globallySearchableAttributes() defaults to recordTitleAttribute + searchable columns', () => {
+    class R extends Resource {
+      static override label                = 'Articles'
+      static override recordTitleAttribute = 'title'
+      static override table(table: Table): Table {
+        return table.columns([
+          Column.make('title').searchable(),
+          Column.make('excerpt').searchable(),
+          Column.make('createdAt'),
+        ])
+      }
+    }
+    const attrs = R.globallySearchableAttributes()
+    assert.deepEqual([...attrs].sort(), ['excerpt', 'title'])
+  })
+
+  it('globallySearchableAttributes() returns [] when no recordTitle and no searchable columns', () => {
+    class R extends Resource { static override label = 'Things' }
+    assert.deepEqual(R.globallySearchableAttributes(), [])
+  })
+
+  it('globallySearchableAttributes() honors override', () => {
+    class R extends Resource {
+      static override label = 'Things'
+      static override globallySearchableAttributes(): string[] {
+        return ['custom_search_index']
+      }
+    }
+    assert.deepEqual(R.globallySearchableAttributes(), ['custom_search_index'])
+  })
+
+  it('getGlobalSearchResultTitle resolves through recordTitleAttribute → name → title → id', () => {
+    class R1 extends Resource {
+      static override label                = 'Articles'
+      static override recordTitleAttribute = 'headline'
+    }
+    assert.equal(R1.getGlobalSearchResultTitle({ headline: 'Hello', name: 'fallback' }), 'Hello')
+
+    class R2 extends Resource { static override label = 'Things' }
+    assert.equal(R2.getGlobalSearchResultTitle({ name: 'Bob' }),  'Bob')
+    assert.equal(R2.getGlobalSearchResultTitle({ title: 'Doc' }), 'Doc')
+    assert.equal(R2.getGlobalSearchResultTitle({ id: 42 }),       '42')
+    assert.equal(R2.getGlobalSearchResultTitle({}),               '')
+    assert.equal(R2.getGlobalSearchResultTitle(null),             '')
+  })
+
+  it('getGlobalSearchResultSubtitle defaults to undefined', () => {
+    class R extends Resource { static override label = 'Things' }
+    assert.equal(R.getGlobalSearchResultSubtitle({ status: 'draft' }), undefined)
+  })
+
+  it('getGlobalSearchResultUrl defaults to ${base}/${slug}/${id}', () => {
+    class R extends Resource {
+      static override label = 'Articles'
+      static override slug  = 'articles'
+    }
+    assert.equal(R.getGlobalSearchResultUrl({ id: '42' }, '/admin'), '/admin/articles/42')
+    assert.equal(R.getGlobalSearchResultUrl({ id: 42 },   '/admin'), '/admin/articles/42')
+    assert.equal(R.getGlobalSearchResultUrl({},           '/admin'), '/admin/articles')
+    assert.equal(R.getGlobalSearchResultUrl(null,         '/admin'), '/admin/articles')
+  })
+
+  it('getGlobalSearchQuery defaults to undefined (use built-in LIKE chain)', () => {
+    class R extends Resource { static override label = 'Things' }
+    assert.equal(R.getGlobalSearchQuery('alice'), undefined)
+  })
 })

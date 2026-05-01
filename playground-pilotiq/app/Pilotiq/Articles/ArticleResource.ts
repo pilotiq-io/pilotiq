@@ -24,6 +24,15 @@ export class ArticleResource extends Resource {
   static override navigationBadgeColor  = 'warning' as const
   static override recordTitleAttribute  = 'title'
 
+  // ── Global search (Plan #12) ──────────────────────────────
+  static override globalSearch = true
+  static override getGlobalSearchResultSubtitle(record: unknown): string | undefined {
+    const r = record as { status?: string; slug?: string }
+    if (r?.status === 'published') return 'Published'
+    if (r?.status === 'draft')     return 'Draft'
+    return undefined
+  }
+
   // ── Authorization (Plan #10) ──────────────────────────────
   // Demo only — real apps would derive the role from the resolved user
   // (see `AdminPanel.ts`, `Pilotiq.user(...)`). Here we hard-gate

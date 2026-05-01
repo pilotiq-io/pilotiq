@@ -1,6 +1,7 @@
 import React from 'react'
 import { Separator } from '../ui/separator.js'
 import { ThemeToggle } from '../ThemeToggle.js'
+import { SearchTrigger } from '../SearchTrigger.js'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -212,6 +213,7 @@ export function TopbarLayout({ panel, basePath, currentPath, children }: AppShel
             </a>
           )}
         </nav>
+        <SearchTrigger />
         <ThemeToggle />
       </header>
       <div className="flex flex-1 overflow-hidden">

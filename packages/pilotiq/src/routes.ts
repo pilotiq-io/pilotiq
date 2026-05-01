@@ -13,6 +13,7 @@ import {
   resourceViewData, globalEditData, globalViewData, customPageData,
   formStateData, type FormStateScope,
   formWizardData,
+  searchData,
 } from './pageData.js'
 import type { ThemeConfig } from './theme/types.js'
 import { presets } from './theme/presets.js'
@@ -296,6 +297,18 @@ export function registerPilotiqRoutes(
   // ── File uploads (FileUpload field POST target) ───────
   router.post(`${base}/_uploads`, async (req, res) => {
     return handleUploadRequest(req, res, pilotiq)
+  })
+
+  // ── Plan #12 global search ────────────────────────────
+  // GET ${base}/_search?q=…&limit=… → { ok, results }
+  // No 403 on unrecognised users — `searchAllResources` filters per
+  // resource. The Pilotiq.guard() layer above is the panel-level gate.
+  router.get(`${base}/_search`, async (req, res) => {
+    const query = req.query as Record<string, unknown> | undefined
+    const rawQ  = query?.['q']
+    const q     = typeof rawQ === 'string' ? rawQ.slice(0, 200) : ''
+    const data  = await searchData(pilotiq, q, req)
+    return res.json(data)
   })
 
   // ── Resource routes ───────────────────────────────────
