@@ -207,10 +207,12 @@ export function RepeaterInput({
   // FormData and POSTs to the partial-resolve endpoint — see
   // FormStateContext.
   //
-  // Limitation: Switch/Slider and other React-controlled primitives
-  // that update via callbacks (not native input events) won't bubble
-  // here. Native inputs (text/number/email/textarea/select/range/date)
-  // are covered.
+  // React-controlled primitives that update via callbacks (Switch /
+  // Slider / Base UI Select / etc.) don't bubble native input events
+  // here. Each of those renderers calls `fs.triggerLive(value)`
+  // explicitly to compensate (Plan #14 v1.2). Native inputs
+  // (text/number/email/textarea/range/date/checkbox/radio) keep
+  // bubbling through this delegate as before.
   const formState = useFormState()
   const fireLive = (name: string, value: string, eventKind: 'change' | 'blur'): void => {
     if (!formState) return

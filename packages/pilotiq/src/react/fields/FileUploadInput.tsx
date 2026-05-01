@@ -50,11 +50,13 @@ export function FileUploadInput({
   const [busy, setBusy] = useState(false)
 
   const setUrls = (next: string[]): void => {
+    const stored = multiple ? next : (next[0] ?? null)
     if (fs.controlled) {
-      fs.setValue(multiple ? next : (next[0] ?? null))
-      fs.triggerLive()
+      fs.setValue(stored)
+      fs.triggerLive(stored)
     } else {
       setLocalUrls(next)
+      fs.triggerLive(stored)
     }
   }
 

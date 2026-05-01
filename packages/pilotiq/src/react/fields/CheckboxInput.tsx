@@ -17,8 +17,8 @@ export function CheckboxInput({
     ? (fs.value === true || fs.value === 'true' || fs.value === 1 || fs.value === '1')
     : localChecked
   const onChange = (next: boolean): void => {
-    if (fs.controlled) { fs.setValue(next); fs.triggerLive() }
-    else setLocalChecked(next)
+    if (fs.controlled) { fs.setValue(next); fs.triggerLive(next) }
+    else { setLocalChecked(next); fs.triggerLive(next) }
   }
   return (
     <div className="flex items-center gap-2">

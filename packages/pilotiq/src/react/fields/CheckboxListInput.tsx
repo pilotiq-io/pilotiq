@@ -35,8 +35,8 @@ export function CheckboxListInput({
     const next = checked
       ? Array.from(new Set([...value, optValue]))
       : value.filter(v => v !== optValue)
-    if (fs.controlled) { fs.setValue(next); fs.triggerLive() }
-    else setLocalValue(next)
+    if (fs.controlled) { fs.setValue(next); fs.triggerLive(next) }
+    else { setLocalValue(next); fs.triggerLive(next) }
   }
 
   const layout = columns > 1

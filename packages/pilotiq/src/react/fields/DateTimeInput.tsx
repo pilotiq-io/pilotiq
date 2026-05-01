@@ -24,8 +24,8 @@ export function DateTimeInput({
     : localValue
 
   const setValue = (v: string): void => {
-    if (fs.controlled) { fs.setValue(v); fs.triggerLive() }
-    else setLocalValue(v)
+    if (fs.controlled) { fs.setValue(v); fs.triggerLive(v) }
+    else { setLocalValue(v); fs.triggerLive(v) }
   }
 
   return (

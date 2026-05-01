@@ -28,11 +28,13 @@ export function DateFieldInput({
     date = localDate
   }
   const onSelect = (next: Date | undefined): void => {
+    const iso = next ? next.toISOString().slice(0, 10) : ''
     if (fs.controlled) {
-      fs.setValue(next ? next.toISOString().slice(0, 10) : '')
-      fs.triggerLive()
+      fs.setValue(iso)
+      fs.triggerLive(iso)
     } else {
       setLocalDate(next)
+      fs.triggerLive(iso)
     }
   }
   const formatted = date ? date.toISOString().slice(0, 10) : ''

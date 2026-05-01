@@ -1,6 +1,6 @@
 import {
   Page, Heading, Section,
-  Form, TextField, NumberField, ToggleField, SelectField, Repeater,
+  Form, TextField, NumberField, ToggleField, SelectField, SliderField, Repeater,
   Notification,
 } from '@pilotiq/pilotiq'
 
@@ -80,7 +80,42 @@ export class RepeaterDemo extends Page {
                     .prefix('$')
                     .helperText('Auto-computed from quantity × unit price (live).')
                     .readonly(),
-                  ToggleField.make('discounted').label('Apply discount'),
+                  // Plan #14 v1.2 — Switch + Slider inner-live verification.
+                  // Both call `fs.triggerLive(value)` explicitly inside their
+                  // renderers; toggling discount on writes a 10% discount
+                  // back into a sibling field, sliding the discount-rate
+                  // updates that same field. Confirms inner `live()` fires
+                  // for React-controlled primitives, not just native inputs.
+                  ToggleField.make('discounted')
+                    .label('Apply discount')
+                    .live()
+                    .afterStateUpdated((value, ctx) => {
+                      const on    = value === true || value === 'true'
+                      const sub   = Number(ctx.row?.$get('subtotal') ?? 0)
+                      const rate  = Number(ctx.row?.$get('discountRate') ?? 10)
+                      ctx.row?.$set('discountAmount',
+                        on ? Math.round(sub * (rate / 100) * 100) / 100 : 0,
+                      )
+                    }),
+                  SliderField.make('discountRate')
+                    .label('Discount rate (%)')
+                    .min(0).max(50).step(5)
+                    .default(10)
+                    .showValue()
+                    .live({ debounce: 200 })
+                    .afterStateUpdated((value, ctx) => {
+                      const on  = ctx.row?.$get('discounted') === true
+                      const sub = Number(ctx.row?.$get('subtotal') ?? 0)
+                      const r   = Number(value ?? 0)
+                      ctx.row?.$set('discountAmount',
+                        on ? Math.round(sub * (r / 100) * 100) / 100 : 0,
+                      )
+                    }),
+                  NumberField.make('discountAmount')
+                    .label('Discount')
+                    .prefix('$')
+                    .helperText('Live-computed from toggle + slider.')
+                    .readonly(),
                 ]),
             ]),
 

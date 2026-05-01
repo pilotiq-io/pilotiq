@@ -21,8 +21,8 @@ export function RadioInput({
     ? (fs.value !== undefined && fs.value !== null ? String(fs.value) : '')
     : localValue
   const onChange = (next: string): void => {
-    if (fs.controlled) { fs.setValue(next); fs.triggerLive() }
-    else setLocalValue(next)
+    if (fs.controlled) { fs.setValue(next); fs.triggerLive(next) }
+    else { setLocalValue(next); fs.triggerLive(next) }
   }
   const layout = inline ? 'flex flex-row flex-wrap gap-4' : 'flex flex-col gap-2'
   return (

@@ -26,10 +26,14 @@ export function SelectFieldInput({
   const value = fs.controlled
     ? (fs.value !== undefined && fs.value !== null ? String(fs.value) : '')
     : localValue
+  // Base UI Select's onValueChange is a callback (no native bubbling
+  // change event). Inner-Repeater rows need the explicit triggerLive
+  // in both paths to fire `live()` re-resolve. Pass the new value as
+  // `valueOverride` so dotted-path inner fields hit the right slot.
   const onValueChange = (v: string | null): void => {
     const next = v ?? ''
-    if (fs.controlled) { fs.setValue(next); fs.triggerLive() }
-    else setLocalValue(next)
+    if (fs.controlled) { fs.setValue(next); fs.triggerLive(next) }
+    else { setLocalValue(next); fs.triggerLive(next) }
   }
   return (
     <>

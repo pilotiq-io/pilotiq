@@ -28,10 +28,16 @@ export function SliderInput({
   const [localValue, setLocalValue] = useState<number>(toNumber(defaultValue))
   const value = fs.controlled ? toNumber(fs.value) : localValue
 
+  // Base UI Slider's onValueChange callback does NOT dispatch a native
+  // bubbling change event, so RepeaterInput's container-level delegate
+  // can't pick up inner-row live() triggers. Call triggerLive explicitly
+  // in BOTH paths (no-op outside FormStateProvider / when field has no
+  // `live` config). Value passed as `valueOverride` so dotted-path
+  // inner-Repeater fields pass through correctly.
   const onChange = (next: number | readonly number[]): void => {
     const v = Array.isArray(next) ? Number(next[0]) : Number(next)
-    if (fs.controlled) { fs.setValue(v); fs.triggerLive() }
-    else setLocalValue(v)
+    if (fs.controlled) { fs.setValue(v); fs.triggerLive(v) }
+    else { setLocalValue(v); fs.triggerLive(v) }
   }
 
   return (

@@ -44,20 +44,20 @@ export function KeyValueInput({
     : localRows
 
   const setRows = (next: Row[]): void => {
+    const obj: Record<string, string> = {}
+    for (const r of next) {
+      if (r.key === '' && r.value === '') continue
+      obj[r.key] = r.value
+    }
     if (fs.controlled) {
-      const obj: Record<string, string> = {}
-      for (const r of next) {
-        if (r.key === '' && r.value === '') continue
-        obj[r.key] = r.value
-      }
       fs.setValue(obj)
-      fs.triggerLive()
       // Mirror locally so the row identity survives a re-resolve that
       // doesn't ship row IDs.
       setLocalRows(next)
     } else {
       setLocalRows(next)
     }
+    fs.triggerLive(obj)
   }
 
   const updateRow = (id: number, patch: Partial<Row>): void => {

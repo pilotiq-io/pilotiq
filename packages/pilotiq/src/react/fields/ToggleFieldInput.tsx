@@ -10,9 +10,16 @@ export function ToggleFieldInput({
   const checked = fs.controlled
     ? (fs.value === true || fs.value === 'true' || fs.value === 1 || fs.value === '1')
     : localChecked
+  // Base UI Switch's onCheckedChange callback does NOT dispatch a native
+  // bubbling change event, so RepeaterInput's container-level delegate
+  // can't pick up inner-row live() triggers. Call triggerLive explicitly
+  // in BOTH paths — the function is a no-op outside FormStateProvider
+  // and when the field has no `live` config, so it's safe to fire
+  // unconditionally. The value is passed as a `valueOverride` so
+  // dotted-path inner-Repeater fields pass through correctly.
   const onChange = (next: boolean): void => {
-    if (fs.controlled) { fs.setValue(next); fs.triggerLive() }
-    else setLocalChecked(next)
+    if (fs.controlled) { fs.setValue(next); fs.triggerLive(next) }
+    else { setLocalChecked(next); fs.triggerLive(next) }
   }
   return (
     <div className="flex items-center gap-2">
