@@ -9,6 +9,11 @@ import { TextField } from '../fields/TextField.js'
 import { defaultListPage, defaultCreatePage, defaultEditPage } from '../defaultPages.js'
 import type { ModelLike, ModelQuery } from './modelDefaults.js'
 import type { TableContext } from '../elements/Table.js'
+import {
+  defaultRelatedQuery,
+  resolveRelatedQuery,
+  modelRelationTableRecords,
+} from './modelDefaults.js'
 
 // ── Fake ModelLike that records every call so tests can assert on it ──
 
@@ -291,5 +296,118 @@ describe('Model-driven defaults — sentinel errors when no model + no handler',
     const form = (Edit.schema() as Array<unknown>)[1] as Form
     const load = form.getLoadRecord()!
     assert.throws(() => (load as () => unknown)(), /no loadRecord handler/)
+  })
+})
+
+// ── Plan #11 relation helpers ─────────────────────────────────────────
+
+describe('defaultRelatedQuery (Plan #11)', () => {
+  it('delegates to parent.related(name) and returns the ModelQuery', () => {
+    const q = new FakeQuery({ data: [], total: 0 })
+    const parent = {
+      relatedCalls: [] as string[],
+      related(name: string): ModelQuery {
+        this.relatedCalls.push(name)
+        return q
+      },
+    }
+    const out = defaultRelatedQuery(parent, 'posts')
+    assert.equal(out, q)
+    assert.deepEqual(parent.relatedCalls, ['posts'])
+  })
+
+  it('throws a clear error when the parent has no .related() method', () => {
+    const parent = { id: 1, name: 'no-related-here' }
+    assert.throws(
+      () => defaultRelatedQuery(parent, 'posts'),
+      /Cannot resolve relation "posts" — parent record has no \.related\(\) method/,
+    )
+  })
+
+  it('throws when parent is null/undefined', () => {
+    assert.throws(() => defaultRelatedQuery(null,      'posts'), /Cannot resolve relation/)
+    assert.throws(() => defaultRelatedQuery(undefined, 'posts'), /Cannot resolve relation/)
+  })
+})
+
+describe('resolveRelatedQuery (Plan #11)', () => {
+  it('prefers ModelLike.relatedQuery override when present', () => {
+    const customQ = new FakeQuery({ data: [], total: 0 })
+    const calls: Array<{ parent: unknown; name: string }> = []
+    const M: ModelLike = {
+      ...makeFakeModel(),
+      relatedQuery(parent, name) {
+        calls.push({ parent, name })
+        return customQ
+      },
+    }
+    const parent = { id: 1, related(_n: string): ModelQuery { throw new Error('should not be called') } }
+    const out = resolveRelatedQuery(M, parent, 'posts')
+    assert.equal(out, customQ)
+    assert.deepEqual(calls, [{ parent, name: 'posts' }])
+  })
+
+  it('falls back to parent.related(name) when no override is set', () => {
+    const M: ModelLike = makeFakeModel()
+    const q = new FakeQuery({ data: [], total: 0 })
+    const parent = { related(_n: string): ModelQuery { return q } }
+    const out = resolveRelatedQuery(M, parent, 'posts')
+    assert.equal(out, q)
+  })
+})
+
+describe('modelRelationTableRecords (Plan #11)', () => {
+  it('drives pagination through parent.related(name) with sort/search/perPage', async () => {
+    const q = new FakeQuery({ data: [{ id: 1 }, { id: 2 }], total: 17 })
+    const relatedCalls: string[] = []
+    const parent = {
+      related(name: string): ModelQuery {
+        relatedCalls.push(name)
+        return q
+      },
+    }
+    const parentModel: ModelLike = makeFakeModel()
+    const table = Table.make()
+      .columns([
+        Column.make('title').sortable().searchable(),
+        Column.make('body').searchable(),
+      ])
+      .paginate(10)
+    const handler = modelRelationTableRecords(parentModel, parent, 'posts', table)
+
+    const ctx: TableContext = { search: 'hello', page: 2, perPage: 10, sort: { column: 'title', direction: 'asc' } }
+    const result = await handler(ctx)
+
+    assert.deepEqual(relatedCalls, ['posts'])
+    assert.deepEqual(result, { rows: [{ id: 1 }, { id: 2 }], total: 17 })
+
+    // Search → where + orWhere across the two searchable columns,
+    // then orderBy + paginate.
+    assert.deepEqual(q.ops[0], { op: 'where',   args: ['title', 'LIKE', '%hello%'] })
+    assert.deepEqual(q.ops[1], { op: 'orWhere', args: ['body',  'LIKE', '%hello%'] })
+    assert.deepEqual(q.ops[2], { op: 'orderBy', args: ['title', 'ASC'] })
+    assert.deepEqual(q.ops[3], { op: 'paginate', args: [2, 10] })
+  })
+
+  it('honors the parent ModelLike.relatedQuery override', async () => {
+    const q = new FakeQuery({ data: [], total: 0 })
+    const overrideCalls: Array<{ parent: unknown; name: string }> = []
+    const parentModel: ModelLike = {
+      ...makeFakeModel(),
+      relatedQuery(parent, name) {
+        overrideCalls.push({ parent, name })
+        return q
+      },
+    }
+    // This parent has NO `.related()` method — so falling back to
+    // defaultRelatedQuery would throw. The override must win.
+    const parent = { id: 99 }
+
+    const table = Table.make().columns([Column.make('title')])
+    const handler = modelRelationTableRecords(parentModel, parent, 'children', table)
+    const result = await handler({})
+
+    assert.deepEqual(result, { rows: [], total: 0 })
+    assert.deepEqual(overrideCalls, [{ parent, name: 'children' }])
   })
 })

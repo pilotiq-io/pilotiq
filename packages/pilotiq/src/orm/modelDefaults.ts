@@ -40,6 +40,14 @@ export interface ModelLike {
   update(id: string | number, data: Record<string, unknown>): Promise<unknown>
   delete(id: string | number):                               Promise<void>
   query():                                                   ModelQuery
+
+  /**
+   * Plan #11 — return a `ModelQuery` scoped to the given parent record's
+   * relation. Optional. When absent, pilotiq falls back to the rudder ORM
+   * convention `parent.related(relationName)`. Override when your ORM
+   * doesn't follow that convention or when you need a custom join shape.
+   */
+  relatedQuery?(parent: unknown, relationName: string): ModelQuery
 }
 
 /** Read the configured primary key (default `'id'`) off a `ModelLike`. */
@@ -123,6 +131,109 @@ export function modelTableRecords(M: ModelLike, table: Table): TableRecordsHandl
     // type) and filters are secondary refinements within a tab — running
     // the tab's predicate after filters keeps that mental model intact
     // and lets a tab's narrower `where` win on collision.
+    if (ctx.tabQuery) q = ctx.tabQuery(q)
+
+    if (ctx.sort) {
+      q = q.orderBy(ctx.sort.column, ctx.sort.direction === 'desc' ? 'DESC' : 'ASC')
+    }
+
+    const page    = ctx.page    ?? 1
+    const perPage = ctx.perPage ?? table.getPerPage() ?? 15
+
+    const result = await q.paginate(page, perPage)
+    return { rows: result.data, total: result.total }
+  }
+}
+
+// ─── Plan #11: relation helpers ────────────────────────────
+
+/** Minimal shape we need on a parent record to resolve a relation under
+ * the rudder ORM convention. */
+interface ParentWithRelated {
+  related(name: string): ModelQuery
+}
+
+/**
+ * Default relation-query resolver. Calls `parent.related(relationName)`
+ * — the rudder ORM convention — and returns the resulting `ModelQuery`.
+ * Throws a clear error when the parent record doesn't expose `.related()`,
+ * pointing the user at `ModelLike.relatedQuery` as the override slot.
+ */
+export function defaultRelatedQuery(parent: unknown, relationName: string): ModelQuery {
+  const p = parent as Partial<ParentWithRelated>
+  if (typeof p?.related !== 'function') {
+    throw new Error(
+      `[Pilotiq] Cannot resolve relation "${relationName}" — parent record has no .related() method. ` +
+      `Implement ModelLike.relatedQuery(parent, name) on the parent's static model to provide a custom resolver.`,
+    )
+  }
+  return (p as ParentWithRelated).related(relationName)
+}
+
+/**
+ * Resolve a relation query by preferring the parent model's
+ * `relatedQuery` override and falling back to the rudder convention.
+ * The single entry point pilotiq's manager code calls.
+ */
+export function resolveRelatedQuery(
+  M:           ModelLike,
+  parent:      unknown,
+  relationName: string,
+): ModelQuery {
+  if (typeof M.relatedQuery === 'function') {
+    return M.relatedQuery(parent, relationName)
+  }
+  return defaultRelatedQuery(parent, relationName)
+}
+
+/**
+ * Sibling of `modelTableRecords` for `RelationManager` tables. Drives
+ * pagination/search/sort/filters against `parent.related(relationName)`
+ * (or the parent model's `relatedQuery` override) instead of the related
+ * model's bare `query()`. Used by the page-data builder when a manager's
+ * `Table.records()` hasn't been set explicitly.
+ *
+ * `parentModel` is the **parent's** ModelLike (where `relatedQuery` lives
+ * if a custom override was set); `parent` is the resolved parent record
+ * instance the manager is scoped under.
+ */
+export function modelRelationTableRecords(
+  parentModel:  ModelLike,
+  parent:       unknown,
+  relationName: string,
+  table:        Table,
+): TableRecordsHandler {
+  const columns: Column[]    = table.getColumns()
+  const searchable: string[] = columns.filter(c => c.isSearchable()).map(c => c.name)
+  const filters             = table.getFilters()
+
+  return async (ctx): Promise<TableRecordsResult> => {
+    let q = resolveRelatedQuery(parentModel, parent, relationName)
+
+    if (ctx.search && searchable.length > 0) {
+      const needle = `%${ctx.search}%`
+      searchable.forEach((col, i) => {
+        q = i === 0
+          ? q.where(col, 'LIKE', needle)
+          : q.orWhere(col, 'LIKE', needle)
+      })
+    }
+
+    const filterValues = ctx.filters ?? {}
+    for (const filter of filters) {
+      const value = filterValues[filter.name]
+      if (value === undefined || value === '') continue
+      const customQuery = filter.getQuery()
+      if (customQuery) {
+        q = customQuery(q, value)
+      } else if (filter.getKind() === 'boolean') {
+        const bool = value === '1' || value === 'true' || value === 'yes' || value === 'on'
+        q = q.where(filter.name, bool)
+      } else {
+        q = q.where(filter.name, value)
+      }
+    }
+
     if (ctx.tabQuery) q = ctx.tabQuery(q)
 
     if (ctx.sort) {

@@ -70,6 +70,7 @@ export {
 // ─── ORM model wiring ─────────────────────────────────
 export {
   modelSave, modelLoadRecord, modelTableRecords, getPrimaryKey,
+  defaultRelatedQuery, resolveRelatedQuery, modelRelationTableRecords,
   type ModelLike, type ModelQuery, type ModelWhereOperator,
 } from './orm/modelDefaults.js'
 
