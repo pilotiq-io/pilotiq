@@ -2,7 +2,7 @@ import {
   Page, Heading, Section,
   Form,
   TextField, NumberField,
-  Hidden, Checkbox, Radio, CheckboxList,
+  Hidden, Checkbox, Radio, CheckboxList, ToggleButtons,
   Slider, ColorPicker, KeyValue,
   DateTimePicker, FileUpload,
   Notification,
@@ -81,6 +81,16 @@ export class FieldTypesDemo extends Page {
                   { value: 'yearly',  label: 'Yearly'  },
                 ])
                 .default('monthly'),
+
+              ToggleButtons.make('priority')
+                .label('Priority')
+                .helperText('Sugar over Radio with chip rendering.')
+                .options([
+                  { value: 'low',    label: 'Low'    },
+                  { value: 'medium', label: 'Medium' },
+                  { value: 'high',   label: 'High'   },
+                ])
+                .default('medium'),
 
               CheckboxList.make('categories')
                 .label('Categories')

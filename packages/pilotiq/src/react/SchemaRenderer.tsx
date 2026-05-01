@@ -13,6 +13,7 @@ import { DateFieldInput }    from './fields/DateFieldInput.js'
 import { HiddenInput }       from './fields/HiddenInput.js'
 import { CheckboxInput }     from './fields/CheckboxInput.js'
 import { RadioInput }        from './fields/RadioInput.js'
+import { ToggleButtonsInput } from './fields/ToggleButtonsInput.js'
 import { CheckboxListInput } from './fields/CheckboxListInput.js'
 import { SliderInput }       from './fields/SliderInput.js'
 import { ColorInput }        from './fields/ColorInput.js'
@@ -210,6 +211,18 @@ function renderFieldInput(
           disabled={disabled}
           options={options}
           inline={inline}
+        />
+      )
+    }
+
+    case 'toggleButtons': {
+      const options = (el['options'] as Array<{ value: string; label: string }>) ?? []
+      return (
+        <ToggleButtonsInput
+          name={name}
+          defaultValue={defaultStr}
+          disabled={disabled}
+          options={options}
         />
       )
     }

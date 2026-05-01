@@ -184,7 +184,7 @@ Skip `ColorColumn`, `SelectColumn`/`ToggleColumn`/`TextInputColumn` (inline-edit
 | `Checkbox` (single) | 1 | Distinct from Toggle. |
 | `Radio` | 1 | |
 | `CheckboxList` | 1 | |
-| `ToggleButtons` (segmented control) | 2 | Sugar over Radio with chip rendering. |
+| ✅ `ToggleButtons` (segmented control) DONE | 2 | Shipped 2026-05-04 — `ToggleButtons.make().options([...])`, sugar over Radio with chip rendering; same data semantics as Radio (single-select string), no separate coercion. Multi-select stays out of scope; reach for `CheckboxList`. |
 | `FileUpload` | 1 | Pairs with `@pilotiq/media`. Big-ish. |
 | `MarkdownEditor` | 2 | We have RichTextField; markdown variant for users who prefer plain. |
 | `CodeEditor` | 2 | Monaco / CodeMirror. |
