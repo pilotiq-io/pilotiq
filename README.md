@@ -94,6 +94,7 @@ export const admin = Pilotiq.make('Admin')
 
 - **Two layout modes** — collapsible sidebar (shadcn) or horizontal topbar
 - **Resources** — `static form(form: Form)` / `static table(table: Table)` / `static detail(record)`. Auto-wires CRUD when `static model = SomeOrmModel` is set.
+- **Relations** — `RelationManager` embeds a related resource's table on a parent record's Edit/View page. Routes auto-register at `${base}/${slug}/:id/${rel}/...` with two-layer authorization (parent `canEdit` + manager `canX`, the latter falling through to the related Resource's policy by default). Scoped to `hasOne` / `hasMany` / `belongsTo` — see [`docs/guide/relations.md`](./docs/guide/relations.md).
 - **Schema system** — Heading (with optional right-aligned actions), Text, Alert, Divider, Card, Section, Tabs, Grid — async or static
 - **Fields** — TextField, EmailField, NumberField, SelectField, TextareaField, ToggleField, DateField, SlugField. Visibility flags (`hideFromTable/Create/Edit/View`) + condition callbacks (`showWhen`, `hideWhen`, `disabledWhen`). Validators via `.validate(...)`.
 - **Filters** — `SelectFilter` / `BooleanFilter` (more kinds extend the `Filter` base). Custom `query(fn)` hook for non-default ORM behavior.
@@ -236,6 +237,8 @@ Pilotiq's packages declare these as peer dependencies. Install both, register th
 | Architecture | [`Architecture.md`](./Architecture.md) |
 | Comparison vs Filament/Nova/Payload | [`docs/comparison.md`](./docs/comparison.md) |
 | Getting started | [`docs/guide/panels.md`](./docs/guide/panels.md) |
+| Relations | [`docs/guide/relations.md`](./docs/guide/relations.md) |
+| Migrating from `@pilotiq/panels` | [`docs/guide/migrating-from-panels.md`](./docs/guide/migrating-from-panels.md) |
 | Fields reference | [`docs/packages/panels/fields.md`](./docs/packages/panels/fields.md) |
 | Schema elements | [`docs/packages/panels/schema.md`](./docs/packages/panels/schema.md) |
 | Rich-text editor | [`docs/packages/lexical.md`](./docs/packages/lexical.md) |

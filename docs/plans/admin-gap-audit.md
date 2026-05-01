@@ -27,7 +27,7 @@ Land in this order. Each step is independently shippable; later steps build on e
 | 8.5 | ✅ `icon-system.md` DONE | ~1 day | Component-typed `Resource.icon = Newspaper` via Vite-plugin manifest + string registry for schema-time icons. Multi-library (lucide / tabler / heroicons / phosphor). Shipped 2026-04-30 as a prereq for #9. |
 | 9 | `resource-navigation.md` | ~1 day | navigationGroup, navigationSort, navigationBadge, recordTitleAttribute. Cosmetic but expected. Builds on icon-system (above). |
 | 10 | `authorization.md` | ~2 days | Resource policies (canView/canCreate/canEdit/canDelete). Pairs with @rudderjs/auth wiring. |
-| 11 | `relations.md` 🚧 IN PROGRESS (8/12) | ~2 weeks | RelationManager. Steps 1-8 framework done 2026-05-01 (class + ORM contract + data builder + IDOR + routes + Vike stubs + auto-Tabs + auth fall-through; 822 tests). Remaining: Step 9 reactive doc, Step 11 playground demo, Step 12 docs. Scoped to hasOne/hasMany/belongsTo; pivot/M2M deferred until ORM adds `belongsToMany`. |
+| 11 | ✅ `relations.md` DONE | ~2 weeks | RelationManager. Shipped 2026-05-01: class + ORM contract + data builder + IDOR + routes + Vike stubs + auto-Tabs + auth fall-through + reactive-integration doc + playground demo (`User → Posts`) + guide. 822 tests. Scoped to hasOne/hasMany/belongsTo; pivot/M2M and auto-wired manager row actions deferred. |
 | 12 | ✅ `global-search.md` DONE | ~1 week | `Resource.globalSearch` opt-in + 4 override statics + `searchAllResources` helper + `GET /_search` + Cmd+K palette + sidebar/topbar trigger pill shipped 2026-05-01. |
 | 13 | `soft-deletes.md` | ~1 week | Needs @rudderjs/orm soft-delete support first. |
 

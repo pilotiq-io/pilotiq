@@ -627,6 +627,60 @@ Panels has no equivalent — this is net-new in pilotiq.
 
 ---
 
+## Relations
+
+Panels exposed `RelationField` for in-form relation pickers and inline
+attaching. Pilotiq replaces it with `RelationManager`, a parent-scoped
+**projection** that mounts as an extra tab on the parent's Edit/View page,
+with its own list / create / edit / delete routes under the parent's URL.
+
+### Mapping
+
+| Panels                                    | Pilotiq                                    |
+|---|---|
+| `RelationField.make('posts')` in `fields()` | `class PostsManager extends RelationManager` registered on `R.relations()` |
+| Inline picker on the parent form            | Tab strip on the parent's Edit/View page; manager has its own `Form` and `Table` schemas |
+| Auto-attach on save                         | `RelationManager.form().mutateDataBeforeCreate()` reads `ctx.parentId` to default the foreign key |
+| Implicit related-resource resolution        | Auto-discovery via `parentModel.relations[rel].model() === R.model`; override with `static relatedResource = OtherResource` |
+| (no equivalent)                             | Two-layer auth (parent `canEdit`, then manager `canX` with fall-through to related Resource) |
+
+```ts
+// pilotiq
+import { RelationManager, Column, TextField, type Form, type Table } from '@pilotiq/pilotiq'
+
+export class PostsManager extends RelationManager {
+  static override relationship = 'posts'   // matches User.relations.posts (rudder ORM)
+  static override label        = 'Posts'
+
+  static override form(form: Form): Form {
+    return form
+      .schema([TextField.make('title').required()])
+      .mutateDataBeforeCreate((data, ctx) => ({
+        ...data,
+        authorId: (ctx as { parentId?: string }).parentId,
+      }))
+  }
+
+  static override table(table: Table): Table {
+    return table.columns([Column.make('title').sortable().searchable()])
+  }
+}
+
+// On the parent Resource:
+class UserResource extends Resource {
+  static override relations() { return [PostsManager] }
+}
+```
+
+Routes auto-register at `${base}/users/:id/posts/...`; the parent edit page
+auto-mounts a "Posts" tab. Full guide at [`docs/guide/relations.md`](./relations.md).
+
+> **Out of scope (deferred):** `belongsToMany` / pivot / many-to-many relations
+> — `@rudderjs/orm` doesn't support M2M yet. Hand-roll a join resource (e.g.
+> `UserRoleResource`) and use two `hasMany` managers in the meantime.
+
+---
+
 ## Things that aren't ported (yet)
 
 - **Live updates** (`static live = true`) — not implemented in pilotiq yet.

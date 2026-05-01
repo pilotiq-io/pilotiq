@@ -7,6 +7,7 @@ model User {
   image         String?
   role          String    @default("user")
   rememberToken String?
+  posts         Post[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
