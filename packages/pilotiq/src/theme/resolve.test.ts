@@ -75,9 +75,10 @@ describe('resolveTheme', () => {
 
     it('hue values override --primary with that hue', () => {
       const blue = resolveTheme({ themeColor: 'blue' })
-      // Non-base hue uses scale[600] for light --primary.
+      // Non-base hue uses scale[600] in BOTH light and dark for brand
+      // consistency across modes.
       assert.equal(blue.light['--primary'], colors.blue[600])
-      assert.equal(blue.dark['--primary'],  colors.blue[400])
+      assert.equal(blue.dark['--primary'],  colors.blue[600])
     })
 
     it('defaults to base sentinel when not specified', () => {

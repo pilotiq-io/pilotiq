@@ -23,9 +23,10 @@ import { parseSeedToScale } from './generate-scale.js'
  *  - **base sentinel** (e.g. Theme = "Neutral"): use the strongest contrast
  *    *within the same scale* — primary is scale[900] in light, scale[50] in
  *    dark. Matches shadcn's neutral theme behavior (very dark/light primary).
- *  - **hue** (e.g. Theme = "Blue"): use a chromatic mid-tone — primary is
- *    scale[600] in light, scale[400] in dark, with a neutral foreground for
- *    accessibility.
+ *  - **hue** (e.g. Theme = "Blue"): use scale[600] in BOTH light and dark so
+ *    the brand color stays consistent across modes (instead of lifting to
+ *    scale[400] in dark, which dilutes brand identity). Foreground stays the
+ *    near-white neutral[50] for AA contrast against the saturated mid-tone.
  */
 function buildTheme(scale: ColorScale, isBase = false): PresetDefinition {
   if (isBase) {
@@ -58,12 +59,12 @@ function buildTheme(scale: ColorScale, isBase = false): PresetDefinition {
       '--sidebar-ring':                 scale[600],
     },
     dark: {
-      '--primary':                      scale[400],
-      '--primary-foreground':           colors.neutral[900],
-      '--ring':                         scale[400],
-      '--sidebar-primary':              scale[400],
-      '--sidebar-primary-foreground':   colors.neutral[900],
-      '--sidebar-ring':                 scale[400],
+      '--primary':                      scale[600],
+      '--primary-foreground':           colors.neutral[50],
+      '--ring':                         scale[600],
+      '--sidebar-primary':              scale[600],
+      '--sidebar-primary-foreground':   colors.neutral[50],
+      '--sidebar-ring':                 scale[600],
     },
   }
 }

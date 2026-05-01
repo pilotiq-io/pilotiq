@@ -56,6 +56,7 @@ export default defineConfig({
       '@base-ui/react/tabs',
       '@base-ui/react/menu',
       '@base-ui/react/separator',
+      '@base-ui/react/slider',
       '@base-ui/react/button',
       'react-day-picker',
       'lucide-react',

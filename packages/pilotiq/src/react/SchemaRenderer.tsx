@@ -780,10 +780,14 @@ function renderActionLike(
 }
 
 /** Color preset → tailwind class group. `ghost` is bg-less and works
- * with hover:bg-accent. Others are solid + hover-darken. */
+ * with hover:bg-accent. `destructive` uses a soft tonal style (Filament-
+ * style) so per-row Delete buttons sit calmly next to primary actions
+ * instead of shouting in saturated red — the modal confirm CTA still
+ * renders solid red via its own hardcoded class. Others are solid + hover-
+ * darken. */
 const COLOR_VARIANTS: Record<string, string> = {
   primary:     'bg-primary text-primary-foreground hover:bg-primary/90',
-  destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+  destructive: 'bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-950/60',
   success:     'bg-emerald-600 text-white hover:bg-emerald-600/90',
   warning:     'bg-amber-500 text-white hover:bg-amber-500/90',
   info:        'bg-blue-600 text-white hover:bg-blue-600/90',
