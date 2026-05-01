@@ -2671,7 +2671,38 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   // header/bulk/row toolbars depending on their `placement` field.
   const actionLike = children.filter(c => c.type === 'action' || c.type === 'actionGroup')
   const filters    = children.filter(c => c.type === 'filter')
-  const hasRecordUrl = Boolean(el['recordUrl'])
+  const hasRecordUrl     = Boolean(el['recordUrl'])
+  const hasRecordClasses = Boolean(el['recordClasses'])
+  const pollInterval     = typeof el['pollInterval'] === 'number' ? el['pollInterval'] as number : undefined
+
+  // Auto-refresh: re-visit current URL on a timer so sort/filter/pagination
+  // state survives. Pause while the document is hidden — background tabs
+  // shouldn't keep hammering the server.
+  useEffect(() => {
+    if (!pollInterval || pollInterval <= 0) return
+    if (typeof document === 'undefined') return
+    let timerId: ReturnType<typeof setInterval> | undefined
+    const tick = () => navigate(window.location.pathname + window.location.search)
+    const start = () => {
+      if (timerId === undefined) timerId = setInterval(tick, pollInterval * 1000)
+    }
+    const stop = () => {
+      if (timerId !== undefined) {
+        clearInterval(timerId)
+        timerId = undefined
+      }
+    }
+    if (document.visibilityState === 'visible') start()
+    const onVis = () => {
+      if (document.visibilityState === 'visible') start()
+      else stop()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      stop()
+    }
+  }, [pollInterval, navigate])
 
   // Group actions by placement. `inline` defaults to header so it shows up
   // somewhere visible — explicit placements always win.
@@ -2896,7 +2927,13 @@ function TableRenderer({ el }: { el: ElementMeta }) {
               const tableUrl = hasRecordUrl ? (recordObj['_recordUrl'] as string | undefined) : undefined
               const colUrls = (recordObj['_columnRecordUrls'] as Record<string, string> | undefined) ?? {}
               const rowHasAnyLink = tableUrl !== undefined || Object.keys(colUrls).length > 0
-              const rowClassName = `${stripedClass}${rowHasAnyLink ? ' cursor-pointer' : ''}`.trim()
+              const customRowClasses = hasRecordClasses
+                ? (recordObj['_recordClasses'] as string | undefined) ?? ''
+                : ''
+              const rowClassName = [stripedClass, rowHasAnyLink ? 'cursor-pointer' : '', customRowClasses]
+                .filter(Boolean)
+                .join(' ')
+                .trim()
               return (
                 <TableRow
                   key={id}

@@ -189,13 +189,15 @@ export async function loadTableRecords(
       const columnsWithRecordUrl = (table.getChildren() ?? [])
         .filter((c): c is Column => c instanceof Column && c.hasRecordUrlHandler())
 
-      const recordUrlFn = table.getRecordUrl()
+      const recordUrlFn     = table.getRecordUrl()
+      const recordClassesFn = table.getRecordClasses()
 
       const needsRowMutation =
         rowActionsWithRules.length > 0 ||
         columnsWithFormatter.length > 0 ||
         columnsWithRecordUrl.length > 0 ||
-        recordUrlFn !== undefined
+        recordUrlFn !== undefined ||
+        recordClassesFn !== undefined
 
       const rows = !needsRowMutation
         ? rawRows
@@ -242,6 +244,15 @@ export async function loadTableRecords(
               } catch {
                 // Per-row recordUrl errors stay silent; rows without a URL
                 // simply aren't clickable.
+              }
+            }
+
+            if (recordClassesFn !== undefined) {
+              try {
+                const cls = recordClassesFn(row)
+                if (cls) out['_recordClasses'] = cls
+              } catch {
+                // Silent — row falls back to default classes.
               }
             }
 

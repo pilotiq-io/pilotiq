@@ -72,6 +72,16 @@ export interface TableEmptyState {
  */
 export type RecordUrlHandler<R = unknown> = (record: R) => string | undefined
 
+/**
+ * Per-row CSS class function. Returns extra Tailwind / CSS class names
+ * appended to that row's `<tr>`. Useful for status-driven row tinting
+ * ("destructive" when overdue, "warning" when stale). Result is appended
+ * after the framework's own row classes (striped, cursor-pointer); user
+ * classes win on equal specificity. Throwing or returning falsy stays
+ * silent — the row just renders without extras.
+ */
+export type RecordClassesHandler<R = unknown> = (record: R) => string | undefined
+
 export interface TableMeta extends ElementMeta {
   type:        'table'
   defaultSort?: { column: string; direction: SortDirection }
@@ -91,6 +101,23 @@ export interface TableMeta extends ElementMeta {
    * the row, not the table meta — `RecordUrlHandler` is server-side only.
    */
   recordUrl?:   true
+
+  /**
+   * Server-side per-row CSS marker — same convention as `recordUrl`.
+   * Each row's `_recordClasses` carries the resolved string; this flag
+   * is just a hint for the renderer to look for it.
+   */
+  recordClasses?: true
+
+  /**
+   * Auto-refresh interval in seconds. The client renderer kicks off a
+   * `setInterval` that re-fetches the current URL via the SPA navigator
+   * — pagination / sort / filter state is preserved because we re-visit
+   * the same `pathname + search`. Hidden tabs pause to avoid hammering
+   * the server in the background; resume on visibility change. Unset =
+   * no polling.
+   */
+  pollInterval?: number
 
   // Render-time state — populated by the framework after `records()` runs.
   rows?:        unknown[]
@@ -131,6 +158,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _currentPage?:  number
   private _currentPath?:  string
   private _recordUrl?:    RecordUrlHandler<R>
+  private _recordClasses?: RecordClassesHandler<R>
+  private _pollInterval?: number
 
   private constructor() { super() }
 
@@ -242,6 +271,30 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
+  /**
+   * Per-row CSS class hook. The handler runs server-side once per row,
+   * after `records()` resolves; the result is stamped under the reserved
+   * `_recordClasses` key on the row and appended to the rendered `<tr>`'s
+   * className. Pair with semantic Tailwind tokens (`bg-destructive/10`,
+   * `text-warning`) so theming stays consistent.
+   */
+  recordClasses(fn: RecordClassesHandler<R>): this {
+    this._recordClasses = fn
+    return this
+  }
+
+  /**
+   * Auto-refresh the table at a regular interval. `seconds` is positive;
+   * non-positive values silently disable polling. SPA-friendly — the
+   * client navigates to `pathname + search` (the current URL) so sort /
+   * filter / pagination state survive the refresh, and AppShell stays
+   * mounted. Polling pauses while the document is hidden.
+   */
+  poll(seconds: number): this {
+    if (seconds > 0) this._pollInterval = seconds
+    return this
+  }
+
   // ─── Render-time state ────────────────────────────────
 
   /** Attach loaded rows + total. Called by the framework after `records()` runs. */
@@ -273,6 +326,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
   getCurrentPage(): number | undefined { return this._currentPage }
   getCurrentPath(): string | undefined { return this._currentPath }
   getRecordUrl(): RecordUrlHandler<R> | undefined { return this._recordUrl }
+  getRecordClasses(): RecordClassesHandler<R> | undefined { return this._recordClasses }
+  getPollInterval(): number | undefined { return this._pollInterval }
 
   /** Convenience: the `Column` children only. */
   getColumns(): Column[] {
@@ -300,6 +355,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
       ...(this._striped                    ? { striped:     true               } : {}),
       ...(this._emptyState   !== undefined ? { emptyState:  this._emptyState   } : {}),
       ...(this._recordUrl    !== undefined ? { recordUrl:   true as const      } : {}),
+      ...(this._recordClasses !== undefined ? { recordClasses: true as const   } : {}),
+      ...(this._pollInterval !== undefined ? { pollInterval: this._pollInterval } : {}),
       ...(this._rows         !== undefined ? { rows:        this._rows }        : {}),
       ...(this._total        !== undefined ? { total:       this._total }       : {}),
       ...(this._currentSort  !== undefined ? { currentSort: this._currentSort } : {}),

@@ -143,6 +143,30 @@ describe('Table Element', () => {
       assert.equal(meta.emptyState,  undefined)
     })
 
+    it('recordClasses sets the meta flag and stores the handler', () => {
+      const fn = (r: { id: string }) => r.id === 'a' ? 'bg-warning/10' : undefined
+      const t  = Table.make<{ id: string }>().recordClasses(fn)
+      assert.equal(t.getRecordClasses(), fn)
+      assert.equal(t.toMeta().recordClasses, true)
+    })
+
+    it('recordClasses meta flag is absent when handler is unset', () => {
+      assert.equal(Table.make().toMeta().recordClasses, undefined)
+    })
+
+    it('poll(seconds) round-trips on the meta', () => {
+      assert.equal(Table.make().poll(15).toMeta().pollInterval, 15)
+    })
+
+    it('poll() ignores zero and negative intervals (no-op)', () => {
+      assert.equal(Table.make().poll(0).toMeta().pollInterval,  undefined)
+      assert.equal(Table.make().poll(-5).toMeta().pollInterval, undefined)
+    })
+
+    it('poll meta key is absent by default', () => {
+      assert.equal(Table.make().toMeta().pollInterval, undefined)
+    })
+
     it('slots compose with .columns() and .filters() without clobbering', () => {
       const t = Table.make()
         .columns([Column.make('a')])

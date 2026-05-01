@@ -49,10 +49,10 @@ Penciled for later (Tier 3): widgets/dashboards, Repeater/Builder fields, Wizard
 | `defaultGroup` / `groups([...])` (group-by row banding) | 2 | Useful for reports. Needs renderer + collapsible support. |
 | `summaries()` (Sum/Avg/Count/Range row at footer) | 2 | Pairs naturally with grouping. |
 | `reorderable(column)` (drag-to-reorder rows) | 2 | Needs `R.model.reorder` ORM contract. |
-| `poll(interval)` (auto-refresh) | 2 | SPA-friendly via vike navigate. |
+| ✅ `poll(interval)` (auto-refresh) DONE | 2 | Shipped 2026-05-04 — SPA-friendly via vike navigate; pauses on hidden tab. |
 | `recordUrl(fn)` (entire row clickable) | 2 | One-liner in renderer. |
 | `striped()` | 1 | Trivial. Roll into #2. |
-| `recordClasses(fn)` (per-row CSS) | 2 | Trivial. |
+| ✅ `recordClasses(fn)` (per-row CSS) DONE | 2 | Shipped 2026-05-04 — server-side per-row eval, stamped under `_recordClasses`. |
 | `heading() / description()` on Table | 1 | Trivial. Roll into #2. |
 | `deferLoading()` (skeleton on first paint) | 3 | Edge case. |
 | `queryStringIdentifier()` (multi-table on one page) | 3 | Currently we'd collide on `?sort=...`. |

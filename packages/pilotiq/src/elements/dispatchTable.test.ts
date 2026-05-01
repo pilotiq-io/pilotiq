@@ -250,6 +250,60 @@ describe('loadTableRecords', () => {
     })
   })
 
+  describe('Table.recordClasses', () => {
+    it('stamps _recordClasses on each row when a handler is set', async () => {
+      const t = Table.make<{ id: string; status: string }>()
+        .columns([Column.make('id')])
+        .records(async () => [
+          { id: 'a', status: 'active' },
+          { id: 'b', status: 'archived' },
+        ])
+        .recordClasses((r) => r.status === 'archived' ? 'opacity-50' : 'bg-success/5')
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['recordClasses'], true)
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_recordClasses'], 'bg-success/5')
+      assert.equal(rows[1]!['_recordClasses'], 'opacity-50')
+    })
+
+    it('skips _recordClasses when handler returns undefined or empty', async () => {
+      const t = Table.make<{ id: string }>()
+        .columns([Column.make('id')])
+        .records(async () => [{ id: 'a' }, { id: 'b' }])
+        .recordClasses((r) => r.id === 'a' ? '' : undefined)
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_recordClasses'], undefined)
+      assert.equal(rows[1]!['_recordClasses'], undefined)
+    })
+
+    it('swallows errors thrown by the recordClasses handler', async () => {
+      const t = Table.make<{ id: string }>()
+        .columns([Column.make('id')])
+        .records(async () => [{ id: 'a' }])
+        .recordClasses(() => { throw new Error('boom') })
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_recordClasses'], undefined)
+    })
+
+    it('does not stamp recordClasses flag when handler is unset', async () => {
+      const t = Table.make()
+        .columns([Column.make('id')])
+        .records(async () => [{ id: 'a' }])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['recordClasses'], undefined)
+    })
+  })
+
   describe('Column.recordUrl per-column override', () => {
     it('stamps _columnRecordUrls[name] when a column has its own recordUrl handler', async () => {
       const t = Table.make<{ id: string; slug: string }>()

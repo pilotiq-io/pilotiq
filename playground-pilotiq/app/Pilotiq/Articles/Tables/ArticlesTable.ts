@@ -51,6 +51,13 @@ export const ArticlesTable = {
         const id = (r as { id?: string })?.id
         return id ? `/new-admin/articles/${id}` : undefined
       })
+      // Tint archived rows so they read as de-emphasised. Server-side
+      // per-row eval — Tailwind classes get appended onto the <tr>.
+      .recordClasses((r) => {
+        const status = (r as { status?: string })?.status
+        if (status === 'archived') return 'opacity-60 italic'
+        return undefined
+      })
       .headerActions([
         ActionGroup.make('manage')
           .label('Manage')
