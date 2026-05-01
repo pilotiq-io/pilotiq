@@ -8,7 +8,7 @@ import { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
 import { TextField } from './fields/TextField.js'
-import { findRelatedResource, relationManagerData, dispatchPageData, resourceEditData, resourceViewData } from './pageData.js'
+import { findRelatedResource, relationManagerData, dispatchPageData, resourceEditData, resourceViewData, safeManagerPolicy } from './pageData.js'
 import { PilotiqRegistry } from './PilotiqRegistry.js'
 import type { ModelLike, ModelQuery } from './orm/modelDefaults.js'
 
@@ -416,6 +416,143 @@ describe('relationManagerData (Plan #11)', () => {
       assert.deepEqual((formMeta['errors'] as Record<string, string[]>)['title'], ['Too short'])
       assert.equal(data['hasErrors'], true)
     })
+  })
+})
+
+// ── Plan #11 — safeManagerPolicy related-resource fall-through (Step 8) ─
+
+describe('safeManagerPolicy (Plan #11 step 8)', () => {
+  it('runs the manager predicate when overridden', async () => {
+    let called = false
+    class M extends RelationManager {
+      static override relationship = 'posts'
+      static override async canCreate(_u: unknown, _p: unknown) { called = true; return true }
+    }
+    const result = await safeManagerPolicy(M, 'canCreate', undefined, 'user', { id: 1 })
+    assert.equal(result, true)
+    assert.equal(called, true, 'overridden manager predicate should be invoked')
+  })
+
+  it('falls through to Related.canX when the manager predicate is the default', async () => {
+    let managerCalled = false
+    let relatedCalled = false
+    class M extends RelationManager {
+      static override relationship = 'posts'
+      // NOT overridden — inherits from RelationManager
+    }
+    class Related extends Resource {
+      static override slug = 'posts'
+      static override async canCreate(_u: unknown) { relatedCalled = true; return false }
+    }
+    // Spy on the inherited default to ensure we DIDN'T call it.
+    const origDefault = RelationManager.canCreate
+    const spy: typeof RelationManager.canCreate = async () => { managerCalled = true; return true }
+    RelationManager.canCreate = spy
+    try {
+      const result = await safeManagerPolicy(M, 'canCreate', Related, 'user', { id: 1 })
+      assert.equal(result, false)
+      assert.equal(managerCalled, false, 'default manager predicate should be skipped when Related is configured')
+      assert.equal(relatedCalled, true, 'Related predicate should run when manager is default')
+    } finally {
+      RelationManager.canCreate = origDefault
+    }
+  })
+
+  it('strips the parent argument when calling the related Resource predicate', async () => {
+    const captured: unknown[][] = []
+    class M extends RelationManager {
+      static override relationship = 'posts'
+    }
+    class Related extends Resource {
+      static override slug = 'posts'
+      static override async canEdit(...args: unknown[]) { captured.push(args); return true }
+    }
+    await safeManagerPolicy(M, 'canEdit', Related, 'user', { id: 'parent-1' }, { id: 'child-1' })
+    // Resource.canEdit signature is (user, record) — the parent arg is dropped.
+    assert.deepEqual(captured, [['user', { id: 'child-1' }]])
+  })
+
+  it('allows when both manager and Related are default', async () => {
+    class M extends RelationManager { static override relationship = 'posts' }
+    const result = await safeManagerPolicy(M, 'canCreate', undefined, 'user', { id: 1 })
+    assert.equal(result, true)
+  })
+
+  it('fails closed when an overridden predicate throws', async () => {
+    class M extends RelationManager {
+      static override relationship = 'posts'
+      static override async canCreate(): Promise<boolean> { throw new Error('boom') }
+    }
+    const result = await safeManagerPolicy(M, 'canCreate', undefined, 'user', { id: 1 })
+    assert.equal(result, false)
+  })
+
+  it('integrates: relation-list 403 when Related.canViewAny denies and manager is default', async () => {
+    const postRows: QueryRow[] = [{ id: 'p1', parentId: 'u1' }]
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = {
+      async find(_id) { return makeParentWithChildren('u1', postRows) },
+      async create() { throw new Error('not used') },
+      async update() { throw new Error('not used') },
+      async delete() { /* ok */ },
+      query() { throw new Error('not used') },
+    }
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+      // Related denies — manager is default → fall-through must propagate.
+      static override async canViewAny() { return false }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override relations() { return [PostsManager] }
+    }
+    const panel = Pilotiq.make('FT-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+    const out = await relationManagerData(panel, {
+      kind: 'relation-list', slug: 'users', recordId: 'u1', relationship: 'posts',
+    })
+    assert.deepEqual(out, { ok: false, status: 403 })
+  })
+
+  it('integrates: manager override beats Related — even when Related allows', async () => {
+    const postRows: QueryRow[] = [{ id: 'p1', parentId: 'u1' }]
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = {
+      async find(_id) { return makeParentWithChildren('u1', postRows) },
+      async create() { throw new Error('not used') },
+      async update() { throw new Error('not used') },
+      async delete() { /* ok */ },
+      query() { throw new Error('not used') },
+    }
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+      static override async canViewAny() { return true }   // Related allows
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+      static override async canViewAny() { return false }  // manager denies — wins
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override relations() { return [PostsManager] }
+    }
+    const panel = Pilotiq.make('FT2-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+    const out = await relationManagerData(panel, {
+      kind: 'relation-list', slug: 'users', recordId: 'u1', relationship: 'posts',
+    })
+    assert.deepEqual(out, { ok: false, status: 403 })
   })
 })
 

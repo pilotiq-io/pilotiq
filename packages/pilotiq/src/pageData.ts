@@ -30,7 +30,7 @@ import { resolveTheme } from './theme/resolve.js'
 import type { ThemeMeta } from './theme/types.js'
 import { consumeFlashedNotifications } from './notifications/flash.js'
 import { serializeIcon, type SerializedIcon, type IconValue } from './icons/types.js'
-import type { RelationManager } from './RelationManager.js'
+import { RelationManager } from './RelationManager.js'
 import { RelationTabs, relationTab, type RelationTabMeta } from './schema/RelationTabs.js'
 import {
   modelSave, modelLoadRecord, modelRelationTableRecords, getPrimaryKey,
@@ -783,6 +783,59 @@ async function safePolicy(fn: () => Promise<boolean> | boolean): Promise<boolean
   try { return Boolean(await fn()) } catch { return false }
 }
 
+/** Plan #11 — authorization predicate names a `RelationManager` carries. */
+export type ManagerCanMethod = 'canViewAny' | 'canView' | 'canCreate' | 'canEdit' | 'canDelete'
+
+/** Plan #11 — compare a manager's static `canX` against `RelationManager`'s
+ *  default to detect whether the subclass overrode it. Class statics are
+ *  inherited via the constructor prototype chain, so an un-overridden
+ *  subclass returns `RelationManager`'s function by reference. */
+function isManagerCanOverridden(M: typeof RelationManager, method: ManagerCanMethod): boolean {
+  return (M as unknown as Record<string, unknown>)[method]
+       !== (RelationManager as unknown as Record<string, unknown>)[method]
+}
+
+/**
+ * Plan #11 — authorize a relation-manager action with sensible defaults.
+ *
+ * - If the manager overrode `canX`: run that predicate (parent-aware
+ *   shape; gets `parent` as the last argument so user code can scope
+ *   per-parent).
+ * - Otherwise, when a related Resource is registered: fall through to
+ *   the Resource's own `canX` (drops the parent argument since
+ *   Resource policies don't carry parent context). Avoids users
+ *   redefining the same policy on both sides.
+ * - Otherwise: allow. Both the manager and the Resource opted out of
+ *   restricting this action.
+ *
+ * Throws are absorbed as `false` (fail-closed) — same convention as
+ * the resource-side `checkPolicy`.
+ */
+export async function safeManagerPolicy(
+  M:        typeof RelationManager,
+  method:   ManagerCanMethod,
+  Related:  ResourceClass | undefined,
+  user:     unknown,
+  parent:   unknown,
+  child?:   unknown,
+): Promise<boolean> {
+  const isRecordScoped = method === 'canView' || method === 'canEdit' || method === 'canDelete'
+
+  if (isManagerCanOverridden(M, method)) {
+    return safePolicy(() => isRecordScoped
+      ? (M as unknown as Record<ManagerCanMethod, (u: unknown, c: unknown, p: unknown) => Promise<boolean>>)[method](user, child, parent)
+      : (M as unknown as Record<ManagerCanMethod, (u: unknown, p: unknown) => Promise<boolean>>)[method](user, parent),
+    )
+  }
+  if (Related) {
+    return safePolicy(() => isRecordScoped
+      ? (Related as unknown as Record<ManagerCanMethod, (u: unknown, r: unknown) => Promise<boolean>>)[method](user, child)
+      : (Related as unknown as Record<ManagerCanMethod, (u: unknown) => Promise<boolean>>)[method](user),
+    )
+  }
+  return true
+}
+
 /**
  * Plan #11 — render data for the three relation-manager URL scopes.
  * Mirrors the resource* builders' shape so routes and Vike +data hooks
@@ -865,7 +918,7 @@ async function buildRelationListData(
   req: unknown,
   user: unknown,
 ): Promise<RelationManagerResult> {
-  if (!await safePolicy(() => M.canViewAny(user, parentRecord))) return { ok: false, status: 403 }
+  if (!await safeManagerPolicy(M, 'canViewAny', Related, user, parentRecord)) return { ok: false, status: 403 }
 
   const cfg = pilotiq.getConfig()
   const base = cfg.path
@@ -923,7 +976,7 @@ async function buildRelationCreateData(
   req: unknown,
   user: unknown,
 ): Promise<RelationManagerResult> {
-  if (!await safePolicy(() => M.canCreate(user, parentRecord))) return { ok: false, status: 403 }
+  if (!await safeManagerPolicy(M, 'canCreate', Related, user, parentRecord)) return { ok: false, status: 403 }
 
   const cfg = pilotiq.getConfig()
   const base = cfg.path
@@ -1004,7 +1057,7 @@ async function buildRelationEditData(
   const child = await Related.model.find(scope.childId).catch(() => undefined)
   if (!child) return null
 
-  if (!await safePolicy(() => M.canEdit(user, child, parentRecord))) return { ok: false, status: 403 }
+  if (!await safeManagerPolicy(M, 'canEdit', Related, user, parentRecord, child)) return { ok: false, status: 403 }
 
   const cfg = pilotiq.getConfig()
   const base = cfg.path

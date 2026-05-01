@@ -14,7 +14,7 @@ import {
   formStateData, type FormStateScope,
   formWizardData,
   searchData,
-  relationManagerData, findRelatedResource,
+  relationManagerData, findRelatedResource, safeManagerPolicy,
 } from './pageData.js'
 import { RelationManager, RESERVED_RELATIONSHIP_TOKENS } from './RelationManager.js'
 import { modelSave, modelLoadRecord, getPrimaryKey } from './orm/modelDefaults.js'
@@ -660,11 +660,13 @@ export function registerPilotiqRoutes(
       }
 
       // List — GET ${base}/${slug}/:id/${rel}
+      // Manager-level canViewAny is enforced inside relationManagerData via
+      // safeManagerPolicy (with related-resource fall-through). We just
+      // surface the {ok:false,status:403} from the data builder as 403.
       router.get(parentBase, async (req, res) => {
         const json = wantsJson(req)
         const ctx = await requireParent(req, res, json)
         if (!ctx) return
-        if (!await checkPolicy(() => M.canViewAny(ctx.user, ctx.parent))) return forbidden(res, json)
         const data = await relationManagerData(pilotiq, {
           kind: 'relation-list', slug, recordId: ctx.recordId, relationship: rel, query: req.query as Record<string, string>,
         }, req)
@@ -678,7 +680,6 @@ export function registerPilotiqRoutes(
         const json = wantsJson(req)
         const ctx = await requireParent(req, res, json)
         if (!ctx) return
-        if (!await checkPolicy(() => M.canCreate(ctx.user, ctx.parent))) return forbidden(res, json)
         const data = await relationManagerData(pilotiq, {
           kind: 'relation-create', slug, recordId: ctx.recordId, relationship: rel,
         }, req)
@@ -692,7 +693,6 @@ export function registerPilotiqRoutes(
         const json = wantsJson(req)
         const pre = await requireParent(req, res, json)
         if (!pre) return
-        if (!await checkPolicy(() => M.canCreate(pre.user, pre.parent))) return forbidden(res, json)
 
         const Related = findRelatedResource(M, R, cfg)
         if (!Related) {
@@ -700,6 +700,7 @@ export function registerPilotiqRoutes(
           const msg = `RelationManager ${M.name}: cannot resolve related Resource for create`
           return json ? res.json({ ok: false, error: msg }) : res.send(msg)
         }
+        if (!await safeManagerPolicy(M, 'canCreate', Related, pre.user, pre.parent)) return forbidden(res, json)
 
         const body = await readFormBody(req)
         const { values } = splitMeta(body)
@@ -849,7 +850,7 @@ export function registerPilotiqRoutes(
         const child = await Related.model.find(childId).catch(() => undefined)
         if (!child) { res.status(404); return res.send('Not found') }
 
-        if (!await checkPolicy(() => M.canDelete(pre.user, child, pre.parent))) return forbidden(res, json)
+        if (!await safeManagerPolicy(M, 'canDelete', Related, pre.user, pre.parent, child)) return forbidden(res, json)
 
         const listUrl = parentBase.replace(':id', pre.recordId)
         try {
