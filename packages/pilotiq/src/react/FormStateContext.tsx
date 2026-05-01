@@ -18,6 +18,9 @@ export interface FormStateApi {
   setValue:      (name: string, value: unknown) => void
   triggerLive:   (name: string) => void
   errors:        Record<string, string[]>
+  /** Plan #8 — replace the errors map. Used by Wizard's step-validate
+   *  flow to surface per-field errors returned from the wizard endpoint. */
+  applyErrors:   (errors: Record<string, string[]>) => void
   formMeta:      ElementMeta
   inFlight:      boolean
   fieldStatus:   (name: string) => FieldStatus
@@ -252,15 +255,20 @@ export function FormStateProvider({
     return pendingNames.has(name) ? 'pending' : 'idle'
   }, [pendingNames])
 
+  const applyErrors = useCallback((next: Record<string, string[]>): void => {
+    setErrors(next)
+  }, [])
+
   const api = useMemo<FormStateApi>(() => ({
     values,
     setValue,
     triggerLive,
     errors,
+    applyErrors,
     formMeta,
     inFlight,
     fieldStatus,
-  }), [values, setValue, triggerLive, errors, formMeta, inFlight, fieldStatus])
+  }), [values, setValue, triggerLive, errors, applyErrors, formMeta, inFlight, fieldStatus])
 
   return (
     <FormStateContext.Provider value={api}>

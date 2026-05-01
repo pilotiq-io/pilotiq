@@ -210,4 +210,120 @@ describe('resolveSchema', () => {
       assert.equal(result[0]!.type, 'forgetful')
     })
   })
+
+  // ─── Plan #8 layout-level visibility ────────────────────
+
+  describe('layout-level visibility (Plan #8)', () => {
+    it('drops a layout element when visible(false)', async () => {
+      const tree = [new TestLeaf('a').visible(false), new TestLeaf('b')]
+      const result = await resolveSchema(tree)
+      assert.equal(result.length, 1)
+      assert.equal(result[0]!.label, 'b')
+    })
+
+    it('keeps a layout element when visible(true)', async () => {
+      const tree = [new TestLeaf('keep').visible(true)]
+      const result = await resolveSchema(tree)
+      assert.equal(result.length, 1)
+    })
+
+    it('evaluates visible(fn) against the resolve ctx', async () => {
+      const tree = [
+        new TestLeaf('shown').visible(({ values }) => values?.['kind'] === 'a'),
+        new TestLeaf('hidden').visible(({ values }) => values?.['kind'] === 'b'),
+      ]
+      const result = await resolveSchema(tree, { values: { kind: 'a' } })
+      assert.equal(result.length, 1)
+      assert.equal(result[0]!.label, 'shown')
+    })
+
+    it('awaits async visible() callbacks', async () => {
+      const tree = [
+        new TestLeaf('async').visible(async () => true),
+        new TestLeaf('asyncHidden').visible(async () => false),
+      ]
+      const result = await resolveSchema(tree)
+      assert.equal(result.length, 1)
+      assert.equal(result[0]!.label, 'async')
+    })
+
+    it('hidden(true) drops the element', async () => {
+      const tree = [new TestLeaf('a').hidden(true), new TestLeaf('b')]
+      const result = await resolveSchema(tree)
+      assert.equal(result.length, 1)
+      assert.equal(result[0]!.label, 'b')
+    })
+
+    it('hidden(fn) inverts the predicate', async () => {
+      const tree = [
+        new TestLeaf('shown').hidden(({ values }) => values?.['kind'] === 'b'),
+        new TestLeaf('hidden').hidden(({ values }) => values?.['kind'] === 'a'),
+      ]
+      const result = await resolveSchema(tree, { values: { kind: 'a' } })
+      assert.equal(result.length, 1)
+      assert.equal(result[0]!.label, 'shown')
+    })
+
+    it('throwing visible() callbacks fail closed (treated as hidden)', async () => {
+      const original = console.warn
+      const calls: unknown[] = []
+      console.warn = (...args: unknown[]) => calls.push(args)
+      try {
+        const tree = [
+          new TestLeaf('a').visible(() => { throw new Error('boom') }),
+          new TestLeaf('b'),
+        ]
+        const result = await resolveSchema(tree)
+        assert.equal(result.length, 1)
+        assert.equal(result[0]!.label, 'b')
+        assert.equal(calls.length, 1)
+      } finally {
+        console.warn = original
+      }
+    })
+
+    it('drops hidden containers without recursing into their children', async () => {
+      let leafResolved = false
+      class Tracker extends Element {
+        getType() { return 'tracker' }
+        toMeta() { leafResolved = true; return { type: 'tracker' } }
+      }
+      const tree = [new TestContainer([new Tracker()]).visible(false)]
+      const result = await resolveSchema(tree)
+      assert.equal(result.length, 0)
+      assert.equal(leafResolved, false)
+    })
+  })
+
+  // ─── Plan #8 layout positioning ─────────────────────────
+
+  describe('layout positioning (Plan #8)', () => {
+    it('emits _layout.columnSpan when set', async () => {
+      const tree = [new TestLeaf('a').columnSpan(2)]
+      const result = await resolveSchema(tree)
+      assert.deepEqual(result[0]!._layout, { columnSpan: 2 })
+    })
+
+    it('emits _layout with columnStart and columnOrder when set', async () => {
+      const tree = [new TestLeaf('a').columnStart(2).columnOrder(3)]
+      const result = await resolveSchema(tree)
+      assert.deepEqual(result[0]!._layout, { columnStart: 2, columnOrder: 3 })
+    })
+
+    it('combines all three positioning hints', async () => {
+      const tree = [new TestLeaf('a').columnSpan(3).columnStart(1).columnOrder(2)]
+      const result = await resolveSchema(tree)
+      assert.deepEqual(result[0]!._layout, {
+        columnSpan: 3,
+        columnStart: 1,
+        columnOrder: 2,
+      })
+    })
+
+    it('omits _layout when no positioning method was used', async () => {
+      const tree = [new TestLeaf('a')]
+      const result = await resolveSchema(tree)
+      assert.equal(result[0]!._layout, undefined)
+    })
+  })
 })

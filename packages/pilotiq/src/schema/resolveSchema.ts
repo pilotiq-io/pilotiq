@@ -1,4 +1,4 @@
-import { Element, type ElementMeta } from './Element.js'
+import { Element, type ElementMeta, type LayoutContext } from './Element.js'
 import { Field } from '../fields/Field.js'
 import { Action } from '../actions/Action.js'
 import { ActionGroup } from '../actions/ActionGroup.js'
@@ -144,6 +144,19 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
     }
   }
 
+  // Layout-level visibility (Plan #8). Field/Action/ActionGroup own
+  // their visibility above; this catches every other Element with a
+  // `.visible(...)` rule (Section, Card, Tabs, Tab, Grid, Split,
+  // Wizard, Step, Group, Fieldset, Heading, Text, …).
+  if (!(el instanceof Field) &&
+      !(el instanceof Action) &&
+      !(el instanceof ActionGroup) &&
+      el.hasVisibilityRule()) {
+    const layoutCtx = buildLayoutContext(ctx)
+    const visible   = await el.evaluateVisibility(layoutCtx)
+    if (!visible) return null
+  }
+
   const type = el.getType()
 
   const customResolver = registry.get(type)
@@ -179,10 +192,30 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
     if (disabled) meta['disabled'] = true
   }
 
+  // Plan #8 — emit `_layout` bag when the element used columnSpan/Start/Order.
+  // Stamped after toMeta() so subclasses don't have to remember.
+  const layout = el.getLayoutPositioning()
+  if (layout) meta._layout = layout
+
   const children = el.getChildren()
   if (children && children.length > 0) {
     meta.children = await resolveAll(children, ctx)
   }
 
   return meta
+}
+
+/**
+ * Build a layout-visibility context from the resolver's `RenderContext`.
+ * Mirrors the `Field.buildConditionContext` shape so layout `visible(fn)`
+ * callbacks can destructure the same way as `Field.showWhen` callbacks.
+ */
+function buildLayoutContext(ctx: RenderContext): LayoutContext {
+  const out: LayoutContext = {}
+  if (ctx.record !== undefined) out.record = ctx.record
+  if (ctx.values !== undefined) out.values = ctx.values
+  if (ctx.$get) out.$get = ctx.$get
+  if (ctx.$set) out.$set = ctx.$set
+  if (ctx.user !== undefined) out.user = ctx.user
+  return out
 }

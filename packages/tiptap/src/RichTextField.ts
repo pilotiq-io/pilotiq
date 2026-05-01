@@ -1,4 +1,4 @@
-import { Field, type FieldMeta, type FieldType } from '@pilotiq/pilotiq'
+import { Field, type FieldMeta, type FieldType, type RenderContext } from '@pilotiq/pilotiq'
 import { Block, type BlockMeta } from './Block.js'
 
 export type RichTextToolbar = 'default' | 'none'
@@ -68,9 +68,12 @@ export class RichTextField extends Field {
   isSlashEnabled():  boolean { return this._slashCommand }
   getToolbar():      RichTextToolbar { return this._toolbar }
 
-  override toMeta(record?: unknown): RichTextFieldMeta {
+  override toMeta(ctx?: RenderContext): RichTextFieldMeta {
+    // RichTextField has no async resolvers, so the parent always returns
+    // the sync FieldMeta branch — cast away the union for the spread.
+    const base = super.toMeta(ctx) as FieldMeta
     return {
-      ...super.toMeta(record),
+      ...base,
       blocks:       this._blocks.map((b) => b.toMeta()),
       slashCommand: this._slashCommand,
       toolbar:      this._toolbar,

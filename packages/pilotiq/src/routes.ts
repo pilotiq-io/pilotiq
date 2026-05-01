@@ -12,6 +12,7 @@ import {
   dashboardData, resourceIndexData, resourceCreateData, resourceEditData,
   resourceViewData, globalEditData, globalViewData, customPageData,
   formStateData, type FormStateScope,
+  formWizardData,
 } from './pageData.js'
 import type { ThemeConfig } from './theme/types.js'
 import { presets } from './theme/presets.js'
@@ -142,6 +143,51 @@ async function handleFormState(
     return res.json({ ok: true, form: result.form, dirty: result.dirty })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Form update failed'
+    res.status(500)
+    return res.json({ ok: false, error: message })
+  }
+}
+
+interface FormWizardBody {
+  step?:   unknown
+  values?: unknown
+}
+
+async function handleFormWizard(
+  req:     AppRequest,
+  res:     AppResponse,
+  pilotiq: Pilotiq,
+  scope:   FormStateScope,
+  formId:  string,
+): Promise<unknown> {
+  const body   = (await readFormBody(req)) as FormWizardBody
+  const stepN  = typeof body.step === 'number' ? body.step
+              : typeof body.step === 'string' ? Number(body.step)
+              : NaN
+  const values = (body.values && typeof body.values === 'object' && !Array.isArray(body.values))
+    ? body.values as Record<string, unknown>
+    : {}
+  if (!formId || !Number.isFinite(stepN) || stepN < 0) {
+    res.status(400)
+    return res.json({ ok: false, error: 'Missing formId or invalid step' })
+  }
+
+  try {
+    const result = await formWizardData(pilotiq, scope, { formId, step: stepN, values }, req)
+    if (result === null) {
+      res.status(404)
+      return res.json({ ok: false, error: 'Page not found' })
+    }
+    if (!result.ok) {
+      res.status(result.status)
+      const payload: Record<string, unknown> = { ok: false }
+      if (result.error)  payload['error']  = result.error
+      if (result.errors) payload['errors'] = result.errors
+      return res.json(payload)
+    }
+    return res.json({ ok: true })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Wizard step validation failed'
     res.status(500)
     return res.json({ ok: false, error: message })
   }
@@ -325,6 +371,15 @@ export function registerPilotiqRoutes(
         const formId = req.params['formId']!
         return handleFormState(req, res, pilotiq, { kind: 'resource-create', slug }, formId)
       })
+
+      // Plan #8 — wizard step-validate endpoint for create-mode forms.
+      router.post(`${base}/${slug}/_form/:formId/wizard`, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, true)
+        const formId = req.params['formId']!
+        return handleFormWizard(req, res, pilotiq, { kind: 'resource-create', slug }, formId)
+      })
     }
 
     // Plan #5 — partial-resolve endpoint for edit-mode forms.
@@ -338,6 +393,17 @@ export function registerPilotiqRoutes(
         const policyRecord = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormState(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
+      })
+
+      // Plan #8 — wizard step-validate endpoint for edit-mode forms.
+      router.post(`${base}/${slug}/:id/_form/:formId/wizard`, async (req, res) => {
+        const recordId = req.params['id']!
+        const formId   = req.params['formId']!
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+        const policyRecord = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
+        return handleFormWizard(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
       })
     }
 
@@ -553,6 +619,15 @@ export function registerPilotiqRoutes(
         return handleFormState(req, res, pilotiq, { kind: 'global-edit', slug }, formId)
       })
 
+      // Plan #8 wizard step-validate endpoint for the global's edit form.
+      router.post(`${base}/${slug}/_form/:formId/wizard`, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, true)
+        if (!await checkPolicy(() => G.canEdit(user, undefined))) return forbidden(res, true)
+        const formId = req.params['formId']!
+        return handleFormWizard(req, res, pilotiq, { kind: 'global-edit', slug }, formId)
+      })
+
       router.get(editUrl, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
         if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, wantsJson(req))
@@ -643,6 +718,14 @@ export function registerPilotiqRoutes(
       if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, true)
       const formId = req.params['formId']!
       return handleFormState(req, res, pilotiq, { kind: 'page', pageSlug }, formId)
+    })
+
+    // Plan #8 wizard step-validate endpoint for custom pages.
+    router.post(`${pageUrl}/_form/:formId/wizard`, async (req, res) => {
+      const user = await pilotiq.resolveUser(req)
+      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, true)
+      const formId = req.params['formId']!
+      return handleFormWizard(req, res, pilotiq, { kind: 'page', pageSlug }, formId)
     })
 
     router.get(pageUrl, async (req, res) => {

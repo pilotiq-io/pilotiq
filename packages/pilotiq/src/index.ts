@@ -90,6 +90,10 @@ export { Card } from './schema/Card.js'
 export { Section } from './schema/Section.js'
 export { Tabs, Tab } from './schema/Tabs.js'
 export { Grid } from './schema/Grid.js'
+export { Group } from './schema/Group.js'
+export { Fieldset } from './schema/Fieldset.js'
+export { Split, type SplitFrom } from './schema/Split.js'
+export { Wizard, Step } from './schema/Wizard.js'
 
 // Form / Table containers (own their own lifecycle)
 export {

@@ -18,7 +18,8 @@ import { Element } from './schema/Element.js'
 import { Field } from './fields/Field.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { Form } from './elements/Form.js'
-import { applyStateUpdate, findForms } from './elements/dispatchForm.js'
+import { applyStateUpdate, findForms, findWizardStepFields } from './elements/dispatchForm.js'
+import { validateSchema } from './validation/index.js'
 import { loadTableRecords, type QueryParams } from './elements/dispatchTable.js'
 import { findActions } from './elements/dispatchAction.js'
 import { ListTabs } from './elements/ListTabs.js'
@@ -312,12 +313,44 @@ export function tagFormStateUrls(
   }
 }
 
+/**
+ * Plan #8 — stamp the wizard step-validate endpoint URL on every form
+ * whose descendants include a `Wizard` element. `FormMeta.wizardUrl` is
+ * what the client posts to on Next-button clicks; forms without a wizard
+ * descendant skip wiring.
+ */
+export function tagFormWizardUrls(
+  elements:   ReadonlyArray<Element>,
+  urlBuilder: (formId: string) => string,
+): void {
+  for (const form of findForms(elements)) {
+    if (formHasWizard(form)) {
+      form.withWizardUrl(urlBuilder(form.getFormId()))
+    }
+  }
+}
+
 function formHasLiveField(form: Form): boolean {
   let found = false
   const visit = (els: ReadonlyArray<Element>): void => {
     for (const el of els) {
       if (found) return
       if (el instanceof Field && el.isLive()) { found = true; return }
+      const children = el.getChildren()
+      if (children) visit(children)
+    }
+  }
+  const children = form.getChildren()
+  if (children) visit(children)
+  return found
+}
+
+function formHasWizard(form: Form): boolean {
+  let found = false
+  const visit = (els: ReadonlyArray<Element>): void => {
+    for (const el of els) {
+      if (found) return
+      if (el.getType() === 'wizard') { found = true; return }
       const children = el.getChildren()
       if (children) visit(children)
     }
@@ -519,6 +552,7 @@ export async function resourceCreateData(
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, createUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/state`)
+  tagFormWizardUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/wizard`)
   if (prefill) {
     const form = findForms(elements)[0]
     if (form) {
@@ -561,6 +595,7 @@ export async function resourceEditData(
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/${recordId}/_form/${formId}/state`)
+  tagFormWizardUrls(elements, formId => `${cfg.path}/${slug}/${recordId}/_form/${formId}/wizard`)
 
   // Locate the primary form, load the record, fill values.
   const form = findForms(elements)[0]
@@ -741,6 +776,99 @@ function selectFormById(forms: ReadonlyArray<Form>, id: string): Form | undefine
   return forms.find(f => f.getFormId() === id)
 }
 
+// ─── Plan #8 wizard step-validate data builder ────────────────
+
+export interface FormWizardRequest {
+  formId: string
+  step:   number
+  values: Record<string, unknown>
+}
+
+export interface FormWizardSuccess {
+  ok: true
+}
+
+export interface FormWizardFailure {
+  ok:     false
+  status: 404 | 422
+  error?: string
+  errors?: Record<string, string[]>
+}
+
+/**
+ * Plan #8 — handle a Wizard step-validate POST. Locates the form by id,
+ * walks to the Wizard descendant, validates only the fields inside step
+ * `step` against `values`. Returns `{ ok: true }` on success or
+ * `{ ok: false, status: 422, errors }` when fields fail validation.
+ *
+ * Errors are keyed by field name, same shape as the form-submit 422 path,
+ * so the client (`FormStateApi.applyErrors`) can surface them in-place.
+ */
+export async function formWizardData(
+  pilotiq: Pilotiq,
+  scope:   FormStateScope,
+  body:    FormWizardRequest,
+  req?:    unknown,
+): Promise<FormWizardSuccess | FormWizardFailure | null> {
+  const cfg = pilotiq.getConfig()
+  const user = await pilotiq.resolveUser(req)
+
+  let PageClass: typeof Page | undefined
+  let mode: 'create' | 'edit'
+  let record: unknown = undefined
+  let baseCtxExtras: Record<string, unknown> = {}
+
+  if (scope.kind === 'resource-create' || scope.kind === 'resource-edit') {
+    const R = cfg.resources.find(r => r.getSlug() === scope.slug)
+    if (!R) return null
+    const pages = R.resolvePages()
+    if (scope.kind === 'resource-create') {
+      if (!pages.create) return null
+      PageClass = pages.create
+      mode = 'create'
+    } else {
+      if (!pages.edit) return null
+      PageClass = pages.edit
+      mode = 'edit'
+      baseCtxExtras = { recordId: scope.recordId }
+      if (R.model) {
+        try { record = await R.model.find(scope.recordId) } catch { /* ignore */ }
+      } else {
+        record = { id: scope.recordId }
+      }
+    }
+  } else if (scope.kind === 'global-edit') {
+    const G = cfg.globals.find(g => g.getSlug() === scope.slug)
+    if (!G) return null
+    const pages = G.resolvePages()
+    if (!pages.edit) return null
+    PageClass = pages.edit
+    mode = 'edit'
+  } else {
+    const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
+    if (!P) return null
+    PageClass = P
+    mode = 'edit'
+  }
+
+  if (!PageClass) return null
+
+  const baseCtx: SchemaContext = uploadCtx(userCtx({ mode, basePath: cfg.path, ...baseCtxExtras }, user), cfg.path)
+  const elements = await callPageSchema(PageClass, baseCtx)
+  const form = selectFormById(findForms(elements), body.formId)
+  if (!form) return { ok: false, status: 404, error: `Form "${body.formId}" not found on page` }
+
+  const formChildren = form.getChildren() ?? []
+  const stepFields = findWizardStepFields(formChildren, body.step)
+  if (!stepFields) return { ok: false, status: 404, error: `Step ${body.step} not found on form "${body.formId}"` }
+
+  const errors = validateSchema(stepFields, body.values, record)
+  if (Object.keys(errors).length > 0) {
+    return { ok: false, status: 422, errors }
+  }
+  return { ok: true }
+}
+
 export async function resourceViewData(
   pilotiq:  Pilotiq,
   slug:     string,
@@ -802,6 +930,7 @@ export async function globalEditData(
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/state`)
+  tagFormWizardUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/wizard`)
 
   const form = findForms(elements)[0]
   let record: unknown = undefined
@@ -877,6 +1006,7 @@ export async function customPageData(
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, pageUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/state`)
+  tagFormWizardUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/wizard`)
   tagActionDispatch(elements, pageUrl)
   const schemaData = await resolveSchema(elements, ctx)
 

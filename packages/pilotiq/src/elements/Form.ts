@@ -78,6 +78,8 @@ export type SavedNotificationHandler<R = unknown> =
 export interface FormMeta extends ElementMeta {
   type:    'form'
   formId:  string
+  /** Plan #8 — wizard step-validate endpoint, when the form has a Wizard descendant. */
+  wizardUrl?: string
   method:  FormMethod
   action?: string
   values?: Record<string, unknown>
@@ -147,6 +149,10 @@ export class Form<R = unknown> extends Element {
 
   // Plan #5 — partial-resolve endpoint. Stamped by the route handler at
   // render time when any descendant field is `live()`; emits as
+  // (Plan #8) `wizardUrl` for step validation endpoint. Stamped only when
+  // the Form has a Wizard descendant.
+  private _wizardUrl?: string
+
   // `stateUrl` on FormMeta. Undefined when no live fields → client
   // skips the controlled-state path entirely.
   private _stateUrl?: string
@@ -323,6 +329,23 @@ export class Form<R = unknown> extends Element {
 
   getStateUrl(): string | undefined { return this._stateUrl }
 
+  /**
+   * Plan #8 — set the wizard step-validate endpoint URL. Stamped at
+   * render-time when the form has a Wizard descendant; the client
+   * POSTs `{ step, values }` here on each Next-button click and
+   * receives `{ ok }` (200) or `{ ok:false, errors }` (422).
+   */
+  withWizardUrl(url: string | undefined): this {
+    if (url === undefined) {
+      delete this._wizardUrl
+    } else {
+      this._wizardUrl = url
+    }
+    return this
+  }
+
+  getWizardUrl(): string | undefined { return this._wizardUrl }
+
   // ─── Getters (used by route handlers) ────────────────
 
   getFormId(): string { return this._formId }
@@ -362,7 +385,8 @@ export class Form<R = unknown> extends Element {
       ...(this._action   !== undefined ? { action:   this._action   } : {}),
       ...(this._values   !== undefined ? { values:   this._values   } : {}),
       ...(this._errors   !== undefined ? { errors:   this._errors   } : {}),
-      ...(this._stateUrl !== undefined ? { stateUrl: this._stateUrl } : {}),
+      ...(this._stateUrl  !== undefined ? { stateUrl:  this._stateUrl  } : {}),
+      ...(this._wizardUrl !== undefined ? { wizardUrl: this._wizardUrl } : {}),
     }
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import type { ElementMeta } from '../schema/Element.js'
 import { getFieldRenderer } from './registry.js'
 import { FormStateProvider, useFormState } from './FormStateContext.js'
@@ -1042,6 +1042,39 @@ function renderAction(
   )
 }
 
+// ─── Layout helpers ─────────────────────────────────────────
+
+/**
+ * Map `meta._layout` (Plan #8 — `columnSpan / columnStart / columnOrder`)
+ * onto Tailwind utility classes. Returns an empty string when the
+ * element has no layout hints. Outside of a parent Grid/Split the
+ * classes have no effect — Tailwind generates `col-span-*` /
+ * `col-start-*` / `order-*` regardless of context.
+ *
+ * Tailwind's JIT only ships utilities up to a fixed range; clamp here
+ * to the safe defaults (1..12 for col, 1..12 for order).
+ */
+function layoutClasses(el: ElementMeta): string {
+  const layout = el['_layout'] as
+    | { columnSpan?: number; columnStart?: number; columnOrder?: number }
+    | undefined
+  if (!layout) return ''
+  const out: string[] = []
+  if (typeof layout.columnSpan  === 'number') {
+    const span = Math.max(1, Math.min(12, layout.columnSpan))
+    out.push(`col-span-${span}`)
+  }
+  if (typeof layout.columnStart === 'number') {
+    const start = Math.max(1, Math.min(12, layout.columnStart))
+    out.push(`col-start-${start}`)
+  }
+  if (typeof layout.columnOrder === 'number') {
+    const order = Math.max(1, Math.min(12, layout.columnOrder))
+    out.push(`order-${order}`)
+  }
+  return out.join(' ')
+}
+
 // ─── Container helpers ──────────────────────────────────────
 
 function renderChildren(children: ElementMeta[] | undefined, gap = 'gap-4'): React.ReactNode {
@@ -1339,19 +1372,65 @@ function TabsRenderer({ el, index }: { el: ElementMeta; index: number }) {
 function SectionRenderer({ el, index }: { el: ElementMeta; index: number }) {
   const title       = el['title']       ? String(el['title']) : undefined
   const description = el['description'] ? String(el['description']) : undefined
+  const iconName    = el['icon']        ? String(el['icon']) : undefined
+  const badge       = el['badge']       ? String(el['badge']) : undefined
   const columns     = Number(el['columns'] ?? 1)
   const collapsible = Boolean(el['collapsible'])
+  const compact     = Boolean(el['compact'])
+  const persist     = Boolean(el['persistCollapsed'])
+  const persistKey  = el['persistKey']
+    ? `pilotiq.section.${String(el['persistKey'])}`
+    : title
+      ? `pilotiq.section.${title.toLowerCase().replace(/\s+/g, '-')}`
+      : undefined
+
   const [collapsed, setCollapsed] = useState(Boolean(el['defaultCollapsed']))
 
+  // Plan #8 — persist open/closed state to localStorage. Hydration-safe:
+  // initial render uses `defaultCollapsed`; effect overrides from storage
+  // after mount so server + client first paint agree.
+  useEffect(() => {
+    if (!persist || !persistKey) return
+    if (typeof window === 'undefined') return
+    try {
+      const stored = window.localStorage.getItem(persistKey)
+      if (stored === '0') setCollapsed(false)
+      if (stored === '1') setCollapsed(true)
+    } catch { /* localStorage may be unavailable (private mode) */ }
+  }, [persist, persistKey])
+
+  useEffect(() => {
+    if (!persist || !persistKey) return
+    if (typeof window === 'undefined') return
+    try { window.localStorage.setItem(persistKey, collapsed ? '1' : '0') }
+    catch { /* ignore */ }
+  }, [persist, persistKey, collapsed])
+
   const gridClass = columns === 2 ? 'grid grid-cols-2 gap-4' : columns === 3 ? 'grid grid-cols-3 gap-4' : 'flex flex-col gap-4'
+  const padding = compact ? 'p-3' : 'p-4'
+  const titleSize = compact ? 'text-sm' : 'text-base'
+  const Icon = resolveIcon(iconName)
 
   return (
-    <section key={index} className="flex flex-col gap-3 rounded-lg border bg-card p-4">
-      {(title || description || collapsible) && (
+    <section
+      key={index}
+      className={`flex flex-col ${compact ? 'gap-2' : 'gap-3'} rounded-lg border bg-card ${padding} ${layoutClasses(el)}`.trim()}
+    >
+      {(title || description || collapsible || badge) && (
         <header className="flex items-start justify-between gap-2">
-          <div>
-            {title && <h3 className="text-base font-semibold">{title}</h3>}
-            {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+          <div className="flex items-start gap-2">
+            {Icon && <Icon className="size-4 mt-0.5 text-muted-foreground" aria-hidden="true" />}
+            <div>
+              <div className="flex items-center gap-2">
+                {title && <h3 className={`${titleSize} font-semibold`}>{title}</h3>}
+                {badge && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {badge}
+                  </span>
+                )}
+              </div>
+              {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+            </div>
           </div>
           {collapsible && (
             <button
@@ -1370,6 +1449,201 @@ function SectionRenderer({ el, index }: { el: ElementMeta; index: number }) {
         </div>
       )}
     </section>
+  )
+}
+
+// ─── Wizard (Plan #8) ───────────────────────────────────────
+
+/**
+ * Multi-step form layout. Tracks active step in `useState`, optionally
+ * persisted to localStorage. On Next click, POSTs `{ step, values }` to
+ * the form's `wizardUrl` (stamped by the route handler when the form
+ * has a Wizard descendant). 200 → advance; 422 → stamp inline errors;
+ * absent `wizardUrl` → advance immediately (no validation).
+ *
+ * Inactive steps render hidden (display:none) rather than unmounted so
+ * controlled inputs preserve their values across step transitions and
+ * cross-step `$get` works on the resolved meta.
+ */
+function WizardRenderer({ el, index }: {
+  el: ElementMeta
+  index: number
+}) {
+  const formState = useFormState()
+  const formId    = formState?.formMeta['formId'] ? String(formState.formMeta['formId']) : undefined
+  const wizardUrl = formState?.formMeta['wizardUrl'] ? String(formState.formMeta['wizardUrl']) : undefined
+
+  const steps = (el.children ?? []).filter(c => c.type === 'step')
+  const skippable   = Boolean(el['skippable'])
+  const startOnStep = Math.max(0, Math.min(Math.max(0, steps.length - 1), Number(el['startOnStep'] ?? 0)))
+  const persist     = el['persist'] !== false
+  const storageKey  = persist && formId ? `pilotiq.wizard.${formId}.step` : undefined
+
+  const [active, setActive] = useState(startOnStep)
+  const [advancing, setAdvancing] = useState(false)
+  const [advanceError, setAdvanceError] = useState<string | null>(null)
+
+  // Hydrate persisted step from localStorage after mount.
+  useEffect(() => {
+    if (!storageKey) return
+    if (typeof window === 'undefined') return
+    try {
+      const stored = window.localStorage.getItem(storageKey)
+      if (stored !== null) {
+        const n = Number(stored)
+        if (Number.isFinite(n) && n >= 0 && n < steps.length) setActive(n)
+      }
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey])
+
+  // Persist active step changes.
+  useEffect(() => {
+    if (!storageKey) return
+    if (typeof window === 'undefined') return
+    try { window.localStorage.setItem(storageKey, String(active)) }
+    catch { /* ignore */ }
+  }, [storageKey, active])
+
+  if (steps.length === 0) {
+    return (
+      <div key={index} className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+        No steps configured.
+      </div>
+    )
+  }
+
+  const isLast  = active === steps.length - 1
+  const isFirst = active === 0
+
+  const advance = async (target: number) => {
+    setAdvanceError(null)
+    if (!wizardUrl) {
+      setActive(target)
+      return
+    }
+    setAdvancing(true)
+    try {
+      const values = formState?.values ?? {}
+      // Validate intermediate steps in order when jumping ahead.
+      const path = target > active
+        ? Array.from({ length: target - active }, (_, k) => active + k)
+        : [active] // jumping back is unconstrained
+      let landed = active
+      for (const stepIdx of path) {
+        const res = await fetch(wizardUrl, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body:    JSON.stringify({ step: stepIdx, values }),
+        })
+        if (res.status === 422) {
+          const data = await res.json().catch(() => ({}))
+          const errors = (data?.errors ?? {}) as Record<string, string[]>
+          if (formState?.applyErrors) formState.applyErrors(errors)
+          landed = stepIdx
+          setAdvanceError('Please fix the highlighted fields.')
+          break
+        }
+        if (!res.ok) {
+          setAdvanceError('Step validation failed.')
+          break
+        }
+        landed = stepIdx + 1
+      }
+      setActive(target > active ? landed : target)
+    } catch {
+      setAdvanceError('Step validation failed.')
+    } finally {
+      setAdvancing(false)
+    }
+  }
+
+  return (
+    <div key={index} className={`flex flex-col gap-6 ${layoutClasses(el)}`.trim()}>
+      {/* Step indicator */}
+      <ol className="flex items-center gap-3 overflow-x-auto" aria-label="Wizard progress">
+        {steps.map((s, i) => {
+          const Icon = resolveIcon(s['icon'] ? String(s['icon']) : undefined)
+          const reachable = skippable || i <= active
+          const isActive = i === active
+          const isDone = i < active
+          return (
+            <li key={i} className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={!reachable || advancing}
+                onClick={() => reachable && advance(i)}
+                className={[
+                  'flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition',
+                  isActive ? 'border-primary bg-primary/10 text-foreground'
+                  : isDone ? 'border-border text-muted-foreground hover:bg-muted'
+                  : 'border-border text-muted-foreground',
+                  reachable ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed',
+                ].join(' ')}
+                aria-current={isActive ? 'step' : undefined}
+              >
+                <span className={[
+                  'flex size-5 items-center justify-center rounded-full text-[11px] font-semibold',
+                  isActive ? 'bg-primary text-primary-foreground'
+                  : isDone ? 'bg-muted-foreground/20 text-foreground'
+                  : 'bg-muted text-muted-foreground',
+                ].join(' ')}>
+                  {Icon ? <Icon className="size-3" aria-hidden="true" /> : i + 1}
+                </span>
+                <span className="font-medium">{String(s['label'] ?? `Step ${i + 1}`)}</span>
+              </button>
+              {i < steps.length - 1 && <span className="h-px w-6 bg-border" aria-hidden="true" />}
+            </li>
+          )
+        })}
+      </ol>
+
+      {/* Active step heading */}
+      {Boolean(steps[active]?.['description']) && (
+        <p className="text-sm text-muted-foreground">{String(steps[active]!['description'])}</p>
+      )}
+
+      {/* Step content. Inactive steps render hidden so controlled inputs survive. */}
+      {steps.map((s, i) => (
+        <div
+          key={i}
+          className={i === active ? 'flex flex-col gap-4' : 'hidden'}
+          aria-hidden={i === active ? undefined : true}
+        >
+          {(s.children ?? []).map((c, ci) => renderElement(c, ci))}
+        </div>
+      ))}
+
+      {advanceError && (
+        <p className="text-sm text-destructive" role="alert">{advanceError}</p>
+      )}
+
+      {/* Step nav. The Form's Save button (in Heading actions or page chrome)
+          stays as-is — only the final step's submit goes through. We expose
+          Back / Next here. The final-step "Save" is the form's submit; the
+          renderer flips Next → submit-button on the final step. */}
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          disabled={isFirst || advancing}
+          onClick={() => advance(active - 1)}
+          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Back
+        </button>
+        {isLast
+          ? <span className="text-xs text-muted-foreground">Submit the form to finish.</span>
+          : <button
+              type="button"
+              disabled={advancing}
+              onClick={() => advance(active + 1)}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {advancing ? 'Validating…' : 'Next'}
+            </button>
+        }
+      </div>
+    </div>
   )
 }
 
@@ -1471,7 +1745,7 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
       return (
         <div
           key={index}
-          className="grid gap-4"
+          className={`grid gap-4 ${layoutClasses(el)}`.trim()}
           style={{
             gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
             ...(gapPx ? { gap: gapPx } : {}),
@@ -1481,6 +1755,73 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
         </div>
       )
     }
+
+    case 'group': {
+      const layout = layoutClasses(el)
+      return (
+        <div key={index} className={layout || undefined}>
+          {renderChildren(el.children)}
+        </div>
+      )
+    }
+
+    case 'split': {
+      const from = el['from'] === 'left' ? 'left' : 'right'
+      const gap  = Math.max(0, Math.min(12, Number(el['gap'] ?? 6)))
+      const children = el.children ?? []
+      // Find the explicit aside child first; fall back to "second child is
+      // aside" so terse Split.make().schema([main, aside]) still works.
+      let asideIdx = children.findIndex(c => c['aside'] === true)
+      if (asideIdx === -1 && children.length >= 2) asideIdx = 1
+      const mainChildren  = children.filter((_, i) => i !== asideIdx)
+      const asideChild    = asideIdx >= 0 ? children[asideIdx] : undefined
+
+      const orderClasses  = from === 'left'
+        ? { aside: '@md:order-first', main: '@md:order-last' }
+        : { aside: '@md:order-last',  main: '@md:order-first' }
+
+      return (
+        <div
+          key={index}
+          className={`@container flex flex-col @md:flex-row gap-${gap} ${layoutClasses(el)}`.trim()}
+        >
+          <div className={`flex flex-col gap-4 flex-1 min-w-0 ${orderClasses.main}`}>
+            {mainChildren.map((c, i) => renderElement(c, i))}
+          </div>
+          {asideChild && (
+            <aside className={`flex flex-col gap-4 @md:w-80 @md:shrink-0 ${orderClasses.aside}`}>
+              {renderElement(asideChild, asideIdx)}
+            </aside>
+          )}
+        </div>
+      )
+    }
+
+    case 'fieldset': {
+      const label   = String(el['label'] ?? '')
+      const columns = Math.max(1, Math.min(3, Number(el['columns'] ?? 1)))
+      const gridStyle = columns > 1
+        ? { display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: '1rem' }
+        : undefined
+      return (
+        <fieldset
+          key={index}
+          className={`rounded-md border border-border px-4 pt-3 pb-4 ${layoutClasses(el)}`.trim()}
+        >
+          {label && <legend className="px-1 text-xs font-medium text-muted-foreground">{label}</legend>}
+          <div className={columns === 1 ? 'flex flex-col gap-3' : undefined} style={gridStyle}>
+            {(el.children ?? []).map((c, i) => renderElement(c, i))}
+          </div>
+        </fieldset>
+      )
+    }
+
+    case 'wizard':
+      return <WizardRenderer key={index} el={el} index={index} />
+
+    case 'step':
+      // Steps are rendered by their parent Wizard; standalone Step is a no-op.
+      return null
 
     case 'field':
       return renderField(el, index)

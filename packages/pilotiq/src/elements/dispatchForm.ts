@@ -311,6 +311,35 @@ export function findForms(elements: ReadonlyArray<Element>): Form[] {
 }
 
 /**
+ * Plan #8 — locate the children of a Wizard step at the given index inside
+ * the form's tree. Returns `undefined` when the form has no Wizard
+ * descendant or the step index is out of range. Step children are returned
+ * as a fresh Element[] so callers can pass them straight to
+ * `validateSchema`. Walks structurally (`getType() === 'wizard'/'step'`)
+ * to stay robust to Vite SSR module-cache duplication.
+ */
+export function findWizardStepFields(
+  formChildren: ReadonlyArray<Element>,
+  stepIndex:    number,
+): Element[] | undefined {
+  let wizard: Element | undefined
+  const walk = (els: ReadonlyArray<Element>): void => {
+    for (const el of els) {
+      if (el.getType() === 'wizard') { wizard = el; return }
+      const children = el.getChildren()
+      if (children && children.length > 0) walk(children)
+      if (wizard) return
+    }
+  }
+  walk(formChildren)
+  if (!wizard) return undefined
+  const steps = (wizard.getChildren() ?? []).filter(c => c.getType() === 'step')
+  const step = steps[stepIndex]
+  if (!step) return undefined
+  return step.getChildren() ?? []
+}
+
+/**
  * Pick the `Form` matching the submitted `_formId`, or fall back to the
  * first form on the page when no id was sent. Returns undefined if the page
  * has no forms.

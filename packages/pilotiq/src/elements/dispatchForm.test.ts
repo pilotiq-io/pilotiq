@@ -2,7 +2,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { Form } from './Form.js'
-import { applyStateUpdate, coerceFormValues, dispatchFormSubmit, findForms, selectForm } from './dispatchForm.js'
+import { applyStateUpdate, coerceFormValues, dispatchFormSubmit, findForms, findWizardStepFields, selectForm } from './dispatchForm.js'
+import { Wizard, Step } from '../schema/Wizard.js'
 import { TextField } from '../fields/TextField.js'
 import { NumberField } from '../fields/NumberField.js'
 import { ToggleField } from '../fields/ToggleField.js'
@@ -350,5 +351,47 @@ describe('coerceFormValues — dehydrated(false) (Plan #6)', () => {
     const elements = [NumberField.make('decoy').dehydrated(false)]
     const out = coerceFormValues(elements, { decoy: '42' })
     assert.equal('decoy' in out, false)
+  })
+})
+
+describe('findWizardStepFields (Plan #8)', () => {
+  it('returns the children of the requested step', () => {
+    const form = Form.make().schema([
+      Wizard.make().steps([
+        Step.make('a').schema([TextField.make('email')]),
+        Step.make('b').schema([TextField.make('name')]),
+      ]),
+    ])
+    const fields = findWizardStepFields(form.getChildren()!, 1)
+    assert.ok(fields)
+    assert.equal(fields!.length, 1)
+    assert.equal((fields![0] as TextField).name, 'name')
+  })
+
+  it('returns undefined when no Wizard descendant exists', () => {
+    const form = Form.make().schema([TextField.make('plain')])
+    const fields = findWizardStepFields(form.getChildren()!, 0)
+    assert.equal(fields, undefined)
+  })
+
+  it('returns undefined when the step index is out of range', () => {
+    const form = Form.make().schema([
+      Wizard.make().steps([Step.make('only').schema([TextField.make('x')])]),
+    ])
+    const fields = findWizardStepFields(form.getChildren()!, 5)
+    assert.equal(fields, undefined)
+  })
+
+  it('walks through containers to find the wizard', () => {
+    const form = Form.make().schema([
+      Section.make('outer').schema([
+        Wizard.make().steps([
+          Step.make('inner').schema([TextField.make('nested')]),
+        ]),
+      ]),
+    ])
+    const fields = findWizardStepFields(form.getChildren()!, 0)
+    assert.ok(fields)
+    assert.equal((fields![0] as TextField).name, 'nested')
   })
 })
