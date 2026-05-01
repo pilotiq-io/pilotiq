@@ -39,6 +39,19 @@ the first non-trivial CRUD form that needs more than scalar values.
 
 **Tests at completion:** 885 → 966 (+81). Build clean.
 
+**v1.1 (2026-05-01):** native HTML5 drag-and-drop reorder + inner-field
+live re-resolve roundtrip via container-level delegated events. 993 tests.
+
+**v1.2 (2026-05-02):** Switch / Slider / Base UI Select / Checkbox /
+Radio / Color / Date / DateTime / KeyValue / FileUpload / CheckboxList
+all call `fs.triggerLive(value)` explicitly in both controlled and
+uncontrolled paths to compensate for callback-style APIs not bubbling
+native change events. Native inputs (TextLikeInput) keep using the
+existing container-level delegate. 1015 tests.
+
+**Remaining v1.2 work:** row-level visibility (`Repeater.itemHidden(row=>…)`)
++ Builder field (heterogeneous Repeater) — both still open.
+
 Estimated effort: **~3 days**. Steps 1-4 are mechanical. Step 5
 (reactive interop) is the conceptual core. Steps 7-8 (drag a11y) are
 the long pole; if scope creeps they split into a `repeater-field-dnd.md`
