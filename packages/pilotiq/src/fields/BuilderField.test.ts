@@ -182,6 +182,26 @@ describe('BuilderField', () => {
       assert.equal(f.getItemLabel(),  labelFn)
       assert.equal(f.getItemHidden(), hiddenFn)
     })
+
+    it('grid() emits only when set with n >= 2', () => {
+      // Mirrors RepeaterField.grid() — same semantics, same threshold.
+      // n < 2 acts as the off sentinel so users can toggle via a config
+      // value without a separate "no-grid" branch.
+      assert.equal('grid' in BuilderField.make('x').toMeta(),       false)
+      assert.equal(BuilderField.make('x').grid(2).toMeta().grid,    2)
+      assert.equal('grid' in BuilderField.make('x').grid(1).toMeta(), false)
+      assert.equal('grid' in BuilderField.make('x').grid(0).toMeta(), false)
+      assert.equal(
+        BuilderField.make('x').grid(0).grid(3).toMeta().grid,
+        3,
+      )
+    })
+
+    it('getGrid() reflects the setter', () => {
+      assert.equal(BuilderField.make('x').getGrid(),               undefined)
+      assert.equal(BuilderField.make('x').grid(2).getGrid(),       2)
+      assert.equal(BuilderField.make('x').grid(2).grid(1).getGrid(), undefined)
+    })
   })
 
   // ─── Resolution ───────────────────────────────────────────

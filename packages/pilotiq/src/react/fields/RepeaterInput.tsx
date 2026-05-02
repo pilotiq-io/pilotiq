@@ -93,6 +93,11 @@ export function RepeaterInput({
   const simple           = Boolean(meta.simple)
   const addLabel         = typeof meta.addActionLabel === 'string' ? meta.addActionLabel : 'Add'
   const columns          = typeof meta.columns === 'number' && meta.columns > 1 ? meta.columns : 1
+  // Row-grid mode: `grid >= 2` lays rows in an n-column grid. Distinct
+  // from `columns` which grids the inner schema *inside* a row. We
+  // suppress the drop indicator in grid mode (a horizontal accent
+  // line reads wrong across grid cells); button reorder still works.
+  const rowGrid          = typeof meta.grid === 'number' && meta.grid > 1 ? meta.grid : 1
 
   const initialRows: RowState[] = useMemo(
     () => (meta.rows ?? []).map(r => ({
@@ -313,6 +318,10 @@ export function RepeaterInput({
     return -1
   })()
 
+  // In grid mode the rows themselves are grid items — wrap them in a
+  // CSS grid; otherwise stack vertically. The empty state and Add
+  // button are rendered as siblings so they don't get pulled into the
+  // grid (Add stays at the natural bottom; empty state spans full).
   return (
     <div
       className="flex flex-col gap-3"
@@ -325,9 +334,15 @@ export function RepeaterInput({
         </div>
       )}
 
+      <div
+        className={rowGrid > 1 ? 'grid gap-3' : 'flex flex-col gap-3'}
+        style={rowGrid > 1
+          ? { gridTemplateColumns: `repeat(${rowGrid}, minmax(0, 1fr))` }
+          : undefined}
+      >
       {rows.map((row, i) => (
         <React.Fragment key={row.id}>
-          {!row.hidden && dropAt === i && <DropIndicator />}
+          {!row.hidden && dropAt === i && rowGrid === 1 && <DropIndicator />}
           <RepeaterRow
             row={row}
             index={i}
@@ -361,7 +376,8 @@ export function RepeaterInput({
           />
         </React.Fragment>
       ))}
-      {dropAt === rows.length && <DropIndicator />}
+      {dropAt === rows.length && rowGrid === 1 && <DropIndicator />}
+      </div>
 
       <Button
         type="button"
@@ -710,6 +726,7 @@ interface RepeaterMetaShape {
   cloneable?:        boolean
   addActionLabel?:   string
   simple?:           boolean
+  grid?:             number
 }
 
 /**

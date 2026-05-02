@@ -100,6 +100,7 @@ the only place a `Block` is mounted.
 | `.collapsible()` | Per-row collapse chevron |
 | `.collapsed()` | Render rows collapsed by default |
 | `.accordion()` | One-row-open-at-a-time mode. Picking a row collapses every other row. Auto-arms `collapsible()`. Pair with `.collapsed()` to start with everything closed (default opens the first visible row). Open-row id persists per-form to `localStorage`. |
+| `.grid(n)` | Lay the *rows themselves* in an n-column grid (n ≥ 2). Different from `Block.columns(n)`, which grids fields *inside* one block's body. n < 2 is the off sentinel. Drag-drop indicator is suppressed in grid mode; ↑ / ↓ buttons still work. |
 | `.cloneable()` | Per-row duplicate button |
 | `.addable(false)` | Hide the **Add block** button (UX gate) |
 | `.deletable(false)` | Hide per-row delete buttons (UX gate) |

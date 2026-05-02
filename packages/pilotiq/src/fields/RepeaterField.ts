@@ -87,6 +87,16 @@ export interface RepeaterFieldMeta extends FieldMeta {
    * stored shape differs (`[v]` instead of `[{name: v}]`).
    */
   simple?:          boolean
+  /**
+   * Set when `Repeater.grid(n)` is configured (n ≥ 2). Lays the ROWS
+   * themselves in an n-column grid (different from `columns(n)` which
+   * grids the inner schema *inside* a row). Useful for tile-style
+   * pickers / member cards / icon palettes. Renderer swaps the outer
+   * `flex flex-col` container for a CSS grid and skips the drag-drop
+   * indicator in grid mode (the horizontal bar reads wrong across
+   * grid cells); button reorder still works.
+   */
+  grid?:            number
 }
 
 /**
@@ -122,6 +132,7 @@ export class RepeaterField extends Field {
   private _itemHidden?:      RepeaterItemHiddenRule
   private _extraItemActions: Action[] = []
   private _simple           = false
+  private _grid?:            number
 
   private constructor(name: string) {
     super(name, 'repeater')
@@ -223,6 +234,23 @@ export class RepeaterField extends Field {
   addActionLabel(label: string): this { this._addActionLabel = label; return this }
 
   /**
+   * Lay the ROWS themselves in an `n`-column grid — different from
+   * `columns(n)` which grids the inner schema *inside* a row. Pass
+   * `n >= 2`; values below 2 reset to no-grid (vertical stack, the
+   * default).
+   *
+   * In grid mode the renderer keeps reorder buttons working but
+   * suppresses the horizontal drop indicator (which doesn't read
+   * across grid cells). Drag-and-drop itself still moves rows; the
+   * cursor is the only feedback.
+   */
+  grid(n: number): this {
+    if (n >= 2) this._grid = n
+    else delete this._grid
+    return this
+  }
+
+  /**
    * Per-row action buttons rendered in each row's header alongside the
    * built-in clone/delete strip. Useful for "Mark featured", "Send test",
    * "Run preview", etc. — handler-style only in v1 (no `.href(…)` or
@@ -270,6 +298,7 @@ export class RepeaterField extends Field {
   getAddActionLabel(): string | undefined { return this._addActionLabel }
   getExtraItemActions(): Action[] { return this._extraItemActions }
   isSimple(): boolean { return this._simple }
+  getGrid(): number | undefined { return this._grid }
   /**
    * The single inner field of a `simple()` repeater. Returns `undefined`
    * outside simple mode (or when the inner schema hasn't been set yet).
@@ -313,6 +342,7 @@ export class RepeaterField extends Field {
     if (this._cloneable)                     meta.cloneable       = true
     if (this._addActionLabel !== undefined)  meta.addActionLabel  = this._addActionLabel
     if (this._simple)                        meta.simple          = true
+    if (this._grid !== undefined)            meta.grid            = this._grid
     return meta
   }
 }

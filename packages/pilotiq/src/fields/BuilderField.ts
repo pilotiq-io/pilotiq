@@ -85,6 +85,13 @@ export interface BuilderFieldMeta extends FieldMeta {
   blockNumbers?:       boolean
   blockIcons?:         boolean
   itemNumbers?:        boolean
+  /**
+   * Set when `Builder.grid(n)` is configured (n ≥ 2). Lays the ROWS
+   * themselves in an n-column grid — distinct from a Block's inner
+   * `Block.columns(n)`, which grids fields *inside* a single row.
+   * See `RepeaterFieldMeta.grid` for the shared semantics.
+   */
+  grid?:               number
 }
 
 /**
@@ -120,6 +127,7 @@ export class BuilderField extends Field {
   private _itemLabel?:            BuilderItemLabel
   private _itemHidden?:           BuilderItemHiddenRule
   private _extraItemActions:      Action[] = []
+  private _grid?:                 number
 
   private constructor(name: string) {
     super(name, 'builder')
@@ -227,6 +235,19 @@ export class BuilderField extends Field {
     return this
   }
 
+  /**
+   * Lay the ROWS themselves in an `n`-column grid. Distinct from
+   * `Block.columns(n)`, which grids fields *inside* a single block's
+   * body. Pass `n >= 2`; values below 2 reset to no-grid (vertical
+   * stack, the default). See `RepeaterField.grid()` for the shared
+   * semantics — same renderer behavior, same drag-indicator caveat.
+   */
+  grid(n: number): this {
+    if (n >= 2) this._grid = n
+    else delete this._grid
+    return this
+  }
+
   // ─── Read-only access ────────────────────────────────
 
   override getChildren(): undefined {
@@ -257,6 +278,7 @@ export class BuilderField extends Field {
   getItemLabel():                 BuilderItemLabel | undefined      { return this._itemLabel  }
   getItemHidden():                BuilderItemHiddenRule | undefined { return this._itemHidden }
   getExtraItemActions():          Action[]                          { return this._extraItemActions }
+  getGrid():                      number | undefined                { return this._grid }
 
   // ─── Meta ────────────────────────────────────────────
 
@@ -291,6 +313,7 @@ export class BuilderField extends Field {
     if (this._blockPickerColumns !== undefined) meta.blockPickerColumns = this._blockPickerColumns
     if (this._addActionLabel    !== undefined) meta.addActionLabel    = this._addActionLabel
     if (this._addActionAlignment !== 'start')  meta.addActionAlignment = this._addActionAlignment
+    if (this._grid              !== undefined) meta.grid              = this._grid
     return meta
   }
 }

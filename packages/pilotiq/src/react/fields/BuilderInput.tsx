@@ -56,6 +56,7 @@ interface BuilderMetaShape {
   addActionLabel?:         string
   addActionAlignment?:     'start' | 'center' | 'end'
   defaultBlock?:           string
+  grid?:                   number
 }
 
 interface RowState {
@@ -115,6 +116,11 @@ export function BuilderInput({
     : 1
   const addLabel         = typeof meta.addActionLabel === 'string' ? meta.addActionLabel : 'Add block'
   const addAlignment     = meta.addActionAlignment ?? 'start'
+  // Row-grid mode mirrors RepeaterField.grid() — n-column grid for the
+  // ROWS themselves (distinct from per-block `Block.columns(n)` which
+  // grids fields *inside* a block body). DnD drop indicator is
+  // suppressed in grid mode (see RepeaterInput for the same caveat).
+  const rowGrid          = typeof meta.grid === 'number' && meta.grid > 1 ? meta.grid : 1
 
   const initialRows: RowState[] = useMemo(
     () => (meta.rows ?? []).map(r => ({
@@ -339,9 +345,15 @@ export function BuilderInput({
         </div>
       )}
 
+      <div
+        className={rowGrid > 1 ? 'grid gap-3' : 'flex flex-col gap-3'}
+        style={rowGrid > 1
+          ? { gridTemplateColumns: `repeat(${rowGrid}, minmax(0, 1fr))` }
+          : undefined}
+      >
       {rows.map((row, i) => (
         <React.Fragment key={row.id}>
-          {!row.hidden && dropAt === i && <DropIndicator />}
+          {!row.hidden && dropAt === i && rowGrid === 1 && <DropIndicator />}
           <BuilderRow
             row={row}
             block={blocksByName.get(row.type)}
@@ -378,7 +390,8 @@ export function BuilderInput({
           />
         </React.Fragment>
       ))}
-      {dropAt === rows.length && <DropIndicator />}
+      {dropAt === rows.length && rowGrid === 1 && <DropIndicator />}
+      </div>
 
       {addable && blocks.length > 0 && (
         <BlockPicker

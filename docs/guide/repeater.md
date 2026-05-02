@@ -63,6 +63,7 @@ The submitted body has shape:
 | `.collapsible()` | Per-row collapse chevron — body kept mounted (so values survive collapse) |
 | `.collapsed()` | Default-collapsed when collapsible (typically combined with `itemLabel`) |
 | `.accordion()` | One-row-open-at-a-time mode. Picking a row collapses every other row. Auto-arms `collapsible()`. Pair with `.collapsed()` to start with everything closed (default opens the first visible row). Open-row id persists per-form to `localStorage`. |
+| `.grid(n)` | Lay the *rows themselves* in an n-column grid (n ≥ 2). Different from `.columns(n)`, which grids the inner schema *inside* a row. n < 2 is the off sentinel. The drag-drop indicator is suppressed in grid mode (it reads wrong across cells); ↑ / ↓ buttons + DnD itself still work. |
 | `.itemLabel(row => string)` | Header text for the collapsed row; falls back to `Item N` |
 | `.itemHidden(rule)` | Per-row visibility — boolean or `(ctx) => bool \| Promise<bool>`. Hidden rows render with `display:none` so values still round-trip on submit |
 | `.addActionLabel(text)` | Label for the Add button (default `'Add'`) |

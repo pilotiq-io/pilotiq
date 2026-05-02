@@ -141,6 +141,43 @@ describe('RepeaterField', () => {
       assert.equal(RepeaterField.make('x').cloneable().toMeta().cloneable, true)
     })
 
+    it('grid() emits only when set with n >= 2', () => {
+      // Default — no key on meta.
+      assert.equal('grid' in RepeaterField.make('x').toMeta(), false)
+      // n >= 2 lands on meta.
+      assert.equal(RepeaterField.make('x').grid(3).toMeta().grid, 3)
+      // n < 2 resets to undefined (so passing 1 is the documented "off"
+      // form, mirroring how columns(1) is the no-grid sentinel).
+      assert.equal('grid' in RepeaterField.make('x').grid(1).toMeta(),  false)
+      assert.equal('grid' in RepeaterField.make('x').grid(0).toMeta(),  false)
+      // Re-arming after a reset works.
+      assert.equal(
+        RepeaterField.make('x').grid(0).grid(2).toMeta().grid,
+        2,
+      )
+    })
+
+    it('getGrid() reflects the setter', () => {
+      assert.equal(RepeaterField.make('x').getGrid(), undefined)
+      assert.equal(RepeaterField.make('x').grid(2).getGrid(), 2)
+      assert.equal(RepeaterField.make('x').grid(2).grid(1).getGrid(), undefined)
+    })
+
+    it('grid() composes with reorderable / collapsible / accordion', () => {
+      // The renderer suppresses the drop indicator in grid mode but
+      // keeps button reorder + accordion behavior. Field-level should
+      // not gate on those flags — they're orthogonal.
+      const meta = RepeaterField.make('x')
+        .grid(2)
+        .reorderable()
+        .accordion()
+        .toMeta()
+      assert.equal(meta.grid,        2)
+      assert.equal(meta.reorderable, true)
+      assert.equal(meta.accordion,   true)
+      assert.equal(meta.collapsible, true)
+    })
+
     it('addActionLabel() emits only when set', () => {
       assert.equal('addActionLabel' in RepeaterField.make('x').toMeta(), false)
       assert.equal(
