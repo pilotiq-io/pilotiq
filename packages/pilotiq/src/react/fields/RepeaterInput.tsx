@@ -87,6 +87,7 @@ export function RepeaterInput({
   const maxItems         = typeof meta.maxItems === 'number' ? meta.maxItems : undefined
   const collapsible      = Boolean(meta.collapsible)
   const defaultCollapsed = Boolean(meta.defaultCollapsed)
+  const accordion        = Boolean(meta.accordion)
   const reorderable      = Boolean(meta.reorderable)
   const cloneable        = Boolean(meta.cloneable)
   const simple           = Boolean(meta.simple)
@@ -106,8 +107,27 @@ export function RepeaterInput({
   )
   const [rows, setRows] = useState<RowState[]>(initialRows)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
-    initSeedCollapsed(initialRows, formId, name, defaultCollapsed, collapsible),
+    accordion ? {} : initSeedCollapsed(initialRows, formId, name, defaultCollapsed, collapsible),
   )
+  // Accordion mode replaces the per-row collapsed map with a single open
+  // row id (or `null` for "all collapsed"). Persisted under a single
+  // `…accordion` storage key so reload + form swap restore the open row.
+  // Initial value: respect `defaultCollapsed` (start with everything
+  // collapsed when the author opted in), otherwise open the first
+  // visible row — Filament's posture, and matches the implicit user
+  // mental model that an accordion always shows *something*.
+  const [accordionOpenId, setAccordionOpenId] = useState<string | null>(() => {
+    if (!accordion) return null
+    const stored = readAccordionFromStorage(formId, name)
+    if (stored !== undefined) {
+      // Storage may hold a stale id from before a row was deleted; if so,
+      // fall through to the default.
+      if (stored === '' || initialRows.some(r => r.id === stored)) return stored === '' ? null : stored
+    }
+    if (defaultCollapsed) return null
+    const firstVisible = initialRows.find(r => !r.hidden)
+    return firstVisible?.id ?? null
+  })
 
   const atMin = minItems !== undefined && rows.length <= minItems
   const atMax = maxItems !== undefined && rows.length >= maxItems
@@ -119,6 +139,12 @@ export function RepeaterInput({
       children: meta.template ?? [],
     }
     setRows(prev => [...prev, newRow])
+    if (accordion) {
+      // New row should be the only one open — the user just asked for it.
+      setAccordionOpenId(newRow.id)
+      writeAccordionToStorage(formId, name, newRow.id)
+      return
+    }
     if (collapsible && defaultCollapsed) {
       setCollapsed(prev => ({ ...prev, [newRow.id]: true }))
       writeCollapsedToStorage(formId, name, newRow.id, true)
@@ -128,6 +154,13 @@ export function RepeaterInput({
   const removeRow = (id: string): void => {
     if (atMin) return
     setRows(prev => prev.filter(r => r.id !== id))
+    if (accordion) {
+      if (accordionOpenId === id) {
+        setAccordionOpenId(null)
+        writeAccordionToStorage(formId, name, null)
+      }
+      return
+    }
     setCollapsed(prev => {
       const { [id]: _drop, ...rest } = prev
       return rest
@@ -254,6 +287,14 @@ export function RepeaterInput({
   }
 
   const toggleCollapsed = (id: string): void => {
+    if (accordion) {
+      // Click the open row to collapse all; click any other row to swap.
+      // No "two rows open" state is reachable.
+      const next = accordionOpenId === id ? null : id
+      setAccordionOpenId(next)
+      writeAccordionToStorage(formId, name, next)
+      return
+    }
     setCollapsed(prev => {
       const nextValue = !prev[id]
       writeCollapsedToStorage(formId, name, id, nextValue)
@@ -295,7 +336,11 @@ export function RepeaterInput({
             name={name}
             disabled={disabled}
             collapsible={collapsible}
-            isCollapsed={collapsible && (collapsed[row.id] ?? false)}
+            isCollapsed={collapsible && (
+              accordion
+                ? accordionOpenId !== row.id
+                : (collapsed[row.id] ?? false)
+            )}
             reorderable={reorderable}
             cloneable={cloneable}
             simple={simple}
@@ -661,6 +706,7 @@ interface RepeaterMetaShape {
   reorderable?:      boolean
   collapsible?:      boolean
   defaultCollapsed?: boolean
+  accordion?:        boolean
   cloneable?:        boolean
   addActionLabel?:   string
   simple?:           boolean
@@ -758,4 +804,29 @@ function deleteCollapsedFromStorage(formId: string, name: string, rowId: string)
   try {
     window.localStorage.removeItem(collapsedStorageKey(formId, name, rowId))
   } catch { /* ignore */ }
+}
+
+function accordionStorageKey(formId: string, name: string): string {
+  return `pilotiq.repeater.${formId}.${name}.accordion`
+}
+
+/**
+ * Read the persisted accordion-open row id. Returns `undefined` when no
+ * value is stored (so the caller can fall back to the default-open
+ * heuristic). Returns `''` when the user explicitly closed every row —
+ * the caller maps that to `null` openId.
+ */
+function readAccordionFromStorage(formId: string, name: string): string | undefined {
+  if (typeof window === 'undefined') return undefined
+  try {
+    const raw = window.localStorage.getItem(accordionStorageKey(formId, name))
+    return raw === null ? undefined : raw
+  } catch { return undefined }
+}
+
+function writeAccordionToStorage(formId: string, name: string, openId: string | null): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(accordionStorageKey(formId, name), openId ?? '')
+  } catch { /* quota exceeded — fall back to in-memory only */ }
 }

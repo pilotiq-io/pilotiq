@@ -99,6 +99,43 @@ describe('RepeaterField', () => {
       )
     })
 
+    it('accordion() emits only when set', () => {
+      assert.equal('accordion' in RepeaterField.make('x').toMeta(), false)
+      assert.equal(RepeaterField.make('x').accordion().toMeta().accordion, true)
+    })
+
+    it('accordion() auto-arms collapsible()', () => {
+      const meta = RepeaterField.make('x').accordion().toMeta()
+      assert.equal(meta.collapsible, true)
+      assert.equal(meta.accordion,   true)
+      assert.equal(RepeaterField.make('x').accordion().isCollapsible(), true)
+    })
+
+    it('accordion(false) leaves collapsible alone', () => {
+      // Explicit opt-out shouldn't drag collapsible along — and shouldn't
+      // turn off a separately-armed collapsible() either.
+      const meta = RepeaterField.make('x').collapsible().accordion(false).toMeta()
+      assert.equal(meta.collapsible, true)
+      assert.equal('accordion' in meta, false)
+    })
+
+    it('accordion() composes with collapsed() to start all-collapsed', () => {
+      // Pairs cleanly with collapsed() — accordion default is "first row
+      // open"; collapsed() flips it to "all collapsed". The renderer is
+      // the one that consults defaultCollapsed; the field just exposes
+      // both flags.
+      const meta = RepeaterField.make('x').accordion().collapsed().toMeta()
+      assert.equal(meta.accordion,        true)
+      assert.equal(meta.collapsible,      true)
+      assert.equal(meta.defaultCollapsed, true)
+    })
+
+    it('isAccordion() reflects setter', () => {
+      assert.equal(RepeaterField.make('x').isAccordion(), false)
+      assert.equal(RepeaterField.make('x').accordion().isAccordion(), true)
+      assert.equal(RepeaterField.make('x').accordion(false).isAccordion(), false)
+    })
+
     it('cloneable() emits only when set', () => {
       assert.equal('cloneable' in RepeaterField.make('x').toMeta(), false)
       assert.equal(RepeaterField.make('x').cloneable().toMeta().cloneable, true)

@@ -70,6 +70,13 @@ export interface RepeaterFieldMeta extends FieldMeta {
   reorderable?:     boolean
   collapsible?:     boolean
   defaultCollapsed?: boolean
+  /**
+   * Set when `Repeater.accordion()` is configured. The renderer replaces
+   * the per-row collapsed map with a single "open row id" slot — picking
+   * row N collapses every other row. Implies `collapsible: true` (the
+   * accordion ergonomic only makes sense over a collapsible repeater).
+   */
+  accordion?:       boolean
   cloneable?:       boolean
   addActionLabel?:  string
   /**
@@ -108,6 +115,7 @@ export class RepeaterField extends Field {
   private _reorderable      = false
   private _collapsible      = false
   private _defaultCollapsed = false
+  private _accordion        = false
   private _cloneable        = false
   private _addActionLabel?:  string
   private _itemLabel?:       RepeaterItemLabel
@@ -177,6 +185,19 @@ export class RepeaterField extends Field {
   /** Render rows collapsed by default (requires `collapsible()`). */
   collapsed(value: boolean = true): this { this._defaultCollapsed = value; return this }
 
+  /**
+   * Accordion mode: only one row open at a time. Picking a different row
+   * collapses the currently-open one. Pair with `collapsed()` to start
+   * with every row collapsed (default is "first row open"). Auto-arms
+   * `collapsible()` since the accordion ergonomic is meaningless on a
+   * non-collapsible repeater.
+   */
+  accordion(value: boolean = true): this {
+    this._accordion = value
+    if (value) this._collapsible = true
+    return this
+  }
+
   /** Show duplicate-row button per row. */
   cloneable(value: boolean = true): this { this._cloneable = value; return this }
 
@@ -242,6 +263,7 @@ export class RepeaterField extends Field {
   isReorderable(): boolean                { return this._reorderable }
   isCollapsible(): boolean                { return this._collapsible }
   isDefaultCollapsed(): boolean           { return this._defaultCollapsed }
+  isAccordion(): boolean                  { return this._accordion }
   isCloneable(): boolean                  { return this._cloneable }
   getItemLabel(): RepeaterItemLabel | undefined { return this._itemLabel }
   getItemHidden(): RepeaterItemHiddenRule | undefined { return this._itemHidden }
@@ -287,6 +309,7 @@ export class RepeaterField extends Field {
     if (this._reorderable)                   meta.reorderable     = true
     if (this._collapsible)                   meta.collapsible     = true
     if (this._defaultCollapsed)              meta.defaultCollapsed = true
+    if (this._accordion)                     meta.accordion       = true
     if (this._cloneable)                     meta.cloneable       = true
     if (this._addActionLabel !== undefined)  meta.addActionLabel  = this._addActionLabel
     if (this._simple)                        meta.simple          = true

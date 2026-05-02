@@ -268,6 +268,22 @@ export class RepeaterDemo extends Page {
                 ]),
             ]),
 
+          Section.make('Accordion mode — one row open at a time')
+            .description('`Repeater.accordion()` — picking a row collapses every other row. Auto-arms `collapsible()`. Pair with `collapsed()` to start with everything collapsed (default opens the first row). Open-row id persists to localStorage.')
+            .schema([
+              Repeater.make('faqAccordion')
+                .label('FAQ entries')
+                .defaultItems(3)
+                .reorderable()
+                .accordion()
+                .itemLabel((row) => String(row['question'] ?? 'New question'))
+                .addActionLabel('Add question')
+                .schema([
+                  TextField.make('question').label('Question').required(),
+                  TextField.make('answer').label('Answer'),
+                ]),
+            ]),
+
           Section.make('Nested example — products with modifiers')
             .description('A Repeater inside a Repeater. Each product can have its own list of modifiers.')
             .schema([

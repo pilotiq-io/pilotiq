@@ -69,6 +69,13 @@ export interface BuilderFieldMeta extends FieldMeta {
   reorderableWithButtons?: boolean
   collapsible?:        boolean
   defaultCollapsed?:   boolean
+  /**
+   * Set when `Builder.accordion()` is configured. The renderer replaces
+   * the per-row collapsed map with a single "open row id" slot — picking
+   * row N collapses every other row. Implies `collapsible: true`. See
+   * `RepeaterFieldMeta.accordion` for the shared semantics.
+   */
+  accordion?:          boolean
   cloneable?:          boolean
   addable?:            boolean
   deletable?:          boolean
@@ -100,6 +107,7 @@ export class BuilderField extends Field {
   private _reorderableWithButtons = false
   private _collapsible            = false
   private _defaultCollapsed       = false
+  private _accordion              = false
   private _cloneable              = false
   private _addable                = true
   private _deletable              = true
@@ -154,6 +162,20 @@ export class BuilderField extends Field {
 
   collapsible(value: boolean = true): this { this._collapsible = value; return this }
   collapsed(value: boolean = true):   this { this._defaultCollapsed = value; return this }
+
+  /**
+   * Accordion mode: only one row open at a time. Picking a different row
+   * collapses the currently-open one. Pair with `collapsed()` to start
+   * with every row collapsed (default is "first row open"). Auto-arms
+   * `collapsible()` since the accordion ergonomic is meaningless on a
+   * non-collapsible builder. Mirrors `RepeaterField.accordion()`.
+   */
+  accordion(value: boolean = true): this {
+    this._accordion = value
+    if (value) this._collapsible = true
+    return this
+  }
+
   cloneable(value: boolean = true):   this { this._cloneable = value; return this }
 
   /**
@@ -223,6 +245,7 @@ export class BuilderField extends Field {
   isReorderableWithButtons():     boolean            { return this._reorderableWithButtons }
   isCollapsible():                boolean            { return this._collapsible    }
   isDefaultCollapsed():           boolean            { return this._defaultCollapsed }
+  isAccordion():                  boolean            { return this._accordion      }
   isCloneable():                  boolean            { return this._cloneable      }
   isAddable():                    boolean            { return this._addable        }
   isDeletable():                  boolean            { return this._deletable      }
@@ -258,6 +281,7 @@ export class BuilderField extends Field {
     if (this._reorderableWithButtons)          meta.reorderableWithButtons = true
     if (this._collapsible)                     meta.collapsible       = true
     if (this._defaultCollapsed)                meta.defaultCollapsed  = true
+    if (this._accordion)                       meta.accordion         = true
     if (this._cloneable)                       meta.cloneable         = true
     if (this._addable === false)               meta.addable           = false
     if (this._deletable === false)             meta.deletable         = false

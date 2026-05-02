@@ -45,6 +45,7 @@ interface BuilderMetaShape {
   reorderableWithButtons?: boolean
   collapsible?:            boolean
   defaultCollapsed?:       boolean
+  accordion?:              boolean
   cloneable?:              boolean
   addable?:                boolean
   deletable?:              boolean
@@ -101,6 +102,7 @@ export function BuilderInput({
   const maxItems         = typeof meta.maxItems === 'number' ? meta.maxItems : undefined
   const collapsible      = Boolean(meta.collapsible)
   const defaultCollapsed = Boolean(meta.defaultCollapsed)
+  const accordion        = Boolean(meta.accordion)
   const reorderable      = Boolean(meta.reorderable)
   const cloneable        = Boolean(meta.cloneable)
   const addable          = meta.addable !== false
@@ -129,8 +131,20 @@ export function BuilderInput({
   )
   const [rows, setRows] = useState<RowState[]>(initialRows)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
-    initSeedCollapsed(initialRows, formId, name, defaultCollapsed, collapsible),
+    accordion ? {} : initSeedCollapsed(initialRows, formId, name, defaultCollapsed, collapsible),
   )
+  // Accordion mode: single open row id (null = all collapsed). See
+  // RepeaterInput for the seeding semantics — Builder mirrors it exactly.
+  const [accordionOpenId, setAccordionOpenId] = useState<string | null>(() => {
+    if (!accordion) return null
+    const stored = readAccordionFromStorage(formId, name)
+    if (stored !== undefined) {
+      if (stored === '' || initialRows.some(r => r.id === stored)) return stored === '' ? null : stored
+    }
+    if (defaultCollapsed) return null
+    const firstVisible = initialRows.find(r => !r.hidden)
+    return firstVisible?.id ?? null
+  })
 
   const atMin = minItems !== undefined && rows.length <= minItems
   const atMax = maxItems !== undefined && rows.length >= maxItems
@@ -156,6 +170,11 @@ export function BuilderInput({
       children: block.template,
     }
     setRows(prev => [...prev, newRow])
+    if (accordion) {
+      setAccordionOpenId(newRow.id)
+      writeAccordionToStorage(formId, name, newRow.id)
+      return
+    }
     if (collapsible && defaultCollapsed) {
       setCollapsed(prev => ({ ...prev, [newRow.id]: true }))
       writeCollapsedToStorage(formId, name, newRow.id, true)
@@ -165,6 +184,13 @@ export function BuilderInput({
   const removeRow = (id: string): void => {
     if (atMin) return
     setRows(prev => prev.filter(r => r.id !== id))
+    if (accordion) {
+      if (accordionOpenId === id) {
+        setAccordionOpenId(null)
+        writeAccordionToStorage(formId, name, null)
+      }
+      return
+    }
     setCollapsed(prev => {
       const { [id]: _drop, ...rest } = prev
       return rest
@@ -275,6 +301,12 @@ export function BuilderInput({
   }
 
   const toggleCollapsed = (id: string): void => {
+    if (accordion) {
+      const next = accordionOpenId === id ? null : id
+      setAccordionOpenId(next)
+      writeAccordionToStorage(formId, name, next)
+      return
+    }
     setCollapsed(prev => {
       const nextValue = !prev[id]
       writeCollapsedToStorage(formId, name, id, nextValue)
@@ -319,7 +351,11 @@ export function BuilderInput({
             name={name}
             disabled={disabled}
             collapsible={collapsible}
-            isCollapsed={collapsible && (collapsed[row.id] ?? false)}
+            isCollapsed={collapsible && (
+              accordion
+                ? accordionOpenId !== row.id
+                : (collapsed[row.id] ?? false)
+            )}
             reorderable={reorderable}
             buttonsOnly={buttonsOnly}
             cloneable={cloneable}
@@ -762,4 +798,28 @@ function writeCollapsedToStorage(
 function deleteCollapsedFromStorage(formId: string, name: string, rowId: string): void {
   if (typeof window === 'undefined') return
   try { window.localStorage.removeItem(collapsedStorageKey(formId, name, rowId)) } catch { /* */ }
+}
+
+function accordionStorageKey(formId: string, name: string): string {
+  return `pilotiq.builder.${formId}.${name}.accordion`
+}
+
+/**
+ * Read the persisted accordion-open row id. Mirror of
+ * `RepeaterInput.readAccordionFromStorage` — `undefined` = no value
+ * stored, `''` = explicitly all-collapsed, anything else = open row id.
+ */
+function readAccordionFromStorage(formId: string, name: string): string | undefined {
+  if (typeof window === 'undefined') return undefined
+  try {
+    const raw = window.localStorage.getItem(accordionStorageKey(formId, name))
+    return raw === null ? undefined : raw
+  } catch { return undefined }
+}
+
+function writeAccordionToStorage(formId: string, name: string, openId: string | null): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(accordionStorageKey(formId, name), openId ?? '')
+  } catch { /* quota exceeded — fall back to in-memory only */ }
 }

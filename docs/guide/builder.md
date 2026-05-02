@@ -99,6 +99,7 @@ the only place a `Block` is mounted.
 | `.reorderableWithButtons()` | Force button-only reorder (drag disabled) |
 | `.collapsible()` | Per-row collapse chevron |
 | `.collapsed()` | Render rows collapsed by default |
+| `.accordion()` | One-row-open-at-a-time mode. Picking a row collapses every other row. Auto-arms `collapsible()`. Pair with `.collapsed()` to start with everything closed (default opens the first visible row). Open-row id persists per-form to `localStorage`. |
 | `.cloneable()` | Per-row duplicate button |
 | `.addable(false)` | Hide the **Add block** button (UX gate) |
 | `.deletable(false)` | Hide per-row delete buttons (UX gate) |

@@ -15,7 +15,8 @@ import {
  *   - 5 block types (Heading, Paragraph, Image, Quote, Embed)
  *   - Block icons + per-block columns
  *   - `Block.maxItems(1)` on Heading — picker greys out after 1 added
- *   - `reorderable() / cloneable() / collapsible()` mirror Repeater
+ *   - `reorderable() / cloneable() / accordion()` mirror Repeater
+ *     (`accordion()` auto-arms `collapsible()`; one row open at a time)
  *   - `blockNumbers()` numbered row headers
  *   - Inner-field `live() + afterStateUpdated()` row-scoped — Image
  *     block's alt updates from the URL
@@ -48,13 +49,13 @@ export class BuilderDemo extends Page {
         })
         .schema([
           Section.make('Page content')
-            .description('Click "Add block" to insert a new section. Drag to reorder.')
+            .description('Click "Add block" to insert a new section. Drag to reorder. Accordion mode: only one block is open at a time — picking another collapses the current one.')
             .schema([
               Builder.make('content')
                 .label('Content blocks')
                 .reorderable()
                 .cloneable()
-                .collapsible()
+                .accordion()
                 .blockNumbers()
                 .blockPickerColumns(2)
                 .minItems(1)

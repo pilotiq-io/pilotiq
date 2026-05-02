@@ -122,6 +122,31 @@ describe('BuilderField', () => {
       assert.equal(meta.blockIcons,             false)
     })
 
+    it('accordion() emits only when set, auto-arms collapsible', () => {
+      assert.equal('accordion' in BuilderField.make('x').toMeta(), false)
+      const meta = BuilderField.make('x').accordion().toMeta()
+      assert.equal(meta.accordion,   true)
+      assert.equal(meta.collapsible, true)
+      assert.equal(BuilderField.make('x').accordion().isAccordion(),   true)
+      assert.equal(BuilderField.make('x').accordion().isCollapsible(), true)
+    })
+
+    it('accordion() composes with collapsed() to start all-collapsed', () => {
+      const meta = BuilderField.make('x').accordion().collapsed().toMeta()
+      assert.equal(meta.accordion,        true)
+      assert.equal(meta.collapsible,      true)
+      assert.equal(meta.defaultCollapsed, true)
+    })
+
+    it('accordion(false) leaves collapsible alone and isAccordion() reflects setter', () => {
+      const meta = BuilderField.make('x').collapsible().accordion(false).toMeta()
+      assert.equal(meta.collapsible,         true)
+      assert.equal('accordion' in meta,      false)
+      assert.equal(BuilderField.make('x').isAccordion(), false)
+      assert.equal(BuilderField.make('x').accordion().isAccordion(), true)
+      assert.equal(BuilderField.make('x').accordion(false).isAccordion(), false)
+    })
+
     it('addable(false) / deletable(false) emit only when off', () => {
       const on  = BuilderField.make('x').toMeta()
       assert.equal('addable'   in on, false)
