@@ -7,6 +7,7 @@ import {
   type Form,
 } from '@pilotiq/pilotiq'
 import { RichTextField, Block } from '@pilotiq/tiptap'
+import { CodeEditorField }      from '@pilotiq/codemirror'
 
 export const ArticleForm = {
   configure(form: Form): Form {
@@ -32,6 +33,12 @@ export const ArticleForm = {
           ]),
         ]),
       ]),
+      CodeEditorField.make('metadata')
+        .label('Metadata (JSON)')
+        .language('json')
+        .height('220px')
+        .placeholder('{ "schema": "json" }')
+        .helperText('Free-form JSON blob. CodeMirror provides highlight + bracket matching.'),
     ])
   },
 }
