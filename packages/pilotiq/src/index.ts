@@ -251,6 +251,13 @@ export { KeyValueField, KeyValue }         from './fields/KeyValueField.js'
 export { TagsInputField, TagsInput, type TagsSuggestionsResolver } from './fields/TagsInputField.js'
 export { FileUploadField, FileUpload }     from './fields/FileUploadField.js'
 export {
+  MarkdownField,
+  Markdown,
+  DEFAULT_MARKDOWN_TOOLBAR,
+  type MarkdownToolbarButton,
+  type MarkdownAttachmentVisibility,
+} from './fields/MarkdownField.js'
+export {
   RepeaterField,
   Repeater,
   isRepeaterField,

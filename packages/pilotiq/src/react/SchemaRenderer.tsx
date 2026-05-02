@@ -21,6 +21,7 @@ import { DateTimeInput }     from './fields/DateTimeInput.js'
 import { KeyValueInput }     from './fields/KeyValueInput.js'
 import { TagsInput }         from './fields/TagsInput.js'
 import { FileUploadInput }   from './fields/FileUploadInput.js'
+import { MarkdownInput }     from './fields/MarkdownInput.js'
 import { RepeaterInput }     from './fields/RepeaterInput.js'
 import {
   Dialog,
@@ -314,6 +315,27 @@ function renderFieldInput(
           multiple={Boolean(el['multiple'])}
           preview={el['preview'] !== false}
           directory={typeof el['directory'] === 'string' ? el['directory'] : undefined}
+          uploadUrl={typeof el['uploadUrl'] === 'string' ? el['uploadUrl'] : undefined}
+        />
+      )
+    }
+
+    case 'markdown': {
+      const toolbarButtons = (el['toolbarButtons'] as Array<
+        'bold' | 'italic' | 'strike' | 'link' | 'heading' | 'bulletList'
+        | 'orderedList' | 'blockquote' | 'codeBlock' | 'attachFiles'
+      > | undefined) ?? []
+      return (
+        <MarkdownInput
+          name={name}
+          defaultValue={defaultValue}
+          disabled={disabled}
+          placeholder={placeholder}
+          toolbarButtons={toolbarButtons}
+          minHeight={typeof el['minHeight'] === 'string' ? el['minHeight'] : undefined}
+          maxHeight={typeof el['maxHeight'] === 'string' ? el['maxHeight'] : undefined}
+          fileAttachmentsDirectory={typeof el['fileAttachmentsDirectory'] === 'string' ? el['fileAttachmentsDirectory'] : undefined}
+          fileAttachmentsVisibility={typeof el['fileAttachmentsVisibility'] === 'string' ? el['fileAttachmentsVisibility'] : undefined}
           uploadUrl={typeof el['uploadUrl'] === 'string' ? el['uploadUrl'] : undefined}
         />
       )

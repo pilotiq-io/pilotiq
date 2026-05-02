@@ -51,7 +51,8 @@
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\"; EXIT=$?; rm -rf dist-test; exit $EXIT"
   },
   "dependencies": {
-    "jiti": "^2.6.0"
+    "jiti": "^2.6.0",
+    "marked": "^14"
   },
   "peerDependencies": {
     "@rudderjs/contracts": "workspace:*",

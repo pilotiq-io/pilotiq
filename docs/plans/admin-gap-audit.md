@@ -186,7 +186,7 @@ Skip `ColorColumn`, `SelectColumn`/`ToggleColumn`/`TextInputColumn` (inline-edit
 | `CheckboxList` | 1 | |
 | ✅ `ToggleButtons` (segmented control) DONE | 2 | Shipped 2026-05-04 — `ToggleButtons.make().options([...])`, sugar over Radio with chip rendering; same data semantics as Radio (single-select string), no separate coercion. Multi-select stays out of scope; reach for `CheckboxList`. |
 | `FileUpload` | 1 | Pairs with `@pilotiq/media`. Big-ish. |
-| `MarkdownEditor` | 2 | We have RichTextField; markdown variant for users who prefer plain. |
+| ✅ `MarkdownEditor` DONE | 2 | Shipped 2026-05-04 cont'd — `MarkdownField.make(name).toolbarButtons([…]) / .disableToolbarButtons([…]) / .minHeight(css) / .maxHeight(css) / .fileAttachmentsDirectory(d) / .fileAttachmentsVisibility('public'\|'private')`. Plain `<textarea>` + formatting toolbar (10 buttons by default) + tabbed live preview rendered client-side via `marked`. Stores raw markdown — same wire format as `TextareaField`, no new coerce branch. `attachFiles` reuses the existing `_uploads` route + `UploadAdapter`; the button is stripped server-side (via new `RenderContext.hasUploadAdapter` flag stamped by `uploadCtx`) when no adapter is registered. Plan doc: `docs/plans/markdown-editor.md`. |
 | `CodeEditor` | 2 | Monaco / CodeMirror. |
 | `KeyValue` (dynamic key-value list) | 2 | |
 | ✅ `TagsInput` DONE | 2 | Shipped 2026-05-04 — `TagsInput.make().suggestions([...]|fn) / .separator(',') / .splitKeys(['Enter']) / .reorderable() / .maxTags(n)`. `string[]` value, JSON-encoded in a single hidden input; new `tagsInput` coerce branch parses back. Backspace pops last chip; suggestion popover filters by typed prefix. |

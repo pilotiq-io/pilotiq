@@ -1,6 +1,6 @@
 import {
   Resource, Column, BadgeColumn, Action,
-  TextField, TextareaField, SelectField,
+  TextField, MarkdownField, SelectField,
   TernaryFilter, DateRangeFilter,
   type Form, type Table,
 } from '@pilotiq/pilotiq'
@@ -35,7 +35,10 @@ export class PostResource extends Resource {
     return form.schema([
       TextField.make('title').required(),
       TextField.make('authorId').required().helperText('User id'),
-      TextareaField.make('body').rows(6),
+      MarkdownField.make('body')
+        .placeholder('Write the post body in markdown…')
+        .minHeight('240px')
+        .helperText('Markdown formatting supported. Use the toolbar or ⌘B / ⌘I / ⌘K.'),
       SelectField.make('status').default('draft').options([
         { value: 'draft',     label: 'Draft' },
         { value: 'published', label: 'Published' },

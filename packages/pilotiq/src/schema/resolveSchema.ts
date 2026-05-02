@@ -54,6 +54,15 @@ export interface RenderContext extends SchemaContext {
    */
   uploadUrl?: string
   /**
+   * `true` when the panel has registered an `UploadAdapter` via
+   * `Pilotiq.uploads({ adapter })`. Distinct from `uploadUrl` (which is
+   * always stamped so `FileUpload` can show a clear error if missed) —
+   * this flag tells fields whose upload integration is *optional* (e.g.
+   * `MarkdownField`'s `attachFiles` toolbar button) whether to surface
+   * the affordance at all.
+   */
+  hasUploadAdapter?: boolean
+  /**
    * Plan #14 row-scoped sugar inside a Repeater. When the resolver is
    * walking a row's inner schema, `row.index` is the row's position and
    * `row.$get / row.$set` are bound to the row's local values map. The
