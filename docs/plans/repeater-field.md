@@ -61,8 +61,13 @@ fails-closed-as-visible (inverse of layout `visible()`'s posture, since
 silent hiding of in-progress data would be a worse failure mode).
 1015 → 1024 tests (+9 itemHidden cases).
 
-**Remaining v1.2 work:** Builder field (heterogeneous-row Repeater) —
-its own plan; deferred until at least one consumer needs it.
+**Builder follow-up shipped 2026-05-02.** Heterogeneous-row Builder
+field landed under `docs/plans/builder-field.md` — `Block.make(name)`
++ `Builder.make(name).blocks([…])`, `{type, data}` storage envelope,
+per-block `maxItems`, server-side resolve / coerce / validate /
+partial-resolve plumbing, walker stop-at-Builder updates, BlockPicker
+dropdown UI in `react/fields/BuilderInput.tsx`. Demo at
+`/new-admin/builder-demo`. 1224 → 1272 tests (+48).
 
 Estimated effort: **~3 days**. Steps 1-4 are mechanical. Step 5
 (reactive interop) is the conceptual core. Steps 7-8 (drag a11y) are

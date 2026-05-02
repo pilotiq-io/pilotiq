@@ -5,6 +5,11 @@ import {
   type RepeaterItemHiddenRule,
   type RepeaterRowMeta,
 } from '../fields/RepeaterField.js'
+import {
+  BuilderField,
+  type BuilderItemHiddenRule,
+  type BuilderRowMeta,
+} from '../fields/BuilderField.js'
 import { Action } from '../actions/Action.js'
 import { ActionGroup } from '../actions/ActionGroup.js'
 import { Filter } from '../filters/Filter.js'
@@ -237,6 +242,15 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
     return meta
   }
 
+  // Plan #14 follow-up — Builder rows. Same row-scoped resolve as
+  // Repeater, but each row's inner schema is the block matching the
+  // row's submitted `type`. The picker (`meta.blocks`) was already
+  // stamped by `BuilderField.toMeta()`.
+  if (el instanceof BuilderField) {
+    await resolveBuilderRows(el, ctx, meta)
+    return meta
+  }
+
   const children = el.getChildren()
   if (children && children.length > 0) {
     meta.children = await resolveAll(children, ctx)
@@ -351,6 +365,153 @@ function readRowId(row: Record<string, unknown>, fieldName: string, index: numbe
   const raw = row['__id']
   if (typeof raw === 'string' && raw.length > 0) return raw
   return `${fieldName}-${index}`
+}
+
+/**
+ * Per-row resolution for `BuilderField`. Each submitted row is
+ * `{ __id?, type, data?: {…} }`. We pick the block matching `type`,
+ * resolve its `schema()` against a row-scoped context where `values`
+ * is the row's `data` body (so `$get('heading')` reads the row's
+ * heading, not the parent form's), and stamp `meta.rows`.
+ *
+ * Rows whose `type` doesn't match a registered block are shipped with
+ * `unknownType: true` and empty `children` — the renderer falls back to
+ * a "missing block" placeholder. Values still round-trip through
+ * FormData (the renderer keeps the row's `__id` + `type` in hidden
+ * inputs) so a config-rollback doesn't silently drop data.
+ *
+ * No template is shipped (`BuilderFieldMeta` doesn't carry one): the
+ * client builds fresh rows by reading the picked block's children from
+ * a server-resolved sample after the user picks the type. v1 ships
+ * empty `data: {}` and lets the inner schema's `default()` values
+ * surface on the next live re-resolve.
+ */
+async function resolveBuilderRows(
+  field: BuilderField,
+  ctx:   RenderContext,
+  meta:  ElementMeta,
+): Promise<void> {
+  const submitted = ctx.values?.[field.name]
+  const rowsInput = Array.isArray(submitted) ? submitted.map(coerceBuilderRow) : []
+
+  const labelFn  = field.getItemLabel()
+  const hiddenFn = field.getItemHidden()
+
+  const rows = await Promise.all(rowsInput.map(async (rowEntry, index) => {
+    const blockName = rowEntry.type
+    const block     = blockName ? field.getBlock(blockName) : undefined
+    const data      = rowEntry.data
+    const id        = readBuilderRowId(rowEntry, field.name, index)
+
+    if (!block) {
+      const unknown: BuilderRowMeta = {
+        id,
+        type:        blockName ?? '',
+        children:    [],
+        unknownType: true,
+      }
+      return unknown
+    }
+
+    const rowCtx: RenderContext = {
+      ...ctx,
+      values: data,
+      $get:   (name: string) => data[name],
+      $set:   (name: string, value: unknown) => { data[name] = value },
+      row:    {
+        index,
+        $get: (name: string) => data[name],
+        $set: (name: string, value: unknown) => { data[name] = value },
+      },
+    }
+    delete rowCtx.changed
+
+    const children = await resolveAll(block.getSchema(), rowCtx)
+    const row: BuilderRowMeta = { id, type: block.name, children }
+
+    if (labelFn) {
+      try {
+        const label = labelFn(data, block.name)
+        if (typeof label === 'string') row.itemLabel = label
+      } catch (err) {
+        console.warn(`[pilotiq] itemLabel() on Builder "${field.name}" threw:`, err)
+      }
+    }
+    if (hiddenFn !== undefined) {
+      const layoutCtx = buildLayoutContext(rowCtx)
+      const hidden    = await evalBuilderItemHidden(hiddenFn, layoutCtx, field.name)
+      if (hidden) row.hidden = true
+    }
+    return row
+  }))
+
+  // Resolve a fresh-row template per block (empty values map). The
+  // client uses these blueprints when the user picks a block from the
+  // picker, so the new row's inputs render with whatever `default()`
+  // values + visibility state apply to a blank record. Resolved here
+  // rather than once-and-cached because conditional `options(fn)` can
+  // depend on the surrounding `record / user / values` context.
+  const blocksMeta = await Promise.all(field.getBlocks().map(async block => {
+    const templateCtx: RenderContext = { ...ctx, values: {} }
+    delete templateCtx.row
+    delete templateCtx.changed
+    const template = await resolveAll(block.getSchema(), templateCtx)
+    const m = block.toMeta()
+    m.template = template
+    return m
+  }))
+
+  meta['rows']   = rows
+  meta['blocks'] = blocksMeta
+}
+
+interface BuilderRowEntry {
+  __id?: string
+  type:  string
+  data:  Record<string, unknown>
+}
+
+/**
+ * Normalize an arbitrary submitted row entry into the `{ __id?, type, data }`
+ * envelope. Robust to JSON bodies (already-shaped) and to flat-fold output
+ * from `coerceBuilderValue` (top-level `__id`/`type` siblings of `data`).
+ *
+ * Returns an entry with a possibly-empty `type` ("" → unknownType row) so
+ * the resolver still emits a `BuilderRowMeta` for shape stability — the
+ * renderer drops empty-type rows visually.
+ */
+function coerceBuilderRow(raw: unknown): BuilderRowEntry {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { type: '', data: {} }
+  }
+  const r = raw as Record<string, unknown>
+  const type = typeof r['type'] === 'string' ? (r['type'] as string) : ''
+  const dataRaw = r['data']
+  const data: Record<string, unknown> = (dataRaw && typeof dataRaw === 'object' && !Array.isArray(dataRaw))
+    ? { ...(dataRaw as Record<string, unknown>) }
+    : {}
+  const out: BuilderRowEntry = { type, data }
+  if (typeof r['__id'] === 'string') out.__id = r['__id'] as string
+  return out
+}
+
+function readBuilderRowId(row: BuilderRowEntry, fieldName: string, index: number): string {
+  if (typeof row.__id === 'string' && row.__id.length > 0) return row.__id
+  return `${fieldName}-${index}`
+}
+
+async function evalBuilderItemHidden(
+  rule:      BuilderItemHiddenRule,
+  ctx:       LayoutContext,
+  fieldName: string,
+): Promise<boolean> {
+  if (typeof rule === 'boolean') return rule
+  try {
+    return Boolean(await rule(ctx))
+  } catch (err) {
+    console.warn(`[pilotiq] itemHidden() on Builder "${fieldName}" threw:`, err)
+    return false
+  }
 }
 
 /**

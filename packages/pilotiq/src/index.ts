@@ -265,6 +265,17 @@ export {
   type RepeaterRowMeta,
   type RepeaterItemLabel,
 } from './fields/RepeaterField.js'
+export {
+  BuilderField,
+  Builder,
+  isBuilderField,
+  type BuilderFieldMeta,
+  type BuilderRowMeta,
+  type BuilderItemLabel,
+  type BuilderItemHiddenRule,
+  type BuilderAddActionAlignment,
+} from './fields/BuilderField.js'
+export { Block, type BlockMeta } from './schema/Block.js'
 
 // ─── Uploads ──────────────────────────────────────────
 // `localUpload` (and any future Node-only adapters) live under the

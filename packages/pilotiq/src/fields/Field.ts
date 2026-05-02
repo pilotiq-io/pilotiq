@@ -125,15 +125,21 @@ export type AfterStateUpdatedContext = {
   request?: unknown
   values:  Record<string, unknown>
   /**
-   * Plan #14 — present only when the field is inside a Repeater row.
-   * `$get` / `$set` are row-scoped (mirroring the resolve-time `$get`
-   * inside a row); cross-row reads / writes go through the parent
-   * `$get / $set` with a dotted path (`items.0.quantity`).
+   * Plan #14 — present only when the field is inside a Repeater or
+   * Builder row. `$get` / `$set` are row-scoped (mirroring the
+   * resolve-time `$get` inside a row); cross-row reads / writes go
+   * through the parent `$get / $set` with a dotted path
+   * (`items.0.quantity` or `content.0.data.heading`).
+   *
+   * `blockType` is set only for Builder rows — the discriminator picks
+   * which block schema is active. Undefined inside Repeater rows
+   * (homogeneous schema, single inner type).
    */
   row?: {
-    index: number
-    $get:  (name: string) => unknown
-    $set:  (name: string, value: unknown) => void
+    index:     number
+    blockType?: string
+    $get:      (name: string) => unknown
+    $set:      (name: string, value: unknown) => void
   }
 }
 

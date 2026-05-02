@@ -5,6 +5,7 @@ import { Action } from '../actions/Action.js'
 import { Column } from '../Column.js'
 import { ListTab } from '../Tab.js'
 import { isRepeaterField } from '../fields/RepeaterField.js'
+import { isBuilderField } from '../fields/BuilderField.js'
 import type { SummaryResult } from '../summarizers/Summarizer.js'
 
 export interface QueryParams {
@@ -85,10 +86,11 @@ export function findTables(elements: ReadonlyArray<Element>): Table[] {
   const walk = (els: ReadonlyArray<Element>): void => {
     for (const el of els) {
       if (el instanceof Table) tables.push(el)
-      // Plan #14 — Tables inside Repeater rows aren't supported in v1.
-      // Stop the walk at the Repeater boundary so the parent table
-      // dispatcher doesn't pick them up.
+      // Plan #14 — Tables inside Repeater / Builder rows aren't
+      // supported in v1. Stop at the array-row boundary so the parent
+      // table dispatcher doesn't pick them up.
       if (isRepeaterField(el)) continue
+      if (isBuilderField(el))  continue
       const children = el.getChildren()
       if (children && children.length > 0) walk(children)
     }

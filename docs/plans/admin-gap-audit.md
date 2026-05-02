@@ -194,7 +194,7 @@ Skip `ColorColumn`, `SelectColumn`/`ToggleColumn`/`TextInputColumn` (inline-edit
 | `Slider` | 2 | |
 | `Hidden` | 1 | Trivial. |
 | `Repeater` (array of sub-schemas) | 3 | Big. Defer until reactive fields land. |
-| `Builder` (heterogeneous array — like @rudderjs lexical/tiptap blocks) | 3 | Tiptap already covers most use cases. |
+| ✅ `Builder` (heterogeneous array) DONE | 2 | Shipped 2026-05-02 — `Block.make(name).schema(…).maxItems(n)` + `Builder.make(name).blocks([…])`, `{type, data}` storage envelope, per-block `maxItems`, server-side resolve / coerce / validate / partial-resolve mirroring Repeater. Demo at `/new-admin/builder-demo`. See `builder-field.md` + `docs/guide/builder.md`. |
 | `DateTimePicker` (vs current DateField) | 1 | Add time component to existing. |
 
 **Reactivity (Plan #5):**

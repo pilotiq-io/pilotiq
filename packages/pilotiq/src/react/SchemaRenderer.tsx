@@ -23,6 +23,7 @@ import { TagsInput }         from './fields/TagsInput.js'
 import { FileUploadInput }   from './fields/FileUploadInput.js'
 import { MarkdownInput }     from './fields/MarkdownInput.js'
 import { RepeaterInput }     from './fields/RepeaterInput.js'
+import { BuilderInput }      from './fields/BuilderInput.js'
 import {
   Dialog,
   DialogContent,
@@ -343,6 +344,9 @@ function renderFieldInput(
 
     case 'repeater':
       return <RepeaterInput el={el} name={name} disabled={disabled} />
+
+    case 'builder':
+      return <BuilderInput el={el} name={name} disabled={disabled} />
 
     case 'dateTime': {
       // Normalize various input shapes to YYYY-MM-DDTHH:mm.

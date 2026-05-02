@@ -1,6 +1,7 @@
 import { Element } from '../schema/Element.js'
 import { Field, type AfterStateUpdatedContext } from '../fields/Field.js'
 import { RepeaterField, isRepeaterField } from '../fields/RepeaterField.js'
+import { BuilderField, isBuilderField } from '../fields/BuilderField.js'
 import { Form, type FormContext } from './Form.js'
 import { validateSchema, type ValidationErrors } from '../validation/index.js'
 import { resolveSavedNotification, type NotificationMeta } from '../notifications/index.js'
@@ -152,6 +153,25 @@ export function coerceFormValues(
     }
     out[repeater.name] = coerceRepeaterValue(repeater, out)
     const prefix = `${repeater.name}.`
+    for (const key of Object.keys(out)) {
+      if (key.startsWith(prefix)) delete out[key]
+    }
+  })
+
+  // Plan #14 follow-up — Builder pass. Same disposition as Repeater
+  // (run BEFORE the generic field walker so per-row inner-schema
+  // coercion uses the row's own body, not the parent form's), but each
+  // row's coercion is dispatched against the block matching the row's
+  // `type` discriminator. Rows whose `type` doesn't match a registered
+  // block have their `data` body passed through verbatim — better to
+  // round-trip than to silently drop unknown content.
+  walkBuildersTopLevel(elements, builder => {
+    if (builder.isDehydrated() === false) {
+      delete out[builder.name]
+      return
+    }
+    out[builder.name] = coerceBuilderValue(builder, out)
+    const prefix = `${builder.name}.`
     for (const key of Object.keys(out)) {
       if (key.startsWith(prefix)) delete out[key]
     }
@@ -325,12 +345,13 @@ function walkFields(elements: Element[], visit: (f: Field) => void): void {
   for (const el of elements) {
     if (el instanceof Field) {
       visit(el)
-      // Plan #14 — don't recurse into Repeater children. The inner schema
-      // belongs to row bodies, not the parent form's body, so the parent
-      // walker would coerce siblings against the wrong values map. The
-      // Repeater pass in `coerceFormValues` recurses into rows with the
-      // proper per-row body.
+      // Plan #14 — don't recurse into Repeater / Builder children. Their
+      // inner schemas belong to row bodies, not the parent form's body,
+      // so the parent walker would coerce siblings against the wrong
+      // values map. The dedicated Repeater + Builder passes in
+      // `coerceFormValues` recurse into rows with the proper per-row body.
       if (el instanceof RepeaterField) continue
+      if (el instanceof BuilderField)  continue
     }
     const children = el.getChildren()
     if (children && children.length > 0) walkFields(children as Element[], visit)
@@ -353,9 +374,155 @@ function walkRepeatersTopLevel(
       visit(el)
       continue
     }
+    // Builder boundaries are also opaque — its inner schemas live per-row
+    // and never need to be visited by the Repeater pass.
+    if (el instanceof BuilderField) continue
     const children = el.getChildren()
     if (children && children.length > 0) walkRepeatersTopLevel(children as Element[], visit)
   }
+}
+
+/**
+ * Walk an Element tree and visit every top-level Builder — i.e., every
+ * `BuilderField` that isn't itself nested inside a Repeater or another
+ * Builder. Inner Builders are reached recursively when the outer
+ * array-row field coerces its row bodies (which then re-enters this
+ * walker via `coerceFormValues`).
+ */
+function walkBuildersTopLevel(
+  elements: Element[],
+  visit:    (f: BuilderField) => void,
+): void {
+  for (const el of elements) {
+    if (el instanceof BuilderField) {
+      visit(el)
+      continue
+    }
+    if (el instanceof RepeaterField) continue
+    const children = el.getChildren()
+    if (children && children.length > 0) walkBuildersTopLevel(children as Element[], visit)
+  }
+}
+
+/**
+ * Build the coerced array value for a single Builder field from the
+ * parent form body. Two body shapes are supported:
+ *
+ * 1. **JSON-shape** — `body[name]` is `unknown[]`. Each entry should be
+ *    an object with shape `{ __id?, type, data?: {…} }`. Non-object
+ *    entries coerce to a sentinel empty row; missing / non-string `type`
+ *    rounds to `''` (resolver flags as `unknownType`).
+ * 2. **Flat-shape** — body has keys like `${name}.${i}.type`,
+ *    `${name}.${i}.__id`, `${name}.${i}.data.${childName}`. Indices are
+ *    grouped, gaps filled with empty rows, and the per-block schema
+ *    drives coercion of `data.*` keys.
+ *
+ * Trailing rows whose `data` body is empty are trimmed (matching
+ * Repeater's posture). The row's `__id` and `type` alone don't keep a
+ * row alive — same trim semantics.
+ */
+function coerceBuilderValue(
+  field: BuilderField,
+  body:  Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const fieldName = field.name
+  const raw       = body[fieldName]
+
+  type RawRow = { __id?: string; type: string; data: Record<string, unknown> }
+  let rows: RawRow[] = []
+
+  if (Array.isArray(raw)) {
+    rows = raw.map(coerceBuilderRowEntry)
+  } else {
+    const prefix  = `${fieldName}.`
+    const grouped = new Map<number, RawRow>()
+    let maxIdx = -1
+    for (const key of Object.keys(body)) {
+      if (!key.startsWith(prefix)) continue
+      const rest = key.slice(prefix.length)
+      const dot  = rest.indexOf('.')
+      if (dot < 0) continue
+      const idxStr = rest.slice(0, dot)
+      const tail   = rest.slice(dot + 1)
+      const idx    = Number(idxStr)
+      if (!Number.isInteger(idx) || idx < 0) continue
+      if (idx > maxIdx) maxIdx = idx
+      let row = grouped.get(idx)
+      if (!row) { row = { type: '', data: {} }; grouped.set(idx, row) }
+      const value = body[key]
+      if (tail === '__id') {
+        if (typeof value === 'string') row.__id = value
+      } else if (tail === 'type') {
+        if (typeof value === 'string') row.type = value
+      } else if (tail.startsWith('data.')) {
+        row.data[tail.slice('data.'.length)] = value
+      } else if (tail === 'data') {
+        // Whole `data` body posted as a single value (rare — typically
+        // a stringified JSON blob from a hidden input). Best-effort parse.
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          row.data = { ...(value as Record<string, unknown>) }
+        } else if (typeof value === 'string' && value !== '') {
+          try {
+            const parsed = JSON.parse(value)
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              row.data = parsed as Record<string, unknown>
+            }
+          } catch { /* leave row.data alone */ }
+        }
+      }
+    }
+    if (maxIdx >= 0) {
+      rows = Array.from({ length: maxIdx + 1 }, (_, i) => grouped.get(i) ?? { type: '', data: {} })
+    }
+  }
+
+  // Trim trailing empty rows (matches Repeater). A row counts as empty
+  // when its `data` body has no values beyond round-tripped sentinels.
+  // Note we don't gate on `type` — a freshly-picked block with no fields
+  // typed in is still "untouched" for the purposes of submit-trim.
+  while (rows.length > 0 && isBuilderRowEmpty(rows[rows.length - 1]!)) {
+    rows.pop()
+  }
+
+  return rows.map(row => {
+    const block = field.getBlock(row.type)
+    let coercedData: Record<string, unknown>
+    if (block) {
+      coercedData = coerceFormValues(block.getSchema(), row.data)
+    } else {
+      // Unknown block type — pass `data` through verbatim so a stale
+      // record with a since-removed block type doesn't lose its
+      // contents on the next save. Validation will surface the issue.
+      coercedData = { ...row.data }
+    }
+    const out: Record<string, unknown> = { type: row.type, data: coercedData }
+    if (typeof row.__id === 'string') out['__id'] = row.__id
+    return out
+  })
+}
+
+function coerceBuilderRowEntry(raw: unknown): { __id?: string; type: string; data: Record<string, unknown> } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { type: '', data: {} }
+  }
+  const r = raw as Record<string, unknown>
+  const type = typeof r['type'] === 'string' ? (r['type'] as string) : ''
+  const dataRaw = r['data']
+  const data: Record<string, unknown> = (dataRaw && typeof dataRaw === 'object' && !Array.isArray(dataRaw))
+    ? { ...(dataRaw as Record<string, unknown>) }
+    : {}
+  const out: { __id?: string; type: string; data: Record<string, unknown> } = { type, data }
+  if (typeof r['__id'] === 'string') out.__id = r['__id'] as string
+  return out
+}
+
+function isBuilderRowEmpty(row: { type: string; data: Record<string, unknown> }): boolean {
+  for (const [k, v] of Object.entries(row.data)) {
+    if (v === undefined || v === null || v === '') continue
+    void k
+    return false
+  }
+  return true
 }
 
 /**
@@ -460,12 +627,13 @@ export function findForms(elements: ReadonlyArray<Element>): Form[] {
   const walk = (els: ReadonlyArray<Element>): void => {
     for (const el of els) {
       if (el.getType() === 'form') forms.push(el as Form)
-      // Plan #14 — don't dive into Repeater children. Forms inside a
-      // Repeater row don't have row context for dispatch, so finding
-      // them at the parent level would mis-route submissions. Use the
-      // structural check (not `instanceof`) per the Vite SSR module
+      // Plan #14 — don't dive into Repeater / Builder children. Forms
+      // inside an array-row field don't have row context for dispatch,
+      // so finding them at the parent level would mis-route submissions.
+      // Use structural checks (not `instanceof`) per the Vite SSR module
       // duplication note above.
       if (isRepeaterField(el)) continue
+      if (isBuilderField(el))  continue
       const children = el.getChildren()
       if (children && children.length > 0) walk(children)
     }
@@ -600,6 +768,16 @@ export async function applyStateUpdate<R = unknown>(
   const children = (form.getChildren() ?? []) as Element[]
 
   if (changed.includes('.')) {
+    // Plan #14 — dotted paths route to the array-row field that owns
+    // the path's first segment. Builder paths look like `name.<i>.data.<leaf>`
+    // (the literal `data` segment is the giveaway); Repeater paths look
+    // like `name.<i>.<leaf>`. Inspect the first segment's field on the
+    // schema to dispatch.
+    const head = changed.split('.', 1)[0]!
+    const headField = findFieldDirect(children, head)
+    if (headField instanceof BuilderField) {
+      return applyBuilderStateUpdate(headField, values, changed, ctx)
+    }
     return applyRepeaterStateUpdate(children, values, changed, ctx)
   }
 
@@ -639,10 +817,12 @@ export async function applyStateUpdate<R = unknown>(
 function findFieldByName(elements: Element[], name: string): Field | undefined {
   for (const el of elements) {
     if (el instanceof Field && el.name === name) return el
-    // Plan #14 — don't dive into a Repeater's inner schema when looking
-    // for a top-level field; row-local fields are addressed through
-    // dotted paths via `applyRepeaterStateUpdate`.
+    // Plan #14 — don't dive into Repeater / Builder inner schemas when
+    // looking for a top-level field; row-local fields are addressed via
+    // dotted paths through `applyRepeaterStateUpdate` /
+    // `applyBuilderStateUpdate`.
     if (el instanceof RepeaterField) continue
+    if (el instanceof BuilderField)  continue
     const children = el.getChildren()
     if (children && children.length > 0) {
       const hit = findFieldByName(children as Element[], name)
@@ -877,4 +1057,120 @@ function writeDottedPath(values: Record<string, unknown>, path: string, value: u
   } else {
     (cur as Record<string, unknown>)[last] = value
   }
+}
+
+// ─── Plan #14 follow-up: Builder partial-resolve ─────────
+
+/**
+ * Resolve a dotted-path live-update into a Builder row.
+ *
+ * Path shape: `<name>.<i>.data.<leaf>`. The literal `data` segment
+ * separates the row's envelope (`__id`, `type`) from the block-scoped
+ * inner field. The row's block schema is selected from the values map
+ * via `values[name][i].type` — Builder rows are heterogeneous, so the
+ * schema can't be derived from the field alone.
+ *
+ * Nested array-row fields inside a block (Repeater-in-Builder, etc.)
+ * aren't supported in v1 — same posture as nested Repeater leaf depth
+ * past one level. Returns `null` (→ 404) on any unsupported shape.
+ *
+ * Mutates a shallow-cloned `values` so the caller gets a fresh map; the
+ * row array + row map + `data` map along the path are cloned to avoid
+ * aliasing the input.
+ */
+async function applyBuilderStateUpdate<R>(
+  field:    BuilderField,
+  values:   Record<string, unknown>,
+  changed:  string,
+  ctx:      StateUpdateContext<R>,
+): Promise<StateUpdateResult | null> {
+  const segments = changed.split('.')
+  // Expected: name (already matched by caller), <i>, 'data', <leaf>...
+  if (segments.length < 4) return null
+  const name    = segments[0]!
+  if (name !== field.name) return null
+  const idxStr  = segments[1]!
+  const idx     = Number(idxStr)
+  if (!Number.isInteger(idx) || idx < 0) return null
+  if (segments[2] !== 'data') return null
+  const leafName = segments[3]!
+  // Nested-array path past `data.<leaf>` not supported in v1.
+  if (segments.length > 4) return null
+
+  // Look up the row's block from the submitted values.
+  const arrRaw = values[name]
+  if (!Array.isArray(arrRaw)) return null
+  const rowRaw = arrRaw[idx]
+  if (!rowRaw || typeof rowRaw !== 'object' || Array.isArray(rowRaw)) return null
+  const blockName = (rowRaw as Record<string, unknown>)['type']
+  if (typeof blockName !== 'string' || blockName === '') return null
+  const block = field.getBlock(blockName)
+  if (!block) return null
+
+  // Locate the leaf field inside the block's schema.
+  const leafField = findFieldDirect(block.getSchema(), leafName)
+  if (!leafField) return null
+
+  // Clone path-traversed containers.
+  const coerced = { ...values }
+  const arrClone = (coerced[name] as unknown[]).slice()
+  coerced[name] = arrClone
+  const rowSrc = arrClone[idx] as Record<string, unknown>
+  const rowClone: Record<string, unknown> = { ...rowSrc }
+  arrClone[idx] = rowClone
+  const dataSrc = rowClone['data']
+  const dataClone: Record<string, unknown> = (dataSrc && typeof dataSrc === 'object' && !Array.isArray(dataSrc))
+    ? { ...(dataSrc as Record<string, unknown>) }
+    : {}
+  rowClone['data'] = dataClone
+
+  // Coerce the leaf field's value only.
+  const rawLeaf      = dataClone[leafName]
+  const coercedSubset = coerceFormValues([leafField], { [leafName]: rawLeaf })
+  dataClone[leafName] = coercedSubset[leafName]
+
+  const dirty = new Set<string>([changed])
+
+  const hook = leafField.getAfterStateUpdated()
+  if (hook) {
+    const rowPrefix = `${name}.${idx}.data`
+
+    const $get = (n: string): unknown => {
+      if (n.includes('.')) return readDottedPath(coerced, n)
+      return dataClone[n]
+    }
+    const $set = (n: string, v: unknown): void => {
+      if (n.includes('.')) {
+        writeDottedPath(coerced, n, v)
+        dirty.add(n)
+        return
+      }
+      dataClone[n] = v
+      dirty.add(`${rowPrefix}.${n}`)
+    }
+
+    const row = {
+      index:     idx,
+      blockType: block.name,
+      $get:      (n: string): unknown => dataClone[n],
+      $set:      (n: string, v: unknown): void => {
+        dataClone[n] = v
+        dirty.add(`${rowPrefix}.${n}`)
+      },
+    }
+
+    const hookCtx: AfterStateUpdatedContext = {
+      $get,
+      $set,
+      values: coerced,
+      row,
+      ...(ctx.record  !== undefined ? { record:  ctx.record  } : {}),
+      ...(ctx.user    !== undefined ? { user:    ctx.user    } : {}),
+      ...(ctx.request !== undefined ? { request: ctx.request } : {}),
+    }
+
+    await hook(dataClone[leafName], hookCtx)
+  }
+
+  return { values: coerced, dirty: Array.from(dirty) }
 }
