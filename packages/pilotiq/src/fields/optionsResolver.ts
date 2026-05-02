@@ -3,8 +3,13 @@ import type { RenderContext } from '../schema/resolveSchema.js'
 /**
  * Shape of an option in a SelectField / Radio / CheckboxList.
  * `value` round-trips through the form body; `label` is display only.
+ *
+ * `disabled` greys the option out and blocks selection. Stamped server-side
+ * by `disableOptionsWhenSelectedInSiblingRepeaterItems()` for options taken
+ * in sibling Repeater/Builder rows; users may also set it themselves on the
+ * static option list to express "this choice is permanently unavailable".
  */
-export type SelectOption = { value: string; label: string }
+export type SelectOption = { value: string; label: string; disabled?: boolean }
 
 /**
  * Reactive options resolver. Receives the same `{ $get, $set, record,
@@ -49,4 +54,42 @@ export async function resolveOptions(
     console.warn(`[pilotiq] options() resolver for "${fieldName}" threw:`, err)
     return []
   }
+}
+
+/**
+ * Apply the "disable options taken in sibling Repeater/Builder rows" gate.
+ * No-op outside an array-row context (no `ctx.row.siblings`) or when the
+ * field hasn't opted in. Builder scoping (same-block-type only) is handled
+ * by the resolver — by the time we get here, `ctx.row.siblings` already
+ * reflects the right scope.
+ *
+ * Multi-value sibling rows (e.g. `CheckboxList` storing `string[]`) unfold
+ * into individual taken values; single-value rows contribute one taken
+ * entry. Empty / null / `''` sibling values are skipped (they aren't real
+ * picks yet — same posture as `Field.distinct()`'s default `ignoreNulls`).
+ */
+export function disableOptionsTakenInSiblings(
+  options:   SelectOption[],
+  enabled:   boolean,
+  fieldName: string,
+  ctx:       RenderContext | undefined,
+): SelectOption[] {
+  if (!enabled) return options
+  const siblings = ctx?.row?.siblings
+  if (!siblings || siblings.length === 0) return options
+  const taken = new Set<string>()
+  for (const sib of siblings) {
+    if (!sib || typeof sib !== 'object') continue
+    const v = (sib as Record<string, unknown>)[fieldName]
+    if (Array.isArray(v)) {
+      for (const x of v) {
+        if (x === undefined || x === null || x === '') continue
+        taken.add(String(x))
+      }
+    } else if (v !== undefined && v !== null && v !== '') {
+      taken.add(String(v))
+    }
+  }
+  if (taken.size === 0) return options
+  return options.map(o => (taken.has(o.value) && !o.disabled ? { ...o, disabled: true } : o))
 }

@@ -228,6 +228,32 @@ export class RepeaterDemo extends Page {
                 ]),
             ]),
 
+          Section.make('disableOptionsWhenSelectedInSiblingRepeaterItems')
+            .description('Pick a colour in row 1 — the same option greys out in every other row. Auto-enables `distinct()` (server-side guarantee) and `live()` (so picks reflect immediately in sibling rows without a submit).')
+            .schema([
+              Repeater.make('colourPicks')
+                .label('Colour picks')
+                .defaultItems(2)
+                .reorderable()
+                .cloneable()
+                .itemLabel((row) => String(row['colour'] ?? 'New pick'))
+                .addActionLabel('Add pick')
+                .schema([
+                  TextField.make('label').label('Label'),
+                  SelectField.make('colour')
+                    .label('Colour')
+                    .options([
+                      { value: 'red',    label: 'Red'    },
+                      { value: 'green',  label: 'Green'  },
+                      { value: 'blue',   label: 'Blue'   },
+                      { value: 'yellow', label: 'Yellow' },
+                      { value: 'purple', label: 'Purple' },
+                    ])
+                    .disableOptionsWhenSelectedInSiblingRepeaterItems()
+                    .helperText('Each colour can only be used in one row.'),
+                ]),
+            ]),
+
           Section.make('Nested example — products with modifiers')
             .description('A Repeater inside a Repeater. Each product can have its own list of modifiers.')
             .schema([

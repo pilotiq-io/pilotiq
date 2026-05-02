@@ -222,6 +222,11 @@ export abstract class Field extends Element {
   // `validateBuilder`; a no-op outside an array-row context.
   protected _distinct?: DistinctOptions
 
+  // Disable options already picked in sibling Repeater/Builder rows. Only
+  // consulted by option-bearing subclasses (Select / Radio / CheckboxList /
+  // ToggleButtons) inside their `toMeta` — a no-op everywhere else.
+  protected _disableOptionsWhenSelectedInSiblings = false
+
   constructor(name: string, type: FieldType) {
     super()
     this.name = name
@@ -350,6 +355,41 @@ export abstract class Field extends Element {
   }
 
   getDistinct(): DistinctOptions | undefined { return this._distinct }
+
+  /**
+   * Inside a Repeater / Builder, grey out option choices that another row
+   * has already picked. Auto-enables `distinct()` (server-side cross-row
+   * uniqueness as a last-line guarantee) and `live()` (so picking a value
+   * in one row immediately re-resolves the others).
+   *
+   * Pass `false` to clear the flag — calling `distinct(false) / live(false)`
+   * separately afterwards is up to you, this method only re-arms them when
+   * enabling. Outside an array-row context the flag is a no-op (the
+   * resolver only stamps `ctx.row.siblings` inside Repeater/Builder rows).
+   *
+   * Builder scoping is per-block-type: a `Select`'s "taken" values come
+   * only from sibling rows whose `type` matches the current row's block
+   * (otherwise picks across heterogeneous blocks would falsely conflict).
+   *
+   * Implemented on `Field` so the flag carries through to every subclass,
+   * but only `SelectField / RadioField / CheckboxListField /
+   * ToggleButtonsField` consume it inside their `toMeta` (other field
+   * types have no option list to disable).
+   */
+  disableOptionsWhenSelectedInSiblingRepeaterItems(value: boolean = true): this {
+    if (value === false) {
+      this._disableOptionsWhenSelectedInSiblings = false
+      return this
+    }
+    this._disableOptionsWhenSelectedInSiblings = true
+    this.distinct()
+    this.live()
+    return this
+  }
+
+  shouldDisableOptionsTakenInSiblings(): boolean {
+    return this._disableOptionsWhenSelectedInSiblings
+  }
 
   isDehydrated(): boolean { return this._dehydrated }
   getDefault(): unknown { return this._default }

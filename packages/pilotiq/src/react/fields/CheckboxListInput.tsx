@@ -14,7 +14,7 @@ export function CheckboxListInput({
   name:         string
   defaultValue: unknown
   disabled:     boolean
-  options:      Array<{ value: string; label: string }>
+  options:      Array<{ value: string; label: string; disabled?: boolean }>
   columns:      number
 }): React.ReactElement {
   const fs = useFieldState(name)
@@ -52,17 +52,25 @@ export function CheckboxListInput({
       {options.map((o) => {
         const id = `${name}-${o.value}`
         const checked = value.includes(o.value)
+        // Per-option disabled (from `disableOptionsWhenSelectedInSiblingRepeaterItems`)
+        // greys out unchecked taken values but keeps already-checked ones
+        // editable so the user can uncheck their own pick — otherwise a row
+        // would be stuck holding a value it can't release.
+        const optDisabled = disabled || (Boolean(o.disabled) && !checked)
         return (
           <label
             key={o.value}
             htmlFor={id}
-            className="flex items-center gap-2 cursor-pointer text-sm"
+            className={
+              'flex items-center gap-2 text-sm ' +
+              (optDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer')
+            }
           >
             <Checkbox
               id={id}
               checked={checked}
               onCheckedChange={(c: boolean) => onToggle(o.value, c)}
-              disabled={disabled}
+              disabled={optDisabled}
             />
             <span>{o.label}</span>
           </label>

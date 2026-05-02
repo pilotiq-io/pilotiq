@@ -12,7 +12,7 @@ export function RadioInput({
   name:         string
   defaultValue: string | undefined
   disabled:     boolean
-  options:      Array<{ value: string; label: string }>
+  options:      Array<{ value: string; label: string; disabled?: boolean }>
   inline:       boolean
 }): React.ReactElement {
   const fs = useFieldState(name)
@@ -31,11 +31,15 @@ export function RadioInput({
       {options.map((o) => {
         const id = `${name}-${o.value}`
         const checked = value === o.value
+        const optDisabled = disabled || Boolean(o.disabled)
         return (
           <label
             key={o.value}
             htmlFor={id}
-            className="flex items-center gap-2 cursor-pointer text-sm"
+            className={
+              'flex items-center gap-2 text-sm ' +
+              (optDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer')
+            }
           >
             <input
               type="radio"
@@ -44,7 +48,7 @@ export function RadioInput({
               value={o.value}
               checked={checked}
               onChange={() => onChange(o.value)}
-              disabled={disabled}
+              disabled={optDisabled}
               className="size-4 accent-primary"
             />
             <span>{o.label}</span>

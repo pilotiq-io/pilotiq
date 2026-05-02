@@ -358,6 +358,54 @@ TextField.make('email')
 ignores nested-Repeater children — the inner array's `distinct()`
 runs against its own rows only.
 
+## Disable options taken in sibling rows — `disableOptionsWhenSelectedInSiblingRepeaterItems()`
+
+The client-side companion to `distinct()` for option-bearing fields.
+Greys out option choices that any sibling row has already picked, so
+users can't pick the same value twice.
+
+Available on `SelectField`, `RadioField`, `CheckboxListField`, and
+`ToggleButtonsField`:
+
+```ts
+Repeater.make('picks').schema([
+  SelectField.make('colour')
+    .options([
+      { value: 'red',   label: 'Red'   },
+      { value: 'green', label: 'Green' },
+      { value: 'blue',  label: 'Blue'  },
+    ])
+    .disableOptionsWhenSelectedInSiblingRepeaterItems(),
+])
+```
+
+Calling this method auto-arms two related flags:
+
+- **`distinct()`** — server-side last-line guarantee. The client UI
+  prevents the conflict from happening, but a tampered request
+  (curl, or a stale tab) is rejected at validation time.
+- **`live()`** — picking a value in one row immediately re-resolves
+  the form so the disabled state on the OTHER rows updates without
+  a page refresh.
+
+**Behavior in Builder.** Same per-block-type scoping as `distinct()` —
+a `Select` inside a `hero` block isn't shadowed by a pick in a
+`paragraph` block (different schemas, different fields).
+
+**CheckboxList** (multi-select) treats each entry of every sibling's
+`string[]` as a taken value. The user can still uncheck their own
+row's pick (the disabled flag never blocks releasing a held value),
+but other rows can't pick it.
+
+**Static `disabled` per option** is preserved alongside the taken
+state — set `{ value, label, disabled: true }` on the static option
+list to mark a choice as permanently unavailable, and the runtime
+disabling stacks on top.
+
+Pass `false` to clear (`.disableOptionsWhenSelectedInSiblingRepeaterItems(false)`).
+This does not also clear `distinct()` / `live()` — call those
+explicitly if you need them off too.
+
 ## Limitations
 
 - **`itemHidden` doesn't re-evaluate on live updates.** Currently

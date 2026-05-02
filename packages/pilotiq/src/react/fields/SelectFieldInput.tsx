@@ -16,7 +16,7 @@ export function SelectFieldInput({
   disabled:     boolean
   required:     boolean
   placeholder:  string | undefined
-  options:      Array<{ value: string; label: string }>
+  options:      Array<{ value: string; label: string; disabled?: boolean }>
 }): React.ReactElement {
   const fs = useFieldState(name)
   // Always-controlled. Initialize to '' (not undefined) so Base UI's Select
@@ -49,7 +49,7 @@ export function SelectFieldInput({
         </SelectTrigger>
         <SelectContent>
           {options.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
+            <SelectItem key={o.value} value={o.value} disabled={o.disabled}>
               {o.label}
             </SelectItem>
           ))}

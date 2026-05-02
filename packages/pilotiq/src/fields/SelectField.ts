@@ -1,5 +1,10 @@
 import { Field, type FieldMeta } from './Field.js'
-import { resolveOptions, type OptionsResolver, type SelectOption } from './optionsResolver.js'
+import {
+  resolveOptions,
+  disableOptionsTakenInSiblings,
+  type OptionsResolver,
+  type SelectOption,
+} from './optionsResolver.js'
 import type { RenderContext } from '../schema/resolveSchema.js'
 
 // Re-export for back-compat — earlier code imported these directly from
@@ -44,7 +49,12 @@ export class SelectField extends Field {
 
   override async toMeta(ctx?: RenderContext): Promise<FieldMeta> {
     const base    = this.buildMeta(ctx)
-    const options = await resolveOptions(this._options, ctx, this.name)
+    const options = disableOptionsTakenInSiblings(
+      await resolveOptions(this._options, ctx, this.name),
+      this.shouldDisableOptionsTakenInSiblings(),
+      this.name,
+      ctx,
+    )
     return { ...base, options }
   }
 }

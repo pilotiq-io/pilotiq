@@ -79,6 +79,15 @@ export interface RenderContext extends SchemaContext {
     index: number
     $get:  (name: string) => unknown
     $set:  (name: string, value: unknown) => void
+    /**
+     * Other rows' values maps, excluding the current row at `index`.
+     * Stamped by `resolveRepeaterRows` (every sibling) and
+     * `resolveBuilderRows` (only same-block-type siblings; each entry is
+     * the row's `data` map). Read by
+     * `disableOptionsWhenSelectedInSiblingRepeaterItems()` to mark
+     * already-picked options as disabled.
+     */
+    siblings?: ReadonlyArray<Record<string, unknown>>
   }
 }
 
@@ -284,6 +293,7 @@ async function resolveRepeaterRows(
   const hiddenFn = field.getItemHidden()
 
   const rows = await Promise.all(rowsInput.map(async (rowValues, index) => {
+    const siblings = rowsInput.filter((_, i) => i !== index)
     const rowCtx: RenderContext = {
       ...ctx,
       values: rowValues,
@@ -293,6 +303,7 @@ async function resolveRepeaterRows(
         index,
         $get: (name: string) => rowValues[name],
         $set: (name: string, value: unknown) => { rowValues[name] = value },
+        siblings,
       },
     }
     delete rowCtx.changed // changed key is parent-scoped; not meaningful inside the row resolve
@@ -458,6 +469,18 @@ async function resolveBuilderRows(
       return unknown
     }
 
+    // Builder siblings are scoped to same-block-type rows only — the
+    // option pickers in a `heading` block aren't shadowed by picks in a
+    // `paragraph` block (different schemas, different `name` keys).
+    // Each entry is the sibling's `data` map (not the envelope) so the
+    // field's lookup `siblings[i][fieldName]` works the same as Repeater.
+    const siblings: Record<string, unknown>[] = []
+    for (let j = 0; j < rowsInput.length; j++) {
+      if (j === index) continue
+      const other = rowsInput[j]!
+      if (other.type !== blockName) continue
+      siblings.push(other.data)
+    }
     const rowCtx: RenderContext = {
       ...ctx,
       values: data,
@@ -467,6 +490,7 @@ async function resolveBuilderRows(
         index,
         $get: (name: string) => data[name],
         $set: (name: string, value: unknown) => { data[name] = value },
+        siblings,
       },
     }
     delete rowCtx.changed

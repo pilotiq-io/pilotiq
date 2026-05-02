@@ -15,7 +15,7 @@ export function ToggleButtonsInput({
   name:         string
   defaultValue: string | undefined
   disabled:     boolean
-  options:      Array<{ value: string; label: string }>
+  options:      Array<{ value: string; label: string; disabled?: boolean }>
 }): React.ReactElement {
   const fs = useFieldState(name)
   const [localValue, setLocalValue] = useState<string>(defaultValue ?? '')
@@ -32,22 +32,23 @@ export function ToggleButtonsInput({
       <input type="hidden" name={name} value={value} />
       {options.map((o, i) => {
         const active = value === o.value
+        const optDisabled = disabled || Boolean(o.disabled)
         return (
           <button
             key={o.value}
             type="button"
             role="radio"
             aria-checked={active}
-            disabled={disabled}
+            disabled={optDisabled}
             data-state={active ? 'on' : 'off'}
-            onClick={() => onPick(o.value)}
+            onClick={() => { if (!optDisabled) onPick(o.value) }}
             className={
-              'px-3 py-1.5 text-sm transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring ' +
+              'px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-ring ' +
               (i > 0 ? 'border-l border-input ' : '') +
               (active
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90 '
                 : 'bg-transparent hover:bg-accent hover:text-accent-foreground ') +
-              (disabled ? 'opacity-50 cursor-not-allowed ' : '')
+              (optDisabled ? 'opacity-50 cursor-not-allowed ' : 'cursor-pointer ')
             }
           >
             {o.label}

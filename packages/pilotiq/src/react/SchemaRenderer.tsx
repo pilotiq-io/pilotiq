@@ -182,7 +182,7 @@ function renderFieldInput(
       )
 
     case 'select': {
-      const options = (el['options'] as Array<{ value: string; label: string }>) ?? []
+      const options = (el['options'] as Array<{ value: string; label: string; disabled?: boolean }>) ?? []
       return (
         <SelectFieldInput
           name={name}
@@ -206,7 +206,7 @@ function renderFieldInput(
     }
 
     case 'radio': {
-      const options = (el['options'] as Array<{ value: string; label: string }>) ?? []
+      const options = (el['options'] as Array<{ value: string; label: string; disabled?: boolean }>) ?? []
       const inline  = Boolean(el['inline'])
       return (
         <RadioInput
@@ -220,7 +220,7 @@ function renderFieldInput(
     }
 
     case 'toggleButtons': {
-      const options = (el['options'] as Array<{ value: string; label: string }>) ?? []
+      const options = (el['options'] as Array<{ value: string; label: string; disabled?: boolean }>) ?? []
       return (
         <ToggleButtonsInput
           name={name}
@@ -232,7 +232,7 @@ function renderFieldInput(
     }
 
     case 'checkboxList': {
-      const options = (el['options'] as Array<{ value: string; label: string }>) ?? []
+      const options = (el['options'] as Array<{ value: string; label: string; disabled?: boolean }>) ?? []
       const columns = Number(el['columns']) || 1
       return (
         <CheckboxListInput
