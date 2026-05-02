@@ -582,4 +582,59 @@ describe('BuilderField', () => {
       assert.equal(isBuilderField(fake), true)
     })
   })
+
+  describe('extraItemActions (per-row buttons)', () => {
+    it('builder stores extra actions; getter returns them', () => {
+      const a = Action.make('promote').handler(() => undefined)
+      const f = BuilderField.make('content').extraItemActions([a])
+      assert.deepEqual(f.getExtraItemActions(), [a])
+    })
+
+    it('per-row resolve stamps extraActions on each row', async () => {
+      const promote = Action.make('promote').handler(() => undefined)
+      const f = BuilderField.make('content')
+        .blocks([
+          Block.make('heading').schema([TextField.make('text')]),
+        ])
+        .extraItemActions([promote])
+
+      const [meta] = await resolveSchema([f], { values: { content: [
+        { type: 'heading', data: { text: 'A' } },
+        { type: 'heading', data: { text: 'B' } },
+      ] } })
+      const builder = meta as BuilderFieldMeta
+      assert.equal(builder.rows.length, 2)
+      assert.equal(builder.rows[0]!.extraActions?.length, 1)
+      assert.equal(builder.rows[1]!.extraActions?.length, 1)
+    })
+
+    it('predicate sees row data via ctx.values', async () => {
+      const seen: Array<Record<string, unknown> | undefined> = []
+      const a = Action.make('a')
+        .handler(() => undefined)
+        .visible(({ values }) => { seen.push(values); return true })
+      const f = BuilderField.make('content')
+        .blocks([Block.make('heading').schema([TextField.make('text')])])
+        .extraItemActions([a])
+
+      await resolveSchema([f], { values: { content: [
+        { type: 'heading', data: { text: 'foo' } },
+      ] } })
+      assert.deepEqual(seen, [{ text: 'foo' }])
+    })
+
+    it('unknown-type rows skip extraActions resolve (no row context)', async () => {
+      const promote = Action.make('promote').handler(() => undefined)
+      const f = BuilderField.make('content')
+        .blocks([Block.make('heading').schema([TextField.make('text')])])
+        .extraItemActions([promote])
+
+      const [meta] = await resolveSchema([f], { values: { content: [
+        { type: 'mystery', data: { foo: 'bar' } },
+      ] } })
+      const builder = meta as BuilderFieldMeta
+      assert.equal(builder.rows[0]!.unknownType, true)
+      assert.equal(builder.rows[0]!.extraActions, undefined)
+    })
+  })
 })

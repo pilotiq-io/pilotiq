@@ -2,6 +2,7 @@ import { type ElementMeta, type LayoutContext } from '../schema/Element.js'
 import { Block, type BlockMeta } from '../schema/Block.js'
 import { Field, type FieldMeta } from './Field.js'
 import type { RenderContext } from '../schema/resolveSchema.js'
+import type { Action, ActionMeta } from '../actions/Action.js'
 
 /**
  * Function evaluated once per row at meta-build to derive a human-readable
@@ -47,6 +48,13 @@ export interface BuilderRowMeta {
   itemLabel?:   string
   hidden?:      boolean
   unknownType?: boolean
+  /**
+   * Resolved per-row action metas for `extraItemActions(...)`. Same shape
+   * as `RepeaterRowMeta.extraActions` — see RepeaterField for the row
+   * dispatch contract. Field-level only in v1; per-block actions stay
+   * deferred to a future polish (`Block.extraItemActions(...)`).
+   */
+  extraActions?: ActionMeta[]
 }
 
 export interface BuilderFieldMeta extends FieldMeta {
@@ -103,6 +111,7 @@ export class BuilderField extends Field {
   private _addActionAlignment:    BuilderAddActionAlignment = 'start'
   private _itemLabel?:            BuilderItemLabel
   private _itemHidden?:           BuilderItemHiddenRule
+  private _extraItemActions:      Action[] = []
 
   private constructor(name: string) {
     super(name, 'builder')
@@ -183,6 +192,19 @@ export class BuilderField extends Field {
 
   itemHidden(rule: BuilderItemHiddenRule): this { this._itemHidden = rule; return this }
 
+  /**
+   * Per-row action buttons rendered alongside clone/delete in each row's
+   * header. Field-level only in v1 — applies to every block. Per-block
+   * variants (`Block.extraItemActions(...)`) deferred. See
+   * `RepeaterField.extraItemActions` for the dispatch contract; the only
+   * Builder-specific note is that `ctx.row` exposes `blockType` so a
+   * single handler can branch by block.
+   */
+  extraItemActions(actions: Action[]): this {
+    this._extraItemActions = actions
+    return this
+  }
+
   // ─── Read-only access ────────────────────────────────
 
   override getChildren(): undefined {
@@ -211,6 +233,7 @@ export class BuilderField extends Field {
   getAddActionAlignment():        BuilderAddActionAlignment { return this._addActionAlignment }
   getItemLabel():                 BuilderItemLabel | undefined      { return this._itemLabel  }
   getItemHidden():                BuilderItemHiddenRule | undefined { return this._itemHidden }
+  getExtraItemActions():          Action[]                          { return this._extraItemActions }
 
   // ─── Meta ────────────────────────────────────────────
 

@@ -11,9 +11,11 @@ import {
 } from 'lucide-react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { Button } from '../ui/button.js'
-import { SchemaRenderer } from '../SchemaRenderer.js'
+import { SchemaRenderer, dispatchHandlerAction } from '../SchemaRenderer.js'
 import { FormIdContext, useFormState } from '../FormStateContext.js'
 import { findFieldMeta } from '../formStateHelpers.js'
+import { useNavigate } from '../navigate.js'
+import { useToast } from '../Toaster.js'
 
 /**
  * Pure reorder helper — used by both the HTML5 DnD path and the
@@ -36,10 +38,11 @@ export function reorderRows<T>(rows: T[], fromIdx: number, insertBeforeIdx: numb
 }
 
 interface RowState {
-  id:        string
-  children:  ElementMeta[]
-  itemLabel?: string
-  hidden?:   boolean
+  id:            string
+  children:      ElementMeta[]
+  itemLabel?:    string
+  hidden?:       boolean
+  extraActions?: ElementMeta[]
 }
 
 /**
@@ -95,6 +98,7 @@ export function RepeaterInput({
       children:  r.children,
       ...(r.itemLabel !== undefined ? { itemLabel: r.itemLabel } : {}),
       ...(r.hidden ? { hidden: true } : {}),
+      ...(r.extraActions && r.extraActions.length > 0 ? { extraActions: r.extraActions } : {}),
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -297,6 +301,7 @@ export function RepeaterInput({
             atMax={atMax}
             columns={columns}
             isDragging={dragId === row.id}
+            rowPath={`${name}.${i}`}
             onMoveUp={() => moveRow(row.id, -1)}
             onMoveDown={() => moveRow(row.id, 1)}
             onClone={() => cloneRow(row.id)}
@@ -330,6 +335,7 @@ function RepeaterRow({
   row, index, isFirstVisible, isLastVisible, name, disabled,
   collapsible, isCollapsed, reorderable, cloneable, atMin, atMax, columns,
   isDragging,
+  rowPath,
   onMoveUp, onMoveDown, onClone, onRemove, onToggleCollapse,
   onDragStart, onDragOver, onDrop, onDragEnd,
 }: {
@@ -347,6 +353,7 @@ function RepeaterRow({
   atMax:             boolean
   columns:           number
   isDragging:        boolean
+  rowPath:           string
   onMoveUp:          () => void
   onMoveDown:        () => void
   onClone:           () => void
@@ -444,6 +451,13 @@ function RepeaterRow({
             </button>
           </>
         )}
+        {row.extraActions && row.extraActions.length > 0 && (
+          <ExtraActionStrip
+            actions={row.extraActions}
+            rowPath={rowPath}
+            disabled={disabled}
+          />
+        )}
         {cloneable && (
           <button
             type="button"
@@ -488,6 +502,75 @@ function RepeaterRow({
 }
 
 /**
+ * Per-row extraItemActions strip. Each button dispatches its handler
+ * action by snapshotting the parent `<form>` (so the server's
+ * `coerceFormValues` sees the row's submitted fields), then POSTs to the
+ * action's `dispatchUrl` with `_rowPath="<fieldName>.<index>"` in the
+ * body — the server uses that path to navigate into the field's row
+ * array and stamp `ctx.row = { index, id, values, fieldName }` on the
+ * handler context.
+ *
+ * v1 — handler-style only. `href` / `method` / modal-form actions inside
+ * `extraItemActions` are accepted by the type system but render here as
+ * no-op buttons (they have neither a `dispatchUrl` nor a row-aware fetch
+ * branch). Filament parity for those modes can land in a follow-up.
+ *
+ * Disabled actions render greyed out + skip dispatch (matches the
+ * `meta.disabled` stamp from `resolveExtraItemActions`).
+ */
+export function ExtraActionStrip({
+  actions, rowPath, disabled,
+}: {
+  actions:  ElementMeta[]
+  rowPath:  string
+  disabled: boolean
+}): React.ReactElement {
+  const navigate = useNavigate()
+  const { notify } = useToast()
+
+  const onClick = (action: ElementMeta) => async (e: React.MouseEvent<HTMLButtonElement>): Promise<void> => {
+    if (disabled || action['disabled']) return
+    const dispatchUrl = action['dispatchUrl'] as string | undefined
+    if (!dispatchUrl) return
+    const form = e.currentTarget.closest('form')
+    const snapshot = form ? new FormData(form) : new FormData()
+    await dispatchHandlerAction(
+      dispatchUrl,
+      [],
+      navigate,
+      notify,
+      { _rowPath: rowPath },
+      snapshot,
+    )
+  }
+
+  return (
+    <>
+      {actions.map((a, i) => {
+        const label    = String(a['label'] ?? a['name'] ?? '')
+        const tooltip  = (a['tooltip'] as string | undefined) ?? label
+        const isDisabled = disabled || Boolean(a['disabled'])
+        const destructive = Boolean(a['destructive'])
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={onClick(a)}
+            disabled={isDisabled}
+            aria-label={label}
+            title={tooltip}
+            data-action-name={a['name']}
+            className={`text-muted-foreground hover:text-foreground disabled:opacity-30 ${destructive ? 'hover:text-destructive' : ''}`.trim()}
+          >
+            <span className="text-xs font-medium">{label}</span>
+          </button>
+        )
+      })}
+    </>
+  )
+}
+
+/**
  * 2px-tall horizontal accent line rendered between rows when the user
  * drags a row over a valid drop boundary. Uses `pointer-events: none`
  * so the underlying row's `dragover` keeps firing — without this, the
@@ -503,7 +586,7 @@ function DropIndicator(): React.ReactElement {
 }
 
 interface RepeaterMetaShape {
-  rows?:             Array<{ id: string; children: ElementMeta[]; itemLabel?: string; hidden?: boolean }>
+  rows?:             Array<{ id: string; children: ElementMeta[]; itemLabel?: string; hidden?: boolean; extraActions?: ElementMeta[] }>
   template?:         ElementMeta[]
   columns?:          number
   minItems?:         number

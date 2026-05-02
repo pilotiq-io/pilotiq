@@ -15,7 +15,7 @@ import { SchemaRenderer } from '../SchemaRenderer.js'
 import { FormIdContext, useFormState } from '../FormStateContext.js'
 import { findFieldMeta } from '../formStateHelpers.js'
 import { useIconFor } from '../icon-context.js'
-import { reorderRows } from './RepeaterInput.js'
+import { reorderRows, ExtraActionStrip } from './RepeaterInput.js'
 
 interface BlockShape {
   name:      string
@@ -27,12 +27,13 @@ interface BlockShape {
 }
 
 interface BuilderRowShape {
-  id:           string
-  type:         string
-  children:     ElementMeta[]
-  itemLabel?:   string
-  hidden?:      boolean
-  unknownType?: boolean
+  id:            string
+  type:          string
+  children:      ElementMeta[]
+  itemLabel?:    string
+  hidden?:       boolean
+  unknownType?:  boolean
+  extraActions?: ElementMeta[]
 }
 
 interface BuilderMetaShape {
@@ -57,12 +58,13 @@ interface BuilderMetaShape {
 }
 
 interface RowState {
-  id:           string
-  type:         string
-  children:     ElementMeta[]
-  itemLabel?:   string
-  hidden?:      boolean
-  unknownType?: boolean
+  id:            string
+  type:          string
+  children:      ElementMeta[]
+  itemLabel?:    string
+  hidden?:       boolean
+  unknownType?:  boolean
+  extraActions?: ElementMeta[]
 }
 
 /**
@@ -120,6 +122,7 @@ export function BuilderInput({
       ...(r.itemLabel    !== undefined ? { itemLabel: r.itemLabel } : {}),
       ...(r.hidden                     ? { hidden: true }            : {}),
       ...(r.unknownType                ? { unknownType: true }       : {}),
+      ...(r.extraActions && r.extraActions.length > 0 ? { extraActions: r.extraActions } : {}),
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -326,6 +329,7 @@ export function BuilderInput({
             showNumbers={showNumbers}
             showIcons={showIcons}
             isDragging={dragId === row.id}
+            rowPath={`${name}.${i}`}
             onMoveUp={() => moveRow(row.id, -1)}
             onMoveDown={() => moveRow(row.id, 1)}
             onClone={() => cloneRow(row.id)}
@@ -482,6 +486,7 @@ function BuilderRow({
   row, block, index, isFirstVisible, isLastVisible, name, disabled,
   collapsible, isCollapsed, reorderable, buttonsOnly, cloneable, deletable,
   atMin, atMax, showNumbers, showIcons, isDragging,
+  rowPath,
   onMoveUp, onMoveDown, onClone, onRemove, onToggleCollapse,
   onDragStart, onDragOver, onDrop, onDragEnd,
 }: {
@@ -503,6 +508,7 @@ function BuilderRow({
   showNumbers:       boolean
   showIcons:         boolean
   isDragging:        boolean
+  rowPath:           string
   onMoveUp:          () => void
   onMoveDown:        () => void
   onClone:           () => void
@@ -620,6 +626,13 @@ function BuilderRow({
               <ArrowDownIcon className="size-4" />
             </button>
           </>
+        )}
+        {row.extraActions && row.extraActions.length > 0 && (
+          <ExtraActionStrip
+            actions={row.extraActions}
+            rowPath={rowPath}
+            disabled={disabled}
+          />
         )}
         {cloneable && (
           <button

@@ -1085,4 +1085,97 @@ describe('RepeaterField', () => {
       assert.equal(meta.live, true)
     })
   })
+
+  describe('extraItemActions (per-row buttons)', () => {
+    it('builder stores extra actions; getter returns them', () => {
+      const a = Action.make('promote').handler(() => undefined)
+      const b = Action.make('archive').handler(() => undefined)
+      const f = RepeaterField.make('items').extraItemActions([a, b])
+      assert.deepEqual(f.getExtraItemActions(), [a, b])
+    })
+
+    it('getter defaults to empty array', () => {
+      assert.deepEqual(RepeaterField.make('items').getExtraItemActions(), [])
+    })
+
+    it('per-row resolve stamps extraActions on each row meta', async () => {
+      const promote = Action.make('promote').handler(() => undefined)
+      const f = RepeaterField.make('items')
+        .schema([TextField.make('title')])
+        .extraItemActions([promote])
+
+      const [meta] = await resolveSchema([f], { values: { items: [{ title: 'a' }, { title: 'b' }] } })
+      const repeater = meta as RepeaterFieldMeta
+      assert.equal(repeater.rows.length, 2)
+      assert.equal(repeater.rows[0]!.extraActions?.length, 1)
+      assert.equal(repeater.rows[0]!.extraActions?.[0]?.name, 'promote')
+      assert.equal(repeater.rows[1]!.extraActions?.length, 1)
+    })
+
+    it('absent when no extra actions registered', async () => {
+      const f = RepeaterField.make('items')
+        .schema([TextField.make('title')])
+      const [meta] = await resolveSchema([f], { values: { items: [{ title: 'a' }] } })
+      const repeater = meta as RepeaterFieldMeta
+      assert.equal(repeater.rows[0]!.extraActions, undefined)
+    })
+
+    it('drops actions whose visible() rule resolves false for that row', async () => {
+      const featured = Action.make('feature')
+        .handler(() => undefined)
+        .visible(({ values }) => values?.['status'] !== 'featured')
+      const f = RepeaterField.make('items')
+        .schema([TextField.make('title')])
+        .extraItemActions([featured])
+
+      const [meta] = await resolveSchema([f], { values: { items: [
+        { title: 'a', status: 'draft'    },
+        { title: 'b', status: 'featured' },
+      ] } })
+      const repeater = meta as RepeaterFieldMeta
+      // Row 0 (draft) keeps the action; row 1 (featured) drops it.
+      assert.equal(repeater.rows[0]!.extraActions?.length, 1)
+      assert.equal(repeater.rows[1]!.extraActions, undefined)
+    })
+
+    it('stamps disabled: true when disabled() rule resolves true', async () => {
+      const send = Action.make('sendTest')
+        .handler(() => undefined)
+        .disabled(({ values }) => !values?.['email'])
+      const f = RepeaterField.make('subscribers')
+        .schema([TextField.make('email')])
+        .extraItemActions([send])
+
+      const [meta] = await resolveSchema([f], { values: { subscribers: [
+        { email: ''       },
+        { email: 'x@y.io' },
+      ] } })
+      const repeater = meta as RepeaterFieldMeta
+      assert.equal(repeater.rows[0]!.extraActions?.[0]?.disabled, true)
+      assert.equal(repeater.rows[1]!.extraActions?.[0]?.disabled, undefined)
+    })
+
+    it('predicate sees parent record + user', async () => {
+      let seenRecord: unknown
+      let seenUser:   unknown
+      const a = Action.make('a')
+        .handler(() => undefined)
+        .visible(({ record, user }) => {
+          seenRecord = record
+          seenUser   = user
+          return true
+        })
+      const f = RepeaterField.make('items')
+        .schema([TextField.make('title')])
+        .extraItemActions([a])
+
+      await resolveSchema([f], {
+        values: { items: [{ title: 'x' }] },
+        record: { id: 'parent-1' },
+        user:   { name: 'admin' },
+      })
+      assert.deepEqual(seenRecord, { id: 'parent-1' })
+      assert.deepEqual(seenUser,   { name: 'admin' })
+    })
+  })
 })

@@ -1,7 +1,7 @@
 import { Action, type ActionContext, type NotificationLike } from '../actions/Action.js'
 import type { Element } from '../schema/Element.js'
-import { isRepeaterField } from '../fields/RepeaterField.js'
-import { isBuilderField } from '../fields/BuilderField.js'
+import { isRepeaterField, RepeaterField } from '../fields/RepeaterField.js'
+import { isBuilderField, BuilderField } from '../fields/BuilderField.js'
 import { validateSchema, type ValidationErrors } from '../validation/index.js'
 import { coerceFormValues } from './dispatchForm.js'
 import { Notification, type NotificationMeta } from '../notifications/Notification.js'
@@ -34,17 +34,73 @@ export function findActions(elements: ReadonlyArray<Element>): Action[] {
 }
 
 /**
+ * Walk an Element tree and return every `Action` registered as an
+ * `extraItemActions(...)` button on a Repeater or Builder field. Used by
+ * the action-dispatch route handler when the submit body carries
+ * `_rowPath`: at that point we need to look up the action *inside* a row
+ * scope rather than at page level (the regular `findActions` walker
+ * deliberately stops at array-row boundaries).
+ *
+ * Each returned entry carries the parent field reference so the
+ * dispatcher can validate that the body's `_rowPath` matches an
+ * actually-registered field (and not e.g. a fabricated path pointing at
+ * an unrelated repeater that happens to have an action with the same
+ * name). The entry's `field.name` is used to namespace dispatch.
+ */
+export interface FoundRowAction {
+  action:    Action
+  field:     RepeaterField | BuilderField
+  fieldName: string
+}
+
+export function findRowExtraActions(
+  elements: ReadonlyArray<Element>,
+): FoundRowAction[] {
+  const out: FoundRowAction[] = []
+  const walk = (els: ReadonlyArray<Element>): void => {
+    for (const el of els) {
+      if (isRepeaterField(el) || isBuilderField(el)) {
+        const f = el as RepeaterField | BuilderField
+        for (const action of f.getExtraItemActions()) {
+          out.push({ action, field: f, fieldName: f.name })
+        }
+        // Don't recurse INTO the row schema (page-level walker semantics
+        // already cover those — and inner Repeater/Builder fields can
+        // carry their own extraItemActions, addressed via deeper paths).
+        const inner = el instanceof RepeaterField ? el.getInnerSchema() : []
+        if (inner.length > 0) walk(inner)
+        if (el instanceof BuilderField) {
+          for (const block of el.getBlocks()) walk(block.getSchema())
+        }
+        continue
+      }
+      const children = el.getChildren()
+      if (children && children.length > 0) walk(children)
+    }
+  }
+  walk(elements)
+  return out
+}
+
+/**
  * Body shape parsed off a `POST {base}/.../_action/{name}` request.
  * `ids` carries the records the action operates on (one element for row
  * actions, many for bulk, none for header). `values` is everything else
  * the client sent — typically dialog-form fields.
+ *
+ * `rowPath` is set only when this submit was triggered from a Repeater
+ * or Builder `extraItemActions` button. The format mirrors the wire
+ * shape used elsewhere — `<fieldName>.<index>` for top-level array-row
+ * fields. Nested array fields aren't supported in v1; the dispatcher
+ * rejects deeper paths.
  */
 export interface ActionRequestInput {
-  ids:    string[]
-  values: Record<string, unknown>
+  ids:      string[]
+  values:   Record<string, unknown>
+  rowPath?: string
 }
 
-/** Parse a posted body into `{ ids, values }`. */
+/** Parse a posted body into `{ ids, values, rowPath? }`. */
 export function parseActionBody(body: Record<string, unknown>): ActionRequestInput {
   const idsRaw = body['ids']
   let ids: string[] = []
@@ -55,16 +111,35 @@ export function parseActionBody(body: Record<string, unknown>): ActionRequestInp
     ids = idsRaw.includes(',') ? idsRaw.split(',').map(s => s.trim()).filter(Boolean) : [idsRaw]
   }
 
+  const rowPathRaw = body['_rowPath']
+  const rowPath = typeof rowPathRaw === 'string' && rowPathRaw.length > 0 ? rowPathRaw : undefined
+
   const values: Record<string, unknown> = { ...body }
   delete values['ids']
   delete values['_actionName']
-  return { ids, values }
+  delete values['_rowPath']
+  const out: ActionRequestInput = { ids, values }
+  if (rowPath !== undefined) out.rowPath = rowPath
+  return out
 }
 
 export type ResolveRecord = (id: string) => Promise<unknown> | unknown
 
 export interface DispatchActionInput extends ActionRequestInput {
   request?: unknown
+  /**
+   * For row-scoped extraItemActions dispatch: the parent Repeater/Builder
+   * field that owns this action, plus the form's full Element schema.
+   * The dispatcher uses these to (a) coerce the submit body so row paths
+   * resolve, (b) pluck the row from the parent field's array, and (c)
+   * stamp `ctx.row` on the handler context.
+   *
+   * When omitted, `rowPath` is treated as "no row scope" even if set on
+   * the body — the dispatcher won't blindly trust client-supplied row
+   * paths for non-row actions.
+   */
+  rowField?:  RepeaterField | BuilderField
+  formSchema?: Element[]
 }
 
 export interface DispatchActionSuccess {
@@ -128,6 +203,32 @@ export async function dispatchAction(
       : input.ids.map(id => ({ id }))
   }
 
+  // Row-scoped dispatch (Repeater / Builder `extraItemActions`). Coerce
+  // the form body once via the form's own schema, navigate to the row
+  // identified by `rowPath`, and stamp `ctx.row`. The handler still sees
+  // `ctx.values` (top-level fields) and `ctx.record` (parent record);
+  // `ctx.row.values` carries the row's fields specifically.
+  if (input.rowPath && input.rowField && input.formSchema) {
+    const parsed = parseRowPath(input.rowPath, input.rowField.name)
+    if (parsed) {
+      const coerced  = coerceFormValues(input.formSchema, input.values)
+      const arr      = coerced[input.rowField.name]
+      const rowEntry = Array.isArray(arr) ? (arr as Array<unknown>)[parsed.index] : undefined
+      const rowData  = extractRowData(rowEntry, input.rowField)
+      const rowId    = rowData['__id']
+      ctx.row = {
+        index:     parsed.index,
+        id:        typeof rowId === 'string' ? rowId : `${input.rowField.name}-${parsed.index}`,
+        values:    rowData,
+        fieldName: input.rowField.name,
+      }
+      if (input.rowField instanceof BuilderField && rowEntry && typeof rowEntry === 'object') {
+        const t = (rowEntry as { type?: unknown }).type
+        if (typeof t === 'string') ctx.row.blockType = t
+      }
+    }
+  }
+
   // Form-modal action — validate the submitted values against the action's
   // schema, then coerce strings into runtime types (booleans/numbers/Dates)
   // before invoking the handler. Action without `.schema()` skips both
@@ -160,6 +261,50 @@ export async function dispatchAction(
       error: err instanceof Error ? err.message : 'Action failed',
     }
   }
+}
+
+/**
+ * Parse `_rowPath` body field into `{ index }`. v1 supports only
+ * top-level array-row fields (`<fieldName>.<index>`); deeper paths
+ * (nested Repeaters) are rejected — return null.
+ *
+ * `expectedField` guards against client-supplied paths pointing at the
+ * wrong field for the named action. Returns null on mismatch so the
+ * dispatcher silently treats the request as non-row-scoped (the action
+ * still runs at page level).
+ */
+function parseRowPath(
+  raw:           string,
+  expectedField: string,
+): { index: number } | null {
+  const parts = raw.split('.')
+  if (parts.length !== 2) return null
+  if (parts[0] !== expectedField) return null
+  const index = Number.parseInt(parts[1] ?? '', 10)
+  if (!Number.isInteger(index) || index < 0) return null
+  return { index }
+}
+
+/**
+ * Pull the row's data envelope from a coerced row entry. RepeaterField
+ * stores rows as flat `{ [field]: value, __id? }` objects; BuilderField
+ * stores them as `{ __id, type, data: {…} }`. The handler always sees
+ * a flat row-fields map, so we unwrap Builder's `.data`.
+ */
+function extractRowData(
+  entry:    unknown,
+  field:    RepeaterField | BuilderField,
+): Record<string, unknown> {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return {}
+  if (field instanceof BuilderField) {
+    const data = (entry as { data?: unknown }).data
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      return { ...(data as Record<string, unknown>) }
+    }
+    return {}
+  }
+  const out = { ...(entry as Record<string, unknown>) }
+  return out
 }
 
 /** Coerce the loose `NotificationLike` shape (single / array / built /

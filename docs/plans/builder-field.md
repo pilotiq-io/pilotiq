@@ -153,10 +153,11 @@ plumbing in the renderer):
 | `.itemNumbers(bool=true)` | Prefixes the per-row label with its 1-based index. |
 | `.reorderableWithButtons(bool=true)` | Forces button-only reorder (default is drag-with-button-fallback). |
 
-The bigger-surface gaps (`extraItemActions`, `relationship`, `grid`,
-`simple`, `table`, `accordion`, `distinct`,
-`disableOptionsWhenSelectedInSiblingRepeaterItems`) are tracked
-separately and out of scope for this plan.
+The bigger-surface gaps (`relationship`, `grid`, `simple`, `table`,
+`accordion`, `distinct`, `disableOptionsWhenSelectedInSiblingRepeaterItems`)
+are tracked separately and out of scope for this plan.
+**`extraItemActions` shipped 2026-05-04 cont'd** — see
+`docs/guide/repeater.md` and `project_pilotiq_extra_item_actions.md`.
 
 ## Out of scope
 

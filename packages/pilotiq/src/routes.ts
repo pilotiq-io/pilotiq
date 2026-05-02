@@ -5,7 +5,7 @@ import type { Pilotiq } from './Pilotiq.js'
 import { Form } from './elements/Form.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { dispatchFormSubmit, findForms, selectForm } from './elements/dispatchForm.js'
-import { dispatchAction, findActions, parseActionBody, type ResolveRecord } from './elements/dispatchAction.js'
+import { dispatchAction, findActions, findRowExtraActions, parseActionBody, type ResolveRecord } from './elements/dispatchAction.js'
 import { flashNotifications } from './notifications/flash.js'
 import {
   panelInfo, callPageSchema, tagFormActions, tagActionDispatch,
@@ -111,6 +111,47 @@ function forbidden(res: AppResponse, json: boolean): unknown {
  * than 500 the page. */
 async function checkPolicy(fn: () => boolean | Promise<boolean>): Promise<boolean> {
   try { return Boolean(await fn()) } catch { return false }
+}
+
+/**
+ * Locate an action by name in a resolved page schema. Looks at both
+ * page-level actions (`findActions`) AND row-scoped extraItemActions on
+ * Repeater/Builder fields (`findRowExtraActions`). When the match is
+ * row-scoped, also returns the parent field reference and the form
+ * schema array — the dispatcher uses both to coerce the form body and
+ * navigate to the right row when stamping `ctx.row`.
+ *
+ * Page-level matches win when a page-level + row-scoped action share the
+ * same name (page-level is strictly more privileged: it has access to
+ * the full form, not just one row). The collision is undocumented
+ * behavior — authors should use distinct names.
+ */
+function resolveDispatchTarget(
+  elements:   import('./schema/Element.js').Element[],
+  actionName: string,
+): {
+  action:      import('./actions/Action.js').Action
+  rowField?:   import('./fields/RepeaterField.js').RepeaterField | import('./fields/BuilderField.js').BuilderField
+  formSchema?: import('./schema/Element.js').Element[]
+} | null {
+  const pageLevel = findActions(elements).find(a => a.name === actionName)
+  if (pageLevel) return { action: pageLevel }
+
+  const rowMatches = findRowExtraActions(elements).filter(r => r.action.name === actionName)
+  if (rowMatches.length === 0) return null
+  if (rowMatches.length > 1) {
+    console.warn(
+      `[pilotiq] Action "${actionName}" registered as extraItemActions on multiple ` +
+      `fields. Using the first match — disambiguate by renaming.`,
+    )
+  }
+  const first = rowMatches[0]!
+  // `formSchema` is the entire page tree for v1 — `coerceFormValues`
+  // needs the field schema rooted at the form, not just the one row's
+  // children. Passing the page tree is over-broad but safe (the function
+  // walks until it finds the field). A future polish can narrow to the
+  // owning Form once we walk back from the matched field.
+  return { action: first.action, rowField: first.field, formSchema: elements }
 }
 
 /**
@@ -388,8 +429,8 @@ export function registerPilotiqRoutes(
         const ctx: SchemaContext = { mode: 'table', basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
         const elements = await callPageSchema(PageClass, ctx)
         tagActionDispatch(elements, indexUrl)
-        const action = findActions(elements).find(a => a.name === actionName)
-        if (!action) {
+        const target = resolveDispatchTarget(elements, actionName)
+        if (!target) {
           if (json) { res.status(404); return res.json({ ok: false, error: `Action "${actionName}" not found` }) }
           res.status(404)
           return res.send(`Action "${actionName}" not found on ${R.label}`)
@@ -399,7 +440,12 @@ export function registerPilotiqRoutes(
           ? (id: string) => R.model!.find(id)
           : undefined
 
-        const result = await dispatchAction(action, { ...input, request: req }, resolveRecord)
+        const result = await dispatchAction(target.action, {
+          ...input,
+          request: req,
+          ...(target.rowField   ? { rowField:   target.rowField   } : {}),
+          ...(target.formSchema ? { formSchema: target.formSchema } : {}),
+        }, resolveRecord)
         if (!result.ok) {
           if (json) {
             res.status(result.errors ? 422 : 500)
@@ -577,6 +623,57 @@ export function registerPilotiqRoutes(
             redirect,
             ...(continueCreate ? { force: true } : {}),
             ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
+          })
+        }
+        flashNotifications(req, result.notifications)
+        return res.redirect(redirect, 303)
+      })
+
+      // Action dispatch — POST ${createUrl}/_action/:actionName
+      // Handles both page-level handler-style actions AND Repeater /
+      // Builder `extraItemActions` rows. The latter pass `_rowPath` in
+      // the body so the dispatcher hydrates `ctx.row` from the form's
+      // coerced values.
+      router.post(`${createUrl}/_action/:actionName`, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, wantsJson(req))
+
+        const actionName = req.params['actionName']!
+        const json = wantsJson(req)
+        const body  = await readFormBody(req)
+        const input = parseActionBody(body)
+
+        const ctx: SchemaContext = { mode: 'create', basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
+        const elements = await callPageSchema(PageClass, ctx)
+        tagActionDispatch(elements, createUrl)
+        const target = resolveDispatchTarget(elements, actionName)
+        if (!target) {
+          if (json) { res.status(404); return res.json({ ok: false, error: `Action "${actionName}" not found` }) }
+          res.status(404)
+          return res.send(`Action "${actionName}" not found on ${R.label}`)
+        }
+
+        const result = await dispatchAction(target.action, {
+          ...input,
+          request: req,
+          ...(target.rowField   ? { rowField:   target.rowField   } : {}),
+          ...(target.formSchema ? { formSchema: target.formSchema } : {}),
+        })
+        if (!result.ok) {
+          if (json) {
+            res.status(result.errors ? 422 : 500)
+            return res.json({ ok: false, error: result.error, ...(result.errors ? { errors: result.errors } : {}) })
+          }
+          res.status(500)
+          return res.send(result.error)
+        }
+        const redirect = normalizeRedirect(result.redirect, base) ?? createUrl
+        if (json) {
+          return res.json({
+            ok: true,
+            redirect,
+            ...(result.notifications ? { notifications: result.notifications } : {}),
           })
         }
         flashNotifications(req, result.notifications)
@@ -816,6 +913,68 @@ export function registerPilotiqRoutes(
             ok: true,
             redirect,
             ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
+          })
+        }
+        flashNotifications(req, result.notifications)
+        return res.redirect(redirect, 303)
+      })
+
+      // Action dispatch — POST ${editUrl}/_action/:actionName
+      // Same shape as the create-page _action route. The `:id` segment
+      // gates record-aware policy (canEdit per record); row-scoped
+      // dispatch reuses the form schema we resolve here for `coerceFormValues`.
+      router.post(`${base}/${slug}/:id/_action/:actionName`, async (req, res) => {
+        const recordId = req.params['id']!
+        // Hono routes `/edit` and `/delete` against this slot too — bail
+        // out so the dedicated handlers downstream pick them up. The
+        // `:actionName` capture catches anything; the explicit guard
+        // mirrors the view-route `recordId === 'create'` defensive branch.
+        const actionName = req.params['actionName']!
+
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        const policyRecord = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, wantsJson(req))
+
+        const json = wantsJson(req)
+        const body  = await readFormBody(req)
+        const input = parseActionBody(body)
+
+        const editUrl = `${base}/${slug}/${recordId}/edit`
+        const ctx: SchemaContext = { mode: 'edit', recordId, basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
+        const elements = await callPageSchema(PageClass, ctx)
+        tagActionDispatch(elements, editUrl)
+        const target = resolveDispatchTarget(elements, actionName)
+        if (!target) {
+          if (json) { res.status(404); return res.json({ ok: false, error: `Action "${actionName}" not found` }) }
+          res.status(404)
+          return res.send(`Action "${actionName}" not found on ${R.label}`)
+        }
+
+        const resolveRecord: ResolveRecord | undefined = R.model
+          ? (id: string) => R.model!.find(id)
+          : undefined
+
+        const result = await dispatchAction(target.action, {
+          ...input,
+          request: req,
+          ...(target.rowField   ? { rowField:   target.rowField   } : {}),
+          ...(target.formSchema ? { formSchema: target.formSchema } : {}),
+        }, resolveRecord)
+        if (!result.ok) {
+          if (json) {
+            res.status(result.errors ? 422 : 500)
+            return res.json({ ok: false, error: result.error, ...(result.errors ? { errors: result.errors } : {}) })
+          }
+          res.status(500)
+          return res.send(result.error)
+        }
+        const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
+        if (json) {
+          return res.json({
+            ok: true,
+            redirect,
+            ...(result.notifications ? { notifications: result.notifications } : {}),
           })
         }
         flashNotifications(req, result.notifications)
@@ -1331,14 +1490,19 @@ export function registerPilotiqRoutes(
       const ctx: SchemaContext = user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}
       const elements = await callPageSchema(PageClass, ctx)
       tagActionDispatch(elements, pageUrl)
-      const action = findActions(elements).find(a => a.name === actionName)
-      if (!action) {
+      const target = resolveDispatchTarget(elements, actionName)
+      if (!target) {
         if (json) { res.status(404); return res.json({ ok: false, error: `Action "${actionName}" not found` }) }
         res.status(404)
         return res.send(`Action "${actionName}" not found on page`)
       }
 
-      const result = await dispatchAction(action, { ...input, request: req })
+      const result = await dispatchAction(target.action, {
+        ...input,
+        request: req,
+        ...(target.rowField   ? { rowField:   target.rowField   } : {}),
+        ...(target.formSchema ? { formSchema: target.formSchema } : {}),
+      })
       if (!result.ok) {
         if (json) {
           res.status(result.errors ? 422 : 500)

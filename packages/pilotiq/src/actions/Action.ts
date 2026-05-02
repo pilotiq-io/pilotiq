@@ -31,6 +31,25 @@ export interface ActionContext {
   user?:    unknown
   values?:  Record<string, unknown>
   request?: unknown
+  /**
+   * Row-scoped context populated when this action was dispatched as a
+   * Repeater / Builder `extraItemActions` button. `index` is the row's
+   * 0-based position; `id` is the row's stable `__id`; `values` is the
+   * row's submitted fields (the row's `data` body inside Builder); for
+   * Builder, `blockType` carries the matched block name. `fieldName`
+   * is the parent Repeater/Builder field's name — useful when a single
+   * handler is shared across multiple repeater fields.
+   *
+   * Always undefined for non-row actions. Handlers that don't care about
+   * row context just ignore this field.
+   */
+  row?:     {
+    index:      number
+    id:         string
+    values:     Record<string, unknown>
+    fieldName:  string
+    blockType?: string
+  }
 }
 
 /** Convenience type: handlers can return either a built `Notification`
@@ -77,11 +96,18 @@ export type ActionSize = 'sm' | 'md' | 'lg'
 
 /** Context passed to visibility / disabled callbacks. `record` is set
  * for single-target evaluation (row actions, edit-page header actions);
- * `records` for bulk evaluations; `user` from the request when wired. */
+ * `records` for bulk evaluations; `user` from the request when wired.
+ *
+ * `values` is populated only when this action is being evaluated inside
+ * a Repeater / Builder row at meta-build time (via `extraItemActions`).
+ * It mirrors the resolver's row-scoped values map — predicates branch
+ * on the row's submitted fields (e.g. `({ values }) => values.status !==
+ * 'archived'`). */
 export interface ActionVisibilityContext {
   record?:  unknown
   records?: unknown[]
   user?:    unknown
+  values?:  Record<string, unknown>
 }
 
 /** Boolean-or-callback rule used by `.visible()` / `.hidden()` /

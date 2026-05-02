@@ -1,6 +1,7 @@
 import { Element, type ElementMeta, type LayoutContext } from '../schema/Element.js'
 import { Field, type FieldMeta } from './Field.js'
 import type { RenderContext } from '../schema/resolveSchema.js'
+import type { Action, ActionMeta } from '../actions/Action.js'
 
 /**
  * Function evaluated once per row at meta-build to derive a human-readable
@@ -46,6 +47,15 @@ export interface RepeaterRowMeta {
   children:  ElementMeta[]
   itemLabel?: string
   hidden?:   boolean
+  /**
+   * Resolved per-row action metas for `extraItemActions(...)`. Empty or
+   * absent when the field has no extra actions, OR when every action's
+   * visibility rule resolved false for this row. The renderer mounts these
+   * in the row header alongside clone/delete; clicking dispatches the
+   * action with `_rowPath = "<fieldName>.<index>"` so the server can
+   * reconstruct the row-scoped handler context.
+   */
+  extraActions?: ActionMeta[]
 }
 
 export interface RepeaterFieldMeta extends FieldMeta {
@@ -94,6 +104,7 @@ export class RepeaterField extends Field {
   private _addActionLabel?:  string
   private _itemLabel?:       RepeaterItemLabel
   private _itemHidden?:      RepeaterItemHiddenRule
+  private _extraItemActions: Action[] = []
 
   private constructor(name: string) {
     super(name, 'repeater')
@@ -154,6 +165,31 @@ export class RepeaterField extends Field {
   /** Custom label for the "Add row" button. Default `'Add'`. */
   addActionLabel(label: string): this { this._addActionLabel = label; return this }
 
+  /**
+   * Per-row action buttons rendered in each row's header alongside the
+   * built-in clone/delete strip. Useful for "Mark featured", "Send test",
+   * "Run preview", etc. — handler-style only in v1 (no `.href(…)` or
+   * `.method(…)`-style row actions; no modal-form actions either).
+   *
+   * Each action's handler receives a row-scoped `ActionContext` with
+   * `ctx.row = { index, id, values }` (the row's submitted values, not
+   * the parent record). Visibility rules (`visible / hidden / disabled`)
+   * are evaluated per row at meta-build with `{ values, record, user }`
+   * — `values` is the row's data, `record` mirrors the parent form's
+   * record (same as inner-field condition callbacks).
+   *
+   * Actions register one per row; the dispatcher uses `_rowPath` from the
+   * submit body to know which row was triggered. Naming collisions
+   * between row actions and page-level actions are NOT allowed (the
+   * server's `findActions` walker treats row-scoped actions separately
+   * via `findRowExtraActions`, but listing the same name in both spots
+   * is undefined behavior).
+   */
+  extraItemActions(actions: Action[]): this {
+    this._extraItemActions = actions
+    return this
+  }
+
   // ─── Read-only access for resolver / coercion / validation ──
 
   override getChildren(): Element[] | undefined {
@@ -174,6 +210,7 @@ export class RepeaterField extends Field {
   getItemLabel(): RepeaterItemLabel | undefined { return this._itemLabel }
   getItemHidden(): RepeaterItemHiddenRule | undefined { return this._itemHidden }
   getAddActionLabel(): string | undefined { return this._addActionLabel }
+  getExtraItemActions(): Action[] { return this._extraItemActions }
 
   // ─── Meta ──────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
 import {
   Page, Heading, Section,
   Form, TextField, NumberField, ToggleField, SelectField, SliderField, Repeater,
-  Notification,
+  Action, Notification,
 } from '@pilotiq/pilotiq'
 
 /**
@@ -175,6 +175,35 @@ export class RepeaterDemo extends Page {
                   ToggleField.make('archived')
                     .label('Archive this row')
                     .helperText('Submit the form to see it disappear from view (data preserved).'),
+                ]),
+            ]),
+
+          Section.make('extraItemActions — per-row buttons')
+            .description('Each row gets a "Send test" button alongside the built-in clone/delete strip. The handler receives the row\'s submitted values via `ctx.row.values` (along with `index`, `id`, `fieldName`). Visibility predicates see the row\'s values too, so unsaved rows can hide actions until the row is filled out.')
+            .schema([
+              Repeater.make('subscribers')
+                .label('Subscribers')
+                .reorderable()
+                .cloneable()
+                .itemLabel((row) => String(row['email'] ?? 'New subscriber'))
+                .addActionLabel('Add subscriber')
+                .extraItemActions([
+                  Action.make('sendTest')
+                    .label('Send test')
+                    .icon('send')
+                    .visible(({ values }) => Boolean(values?.['email']))
+                    .handler((ctx) => {
+                      const email = ctx.row?.values?.['email']
+                      // eslint-disable-next-line no-console
+                      console.log(`[repeater-demo] would send test to row ${ctx.row?.index}: ${email}`)
+                      return {
+                        notify: Notification.make(`Test queued for ${email}`).success(),
+                      }
+                    }),
+                ])
+                .schema([
+                  TextField.make('email').label('Email').required(),
+                  ToggleField.make('weekly').label('Weekly digest').default(true),
                 ]),
             ]),
 

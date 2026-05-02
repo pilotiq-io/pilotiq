@@ -23,7 +23,7 @@ import { applyStateUpdate, findForms, findWizardStepFields, selectFormById } fro
 import { validateSchema } from './validation/index.js'
 import { searchAllResources, type GlobalSearchResult } from './search.js'
 import { loadTableRecords, findTables, type QueryParams } from './elements/dispatchTable.js'
-import { findActions } from './elements/dispatchAction.js'
+import { findActions, findRowExtraActions } from './elements/dispatchAction.js'
 import { Filter } from './filters/Filter.js'
 import { TrashedFilter } from './filters/TrashedFilter.js'
 import { ListTabs } from './elements/ListTabs.js'
@@ -435,6 +435,16 @@ export function tagActionDispatch(elements: ReadonlyArray<Element>, baseUrl: str
     if (action.getDispatchUrl()) continue
     action.dispatchUrl(`${baseUrl}/_action/${action.name}`)
   }
+  // Row-scoped extraItemActions (Repeater/Builder). Stamped here too so
+  // the client can POST to the same `_action/:name` route — the renderer
+  // attaches `_rowPath=<fieldName>.<index>` per click; the server's
+  // dispatcher uses that to walk into the right row when building
+  // `ctx.row`. See `findRowExtraActions` in `dispatchAction.ts`.
+  for (const { action } of findRowExtraActions(elements)) {
+    if (!action.getHandler()) continue
+    if (action.getDispatchUrl()) continue
+    action.dispatchUrl(`${baseUrl}/_action/${action.name}`)
+  }
 }
 
 // ─── Per-role data builders ──────────────────────────────────
@@ -597,6 +607,7 @@ export async function resourceCreateData(
   const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'create', basePath: cfg.path }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, createUrl)
+  tagActionDispatch(elements, createUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/state`)
   tagFormWizardUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/wizard`)
   if (prefill) {
@@ -640,6 +651,7 @@ export async function resourceEditData(
   const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'edit', recordId, basePath: cfg.path }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
+  tagActionDispatch(elements, editUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/${recordId}/_form/${formId}/state`)
   tagFormWizardUrls(elements, formId => `${cfg.path}/${slug}/${recordId}/_form/${formId}/wizard`)
 

@@ -7,8 +7,12 @@ import { Section } from '../schema/Section.js'
 import { Table } from './Table.js'
 import { Column } from '../Column.js'
 import {
-  findActions, parseActionBody, dispatchAction,
+  findActions, findRowExtraActions, parseActionBody, dispatchAction,
 } from './dispatchAction.js'
+import { RepeaterField } from '../fields/RepeaterField.js'
+import { BuilderField } from '../fields/BuilderField.js'
+import { Block } from '../schema/Block.js'
+import { TextField } from '../fields/TextField.js'
 
 describe('findActions', () => {
   it('returns top-level actions', () => {
@@ -278,5 +282,135 @@ describe('Action notifications', () => {
       assert.equal(result.redirect, '/articles')
       assert.equal(result.notifications?.[0]?.title, 'Saved')
     }
+  })
+})
+
+describe('findRowExtraActions', () => {
+  it('returns extraItemActions registered on Repeater fields', () => {
+    const send = Action.make('sendTest').handler(() => undefined)
+    const repeater = RepeaterField.make('items')
+      .schema([TextField.make('email')])
+      .extraItemActions([send])
+    const found = findRowExtraActions([repeater])
+    assert.equal(found.length, 1)
+    assert.equal(found[0]!.action.name, 'sendTest')
+    assert.equal(found[0]!.fieldName, 'items')
+  })
+
+  it('returns extraItemActions registered on Builder fields', () => {
+    const promote = Action.make('promote').handler(() => undefined)
+    const builder = BuilderField.make('content')
+      .blocks([Block.make('heading').schema([TextField.make('text')])])
+      .extraItemActions([promote])
+    const found = findRowExtraActions([builder])
+    assert.equal(found.length, 1)
+    assert.equal(found[0]!.action.name, 'promote')
+    assert.equal(found[0]!.fieldName, 'content')
+  })
+
+  it('returns empty when no row actions are registered', () => {
+    const r = RepeaterField.make('items').schema([TextField.make('x')])
+    assert.deepEqual(findRowExtraActions([r]), [])
+  })
+
+  it('walks past containers to find Repeater/Builder fields', () => {
+    const a = Action.make('a').handler(() => undefined)
+    const repeater = RepeaterField.make('items').schema([TextField.make('x')]).extraItemActions([a])
+    const tree = [Section.make('S').schema([Card.make('C').schema([repeater])])]
+    const found = findRowExtraActions(tree)
+    assert.equal(found.length, 1)
+    assert.equal(found[0]!.fieldName, 'items')
+  })
+
+  it('walks into Repeater inner schema for nested Repeater rows', () => {
+    const inner = Action.make('innerAction').handler(() => undefined)
+    const innerRepeater = RepeaterField.make('rows')
+      .schema([TextField.make('y')])
+      .extraItemActions([inner])
+    const outerRepeater = RepeaterField.make('groups')
+      .schema([TextField.make('x'), innerRepeater])
+    const found = findRowExtraActions([outerRepeater])
+    assert.equal(found.length, 1)
+    assert.equal(found[0]!.fieldName, 'rows')
+  })
+})
+
+describe('dispatchAction with rowField + rowPath (extraItemActions)', () => {
+  it('hydrates ctx.row.values from a flat-keyed form body', async () => {
+    let seenCtx: { row?: { index: number; id: string; values: Record<string, unknown>; fieldName: string } } | undefined
+    const action = Action.make('sendTest').handler(ctx => { seenCtx = ctx })
+    const repeater = RepeaterField.make('items')
+      .schema([TextField.make('email')])
+      .extraItemActions([action])
+
+    const result = await dispatchAction(action, {
+      ids:    [],
+      values: {
+        'items.0.email': 'a@x.com',
+        'items.0.__id': 'row-aaa',
+        'items.1.email': 'b@x.com',
+        'items.1.__id': 'row-bbb',
+      },
+      rowPath:    'items.1',
+      rowField:   repeater,
+      formSchema: [repeater],
+    })
+    assert.equal(result.ok, true)
+    assert.equal(seenCtx?.row?.index, 1)
+    assert.equal(seenCtx?.row?.id, 'row-bbb')
+    assert.equal(seenCtx?.row?.fieldName, 'items')
+    assert.deepEqual(seenCtx?.row?.values, { email: 'b@x.com', __id: 'row-bbb' })
+  })
+
+  it('rejects rowPath whose field name does not match (silent fall-through)', async () => {
+    let seenCtx: { row?: unknown } | undefined
+    const action = Action.make('sendTest').handler(ctx => { seenCtx = ctx })
+    const repeater = RepeaterField.make('items')
+      .schema([TextField.make('email')])
+      .extraItemActions([action])
+
+    const result = await dispatchAction(action, {
+      ids:    [],
+      values: { 'items.0.email': 'a@x.com' },
+      rowPath:    'foreignField.0',
+      rowField:   repeater,
+      formSchema: [repeater],
+    })
+    assert.equal(result.ok, true)
+    assert.equal(seenCtx?.row, undefined)
+  })
+
+  it('hydrates ctx.row for Builder rows (unwraps `data` envelope) + sets blockType', async () => {
+    let seenCtx: { row?: { values: Record<string, unknown>; blockType?: string } } | undefined
+    const action = Action.make('promote').handler(ctx => { seenCtx = ctx })
+    const builder = BuilderField.make('content')
+      .blocks([Block.make('heading').schema([TextField.make('text')])])
+      .extraItemActions([action])
+
+    const result = await dispatchAction(action, {
+      ids:    [],
+      values: {
+        'content.0.__id': 'row-1',
+        'content.0.type': 'heading',
+        'content.0.data.text': 'Hello',
+      },
+      rowPath:    'content.0',
+      rowField:   builder,
+      formSchema: [builder],
+    })
+    assert.equal(result.ok, true)
+    assert.equal(seenCtx?.row?.blockType, 'heading')
+    assert.deepEqual(seenCtx?.row?.values, { text: 'Hello' })
+  })
+
+  it('parseActionBody extracts _rowPath into the input', () => {
+    const r = parseActionBody({ _rowPath: 'items.2', name: 'foo' })
+    assert.equal(r.rowPath, 'items.2')
+    assert.deepEqual(r.values, { name: 'foo' })
+  })
+
+  it('parseActionBody returns rowPath undefined when missing', () => {
+    const r = parseActionBody({ name: 'foo' })
+    assert.equal(r.rowPath, undefined)
   })
 })

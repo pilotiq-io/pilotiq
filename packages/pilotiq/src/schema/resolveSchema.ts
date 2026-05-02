@@ -10,7 +10,7 @@ import {
   type BuilderItemHiddenRule,
   type BuilderRowMeta,
 } from '../fields/BuilderField.js'
-import { Action } from '../actions/Action.js'
+import { Action, type ActionMeta, type ActionVisibilityContext } from '../actions/Action.js'
 import { ActionGroup } from '../actions/ActionGroup.js'
 import { Filter } from '../filters/Filter.js'
 
@@ -312,6 +312,11 @@ async function resolveRepeaterRows(
       const hidden    = await evalItemHidden(hiddenFn, layoutCtx, field.name)
       if (hidden) row.hidden = true
     }
+    const extras = field.getExtraItemActions()
+    if (extras.length > 0) {
+      const resolved = await resolveExtraItemActions(extras, ctx, rowValues)
+      if (resolved.length > 0) row.extraActions = resolved
+    }
     return row
   }))
 
@@ -322,6 +327,46 @@ async function resolveRepeaterRows(
 
   meta['rows']     = rows
   meta['template'] = template
+}
+
+/**
+ * Resolve a Repeater/Builder field's `extraItemActions` for one row.
+ *
+ * Each action's `.visible() / .hidden() / .disabled()` rules see a
+ * `ActionVisibilityContext` with the parent record + user (so an action
+ * can authorize against the page's user) plus the row's `values` and
+ * `row.{ index, id, blockType? }` (so per-row predicates work).
+ *
+ * Visibility-eval throwers fail-closed (the action is dropped from the
+ * row's strip — same posture as page-level Action visibility).
+ *
+ * Disabled stamping mirrors row-placement table actions: visibility =
+ * include/exclude in the strip; disabled = stamp `disabled: true` on
+ * the meta so the renderer greys it out.
+ */
+async function resolveExtraItemActions(
+  actions:   Action[],
+  ctx:       RenderContext,
+  rowValues: Record<string, unknown>,
+): Promise<ActionMeta[]> {
+  const out: ActionMeta[] = []
+  for (const action of actions) {
+    const evalCtx: ActionVisibilityContext = { values: rowValues }
+    if (ctx.record !== undefined) evalCtx.record = ctx.record
+    if (ctx.user   !== undefined) evalCtx.user   = ctx.user
+    let visible  = true
+    let disabled = false
+    if (action.hasVisibilityRules()) {
+      const result = await action.evaluate(evalCtx)
+      visible  = result.visible
+      disabled = result.disabled
+    }
+    if (!visible) continue
+    const meta = action.toMeta()
+    if (disabled) meta.disabled = true
+    out.push(meta)
+  }
+  return out
 }
 
 function coerceRowValues(raw: unknown): Record<string, unknown> {
@@ -441,6 +486,11 @@ async function resolveBuilderRows(
       const layoutCtx = buildLayoutContext(rowCtx)
       const hidden    = await evalBuilderItemHidden(hiddenFn, layoutCtx, field.name)
       if (hidden) row.hidden = true
+    }
+    const extras = field.getExtraItemActions()
+    if (extras.length > 0) {
+      const resolved = await resolveExtraItemActions(extras, ctx, data)
+      if (resolved.length > 0) row.extraActions = resolved
     }
     return row
   }))

@@ -257,19 +257,68 @@ through the delegated handler, so their inner `live()` won't fire.
 Native inputs — text, number, email, textarea, select, range, date,
 checkbox, radio — all work.
 
+## Per-row action buttons — `extraItemActions`
+
+`Repeater.extraItemActions([...])` and `Builder.extraItemActions([...])`
+register handler-style action buttons that render in each row's header
+alongside the built-in clone/delete strip. Useful for "Send test",
+"Mark featured", etc.
+
+```ts
+Repeater.make('subscribers')
+  .schema([TextField.make('email').required()])
+  .extraItemActions([
+    Action.make('sendTest')
+      .label('Send test')
+      .icon('send')
+      .visible(({ values }) => Boolean(values?.email))
+      .handler((ctx) => {
+        const email = ctx.row?.values?.email
+        // ctx.row = { index, id, values, fieldName, blockType? }
+        return { notify: Notification.make(`Test queued for ${email}`).success() }
+      }),
+  ])
+```
+
+The handler context carries:
+
+| Field | Description |
+| --- | --- |
+| `ctx.record` | The parent record (edit page) — same as page-level handlers see. |
+| `ctx.user` | The resolved panel user. |
+| `ctx.row.index` | 0-based row position. |
+| `ctx.row.id` | Stable row id (the row's `__id`). |
+| `ctx.row.values` | The row's submitted fields (Builder rows are unwrapped from `data`). |
+| `ctx.row.fieldName` | Parent Repeater/Builder field name. |
+| `ctx.row.blockType` | (Builder only) Matched block name. |
+
+Visibility predicates (`.visible() / .hidden() / .disabled()`) receive
+`ActionVisibilityContext` with `values` set to the row's submitted
+fields, plus the parent `record` and `user`.
+
+**v1 limitations:**
+
+- **Handler-style only.** `.href(…)` / `.method(…)` / modal-form
+  actions aren't supported per-row in v1. They render as no-op
+  buttons. Use a handler that returns `{ redirect }` for navigation.
+- **Top-level fields only.** Nested Repeater/Builder rows hit the
+  2-segment `_rowPath` cap. The action will render but dispatch
+  fails-quiet.
+- **Builder per-block actions** (`Block.extraItemActions(...)`) are
+  deferred. Use field-level `extraItemActions` and branch in your
+  handler on `ctx.row.blockType`.
+
 ## Limitations
 
 - **`itemHidden` doesn't re-evaluate on live updates.** Currently
   evaluated only at full form-render. Reactive hide/show is a future
   revision.
-- **No per-row authorization API yet** (`itemCanDelete` etc.). Action
-  visibility on row buttons is currently row-data-dependent through
-  `Action.visible(({ record }) => …)` on the table-side; an inner
-  Repeater row equivalent is tracked for a later cycle.
-- **`Builder` (heterogeneous-row Repeater)** is its own plan once
-  Repeater proves out the shape.
-- **Actions / Forms inside a Repeater row** aren't dispatched in v1
-  (no row context on the handler). Keep them at the form level.
+- **No per-row authorization API yet** (`itemCanDelete` etc.). Use
+  `extraItemActions` with `.visible()` for row-level branching;
+  built-in clone/delete still go through the field-level `cloneable()
+  / deletable()` flags.
+- **Forms inside a Repeater row** aren't dispatched in v1 (no row
+  context on the handler). Keep forms at the page level.
 
 ## See also
 

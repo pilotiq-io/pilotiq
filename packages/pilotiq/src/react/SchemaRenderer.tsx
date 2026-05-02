@@ -505,15 +505,21 @@ async function dispatchMethodAction(
  * failure). On success: drain notifications, SPA-navigate; on failure:
  * surface the error as a toast. No full page reload in any case.
  */
-async function dispatchHandlerAction(
+export async function dispatchHandlerAction(
   url:      string,
   ids:      string[],
   navigate: Navigate,
   notify:   Notify,
   values:   Record<string, string> = {},
+  formSnapshot?: FormData,
 ): Promise<void> {
   try {
-    const fd = new FormData()
+    // When `formSnapshot` is set (Repeater / Builder `extraItemActions`
+    // dispatch), the snapshot already carries the form's full state — we
+    // just append `ids` / `values` on top so the server sees both the
+    // form body (for coerceFormValues + row hydration) and the action's
+    // own meta keys.
+    const fd = formSnapshot ?? new FormData()
     for (const id of ids) fd.append('ids', id)
     for (const [k, v] of Object.entries(values)) fd.append(k, v)
     const res = await fetch(url, {
