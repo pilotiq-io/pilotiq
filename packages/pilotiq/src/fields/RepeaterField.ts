@@ -2,6 +2,11 @@ import { Element, type ElementMeta, type LayoutContext } from '../schema/Element
 import { Field, type FieldMeta } from './Field.js'
 import type { RenderContext } from '../schema/resolveSchema.js'
 import type { Action, ActionMeta } from '../actions/Action.js'
+import {
+  RowButton,
+  type RowButtonKind,
+  type RowButtonsMeta,
+} from './RowButton.js'
 
 /**
  * Function evaluated once per row at meta-build to derive a human-readable
@@ -129,6 +134,15 @@ export interface RepeaterFieldMeta extends FieldMeta {
   table?:           {
     columns: RepeaterTableColumn[]
   }
+  /**
+   * Per-slot chrome overrides for the seven built-in row buttons (add /
+   * clone / delete / moveUp / moveDown / reorder / collapse). Authors set
+   * these via `.addAction(RowButton.make()…)` etc.; the renderer merges
+   * each override on top of its hardcoded default (icon + tooltip + color
+   * + aria-label). Absent slots fall through to defaults — non-customized
+   * Repeaters pay zero serialization cost.
+   */
+  buttons?:         RowButtonsMeta
 }
 
 /**
@@ -166,6 +180,7 @@ export class RepeaterField extends Field {
   private _simple           = false
   private _grid?:            number
   private _tableColumns?:    RepeaterTableColumn[]
+  private _buttons:          { [K in RowButtonKind]?: RowButton } = {}
 
   private constructor(name: string) {
     super(name, 'repeater')
@@ -304,6 +319,37 @@ export class RepeaterField extends Field {
   }
 
   /**
+   * Customize the bottom Add button's chrome (label / icon / color /
+   * tooltip). Equivalent to `addActionLabel()` plus icon + color
+   * overrides — when both are set, this customizer wins (it ships under
+   * `meta.buttons.add` which the renderer reads after `addActionLabel`).
+   */
+  addAction(b: RowButton): this { this._buttons.add = b; return this }
+
+  /** Customize the per-row clone (`Duplicate row`) button. */
+  cloneAction(b: RowButton): this { this._buttons.clone = b; return this }
+
+  /** Customize the per-row trash (`Remove row`) button. */
+  deleteAction(b: RowButton): this { this._buttons.delete = b; return this }
+
+  /** Customize the per-row Up arrow. */
+  moveUpAction(b: RowButton): this { this._buttons.moveUp = b; return this }
+
+  /** Customize the per-row Down arrow. */
+  moveDownAction(b: RowButton): this { this._buttons.moveDown = b; return this }
+
+  /**
+   * Customize the drag-grip handle. `label` becomes the `aria-label`,
+   * `tooltip` becomes the `title` attribute, `icon` swaps the grip glyph,
+   * `color` re-tones the handle. The grip isn't a real `<button>` (it's a
+   * draggable `<span>`) so click semantics don't apply.
+   */
+  reorderAction(b: RowButton): this { this._buttons.reorder = b; return this }
+
+  /** Customize the per-row collapse chevron. */
+  collapseAction(b: RowButton): this { this._buttons.collapse = b; return this }
+
+  /**
    * Per-row action buttons rendered in each row's header alongside the
    * built-in clone/delete strip. Useful for "Mark featured", "Send test",
    * "Run preview", etc. — handler-style only in v1 (no `.href(…)` or
@@ -354,6 +400,8 @@ export class RepeaterField extends Field {
   getGrid(): number | undefined { return this._grid }
   getTableColumns(): RepeaterTableColumn[] | undefined { return this._tableColumns }
   isTable(): boolean { return this._tableColumns !== undefined }
+  /** The configured customizer for a given slot, or `undefined`. */
+  getButton(kind: RowButtonKind): RowButton | undefined { return this._buttons[kind] }
   /**
    * The single inner field of a `simple()` repeater. Returns `undefined`
    * outside simple mode (or when the inner schema hasn't been set yet).
@@ -399,6 +447,8 @@ export class RepeaterField extends Field {
     if (this._simple)                        meta.simple          = true
     if (this._grid !== undefined)            meta.grid            = this._grid
     if (this._tableColumns !== undefined)    meta.table           = { columns: this._tableColumns }
+    const buttons = serializeRowButtons(this._buttons)
+    if (buttons !== undefined)               meta.buttons         = buttons
     return meta
   }
 }
@@ -417,4 +467,28 @@ export const Repeater = RepeaterField
  */
 export function isRepeaterField(el: { getType(): string; fieldType?: string }): boolean {
   return el.getType() === 'field' && el['fieldType'] === 'repeater'
+}
+
+/**
+ * Walk a sparse `{ [kind]: RowButton }` map and serialize only the slots
+ * the user actually set. Returns `undefined` when nothing is configured so
+ * `meta.buttons` stays absent for non-customized fields. Each slot's inner
+ * meta is the result of `RowButton.toMeta()` — already JSON-safe and
+ * already drops unset keys.
+ *
+ * Shared between Repeater + Builder so the wire shape stays identical
+ * across both renderers.
+ */
+export function serializeRowButtons(
+  buttons: { [K in RowButtonKind]?: RowButton },
+): RowButtonsMeta | undefined {
+  const out: RowButtonsMeta = {}
+  let any = false
+  for (const k of Object.keys(buttons) as RowButtonKind[]) {
+    const b = buttons[k]
+    if (b === undefined) continue
+    out[k] = b.toMeta()
+    any = true
+  }
+  return any ? out : undefined
 }

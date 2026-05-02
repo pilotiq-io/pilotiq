@@ -67,7 +67,8 @@ The submitted body has shape:
 | `.table([{ label, alignment?, width?, required? }, …])` | Render rows as a compact HTML table — one `<tr>` per row, one `<td>` per inner field. Columns map 1:1 to `schema()` fields in declaration order. Inner-field labels render `sr-only`; clone / delete / `extraItemActions` land in a final actions cell. Pass `[]` to turn off. Mutually exclusive with `.simple()` and `.grid()`. |
 | `.itemLabel(row => string)` | Header text for the collapsed row; falls back to `Item N` |
 | `.itemHidden(rule)` | Per-row visibility — boolean or `(ctx) => bool \| Promise<bool>`. Hidden rows render with `display:none` so values still round-trip on submit |
-| `.addActionLabel(text)` | Label for the Add button (default `'Add'`) |
+| `.addActionLabel(text)` | Label for the Add button (default `'Add'`) — shorthand for `.addAction(RowButton.make().label(text))` |
+| `.addAction(b)` / `.cloneAction(b)` / `.deleteAction(b)` / `.moveUpAction(b)` / `.moveDownAction(b)` / `.reorderAction(b)` / `.collapseAction(b)` | Customize the chrome of the seven built-in row buttons (label / icon / color / tooltip). See [Row-button customizers](#row-button-customizers) below. |
 
 Inherited from `Field`: `.label() / .required() / .helperText() /
 .dehydrated() / .live() / .visible() / .hidden() / .disabled()`.
@@ -360,6 +361,52 @@ TextField.make('email')
 (there's nothing to compare against). Inside a Repeater, the check
 ignores nested-Repeater children — the inner array's `distinct()`
 runs against its own rows only.
+
+## Row-button customizers
+
+The seven built-in row chrome buttons can be re-skinned without owning
+the button markup. `RowButton.make()` is a tiny fluent builder — set
+any subset of `label / icon / color / tooltip` and pass it to the
+matching slot setter:
+
+```ts
+import { Repeater, RowButton } from '@pilotiq/pilotiq'
+
+Repeater.make('lineItems')
+  .schema([…])
+  .reorderable()
+  .cloneable()
+  // Every slot accepts a RowButton; absent slots keep their defaults.
+  .addAction(RowButton.make().label('Add line item').icon('plus-circle'))
+  .deleteAction(RowButton.make().tooltip('Remove this line').color('destructive'))
+  .cloneAction(RowButton.make().icon('files'))
+  .moveUpAction(RowButton.make().tooltip('Move earlier'))
+  .moveDownAction(RowButton.make().tooltip('Move later'))
+  .reorderAction(RowButton.make().tooltip('Hold and drag'))
+  .collapseAction(RowButton.make().icon('chevrons-up-down'))
+```
+
+| Slot | Default icon | What it controls |
+|---|---|---|
+| `addAction` | `+` | Bottom Add button — also reads the customizer label / icon / tooltip on Builder's picker shortcut. Color is intentionally ignored on Add to keep the outline-button visual. |
+| `cloneAction` | copy | Per-row Duplicate button. |
+| `deleteAction` | trash | Per-row Remove button (default color: destructive on hover). |
+| `moveUpAction` | arrow up | Keyboard-fallback Up arrow. |
+| `moveDownAction` | arrow down | Keyboard-fallback Down arrow. |
+| `reorderAction` | grip | Drag handle (a `<span>`, not a button — `label` becomes the `aria-label`, `tooltip` the `title`). |
+| `collapseAction` | chevron | Collapse / expand chevron. When you set a custom icon it's used in both states (matches Filament's flat surface). |
+
+**Icons** are string-only — resolved through the `registerIcons({ … })`
+runtime registry, the same way `Block.icon()` and `Section.icon()`
+work. Unknown keys fall back to the slot's default Lucide glyph.
+
+**Color tokens:** `'foreground' | 'destructive' | 'primary' | 'success' |
+'warning' | 'info' | 'muted'`. They map to `text-…/hover:text-…`
+Tailwind class pairs, mirroring `Action.color()`.
+
+**`addActionLabel(text)` is a shorthand** for
+`addAction(RowButton.make().label(text))` — both setters can coexist;
+the customizer wins when both are set.
 
 ## Compact table layout — `table([{ label, … }, …])`
 

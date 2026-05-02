@@ -114,7 +114,8 @@ the only place a `Block` is mounted.
 | `.cloneable()` | Per-row duplicate button |
 | `.addable(false)` | Hide the **Add block** button (UX gate) |
 | `.deletable(false)` | Hide per-row delete buttons (UX gate) |
-| `.addActionLabel(text)` | Custom add button label (default `Add block`) |
+| `.addActionLabel(text)` | Custom add button label (default `Add block`) — shorthand for `.addAction(RowButton.make().label(text))` |
+| `.addAction(b)` / `.cloneAction(b)` / `.deleteAction(b)` / `.moveUpAction(b)` / `.moveDownAction(b)` / `.reorderAction(b)` / `.collapseAction(b)` | Customize the chrome of the seven built-in row buttons (label / icon / color / tooltip). Same surface as Repeater — see [Row-button customizers](./repeater.md#row-button-customizers). |
 | `.addActionAlignment('start' \| 'center' \| 'end')` | Position of the add button |
 | `.blockPickerColumns(n)` | Grid layout of the picker dropdown |
 | `.blockNumbers()` | `1.` `2.` `3.` numbering on row headers |

@@ -3,6 +3,12 @@ import { Block, type BlockMeta } from '../schema/Block.js'
 import { Field, type FieldMeta } from './Field.js'
 import type { RenderContext } from '../schema/resolveSchema.js'
 import type { Action, ActionMeta } from '../actions/Action.js'
+import {
+  RowButton,
+  type RowButtonKind,
+  type RowButtonsMeta,
+} from './RowButton.js'
+import { serializeRowButtons } from './RepeaterField.js'
 
 /**
  * Function evaluated once per row at meta-build to derive a human-readable
@@ -101,6 +107,12 @@ export interface BuilderFieldMeta extends FieldMeta {
    * See `RepeaterFieldMeta.grid` for the shared semantics.
    */
   grid?:               number
+  /**
+   * Per-slot chrome overrides for the seven built-in row buttons. Same
+   * shape as `RepeaterFieldMeta.buttons`; see `RowButton` for the
+   * customizer. Authors set these via `.addAction(RowButton.make()…)` etc.
+   */
+  buttons?:            RowButtonsMeta
 }
 
 /**
@@ -138,6 +150,7 @@ export class BuilderField extends Field {
   private _itemHidden?:           BuilderItemHiddenRule
   private _extraItemActions:      Action[] = []
   private _grid?:                 number
+  private _buttons:               { [K in RowButtonKind]?: RowButton } = {}
 
   private constructor(name: string) {
     super(name, 'builder')
@@ -268,6 +281,36 @@ export class BuilderField extends Field {
     return this
   }
 
+  /**
+   * Customize the bottom Add button's chrome. Equivalent to
+   * `addActionLabel()` plus icon / color / tooltip overrides; the
+   * customizer wins when both are set (it ships under `meta.buttons.add`
+   * which the renderer reads after `addActionLabel`).
+   */
+  addAction(b: RowButton): this { this._buttons.add = b; return this }
+
+  /** Customize the per-row clone button. */
+  cloneAction(b: RowButton): this { this._buttons.clone = b; return this }
+
+  /** Customize the per-row trash button. */
+  deleteAction(b: RowButton): this { this._buttons.delete = b; return this }
+
+  /** Customize the per-row Up arrow. */
+  moveUpAction(b: RowButton): this { this._buttons.moveUp = b; return this }
+
+  /** Customize the per-row Down arrow. */
+  moveDownAction(b: RowButton): this { this._buttons.moveDown = b; return this }
+
+  /**
+   * Customize the drag-grip handle (label → aria-label, tooltip → title,
+   * icon swaps the glyph, color re-tones the handle). The grip isn't a
+   * real `<button>` so click semantics don't apply.
+   */
+  reorderAction(b: RowButton): this { this._buttons.reorder = b; return this }
+
+  /** Customize the per-row collapse chevron. */
+  collapseAction(b: RowButton): this { this._buttons.collapse = b; return this }
+
   // ─── Read-only access ────────────────────────────────
 
   override getChildren(): undefined {
@@ -300,6 +343,8 @@ export class BuilderField extends Field {
   getItemHidden():                BuilderItemHiddenRule | undefined { return this._itemHidden }
   getExtraItemActions():          Action[]                          { return this._extraItemActions }
   getGrid():                      number | undefined                { return this._grid }
+  /** The configured customizer for a given slot, or `undefined`. */
+  getButton(kind: RowButtonKind): RowButton | undefined             { return this._buttons[kind] }
 
   // ─── Meta ────────────────────────────────────────────
 
@@ -336,6 +381,8 @@ export class BuilderField extends Field {
     if (this._addActionLabel    !== undefined) meta.addActionLabel    = this._addActionLabel
     if (this._addActionAlignment !== 'start')  meta.addActionAlignment = this._addActionAlignment
     if (this._grid              !== undefined) meta.grid              = this._grid
+    const buttons = serializeRowButtons(this._buttons)
+    if (buttons !== undefined)                 meta.buttons           = buttons
     return meta
   }
 }

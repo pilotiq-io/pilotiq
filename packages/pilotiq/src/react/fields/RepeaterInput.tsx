@@ -1,14 +1,5 @@
 import React, { useContext, useMemo, useState } from 'react'
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  CopyIcon,
-  GripVerticalIcon,
-  PlusIcon,
-  Trash2Icon,
-} from 'lucide-react'
+import { PlusIcon } from 'lucide-react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { Button } from '../ui/button.js'
 import { SchemaRenderer, dispatchHandlerAction } from '../SchemaRenderer.js'
@@ -16,6 +7,17 @@ import { FormIdContext, useFormState } from '../FormStateContext.js'
 import { findFieldMeta } from '../formStateHelpers.js'
 import { useNavigate } from '../navigate.js'
 import { useToast } from '../Toaster.js'
+import type { RowButtonsMeta } from '../../fields/RowButton.js'
+import {
+  RowChromeIconButton,
+  ReorderGrip,
+  CollapseChevron,
+  resolveRowChrome,
+  DEFAULT_MOVE_UP,
+  DEFAULT_MOVE_DOWN,
+  DEFAULT_CLONE,
+  DEFAULT_DELETE,
+} from './rowChromeButton.js'
 
 /**
  * Pure reorder helper — used by both the HTML5 DnD path and the
@@ -91,7 +93,11 @@ export function RepeaterInput({
   const reorderable      = Boolean(meta.reorderable)
   const cloneable        = Boolean(meta.cloneable)
   const simple           = Boolean(meta.simple)
-  const addLabel         = typeof meta.addActionLabel === 'string' ? meta.addActionLabel : 'Add'
+  const buttons          = meta.buttons
+  // Customizer wins over the legacy `addActionLabel`. Default 'Add' is the
+  // final fallback; documented in `RepeaterField.addActionLabel`.
+  const addLabel         = buttons?.add?.label
+    ?? (typeof meta.addActionLabel === 'string' ? meta.addActionLabel : 'Add')
   const columns          = typeof meta.columns === 'number' && meta.columns > 1 ? meta.columns : 1
   // Row-grid mode: `grid >= 2` lays rows in an n-column grid. Distinct
   // from `columns` which grids the inner schema *inside* a row. We
@@ -347,6 +353,7 @@ export function RepeaterInput({
         disabled={disabled}
         columns={tableColumns}
         addLabel={addLabel}
+        buttons={buttons}
         atMin={atMin}
         atMax={atMax}
         reorderable={reorderable}
@@ -414,6 +421,7 @@ export function RepeaterInput({
             atMin={atMin}
             atMax={atMax}
             columns={columns}
+            buttons={buttons}
             isDragging={dragId === row.id}
             rowPath={`${name}.${i}`}
             onMoveUp={() => moveRow(row.id, -1)}
@@ -431,24 +439,60 @@ export function RepeaterInput({
       {dropAt === rows.length && rowGrid === 1 && <DropIndicator />}
       </div>
 
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={addRow}
+      <AddRowButton
+        label={addLabel}
+        buttons={buttons}
         disabled={disabled || atMax}
-        className="self-start"
-      >
-        <PlusIcon className="size-4" />
-        {addLabel}
-      </Button>
+        onClick={addRow}
+      />
     </div>
+  )
+}
+
+/**
+ * Bottom Add button — outline shadcn `<Button>`. Reads the customizer
+ * (`addAction(RowButton.make()…)`) for icon + tooltip overrides; label
+ * is already pre-resolved upstream so the legacy `addActionLabel()` setter
+ * keeps working. Color override is intentionally ignored on the Add
+ * button to preserve the outline-button visual identity (icon-color
+ * tweaks would clash with the shadcn variant); use `Action.color()` on
+ * a custom header action if you need a different chrome there.
+ */
+function AddRowButton({
+  label,
+  buttons,
+  disabled,
+  onClick,
+}: {
+  label:    string
+  buttons:  RowButtonsMeta | undefined
+  disabled: boolean
+  onClick:  () => void
+}): React.ReactElement {
+  const { Icon, tooltip } = resolveRowChrome(
+    { Icon: PlusIcon, label, tooltip: '', colorClass: '' },
+    buttons?.add,
+  )
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={onClick}
+      disabled={disabled}
+      title={tooltip || undefined}
+      className="self-start"
+    >
+      <Icon className="size-4" />
+      {label}
+    </Button>
   )
 }
 
 function RepeaterRow({
   row, index, isFirstVisible, isLastVisible, name, disabled,
   collapsible, isCollapsed, reorderable, cloneable, simple, atMin, atMax, columns,
+  buttons,
   isDragging,
   rowPath,
   onMoveUp, onMoveDown, onClone, onRemove, onToggleCollapse,
@@ -468,6 +512,7 @@ function RepeaterRow({
   atMin:             boolean
   atMax:             boolean
   columns:           number
+  buttons:           RowButtonsMeta | undefined
   isDragging:        boolean
   rowPath:           string
   onMoveUp:          () => void
@@ -529,49 +574,32 @@ function RepeaterRow({
         {...dragProps}
       >
         <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
-        {reorderable && (
-          <span
-            aria-hidden="true"
-            className={`text-muted-foreground ${disabled ? 'opacity-30' : 'cursor-grab active:cursor-grabbing'}`}
-            title="Drag to reorder"
-          >
-            <GripVerticalIcon className="size-4" />
-          </span>
-        )}
+        {reorderable && <ReorderGrip disabled={disabled} buttons={buttons} />}
         <div className="flex-1 [&_label]:sr-only">
           <SchemaRenderer elements={namespaced} />
         </div>
         {reorderable && (
           <>
-            <button
-              type="button"
-              onClick={onMoveUp}
+            <RowChromeIconButton
+              defaults={DEFAULT_MOVE_UP}
+              override={buttons?.moveUp}
               disabled={disabled || isFirstVisible}
-              aria-label="Move up"
-              className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-            >
-              <ArrowUpIcon className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={onMoveDown}
+              onClick={onMoveUp}
+            />
+            <RowChromeIconButton
+              defaults={DEFAULT_MOVE_DOWN}
+              override={buttons?.moveDown}
               disabled={disabled || isLastVisible}
-              aria-label="Move down"
-              className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-            >
-              <ArrowDownIcon className="size-4" />
-            </button>
+              onClick={onMoveDown}
+            />
           </>
         )}
-        <button
-          type="button"
-          onClick={onRemove}
+        <RowChromeIconButton
+          defaults={DEFAULT_DELETE}
+          override={buttons?.delete}
           disabled={disabled || atMin}
-          aria-label="Remove row"
-          className="text-muted-foreground hover:text-destructive disabled:opacity-30"
-        >
-          <Trash2Icon className="size-4" />
-        </button>
+          onClick={onRemove}
+        />
       </div>
     )
   }
@@ -583,51 +611,31 @@ function RepeaterRow({
       {...dragProps}
     >
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        {reorderable && (
-          <span
-            aria-hidden="true"
-            className={`text-muted-foreground ${disabled ? 'opacity-30' : 'cursor-grab active:cursor-grabbing'}`}
-            title="Drag to reorder"
-          >
-            <GripVerticalIcon className="size-4" />
-          </span>
-        )}
+        {reorderable && <ReorderGrip disabled={disabled} buttons={buttons} />}
         {collapsible && (
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-            aria-label={isCollapsed ? 'Expand' : 'Collapse'}
-            aria-expanded={!isCollapsed}
+          <CollapseChevron
+            isCollapsed={isCollapsed}
             disabled={disabled}
-          >
-            {isCollapsed
-              ? <ChevronRightIcon className="size-4" />
-              : <ChevronDownIcon  className="size-4" />}
-          </button>
+            buttons={buttons}
+            onToggle={onToggleCollapse}
+          />
         )}
         <span className="flex-1 truncate text-sm font-medium">{headerLabel}</span>
         <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
         {reorderable && (
           <>
-            <button
-              type="button"
-              onClick={onMoveUp}
+            <RowChromeIconButton
+              defaults={DEFAULT_MOVE_UP}
+              override={buttons?.moveUp}
               disabled={disabled || isFirstVisible}
-              aria-label="Move up"
-              className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-            >
-              <ArrowUpIcon className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={onMoveDown}
+              onClick={onMoveUp}
+            />
+            <RowChromeIconButton
+              defaults={DEFAULT_MOVE_DOWN}
+              override={buttons?.moveDown}
               disabled={disabled || isLastVisible}
-              aria-label="Move down"
-              className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-            >
-              <ArrowDownIcon className="size-4" />
-            </button>
+              onClick={onMoveDown}
+            />
           </>
         )}
         {row.extraActions && row.extraActions.length > 0 && (
@@ -638,25 +646,19 @@ function RepeaterRow({
           />
         )}
         {cloneable && (
-          <button
-            type="button"
-            onClick={onClone}
+          <RowChromeIconButton
+            defaults={DEFAULT_CLONE}
+            override={buttons?.clone}
             disabled={disabled || atMax}
-            aria-label="Duplicate row"
-            className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-          >
-            <CopyIcon className="size-4" />
-          </button>
+            onClick={onClone}
+          />
         )}
-        <button
-          type="button"
-          onClick={onRemove}
+        <RowChromeIconButton
+          defaults={DEFAULT_DELETE}
+          override={buttons?.delete}
           disabled={disabled || atMin}
-          aria-label="Remove row"
-          className="text-muted-foreground hover:text-destructive disabled:opacity-30"
-        >
-          <Trash2Icon className="size-4" />
-        </button>
+          onClick={onRemove}
+        />
       </div>
 
       {/* Body — kept mounted (display:none on collapse) so uncontrolled
@@ -779,7 +781,7 @@ function DropIndicator(): React.ReactElement {
  * stays stable across rows even when individual buttons disable.
  */
 function RepeaterTableLayout({
-  rows, name, formId: _formId, disabled, columns, addLabel, atMin, atMax,
+  rows, name, formId: _formId, disabled, columns, addLabel, buttons, atMin, atMax,
   reorderable, cloneable,
   firstVisibleIdx, lastVisibleIdx, hasVisibleRow,
   dragId,
@@ -793,6 +795,7 @@ function RepeaterTableLayout({
   disabled:          boolean
   columns:           TableColumnShape[]
   addLabel:          string
+  buttons:           RowButtonsMeta | undefined
   atMin:             boolean
   atMax:             boolean
   reorderable:       boolean
@@ -863,6 +866,7 @@ function RepeaterTableLayout({
                   columns={columns}
                   reorderable={reorderable}
                   cloneable={cloneable}
+                  buttons={buttons}
                   isFirstVisible={i === firstVisibleIdx}
                   isLastVisible={i === lastVisibleIdx}
                   atMin={atMin}
@@ -884,17 +888,12 @@ function RepeaterTableLayout({
         </div>
       )}
 
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={onAdd}
+      <AddRowButton
+        label={addLabel}
+        buttons={buttons}
         disabled={disabled || atMax}
-        className="self-start"
-      >
-        <PlusIcon className="size-4" />
-        {addLabel}
-      </Button>
+        onClick={onAdd}
+      />
     </div>
   )
 }
@@ -906,7 +905,7 @@ function alignClass(a: 'left' | 'center' | 'right' | undefined): string {
 }
 
 function RepeaterTableRow({
-  row, index, name, disabled, columns, reorderable, cloneable,
+  row, index, name, disabled, columns, reorderable, cloneable, buttons,
   isFirstVisible, isLastVisible, atMin, atMax, isDragging, rowPath,
   onMoveUp, onMoveDown, onClone, onRemove,
   onDragStart, onDragOver, onDrop, onDragEnd,
@@ -918,6 +917,7 @@ function RepeaterTableRow({
   columns:         TableColumnShape[]
   reorderable:     boolean
   cloneable:       boolean
+  buttons:         RowButtonsMeta | undefined
   isFirstVisible:  boolean
   isLastVisible:   boolean
   atMin:           boolean
@@ -989,31 +989,19 @@ function RepeaterTableRow({
         <div className="inline-flex items-center gap-1">
           {reorderable && (
             <>
-              <span
-                aria-hidden="true"
-                className={`text-muted-foreground ${disabled ? 'opacity-30' : 'cursor-grab active:cursor-grabbing'}`}
-                title="Drag to reorder"
-              >
-                <GripVerticalIcon className="size-4" />
-              </span>
-              <button
-                type="button"
-                onClick={onMoveUp}
+              <ReorderGrip disabled={disabled} buttons={buttons} />
+              <RowChromeIconButton
+                defaults={DEFAULT_MOVE_UP}
+                override={buttons?.moveUp}
                 disabled={disabled || isFirstVisible}
-                aria-label="Move up"
-                className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-              >
-                <ArrowUpIcon className="size-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onMoveDown}
+                onClick={onMoveUp}
+              />
+              <RowChromeIconButton
+                defaults={DEFAULT_MOVE_DOWN}
+                override={buttons?.moveDown}
                 disabled={disabled || isLastVisible}
-                aria-label="Move down"
-                className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-              >
-                <ArrowDownIcon className="size-4" />
-              </button>
+                onClick={onMoveDown}
+              />
             </>
           )}
           {row.extraActions && row.extraActions.length > 0 && (
@@ -1024,25 +1012,19 @@ function RepeaterTableRow({
             />
           )}
           {cloneable && (
-            <button
-              type="button"
-              onClick={onClone}
+            <RowChromeIconButton
+              defaults={DEFAULT_CLONE}
+              override={buttons?.clone}
               disabled={disabled || atMax}
-              aria-label="Duplicate row"
-              className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-            >
-              <CopyIcon className="size-4" />
-            </button>
+              onClick={onClone}
+            />
           )}
-          <button
-            type="button"
-            onClick={onRemove}
+          <RowChromeIconButton
+            defaults={DEFAULT_DELETE}
+            override={buttons?.delete}
             disabled={disabled || atMin}
-            aria-label="Remove row"
-            className="text-muted-foreground hover:text-destructive disabled:opacity-30"
-          >
-            <Trash2Icon className="size-4" />
-          </button>
+            onClick={onRemove}
+          />
         </div>
       </td>
     </tr>
@@ -1065,6 +1047,7 @@ interface RepeaterMetaShape {
   simple?:           boolean
   grid?:             number
   table?:            { columns: TableColumnShape[] }
+  buttons?:          RowButtonsMeta
 }
 
 interface TableColumnShape {
@@ -1192,3 +1175,4 @@ function writeAccordionToStorage(formId: string, name: string, openId: string | 
     window.localStorage.setItem(accordionStorageKey(formId, name), openId ?? '')
   } catch { /* quota exceeded — fall back to in-memory only */ }
 }
+

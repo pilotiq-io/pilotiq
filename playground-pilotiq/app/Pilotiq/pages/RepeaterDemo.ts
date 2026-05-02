@@ -1,6 +1,7 @@
 import {
   Page, Heading, Section,
   Form, TextField, NumberField, ToggleField, SelectField, SliderField, Repeater,
+  RowButton,
   Action, Notification,
 } from '@pilotiq/pilotiq'
 
@@ -327,6 +328,36 @@ export class RepeaterDemo extends Page {
                 .schema([
                   TextField.make('question').label('Question').required(),
                   TextField.make('answer').label('Answer'),
+                ]),
+            ]),
+
+          Section.make('Custom row chrome — `RowButton` overrides')
+            .description('`addAction / cloneAction / deleteAction / moveUpAction / moveDownAction / reorderAction / collapseAction` swap the icon, label, color, and tooltip on the seven built-in row buttons. Defaults preserved when not set.')
+            .schema([
+              Repeater.make('annotations')
+                .label('Annotations')
+                .defaultItems(2)
+                .reorderable()
+                .cloneable()
+                .collapsible()
+                .itemLabel((row) => String(row['note'] ?? 'New annotation'))
+                .addAction(RowButton.make().label('Add annotation').icon('sticker'))
+                .deleteAction(RowButton.make().tooltip('Discard this note').color('destructive'))
+                .cloneAction(RowButton.make().tooltip('Copy to a new row'))
+                .moveUpAction(RowButton.make().tooltip('Move earlier'))
+                .moveDownAction(RowButton.make().tooltip('Move later'))
+                .reorderAction(RowButton.make().tooltip('Hold and drag'))
+                .collapseAction(RowButton.make().tooltip('Toggle body'))
+                .schema([
+                  TextField.make('note').label('Note').required(),
+                  SelectField.make('severity')
+                    .label('Severity')
+                    .options([
+                      { value: 'low',    label: 'Low'    },
+                      { value: 'medium', label: 'Medium' },
+                      { value: 'high',   label: 'High'   },
+                    ])
+                    .default('low'),
                 ]),
             ]),
 

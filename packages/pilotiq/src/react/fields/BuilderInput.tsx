@@ -1,14 +1,5 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  CopyIcon,
-  GripVerticalIcon,
-  PlusIcon,
-  Trash2Icon,
-} from 'lucide-react'
+import { ChevronDownIcon, PlusIcon } from 'lucide-react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { Button } from '../ui/button.js'
 import { SchemaRenderer } from '../SchemaRenderer.js'
@@ -16,6 +7,17 @@ import { FormIdContext, useFormState } from '../FormStateContext.js'
 import { findFieldMeta } from '../formStateHelpers.js'
 import { useIconFor } from '../icon-context.js'
 import { reorderRows, ExtraActionStrip } from './RepeaterInput.js'
+import type { RowButtonsMeta } from '../../fields/RowButton.js'
+import {
+  RowChromeIconButton,
+  ReorderGrip,
+  CollapseChevron,
+  resolveRowChrome,
+  DEFAULT_MOVE_UP,
+  DEFAULT_MOVE_DOWN,
+  DEFAULT_CLONE,
+  DEFAULT_DELETE,
+} from './rowChromeButton.js'
 
 interface BlockShape {
   name:      string
@@ -58,6 +60,7 @@ interface BuilderMetaShape {
   addActionAlignment?:     'start' | 'center' | 'end'
   defaultBlock?:           string
   grid?:                   number
+  buttons?:                RowButtonsMeta
 }
 
 interface RowState {
@@ -116,7 +119,11 @@ export function BuilderInput({
   const pickerColumns    = typeof meta.blockPickerColumns === 'number' && meta.blockPickerColumns > 1
     ? meta.blockPickerColumns
     : 1
-  const addLabel         = typeof meta.addActionLabel === 'string' ? meta.addActionLabel : 'Add block'
+  const buttons          = meta.buttons
+  // Customizer wins over the legacy `addActionLabel`. Default 'Add block'
+  // is the final fallback (mirrors `BuilderField.addActionLabel`).
+  const addLabel         = buttons?.add?.label
+    ?? (typeof meta.addActionLabel === 'string' ? meta.addActionLabel : 'Add block')
   const addAlignment     = meta.addActionAlignment ?? 'start'
   // Row-grid mode mirrors RepeaterField.grid() — n-column grid for the
   // ROWS themselves (distinct from per-block `Block.columns(n)` which
@@ -395,6 +402,7 @@ export function BuilderInput({
             atMax={atMax}
             showNumbers={showNumbers}
             showIcons={showIcons}
+            buttons={buttons}
             isDragging={dragId === row.id}
             rowPath={`${name}.${i}`}
             onMoveUp={() => moveRow(row.id, -1)}
@@ -419,6 +427,7 @@ export function BuilderInput({
           atMax={atMax}
           disabled={disabled}
           label={addLabel}
+          buttons={buttons}
           alignClass={addAlignClass}
           columns={pickerColumns}
           onPick={addRowOfType}
@@ -431,17 +440,26 @@ export function BuilderInput({
 // ─── Block picker dropdown ──────────────────────────────────
 
 function BlockPicker({
-  blocks, typeCounts, atMax, disabled, label, alignClass, columns, onPick,
+  blocks, typeCounts, atMax, disabled, label, buttons, alignClass, columns, onPick,
 }: {
   blocks:     BlockShape[]
   typeCounts: Map<string, number>
   atMax:      boolean
   disabled:   boolean
   label:      string
+  buttons:    RowButtonsMeta | undefined
   alignClass: string
   columns:    number
   onPick:     (blockName: string) => void
 }): React.ReactElement {
+  // Resolve customizer overrides (icon + tooltip) for the bottom Add
+  // button. Color is intentionally ignored to preserve the outline-button
+  // visual identity (use a header `Action.color()` if you need a tinted
+  // chrome elsewhere). Label was already pre-resolved upstream.
+  const { Icon: AddIcon, tooltip: addTooltip } = resolveRowChrome(
+    { Icon: PlusIcon, label, tooltip: '', colorClass: '' },
+    buttons?.add,
+  )
   const [open, setOpen] = useState(false)
   const containerRef    = useRef<HTMLDivElement>(null)
 
@@ -476,9 +494,10 @@ function BlockPicker({
         size="sm"
         onClick={() => onPick(only.name)}
         disabled={disabled || atMax || onlyAtCap}
+        title={addTooltip || undefined}
         className={alignClass}
       >
-        <PlusIcon className="size-4" />
+        <AddIcon className="size-4" />
         {label}
       </Button>
     )
@@ -492,10 +511,11 @@ function BlockPicker({
         size="sm"
         onClick={() => setOpen(o => !o)}
         disabled={disabled || atMax}
+        title={addTooltip || undefined}
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <PlusIcon className="size-4" />
+        <AddIcon className="size-4" />
         {label}
         <ChevronDownIcon className="size-3 opacity-50" />
       </Button>
@@ -655,7 +675,7 @@ function BetweenInserter({
 function BuilderRow({
   row, block, index, isFirstVisible, isLastVisible, name, disabled,
   collapsible, isCollapsed, reorderable, buttonsOnly, cloneable, deletable,
-  atMin, atMax, showNumbers, showIcons, isDragging,
+  atMin, atMax, showNumbers, showIcons, buttons, isDragging,
   rowPath,
   onMoveUp, onMoveDown, onClone, onRemove, onToggleCollapse,
   onDragStart, onDragOver, onDrop, onDragEnd,
@@ -677,6 +697,7 @@ function BuilderRow({
   atMax:             boolean
   showNumbers:       boolean
   showIcons:         boolean
+  buttons:           RowButtonsMeta | undefined
   isDragging:        boolean
   rowPath:           string
   onMoveUp:          () => void
@@ -749,27 +770,15 @@ function BuilderRow({
     >
       <div className="flex items-center gap-2 border-b px-3 py-2">
         {reorderable && !buttonsOnly && (
-          <span
-            aria-hidden="true"
-            className={`text-muted-foreground ${disabled ? 'opacity-30' : 'cursor-grab active:cursor-grabbing'}`}
-            title="Drag to reorder"
-          >
-            <GripVerticalIcon className="size-4" />
-          </span>
+          <ReorderGrip disabled={disabled} buttons={buttons} />
         )}
         {collapsible && (
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-            aria-label={isCollapsed ? 'Expand' : 'Collapse'}
-            aria-expanded={!isCollapsed}
+          <CollapseChevron
+            isCollapsed={isCollapsed}
             disabled={disabled}
-          >
-            {isCollapsed
-              ? <ChevronRightIcon className="size-4" />
-              : <ChevronDownIcon  className="size-4" />}
-          </button>
+            buttons={buttons}
+            onToggle={onToggleCollapse}
+          />
         )}
         {RowIcon && <RowIcon className="size-4 shrink-0 text-muted-foreground" />}
         <span className="flex-1 truncate text-sm font-medium">{headerLabel}</span>
@@ -777,24 +786,18 @@ function BuilderRow({
         <input type="hidden" name={`${name}.${index}.type`} value={row.type} readOnly />
         {reorderable && (
           <>
-            <button
-              type="button"
-              onClick={onMoveUp}
+            <RowChromeIconButton
+              defaults={DEFAULT_MOVE_UP}
+              override={buttons?.moveUp}
               disabled={disabled || isFirstVisible}
-              aria-label="Move up"
-              className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-            >
-              <ArrowUpIcon className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={onMoveDown}
+              onClick={onMoveUp}
+            />
+            <RowChromeIconButton
+              defaults={DEFAULT_MOVE_DOWN}
+              override={buttons?.moveDown}
               disabled={disabled || isLastVisible}
-              aria-label="Move down"
-              className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-            >
-              <ArrowDownIcon className="size-4" />
-            </button>
+              onClick={onMoveDown}
+            />
           </>
         )}
         {row.extraActions && row.extraActions.length > 0 && (
@@ -805,26 +808,20 @@ function BuilderRow({
           />
         )}
         {cloneable && (
-          <button
-            type="button"
-            onClick={onClone}
+          <RowChromeIconButton
+            defaults={DEFAULT_CLONE}
+            override={buttons?.clone}
             disabled={disabled || atMax}
-            aria-label="Duplicate row"
-            className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-          >
-            <CopyIcon className="size-4" />
-          </button>
+            onClick={onClone}
+          />
         )}
         {deletable && (
-          <button
-            type="button"
-            onClick={onRemove}
+          <RowChromeIconButton
+            defaults={DEFAULT_DELETE}
+            override={buttons?.delete}
             disabled={disabled || atMin}
-            aria-label="Remove row"
-            className="text-muted-foreground hover:text-destructive disabled:opacity-30"
-          >
-            <Trash2Icon className="size-4" />
-          </button>
+            onClick={onRemove}
+          />
         )}
       </div>
 

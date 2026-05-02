@@ -265,7 +265,16 @@ export {
   type RepeaterFieldMeta,
   type RepeaterRowMeta,
   type RepeaterItemLabel,
+  type RepeaterTableColumn,
+  type RepeaterItemHiddenRule,
 } from './fields/RepeaterField.js'
+export {
+  RowButton,
+  type RowButtonMeta,
+  type RowButtonsMeta,
+  type RowButtonKind,
+  type RowButtonColor,
+} from './fields/RowButton.js'
 export {
   BuilderField,
   Builder,
