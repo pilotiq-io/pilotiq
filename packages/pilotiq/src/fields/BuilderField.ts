@@ -79,6 +79,15 @@ export interface BuilderFieldMeta extends FieldMeta {
   cloneable?:          boolean
   addable?:            boolean
   deletable?:          boolean
+  /**
+   * Set when `Builder.addBetween()` is configured. The renderer mounts a
+   * thin "+" insertion zone above each row (and at the very top) — clicking
+   * it opens a compact picker that inserts the picked block at that
+   * index. The bottom `Add block` button stays — `addBetween` is additive,
+   * not a replacement. Respects `addable === false` and the field-level
+   * `maxItems` cap; per-block `Block.maxItems` already filters the picker.
+   */
+  addBetween?:         boolean
   addActionLabel?:     string
   addActionAlignment?: BuilderAddActionAlignment
   blockPickerColumns?: number
@@ -118,6 +127,7 @@ export class BuilderField extends Field {
   private _cloneable              = false
   private _addable                = true
   private _deletable              = true
+  private _addBetween             = false
   private _itemNumbers            = false
   private _blockNumbers           = false
   private _blockIcons             = true
@@ -198,6 +208,16 @@ export class BuilderField extends Field {
    */
   deletable(value: boolean = true): this { this._deletable = value; return this }
 
+  /**
+   * Mount inline `+ Insert` zones above each row (and at the very top)
+   * so the user can insert a new block between existing rows without
+   * scrolling to the field's bottom `Add block` button. Mirrors
+   * Filament's `addBetweenAction()` affordance. Additive — the bottom
+   * `Add block` button stays. Respects `addable === false` and
+   * `maxItems`; per-block `Block.maxItems` already filters the picker.
+   */
+  addBetween(value: boolean = true): this { this._addBetween = value; return this }
+
   /** Position of the `Add block` button. */
   addActionAlignment(a: BuilderAddActionAlignment): this {
     this._addActionAlignment = a
@@ -270,6 +290,7 @@ export class BuilderField extends Field {
   isCloneable():                  boolean            { return this._cloneable      }
   isAddable():                    boolean            { return this._addable        }
   isDeletable():                  boolean            { return this._deletable      }
+  isAddBetween():                 boolean            { return this._addBetween     }
   showsBlockNumbers():            boolean            { return this._blockNumbers || this._itemNumbers }
   showsBlockIcons():              boolean            { return this._blockIcons     }
   getBlockPickerColumns():        number | undefined { return this._blockPickerColumns }
@@ -307,6 +328,7 @@ export class BuilderField extends Field {
     if (this._cloneable)                       meta.cloneable         = true
     if (this._addable === false)               meta.addable           = false
     if (this._deletable === false)             meta.deletable         = false
+    if (this._addBetween)                      meta.addBetween        = true
     if (this._blockNumbers)                    meta.blockNumbers      = true
     if (this._blockIcons === false)            meta.blockIcons        = false
     if (this._itemNumbers)                     meta.itemNumbers       = true

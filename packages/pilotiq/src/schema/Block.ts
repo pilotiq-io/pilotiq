@@ -1,4 +1,5 @@
 import type { Element, ElementMeta } from './Element.js'
+import type { LayoutContext, LayoutVisibilityRule } from './Element.js'
 
 /**
  * Wire-format metadata for a single block type — what `BuilderField`
@@ -47,11 +48,12 @@ export interface BlockMeta {
 export class Block {
   readonly name: string
 
-  private _label?:    string
-  private _icon?:     string
-  private _columns?:  number
-  private _maxItems?: number
-  private _schema:    Element[] = []
+  private _label?:        string
+  private _icon?:         string
+  private _columns?:      number
+  private _maxItems?:     number
+  private _schema:        Element[] = []
+  private _visibleRule?:  LayoutVisibilityRule
 
   private constructor(name: string) {
     this.name = name
@@ -87,6 +89,52 @@ export class Block {
    * "at most three callouts".
    */
   maxItems(n: number): this { this._maxItems = n; return this }
+
+  /**
+   * Conditionally hide this block from the Builder's picker dropdown.
+   * Rule shape mirrors `Element.visible()`: a literal `boolean` or a
+   * callback receiving a `LayoutContext` (`{ record, values, user, $get,
+   * $set }`). Async callbacks are awaited.
+   *
+   * Hidden blocks disappear from the picker only — existing rows of a
+   * now-hidden block keep rendering with their full schema, so toggling
+   * visibility on a feature flag never silently destroys content.
+   *
+   * Throwing → fail closed (block stays hidden), parallel to
+   * `Element.evaluateVisibility`'s posture for layout rules.
+   */
+  visible(rule: LayoutVisibilityRule): this {
+    this._visibleRule = rule
+    return this
+  }
+
+  /** Inverse of `visible()`. `hidden(true)` is `visible(false)`. */
+  hidden(rule: LayoutVisibilityRule): this {
+    if (typeof rule === 'boolean') {
+      this._visibleRule = !rule
+    } else {
+      this._visibleRule = async (ctx) => !(await rule(ctx))
+    }
+    return this
+  }
+
+  hasVisibilityRule(): boolean { return this._visibleRule !== undefined }
+
+  /**
+   * Resolve the visibility rule against a context. Returns `true` when
+   * no rule is set; throwing rules return `false` and log a warning.
+   */
+  async evaluateVisibility(ctx: LayoutContext = {}): Promise<boolean> {
+    const rule = this._visibleRule
+    if (rule === undefined) return true
+    if (typeof rule === 'boolean') return rule
+    try {
+      return Boolean(await rule(ctx))
+    } catch (err) {
+      console.warn(`[pilotiq] visible() rule on Block "${this.name}" threw:`, err)
+      return false
+    }
+  }
 
   // ─── Read-only access ────────────────────────────────
 

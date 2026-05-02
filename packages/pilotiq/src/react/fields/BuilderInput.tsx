@@ -49,6 +49,7 @@ interface BuilderMetaShape {
   cloneable?:              boolean
   addable?:                boolean
   deletable?:              boolean
+  addBetween?:             boolean
   blockNumbers?:           boolean
   itemNumbers?:            boolean
   blockIcons?:             boolean
@@ -108,6 +109,7 @@ export function BuilderInput({
   const cloneable        = Boolean(meta.cloneable)
   const addable          = meta.addable !== false
   const deletable        = meta.deletable !== false
+  const addBetween       = Boolean(meta.addBetween)
   const buttonsOnly      = Boolean(meta.reorderableWithButtons)
   const showNumbers      = Boolean(meta.blockNumbers || meta.itemNumbers)
   const showIcons        = meta.blockIcons !== false
@@ -164,7 +166,10 @@ export function BuilderInput({
     return m
   }, [rows])
 
-  const addRowOfType = (blockName: string): void => {
+  // `atIndex` (when defined) splices the new row at that position,
+  // shifting existing rows down. Used by the inline `addBetween` zones;
+  // bottom Add button leaves it undefined → append.
+  const addRowOfType = (blockName: string, atIndex?: number): void => {
     if (atMax) return
     const block = blocksByName.get(blockName)
     if (!block) return
@@ -175,7 +180,11 @@ export function BuilderInput({
       type:     block.name,
       children: block.template,
     }
-    setRows(prev => [...prev, newRow])
+    setRows(prev => {
+      if (atIndex === undefined) return [...prev, newRow]
+      const i = Math.max(0, Math.min(atIndex, prev.length))
+      return [...prev.slice(0, i), newRow, ...prev.slice(i)]
+    })
     if (accordion) {
       setAccordionOpenId(newRow.id)
       writeAccordionToStorage(formId, name, newRow.id)
@@ -354,6 +363,16 @@ export function BuilderInput({
       {rows.map((row, i) => (
         <React.Fragment key={row.id}>
           {!row.hidden && dropAt === i && rowGrid === 1 && <DropIndicator />}
+          {!row.hidden && addBetween && addable && blocks.length > 0 && rowGrid === 1 && (
+            <BetweenInserter
+              blocks={blocks}
+              typeCounts={typeCounts}
+              atMax={atMax}
+              disabled={disabled}
+              columns={pickerColumns}
+              onPick={(blockName) => addRowOfType(blockName, i)}
+            />
+          )}
           <BuilderRow
             row={row}
             block={blocksByName.get(row.type)}
@@ -526,6 +545,108 @@ function BlockPickerItem({
       {Icon && <Icon className="size-4 shrink-0 text-muted-foreground" />}
       <span className="truncate">{block.label}</span>
     </button>
+  )
+}
+
+// ─── Inline insert-between zone (Builder.addBetween) ────────
+//
+// Hairline horizontal "+" button that lives between rows. Hidden
+// (opacity-0) until hovered or focused so the row stack stays calm,
+// then surfaces on hover. Clicking opens a compact picker rooted at
+// the inserter — the same `BlockPickerItem` shape as the bottom Add
+// button. When only one block is registered, clicking the line
+// inserts directly without a dropdown.
+//
+// Insertion index is owned by the parent — the inserter just calls
+// `onPick(blockName)` and the caller splices at the right place.
+
+function BetweenInserter({
+  blocks, typeCounts, atMax, disabled, columns, onPick,
+}: {
+  blocks:     BlockShape[]
+  typeCounts: Map<string, number>
+  atMax:      boolean
+  disabled:   boolean
+  columns:    number
+  onPick:     (blockName: string) => void
+}): React.ReactElement | null {
+  const [open, setOpen] = useState(false)
+  const containerRef    = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDocPointerDown = (e: PointerEvent): void => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const onDocKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', onDocPointerDown)
+    document.addEventListener('keydown',     onDocKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDocPointerDown)
+      document.removeEventListener('keydown',     onDocKey)
+    }
+  }, [open])
+
+  if (blocks.length === 0) return null
+
+  const isDisabled = disabled || atMax
+
+  return (
+    <div ref={containerRef} className="relative -my-1 flex justify-center">
+      <button
+        type="button"
+        onClick={() => {
+          if (isDisabled) return
+          // Single-block shortcut — skip the dropdown.
+          if (blocks.length === 1) {
+            const only = blocks[0]!
+            const onlyAtCap = only.maxItems !== undefined && (typeCounts.get(only.name) ?? 0) >= only.maxItems
+            if (onlyAtCap) return
+            onPick(only.name)
+            return
+          }
+          setOpen(o => !o)
+        }}
+        disabled={isDisabled}
+        aria-label="Insert block here"
+        aria-haspopup={blocks.length > 1 ? 'menu' : undefined}
+        aria-expanded={blocks.length > 1 ? open : undefined}
+        className="group/inserter flex h-4 w-full items-center justify-center opacity-0 hover:opacity-100 focus-visible:opacity-100 transition-opacity disabled:pointer-events-none"
+      >
+        <span className="flex h-px w-full items-center bg-border group-hover/inserter:bg-primary group-focus-visible/inserter:bg-primary transition-colors">
+          <span className="mx-auto flex size-5 items-center justify-center rounded-full border border-primary bg-background text-primary">
+            <PlusIcon className="size-3" />
+          </span>
+        </span>
+      </button>
+      {open && blocks.length > 1 && (
+        <div
+          role="menu"
+          className="absolute left-1/2 top-full z-20 mt-1 min-w-[12rem] -translate-x-1/2 rounded-md border bg-popover p-1 shadow-md"
+        >
+          <div
+            className={columns > 1 ? 'grid gap-1' : 'flex flex-col gap-0.5'}
+            style={columns > 1 ? { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` } : undefined}
+          >
+            {blocks.map(b => {
+              const atTypeCap = b.maxItems !== undefined && (typeCounts.get(b.name) ?? 0) >= b.maxItems
+              return (
+                <BlockPickerItem
+                  key={b.name}
+                  block={b}
+                  disabled={atTypeCap}
+                  onPick={() => { onPick(b.name); setOpen(false) }}
+                />
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -10,6 +10,7 @@ import {
   type BuilderItemHiddenRule,
   type BuilderRowMeta,
 } from '../fields/BuilderField.js'
+import type { BlockMeta } from './Block.js'
 import { Action, type ActionMeta, type ActionVisibilityContext } from '../actions/Action.js'
 import { ActionGroup } from '../actions/ActionGroup.js'
 import { Filter } from '../filters/Filter.js'
@@ -548,7 +549,16 @@ async function resolveBuilderRows(
   // values + visibility state apply to a blank record. Resolved here
   // rather than once-and-cached because conditional `options(fn)` can
   // depend on the surrounding `record / user / values` context.
-  const blocksMeta = await Promise.all(field.getBlocks().map(async block => {
+  //
+  // `Block.visible(rule)` is evaluated against an outer (not row-scoped)
+  // LayoutContext — it's a picker-time gate, not a per-row gate. Hidden
+  // blocks drop from `meta.blocks` so the picker doesn't show them; rows
+  // already in `submitted` data of that block-type still render above
+  // (the for-loop over `rowsInput` is independent of `getBlocks()`).
+  const pickerLayoutCtx = buildLayoutContext(ctx)
+  const blocksMetaRaw = await Promise.all(field.getBlocks().map(async block => {
+    const visible = await block.evaluateVisibility(pickerLayoutCtx)
+    if (!visible) return null
     const templateCtx: RenderContext = { ...ctx, values: {} }
     delete templateCtx.row
     delete templateCtx.changed
@@ -557,6 +567,7 @@ async function resolveBuilderRows(
     m.template = template
     return m
   }))
+  const blocksMeta = blocksMetaRaw.filter((m): m is BlockMeta => m !== null)
 
   meta['rows']   = rows
   meta['blocks'] = blocksMeta

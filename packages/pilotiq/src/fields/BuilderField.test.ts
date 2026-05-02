@@ -51,6 +51,48 @@ describe('Block', () => {
     assert.equal('columns'  in meta, false)
     assert.equal('maxItems' in meta, false)
   })
+
+  describe('visible(rule)', () => {
+    it('returns true when no rule is set', async () => {
+      const visible = await Block.make('heading').evaluateVisibility()
+      assert.equal(visible, true)
+      assert.equal(Block.make('heading').hasVisibilityRule(), false)
+    })
+
+    it('boolean rule short-circuits', async () => {
+      const b = Block.make('heading').visible(false)
+      assert.equal(await b.evaluateVisibility(), false)
+      assert.equal(b.hasVisibilityRule(), true)
+    })
+
+    it('callback receives the layout context', async () => {
+      let seen: unknown
+      const b = Block.make('heading').visible((ctx) => {
+        seen = ctx.user
+        return true
+      })
+      await b.evaluateVisibility({ user: { role: 'admin' } })
+      assert.deepEqual(seen, { role: 'admin' })
+    })
+
+    it('async callback is awaited', async () => {
+      const b = Block.make('heading').visible(async () => false)
+      assert.equal(await b.evaluateVisibility(), false)
+    })
+
+    it('throwing rule fails closed (hidden)', async () => {
+      const b = Block.make('heading').visible(() => { throw new Error('boom') })
+      assert.equal(await b.evaluateVisibility(), false)
+    })
+
+    it('hidden() inverts the rule', async () => {
+      assert.equal(await Block.make('h').hidden(true).evaluateVisibility(),  false)
+      assert.equal(await Block.make('h').hidden(false).evaluateVisibility(), true)
+      const b = Block.make('h').hidden((ctx) => ctx.user === 'banned')
+      assert.equal(await b.evaluateVisibility({ user: 'banned' }), false)
+      assert.equal(await b.evaluateVisibility({ user: 'ok' }),     true)
+    })
+  })
 })
 
 // ─── BuilderField ────────────────────────────────────────────
@@ -156,6 +198,18 @@ describe('BuilderField', () => {
       assert.equal(off.deletable, false)
     })
 
+    it('addBetween() emits only when set', () => {
+      const off = BuilderField.make('x').toMeta()
+      assert.equal('addBetween' in off, false)
+      assert.equal(BuilderField.make('x').isAddBetween(), false)
+      const on  = BuilderField.make('x').addBetween().toMeta()
+      assert.equal(on.addBetween, true)
+      assert.equal(BuilderField.make('x').addBetween().isAddBetween(), true)
+      // Toggleable back off.
+      const back = BuilderField.make('x').addBetween().addBetween(false).toMeta()
+      assert.equal('addBetween' in back, false)
+    })
+
     it('addActionAlignment defaults to start (omitted) and emits when changed', () => {
       assert.equal('addActionAlignment' in BuilderField.make('x').toMeta(), false)
       const center = BuilderField.make('x').addActionAlignment('center').toMeta()
@@ -255,6 +309,42 @@ describe('BuilderField', () => {
       const m = metaOf(raw)
       assert.equal(m.rows[0]?.id, 'content-0')
       assert.equal(m.rows[1]?.id, 'content-1')
+    })
+
+    it('Block.visible() drops hidden blocks from picker meta only', async () => {
+      const f = BuilderField.make('content').blocks([
+        Block.make('heading').schema([TextField.make('text')]),
+        Block.make('admin')
+          .visible(({ user }) => (user as { role?: string } | undefined)?.role === 'admin')
+          .schema([TextField.make('secret')]),
+      ])
+      const [rawGuest] = await resolveSchema([f], { user: { role: 'guest' } })
+      const mGuest = metaOf(rawGuest)
+      assert.equal(mGuest.blocks.length, 1)
+      assert.equal(mGuest.blocks[0]?.name, 'heading')
+
+      const [rawAdmin] = await resolveSchema([f], { user: { role: 'admin' } })
+      const mAdmin = metaOf(rawAdmin)
+      assert.equal(mAdmin.blocks.length, 2)
+    })
+
+    it('Block.visible() does NOT hide existing rows of a hidden block', async () => {
+      // Toggling a feature flag must never silently destroy stored content.
+      const f = BuilderField.make('content').blocks([
+        Block.make('heading').schema([TextField.make('text')]),
+        Block.make('admin').visible(false).schema([TextField.make('secret')]),
+      ])
+      const [raw] = await resolveSchema([f], {
+        values: { content: [
+          { type: 'heading', data: { text: 'A' } },
+          { type: 'admin',   data: { secret: 'shh' } },
+        ] },
+      })
+      const m = metaOf(raw)
+      assert.equal(m.blocks.length, 1, 'picker drops admin')
+      assert.equal(m.rows.length, 2, 'rows still render')
+      assert.equal(m.rows[1]?.type, 'admin')
+      assert.equal(m.rows[1]?.children.length, 1, 'admin row inner schema resolves')
     })
 
     it('unknown block type → unknownType:true with empty children', async () => {

@@ -83,7 +83,16 @@ Block.make('name')
   .schema([Field, Field, ...])     // inner schema for this block type
   .columns(2)                      // grid columns inside this block's body
   .maxItems(1)                     // optional cap on how many rows of this type
+  .visible(({ user }) => …)        // hide block from the picker conditionally
 ```
+
+`Block.visible(rule)` accepts the same shape as layout `visible()`:
+either a literal `boolean` or a `(LayoutContext) => bool | Promise<bool>`
+callback (`ctx.user / record / values / $get / $set`). Hidden blocks
+drop from the picker dropdown only — **existing rows of a now-hidden
+block keep rendering with their full schema and round-trip on save**,
+so toggling visibility on a feature flag never silently destroys
+content. Throwing predicates fail closed (block stays hidden).
 
 Blocks are composition primitives — they don't extend `Element`, they
 don't render in the schema tree on their own. `Builder.blocks([…])` is
@@ -94,6 +103,7 @@ the only place a `Block` is mounted.
 | Method | Effect |
 |---|---|
 | `.blocks([Block…])` | Register the block types the picker offers (order = picker order) |
+| `.addBetween()` | Mount thin `+` insertion zones above each row so the user can insert a block mid-stack without scrolling. Additive — the bottom **Add block** button stays. Suppressed in `grid()` mode. |
 | `.minItems(n)` / `.maxItems(n)` | Total-row validator + client gate |
 | `.reorderable()` | Drag handle + Up / Down buttons |
 | `.reorderableWithButtons()` | Force button-only reorder (drag disabled) |
@@ -219,9 +229,6 @@ silently loses data.
   a block's schema works at SSR but the client-side reactive
   re-resolve doesn't address paths past `data.<leaf>`. Surface the
   inner content via `.live()` on a leaf field.
-- **Block-level conditional visibility.** No `Block.visible(rule)` —
-  for now, build the `blocks([…])` array conditionally based on the
-  user / record before passing it to `Builder.make()`.
 - **Per-row authorization.** `canAdd / canDelete` per row aren't
   exposed yet. Use `Resource.canEdit` for the page-level gate.
 - **Block previews.** Filament's read-only `Block::preview('view.path')`
