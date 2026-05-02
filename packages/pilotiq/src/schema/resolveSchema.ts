@@ -285,8 +285,14 @@ async function resolveRepeaterRows(
 ): Promise<void> {
   const inner       = field.getInnerSchema()
   const submitted   = ctx.values?.[field.name]
+  // For `simple()` repeaters the loaded record / submitted value is a
+  // flat `[v1, v2, …]` array. Wrap each primitive entry inline using the
+  // inner field's name so the rest of the resolver path treats it as a
+  // standard `[{<innerName>: v}]` row. Object entries pass through (e.g.
+  // when a coerce/state-update has already produced wrapped rows).
+  const simpleInner = field.getSimpleInnerField()
   const rowsInput: Array<Record<string, unknown>> = Array.isArray(submitted)
-    ? submitted.map(coerceRowValues)
+    ? submitted.map(raw => simpleInner ? coerceSimpleRowValues(raw, simpleInner.name) : coerceRowValues(raw))
     : Array.from({ length: field.getDefaultItems() }, () => ({}))
 
   const labelFn  = field.getItemLabel()
@@ -385,6 +391,23 @@ function coerceRowValues(raw: unknown): Record<string, unknown> {
     return { ...(raw as Record<string, unknown>) }
   }
   return {}
+}
+
+/**
+ * Variant of `coerceRowValues` for `Repeater.simple(field)`. Object rows
+ * pass through (already wrapped); primitive / null / undefined entries
+ * are wrapped under the inner field's name so the resolve / validate /
+ * coerce pipeline keeps using the standard `{ <innerName>: value }`
+ * shape regardless of whether the caller fed flat `[v1, v2]` (loaded
+ * record, or `withValues({ name: ['x'] })`) or wrapped `[{name: v1}]`
+ * (post-coerce, post-state-update).
+ */
+function coerceSimpleRowValues(raw: unknown, innerName: string): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return { ...(raw as Record<string, unknown>) }
+  }
+  if (raw === undefined) return {}
+  return { [innerName]: raw }
 }
 
 /**

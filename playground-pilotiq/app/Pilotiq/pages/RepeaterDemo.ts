@@ -228,6 +228,20 @@ export class RepeaterDemo extends Page {
                 ]),
             ]),
 
+          Section.make('Simple Repeater — flat-array storage')
+            .description('`Repeater.simple(TextField.make(\'value\'))` — single-input rows that store as `[v1, v2, …]` instead of `[{value: v1}, …]`. Reorder + delete + min/maxItems work as usual; clone + collapse are dropped (a single-field row has nothing to clone or collapse).')
+            .schema([
+              Repeater.make('keywords')
+                .label('Keywords')
+                .simple(
+                  TextField.make('keyword')
+                    .placeholder('Enter a keyword'),
+                )
+                .reorderable()
+                .defaultItems(2)
+                .addActionLabel('Add keyword'),
+            ]),
+
           Section.make('disableOptionsWhenSelectedInSiblingRepeaterItems')
             .description('Pick a colour in row 1 — the same option greys out in every other row. Auto-enables `distinct()` (server-side guarantee) and `live()` (so picks reflect immediately in sibling rows without a submit).')
             .schema([

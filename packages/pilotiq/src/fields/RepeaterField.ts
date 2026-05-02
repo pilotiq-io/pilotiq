@@ -72,6 +72,14 @@ export interface RepeaterFieldMeta extends FieldMeta {
   defaultCollapsed?: boolean
   cloneable?:       boolean
   addActionLabel?:  string
+  /**
+   * Set when `Repeater.simple(field)` is configured. Tells the renderer
+   * to drop the per-row chrome (header, clone, collapse) and lay the
+   * single inner field out flush with a trash button on each row. The
+   * wire format is unchanged — `<name>.<i>.<innerName>` — only the
+   * stored shape differs (`[v]` instead of `[{name: v}]`).
+   */
+  simple?:          boolean
 }
 
 /**
@@ -105,6 +113,7 @@ export class RepeaterField extends Field {
   private _itemLabel?:       RepeaterItemLabel
   private _itemHidden?:      RepeaterItemHiddenRule
   private _extraItemActions: Action[] = []
+  private _simple           = false
 
   private constructor(name: string) {
     super(name, 'repeater')
@@ -117,6 +126,33 @@ export class RepeaterField extends Field {
   /** Inner schema rendered per row. Each row resolves these elements. */
   schema(elements: Element[]): this {
     this._children = elements
+    return this
+  }
+
+  /**
+   * Single-field "flat array" Repeater. Storage shape changes from
+   * `[{ <innerName>: value }]` to `[value, value, …]` — handy for
+   * keyword/alias/alt-domain lists where the row is just one input.
+   *
+   * Wire format on the form stays the same `<name>.<i>.<innerName>` shape
+   * (the inner field's name is opaque to the consumer); the flat shape
+   * shows up only in the saved record (after coerce → unwrap) and in the
+   * loaded record (re-wrapped on the way into `resolveRepeaterRows`).
+   *
+   * Validators run against the wrapped shape so per-field rules
+   * (`required`, `unique`, custom validators) work the same as in a
+   * regular Repeater. The chrome strips down: no per-row header, no
+   * collapse, no clone — just an inline trash button on each row plus
+   * the bottom Add button. Reorder still works when `reorderable()`
+   * is set.
+   *
+   * Calling `simple()` replaces the inner schema with the single field —
+   * pass any prior `schema(...)` you'd called as wasted; `simple()` is
+   * the schema for these rows.
+   */
+  simple(field: Field): this {
+    this._simple = true
+    this._children = [field]
     return this
   }
 
@@ -211,6 +247,20 @@ export class RepeaterField extends Field {
   getItemHidden(): RepeaterItemHiddenRule | undefined { return this._itemHidden }
   getAddActionLabel(): string | undefined { return this._addActionLabel }
   getExtraItemActions(): Action[] { return this._extraItemActions }
+  isSimple(): boolean { return this._simple }
+  /**
+   * The single inner field of a `simple()` repeater. Returns `undefined`
+   * outside simple mode (or when the inner schema hasn't been set yet).
+   * Used by the wrap/unwrap helpers in `dispatchForm` and `resolveSchema`
+   * — internal contract is "the simple inner field's name is the wrapping
+   * key for `[v]` ↔ `[{name: v}]` transforms".
+   */
+  getSimpleInnerField(): Field | undefined {
+    if (!this._simple) return undefined
+    const first = this._children[0]
+    if (first instanceof Field) return first
+    return undefined
+  }
 
   // ─── Meta ──────────────────────────────────────────────
 
@@ -239,6 +289,7 @@ export class RepeaterField extends Field {
     if (this._defaultCollapsed)              meta.defaultCollapsed = true
     if (this._cloneable)                     meta.cloneable       = true
     if (this._addActionLabel !== undefined)  meta.addActionLabel  = this._addActionLabel
+    if (this._simple)                        meta.simple          = true
     return meta
   }
 }

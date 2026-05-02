@@ -358,6 +358,51 @@ TextField.make('email')
 ignores nested-Repeater children — the inner array's `distinct()`
 runs against its own rows only.
 
+## Single-field flat-array repeater — `simple(field)`
+
+When the row is a single field, the `[{ field: value }]` storage shape
+adds noise. `Repeater.simple(field)` flattens it to `[value, value, …]`:
+
+```ts
+Repeater.make('keywords')
+  .simple(
+    TextField.make('keyword').placeholder('Enter a keyword'),
+  )
+  .reorderable()
+  .defaultItems(2)
+```
+
+The persisted record holds `keywords: ['react', 'typescript', …]` — a
+plain string array. The form pipeline (resolve, coerce, validate) keeps
+using the wrapped `[{ keyword: v }]` shape internally so per-field
+validators (`required`, `unique`, `distinct`, custom validators) work
+exactly the same as in a regular Repeater. The flattening happens
+once, after coerce, before your `save()` handler runs.
+
+The chrome flattens too:
+
+- **No row header** — single-field rows don't need a label.
+- **No clone** — there's no row identity to duplicate; users can just
+  pick a value again.
+- **No collapse** — pointless for a single input.
+- **Reorder + delete still work** — drag handle (when `reorderable()`)
+  + trash icon stay on each row.
+
+`min/maxItems`, `defaultItems`, `addActionLabel`, and `extraItemActions`
+all carry over.
+
+**Loading edit-mode records.** When the Repeater is `simple()`, the
+loaded record value `['a', 'b']` is wrapped on the way into resolution.
+Already-wrapped values (e.g. when a coerce or state-update has already
+produced `[{name: v}, …]`) pass through — the wrap is idempotent.
+
+**`simple()` replaces any prior `schema()` call.** The single field
+passed to `simple()` becomes the entire inner schema.
+
+**Heterogeneous rows belong in `Builder`, not `simple`.** If your row
+holds more than one field, use the regular `schema([…])` form;
+`simple` is purely for the one-input case.
+
 ## Disable options taken in sibling rows — `disableOptionsWhenSelectedInSiblingRepeaterItems()`
 
 The client-side companion to `distinct()` for option-bearing fields.

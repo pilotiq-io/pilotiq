@@ -89,6 +89,7 @@ export function RepeaterInput({
   const defaultCollapsed = Boolean(meta.defaultCollapsed)
   const reorderable      = Boolean(meta.reorderable)
   const cloneable        = Boolean(meta.cloneable)
+  const simple           = Boolean(meta.simple)
   const addLabel         = typeof meta.addActionLabel === 'string' ? meta.addActionLabel : 'Add'
   const columns          = typeof meta.columns === 'number' && meta.columns > 1 ? meta.columns : 1
 
@@ -297,6 +298,7 @@ export function RepeaterInput({
             isCollapsed={collapsible && (collapsed[row.id] ?? false)}
             reorderable={reorderable}
             cloneable={cloneable}
+            simple={simple}
             atMin={atMin}
             atMax={atMax}
             columns={columns}
@@ -333,7 +335,7 @@ export function RepeaterInput({
 
 function RepeaterRow({
   row, index, isFirstVisible, isLastVisible, name, disabled,
-  collapsible, isCollapsed, reorderable, cloneable, atMin, atMax, columns,
+  collapsible, isCollapsed, reorderable, cloneable, simple, atMin, atMax, columns,
   isDragging,
   rowPath,
   onMoveUp, onMoveDown, onClone, onRemove, onToggleCollapse,
@@ -349,6 +351,7 @@ function RepeaterRow({
   isCollapsed:       boolean
   reorderable:       boolean
   cloneable:         boolean
+  simple:            boolean
   atMin:             boolean
   atMax:             boolean
   columns:           number
@@ -396,6 +399,69 @@ function RepeaterRow({
         onDragEnd,
       }
     : {}
+
+  // Simple-mode: flatten the row to one input + inline action strip — no
+  // header, no border, no collapse (a single field has nothing to collapse).
+  // Reorder + delete still work; clone + extraActions are intentionally
+  // dropped since there's no "row identity" worth duplicating in the flat
+  // shape, and per-row buttons read cluttered next to a one-input row.
+  // FieldShell renders a label by default — for simple rows we want flush
+  // inputs (Filament's posture too), so we suppress the inner label by
+  // wrapping in a class that hides the FieldShell's label slot.
+  if (simple) {
+    return (
+      <div
+        className={`flex items-center gap-2 transition-opacity ${isDragging ? 'opacity-50' : ''}`}
+        data-pilotiq-repeater-row="simple"
+        {...dragProps}
+      >
+        <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
+        {reorderable && (
+          <span
+            aria-hidden="true"
+            className={`text-muted-foreground ${disabled ? 'opacity-30' : 'cursor-grab active:cursor-grabbing'}`}
+            title="Drag to reorder"
+          >
+            <GripVerticalIcon className="size-4" />
+          </span>
+        )}
+        <div className="flex-1 [&_label]:sr-only">
+          <SchemaRenderer elements={namespaced} />
+        </div>
+        {reorderable && (
+          <>
+            <button
+              type="button"
+              onClick={onMoveUp}
+              disabled={disabled || isFirstVisible}
+              aria-label="Move up"
+              className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+            >
+              <ArrowUpIcon className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={onMoveDown}
+              disabled={disabled || isLastVisible}
+              aria-label="Move down"
+              className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+            >
+              <ArrowDownIcon className="size-4" />
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={disabled || atMin}
+          aria-label="Remove row"
+          className="text-muted-foreground hover:text-destructive disabled:opacity-30"
+        >
+          <Trash2Icon className="size-4" />
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -597,6 +663,7 @@ interface RepeaterMetaShape {
   defaultCollapsed?: boolean
   cloneable?:        boolean
   addActionLabel?:   string
+  simple?:           boolean
 }
 
 /**

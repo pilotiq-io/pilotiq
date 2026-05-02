@@ -94,11 +94,23 @@ async function validateRepeater(
 
   if (baseErrors.length > 0) errors[field.name] = baseErrors
 
-  const inner = field.getInnerSchema()
+  const inner       = field.getInnerSchema()
+  const simpleInner = field.getSimpleInnerField()
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]
-    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
-    const rowValues = row as Record<string, unknown>
+    // For `simple()` repeaters, wrap primitive entries inline so per-field
+    // validators run against the standard `{ <innerName>: v }` shape. A
+    // primitive in a non-simple Repeater is genuinely malformed and gets
+    // skipped (the prior posture).
+    let rowValues: Record<string, unknown> | null
+    if (row && typeof row === 'object' && !Array.isArray(row)) {
+      rowValues = row as Record<string, unknown>
+    } else if (simpleInner && row !== undefined) {
+      rowValues = { [simpleInner.name]: row }
+    } else {
+      rowValues = null
+    }
+    if (!rowValues) continue
     const rowErrors = await validateSchema(inner, rowValues, record)
     for (const [childName, msgs] of Object.entries(rowErrors)) {
       errors[`${field.name}.${i}.${childName}`] = msgs
@@ -110,10 +122,16 @@ async function validateRepeater(
     innerFields: collectDistinctFields(inner),
     rows,
     errorKey: (rowIdx, childName) => `${field.name}.${rowIdx}.${childName}`,
-    extractValue: (row, childName) =>
-      (row && typeof row === 'object' && !Array.isArray(row))
-        ? (row as Record<string, unknown>)[childName]
-        : undefined,
+    // `simple()` repeaters can hand bare primitive rows to the comparator;
+    // when the row matches the inner field, treat the primitive itself as
+    // the value. Object rows still read by child key as normal.
+    extractValue: (row, childName) => {
+      if (row && typeof row === 'object' && !Array.isArray(row)) {
+        return (row as Record<string, unknown>)[childName]
+      }
+      if (simpleInner && simpleInner.name === childName) return row
+      return undefined
+    },
     rowMatches: () => true,
     errors,
   })

@@ -78,6 +78,10 @@ export async function dispatchFormSubmit<R = unknown>(
   }
 
   let data: Record<string, unknown> = coerceFormValues(children as Element[], body)
+  // Flatten `simple()` Repeaters from the wrapped `[{name: v}]` pipeline
+  // shape to the user-declared `[v]` storage shape before any user-side
+  // transform runs. Non-simple repeaters are untouched.
+  data = unwrapSimpleRepeaters(children as Element[], data)
 
   const mutate = form.getMutateData()
   if (mutate) data = await mutate(data, { ...ctx, values: data })
@@ -549,10 +553,11 @@ function coerceRepeaterValue(
   const inner     = field.getInnerSchema()
   const fieldName = field.name
   const raw       = body[fieldName]
+  const simpleInner = field.getSimpleInnerField()
 
   let rowBodies: Array<Record<string, unknown>> = []
   if (Array.isArray(raw)) {
-    rowBodies = raw.map(coerceRowEntry)
+    rowBodies = raw.map(r => simpleInner ? coerceSimpleEntry(r, simpleInner.name) : coerceRowEntry(r))
   } else {
     const prefix = `${fieldName}.`
     const grouped = new Map<number, Record<string, unknown>>()
@@ -596,6 +601,54 @@ function coerceRowEntry(raw: unknown): Record<string, unknown> {
     return { ...(raw as Record<string, unknown>) }
   }
   return {}
+}
+
+/**
+ * Variant of `coerceRowEntry` for `Repeater.simple(field)`. Wraps a
+ * primitive entry under the inner field's name so the rest of the
+ * coerce pipeline keeps using `{ <innerName>: v }` row shape. Object
+ * entries pass through. The unwrap (back to `[v]`) happens once at the
+ * top of `dispatchFormSubmit` via `unwrapSimpleRepeaters`.
+ */
+function coerceSimpleEntry(raw: unknown, innerName: string): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return { ...(raw as Record<string, unknown>) }
+  }
+  if (raw === undefined) return {}
+  return { [innerName]: raw }
+}
+
+/**
+ * After `coerceFormValues` has produced wrapped `[{<innerName>: v}]`
+ * rows for every Repeater in the schema, flatten the `simple()` ones
+ * back to `[v, v, …]` for storage. Non-simple repeaters are left alone.
+ *
+ * Runs before `mutateData` / `save` so user-facing data already uses
+ * the storage shape they declared via `.simple(field)` — they don't
+ * have to remember the internal wrapping at the save site.
+ *
+ * Tolerates already-flat input (e.g. when a `dehydrated(false)` upstream
+ * has dropped wrapping, or when the user manually fed a flat array
+ * through `withValues`) by re-emitting verbatim.
+ */
+export function unwrapSimpleRepeaters(
+  elements: Element[],
+  values:   Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...values }
+  walkRepeatersTopLevel(elements, repeater => {
+    const innerName = repeater.getSimpleInnerField()?.name
+    if (!innerName) return
+    const rows = out[repeater.name]
+    if (!Array.isArray(rows)) return
+    out[repeater.name] = rows.map(row => {
+      if (row && typeof row === 'object' && !Array.isArray(row)) {
+        return (row as Record<string, unknown>)[innerName]
+      }
+      return row
+    })
+  })
+  return out
 }
 
 function isRawRowEmpty(rowBody: Record<string, unknown>): boolean {
