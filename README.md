@@ -96,7 +96,7 @@ export const admin = Pilotiq.make('Admin')
 - **Resources** — `static form(form: Form)` / `static table(table: Table)` / `static detail(record)`. Auto-wires CRUD when `static model = SomeOrmModel` is set.
 - **Relations** — `RelationManager` embeds a related resource's table on a parent record's Edit/View page. Routes auto-register at `${base}/${slug}/:id/${rel}/...` with two-layer authorization (parent `canEdit` + manager `canX`, the latter falling through to the related Resource's policy by default). Scoped to `hasOne` / `hasMany` / `belongsTo` — see [`docs/guide/relations.md`](./docs/guide/relations.md).
 - **Schema system** — Heading (with optional right-aligned actions), Text, Alert, Divider, Card, Section (with `.compact()` for tighter outer padding and `.dense()` for tighter inner gap — orthogonal), Tabs, Grid — async or static
-- **Fields** — TextField, EmailField, NumberField, SelectField, TextareaField, ToggleField, DateField, SlugField, Hidden, Checkbox, Radio, ToggleButtons (segmented chip control), CheckboxList, Slider, ColorPicker, DateTimePicker, KeyValue, TagsInput (chip-style multi-tag with optional `suggestions([...] | fn)`), FileUpload, Markdown (plain-markdown editor with toolbar + tabbed live preview; `attachFiles` integrates with the panel's UploadAdapter), Repeater. Visibility flags (`hideFromTable/Create/Edit/View`) + condition callbacks (`showWhen`, `hideWhen`, `disabledWhen`). Validators via `.validate(...)` — sync or async (built-in `unique({ model, where?, caseInsensitive? })` probes the DB; ignores the row under edit by default). `live()` + `afterStateUpdated((value, ctx) => …)` + `$get/$set` for reactive forms.
+- **Fields** — TextField, EmailField, NumberField, SelectField, TextareaField, ToggleField, DateField, SlugField, Hidden, Checkbox, Radio, ToggleButtons (segmented chip control), CheckboxList, Slider, ColorPicker, DateTimePicker, KeyValue, TagsInput (chip-style multi-tag with optional `suggestions([...] | fn)`), FileUpload, Markdown (plain-markdown editor with toolbar + tabbed live preview; `attachFiles` integrates with the panel's UploadAdapter), Repeater. Plus adapter-package fields: RichText (Tiptap, via `@pilotiq/tiptap`) and CodeEditor (CodeMirror 6, via `@pilotiq/codemirror` — string-id language registry, `'auto' | 'light' | 'dark'` theme, line numbers, indent-aware tab handling). Visibility flags (`hideFromTable/Create/Edit/View`) + condition callbacks (`showWhen`, `hideWhen`, `disabledWhen`). Validators via `.validate(...)` — sync or async (built-in `unique({ model, where?, caseInsensitive? })` probes the DB; ignores the row under edit by default). `live()` + `afterStateUpdated((value, ctx) => …)` + `$get/$set` for reactive forms.
 - **Filters** — `SelectFilter` / `MultiSelectFilter` (comma-separated URL value, `where(name,'IN',values)`) / `BooleanFilter` / `TernaryFilter` (yes/no/blank — distinguishes NULL from "any") / `DateRangeFilter` (`from..to`-encoded URL value, with `parseDateRangeValue` helper) / `FormFilter` (arbitrary inner schema; JSON-encoded URL value; `.handle((q, values) => q)` typed callback). More kinds extend the `Filter` base. Custom `query(fn)` hook for non-default ORM behavior. `Filter.indicator(string|fn)` configures the active-filter pill — pills sit above the table with × to clear in place.
 - **Actions** — Four modes: `.href(url)` link, `.method(m).action(url)` form-post, `.handler((ctx) => ...)` server-dispatched (`{ ids?, values? }` POST), `.submit()` for `<button type="submit">`. Four placements: `inline`, `header`, `bulk`, `row`. `:id` URL templating for row-level link/form actions.
 - **Custom pages** — `Page` class with `static schema()`, slug, label, icon. Or extend the Filament-style `ListPage` / `CreatePage` / `EditPage` / `ViewPage` bases for resource pages.
@@ -129,7 +129,9 @@ Pro packages are commercial. They live in a separate private repo at `pilotiq-io
 |---|---|
 | [`@pilotiq/pilotiq`](./packages/pilotiq) | **New** — View-based admin panel with auto page generation, theme engine, schema system, AppShell layouts |
 | [`@pilotiq/panels`](./packages/panels) | **Legacy** — Resource builder with vendored pages, full field system, i18n, theme editor |
-| [`@pilotiq/lexical`](./packages/lexical) | Lexical rich-text editor adapter — local-only by default |
+| [`@pilotiq/tiptap`](./packages/tiptap) | Tiptap rich-text adapter for `@pilotiq/pilotiq` — slash menu, draggable blocks, custom-block API |
+| [`@pilotiq/codemirror`](./packages/codemirror) | CodeMirror 6 code-editor adapter for `@pilotiq/pilotiq` — `CodeEditorField` with syntax highlight, line numbers, language registry |
+| [`@pilotiq/lexical`](./packages/lexical) | **Legacy** — Lexical rich-text adapter for `@pilotiq/panels` (sunsets with panels) |
 | [`@pilotiq/media`](./packages/media) | Media library + `MediaPickerField` |
 | [`playground/`](./playground) | **Panels** demo — panels + lexical + media on port 3001 |
 | [`playground-pilotiq/`](./playground-pilotiq) | **Pilotiq** demo — view-based panel on port 3003 |
@@ -241,7 +243,9 @@ Pilotiq's packages declare these as peer dependencies. Install both, register th
 | Migrating from `@pilotiq/panels` | [`docs/guide/migrating-from-panels.md`](./docs/guide/migrating-from-panels.md) |
 | Fields reference | [`docs/packages/panels/fields.md`](./docs/packages/panels/fields.md) |
 | Schema elements | [`docs/packages/panels/schema.md`](./docs/packages/panels/schema.md) |
-| Rich-text editor | [`docs/packages/lexical.md`](./docs/packages/lexical.md) |
+| Rich-text editor (Tiptap, new) | [`packages/tiptap`](./packages/tiptap) |
+| Code editor (CodeMirror) | [`docs/packages/codemirror.md`](./docs/packages/codemirror.md) |
+| Rich-text editor (Lexical, legacy) | [`docs/packages/lexical.md`](./docs/packages/lexical.md) |
 | Development setup | [`docs/development.md`](./docs/development.md) |
 | Contributing | [`docs/contributing/panels-extension.md`](./docs/contributing/panels-extension.md) |
 
