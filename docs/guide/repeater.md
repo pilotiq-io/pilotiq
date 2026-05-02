@@ -64,6 +64,7 @@ The submitted body has shape:
 | `.collapsed()` | Default-collapsed when collapsible (typically combined with `itemLabel`) |
 | `.accordion()` | One-row-open-at-a-time mode. Picking a row collapses every other row. Auto-arms `collapsible()`. Pair with `.collapsed()` to start with everything closed (default opens the first visible row). Open-row id persists per-form to `localStorage`. |
 | `.grid(n)` | Lay the *rows themselves* in an n-column grid (n ≥ 2). Different from `.columns(n)`, which grids the inner schema *inside* a row. n < 2 is the off sentinel. The drag-drop indicator is suppressed in grid mode (it reads wrong across cells); ↑ / ↓ buttons + DnD itself still work. |
+| `.table([{ label, alignment?, width?, required? }, …])` | Render rows as a compact HTML table — one `<tr>` per row, one `<td>` per inner field. Columns map 1:1 to `schema()` fields in declaration order. Inner-field labels render `sr-only`; clone / delete / `extraItemActions` land in a final actions cell. Pass `[]` to turn off. Mutually exclusive with `.simple()` and `.grid()`. |
 | `.itemLabel(row => string)` | Header text for the collapsed row; falls back to `Item N` |
 | `.itemHidden(rule)` | Per-row visibility — boolean or `(ctx) => bool \| Promise<bool>`. Hidden rows render with `display:none` so values still round-trip on submit |
 | `.addActionLabel(text)` | Label for the Add button (default `'Add'`) |
@@ -359,6 +360,52 @@ TextField.make('email')
 (there's nothing to compare against). Inside a Repeater, the check
 ignores nested-Repeater children — the inner array's `distinct()`
 runs against its own rows only.
+
+## Compact table layout — `table([{ label, … }, …])`
+
+For uniform rows (think team members, address book entries, line items),
+table mode is denser than the default card layout — one `<tr>` per row,
+one `<td>` per inner field, with the column headers carrying the labels:
+
+```ts
+Repeater.make('teamMembers')
+  .table([
+    { label: 'Name' },
+    { label: 'Email' },
+    { label: 'Role',   alignment: 'right' },
+    { label: 'Active', alignment: 'center', width: '6rem' },
+  ])
+  .reorderable()
+  .cloneable()
+  .schema([
+    TextField.make('name').required(),
+    TextField.make('email').required(),
+    SelectField.make('role').options([…]),
+    ToggleField.make('active'),
+  ])
+```
+
+Columns map 1:1 to `schema()` fields in declaration order — `columns[0]`
+is the header for `schema[0]`, and so on. Each column accepts:
+
+| Key | Effect |
+|---|---|
+| `label` | Header text (required) |
+| `alignment` | `'left' \| 'center' \| 'right'` — aligns header + cell |
+| `width` | Raw CSS width string (`'30%'`, `'6rem'`, `'200px'`) |
+| `required` | Adds a red asterisk to the header (purely visual) |
+
+Inner-field labels render `sr-only` since the column header carries the
+labelling. Reorder grip + ↑/↓ buttons, clone, delete, and any
+`extraItemActions` land in a trailing actions cell.
+
+Pass an empty array (`.table([])`) to turn off table mode — handy for
+toggling via a config value.
+
+**Mutually exclusive with `.simple()` and `.grid()`.** The field setters
+arbitrate (whichever was set last wins). `.collapsible()` and
+`.accordion()` are silently ignored in table mode — `<tr>` rows have no
+chrome to collapse.
 
 ## Single-field flat-array repeater — `simple(field)`
 

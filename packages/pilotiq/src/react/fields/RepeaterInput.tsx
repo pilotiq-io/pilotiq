@@ -98,6 +98,12 @@ export function RepeaterInput({
   // suppress the drop indicator in grid mode (a horizontal accent
   // line reads wrong across grid cells); button reorder still works.
   const rowGrid          = typeof meta.grid === 'number' && meta.grid > 1 ? meta.grid : 1
+  // Table mode renders rows as `<tr>` and inner fields as `<td>`. Mutually
+  // exclusive with `simple` and `grid` (the field setters arbitrate).
+  // Collapsible / accordion are meaningless on `<tr>` rows so we ignore
+  // those flags in this path.
+  const tableColumns     = meta.table?.columns
+  const tableMode        = Array.isArray(tableColumns) && tableColumns.length > 0
 
   const initialRows: RowState[] = useMemo(
     () => (meta.rows ?? []).map(r => ({
@@ -217,7 +223,10 @@ export function RepeaterInput({
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropAt, setDropAt] = useState<number | null>(null)
 
-  const onRowDragStart = (id: string) => (e: React.DragEvent<HTMLDivElement>): void => {
+  // Generic on `HTMLElement` so the same handlers wire onto a `<div>`
+  // row (card / grid layouts) AND a `<tr>` row (table layout). Concrete
+  // refinement happens at the consumer's prop boundary.
+  const onRowDragStart = (id: string) => (e: React.DragEvent<HTMLElement>): void => {
     if (!reorderable || disabled) return
     setDragId(id)
     // dataTransfer needs *something* to register the drag in Firefox.
@@ -225,7 +234,7 @@ export function RepeaterInput({
     try { e.dataTransfer.setData('text/plain', id) } catch { /* IE quirk; ignore */ }
   }
 
-  const onRowDragOver = (idx: number) => (e: React.DragEvent<HTMLDivElement>): void => {
+  const onRowDragOver = (idx: number) => (e: React.DragEvent<HTMLElement>): void => {
     if (!reorderable || disabled || dragId === null) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
@@ -235,7 +244,7 @@ export function RepeaterInput({
     setDropAt(aboveHalf ? idx : idx + 1)
   }
 
-  const onRowDrop = (e: React.DragEvent<HTMLDivElement>): void => {
+  const onRowDrop = (e: React.DragEvent<HTMLElement>): void => {
     if (!reorderable || disabled || dragId === null || dropAt === null) {
       setDragId(null); setDropAt(null); return
     }
@@ -317,6 +326,49 @@ export function RepeaterInput({
     for (let i = rows.length - 1; i >= 0; i--) if (!rows[i]?.hidden) return i
     return -1
   })()
+
+  if (tableMode && tableColumns) {
+    // Table mode renders rows as `<tr>` with the inner schema's fields
+    // as `<td>` cells. The reorder grip + extraActions + clone + delete
+    // strip lives in a final actions column (only mounted when any of
+    // those are configured). Hidden rows render with `display:none` on
+    // `<tr>` so values still round-trip on submit. Drop indicator is
+    // suppressed — a horizontal accent across `<td>` cells looks broken;
+    // button reorder + drag itself still move rows.
+    // Actions cell is always present in v1 — delete is implicit on every
+    // Repeater row, and reorder/clone/extraActions land here too. When
+    // every action happens to be disabled (e.g. atMin && no reorderable
+    // && no clone), the cell still renders for column-count consistency.
+    return (
+      <RepeaterTableLayout
+        rows={rows}
+        name={name}
+        formId={formId}
+        disabled={disabled}
+        columns={tableColumns}
+        addLabel={addLabel}
+        atMin={atMin}
+        atMax={atMax}
+        reorderable={reorderable}
+        cloneable={cloneable}
+        firstVisibleIdx={firstVisibleIdx}
+        lastVisibleIdx={lastVisibleIdx}
+        hasVisibleRow={hasVisibleRow}
+        dragId={dragId}
+        onAdd={addRow}
+        onMoveUp={(id) => moveRow(id, -1)}
+        onMoveDown={(id) => moveRow(id, 1)}
+        onClone={cloneRow}
+        onRemove={removeRow}
+        onContainerChange={onContainerChange}
+        onContainerBlur={onContainerBlur}
+        onRowDragStart={onRowDragStart}
+        onRowDragOver={onRowDragOver}
+        onRowDrop={onRowDrop}
+        onRowDragEnd={onRowDragEnd}
+      />
+    )
+  }
 
   // In grid mode the rows themselves are grid items — wrap them in a
   // CSS grid; otherwise stack vertically. The empty state and Add
@@ -423,10 +475,10 @@ function RepeaterRow({
   onClone:           () => void
   onRemove:          () => void
   onToggleCollapse:  () => void
-  onDragStart:       (e: React.DragEvent<HTMLDivElement>) => void
-  onDragOver:        (e: React.DragEvent<HTMLDivElement>) => void
-  onDrop:            (e: React.DragEvent<HTMLDivElement>) => void
-  onDragEnd:         (e: React.DragEvent<HTMLDivElement>) => void
+  onDragStart:       (e: React.DragEvent<HTMLElement>) => void
+  onDragOver:        (e: React.DragEvent<HTMLElement>) => void
+  onDrop:            (e: React.DragEvent<HTMLElement>) => void
+  onDragEnd:         (e: React.DragEvent<HTMLElement>) => void
 }): React.ReactElement {
   const prefix     = `${name}.${index}`
   const namespaced = useMemo(
@@ -712,6 +764,291 @@ function DropIndicator(): React.ReactElement {
   )
 }
 
+/**
+ * Table-mode layout. Renders rows as `<tr>` and inner schema fields as
+ * `<td>` cells, with the supplied column headers in `<thead>`.
+ *
+ * Cells call `prefixFieldNames` to emit row-scoped flat dotted names
+ * (`items.0.name`, etc.) — same wire shape as the card layout, so
+ * `coerceFormValues` re-groups identically. The first inner FieldShell
+ * label is suppressed via a parent `[&_label]:sr-only` since the
+ * column header carries the labelling.
+ *
+ * The actions column hosts grip / Up / Down / clone / extraActions /
+ * delete affordances. We render it unconditionally so column count
+ * stays stable across rows even when individual buttons disable.
+ */
+function RepeaterTableLayout({
+  rows, name, formId: _formId, disabled, columns, addLabel, atMin, atMax,
+  reorderable, cloneable,
+  firstVisibleIdx, lastVisibleIdx, hasVisibleRow,
+  dragId,
+  onAdd, onMoveUp, onMoveDown, onClone, onRemove,
+  onContainerChange, onContainerBlur,
+  onRowDragStart, onRowDragOver, onRowDrop, onRowDragEnd,
+}: {
+  rows:              RowState[]
+  name:              string
+  formId:            string
+  disabled:          boolean
+  columns:           TableColumnShape[]
+  addLabel:          string
+  atMin:             boolean
+  atMax:             boolean
+  reorderable:       boolean
+  cloneable:         boolean
+  firstVisibleIdx:   number
+  lastVisibleIdx:    number
+  hasVisibleRow:     boolean
+  dragId:            string | null
+  onAdd:             () => void
+  onMoveUp:          (id: string) => void
+  onMoveDown:        (id: string) => void
+  onClone:           (id: string) => void
+  onRemove:          (id: string) => void
+  onContainerChange: (e: React.ChangeEvent<HTMLDivElement>) => void
+  onContainerBlur:   (e: React.FocusEvent<HTMLDivElement>) => void
+  onRowDragStart:    (id: string) => (e: React.DragEvent<HTMLElement>) => void
+  onRowDragOver:     (idx: number) => (e: React.DragEvent<HTMLElement>) => void
+  onRowDrop:         (e: React.DragEvent<HTMLElement>) => void
+  onRowDragEnd:      (e: React.DragEvent<HTMLElement>) => void
+}): React.ReactElement {
+  // The container div carries the change/blur delegates so live() events
+  // bubble identically to the card path. `[&_label]:sr-only` hides the
+  // FieldShell label across every cell (column header carries it).
+  return (
+    <div
+      className="flex flex-col gap-3"
+      onChange={onContainerChange}
+      onBlur={onContainerBlur}
+    >
+      {!hasVisibleRow && (
+        <div className="rounded-md border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+          No items yet. Click {addLabel} to start.
+        </div>
+      )}
+
+      {hasVisibleRow && (
+        <div className="overflow-x-auto rounded-md border [&_label]:sr-only">
+          <table className="w-full border-collapse text-sm">
+            <colgroup>
+              {columns.map((c, i) => (
+                <col key={i} style={c.width ? { width: c.width } : undefined} />
+              ))}
+              <col />
+            </colgroup>
+            <thead className="bg-muted/40">
+              <tr>
+                {columns.map((c, i) => (
+                  <th
+                    key={i}
+                    scope="col"
+                    className={`px-3 py-2 text-xs font-medium text-muted-foreground ${alignClass(c.alignment)}`}
+                  >
+                    {c.label}
+                    {c.required && <span className="ml-0.5 text-destructive">*</span>}
+                  </th>
+                ))}
+                <th scope="col" className="w-px" aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <RepeaterTableRow
+                  key={row.id}
+                  row={row}
+                  index={i}
+                  name={name}
+                  disabled={disabled}
+                  columns={columns}
+                  reorderable={reorderable}
+                  cloneable={cloneable}
+                  isFirstVisible={i === firstVisibleIdx}
+                  isLastVisible={i === lastVisibleIdx}
+                  atMin={atMin}
+                  atMax={atMax}
+                  isDragging={dragId === row.id}
+                  rowPath={`${name}.${i}`}
+                  onMoveUp={() => onMoveUp(row.id)}
+                  onMoveDown={() => onMoveDown(row.id)}
+                  onClone={() => onClone(row.id)}
+                  onRemove={() => onRemove(row.id)}
+                  onDragStart={onRowDragStart(row.id)}
+                  onDragOver={onRowDragOver(i)}
+                  onDrop={onRowDrop}
+                  onDragEnd={onRowDragEnd}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={onAdd}
+        disabled={disabled || atMax}
+        className="self-start"
+      >
+        <PlusIcon className="size-4" />
+        {addLabel}
+      </Button>
+    </div>
+  )
+}
+
+function alignClass(a: 'left' | 'center' | 'right' | undefined): string {
+  if (a === 'right')  return 'text-right'
+  if (a === 'center') return 'text-center'
+  return 'text-left'
+}
+
+function RepeaterTableRow({
+  row, index, name, disabled, columns, reorderable, cloneable,
+  isFirstVisible, isLastVisible, atMin, atMax, isDragging, rowPath,
+  onMoveUp, onMoveDown, onClone, onRemove,
+  onDragStart, onDragOver, onDrop, onDragEnd,
+}: {
+  row:             RowState
+  index:           number
+  name:            string
+  disabled:        boolean
+  columns:         TableColumnShape[]
+  reorderable:     boolean
+  cloneable:       boolean
+  isFirstVisible:  boolean
+  isLastVisible:   boolean
+  atMin:           boolean
+  atMax:           boolean
+  isDragging:      boolean
+  rowPath:         string
+  onMoveUp:        () => void
+  onMoveDown:      () => void
+  onClone:         () => void
+  onRemove:        () => void
+  onDragStart:     (e: React.DragEvent<HTMLElement>) => void
+  onDragOver:      (e: React.DragEvent<HTMLElement>) => void
+  onDrop:          (e: React.DragEvent<HTMLElement>) => void
+  onDragEnd:       (e: React.DragEvent<HTMLElement>) => void
+}): React.ReactElement {
+  const prefix     = `${name}.${index}`
+  const namespaced = useMemo(
+    () => row.children.map(c => prefixFieldNames(c, prefix)),
+    [row.children, prefix],
+  )
+
+  if (row.hidden) {
+    // Render the hidden envelope as a single full-span cell so column
+    // count stays valid; `display:none` ensures the row is invisible but
+    // still in the form's submit. Using `<tr style="display:none">`
+    // would warn under React strict-mode in Firefox; the wrapping cell
+    // keeps the markup HTML-valid.
+    return (
+      <tr style={{ display: 'none' }} data-pilotiq-repeater-row="hidden">
+        <td colSpan={columns.length + 1}>
+          <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
+          <SchemaRenderer elements={namespaced} />
+        </td>
+      </tr>
+    )
+  }
+
+  // Pair each column header (in order) with the corresponding inner
+  // field meta. Extra fields beyond the column count fall through the
+  // last cell as stacked items — a misconfiguration but better than
+  // dropping them silently.
+  const fieldsPerCell: ElementMeta[][] = columns.map((_c, i) =>
+    i === columns.length - 1 ? namespaced.slice(i) : namespaced.slice(i, i + 1),
+  )
+
+  const dragProps = reorderable && !disabled
+    ? {
+        draggable: true as const,
+        onDragStart,
+        onDragOver,
+        onDrop,
+        onDragEnd,
+      }
+    : {}
+
+  return (
+    <tr
+      className={`border-t align-top ${isDragging ? 'opacity-50' : ''}`}
+      data-pilotiq-repeater-row=""
+      {...dragProps}
+    >
+      <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
+      {columns.map((c, i) => (
+        <td key={i} className={`px-3 py-2 ${alignClass(c.alignment)}`}>
+          <SchemaRenderer elements={fieldsPerCell[i] ?? []} />
+        </td>
+      ))}
+      <td className="whitespace-nowrap px-3 py-2 text-right">
+        <div className="inline-flex items-center gap-1">
+          {reorderable && (
+            <>
+              <span
+                aria-hidden="true"
+                className={`text-muted-foreground ${disabled ? 'opacity-30' : 'cursor-grab active:cursor-grabbing'}`}
+                title="Drag to reorder"
+              >
+                <GripVerticalIcon className="size-4" />
+              </span>
+              <button
+                type="button"
+                onClick={onMoveUp}
+                disabled={disabled || isFirstVisible}
+                aria-label="Move up"
+                className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+              >
+                <ArrowUpIcon className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={onMoveDown}
+                disabled={disabled || isLastVisible}
+                aria-label="Move down"
+                className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+              >
+                <ArrowDownIcon className="size-4" />
+              </button>
+            </>
+          )}
+          {row.extraActions && row.extraActions.length > 0 && (
+            <ExtraActionStrip
+              actions={row.extraActions}
+              rowPath={rowPath}
+              disabled={disabled}
+            />
+          )}
+          {cloneable && (
+            <button
+              type="button"
+              onClick={onClone}
+              disabled={disabled || atMax}
+              aria-label="Duplicate row"
+              className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+            >
+              <CopyIcon className="size-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={disabled || atMin}
+            aria-label="Remove row"
+            className="text-muted-foreground hover:text-destructive disabled:opacity-30"
+          >
+            <Trash2Icon className="size-4" />
+          </button>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
 interface RepeaterMetaShape {
   rows?:             Array<{ id: string; children: ElementMeta[]; itemLabel?: string; hidden?: boolean; extraActions?: ElementMeta[] }>
   template?:         ElementMeta[]
@@ -727,6 +1064,14 @@ interface RepeaterMetaShape {
   addActionLabel?:   string
   simple?:           boolean
   grid?:             number
+  table?:            { columns: TableColumnShape[] }
+}
+
+interface TableColumnShape {
+  label:      string
+  alignment?: 'left' | 'center' | 'right'
+  width?:     string
+  required?:  boolean
 }
 
 /**

@@ -178,6 +178,47 @@ describe('RepeaterField', () => {
       assert.equal(meta.collapsible, true)
     })
 
+    it('table() emits column descriptors only when a non-empty array is set', () => {
+      // Default — no key on meta.
+      assert.equal('table' in RepeaterField.make('x').toMeta(), false)
+      // Empty array is the off sentinel.
+      assert.equal('table' in RepeaterField.make('x').table([]).toMeta(), false)
+      // Non-empty lands the column array verbatim.
+      const meta = RepeaterField.make('x').table([
+        { label: 'Name' },
+        { label: 'Role', alignment: 'right', width: '30%', required: true },
+      ]).toMeta()
+      assert.deepEqual(meta.table, {
+        columns: [
+          { label: 'Name' },
+          { label: 'Role', alignment: 'right', width: '30%', required: true },
+        ],
+      })
+    })
+
+    it('table() with an empty array clears a previously-set column array', () => {
+      // Lets users toggle table mode on/off via a config value without
+      // a separate "untable()" branch — mirrors grid()'s sentinel form.
+      const meta = RepeaterField.make('x')
+        .table([{ label: 'Name' }])
+        .table([])
+        .toMeta()
+      assert.equal('table' in meta, false)
+    })
+
+    it('isTable() / getTableColumns() reflect the setter', () => {
+      const f = RepeaterField.make('x')
+      assert.equal(f.isTable(),         false)
+      assert.equal(f.getTableColumns(), undefined)
+      const t = f.table([{ label: 'Name' }])
+      assert.equal(t.isTable(),         true)
+      assert.deepEqual(t.getTableColumns(), [{ label: 'Name' }])
+      // Round-trip through the empty-array off sentinel.
+      const off = t.table([])
+      assert.equal(off.isTable(),         false)
+      assert.equal(off.getTableColumns(), undefined)
+    })
+
     it('addActionLabel() emits only when set', () => {
       assert.equal('addActionLabel' in RepeaterField.make('x').toMeta(), false)
       assert.equal(

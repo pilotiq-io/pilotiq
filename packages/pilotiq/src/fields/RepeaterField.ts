@@ -12,6 +12,24 @@ import type { Action, ActionMeta } from '../actions/Action.js'
 export type RepeaterItemLabel = (row: Record<string, unknown>) => string
 
 /**
+ * Header descriptor for `Repeater.table([...])` mode. One entry per inner
+ * schema field, in declaration order — column[i] is the header for
+ * `schema[i]`. Object literal (not a class) to keep the surface lean;
+ * promote to a builder class if we ever need chaining or async resolvers.
+ *
+ * `alignment` aligns header text + cell contents (cells use `text-*`).
+ * `width` is a raw CSS width string passed to `<col style="width: …">`.
+ * `required` adds a red asterisk after the header label — purely visual,
+ * doesn't affect validation (the inner field's own `required()` does).
+ */
+export interface RepeaterTableColumn {
+  label:       string
+  alignment?:  'left' | 'center' | 'right'
+  width?:      string
+  required?:   boolean
+}
+
+/**
  * Per-row visibility rule. Either a literal `boolean` or a callback receiving
  * a row-scoped `LayoutContext`. The context's `values / $get / $set / row` are
  * row-local; `record / user` mirror the parent form's render context.
@@ -97,6 +115,20 @@ export interface RepeaterFieldMeta extends FieldMeta {
    * grid cells); button reorder still works.
    */
   grid?:            number
+  /**
+   * Set when `Repeater.table([...])` is configured. Renders rows as
+   * `<tr>` and inner fields as `<td>`, with the supplied column
+   * headers in a `<thead>`. Useful for compact uniform-row repeaters.
+   * Mutually exclusive with `simple` (single-field shape conflicts)
+   * and with `grid` (different layout); collapsible/accordion are
+   * meaningless on `<tr>` rows so the renderer ignores them. The
+   * inner schema's field labels are suppressed via `[&_label]:sr-only`
+   * so headers carry the labelling. `clone / delete / extraActions`
+   * land in a final actions cell when configured.
+   */
+  table?:           {
+    columns: RepeaterTableColumn[]
+  }
 }
 
 /**
@@ -133,6 +165,7 @@ export class RepeaterField extends Field {
   private _extraItemActions: Action[] = []
   private _simple           = false
   private _grid?:            number
+  private _tableColumns?:    RepeaterTableColumn[]
 
   private constructor(name: string) {
     super(name, 'repeater')
@@ -251,6 +284,26 @@ export class RepeaterField extends Field {
   }
 
   /**
+   * Render rows as a compact HTML table — one `<tr>` per row, one
+   * `<td>` per inner field, with the supplied column headers above.
+   * Columns map 1:1 to `schema()` fields in declaration order.
+   *
+   * Pass an empty array to turn table mode off (handy for toggling via
+   * a config value). Mutually exclusive with `simple()` (single-field
+   * shape conflicts) and `grid()` (different layout) — the field
+   * applies whichever was set last; renderer ignores collapsible /
+   * accordion in table mode (`<tr>` rows can't collapse). The inner
+   * schema's field labels render `sr-only` so headers carry the
+   * labelling; clone / delete / `extraItemActions` land in a final
+   * actions cell when configured.
+   */
+  table(columns: RepeaterTableColumn[]): this {
+    if (columns.length === 0) delete this._tableColumns
+    else this._tableColumns = columns
+    return this
+  }
+
+  /**
    * Per-row action buttons rendered in each row's header alongside the
    * built-in clone/delete strip. Useful for "Mark featured", "Send test",
    * "Run preview", etc. — handler-style only in v1 (no `.href(…)` or
@@ -299,6 +352,8 @@ export class RepeaterField extends Field {
   getExtraItemActions(): Action[] { return this._extraItemActions }
   isSimple(): boolean { return this._simple }
   getGrid(): number | undefined { return this._grid }
+  getTableColumns(): RepeaterTableColumn[] | undefined { return this._tableColumns }
+  isTable(): boolean { return this._tableColumns !== undefined }
   /**
    * The single inner field of a `simple()` repeater. Returns `undefined`
    * outside simple mode (or when the inner schema hasn't been set yet).
@@ -343,6 +398,7 @@ export class RepeaterField extends Field {
     if (this._addActionLabel !== undefined)  meta.addActionLabel  = this._addActionLabel
     if (this._simple)                        meta.simple          = true
     if (this._grid !== undefined)            meta.grid            = this._grid
+    if (this._tableColumns !== undefined)    meta.table           = { columns: this._tableColumns }
     return meta
   }
 }

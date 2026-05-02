@@ -268,6 +268,52 @@ export class RepeaterDemo extends Page {
                 ]),
             ]),
 
+          Section.make('Table mode — compact uniform-row layout')
+            .description('`Repeater.table([cols…])` renders rows as a compact HTML table — each inner field becomes a `<td>`, the columns array supplies the headers (in declaration order). Reorder + clone + delete + extraActions land in a final actions cell. Inner-field labels render `sr-only` since the column header carries the labelling.')
+            .schema([
+              Repeater.make('teamMembers')
+                .label('Team members')
+                .table([
+                  { label: 'Name' },
+                  { label: 'Email' },
+                  { label: 'Role',   alignment: 'right' },
+                  { label: 'Active', alignment: 'center', width: '6rem' },
+                ])
+                .defaultItems(2)
+                .reorderable()
+                .cloneable()
+                .addActionLabel('Add member')
+                .schema([
+                  TextField.make('name').label('Name').required(),
+                  TextField.make('email').label('Email').required(),
+                  SelectField.make('role').label('Role')
+                    .options([
+                      { value: 'admin',  label: 'Admin'  },
+                      { value: 'editor', label: 'Editor' },
+                      { value: 'viewer', label: 'Viewer' },
+                    ])
+                    .default('viewer'),
+                  ToggleField.make('active').label('Active').default(true),
+                ]),
+            ]),
+
+          Section.make('Grid mode — n-column row layout')
+            .description('`Repeater.grid(n)` lays the *rows themselves* in an n-column grid — different from `columns(n)` which grids the inner schema *inside* a row. Useful for tile-style pickers / member cards. Reorder buttons still work; the drag-drop indicator is suppressed (it reads wrong across grid cells).')
+            .schema([
+              Repeater.make('memberCards')
+                .label('Member cards')
+                .grid(3)
+                .defaultItems(3)
+                .reorderable()
+                .cloneable()
+                .itemLabel((row) => String(row['name'] ?? 'New member'))
+                .addActionLabel('Add member')
+                .schema([
+                  TextField.make('name').label('Name').required(),
+                  TextField.make('title').label('Title'),
+                ]),
+            ]),
+
           Section.make('Accordion mode — one row open at a time')
             .description('`Repeater.accordion()` — picking a row collapses every other row. Auto-arms `collapsible()`. Pair with `collapsed()` to start with everything collapsed (default opens the first row). Open-row id persists to localStorage.')
             .schema([
