@@ -159,6 +159,25 @@ export type FormatStateUsingHandler = (
   ctx:   { record?: unknown },
 ) => string
 
+/**
+ * Configuration for `Field.distinct()` — cross-row uniqueness inside a
+ * Repeater or Builder. Outside an array-row context the flag is a no-op
+ * (validators run per row's local values map; cross-row comparisons are
+ * the array-field validator's job).
+ *
+ * - `caseInsensitive` (default `false`): case-fold strings before
+ *   comparing. Non-string values are compared as-is.
+ * - `ignoreNulls` (default `true`): treat `null / undefined / ''` as
+ *   "not yet set" and skip them — two empty rows aren't a conflict by
+ *   default. Pass `false` to forbid duplicate empties too.
+ * - `message` (default `'Must be unique'`): override the rejection text.
+ */
+export interface DistinctOptions {
+  caseInsensitive?: boolean
+  ignoreNulls?:     boolean
+  message?:         string
+}
+
 export abstract class Field extends Element {
   readonly name: string
   readonly fieldType: FieldType
@@ -199,6 +218,9 @@ export abstract class Field extends Element {
   protected _default?: unknown
   protected _dehydrated = true
   protected _formatStateUsing?: FormatStateUsingHandler
+  // Cross-row uniqueness flag. Only consulted by `validateRepeater` and
+  // `validateBuilder`; a no-op outside an array-row context.
+  protected _distinct?: DistinctOptions
 
   constructor(name: string, type: FieldType) {
     super()
@@ -303,6 +325,31 @@ export abstract class Field extends Element {
     this._formatStateUsing = fn
     return this
   }
+
+  /**
+   * Cross-row uniqueness inside a Repeater / Builder. When the field is
+   * resolved in a row context, every row's value is compared against
+   * earlier rows; the second + subsequent occurrences fail validation.
+   *
+   * Pass `false` (or `distinct(false)`) to clear the flag. Pass an options
+   * object for `caseInsensitive / ignoreNulls / message` (see
+   * `DistinctOptions`). Bare `distinct()` is the common case — exact
+   * comparison, empty values ignored, default message.
+   *
+   * Outside an array-row context this flag is a no-op (`validateSchema`
+   * never reads it directly — only `validateRepeater / validateBuilder`
+   * do, and those have access to the full row array). Pair with
+   * `unique({ model })` if you also need DB-level uniqueness across all
+   * records.
+   */
+  distinct(opts?: boolean | DistinctOptions): this {
+    if (opts === false) { delete this._distinct; return this }
+    if (opts === undefined || opts === true) { this._distinct = {}; return this }
+    this._distinct = opts
+    return this
+  }
+
+  getDistinct(): DistinctOptions | undefined { return this._distinct }
 
   isDehydrated(): boolean { return this._dehydrated }
   getDefault(): unknown { return this._default }

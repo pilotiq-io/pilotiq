@@ -207,6 +207,27 @@ export class RepeaterDemo extends Page {
                 ]),
             ]),
 
+          Section.make('distinct() — cross-row uniqueness')
+            .description('Inner field marked `.distinct({ caseInsensitive: true })`. Add two rows with the same SKU (any case) and submit — the second row fails validation. Empty rows are skipped by default; set `ignoreNulls: false` to require non-empty + unique.')
+            .schema([
+              Repeater.make('inventory')
+                .label('Inventory items')
+                .columns(2)
+                .defaultItems(2)
+                .reorderable()
+                .cloneable()
+                .itemLabel((row) => String(row['sku'] ?? 'New item'))
+                .addActionLabel('Add item')
+                .schema([
+                  TextField.make('sku')
+                    .label('SKU')
+                    .required()
+                    .distinct({ caseInsensitive: true, message: 'Each SKU must appear only once' })
+                    .helperText('Case-insensitive — "ABC-1" and "abc-1" count as the same SKU.'),
+                  NumberField.make('stock').label('In stock').default(0),
+                ]),
+            ]),
+
           Section.make('Nested example — products with modifiers')
             .description('A Repeater inside a Repeater. Each product can have its own list of modifiers.')
             .schema([

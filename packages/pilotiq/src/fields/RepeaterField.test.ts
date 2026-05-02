@@ -738,6 +738,143 @@ describe('RepeaterField', () => {
     })
   })
 
+  describe('distinct() — cross-row uniqueness', () => {
+    function distinctRepeater() {
+      return RepeaterField.make('items').schema([
+        TextField.make('product').distinct(),
+        NumberField.make('quantity'),
+      ])
+    }
+
+    it('all-unique rows produce no error', async () => {
+      const errors = await validateSchema([distinctRepeater()], {
+        items: [{ product: 'A' }, { product: 'B' }, { product: 'C' }],
+      })
+      assert.equal(isValid(errors), true)
+    })
+
+    it('duplicate value flags every row beyond the first occurrence', async () => {
+      const errors = await validateSchema([distinctRepeater()], {
+        items: [{ product: 'A' }, { product: 'A' }, { product: 'A' }],
+      })
+      assert.equal('items.0.product' in errors, false)
+      assert.deepEqual(errors['items.1.product'], ['Must be unique'])
+      assert.deepEqual(errors['items.2.product'], ['Must be unique'])
+    })
+
+    it('first occurrence is always allowed (even at the last row)', async () => {
+      const errors = await validateSchema([distinctRepeater()], {
+        items: [{ product: 'A' }, { product: 'B' }, { product: 'A' }],
+      })
+      assert.equal('items.0.product' in errors, false)
+      assert.equal('items.1.product' in errors, false)
+      assert.deepEqual(errors['items.2.product'], ['Must be unique'])
+    })
+
+    it('default ignoreNulls=true skips empty / null / undefined values', async () => {
+      const errors = await validateSchema([distinctRepeater()], {
+        items: [{ product: '' }, { product: '' }, { product: null }, {}],
+      })
+      assert.equal(isValid(errors), true)
+    })
+
+    it('ignoreNulls=false flags duplicate empty rows too', async () => {
+      const f = RepeaterField.make('items').schema([
+        TextField.make('product').distinct({ ignoreNulls: false }),
+      ])
+      const errors = await validateSchema([f], {
+        items: [{ product: '' }, { product: '' }],
+      })
+      assert.deepEqual(errors['items.1.product'], ['Must be unique'])
+    })
+
+    it('caseInsensitive folds case before comparing', async () => {
+      const f = RepeaterField.make('items').schema([
+        TextField.make('product').distinct({ caseInsensitive: true }),
+      ])
+      const errors = await validateSchema([f], {
+        items: [{ product: 'Foo' }, { product: 'foo' }, { product: 'FOO' }],
+      })
+      assert.equal('items.0.product' in errors, false)
+      assert.deepEqual(errors['items.1.product'], ['Must be unique'])
+      assert.deepEqual(errors['items.2.product'], ['Must be unique'])
+    })
+
+    it('caseInsensitive=false (default) treats different cases as distinct', async () => {
+      const errors = await validateSchema([distinctRepeater()], {
+        items: [{ product: 'Foo' }, { product: 'foo' }],
+      })
+      assert.equal(isValid(errors), true)
+    })
+
+    it('custom message overrides the default', async () => {
+      const f = RepeaterField.make('items').schema([
+        TextField.make('product').distinct({ message: 'Each product must appear once' }),
+      ])
+      const errors = await validateSchema([f], {
+        items: [{ product: 'A' }, { product: 'A' }],
+      })
+      assert.deepEqual(errors['items.1.product'], ['Each product must appear once'])
+    })
+
+    it('runs alongside per-field validators (does not replace them)', async () => {
+      const f = RepeaterField.make('items').schema([
+        TextField.make('product').required().distinct(),
+      ])
+      const errors = await validateSchema([f], {
+        items: [{ product: 'A' }, { product: '' }, { product: 'A' }],
+      })
+      // Row 1 fails required (empty); row 2 fails distinct (duplicate of row 0).
+      assert.deepEqual(errors['items.1.product'], ['This field is required'])
+      assert.deepEqual(errors['items.2.product'], ['Must be unique'])
+    })
+
+    it('multiple distinct fields are independent', async () => {
+      const f = RepeaterField.make('items').schema([
+        TextField.make('sku').distinct(),
+        TextField.make('label').distinct(),
+      ])
+      const errors = await validateSchema([f], {
+        items: [
+          { sku: 'X', label: 'red' },
+          { sku: 'X', label: 'blue' },   // dup sku, unique label
+          { sku: 'Y', label: 'red' },    // unique sku, dup label
+        ],
+      })
+      assert.deepEqual(errors['items.1.sku'],   ['Must be unique'])
+      assert.deepEqual(errors['items.2.label'], ['Must be unique'])
+      assert.equal('items.1.label' in errors, false)
+      assert.equal('items.2.sku'   in errors, false)
+    })
+
+    it('distinct() is a no-op outside an array-row context (no top-level cross-form check)', async () => {
+      // A distinct flag on a regular form Field never fires through validateSchema —
+      // there's nothing to compare against. This locks in the no-op posture so a
+      // future refactor can't accidentally widen distinct() to a single-row context.
+      const errors = await validateSchema(
+        [TextField.make('product').distinct()],
+        { product: 'A' },
+      )
+      assert.equal(isValid(errors), true)
+    })
+
+    it('distinct(false) clears a previously-set rule', async () => {
+      const field = TextField.make('product').distinct({ caseInsensitive: true }).distinct(false)
+      const f = RepeaterField.make('items').schema([field])
+      const errors = await validateSchema([f], {
+        items: [{ product: 'A' }, { product: 'A' }],
+      })
+      assert.equal(isValid(errors), true)
+    })
+
+    it('compares values across non-trailing rows when later rows are empty', async () => {
+      const errors = await validateSchema([distinctRepeater()], {
+        items: [{ product: 'A' }, { product: 'A' }, {}],
+      })
+      assert.deepEqual(errors['items.1.product'], ['Must be unique'])
+    })
+  })
+
   describe('applyStateUpdate (Step 5 — reactive interop)', () => {
     function buildForm(repeater: RepeaterField): Form {
       return Form.make().schema([repeater])

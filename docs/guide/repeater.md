@@ -308,6 +308,56 @@ fields, plus the parent `record` and `user`.
   deferred. Use field-level `extraItemActions` and branch in your
   handler on `ctx.row.blockType`.
 
+## Cross-row uniqueness — `distinct()`
+
+`Field.distinct()` rejects duplicate values across the rows of a
+Repeater (or rows of the same block type inside a Builder). The first
+occurrence is always allowed; second + subsequent rows fail
+validation.
+
+```ts
+Repeater.make('inventory')
+  .schema([
+    TextField.make('sku')
+      .required()
+      .distinct({ caseInsensitive: true }),
+    NumberField.make('stock'),
+  ])
+```
+
+Options:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `caseInsensitive` | `false` | Case-fold strings before comparing. Non-string values are compared as-is. |
+| `ignoreNulls` | `true` | Treat `null / undefined / ''` as "not yet set" — two empty rows aren't a conflict. Set `false` to forbid duplicate empties too. |
+| `message` | `'Must be unique'` | Override the rejection text. |
+
+Bare `distinct()` is the common case. Pass `false` to clear a
+previously-set rule (`field.distinct(opts).distinct(false)`).
+
+**Behavior in Builder.** The check is scoped to rows of the same
+block type — two `heading` blocks with the same `text` conflict, but
+a `heading.text = "X"` never conflicts with a `paragraph.text = "X"`
+(different block schemas, different intent).
+
+**Interaction with `unique()`.** The two are orthogonal: `distinct()`
+is in-form cross-row; `unique({ model })` is across-records DB probe.
+Pair them when a Repeater value must be unique both within the row
+set _and_ against persisted records:
+
+```ts
+TextField.make('email')
+  .required()
+  .distinct({ caseInsensitive: true })
+  .validate(unique({ model: Subscriber, caseInsensitive: true }))
+```
+
+**Limitations.** Outside a Repeater/Builder, `distinct()` is a no-op
+(there's nothing to compare against). Inside a Repeater, the check
+ignores nested-Repeater children — the inner array's `distinct()`
+runs against its own rows only.
+
 ## Limitations
 
 - **`itemHidden` doesn't re-evaluate on live updates.** Currently

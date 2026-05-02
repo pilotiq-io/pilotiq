@@ -125,7 +125,15 @@ export class BuilderDemo extends Page {
                     .label('Embed')
                     .icon('link')
                     .schema([
-                      TextField.make('url').label('URL').required(),
+                      TextField.make('url')
+                        .label('URL')
+                        .required()
+                        // Cross-row uniqueness scoped to embed blocks only —
+                        // adding two embed rows with the same URL fails on
+                        // the second row. Heading/paragraph/quote rows with
+                        // a `url` field (none here, but a useful invariant)
+                        // would never conflict.
+                        .distinct({ caseInsensitive: true, message: 'Each embed URL must be unique' }),
                       NumberField.make('aspectRatio').label('Aspect ratio (W:H)').helperText('e.g. 16 for 16:9'),
                     ]),
                 ]),

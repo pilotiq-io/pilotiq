@@ -451,6 +451,117 @@ describe('BuilderField', () => {
     })
   })
 
+  describe('distinct() — cross-row uniqueness (per block type)', () => {
+    function distinctBuilder() {
+      return BuilderField.make('content').blocks([
+        Block.make('heading').schema([TextField.make('text').distinct()]),
+        Block.make('paragraph').schema([TextField.make('body').distinct()]),
+      ])
+    }
+
+    it('all-unique rows produce no error', async () => {
+      const errors = await validateSchema([distinctBuilder()], {
+        content: [
+          { type: 'heading',   data: { text: 'A' } },
+          { type: 'heading',   data: { text: 'B' } },
+          { type: 'paragraph', data: { body: 'A' } },
+        ],
+      })
+      assert.equal(isValid(errors), true)
+    })
+
+    it('duplicate within the same block flags the second occurrence', async () => {
+      const errors = await validateSchema([distinctBuilder()], {
+        content: [
+          { type: 'heading', data: { text: 'A' } },
+          { type: 'heading', data: { text: 'A' } },
+        ],
+      })
+      assert.equal('content.0.data.text' in errors, false)
+      assert.deepEqual(errors['content.1.data.text'], ['Must be unique'])
+    })
+
+    it('comparison is scoped to same block type — different blocks with the same field-name value never conflict', async () => {
+      // Both schemas happen to have a `text` field marked distinct (renamed
+      // here so the assertion is explicit). A heading block's value should
+      // never be compared against a paragraph block's value.
+      const f = BuilderField.make('content').blocks([
+        Block.make('heading').schema([TextField.make('val').distinct()]),
+        Block.make('paragraph').schema([TextField.make('val').distinct()]),
+      ])
+      const errors = await validateSchema([f], {
+        content: [
+          { type: 'heading',   data: { val: 'A' } },
+          { type: 'paragraph', data: { val: 'A' } }, // same value, different block
+        ],
+      })
+      assert.equal(isValid(errors), true)
+    })
+
+    it('non-contiguous rows of the same type still conflict', async () => {
+      // heading(A) at idx 0, paragraph at idx 1, heading(A) at idx 2 → idx 2 fails.
+      const errors = await validateSchema([distinctBuilder()], {
+        content: [
+          { type: 'heading',   data: { text: 'A' } },
+          { type: 'paragraph', data: { body: 'B' } },
+          { type: 'heading',   data: { text: 'A' } },
+        ],
+      })
+      assert.deepEqual(errors['content.2.data.text'], ['Must be unique'])
+    })
+
+    it('caseInsensitive folds case before comparing', async () => {
+      const f = BuilderField.make('content').blocks([
+        Block.make('heading').schema([TextField.make('text').distinct({ caseInsensitive: true })]),
+      ])
+      const errors = await validateSchema([f], {
+        content: [
+          { type: 'heading', data: { text: 'Foo' } },
+          { type: 'heading', data: { text: 'foo' } },
+        ],
+      })
+      assert.deepEqual(errors['content.1.data.text'], ['Must be unique'])
+    })
+
+    it('default ignoreNulls=true skips empty values', async () => {
+      const errors = await validateSchema([distinctBuilder()], {
+        content: [
+          { type: 'heading', data: { text: '' } },
+          { type: 'heading', data: { text: '' } },
+        ],
+      })
+      // The required-style check isn't on this field, so empty rows pass.
+      assert.equal(isValid(errors), true)
+    })
+
+    it('custom message overrides the default', async () => {
+      const f = BuilderField.make('content').blocks([
+        Block.make('heading').schema([
+          TextField.make('text').distinct({ message: 'Each heading text must be unique' }),
+        ]),
+      ])
+      const errors = await validateSchema([f], {
+        content: [
+          { type: 'heading', data: { text: 'A' } },
+          { type: 'heading', data: { text: 'A' } },
+        ],
+      })
+      assert.deepEqual(errors['content.1.data.text'], ['Each heading text must be unique'])
+    })
+
+    it('unknown block rows are skipped (no crash, no false dup)', async () => {
+      const errors = await validateSchema([distinctBuilder()], {
+        content: [
+          { type: 'heading', data: { text: 'A' } },
+          { type: 'phantom', data: { text: 'A' } },   // unknown block type
+        ],
+      })
+      // Row 1 produces an "Unknown block type" error but no distinct error.
+      assert.ok(errors['content.1']?.some(e => e.includes('Unknown')))
+      assert.equal('content.1.data.text' in errors, false)
+    })
+  })
+
   // ─── Live re-resolve (applyStateUpdate) ──────────────────
 
   describe('applyStateUpdate (dotted path)', () => {

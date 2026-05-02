@@ -1,5 +1,5 @@
 import { Element } from '../schema/Element.js'
-import { Field } from '../fields/Field.js'
+import { Field, type DistinctOptions } from '../fields/Field.js'
 import { RepeaterField } from '../fields/RepeaterField.js'
 import { BuilderField } from '../fields/BuilderField.js'
 
@@ -104,6 +104,19 @@ async function validateRepeater(
       errors[`${field.name}.${i}.${childName}`] = msgs
     }
   }
+
+  checkDistinctRows({
+    fieldName: field.name,
+    innerFields: collectDistinctFields(inner),
+    rows,
+    errorKey: (rowIdx, childName) => `${field.name}.${rowIdx}.${childName}`,
+    extractValue: (row, childName) =>
+      (row && typeof row === 'object' && !Array.isArray(row))
+        ? (row as Record<string, unknown>)[childName]
+        : undefined,
+    rowMatches: () => true,
+    errors,
+  })
 }
 
 /**
@@ -182,7 +195,101 @@ async function validateBuilder(
     }
   }
 
+  // Distinct check is per-block-type — comparing a `heading.title` against a
+  // `paragraph.text` is meaningless (different schemas, different fields).
+  // We re-walk the rows once per block type so each pass only sees rows
+  // matching that type.
+  for (const block of field.getBlocks()) {
+    const distinctFields = collectDistinctFields(block.getSchema())
+    if (distinctFields.length === 0) continue
+    checkDistinctRows({
+      fieldName: field.name,
+      innerFields: distinctFields,
+      rows,
+      errorKey: (rowIdx, childName) => `${field.name}.${rowIdx}.data.${childName}`,
+      extractValue: (row, childName) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return undefined
+        const r = row as Record<string, unknown>
+        const data = r['data']
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return undefined
+        return (data as Record<string, unknown>)[childName]
+      },
+      rowMatches: row => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return false
+        return (row as Record<string, unknown>)['type'] === block.name
+      },
+      errors,
+    })
+  }
+
   if (baseErrors.length > 0) errors[field.name] = baseErrors
+}
+
+/**
+ * Walk the inner schema for fields with `.distinct()` set. Stops at any
+ * nested Repeater / Builder so the outer field's distinct pass doesn't
+ * accidentally walk into a child array's leaves (those rows are
+ * validated by their own array-field pass when they're submitted).
+ */
+function collectDistinctFields(elements: Element[]): Array<{ field: Field; opts: DistinctOptions }> {
+  const out: Array<{ field: Field; opts: DistinctOptions }> = []
+  const visit = (els: Element[]): void => {
+    for (const el of els) {
+      if (el instanceof RepeaterField) continue
+      if (el instanceof BuilderField)  continue
+      if (el instanceof Field) {
+        const opts = el.getDistinct()
+        if (opts) out.push({ field: el, opts })
+      }
+      const children = el.getChildren()
+      if (children && children.length > 0) visit(children)
+    }
+  }
+  visit(elements)
+  return out
+}
+
+/**
+ * Cross-row distinct comparison shared by Repeater + Builder. The first
+ * occurrence of each value passes; subsequent rows with the same value
+ * (after `caseInsensitive` / `ignoreNulls` normalization) get the
+ * configured rejection message under their flat-keyed error path.
+ *
+ * `rowMatches` lets the Builder caller scope the comparison to a single
+ * block type; Repeater always passes `() => true`.
+ */
+function checkDistinctRows(args: {
+  fieldName:    string
+  innerFields:  Array<{ field: Field; opts: DistinctOptions }>
+  rows:         unknown[]
+  errorKey:     (rowIdx: number, childName: string) => string
+  extractValue: (row: unknown, childName: string) => unknown
+  rowMatches:   (row: unknown) => boolean
+  errors:       ValidationErrors
+}): void {
+  if (args.innerFields.length === 0) return
+  for (const { field: child, opts } of args.innerFields) {
+    const ignoreNulls = opts.ignoreNulls !== false   // default true
+    const seen = new Map<unknown, number>()
+    for (let i = 0; i < args.rows.length; i++) {
+      const row = args.rows[i]
+      if (!args.rowMatches(row)) continue
+      const value = args.extractValue(row, child.name)
+      if (ignoreNulls && (value === undefined || value === null || value === '')) continue
+      const key = (opts.caseInsensitive && typeof value === 'string')
+        ? value.toLowerCase()
+        : value
+      if (!seen.has(key)) {
+        seen.set(key, i)
+        continue
+      }
+      const errKey = args.errorKey(i, child.name)
+      const message = opts.message ?? 'Must be unique'
+      const existing = args.errors[errKey]
+      if (existing) existing.push(message)
+      else args.errors[errKey] = [message]
+    }
+  }
 }
 
 /**

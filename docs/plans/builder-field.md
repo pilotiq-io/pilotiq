@@ -154,10 +154,12 @@ plumbing in the renderer):
 | `.reorderableWithButtons(bool=true)` | Forces button-only reorder (default is drag-with-button-fallback). |
 
 The bigger-surface gaps (`relationship`, `grid`, `simple`, `table`,
-`accordion`, `distinct`, `disableOptionsWhenSelectedInSiblingRepeaterItems`)
+`accordion`, `disableOptionsWhenSelectedInSiblingRepeaterItems`)
 are tracked separately and out of scope for this plan.
 **`extraItemActions` shipped 2026-05-04 cont'd** — see
 `docs/guide/repeater.md` and `project_pilotiq_extra_item_actions.md`.
+**`distinct()` shipped 2026-05-04 cont'd** — see `docs/guide/repeater.md`
+("Cross-row uniqueness").
 
 ## Out of scope
 
@@ -172,8 +174,6 @@ are tracked separately and out of scope for this plan.
   `Builder.make().blocks(user.isAdmin ? […incl. Hero] : […])` covers it.
 - **Per-block authorization** (`canAdd / canDelete / canEdit`). Out of
   scope; admin-trusted authors today.
-- **`distinct()` validator on inner fields** (no two rows with the same
-  block type having the same field value). Defer.
 - **Pivot / belongsToMany / relation-stored Builder rows.** Builder
   always stores into a JSON column on the parent record (or arbitrary
   user-handled storage via form lifecycle hooks). Relation-stored

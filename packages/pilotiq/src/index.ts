@@ -229,6 +229,7 @@ export {
   type AfterStateUpdatedContext,
   type FieldDecoration,
   type FormatStateUsingHandler,
+  type DistinctOptions,
 } from './fields/Field.js'
 export { resolveField, resolveFields } from './fields/resolveField.js'
 export { TextField } from './fields/TextField.js'

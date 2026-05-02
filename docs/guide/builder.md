@@ -180,6 +180,29 @@ runs, matching `Repeater` semantics.
 | One-of-many *plus* free-form text | `Builder` (each block is a flavor) |
 | User-defined block types | Out of scope — both fields take a fixed schema |
 
+## Cross-row uniqueness — `distinct()`
+
+`Field.distinct()` works inside a Builder block's schema the same way
+it does inside a Repeater, with one extra wrinkle: comparison is
+**scoped to rows of the same block type**. Two `heading` rows with
+the same title conflict; a `heading.title = "X"` never conflicts with
+a `paragraph.body = "X"`.
+
+```ts
+Builder.make('content').blocks([
+  Block.make('embed').schema([
+    TextField.make('url')
+      .required()
+      .distinct({ caseInsensitive: true, message: 'Each embed URL must be unique' }),
+  ]),
+  // ... other blocks
+])
+```
+
+Same option set as Repeater (`caseInsensitive / ignoreNulls /
+message`) — see the [Repeater guide](./repeater.md) for full
+discussion.
+
 ## Stale block types
 
 If a previously-used block name is removed from `.blocks([…])`, existing
