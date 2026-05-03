@@ -192,6 +192,8 @@ export {
   type TableGroupMeta,
   type TableGroupTitleHandler,
   type TableGroupDescriptionHandler,
+  type TableGroupKeyComparator,
+  orderByKeys,
 } from './elements/TableGroup.js'
 export {
   loadTableRecords,

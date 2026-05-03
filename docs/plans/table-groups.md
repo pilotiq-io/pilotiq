@@ -281,11 +281,15 @@ Estimate: +25-30 tests.
 
 ## Out of scope (deferred to v2)
 
-- **Manual group ordering** — `orderQueryUsing((q, dir) => q)`. Today
-  groups appear in insertion order from the row data; v2 can let users
-  pin "draft" before "published".
+- ~~**Manual group ordering**~~ ✅ shipped 2026-05-03 cont'd —
+  `TableGroup.orderUsing((a, b) => number)` overrides the default
+  alphabetic comparator on group keys. Sugar helper `orderByKeys([…])`
+  handles the common "pin these in order" case. Empty-bucket-last rule
+  is structural and still applies after the user's comparator.
 - **`scopeQueryByKey()`** — clicking a group name to navigate to a
-  filtered view of just that group.
+  filtered view of just that group. Still deferred — needs renderer
+  work (clickable heading) + URL-param wiring; coupled enough to
+  filtering that it deserves its own pass.
 - **Group counts in the dropdown** — `"Status (3)"`. Needs a separate
   count query per group; defer.
 - **Server-side query-driven grouping** — today the row order comes

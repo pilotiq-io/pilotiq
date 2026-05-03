@@ -86,6 +86,10 @@ is documentation-only for v1.
   plan adds `attach / detach / sync` actions and pivot-form support.
   Until then, users with M2M needs implement a hand-written join
   resource (e.g. `UserRoleResource`) and use two `hasMany` managers.
+  **Cross-repo plan filed (2026-05-03):**
+  `~/Projects/rudder/docs/plans/2026-05-03-orm-belongs-to-many.md`
+  — once that lands, the pilotiq follow-up plan can be written
+  against the documented contract.
 - Polymorphic relations (`morphMany / morphTo`) — same blocker; same
   follow-up.
 - `RelationGroup` (tabbing multiple managers under one label) — the

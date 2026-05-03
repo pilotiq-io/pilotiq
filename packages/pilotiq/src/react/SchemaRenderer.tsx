@@ -298,6 +298,7 @@ function renderFieldInput(
         : ','
       const splitKeys = (el['splitKeys'] as string[] | undefined) ?? ['Enter']
       const maxTags   = typeof el['maxTags'] === 'number' ? el['maxTags'] as number : null
+      const reorderable = Boolean(el['reorderable'])
       return (
         <TagsInput
           name={name}
@@ -308,6 +309,7 @@ function renderFieldInput(
           separator={separator}
           splitKeys={splitKeys}
           maxTags={maxTags}
+          reorderable={reorderable}
         />
       )
     }

@@ -163,6 +163,42 @@ describe('RepeaterField', () => {
       assert.equal(RepeaterField.make('x').grid(2).grid(1).getGrid(), undefined)
     })
 
+    it('grid() accepts a responsive object form', () => {
+      const meta = RepeaterField.make('x')
+        .grid({ default: 1, md: 2, xl: 3 })
+        .toMeta()
+      assert.deepEqual(meta.grid, { default: 1, md: 2, xl: 3 })
+    })
+
+    it('grid() floors floats and drops degenerate entries', () => {
+      // `default: 0` and `sm: 1` are both dropped — non-default entries
+      // require n >= 2 (n=1 would just fall through to the previous
+      // rule) and `default` requires n >= 1 (and 0 is degenerate even
+      // there). `md: 2.7` floors to 2, `lg: 3` survives.
+      const meta = RepeaterField.make('x')
+        .grid({ default: 0, sm: 1, md: 2.7, lg: 3 })
+        .toMeta()
+      assert.deepEqual(meta.grid, { md: 2, lg: 3 })
+    })
+
+    it('grid() collapses single-default responsive object to scalar', () => {
+      // If only `default` remains after filtering, the responsive form
+      // is no different from the scalar form — collapse to keep the
+      // wire shape minimal.
+      const meta = RepeaterField.make('x')
+        .grid({ default: 3 })
+        .toMeta()
+      assert.equal(meta.grid, 3)
+    })
+
+    it('grid({}) with no usable entries resets to no-grid', () => {
+      assert.equal(
+        'grid' in RepeaterField.make('x').grid({ md: 1 }).toMeta(),
+        false,
+      )
+      assert.equal('grid' in RepeaterField.make('x').grid({}).toMeta(), false)
+    })
+
     it('grid() composes with reorderable / collapsible / accordion', () => {
       // The renderer suppresses the drop indicator in grid mode but
       // keeps button reorder + accordion behavior. Field-level should

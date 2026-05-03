@@ -256,6 +256,18 @@ describe('BuilderField', () => {
       assert.equal(BuilderField.make('x').grid(2).getGrid(),       2)
       assert.equal(BuilderField.make('x').grid(2).grid(1).getGrid(), undefined)
     })
+
+    it('grid() accepts a responsive object form (mirrors RepeaterField)', () => {
+      const meta = BuilderField.make('x')
+        .grid({ default: 1, md: 2, xl: 3 })
+        .toMeta()
+      assert.deepEqual(meta.grid, { default: 1, md: 2, xl: 3 })
+    })
+
+    it('grid() collapses single-default responsive object to scalar', () => {
+      const meta = BuilderField.make('x').grid({ default: 3 }).toMeta()
+      assert.equal(meta.grid, 3)
+    })
   })
 
   // ─── Resolution ───────────────────────────────────────────

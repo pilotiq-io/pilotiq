@@ -416,10 +416,15 @@ export async function loadTableRecords(
       // same value cluster together. The user's sort still applies
       // (records came in pre-sorted from `records()`); we just shuffle
       // those clusters so groups are contiguous. Empty/null group values
-      // bubble to the bottom under the empty-string key.
+      // bubble to the bottom under the empty-string key. When
+      // `TableGroup.orderUsing(comparator)` is set on the active group,
+      // the comparator overrides the default alphabetic order.
       const finalRows = groupColumn === undefined
         ? rows
-        : sortRowsByGroupValue(rows as Array<Record<string, unknown>>)
+        : sortRowsByGroupValue(
+            rows as Array<Record<string, unknown>>,
+            activeGroup?.getKeyComparator(),
+          )
 
       // Per-column summaries. Compute over the rows we just rendered
       // (per-page only in v1; cross-page aggregation is deferred). Pulls
@@ -490,9 +495,15 @@ export async function loadTableRecords(
  * same group are contiguous. Preserves original order within groups
  * (ties broken by original index). Empty / unstamped group values sort
  * to the end so the "ungrouped" band appears last.
+ *
+ * When a `comparator` is supplied (via `TableGroup.orderUsing(...)`) it
+ * replaces the default alphabetic comparison between distinct keys. The
+ * empty-bucket-last rule and within-group stability are preserved
+ * around the user's comparator — those are structural, not policy.
  */
 function sortRowsByGroupValue(
   rows: ReadonlyArray<Record<string, unknown>>,
+  comparator?: (a: string, b: string) => number,
 ): Array<Record<string, unknown>> {
   const indexed = rows.map((r, i) => ({ r, i, key: String(r['_groupValue'] ?? '') }))
   indexed.sort((a, b) => {
@@ -501,7 +512,15 @@ function sortRowsByGroupValue(
     if (aEmpty && !bEmpty) return 1
     if (!aEmpty && bEmpty) return -1
     if (a.key === b.key) return a.i - b.i
-    return a.key < b.key ? -1 : 1
+    if (comparator) {
+      const cmp = comparator(a.key, b.key)
+      if (cmp !== 0) return cmp
+      // Comparator-tied → fall back to alphabetic so ties don't churn
+      // depending on input order (otherwise pinning two keys to the
+      // same rank would leave them in arrival order, which surprises
+      // users when their `records()` reorders).
+    }
+    return a.key < b.key ? -1 : a.key > b.key ? 1 : 0
   })
   return indexed.map(({ r }) => r)
 }

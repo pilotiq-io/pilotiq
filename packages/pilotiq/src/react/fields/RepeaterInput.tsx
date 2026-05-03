@@ -1,4 +1,4 @@
-import React, { useContext, useMemo, useState } from 'react'
+import React, { useContext, useId, useMemo, useState } from 'react'
 import { PlusIcon } from 'lucide-react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { Button } from '../ui/button.js'
@@ -37,6 +37,70 @@ export function reorderRows<T>(rows: T[], fromIdx: number, insertBeforeIdx: numb
   const target = insertBeforeIdx > fromIdx ? insertBeforeIdx - 1 : insertBeforeIdx
   next.splice(target, 0, moved)
   return next
+}
+
+/** Tailwind v4 default breakpoints. Hardcoded so the renderer doesn't need
+ * to read the consumer's tailwind config. */
+const RESPONSIVE_GRID_BREAKPOINTS: Array<{ key: 'sm' | 'md' | 'lg' | 'xl' | '2xl'; min: string }> = [
+  { key: 'sm',  min: '40rem' },
+  { key: 'md',  min: '48rem' },
+  { key: 'lg',  min: '64rem' },
+  { key: 'xl',  min: '80rem' },
+  { key: '2xl', min: '96rem' },
+]
+
+/**
+ * Compute the grid container's className / style / scoped-CSS block from
+ * a `meta.grid` value. Shared between Repeater and Builder so both render
+ * responsive grids identically.
+ *
+ * - `meta.grid` undefined → `{ hasGrid: false }` and the caller falls back
+ *   to a vertical flex stack.
+ * - Number form (`grid(2)`) → inline `gridTemplateColumns: repeat(N, …)`.
+ * - Object form (`grid({ default: 1, md: 2 })`) → a fresh `<style>` block
+ *   keyed off `scopeId` + a matching className on the container; default
+ *   columns drive the base rule, each declared breakpoint adds a media
+ *   query override.
+ *
+ * `scopeId` should be a stable per-field identifier (we use `useId()` from
+ * React — already isolated to this render's component instance).
+ */
+export function buildGridContainer(
+  grid: number | Record<string, number | undefined> | undefined,
+  scopeId: string,
+): {
+  hasGrid:    boolean
+  className:  string
+  style:      React.CSSProperties | undefined
+  styleBlock: React.ReactElement | null
+} {
+  if (grid === undefined) {
+    return { hasGrid: false, className: 'flex flex-col gap-3', style: undefined, styleBlock: null }
+  }
+  if (typeof grid === 'number') {
+    return {
+      hasGrid: true,
+      className: 'grid gap-3',
+      style: { gridTemplateColumns: `repeat(${grid}, minmax(0, 1fr))` },
+      styleBlock: null,
+    }
+  }
+  const cls = `pq-grid-${scopeId.replace(/:/g, '')}`
+  const baseCols = typeof grid['default'] === 'number' ? grid['default'] : 1
+  const rules: string[] = [
+    `.${cls} { display: grid; gap: 0.75rem; grid-template-columns: repeat(${baseCols}, minmax(0, 1fr)); }`,
+  ]
+  for (const bp of RESPONSIVE_GRID_BREAKPOINTS) {
+    const cols = grid[bp.key]
+    if (typeof cols !== 'number') continue
+    rules.push(`@media (min-width: ${bp.min}) { .${cls} { grid-template-columns: repeat(${cols}, minmax(0, 1fr)); } }`)
+  }
+  return {
+    hasGrid: true,
+    className: cls,
+    style: undefined,
+    styleBlock: <style>{rules.join('\n')}</style>,
+  }
 }
 
 interface RowState {
@@ -99,11 +163,18 @@ export function RepeaterInput({
   const addLabel         = buttons?.add?.label
     ?? (typeof meta.addActionLabel === 'string' ? meta.addActionLabel : 'Add')
   const columns          = typeof meta.columns === 'number' && meta.columns > 1 ? meta.columns : 1
-  // Row-grid mode: `grid >= 2` lays rows in an n-column grid. Distinct
-  // from `columns` which grids the inner schema *inside* a row. We
-  // suppress the drop indicator in grid mode (a horizontal accent
-  // line reads wrong across grid cells); button reorder still works.
-  const rowGrid          = typeof meta.grid === 'number' && meta.grid > 1 ? meta.grid : 1
+  // Row-grid mode: scalar `grid: N` or responsive object `grid: { default, md, … }`
+  // lays rows in an n-column grid. Distinct from `columns` which grids the inner
+  // schema *inside* a row. We suppress the drop indicator in grid mode (a horizontal
+  // accent line reads wrong across grid cells); button reorder still works.
+  const gridScopeId      = useId()
+  const gridContainer    = useMemo(
+    () => buildGridContainer(
+      meta.grid as number | Record<string, number | undefined> | undefined,
+      gridScopeId,
+    ),
+    [meta.grid, gridScopeId],
+  )
   // Table mode renders rows as `<tr>` and inner fields as `<td>`. Mutually
   // exclusive with `simple` and `grid` (the field setters arbitrate).
   // Collapsible / accordion are meaningless on `<tr>` rows so we ignore
@@ -393,15 +464,14 @@ export function RepeaterInput({
         </div>
       )}
 
+      {gridContainer.styleBlock}
       <div
-        className={rowGrid > 1 ? 'grid gap-3' : 'flex flex-col gap-3'}
-        style={rowGrid > 1
-          ? { gridTemplateColumns: `repeat(${rowGrid}, minmax(0, 1fr))` }
-          : undefined}
+        className={gridContainer.className}
+        style={gridContainer.style}
       >
       {rows.map((row, i) => (
         <React.Fragment key={row.id}>
-          {!row.hidden && dropAt === i && rowGrid === 1 && <DropIndicator />}
+          {!row.hidden && dropAt === i && !gridContainer.hasGrid && <DropIndicator />}
           <RepeaterRow
             row={row}
             index={i}
@@ -436,7 +506,7 @@ export function RepeaterInput({
           />
         </React.Fragment>
       ))}
-      {dropAt === rows.length && rowGrid === 1 && <DropIndicator />}
+      {dropAt === rows.length && !gridContainer.hasGrid && <DropIndicator />}
       </div>
 
       <AddRowButton

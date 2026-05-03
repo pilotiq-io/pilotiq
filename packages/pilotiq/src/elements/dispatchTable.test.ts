@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { Table } from './Table.js'
-import { TableGroup } from './TableGroup.js'
+import { TableGroup, orderByKeys } from './TableGroup.js'
 import { Column } from '../Column.js'
 import { Section } from '../schema/Section.js'
 import { resolveSchema } from '../schema/resolveSchema.js'
@@ -343,6 +343,54 @@ describe('loadTableRecords', () => {
       assert.deepEqual(rows.map(r => r['id']), ['2', '1', '3'])
       assert.equal(rows[1]!['_groupValue'], '')
       assert.equal(rows[2]!['_groupValue'], '')
+    })
+
+    it('TableGroup.orderUsing() pins group order', async () => {
+      // Without orderUsing, alphabetic order would put 'archived' first.
+      // With orderByKeys(['draft', 'published', 'archived']), drafts come
+      // first regardless. Empty bucket still sinks to the bottom.
+      const status = TableGroup.make('status').orderUsing(
+        orderByKeys(['draft', 'published', 'archived']),
+      )
+      const t = Table.make<{ id: string; status: string | null }>()
+        .columns([Column.make('status')])
+        .records(async () => [
+          { id: 'a', status: 'archived'  },
+          { id: 'd', status: 'draft'     },
+          { id: 'p', status: 'published' },
+          { id: 'n', status: null        },
+          { id: 'd2', status: 'draft'    },
+        ])
+        .defaultGroup(status)
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.deepEqual(
+        rows.map(r => r['id']),
+        ['d', 'd2', 'p', 'a', 'n'],
+      )
+    })
+
+    it('orderUsing() composes with the empty-bucket-last rule', async () => {
+      // Comparator that would put '' at the top alphabetically — the
+      // structural empty-last rule still wins.
+      const status = TableGroup.make('status').orderUsing(
+        (a, b) => a.localeCompare(b),
+      )
+      const t = Table.make<{ id: string; status: string | null }>()
+        .columns([Column.make('status')])
+        .records(async () => [
+          { id: 'n', status: null   },
+          { id: 'b', status: 'beta' },
+          { id: 'a', status: 'alpha'},
+        ])
+        .defaultGroup(status)
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.deepEqual(rows.map(r => r['id']), ['a', 'b', 'n'])
     })
 
     it('computes per-column summaries over the rendered rows', async () => {

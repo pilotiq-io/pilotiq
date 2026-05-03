@@ -50,6 +50,28 @@ export interface RepeaterRelationshipMeta {
 export type RepeaterItemLabel = (row: Record<string, unknown>) => string
 
 /**
+ * Responsive column-count config for `Repeater.grid()` and `Builder.grid()`.
+ * Keys map to the standard Tailwind breakpoints (sm/md/lg/xl/2xl). `default`
+ * sets the column count below the smallest declared breakpoint and falls back
+ * to 1 when omitted. Pass values ≥ 2 — anything lower is dropped at the field
+ * level so the renderer sees only meaningful entries.
+ *
+ * Example: `.grid({ default: 1, md: 2, xl: 3 })` renders one column on mobile,
+ * two from `md` up, three from `xl` up.
+ */
+export interface ResponsiveGridConfig {
+  default?: number
+  sm?:      number
+  md?:      number
+  lg?:      number
+  xl?:      number
+  '2xl'?:   number
+}
+
+/** Single-number form for `grid(n)` (current API) OR responsive object form. */
+export type RepeaterGridConfig = number | ResponsiveGridConfig
+
+/**
  * Header descriptor for `Repeater.table([...])` mode. One entry per inner
  * schema field, in declaration order — column[i] is the header for
  * `schema[i]`. Object literal (not a class) to keep the surface lean;
@@ -144,15 +166,22 @@ export interface RepeaterFieldMeta extends FieldMeta {
    */
   simple?:          boolean
   /**
-   * Set when `Repeater.grid(n)` is configured (n ≥ 2). Lays the ROWS
-   * themselves in an n-column grid (different from `columns(n)` which
-   * grids the inner schema *inside* a row). Useful for tile-style
-   * pickers / member cards / icon palettes. Renderer swaps the outer
-   * `flex flex-col` container for a CSS grid and skips the drag-drop
-   * indicator in grid mode (the horizontal bar reads wrong across
-   * grid cells); button reorder still works.
+   * Set when `Repeater.grid(...)` is configured. Lays the ROWS themselves
+   * in an n-column grid (different from `columns(n)` which grids the inner
+   * schema *inside* a row). Useful for tile-style pickers / member cards /
+   * icon palettes.
+   *
+   * Two shapes:
+   *   - `number` (≥ 2) — fixed grid at every viewport.
+   *   - `ResponsiveGridConfig` — `{ default?, sm?, md?, lg?, xl?, '2xl'? }`
+   *     keyed by Tailwind breakpoint. The renderer emits a scoped
+   *     `<style>` block with media queries per declared breakpoint.
+   *
+   * Renderer swaps the outer `flex flex-col` container for a CSS grid and
+   * skips the drag-drop indicator in grid mode (the horizontal bar reads
+   * wrong across grid cells); button reorder still works.
    */
-  grid?:            number
+  grid?:            RepeaterGridConfig
   /**
    * Set when `Repeater.table([...])` is configured. Renders rows as
    * `<tr>` and inner fields as `<td>`, with the supplied column
@@ -219,7 +248,7 @@ export class RepeaterField extends Field {
   private _itemHidden?:      RepeaterItemHiddenRule
   private _extraItemActions: Action[] = []
   private _simple           = false
-  private _grid?:            number
+  private _grid?:            RepeaterGridConfig
   private _tableColumns?:    RepeaterTableColumn[]
   private _buttons:          { [K in RowButtonKind]?: RowButton } = {}
   private _relationship?:    RepeaterRelationshipConfig
@@ -329,19 +358,28 @@ export class RepeaterField extends Field {
   addActionLabel(label: string): this { this._addActionLabel = label; return this }
 
   /**
-   * Lay the ROWS themselves in an `n`-column grid — different from
-   * `columns(n)` which grids the inner schema *inside* a row. Pass
-   * `n >= 2`; values below 2 reset to no-grid (vertical stack, the
-   * default).
+   * Lay the ROWS themselves in an n-column grid — different from
+   * `columns(n)` which grids the inner schema *inside* a row.
+   *
+   * Two forms:
+   *   - `grid(2)` — fixed 2-column grid at every viewport.
+   *   - `grid({ default: 1, md: 2, xl: 3 })` — responsive: column count
+   *     changes at the named Tailwind breakpoint (sm 640px / md 768px /
+   *     lg 1024px / xl 1280px / 2xl 1536px). `default` (or `1` when
+   *     omitted) is the count below the smallest declared breakpoint.
+   *
+   * Pass `n >= 2` or an object with at least one breakpoint having a value
+   * `>= 2`; otherwise the grid mode resets (vertical stack, the default).
    *
    * In grid mode the renderer keeps reorder buttons working but
    * suppresses the horizontal drop indicator (which doesn't read
    * across grid cells). Drag-and-drop itself still moves rows; the
    * cursor is the only feedback.
    */
-  grid(n: number): this {
-    if (n >= 2) this._grid = n
-    else delete this._grid
+  grid(config: RepeaterGridConfig): this {
+    const normalized = normalizeGridConfig(config)
+    if (normalized === undefined) delete this._grid
+    else this._grid = normalized
     return this
   }
 
@@ -491,7 +529,7 @@ export class RepeaterField extends Field {
   getAddActionLabel(): string | undefined { return this._addActionLabel }
   getExtraItemActions(): Action[] { return this._extraItemActions }
   isSimple(): boolean { return this._simple }
-  getGrid(): number | undefined { return this._grid }
+  getGrid(): RepeaterGridConfig | undefined { return this._grid }
   getTableColumns(): RepeaterTableColumn[] | undefined { return this._tableColumns }
   isTable(): boolean { return this._tableColumns !== undefined }
   /** Resolved relationship config (`undefined` when not configured). */
@@ -593,4 +631,48 @@ export function serializeRowButtons(
     any = true
   }
   return any ? out : undefined
+}
+
+const RESPONSIVE_BREAKPOINTS = ['default', 'sm', 'md', 'lg', 'xl', '2xl'] as const
+
+/**
+ * Coerce a user-supplied grid config into the shape stored on `_grid`.
+ *
+ * - `number` ≥ 2 → returned unchanged.
+ * - `number` < 2 → `undefined` (resets the grid mode — mirrors the existing
+ *   "passing 1 turns it off" sentinel).
+ * - `ResponsiveGridConfig` → object with each declared breakpoint floored
+ *   to an integer ≥ 2; entries below 2 are dropped. When no breakpoint
+ *   survives the filter, returns `undefined` (no grid mode at any size).
+ *   Single-entry results collapse to the bare number when the only
+ *   surviving entry is `default` — that's exactly the scalar form.
+ *
+ * Shared with `Builder.grid()` so the two fields validate identically.
+ */
+export function normalizeGridConfig(
+  config: RepeaterGridConfig,
+): RepeaterGridConfig | undefined {
+  if (typeof config === 'number') {
+    return config >= 2 ? Math.floor(config) : undefined
+  }
+  const out: ResponsiveGridConfig = {}
+  let breakpointCount = 0  // declared breakpoints other than `default`
+  for (const k of RESPONSIVE_BREAKPOINTS) {
+    const raw = config[k]
+    if (typeof raw !== 'number') continue
+    const n = Math.floor(raw)
+    // `default` allows n=1 (explicit "vertical stack below the smallest
+    // declared breakpoint"). Other breakpoints require n >= 2 — anything
+    // smaller would just fall through to the previous rule.
+    if (k === 'default' ? n < 1 : n < 2) continue
+    out[k] = n
+    if (k !== 'default') breakpointCount++
+  }
+  // No actual breakpoint overrides → no responsive behavior. Either
+  // collapse to the scalar form (when default exists) or reset.
+  if (breakpointCount === 0) {
+    if (typeof out.default === 'number' && out.default >= 2) return out.default
+    return undefined
+  }
+  return out
 }

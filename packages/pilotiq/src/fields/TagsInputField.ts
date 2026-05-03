@@ -87,7 +87,9 @@ export class TagsInputField extends Field {
     return this
   }
 
-  /** Reserve drag-reorder for v2 — the chip row stays in insertion order. */
+  /** Allow chip reorder via native HTML5 drag-and-drop. Off by default — most
+   * tag sets are insertion-ordered or alphabetized, and the chip strip is small
+   * enough that drag affordances are noisy when unused. */
   reorderable(value: boolean = true): this {
     this._reorderable = value
     return this

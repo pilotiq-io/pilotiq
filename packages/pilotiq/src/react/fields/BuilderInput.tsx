@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronDownIcon, PlusIcon } from 'lucide-react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { Button } from '../ui/button.js'
@@ -6,7 +6,7 @@ import { SchemaRenderer } from '../SchemaRenderer.js'
 import { FormIdContext, useFormState } from '../FormStateContext.js'
 import { findFieldMeta } from '../formStateHelpers.js'
 import { useIconFor } from '../icon-context.js'
-import { reorderRows, ExtraActionStrip } from './RepeaterInput.js'
+import { reorderRows, ExtraActionStrip, buildGridContainer } from './RepeaterInput.js'
 import type { RowButtonsMeta } from '../../fields/RowButton.js'
 import {
   RowChromeIconButton,
@@ -129,7 +129,16 @@ export function BuilderInput({
   // ROWS themselves (distinct from per-block `Block.columns(n)` which
   // grids fields *inside* a block body). DnD drop indicator is
   // suppressed in grid mode (see RepeaterInput for the same caveat).
-  const rowGrid          = typeof meta.grid === 'number' && meta.grid > 1 ? meta.grid : 1
+  // Accepts the scalar form (`grid(2)`) or a responsive object — see
+  // `buildGridContainer` for the breakpoint mapping.
+  const gridScopeId      = useId()
+  const gridContainer    = useMemo(
+    () => buildGridContainer(
+      meta.grid as number | Record<string, number | undefined> | undefined,
+      gridScopeId,
+    ),
+    [meta.grid, gridScopeId],
+  )
 
   const initialRows: RowState[] = useMemo(
     () => (meta.rows ?? []).map(r => ({
@@ -361,16 +370,15 @@ export function BuilderInput({
         </div>
       )}
 
+      {gridContainer.styleBlock}
       <div
-        className={rowGrid > 1 ? 'grid gap-3' : 'flex flex-col gap-3'}
-        style={rowGrid > 1
-          ? { gridTemplateColumns: `repeat(${rowGrid}, minmax(0, 1fr))` }
-          : undefined}
+        className={gridContainer.className}
+        style={gridContainer.style}
       >
       {rows.map((row, i) => (
         <React.Fragment key={row.id}>
-          {!row.hidden && dropAt === i && rowGrid === 1 && <DropIndicator />}
-          {!row.hidden && addBetween && addable && blocks.length > 0 && rowGrid === 1 && (
+          {!row.hidden && dropAt === i && !gridContainer.hasGrid && <DropIndicator />}
+          {!row.hidden && addBetween && addable && blocks.length > 0 && !gridContainer.hasGrid && (
             <BetweenInserter
               blocks={blocks}
               typeCounts={typeCounts}
@@ -417,7 +425,7 @@ export function BuilderInput({
           />
         </React.Fragment>
       ))}
-      {dropAt === rows.length && rowGrid === 1 && <DropIndicator />}
+      {dropAt === rows.length && !gridContainer.hasGrid && <DropIndicator />}
       </div>
 
       {addable && blocks.length > 0 && (

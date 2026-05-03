@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { TableGroup, bucketDateValue, formatDateBucketTitle } from './TableGroup.js'
+import { TableGroup, bucketDateValue, formatDateBucketTitle, orderByKeys } from './TableGroup.js'
 
 describe('TableGroup', () => {
   describe('fluent setters', () => {
@@ -86,6 +86,45 @@ describe('TableGroup', () => {
 
     it('returns empty string for unparseable inputs', () => {
       assert.equal(bucketDateValue('not a date'), '')
+    })
+  })
+
+  describe('orderUsing + orderByKeys', () => {
+    it('default — comparator unset', () => {
+      const g = TableGroup.make('status')
+      assert.equal(g.getKeyComparator(), undefined)
+    })
+
+    it('orderUsing() stores the comparator', () => {
+      const cmp = (a: string, b: string): number => a.length - b.length
+      const g = TableGroup.make('status').orderUsing(cmp)
+      assert.equal(g.getKeyComparator(), cmp)
+    })
+
+    it('orderByKeys ranks listed keys in order', () => {
+      const cmp = orderByKeys(['draft', 'published', 'archived'])
+      // Listed keys come back in declaration order, regardless of input.
+      const sorted = ['archived', 'draft', 'published'].slice().sort(cmp)
+      assert.deepEqual(sorted, ['draft', 'published', 'archived'])
+    })
+
+    it('orderByKeys puts unknown keys after the listed ones', () => {
+      const cmp = orderByKeys(['draft', 'published'])
+      // 'pending' isn't in the list — must sort after both listed keys.
+      const sorted = ['pending', 'draft', 'published'].slice().sort(cmp)
+      assert.deepEqual(sorted, ['draft', 'published', 'pending'])
+    })
+
+    it('orderByKeys breaks ties between unlisted keys alphabetically', () => {
+      const cmp = orderByKeys(['draft'])
+      const sorted = ['zeta', 'alpha', 'draft', 'beta'].slice().sort(cmp)
+      assert.deepEqual(sorted, ['draft', 'alpha', 'beta', 'zeta'])
+    })
+
+    it('orderByKeys empty list collapses to alphabetic', () => {
+      const cmp = orderByKeys([])
+      const sorted = ['c', 'a', 'b'].slice().sort(cmp)
+      assert.deepEqual(sorted, ['a', 'b', 'c'])
     })
   })
 

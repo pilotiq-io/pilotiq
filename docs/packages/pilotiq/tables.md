@@ -55,6 +55,27 @@ Table.make().defaultGroup('status')
 Stable-sorts rows by the group column server-side; the renderer inserts
 a heading row whenever the value changes between adjacent rows.
 
+### Manual group ordering
+
+Pass a `TableGroup` with `orderUsing(...)` (or the `orderByKeys([…])`
+helper) to override the default alphabetic ordering of group buckets.
+Useful for pinning enums in a meaningful sequence:
+
+```ts
+import { Table, TableGroup, orderByKeys } from '@pilotiq/pilotiq'
+
+Table.make()
+  .groups([
+    TableGroup.make('status').orderUsing(
+      orderByKeys(['draft', 'published', 'archived']),
+    ),
+  ])
+  .defaultGroup('status')
+```
+
+Empty / null group values still sink to the bottom — that's structural,
+not policy. Within a group the original row order is preserved.
+
 > [!TIP]
 > Combine `defaultGroup('category')` with `Column.summarize([Sum, Count])`
 > for ledger-shaped reports.

@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react'
-import { XIcon } from 'lucide-react'
+import { GripVerticalIcon, XIcon } from 'lucide-react'
 import { useFieldState } from '../FormStateContext.js'
+import { reorderRows } from './RepeaterInput.js'
 
 /**
  * Free-text tag chips. Value is `string[]`. Renders pill-shaped chips
@@ -11,9 +12,13 @@ import { useFieldState } from '../FormStateContext.js'
  *
  * The chip set serializes to a single hidden input as JSON; the server's
  * `coerceFormValues` `tagsInput` branch parses it back into `string[]`.
+ *
+ * When `reorderable` is set, each chip becomes draggable via native HTML5
+ * drag-and-drop. A 2px vertical drop indicator hints where the dragged chip
+ * will land. Reuses `reorderRows` from RepeaterInput so behavior matches.
  */
 export function TagsInput({
-  name, defaultValue, disabled, placeholder, suggestions, separator, splitKeys, maxTags,
+  name, defaultValue, disabled, placeholder, suggestions, separator, splitKeys, maxTags, reorderable,
 }: {
   name:         string
   defaultValue: unknown
@@ -23,6 +28,7 @@ export function TagsInput({
   separator:    string | null
   splitKeys:    string[]
   maxTags:      number | null
+  reorderable:  boolean
 }): React.ReactElement {
   const fs = useFieldState(name)
 
@@ -30,7 +36,10 @@ export function TagsInput({
   const [localTags, setLocalTags] = useState<string[]>(initial)
   const [draft, setDraft] = useState<string>('')
   const [focused, setFocused] = useState<boolean>(false)
+  const [dragFromIdx, setDragFromIdx] = useState<number | null>(null)
+  const [dropAt, setDropAt] = useState<number | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const canReorder = reorderable && !disabled
 
   const tags = fs.controlled ? toArray(fs.value) : localTags
 
@@ -65,6 +74,40 @@ export function TagsInput({
 
   const removeTag = (idx: number): void => {
     setTags(tags.filter((_, i) => i !== idx))
+  }
+
+  const onChipDragStart = (idx: number) => (e: React.DragEvent<HTMLSpanElement>): void => {
+    if (!canReorder) return
+    setDragFromIdx(idx)
+    e.dataTransfer.effectAllowed = 'move'
+    // Firefox refuses to start a drag without setData on the dataTransfer.
+    e.dataTransfer.setData('text/plain', String(idx))
+  }
+
+  const onChipDragOver = (idx: number) => (e: React.DragEvent<HTMLSpanElement>): void => {
+    if (dragFromIdx == null) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const before = e.clientX < rect.left + rect.width / 2
+    setDropAt(before ? idx : idx + 1)
+  }
+
+  const onChipDrop = (e: React.DragEvent<HTMLSpanElement>): void => {
+    if (dragFromIdx == null || dropAt == null) {
+      setDragFromIdx(null); setDropAt(null)
+      return
+    }
+    e.preventDefault()
+    const next = reorderRows(tags, dragFromIdx, dropAt)
+    if (next !== tags) setTags(next)
+    setDragFromIdx(null)
+    setDropAt(null)
+  }
+
+  const onChipDragEnd = (): void => {
+    setDragFromIdx(null)
+    setDropAt(null)
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
@@ -128,22 +171,44 @@ export function TagsInput({
         onClick={() => inputRef.current?.focus()}
       >
         {tags.map((t, i) => (
-          <span
-            key={`${t}-${i}`}
-            className="inline-flex items-center gap-1 rounded bg-secondary text-secondary-foreground text-xs px-2 py-0.5"
-          >
-            <span>{t}</span>
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={(e) => { e.stopPropagation(); removeTag(i) }}
-              disabled={disabled}
-              aria-label={`Remove ${t}`}
+          <React.Fragment key={`${t}-${i}`}>
+            {canReorder && dropAt === i && dragFromIdx !== null && dragFromIdx !== i && dragFromIdx + 1 !== i && (
+              <span aria-hidden className="inline-block w-0.5 h-5 bg-primary rounded self-center" />
+            )}
+            <span
+              className={[
+                'inline-flex items-center gap-1 rounded bg-secondary text-secondary-foreground text-xs px-2 py-0.5',
+                canReorder ? 'cursor-grab active:cursor-grabbing' : '',
+                dragFromIdx === i ? 'opacity-50' : '',
+              ].join(' ')}
+              draggable={canReorder}
+              onDragStart={canReorder ? onChipDragStart(i) : undefined}
+              onDragOver={canReorder ? onChipDragOver(i) : undefined}
+              onDrop={canReorder ? onChipDrop : undefined}
+              onDragEnd={canReorder ? onChipDragEnd : undefined}
             >
-              <XIcon className="size-3" />
-            </button>
-          </span>
+              {canReorder && (
+                <GripVerticalIcon
+                  className="size-3 text-muted-foreground -ml-0.5"
+                  aria-hidden
+                />
+              )}
+              <span>{t}</span>
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={(e) => { e.stopPropagation(); removeTag(i) }}
+                disabled={disabled}
+                aria-label={`Remove ${t}`}
+              >
+                <XIcon className="size-3" />
+              </button>
+            </span>
+          </React.Fragment>
         ))}
+        {canReorder && dropAt === tags.length && dragFromIdx !== null && dragFromIdx !== tags.length - 1 && (
+          <span aria-hidden className="inline-block w-0.5 h-5 bg-primary rounded self-center" />
+        )}
         <input
           ref={inputRef}
           type="text"

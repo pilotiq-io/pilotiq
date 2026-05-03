@@ -18,6 +18,16 @@ export type TableGroupDescriptionHandler<R = unknown> = (
   record: R,
 ) => string | undefined
 
+/**
+ * Comparator on resolved group keys. Receives the same string values that
+ * the dispatcher stamps onto `_groupValue` (so for `date()` groups the keys
+ * are `YYYY-MM-DD`, not raw timestamps). Return < 0 to put `a` first, > 0
+ * to put `b` first, 0 to keep insertion order. The empty-bucket-last rule
+ * is still applied AFTER your comparator — the empty bucket stays at the
+ * bottom regardless of what you return for it.
+ */
+export type TableGroupKeyComparator = (a: string, b: string) => number
+
 export interface TableGroupMeta {
   column:        string
   label:         string
@@ -38,6 +48,7 @@ export class TableGroup<R = unknown> {
   private _titleFn?:       TableGroupTitleHandler<R>
   private _descriptionFn?: TableGroupDescriptionHandler<R>
   private _date           = false
+  private _keyComparator?: TableGroupKeyComparator
 
   private constructor(column: string) {
     this._column = column
@@ -78,6 +89,28 @@ export class TableGroup<R = unknown> {
    * 4, 2026"). User-supplied title formatter wins. */
   date(v: boolean = true): this { this._date = v; return this }
 
+  /**
+   * Override the alphabetic ordering of group buckets with a custom
+   * comparator on resolved group keys. Useful for pinning enums in a
+   * meaningful order (e.g. `'draft' → 'published' → 'archived'`).
+   *
+   * The empty-bucket-last rule still runs AFTER this comparator — rows
+   * with no group value always sort to the bottom regardless of what
+   * the comparator returns for the empty key. Pass an array of keys
+   * for the convenient case via the `orderByKeys` helper below.
+   *
+   * Example:
+   * ```ts
+   * TableGroup.make('status').orderUsing(orderByKeys([
+   *   'draft', 'published', 'archived',
+   * ]))
+   * ```
+   */
+  orderUsing(comparator: TableGroupKeyComparator): this {
+    this._keyComparator = comparator
+    return this
+  }
+
   // ─── Getters ──────────────────────────────────────────
 
   getColumn(): string { return this._column }
@@ -88,6 +121,7 @@ export class TableGroup<R = unknown> {
   getTitleHandler():       TableGroupTitleHandler<R>       | undefined { return this._titleFn }
   getDescriptionHandler(): TableGroupDescriptionHandler<R> | undefined { return this._descriptionFn }
   isDate(): boolean { return this._date }
+  getKeyComparator(): TableGroupKeyComparator | undefined { return this._keyComparator }
 
   toMeta(): TableGroupMeta {
     return {
@@ -116,6 +150,33 @@ export function bucketDateValue(raw: unknown): string {
   const m = String(d.getUTCMonth() + 1).padStart(2, '0')
   const day = String(d.getUTCDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+/**
+ * Convenience comparator factory for `TableGroup.orderUsing(...)`. Returns
+ * a comparator that sorts the supplied keys in declaration order, with any
+ * unknown keys falling through to alphabetic ordering AFTER the listed ones.
+ *
+ * Use it to pin enum-like values without writing a manual switch:
+ *
+ * ```ts
+ * TableGroup.make('status').orderUsing(orderByKeys(['draft', 'published']))
+ * ```
+ *
+ * The empty bucket is unaffected — `dispatchTable` always sinks empty groups
+ * to the bottom regardless of what your comparator returns for them.
+ */
+export function orderByKeys(keys: ReadonlyArray<string>): TableGroupKeyComparator {
+  const rank = new Map<string, number>()
+  keys.forEach((k, i) => rank.set(k, i))
+  return (a, b) => {
+    const ra = rank.get(a)
+    const rb = rank.get(b)
+    if (ra !== undefined && rb !== undefined) return ra - rb
+    if (ra !== undefined) return -1
+    if (rb !== undefined) return  1
+    return a < b ? -1 : a > b ? 1 : 0
+  }
 }
 
 /**
