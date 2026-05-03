@@ -4,9 +4,10 @@
 parent record's Edit/View page, gated through the parent's authorization and
 routed under the parent's URL.
 
-> Scope: `hasOne`, `hasMany`, `belongsTo` — what `@rudderjs/orm` supports
-> today. `belongsToMany` (pivot) and polymorphic relations are deferred until
-> the underlying ORM lands them.
+> Scope: `hasOne`, `hasMany`, `belongsTo`, `belongsToMany`, plus the
+> polymorphic `morphMany / morphOne / morphTo`. `morphToMany` and
+> `morphedByMany` (polymorphic-pivot) remain deferred until
+> `@rudderjs/orm` lands them.
 
 ## Quick example — `User → Posts`
 
@@ -297,19 +298,138 @@ deferred — file a request if you need it.)
   ORM `withPivot([…])`.
 - **Reorderable pivot rows.** Needs ORM `orderByPivot('position')` +
   `withPivot(['position'])`. Same gating.
-- **Polymorphic M2M (`morphedByMany`).** ORM still defers polymorphic
-  relations.
+- **Polymorphic M2M (`morphedByMany`).** Still deferred — ORM does
+  ship `morphMany / morphOne / morphTo` (see "Polymorphic" below) but
+  not the polymorphic-pivot variant.
 - **`syncWithoutDetaching` / `toggle`.** The accessor is exposed via
   `parent.related(rel)`; users with custom needs reach for it directly
   inside a regular `Action.handler`.
 
+## Polymorphic
+
+`morphMany / morphOne / morphTo` ship in the polymorphic follow-up. One
+related table can attach to several parent types — Comments on Posts
+and Videos, Images on Users and Products, etc. — without per-parent FK
+columns. Declare on each side of the relation:
+
+```ts
+// app/Models/Comment.ts — the child side carries `commentable_id` + `commentable_type`.
+import { Model } from '@rudderjs/orm'
+import { Post } from './Post.js'
+import { Video } from './Video.js'
+
+export class Comment extends Model {
+  static override table = 'comment'
+  static override relations = {
+    commentable: {
+      type:      'morphTo' as const,
+      morphName: 'commentable',
+      types:     () => [Post, Video],   // closed list of allowed parents
+    },
+  }
+
+  id!: string
+  body!: string
+  commentableId!:   string   // camelCase column convention (rudder ORM divergence from Laravel)
+  commentableType!: string
+}
+```
+
+```ts
+// app/Models/Post.ts — parent side, morphMany.
+import { Model } from '@rudderjs/orm'
+import { Comment } from './Comment.js'
+
+export class Post extends Model {
+  static override table = 'post'
+  static override relations = {
+    comments: {
+      type:      'morphMany' as const,
+      model:     () => Comment,
+      morphName: 'commentable',
+    },
+  }
+}
+```
+
+Wire a `RelationManager` on the parent side; pilotiq auto-detects the
+mode as `'morphMany'` from `Post.relations.comments.type`. The same
+manager class can be mounted on multiple parents — pilotiq uses
+`parent.constructor.name` (or `static morphAlias`) to populate
+`commentableType` per-row.
+
+```ts
+// app/Pilotiq/Posts/relations/CommentsManager.ts
+import { RelationManager, Action, Column, TextField, type RelationManagerContext, type Form, type Table } from '@pilotiq/pilotiq'
+import { CommentResource } from '../../Comments/CommentResource.js'
+
+export class CommentsManager extends RelationManager {
+  static override relationship    = 'comments'
+  static override label           = 'Comments'
+  static override labelSingular   = 'Comment'
+  static override relatedResource = CommentResource
+
+  static override form(form: Form): Form {
+    // No mutateDataBeforeCreate — the framework auto-fills
+    // commentableId + commentableType from the URL parent.
+    return form.schema([TextField.make('body').required()])
+  }
+
+  static override table(table: Table, ctx: RelationManagerContext): Table {
+    return table
+      .columns([Column.make('body'), Column.make('createdAt').sortable().since()])
+      .headerActions([ Action.relationCreate(CommentsManager, ctx) ])
+      .recordActions([ Action.relationEdit(CommentsManager, ctx), Action.relationDelete(CommentsManager, ctx) ])
+  }
+}
+```
+
+### Auto-injection of morph columns
+
+When `mode === 'morphMany'`, the `relation-create` and `relation-edit`
+POST handlers automatically inject the morph columns on the child:
+
+- `<morphName>Id` ← `parent[primaryKey]`
+- `<morphName>Type` ← `parent.constructor.morphAlias ?? parent.constructor.name`
+
+The injection runs **after** any user-supplied `mutateDataBeforeCreate`
+/ `mutateDataBeforeUpdate` so the framework wins last. This is anti-
+tamper protection: a tampered POST body sending
+`commentableId=<other-parent>&commentableType=<other-class>` is silently
+overwritten with the URL-scoped parent's values, so a child can't be
+reassigned to a different polymorphic parent through a manipulated form.
+
+### `morphTo` (child-side) managers
+
+A `morphTo` relation has no single related model — the target class is
+dynamic (`Post` or `Video` per row). Pilotiq recognizes the mode but
+does **not** auto-discover the related Resource and does **not**
+auto-inject create / edit / delete actions. If you need to project a
+manager from the child side, set `static relatedResource =` explicitly
+and wire actions yourself. Most users won't — comments are normally
+viewed from the post / video edit page, not the other way around.
+
+### What polymorphic does NOT support (yet)
+
+- **`morphToMany` / `morphedByMany`** — polymorphic-pivot variants.
+  Same gating story as plain `belongsToMany` had: needs an ORM-side
+  primitive first.
+- **`Action.relationMorphAttach`** — re-link an existing standalone
+  child to the URL parent (vs the dominant *create-with-parent* flow).
+  Out of v1; user code can call
+  `M.update(id, { ...computeMorphPayload(parent, desc) })` directly via
+  a regular `Action.handler` if needed.
+- **`Repeater.relationship` polymorphic mode** — JSON-Repeater rows
+  storing a polymorphic `type` column. Deferred alongside the existing
+  Repeater.relationship `hasMany`-only scope.
+
 ## Out of scope
 
 These are deferred to follow-up plans and explicitly do **not** ship in
-Plan #11 or its M2M follow-up:
+Plan #11 or its M2M / polymorphic follow-ups:
 
-- **Polymorphic relations** (`morphMany / morphTo` / `morphedByMany`) —
-  not yet in `@rudderjs/orm`.
+- **`morphToMany` / `morphedByMany`** — polymorphic-pivot variants;
+  gated on `@rudderjs/orm` shipping the primitive.
 - **`RelationGroup`** — tabbing multiple managers under one label. Each
   manager already gets its own tab; grouping is a Tier-2 polish.
 - **Implicit row actions.** The manager's `static table()` does *not*
