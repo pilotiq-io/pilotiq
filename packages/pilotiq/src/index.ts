@@ -188,8 +188,15 @@ export {
   type SortDirection,
 } from './elements/Table.js'
 export {
+  TableGroup,
+  type TableGroupMeta,
+  type TableGroupTitleHandler,
+  type TableGroupDescriptionHandler,
+} from './elements/TableGroup.js'
+export {
   loadTableRecords,
   parseTableQuery,
+  parseActiveGroup,
   parseFilterValues,
   findTables,
   type QueryParams,

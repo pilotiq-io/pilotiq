@@ -64,6 +64,7 @@ import {
 import {
   CalendarIcon, FilterIcon, MoreHorizontalIcon,
   CircleIcon, InboxIcon, GripVerticalIcon,
+  ChevronDownIcon,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { useNavigate, type NavigateFn } from './navigate.js'
@@ -2257,6 +2258,11 @@ interface TableUrlState {
   search?: string
   sort?:   { column: string; direction: 'asc' | 'desc' }
   page?:   number
+  /** Active group column for `?group=`. Empty string means an explicit
+   * "no grouping" override (set on the URL when the user picks "None"
+   * in the dropdown to override `defaultGroup`); `undefined` omits the
+   * key entirely so the configured default takes over. */
+  group?:  string
 }
 
 function buildTableQuery(
@@ -2269,13 +2275,14 @@ function buildTableQuery(
   const params = new URLSearchParams()
   // Carry forward active filter values so sort/pagination links don't
   // accidentally clear them. Filter names can't collide with reserved
-  // keys (search/sort/page/perPage) — that's enforced upstream.
+  // keys (search/sort/page/perPage/group) — that's enforced upstream.
   for (const [name, val] of Object.entries(filterValues)) {
     if (val) params.set(name, val)
   }
   if (merged.search)    params.set('search', merged.search)
   if (merged.sort)      params.set('sort', `${merged.sort.column}:${merged.sort.direction}`)
   if (merged.page && merged.page > 1) params.set('page', String(merged.page))
+  if (merged.group !== undefined) params.set('group', merged.group)
   const qs = params.toString()
   // Always anchor to a real pathname — Vike's client-side router treats
   // a bare `?qs` href as a fresh URL with empty pathname, which routes
@@ -2538,6 +2545,66 @@ function FilterSelect({
         </SelectContent>
       </Select>
     </div>
+  )
+}
+
+/**
+ * Heading-row text for a group band. Shows `<label>: <value-or-title>`
+ * with an optional description below. Reused for both collapsible and
+ * static heading rows.
+ */
+function GroupHeaderText({
+  label, value, title, description,
+}: {
+  label?:       string | undefined
+  value?:       string | undefined
+  title?:       string | undefined
+  description?: string | undefined
+}) {
+  const display = title ?? value ?? ''
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span>
+        {label && <span className="text-muted-foreground/70">{label}: </span>}
+        <span className="text-foreground">{display || 'Ungrouped'}</span>
+      </span>
+      {description && (
+        <span className="text-[10px] font-normal normal-case text-muted-foreground/80">
+          {description}
+        </span>
+      )}
+    </span>
+  )
+}
+
+/**
+ * "Group by" dropdown rendered above the table when 2+ TableGroups
+ * are registered (or 1 group with rich metadata). Selecting "None"
+ * sets `?group=` (empty) which explicitly overrides `defaultGroup`.
+ *
+ * URL-driven — `onChange` builds the next href via `buildTableQuery`
+ * and SPA-navigates; the page re-renders with the new active group.
+ */
+function TableGroupPicker({
+  options, active, onChange,
+}: {
+  options: Array<{ column: string; label: string }>
+  active:  string | undefined
+  onChange: (column: string) => void
+}) {
+  const value = active ?? ''
+  return (
+    <Select value={value} onValueChange={(v) => onChange(typeof v === 'string' ? v : '')}>
+      <SelectTrigger size="sm" className="h-9 w-44">
+        <SelectValue placeholder="Group by…" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="">No grouping</SelectItem>
+        {options.map(o => (
+          <SelectItem key={o.column} value={o.column}>{o.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
@@ -3046,12 +3113,25 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   const pollInterval     = typeof el['pollInterval'] === 'number' ? el['pollInterval'] as number : undefined
   const defaultGroup     = typeof el['defaultGroup'] === 'string' ? el['defaultGroup'] as string : undefined
   const summaries        = el['summaries'] as Record<string, Array<{ kind: string; value: string; label?: string }>> | undefined
-  const groupColumnLabel = defaultGroup
-    ? (() => {
-        const col = columns.find(c => c['name'] === defaultGroup)
-        return col ? String(col['label'] ?? defaultGroup) : defaultGroup
-      })()
+  const groupOptions     = (el['groups'] as Array<{
+    column:       string
+    label:        string
+    collapsible?: true
+    collapsed?:   true
+    date?:        true
+  }> | undefined) ?? []
+  // Active group's registered metadata (if any). Falls back to a synth
+  // for the bare-column form so the heading row still has a label.
+  const activeGroupMeta  = defaultGroup
+    ? (groupOptions.find(g => g.column === defaultGroup) ?? {
+        column:       defaultGroup,
+        label:        (() => {
+          const col = columns.find(c => c['name'] === defaultGroup)
+          return col ? String(col['label'] ?? defaultGroup) : defaultGroup
+        })(),
+      })
     : undefined
+  const groupColumnLabel = activeGroupMeta?.label
 
   // Auto-refresh: re-visit current URL on a timer so sort/filter/pagination
   // state survives. Pause while the document is hidden — background tabs
@@ -3107,10 +3187,69 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   const rows = reorderRowsLocal ?? rawRows
   const { notify } = useToast()
 
+  // Read the explicit `?group=` value out of the URL so sort/pagination
+  // links preserve "None" overrides (`?group=`). Server render: no URL,
+  // so we fall back to `defaultGroup` from the meta — which is already
+  // the reconciled active column.
+  const urlGroup: string | undefined = typeof window === 'undefined'
+    ? undefined
+    : (() => {
+        const sp = new URLSearchParams(window.location.search)
+        return sp.has('group') ? sp.get('group')! : undefined
+      })()
+
+  // Collapsible groups — per-group fold state. Keyed by `_groupValue`
+  // (the raw column value, NOT the resolved title) so rows that share a
+  // group key fold together. Persisted in localStorage at
+  // `pilotiq.table.<currentPath>.groups.<column>.<value>`. Default-
+  // collapsed groups derive their initial state from `meta.collapsed`.
+  const groupCollapsible = activeGroupMeta?.collapsible === true
+  const groupDefaultCollapsed = activeGroupMeta?.collapsed === true
+  const groupStorageKey = (groupValue: string): string =>
+    `pilotiq.table.${currentPath}.groups.${defaultGroup ?? ''}.${groupValue}`
+  // Lazy-init from localStorage on mount; SSR returns the meta default.
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+  useEffect(() => {
+    if (!groupCollapsible || !defaultGroup) return
+    if (typeof window === 'undefined') return
+    // Walk the rendered rows once on mount, picking up persisted state.
+    const next: Record<string, boolean> = {}
+    const seen = new Set<string>()
+    for (const row of rows) {
+      const v = String((row as Record<string, unknown>)['_groupValue'] ?? '')
+      if (seen.has(v)) continue
+      seen.add(v)
+      try {
+        const stored = window.localStorage.getItem(groupStorageKey(v))
+        next[v] = stored === null ? groupDefaultCollapsed : stored === '1'
+      } catch {
+        next[v] = groupDefaultCollapsed
+      }
+    }
+    setCollapsedGroups(next)
+    // Re-run if the active group changes — different values, different
+    // localStorage namespace.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultGroup, groupCollapsible, groupDefaultCollapsed, currentPath])
+  const toggleGroupCollapsed = (groupValue: string): void => {
+    setCollapsedGroups(prev => {
+      const nextOpen = !prev[groupValue]
+      const next = { ...prev, [groupValue]: nextOpen }
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(groupStorageKey(groupValue), nextOpen ? '1' : '0')
+        } catch { /* private mode / quota — silent */ }
+      }
+      return next
+    })
+  }
   const state: TableUrlState = {
     ...(search       !== undefined ? { search }      : {}),
     ...(currentSort  !== undefined ? { sort: currentSort } : {}),
     page: currentPage,
+    ...(urlGroup     !== undefined ? { group: urlGroup }
+        : defaultGroup !== undefined ? { group: defaultGroup }
+        : {}),
   }
 
   // Snapshot active filter values for sort/pagination href construction.
@@ -3217,7 +3356,17 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   const totalPages = perPage && perPage > 0 ? Math.max(1, Math.ceil(total / perPage)) : 1
   const showPagination = totalPages > 1
   const hasFilters     = filters.length > 0
-  const showHeaderBar  = searchable || headerActions.length > 0 || hasFilters
+  // Show the "Group by" dropdown when 2+ groups are registered, or 1
+  // group with rich metadata (label/collapsible/etc.). A single bare
+  // `defaultGroup('col')` with no `groups([...])` registration shouldn't
+  // render the picker — there's nothing to pick.
+  const hasGroupPicker = groupOptions.length >= 2
+    || (groupOptions.length === 1 && Boolean(
+      groupOptions[0]!.collapsible
+      || groupOptions[0]!.collapsed
+      || groupOptions[0]!.date,
+    ))
+  const showHeaderBar  = searchable || headerActions.length > 0 || hasFilters || hasGroupPicker
   const hasBulkActions = bulkActions.length > 0
   const hasRowActions  = rowActions.length > 0
 
@@ -3264,7 +3413,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
       )}
       {showHeaderBar && (
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-          {(searchable || hasFilters) ? (
+          {(searchable || hasFilters || hasGroupPicker) ? (
             <div className="flex items-center gap-2">
               {searchable && (
                 <form method="get" action={currentPath || undefined} className="flex items-end gap-2">
@@ -3284,6 +3433,23 @@ function TableRenderer({ el }: { el: ElementMeta }) {
               )}
               {hasFilters && (
                 <FilterPopover filters={filters} />
+              )}
+              {hasGroupPicker && (
+                <TableGroupPicker
+                  options={groupOptions}
+                  active={defaultGroup}
+                  onChange={(value) => {
+                    // value === '' → explicit "None" (clears defaultGroup);
+                    // value !== '' → switch to that column.
+                    const href = buildTableQuery(
+                      state,
+                      { page: 1, group: value },
+                      currentPath,
+                      activeFilters,
+                    )
+                    navigate(href)
+                  }}
+                />
               )}
             </div>
           ) : <span />}
@@ -3394,11 +3560,21 @@ function TableRenderer({ el }: { el: ElementMeta }) {
               const groupValue = defaultGroup
                 ? String(recordObj['_groupValue'] ?? '')
                 : undefined
+              const groupTitle = defaultGroup
+                ? (recordObj['_groupTitle'] as string | undefined)
+                : undefined
+              const groupDescription = defaultGroup
+                ? (recordObj['_groupDescription'] as string | undefined)
+                : undefined
               const prevGroupValue = defaultGroup && ri > 0
                 ? String(((rows[ri - 1] as Record<string, unknown>)['_groupValue'] ?? ''))
                 : undefined
               const showGroupHeader =
                 defaultGroup !== undefined && groupValue !== prevGroupValue
+              // Hide data rows whose group is collapsed. The heading row
+              // for that group still renders (so the user can re-expand).
+              const isInCollapsedGroup =
+                groupCollapsible && groupValue !== undefined && collapsedGroups[groupValue] === true
               // Filament-style per-cell linking. Each data cell wraps
               // its content in a real `<a href>` when the column resolves
               // to a record URL — column override (`Column.recordUrl(fn)`)
@@ -3424,11 +3600,38 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                       colSpan={totalCols}
                       className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
                     >
-                      <span className="text-muted-foreground/70">{groupColumnLabel}: </span>
-                      <span className="text-foreground">{groupValue || 'Ungrouped'}</span>
+                      {groupCollapsible ? (
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 text-left"
+                          onClick={() => toggleGroupCollapsed(groupValue!)}
+                          aria-expanded={!isInCollapsedGroup}
+                        >
+                          <ChevronDownIcon
+                            className={[
+                              'size-4 transition-transform',
+                              isInCollapsedGroup ? '-rotate-90' : '',
+                            ].filter(Boolean).join(' ')}
+                          />
+                          <GroupHeaderText
+                            label={groupColumnLabel}
+                            value={groupValue}
+                            title={groupTitle}
+                            description={groupDescription}
+                          />
+                        </button>
+                      ) : (
+                        <GroupHeaderText
+                          label={groupColumnLabel}
+                          value={groupValue}
+                          title={groupTitle}
+                          description={groupDescription}
+                        />
+                      )}
                     </TableCell>
                   </TableRow>
                 )}
+                {isInCollapsedGroup ? null : (
                 <TableRow
                   data-state={isSelected ? 'selected' : undefined}
                   className={[
@@ -3511,6 +3714,7 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                     </TableCell>
                   )}
                 </TableRow>
+                )}
                 </React.Fragment>
               )
             })}

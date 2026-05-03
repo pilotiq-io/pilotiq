@@ -4,6 +4,7 @@ import { Action } from '../actions/Action.js'
 import { ActionGroup } from '../actions/ActionGroup.js'
 import { Filter } from '../filters/Filter.js'
 import type { SummaryResult } from '../summarizers/Summarizer.js'
+import { TableGroup, type TableGroupMeta } from './TableGroup.js'
 
 /** Either a plain `Action` or an `ActionGroup` (a labelled dropdown of
  * actions). Both can sit in any of the table action slots — the slot
@@ -120,11 +121,18 @@ export interface TableMeta extends ElementMeta {
    */
   pollInterval?: number
 
-  /** Column name to band rows by. Server-side stable-sorts the rendered
-   * rows so all rows with the same value are adjacent, stamps each row
-   * with `_groupValue`, and the renderer inserts a heading row whenever
-   * the value changes. */
+  /** The currently active group — the column rows are banded by. Set
+   * each request from either `?group=` or `defaultGroup(...)`. The
+   * renderer emits a heading row whenever `_groupValue` changes between
+   * adjacent rows. Always a column name; the rich metadata (label /
+   * collapsibility / etc.) lives on `groups` below. */
   defaultGroup?: string
+
+  /** Group selector options. When 2+ groups are registered the renderer
+   * mounts a "Group by" dropdown above the table; the user's selection
+   * round-trips via `?group=`. Empty / absent means the bare-column form
+   * (`Table.defaultGroup('col')` only). */
+  groups?: TableGroupMeta[]
 
   /** Per-column summary results — keyed by column name, each entry is the
    * computed `SummaryResult[]` for that column's `summarize([…])`. Filled
@@ -191,6 +199,10 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _recordClasses?: RecordClassesHandler<R>
   private _pollInterval?: number
   private _defaultGroup?: string
+  // Variance-relaxed — Filament-style covariant `TableGroup<R>[]` ergonomics
+  // matter more than tight invariance against the table's `R` parameter.
+  private _groups:        TableGroup<any>[] = []  // eslint-disable-line @typescript-eslint/no-explicit-any
+  private _activeGroup?:  string
   private _summaries?:    Record<string, SummaryResult[]>
   private _reorderableColumn?: string
   private _reorderUrl?:   string
@@ -333,10 +345,34 @@ export class Table<R = unknown, Q = unknown> extends Element {
    * Band rows by a column's value. Stable-sorts the rendered rows so
    * shared values cluster together, then stamps each row's `_groupValue`
    * — the renderer inserts a heading row whenever the value changes.
-   * v1 takes a column name only (no labels / collapsibility yet).
+   *
+   * Accepts either a bare column name or a `TableGroup` instance. When
+   * passed a `TableGroup` it's auto-added to `groups([…])` if it isn't
+   * registered already, so `defaultGroup(TableGroup.make('status').label('Status'))`
+   * doesn't require repeating the registration.
    */
-  defaultGroup(column: string): this {
-    this._defaultGroup = column
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  defaultGroup(group: string | TableGroup<any>): this {
+    if (typeof group === 'string') {
+      this._defaultGroup = group
+    } else {
+      this._defaultGroup = group.getColumn()
+      const already = this._groups.some(g => g.getColumn() === group.getColumn())
+      if (!already) this._groups.push(group)
+    }
+    return this
+  }
+
+  /**
+   * Register the available group options. The renderer mounts a "Group
+   * by" dropdown above the table when 2+ groups are registered (or 1
+   * group with rich metadata — label / collapsible / record-derived
+   * title). The active selection round-trips through the URL via the
+   * reserved `?group=` key.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  groups(items: TableGroup<any>[]): this {
+    this._groups = items
     return this
   }
 
@@ -386,6 +422,16 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
+  /** Render-time setter — the column rows are actually banded by for
+   * this request, after `?group=` and `defaultGroup(...)` are reconciled.
+   * Set by `loadTableRecords`. Empty string explicitly clears (URL
+   * `?group=` overrode `defaultGroup`). */
+  withActiveGroup(column: string | undefined): this {
+    if (column === undefined) delete this._activeGroup
+    else this._activeGroup = column
+    return this
+  }
+
   // ─── Getters ──────────────────────────────────────────
 
   getQuery(): TableQueryHandler<Q> | undefined { return this._query }
@@ -402,6 +448,20 @@ export class Table<R = unknown, Q = unknown> extends Element {
   getRecordClasses(): RecordClassesHandler<R> | undefined { return this._recordClasses }
   getPollInterval(): number | undefined { return this._pollInterval }
   getDefaultGroup(): string | undefined { return this._defaultGroup }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getGroups(): TableGroup<any>[] { return this._groups }
+  getActiveGroup(): string | undefined { return this._activeGroup }
+  /** Resolve the active column to a `TableGroup` instance. Returns the
+   * matching registered group, or — when the active column is set but
+   * not registered (bare-column form) — synthesizes a no-metadata group
+   * so the dispatcher has a uniform shape to work with. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getActiveGroupInstance(): TableGroup<any> | undefined {
+    const col = this._activeGroup
+    if (!col) return undefined
+    const found = this._groups.find(g => g.getColumn() === col)
+    return found ?? TableGroup.make(col)
+  }
   getSummaries(): Record<string, SummaryResult[]> | undefined { return this._summaries }
   getReorderableColumn(): string | undefined { return this._reorderableColumn }
   isReorderable(): boolean { return this._reorderableColumn !== undefined }
@@ -435,7 +495,22 @@ export class Table<R = unknown, Q = unknown> extends Element {
       ...(this._recordUrl    !== undefined ? { recordUrl:   true as const      } : {}),
       ...(this._recordClasses !== undefined ? { recordClasses: true as const   } : {}),
       ...(this._pollInterval !== undefined ? { pollInterval: this._pollInterval } : {}),
-      ...(this._defaultGroup !== undefined ? { defaultGroup: this._defaultGroup } : {}),
+      // `defaultGroup` on the meta means "the column rows are actually
+      // grouped by for this render". Prefer the render-time activeGroup
+      // (set by `loadTableRecords` after reconciling `?group=` and the
+      // configured default); fall back to the configured default when
+      // no request-side reconciliation has happened (e.g. tests calling
+      // `toMeta()` directly).
+      ...(this._activeGroup !== undefined
+        ? (this._activeGroup === ''
+            ? {}
+            : { defaultGroup: this._activeGroup })
+        : (this._defaultGroup !== undefined
+            ? { defaultGroup: this._defaultGroup }
+            : {})),
+      ...(this._groups.length > 0
+        ? { groups: this._groups.map(g => g.toMeta()) }
+        : {}),
       ...(this._summaries    !== undefined ? { summaries:    this._summaries    } : {}),
       ...(this._reorderableColumn !== undefined ? { reorderable: true as const, reorderableColumn: this._reorderableColumn } : {}),
       ...(this._reorderUrl   !== undefined ? { reorderUrl:  this._reorderUrl  } : {}),

@@ -1,5 +1,6 @@
 import { Element } from '../schema/Element.js'
 import { Table, type TableContext, type SortDirection } from './Table.js'
+import { TableGroup, bucketDateValue, formatDateBucketTitle } from './TableGroup.js'
 import type { Filter } from '../filters/Filter.js'
 import { Action } from '../actions/Action.js'
 import { Column } from '../Column.js'
@@ -19,7 +20,7 @@ export interface QueryParams {
 }
 
 /** Reserved query keys consumed by the framework — anything else is a filter. */
-const RESERVED_QUERY_KEYS = new Set(['search', 'sort', 'page', 'perPage'])
+const RESERVED_QUERY_KEYS = new Set(['search', 'sort', 'page', 'perPage', 'group'])
 
 /**
  * Optional hooks passed by the caller (`pageData.resourceIndexData`)
@@ -95,6 +96,37 @@ export function parseTableQuery(q: QueryParams = {}): {
     : undefined
 
   return { search, sort, page, perPage }
+}
+
+/**
+ * Reconcile the URL `?group=` key against a table's configured
+ * `defaultGroup` + `groups([...])` registration. Returns the column
+ * the table should band rows by for this request, or `undefined` for
+ * "no grouping".
+ *
+ * Selection rules:
+ *
+ *   `?group=col`        → that column, IF it's registered or matches
+ *                          the bare `defaultGroup` (otherwise no grouping).
+ *   `?group=` (empty)   → no grouping (overrides defaultGroup).
+ *   absent              → fall back to `defaultGroup`.
+ */
+export function parseActiveGroup(
+  query: QueryParams,
+  table: Table,
+): string | undefined {
+  const raw = query['group']
+  if (typeof raw === 'string') {
+    if (raw === '') return undefined  // explicit clear
+    const registered = table.getGroups().map(g => g.getColumn())
+    const fallback   = table.getDefaultGroup()
+    // Trust either an explicit registration OR the bare-column form.
+    // Unknown columns → treat as no grouping (silent — stale bookmark).
+    if (registered.includes(raw)) return raw
+    if (fallback === raw)         return raw
+    return undefined
+  }
+  return table.getDefaultGroup()
 }
 
 /** Walk an Element tree and return every `Table` instance in document order. */
@@ -226,7 +258,22 @@ export async function loadTableRecords(
 
       const recordUrlFn     = table.getRecordUrl()
       const recordClassesFn = table.getRecordClasses()
-      const groupColumn     = table.getDefaultGroup()
+      // Reconcile `?group=` against the configured groups + defaultGroup.
+      // Stamp the resolved column back onto the table so `toMeta()`
+      // emits it as the meta's `defaultGroup` (the renderer reads from
+      // there). Empty-string "explicit clear" is distinct from `undefined`
+      // ("never reconciled") so we can tell tests-skipping-loadTableRecords
+      // apart from URL-cleared.
+      const activeGroupCol  = parseActiveGroup(query, table)
+      table.withActiveGroup(activeGroupCol ?? '')
+      // Resolve to a TableGroup instance — synth a no-metadata instance
+      // for bare-column / unregistered columns so per-row stamping has
+      // a uniform shape.
+      const activeGroup     = activeGroupCol === undefined
+        ? undefined
+        : (table.getGroups().find(g => g.getColumn() === activeGroupCol)
+            ?? TableGroup.make(activeGroupCol))
+      const groupColumn     = activeGroup?.getColumn()
 
       const needsRowMutation =
         rowActionsWithRules.length > 0 ||
@@ -294,9 +341,36 @@ export async function loadTableRecords(
               }
             }
 
-            if (groupColumn !== undefined) {
-              const raw = recordObj[groupColumn]
-              out['_groupValue'] = raw == null || raw === '' ? '' : String(raw)
+            if (activeGroup !== undefined) {
+              const raw = recordObj[activeGroup.getColumn()]
+              // Date-bucketed groups use `YYYY-MM-DD` as the stable-sort
+              // key so all rows from the same day cluster together;
+              // unparseable values bucket to '' (bottom).
+              const value = activeGroup.isDate()
+                ? bucketDateValue(raw)
+                : (raw == null || raw === '' ? '' : String(raw))
+              out['_groupValue'] = value
+
+              // Per-row resolved title. User-supplied handler wins over
+              // the date() default formatter. Throwing handler stays
+              // silent — falls back to the raw `_groupValue`.
+              const titleFn = activeGroup.getTitleHandler()
+              if (titleFn) {
+                try {
+                  const t = titleFn(row)
+                  if (t !== undefined) out['_groupTitle'] = String(t)
+                } catch { /* silent */ }
+              } else if (activeGroup.isDate() && value !== '') {
+                out['_groupTitle'] = formatDateBucketTitle(raw)
+              }
+
+              const descFn = activeGroup.getDescriptionHandler()
+              if (descFn) {
+                try {
+                  const d = descFn(row)
+                  if (d !== undefined) out['_groupDescription'] = String(d)
+                } catch { /* silent */ }
+              }
             }
 
             if (columnsWithRecordUrl.length > 0) {

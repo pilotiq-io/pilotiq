@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { Table } from './Table.js'
+import { TableGroup } from './TableGroup.js'
 import { Column } from '../Column.js'
 import { Section } from '../schema/Section.js'
 import { resolveSchema } from '../schema/resolveSchema.js'
@@ -9,6 +10,7 @@ import { Sum, Average, Count, Range } from '../summarizers/Summarizer.js'
 import { TextInputColumn, ToggleColumn, SelectColumn } from '../columns/index.js'
 import {
   parseTableQuery,
+  parseActiveGroup,
   findTables,
   loadTableRecords,
 } from './dispatchTable.js'
@@ -402,6 +404,184 @@ describe('loadTableRecords', () => {
       // Sum is order-independent; this also confirms grouping doesn't
       // accidentally drop rows from the summary input.
       assert.equal(summaries['amount']![0]!.value, '150')
+    })
+  })
+
+  describe('Table.groups + parseActiveGroup', () => {
+    it('parseActiveGroup: ?group=col picks a registered group', () => {
+      const t = Table.make()
+        .groups([TableGroup.make('status'), TableGroup.make('author')])
+      assert.equal(parseActiveGroup({ group: 'status' }, t), 'status')
+      assert.equal(parseActiveGroup({ group: 'author' }, t), 'author')
+    })
+
+    it('parseActiveGroup: ?group= (empty) explicitly clears', () => {
+      const t = Table.make().defaultGroup('status')
+      assert.equal(parseActiveGroup({ group: '' }, t), undefined)
+    })
+
+    it('parseActiveGroup: absent ?group falls back to defaultGroup', () => {
+      const t = Table.make().defaultGroup('status')
+      assert.equal(parseActiveGroup({}, t), 'status')
+    })
+
+    it('parseActiveGroup: unknown column falls back to no grouping', () => {
+      const t = Table.make()
+        .groups([TableGroup.make('status')])
+        .defaultGroup('status')
+      assert.equal(parseActiveGroup({ group: 'wat' }, t), undefined)
+    })
+
+    it('parseActiveGroup: bare-column form works (no groups([…]) registered)', () => {
+      const t = Table.make().defaultGroup('status')
+      assert.equal(parseActiveGroup({ group: 'status' }, t), 'status')
+    })
+
+    it('?group=col switches the active group at load time', async () => {
+      const t = Table.make<{ id: string; status: string; author: string }>()
+        .columns([Column.make('status'), Column.make('author')])
+        .groups([TableGroup.make('status'), TableGroup.make('author')])
+        .defaultGroup('status')
+        .records(async () => [
+          { id: '1', status: 'draft',     author: 'a' },
+          { id: '2', status: 'published', author: 'b' },
+          { id: '3', status: 'draft',     author: 'a' },
+        ])
+
+      await loadTableRecords([t], { group: 'author' })
+      const meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['defaultGroup'], 'author')
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      // Stable-sort clusters by author now.
+      assert.deepEqual(rows.map(r => r['_groupValue']), ['a', 'a', 'b'])
+    })
+
+    it('?group= explicitly disables grouping (overrides defaultGroup)', async () => {
+      const t = Table.make<{ id: string; status: string }>()
+        .columns([Column.make('status')])
+        .defaultGroup('status')
+        .records(async () => [
+          { id: '1', status: 'draft' },
+          { id: '2', status: 'published' },
+        ])
+
+      await loadTableRecords([t], { group: '' })
+      const meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['defaultGroup'], undefined)
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_groupValue'], undefined)
+    })
+
+    it('getTitleFromRecordUsing stamps _groupTitle per row', async () => {
+      const t = Table.make<{ id: string; status: string }>()
+        .columns([Column.make('status')])
+        .groups([
+          TableGroup.make<{ id: string; status: string }>('status').getTitleFromRecordUsing(
+            (r) => r.status === 'draft' ? 'Drafts' : 'Live',
+          ),
+        ])
+        .defaultGroup('status')
+        .records(async () => [
+          { id: '1', status: 'draft' },
+          { id: '2', status: 'published' },
+        ])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_groupTitle'], 'Drafts')
+      assert.equal(rows[1]!['_groupTitle'], 'Live')
+    })
+
+    it('getDescriptionFromRecordUsing stamps _groupDescription per row', async () => {
+      const t = Table.make<{ id: string; status: string }>()
+        .columns([Column.make('status')])
+        .groups([
+          TableGroup.make<{ id: string; status: string }>('status').getDescriptionFromRecordUsing(
+            (r) => `${r.status} band`,
+          ),
+        ])
+        .defaultGroup('status')
+        .records(async () => [{ id: '1', status: 'draft' }])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_groupDescription'], 'draft band')
+    })
+
+    it('throwing title handler stays silent (falls back to bare _groupValue)', async () => {
+      const t = Table.make<{ id: string; status: string }>()
+        .columns([Column.make('status')])
+        .groups([
+          TableGroup.make('status').getTitleFromRecordUsing(() => {
+            throw new Error('boom')
+          }),
+        ])
+        .defaultGroup('status')
+        .records(async () => [{ id: '1', status: 'draft' }])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_groupTitle'],       undefined)
+      assert.equal(rows[0]!['_groupValue'],       'draft')
+    })
+
+    it('date() bucketing stamps _groupValue as YYYY-MM-DD + a default _groupTitle', async () => {
+      const t = Table.make<{ id: string; createdAt: string }>()
+        .columns([Column.make('createdAt')])
+        .groups([TableGroup.make('createdAt').date()])
+        .defaultGroup('createdAt')
+        .records(async () => [
+          { id: '1', createdAt: '2026-05-04T10:00:00.000Z' },
+          { id: '2', createdAt: '2026-05-04T22:30:00.000Z' },
+          { id: '3', createdAt: '2026-04-15T08:00:00.000Z' },
+        ])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      // Two rows on 2026-05-04 cluster, then 2026-04-15 — but stable-sort
+      // is alphabetical on the bucket string, so 04-15 sorts before 05-04.
+      assert.deepEqual(rows.map(r => r['_groupValue']), ['2026-04-15', '2026-05-04', '2026-05-04'])
+      // Default title formatter kicks in (locale text containing the year).
+      assert.match(String(rows[0]!['_groupTitle']), /2026/)
+    })
+
+    it('date() with a user title handler — the user handler wins over the default', async () => {
+      const t = Table.make<{ id: string; createdAt: string }>()
+        .columns([Column.make('createdAt')])
+        .groups([
+          TableGroup.make('createdAt').date()
+            .getTitleFromRecordUsing(() => 'CUSTOM'),
+        ])
+        .defaultGroup('createdAt')
+        .records(async () => [{ id: '1', createdAt: '2026-05-04T00:00:00.000Z' }])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_groupTitle'], 'CUSTOM')
+    })
+
+    it('toMeta emits groups[] for the renderer dropdown', async () => {
+      const t = Table.make()
+        .columns([Column.make('status'), Column.make('author')])
+        .groups([
+          TableGroup.make('status').label('Status').collapsible(),
+          TableGroup.make('author').label('Author'),
+        ])
+        .defaultGroup('status')
+        .records(async () => [])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const groups = meta['groups'] as Array<Record<string, unknown>>
+      assert.equal(groups.length, 2)
+      assert.equal(groups[0]!['column'], 'status')
+      assert.equal(groups[0]!['label'],  'Status')
+      assert.equal(groups[0]!['collapsible'], true)
     })
   })
 

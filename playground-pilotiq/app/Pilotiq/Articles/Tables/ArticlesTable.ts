@@ -5,6 +5,7 @@ import {
   TextField, SelectField,
   Notification,
   Sum, Count,
+  TableGroup,
   type Table,
 } from '@pilotiq/pilotiq'
 import { app } from '@rudderjs/core'
@@ -35,6 +36,28 @@ export const ArticlesTable = {
           .summarize([Sum.make().label('Featured')]),
         Column.make('publishedAt').label('Published').sortable().dateTime(),
         Column.make('createdAt').label('Created').sortable().since(),
+      ])
+      // Three group options — user picks which one is active via the
+      // "Group by" dropdown above the table; "status" is the default.
+      .groups([
+        TableGroup.make<{ status?: string }>('status')
+          .label('Status')
+          .collapsible()
+          .getTitleFromRecordUsing((r) => {
+            switch (r.status) {
+              case 'draft':     return 'Drafts'
+              case 'published': return 'Published'
+              case 'archived':  return 'Archived'
+              default:          return r.status ?? 'Unknown'
+            }
+          }),
+        TableGroup.make('featured')
+          .label('Featured')
+          .collapsible(),
+        TableGroup.make('createdAt')
+          .label('Created date')
+          .date()
+          .collapsible(),
       ])
       .defaultGroup('status')
       .filters([

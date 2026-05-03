@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { Table } from './Table.js'
+import { TableGroup } from './TableGroup.js'
 import { Column } from '../Column.js'
 import { Action } from '../actions/Action.js'
 import { resolveSchema } from '../schema/resolveSchema.js'
@@ -170,6 +171,58 @@ describe('Table Element', () => {
     it('defaultGroup(column) round-trips on the meta', () => {
       assert.equal(Table.make().defaultGroup('status').toMeta().defaultGroup, 'status')
       assert.equal(Table.make().toMeta().defaultGroup, undefined)
+    })
+
+    it('groups([...]) round-trips on the meta with serialized TableGroupMeta', () => {
+      const meta = Table.make()
+        .groups([
+          TableGroup.make('status').label('Status').collapsible(),
+          TableGroup.make('createdAt').label('Created').date(),
+        ])
+        .toMeta()
+      assert.equal(meta.groups?.length, 2)
+      assert.deepEqual(meta.groups![0], { column: 'status',    label: 'Status',  collapsible: true })
+      assert.deepEqual(meta.groups![1], { column: 'createdAt', label: 'Created', date: true })
+    })
+
+    it('groups meta key is absent when no groups are registered', () => {
+      assert.equal(Table.make().toMeta().groups, undefined)
+    })
+
+    it('defaultGroup(TableGroup) auto-adds the group when not already registered', () => {
+      const t = Table.make().defaultGroup(TableGroup.make('status').label('Status'))
+      const meta = t.toMeta()
+      assert.equal(meta.defaultGroup, 'status')
+      assert.equal(meta.groups?.length, 1)
+      assert.equal(meta.groups![0]!.column, 'status')
+      assert.equal(meta.groups![0]!.label,  'Status')
+    })
+
+    it('defaultGroup(TableGroup) does NOT duplicate when group is already registered', () => {
+      const status = TableGroup.make('status').label('Status')
+      const t = Table.make()
+        .groups([status, TableGroup.make('author').label('Author')])
+        .defaultGroup(status)
+      assert.equal(t.toMeta().groups?.length, 2)
+    })
+
+    it('defaultGroup(string) does NOT auto-add to groups', () => {
+      const meta = Table.make().defaultGroup('status').toMeta()
+      assert.equal(meta.defaultGroup, 'status')
+      assert.equal(meta.groups, undefined)
+    })
+
+    it('withActiveGroup() overrides the configured defaultGroup on the meta', () => {
+      const t = Table.make().defaultGroup('status')
+      assert.equal(t.toMeta().defaultGroup, 'status')
+      t.withActiveGroup('author')
+      assert.equal(t.toMeta().defaultGroup, 'author')
+    })
+
+    it('withActiveGroup("") (empty) clears the meta defaultGroup', () => {
+      const t = Table.make().defaultGroup('status')
+      t.withActiveGroup('')
+      assert.equal(t.toMeta().defaultGroup, undefined)
     })
 
     it('summaries meta is undefined until withSummaries() is called', () => {
