@@ -394,6 +394,53 @@ Column.make('title')
 
 ---
 
+## Display elements (primes)
+
+Inline-displayable leaves that render text, images, icons, and chrome inside a schema. Drop them into `Resource.detail()`, `Page.schema()`, `Section.schema([…])`, etc.
+
+| Prime     | Make                                  | Notes                                                                                       |
+| --------- | ------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `Text`    | `Text.make('hello')`                  | Paragraph text. See "Text formatting" below for color / size / weight / badge setters.      |
+| `Heading` | `Heading.make('Profile')`             | `.level(1\|2\|3)`, `.description()`, `.actions([Action…])` for an admin-style page header.  |
+| `Alert`   | `Alert.make('Heads up')`              | `.info() / .warning() / .success() / .danger()` + `.title()`.                              |
+| `Divider` | `Divider.make()`                      | `.label('Section break')` for a labeled `<hr>`.                                            |
+| `Image`   | `Image.make('https://…/avatar.png')`  | `.alt() / .width() / .height() / .size(px)` (square sugar) / `.rounded() / .circle()`.     |
+| `Icon`    | `Icon.make('check-circle')`           | `.size(px) / .color(IconColor) / .label(text)`. String-only — see "Icons" below.            |
+
+### Text formatting
+
+```ts
+Text.make('Active')
+  .color('success')           // 'default' | 'muted' | 'primary' | 'destructive' | 'success' | 'warning' | 'info'
+  .size('lg')                 // 'xs' | 'sm' | 'base' | 'lg' | 'xl'
+  .weight('semibold')         // 'normal' | 'medium' | 'semibold' | 'bold'
+
+Text.make('Pending')
+  .badge()                    // pill rendering with the default 'gray' tint
+  .badgeColor('warning')      // 'gray' | 'primary' | 'success' | 'warning' | 'destructive' | 'info' (implies badge)
+```
+
+Bare `Text.make()` keeps the prior defaults (`text-sm` + `text-muted-foreground`) for back-compat.
+
+### Icons
+
+`Icon` resolves through the user-extensible icon registry (`registerIcons({ name: Component })`). Pass the string registry key:
+
+```ts
+import { registerIcons } from '@pilotiq/pilotiq/icons'
+import { CheckCircle } from 'lucide-react'
+
+registerIcons({ 'check-circle': CheckCircle })
+
+Icon.make('check-circle').size(20).color('success').label('Done')
+```
+
+For *component-typed* icons used by `Resource.icon` / `Page.icon` / `Global.icon` statics (where the Vite-plugin manifest can resolve them at render), see the `IconValue` type from `@pilotiq/pilotiq/icons`. The schema-level `Icon` element is intentionally string-only — schema instances are constructed at every render and don't have an "owning class" the manifest can key off.
+
+`Icon.make(name)` returns `null` when the name isn't registered; pair it with `registerIcons()` at boot or use one of the bundled icon packs (`@pilotiq/pilotiq/icons/lucide`).
+
+---
+
 ## Container elements
 
 A container is any Element that populates `_children`. Built-in containers:
@@ -473,7 +520,7 @@ src/
 ├── schema/
 │   ├── Element.ts           ← abstract base + ElementMeta
 │   ├── resolveSchema.ts     ← resolver + registerResolver + RenderContext
-│   ├── Text.ts, Heading.ts, Alert.ts, Divider.ts   ← display leaves
+│   ├── Text.ts, Heading.ts, Alert.ts, Divider.ts, Image.ts, Icon.ts   ← display leaves
 │   └── Card.ts, Section.ts, Tabs.ts, Grid.ts       ← containers
 ├── fields/
 │   ├── Field.ts             ← base Field, visibility, validators, FieldMeta
