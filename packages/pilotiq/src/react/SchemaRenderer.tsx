@@ -83,6 +83,7 @@ import { getIcon } from '../icons/registry.js'
 import { pickEditableCell } from './cells/EditableCell.js'
 import { WidgetDataProvider } from './WidgetDataContext.js'
 import { StatsOverviewRenderer } from './widgets/StatsOverviewRenderer.js'
+import { TableWidgetRenderer } from './widgets/TableWidgetRenderer.js'
 import { getWidgetRenderer } from './widgetRegistry.js'
 
 /** Resolve an icon name through the user-extensible registry. Returns
@@ -2025,6 +2026,9 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
 
     case 'stats':
       return <StatsOverviewRenderer key={index} meta={el} />
+
+    case 'tableWidget':
+      return <TableWidgetRenderer key={index} meta={el} />
 
     default: {
       // Plan #15 Phase C — server-data widget elements registered by

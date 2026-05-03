@@ -645,7 +645,7 @@ function collectServerDataElements(elements: ReadonlyArray<Element>): ServerData
       // Skip walkers that imply per-row resolution — widgets inside
       // Repeater/Builder rows don't have a stable id space.
       const type = el.getType()
-      if (type === 'form' || type === 'repeater' || type === 'builder' || type === 'table') continue
+      if (type === 'form' || type === 'repeater' || type === 'builder' || type === 'table' || type === 'tableWidget') continue
       const children = el.getChildren()
       if (children) walk(children)
     }

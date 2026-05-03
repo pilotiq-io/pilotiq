@@ -146,6 +146,13 @@ export {
   type StatsHandler,
   type StatsOverviewPayload,
 } from './schema/StatsOverview.js'
+export {
+  TableWidget,
+  type TableWidgetRecordsHandler,
+  type TableWidgetRecordsResult,
+  type TableWidgetQueryHandler,
+  type TableWidgetPayload,
+} from './schema/TableWidget.js'
 
 // Container elements
 export { Card } from './schema/Card.js'
