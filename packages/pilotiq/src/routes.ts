@@ -508,6 +508,18 @@ export function registerPilotiqRoutes(
         return view('pilotiq.slug', data ?? {})
       })
 
+      // Plan #15 — resource-scope widget polling. Re-resolves the list
+      // page schema (so widgets from `Resource.headerSchema()` /
+      // `footerSchema()` are reachable), runs `R.canAccess + R.canViewAny`
+      // in front of the per-widget `evaluateVisibility` check, then
+      // returns the resolved payload. Body: `{ filter? }`.
+      router.post(`${indexUrl}/_widget/:id`, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user)))  return forbidden(res, true)
+        if (!await checkPolicy(() => R.canViewAny(user))) return forbidden(res, true)
+        return handleWidgetData(req, res, pilotiq, { kind: 'resource', slug }, req.params['id']!)
+      })
+
       // Action dispatch — POST ${base}/${slug}/_action/:actionName
       router.post(`${indexUrl}/_action/:actionName`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)

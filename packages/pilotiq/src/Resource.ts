@@ -6,6 +6,7 @@ import type { ModelLike, ModelQuery } from './orm/modelDefaults.js'
 import type { IconValue } from './icons/types.js'
 import { defaultPages } from './defaultPages.js'
 import type { RelationManager } from './RelationManager.js'
+import type { SchemaContext } from './schema/resolveSchema.js'
 
 /** Map of resource page roles to Page subclasses. */
 export interface ResourcePages {
@@ -281,6 +282,29 @@ export abstract class Resource {
    * Returns an array of Elements (typically Sections + display elements).
    */
   static detail(_record: unknown): Element[] { return [] }
+
+  /**
+   * Plan #15 — schema rendered above the list-page table. Default `[]`.
+   * Typical use: dashboard widgets that contextualize the list (KPI cards,
+   * charts, status alerts). Anything Element-typed is allowed —
+   * `Group / Card / Section` for layout, `Stat / StatsOverview / Chart /
+   * TableWidget / View` for server-data widgets, `Heading / Alert` for
+   * static chrome. Resolves with the same `SchemaContext` passed to the
+   * list page's schema (carries `mode: 'table'`, `basePath`, `user`).
+   * Server-data widgets inside resolve in parallel via the shared
+   * `_widgetData` map and re-fetch through `POST {base}/{slug}/_widget/:id`.
+   * The hook only fires after `Resource.canAccess(user)` passes (route-level
+   * gate) — there's no extra per-hook authorization.
+   */
+  static headerSchema(_ctx?: SchemaContext): Element[] | Promise<Element[]> { return [] }
+
+  /**
+   * Plan #15 — schema rendered below the list-page table. Default `[]`.
+   * Same shape and posture as `headerSchema()`; useful for footnotes,
+   * legends, or "longest-running…" tables that contextualize the list
+   * from below.
+   */
+  static footerSchema(_ctx?: SchemaContext): Element[] | Promise<Element[]> { return [] }
 
   /**
    * Delete a record by id. Falls through to `model.delete(id)` when

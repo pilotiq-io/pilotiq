@@ -21,9 +21,15 @@ import {
   Page,
   Heading,
   Group,
+  Card,
   View,
+  Resource,
+  Table,
+  Column,
+  ListPage,
   dashboardData,
   customPageData,
+  resourceIndexData,
   panelInfo,
   resolveServerDataElements,
   widgetData,
@@ -355,5 +361,232 @@ describe('widgetData — page scope', () => {
     if (out.ok) {
       assert.deepEqual(out.data, { count: 7 })
     }
+  })
+})
+
+// ─── Phase E: Resource.headerSchema / footerSchema ────────
+
+describe('Resource.headerSchema / footerSchema (Plan #15 Phase E)', () => {
+  it('default to []', () => {
+    class R extends Resource {
+      static override label = 'Items'
+      static override slug  = 'items'
+    }
+    assert.deepEqual(R.headerSchema(), [])
+    assert.deepEqual(R.footerSchema(), [])
+  })
+
+  it('ListPage.schema slots headerSchema between Heading and Table', async () => {
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+      static override headerSchema() { return [StatsView.make()] }
+    }
+    class L extends ListPage {
+      static override getResource() { return R }
+    }
+    const schema = await L.schema({ basePath: '/admin' }) as Array<{ getType(): string }>
+    assert.equal(schema[0]!.getType(), 'heading')
+    assert.equal(schema[1]!.getType(), 'view')
+    assert.equal(schema[2]!.getType(), 'table')
+  })
+
+  it('ListPage.schema appends footerSchema after Table', async () => {
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+      static override footerSchema() { return [CountsView.make()] }
+    }
+    class L extends ListPage {
+      static override getResource() { return R }
+    }
+    const schema = await L.schema({ basePath: '/admin' }) as Array<{ getType(): string }>
+    assert.equal(schema[0]!.getType(), 'heading')
+    assert.equal(schema[1]!.getType(), 'table')
+    assert.equal(schema[2]!.getType(), 'view')
+  })
+
+  it('async headerSchema is awaited', async () => {
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+      static override async headerSchema() { return [StatsView.make()] }
+    }
+    class L extends ListPage {
+      static override getResource() { return R }
+    }
+    const schema = await L.schema({ basePath: '/admin' }) as Array<{ getType(): string }>
+    assert.equal(schema[1]!.getType(), 'view')
+  })
+
+  it('headerSchema receives the SchemaContext (basePath, mode)', async () => {
+    let seenCtx: unknown
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+      static override headerSchema(ctx?: { basePath?: string; mode?: string }) {
+        seenCtx = ctx
+        return []
+      }
+    }
+    class L extends ListPage {
+      static override getResource() { return R }
+    }
+    await L.schema({ basePath: '/admin', mode: 'table' })
+    const ctx = seenCtx as { basePath?: string; mode?: string }
+    assert.equal(ctx.basePath, '/admin')
+    assert.equal(ctx.mode, 'table')
+  })
+})
+
+describe('resourceIndexData — _widgetData wiring (Plan #15 Phase E)', () => {
+  it('ships _widgetData for headerSchema widgets', async () => {
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).records(async () => ({ rows: [], total: 0 }))
+      }
+      static override headerSchema() { return [StatsView.make().lazy(false)] }
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([R])
+    const data = await resourceIndexData(panel, 'posts')
+    assert.ok(data)
+    assert.deepEqual(data!['_widgetData'], { StatsView: { total: 42 } })
+  })
+
+  it('lazy headerSchema widgets stamp null in _widgetData', async () => {
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).records(async () => ({ rows: [], total: 0 }))
+      }
+      static override headerSchema() { return [StatsView.make()] }
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([R])
+    const data = await resourceIndexData(panel, 'posts')
+    assert.deepEqual(data!['_widgetData'], { StatsView: null })
+  })
+
+  it('stamps resource-scope widgetUrl on every widget meta', async () => {
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).records(async () => ({ rows: [], total: 0 }))
+      }
+      static override headerSchema() { return [StatsView.make()] }
+      static override footerSchema() { return [CountsView.make()] }
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([R])
+    const data = await resourceIndexData(panel, 'posts')
+    const schema = data!['schemaData'] as Array<Record<string, unknown>>
+    const stats  = schema.find(s => s['id'] === 'StatsView')!
+    const counts = schema.find(s => s['id'] === 'CountsView')!
+    assert.equal(stats['widgetUrl'],  '/admin/posts/_widget/StatsView')
+    assert.equal(counts['widgetUrl'], '/admin/posts/_widget/CountsView')
+  })
+
+  it('resolves widgets nested inside Group/Card layout primitives', async () => {
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).records(async () => ({ rows: [], total: 0 }))
+      }
+      static override headerSchema() {
+        return [
+          Group.make().schema([StatsView.make().lazy(false)]),
+          Card.make('Recent').schema([CountsView.make().lazy(false)]),
+        ]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([R])
+    const data = await resourceIndexData(panel, 'posts')
+    assert.deepEqual(data!['_widgetData'], {
+      StatsView:  { total: 42 },
+      CountsView: { count: 7 },
+    })
+  })
+})
+
+describe('widgetData — resource scope (Plan #15 Phase E)', () => {
+  it('returns 404 when the resource slug is unknown', async () => {
+    const panel = Pilotiq.make('T').path('/admin')
+    const out = await widgetData(panel, { kind: 'resource', slug: 'nope' }, { id: 'X' })
+    assert.equal(out.ok, false)
+    if (!out.ok) assert.equal(out.status, 404)
+  })
+
+  it('returns 404 when the widget id is unknown on a resource', async () => {
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+      static override headerSchema() { return [StatsView.make()] }
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([R])
+    const out = await widgetData(panel, { kind: 'resource', slug: 'posts' }, { id: 'NotThere' })
+    assert.equal(out.ok, false)
+    if (!out.ok) assert.equal(out.status, 404)
+  })
+
+  it('runs a widget from headerSchema and returns the payload', async () => {
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+      static override headerSchema() { return [StatsView.make()] }
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([R])
+    const out = await widgetData(panel, { kind: 'resource', slug: 'posts' }, { id: 'StatsView' })
+    assert.equal(out.ok, true)
+    if (out.ok) assert.deepEqual(out.data, { total: 42 })
+  })
+
+  it('runs a widget from footerSchema', async () => {
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+      static override footerSchema() { return [CountsView.make()] }
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([R])
+    const out = await widgetData(panel, { kind: 'resource', slug: 'posts' }, { id: 'CountsView' })
+    assert.equal(out.ok, true)
+    if (out.ok) assert.deepEqual(out.data, { count: 7 })
+  })
+
+  it('returns 403 when a resource-scope widget is hidden', async () => {
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+      static override headerSchema() { return [StatsView.make().visible(false)] }
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([R])
+    const out = await widgetData(panel, { kind: 'resource', slug: 'posts' }, { id: 'StatsView' })
+    assert.equal(out.ok, false)
+    if (!out.ok) assert.equal(out.status, 403)
+  })
+
+  it('finds widgets nested inside Group containers', async () => {
+    class R extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+      static override headerSchema() {
+        return [Group.make().schema([StatsView.make()])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([R])
+    const out = await widgetData(panel, { kind: 'resource', slug: 'posts' }, { id: 'StatsView' })
+    assert.equal(out.ok, true)
+    if (out.ok) assert.deepEqual(out.data, { total: 42 })
   })
 })

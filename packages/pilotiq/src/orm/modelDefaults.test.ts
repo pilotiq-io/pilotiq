@@ -99,7 +99,7 @@ describe('Model-driven defaults — list page Table.records', () => {
 
   it('paginates with default sort + perPage when ctx is empty', async () => {
     const List   = defaultListPage(ArticleResource)
-    const schema = List.schema() as Array<{ getType(): string }>
+    const schema = await List.schema() as Array<{ getType(): string }>
     const table  = schema[1] as Table
     const handler = table.getRecords()
     assert.ok(handler, 'records handler should be installed')
@@ -117,7 +117,7 @@ describe('Model-driven defaults — list page Table.records', () => {
 
   it('applies search across every searchable column with LIKE/orWhere', async () => {
     const List = defaultListPage(ArticleResource)
-    const table = (List.schema() as Array<unknown>)[1] as Table
+    const table = (await List.schema())[1] as unknown as Table
     const handler = table.getRecords()!
 
     await handler({ search: 'foo', page: 1 } as TableContext)
@@ -129,7 +129,7 @@ describe('Model-driven defaults — list page Table.records', () => {
 
   it('translates ctx.sort to orderBy with uppercased direction', async () => {
     const List = defaultListPage(ArticleResource)
-    const table = (List.schema() as Array<unknown>)[1] as Table
+    const table = (await List.schema())[1] as unknown as Table
     const handler = table.getRecords()!
 
     await handler({ sort: { column: 'createdAt', direction: 'desc' }, page: 2, perPage: 5 } as TableContext)
@@ -145,7 +145,7 @@ describe('Model-driven defaults — list page Table.records', () => {
           .records(async () => ({ rows: [{ id: 'custom' }], total: 1 }))
       }
     }
-    const table = (defaultListPage(CustomResource).schema() as Array<unknown>)[1] as Table
+    const table = (await defaultListPage(CustomResource).schema())[1] as unknown as Table
     // The user's records handler stays — running it should NOT touch the model.
     const handler = table.getRecords()!
     const result  = await handler({} as TableContext)

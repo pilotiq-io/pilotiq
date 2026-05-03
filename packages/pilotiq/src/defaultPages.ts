@@ -116,7 +116,7 @@ export class ListPage extends ResourcePage {
     return this.label ?? this.getResource().label
   }
 
-  static override schema(ctx?: SchemaContext): Element[] {
+  static override async schema(ctx?: SchemaContext): Promise<Element[]> {
     const R = this.getResource()
     const basePath = (ctx?.['basePath'] as string | undefined) ?? ''
     const table = R.table(Table.make())
@@ -143,9 +143,19 @@ export class ListPage extends ResourcePage {
       ? ListTabs.make().tabs(tabs)
       : undefined
 
+    // Plan #15 — `Resource.headerSchema(ctx) / footerSchema(ctx)` slot
+    // dashboard widgets above and below the list table. Resolved with the
+    // same `SchemaContext` so widgets see `mode: 'table'`, `basePath`, `user`.
+    const [header, footer] = await Promise.all([
+      Promise.resolve(R.headerSchema(ctx)),
+      Promise.resolve(R.footerSchema(ctx)),
+    ])
+
     const elements: Element[] = [...this.getHeader(R)]
+    if (header.length > 0) elements.push(...header)
     if (listTabs) elements.push(listTabs)
     elements.push(table)
+    if (footer.length > 0) elements.push(...footer)
     return elements
   }
 

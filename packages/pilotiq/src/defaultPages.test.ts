@@ -53,9 +53,9 @@ describe('defaultPages factory', () => {
     assert.equal(ListArticles.toMeta().icon, 'file-text')
   })
 
-  it('list page schema returns [Heading, Table] populated by R.table()', () => {
+  it('list page schema returns [Heading, Table] populated by R.table()', async () => {
     const ListArticles = defaultListPage(ArticleResource)
-    const schema = ListArticles.schema()
+    const schema = await ListArticles.schema()
     assert.ok(Array.isArray(schema))
     const elements = schema as Array<{ getType(): string }>
     assert.equal(elements.length, 2)
@@ -206,7 +206,7 @@ describe('Resource.resolvePages()', () => {
 })
 
 describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
-  it('subclassing ListPage with getResource() override produces the same shape as the factory', () => {
+  it('subclassing ListPage with getResource() override produces the same shape as the factory', async () => {
     class MyList extends ListPage {
       static override getResource() { return ArticleResource }
     }
@@ -216,16 +216,16 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
     assert.equal(MyList.getLabel(), 'Articles')
     assert.equal(MyList.toMeta().icon, 'file-text')
 
-    const schema = MyList.schema() as Array<{ getType(): string }>
+    const schema = await MyList.schema() as Array<{ getType(): string }>
     assert.equal(schema[0]!.getType(), 'heading')
     assert.equal(schema[1]!.getType(), 'table')
   })
 
-  it('ListPage does NOT inject default Create / Edit / Delete actions (Filament-style explicit)', () => {
+  it('ListPage does NOT inject default Create / Edit / Delete actions (Filament-style explicit)', async () => {
     class MyList extends ListPage {
       static override getResource() { return ArticleResource }
     }
-    const schema = MyList.schema({ basePath: '/admin' }) as Array<{ getType(): string }>
+    const schema = await MyList.schema({ basePath: '/admin' }) as Array<{ getType(): string }>
     const table = schema[1] as Table
     const tableActions = (table.getChildren() ?? []).filter((c): c is Action => c instanceof Action)
     const names = tableActions.map(a => a.name)
@@ -262,7 +262,7 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
     assert.equal(editForViewPage.getHref(), '/admin/articles/42/edit')
   })
 
-  it('subclasses can override getHeaderActions / getRowActions to opt in', () => {
+  it('subclasses can override getHeaderActions / getRowActions to opt in', async () => {
     class WithActions extends ListPage {
       static override getResource() { return ArticleResource }
       static override getHeaderActions(R: typeof ArticleResource, basePath: string) {
@@ -272,7 +272,7 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
         return [Action.edit(R, basePath), Action.delete(R, basePath)]
       }
     }
-    const table = (WithActions.schema({ basePath: '/admin' }) as Array<unknown>)[1] as Table
+    const table = (await WithActions.schema({ basePath: '/admin' }))[1] as unknown as Table
     const tableActions = (table.getChildren() ?? []).filter((c): c is Action => c instanceof Action)
     const names = tableActions.map(a => a.name)
     assert.ok(names.includes('create'))
@@ -283,7 +283,7 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
     assert.equal(edit.getPlacement(), 'row', 'recordActions slot stamps row placement')
   })
 
-  it('Resource.table() actions win over identically-named page-level overrides', () => {
+  it('Resource.table() actions win over identically-named page-level overrides', async () => {
     class CustomActions extends ArticleResource {
       static override table(t: Table): Table {
         return t.columns([Column.make('title')]).actions([
@@ -297,7 +297,7 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
         return [Action.create(R, basePath)]
       }
     }
-    const table = (List.schema({ basePath: '/admin' }) as Array<unknown>)[1] as Table
+    const table = (await List.schema({ basePath: '/admin' }))[1] as unknown as Table
     const creates = (table.getChildren() ?? [])
       .filter((c): c is Action => c instanceof Action)
       .filter(a => a.name === 'create')
@@ -324,14 +324,14 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
     assert.equal(Custom.getLabel(), 'All articles')
   })
 
-  it('subclasses can override getHeader() to customize the header without re-implementing wiring', () => {
+  it('subclasses can override getHeader() to customize the header without re-implementing wiring', async () => {
     class Verbose extends ListPage {
       static override getResource() { return ArticleResource }
       static override getHeader(R: typeof ArticleResource) {
         return [Heading.make(`${R.label} (custom)`).level(1)]
       }
     }
-    const schema = Verbose.schema() as Array<{ getType(): string; toMeta(): { content?: string } }>
+    const schema = await Verbose.schema() as Array<{ getType(): string; toMeta(): { content?: string } }>
     assert.equal(schema[0]!.getType(), 'heading')
     assert.equal(schema[0]!.toMeta().content, 'Articles (custom)')
     // The table is still wired by the base class — override is additive.

@@ -759,6 +759,9 @@ export async function resourceIndexData(
   const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'table', basePath: cfg.path }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
   tagActionDispatch(elements, indexUrl)
+  // Plan #15 — resource-scope widget polling URL. Stamped before the
+  // schema resolves so each widget's meta carries its endpoint.
+  tagWidgetUrls(elements, id => `${indexUrl}/_widget/${id}`)
   // Mark the active tab + parallel-eval badges + stamp per-tab URLs
   // before the table records run — `loadTableRecords` walks the schema
   // for the active tab and splices its `modifyQuery` predicate into the
@@ -769,6 +772,7 @@ export async function resourceIndexData(
   })
   tagTableReorderUrls(elements, `${indexUrl}/_reorder`)
   tagCellEditUrls(elements, indexUrl)
+  const widgetData = await resolveServerDataElements(elements, ctx)
   const schemaData = await resolveSchema(elements, ctx)
 
   return {
@@ -779,6 +783,7 @@ export async function resourceIndexData(
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
+    _widgetData: widgetData,
     notifications: consumeFlashedNotifications(req),
   }
 }
@@ -1927,15 +1932,18 @@ export async function customPageData(
  * Scopes the polling endpoint resolves against. Mirrors the
  * form-state / wizard scope discriminator.
  *
- *   panel: dashboard page (`POST {base}/_widget/:id`)
- *   page:  custom page (`POST {base}/{pageSlug}/_widget/:id`)
- *
- * Resource-scoped (`POST {base}/{slug}/_widget/:id`) lands in Phase E
- * with the `headerSchema / footerSchema` hooks; not yet implemented.
+ *   panel:    dashboard page (`POST {base}/_widget/:id`)
+ *   page:     custom page    (`POST {base}/{pageSlug}/_widget/:id`)
+ *   resource: list page      (`POST {base}/{slug}/_widget/:id`) —
+ *             resolves the resource's index `Page.schema()` so widgets
+ *             from `Resource.headerSchema()` / `footerSchema()` are
+ *             reachable. Auth runs `R.canAccess + R.canViewAny` in
+ *             front of the per-widget visibility check.
  */
 export type WidgetScope =
   | { kind: 'panel' }
-  | { kind: 'page';  pageSlug: string }
+  | { kind: 'page';     pageSlug: string }
+  | { kind: 'resource'; slug:     string }
 
 export interface WidgetRequest {
   id:      string
@@ -1984,11 +1992,20 @@ export async function widgetData(
     if (!cfg.dashboardPage) return { ok: false, status: 404, error: 'No dashboard page registered' }
     ctx = uploadCtx(userCtx({ basePath: cfg.path }, user), cfg)
     elements = await callPageSchema(cfg.dashboardPage, ctx)
-  } else {
+  } else if (scope.kind === 'page') {
     const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
     if (!P) return { ok: false, status: 404, error: 'Page not found' }
     ctx = uploadCtx(userCtx({ basePath: cfg.path }, user), cfg)
     elements = await callPageSchema(P, ctx)
+  } else {
+    // Resource-scope: re-resolve the list page's schema so widgets from
+    // `Resource.headerSchema()` / `footerSchema()` are reachable.
+    const R = cfg.resources.find(r => r.getSlug() === scope.slug)
+    if (!R) return { ok: false, status: 404, error: 'Resource not found' }
+    const pages = R.resolvePages()
+    if (!pages.index) return { ok: false, status: 404, error: 'Resource has no list page' }
+    ctx = uploadCtx(userCtx({ mode: 'table', basePath: cfg.path }, user), cfg)
+    elements = await callPageSchema(pages.index, ctx)
   }
 
   // Stamp the request's filter onto the render context so widget hooks
@@ -2034,7 +2051,7 @@ function findWidgetById(elements: ReadonlyArray<Element>, id: string): ServerDat
         continue
       }
       const type = el.getType()
-      if (type === 'form' || type === 'repeater' || type === 'builder' || type === 'table') continue
+      if (type === 'form' || type === 'repeater' || type === 'builder' || type === 'table' || type === 'tableWidget') continue
       const children = el.getChildren()
       if (children) walk(children)
     }
