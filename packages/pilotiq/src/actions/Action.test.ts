@@ -242,6 +242,7 @@ describe('Action.relation* factories (Plan #11 polish)', () => {
     parentId:     '42',
     relationship: 'posts',
     parentRecord: { id: '42' },
+    mode:         'hasMany',
   }
 
   describe('relationCreate', () => {
@@ -277,6 +278,12 @@ describe('Action.relation* factories (Plan #11 polish)', () => {
       const result = await Action.relationCreate(Posts, ctx).evaluate({})
       assert.equal(result.visible, true)
     })
+
+    it('auto-hides under belongsToMany mode (no per-pivot create)', async () => {
+      const m2mCtx = { ...ctx, mode: 'belongsToMany' as const }
+      const result = await Action.relationCreate(Posts, m2mCtx).evaluate({})
+      assert.equal(result.visible, false)
+    })
   })
 
   describe('relationEdit', () => {
@@ -306,6 +313,12 @@ describe('Action.relation* factories (Plan #11 polish)', () => {
       await a.evaluate({ record: { id: '7', title: 'A' } })
       assert.deepEqual(seenChild, { id: '7', title: 'A' })
       assert.deepEqual(seenParent, { id: '42' })
+    })
+
+    it('auto-hides under belongsToMany mode (no per-pivot edit)', async () => {
+      const m2mCtx = { ...ctx, mode: 'belongsToMany' as const }
+      const result = await Action.relationEdit(Posts, m2mCtx).evaluate({ record: { id: '9' } })
+      assert.equal(result.visible, false)
     })
   })
 
@@ -349,6 +362,12 @@ describe('Action.relation* factories (Plan #11 polish)', () => {
       const a = Action.relationDelete(Posts, { ...ctx, related: Related })
       assert.equal((await a.evaluate({ record: { archivedAt: '2026-01-01' } })).visible, false)
       assert.equal((await a.evaluate({ record: { archivedAt: null } })).visible, true)
+    })
+
+    it('auto-hides under belongsToMany mode (use relationDetach instead)', async () => {
+      const m2mCtx = { ...ctx, mode: 'belongsToMany' as const }
+      const result = await Action.relationDelete(Posts, m2mCtx).evaluate({ record: { id: '9' } })
+      assert.equal(result.visible, false)
     })
   })
 
@@ -458,6 +477,146 @@ describe('Action.relation* factories (Plan #11 polish)', () => {
       }
       const a = Action.relationForceDelete(Stricter, softCtx)
       assert.equal((await a.evaluate({ record: { deletedAt: '2026-01-01' } })).visible, false)
+    })
+  })
+
+  describe('M2M factories — relationAttach', () => {
+    class Tags extends RelationManager {
+      static override relationship  = 'tags'
+      static override label         = 'Tags'
+      static override labelSingular = 'Tag'
+    }
+
+    const m2mCtx: RelationManagerContext = {
+      basePath:     '/admin',
+      parentSlug:   'articles',
+      parentId:     '5',
+      relationship: 'tags',
+      parentRecord: { id: '5' },
+      mode:         'belongsToMany',
+    }
+
+    it('renders as a header action with an Attach label', () => {
+      const meta = Action.relationAttach(Tags, m2mCtx).toMeta()
+      assert.equal(meta.label,     'Attach Tag')
+      assert.equal(meta.placement, 'header')
+    })
+
+    it('builds a modal-form schema only when M2M + Related.model are set', () => {
+      // No related Resource → schema stays empty (action would still
+      // mount but the modal has nothing to pick from). `.getSchema()`
+      // returns the raw Element[] before resolver-side serialization;
+      // `toMeta().children` is populated by the schema walker, not by
+      // the action itself, so we check the unresolved tree directly.
+      const noRelated = Action.relationAttach(Tags, m2mCtx)
+      assert.equal(noRelated.getSchema().length, 0)
+
+      // With a stub related model present, the schema gains a SelectField.
+      const Related = {
+        model: { query: () => ({ paginate: async () => ({ data: [], total: 0 }) }) },
+      } as unknown as RelationManagerContext['related']
+      const withRelated = Action.relationAttach(Tags, { ...m2mCtx, related: Related })
+      assert.equal(withRelated.getSchema().length, 1)
+    })
+
+    it('auto-hides under hasMany mode (drop-in safety)', async () => {
+      const hasManyCtx = { ...m2mCtx, mode: 'hasMany' as const }
+      const result = await Action.relationAttach(Tags, hasManyCtx).evaluate({})
+      assert.equal(result.visible, false)
+    })
+
+    it('visible when canAttach defaults true under M2M mode', async () => {
+      const result = await Action.relationAttach(Tags, m2mCtx).evaluate({})
+      assert.equal(result.visible, true)
+    })
+
+    it('manager canAttach=false hides the action even under M2M', async () => {
+      class Locked extends RelationManager {
+        static override relationship = 'tags'
+        static override async canAttach(): Promise<boolean> { return false }
+      }
+      const result = await Action.relationAttach(Locked, m2mCtx).evaluate({})
+      assert.equal(result.visible, false)
+    })
+  })
+
+  describe('M2M factories — relationDetach', () => {
+    class Tags extends RelationManager {
+      static override relationship  = 'tags'
+      static override label         = 'Tags'
+      static override labelSingular = 'Tag'
+    }
+
+    const m2mCtx: RelationManagerContext = {
+      basePath:     '/admin',
+      parentSlug:   'articles',
+      parentId:     '5',
+      relationship: 'tags',
+      parentRecord: { id: '5' },
+      mode:         'belongsToMany',
+    }
+
+    it('builds the detach URL with :id template for row context', () => {
+      const meta = Action.relationDetach(Tags, m2mCtx).toMeta()
+      assert.equal(meta.action, '/admin/articles/5/tags/:id/_detach')
+      assert.equal(meta.method, 'post')
+      assert.equal(meta.label,  'Detach')
+    })
+
+    it('bakes in an explicit recordId when provided', () => {
+      const meta = Action.relationDetach(Tags, m2mCtx, '9').toMeta()
+      assert.equal(meta.action, '/admin/articles/5/tags/9/_detach')
+    })
+
+    it('auto-hides under hasMany mode', async () => {
+      const hasManyCtx = { ...m2mCtx, mode: 'hasMany' as const }
+      const result = await Action.relationDetach(Tags, hasManyCtx).evaluate({ record: { id: 9 } })
+      assert.equal(result.visible, false)
+    })
+
+    it('visible when canDetach defaults true under M2M mode', async () => {
+      const result = await Action.relationDetach(Tags, m2mCtx).evaluate({ record: { id: 9 } })
+      assert.equal(result.visible, true)
+    })
+
+    it('confirm message frames the operation as detach (not delete)', () => {
+      const meta = Action.relationDetach(Tags, m2mCtx).toMeta() as { confirm?: { message: string } }
+      assert.match(meta.confirm?.message ?? '', /Detach/)
+      assert.match(meta.confirm?.message ?? '', /stays in place/)
+    })
+  })
+
+  describe('M2M factories — relationBulkDetach', () => {
+    class Tags extends RelationManager {
+      static override relationship  = 'tags'
+      static override label         = 'Tags'
+      static override labelSingular = 'Tag'
+    }
+
+    const m2mCtx: RelationManagerContext = {
+      basePath:     '/admin',
+      parentSlug:   'articles',
+      parentId:     '5',
+      relationship: 'tags',
+      parentRecord: { id: '5' },
+      mode:         'belongsToMany',
+    }
+
+    it('renders as a bulk action with destructive styling', () => {
+      const meta = Action.relationBulkDetach(Tags, m2mCtx).toMeta()
+      assert.equal(meta.placement, 'bulk')
+      assert.equal(meta.color,     'destructive')
+    })
+
+    it('auto-hides under hasMany mode', async () => {
+      const hasManyCtx = { ...m2mCtx, mode: 'hasMany' as const }
+      const result = await Action.relationBulkDetach(Tags, hasManyCtx).evaluate({})
+      assert.equal(result.visible, false)
+    })
+
+    it('visible when canAttach defaults true under M2M mode (bulk uses canAttach as gate)', async () => {
+      const result = await Action.relationBulkDetach(Tags, m2mCtx).evaluate({})
+      assert.equal(result.visible, true)
     })
   })
 })

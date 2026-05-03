@@ -33,7 +33,25 @@ export interface RelationManagerContext {
    *  register one). Action visibility predicates fall through to the
    *  related Resource's policy when the manager hasn't overridden. */
   related?:     ResourceClass | undefined
+  /**
+   * Auto-detected from the parent model's `static relations[name].type`.
+   * Drives default action injection (M2M gets attach/detach/bulk-detach
+   * instead of create/edit/delete) and lets `Action.relationCreate /
+   * Edit / Delete` factories short-circuit to hidden under M2M (where
+   * those operations don't make sense — there's no per-pivot-row form,
+   * and detach ≠ delete). Defaults to `'hasMany'` when the relations
+   * map doesn't expose a type field.
+   */
+  mode:         RelationMode
 }
+
+/** Three relation shapes the page-data builder distinguishes. `hasOne`
+ *  is treated identically to `hasMany` for action defaults (one-row
+ *  table is still a table); `belongsToMany` is the M2M variant.
+ *  `belongsTo` runs through the same path as `hasMany` for now —
+ *  managers on the inverse side are uncommon. Polymorphic shapes
+ *  (`morphMany / morphedByMany`) are still gated on ORM support. */
+export type RelationMode = 'hasMany' | 'belongsToMany'
 
 /**
  * Plan #11 — RelationManager abstract base class.
@@ -193,6 +211,17 @@ export abstract class RelationManager {
     return this.canDelete(user, record, parentRecord)
   }
 
+  /** M2M follow-up — allowed to attach an existing related record to the
+   *  parent (insert a pivot row). Default `true`. No fall-through to the
+   *  related Resource: attaching is a pivot operation, not a record
+   *  creation, so `Resource.canCreate` is the wrong gate. */
+  static async canAttach(_user: unknown, _parentRecord: unknown): Promise<boolean> { return true }
+
+  /** M2M follow-up — allowed to detach a related record from the parent
+   *  (delete a pivot row, target record stays). Default `true`. No
+   *  fall-through to the related Resource: detaching ≠ deleting. */
+  static async canDetach(_user: unknown, _record: unknown, _parentRecord: unknown): Promise<boolean> { return true }
+
   // ─── Accessors ────────────────────────────────────────────────
 
   /**
@@ -233,10 +262,15 @@ export abstract class RelationManager {
  * with. Validated at panel boot in `PilotiqRegistry.register`. The
  * soft-delete tokens (`restore`, `force-delete`) entered the set with
  * Plan #13's relation-manager polish — they're sibling paths to a
- * resource's `:id/restore` route. */
+ * resource's `:id/restore` route. The M2M follow-up adds `_attach /
+ * _detach / _bulk-detach` for pivot-row mutations — these need to be
+ * reserved even though they live one segment deeper than the
+ * relationship name (they could otherwise alias a child record id of,
+ * say, `_attach` slipping through the IDOR check). */
 export const RESERVED_RELATIONSHIP_TOKENS: ReadonlySet<string> = new Set([
   'edit', 'delete', 'restore', 'force-delete',
   '_form', '_action', '_search', '_uploads',
+  '_attach', '_detach', '_bulk-detach',
 ])
 
 // ─── Authorization helpers (Plan #11) ────────────────────────────
@@ -245,10 +279,15 @@ export const RESERVED_RELATIONSHIP_TOKENS: ReadonlySet<string> = new Set([
 // pageData — so `Action.ts` can reuse the fall-through logic without
 // importing pageData (cycle: pageData → Action → pageData).
 
-/** Names of the predicate methods a `RelationManager` carries. */
+/** Names of the predicate methods a `RelationManager` carries.
+ *  `canAttach / canDetach` (M2M follow-up) are deliberately
+ *  manager-only — they don't fall through to the related Resource
+ *  because attach/detach are pivot operations, not record operations,
+ *  so `Resource.canCreate / canDelete` are the wrong gates. */
 export type ManagerCanMethod =
   | 'canViewAny' | 'canView' | 'canCreate' | 'canEdit' | 'canDelete'
   | 'canRestore' | 'canForceDelete'
+  | 'canAttach'  | 'canDetach'
 
 /** True when the subclass replaces the inherited base implementation.
  * Class statics are inherited via the constructor prototype chain, so
@@ -264,7 +303,9 @@ export function isManagerCanOverridden(
 
 /** Structural shape we need from the related Resource for fall-through.
  * Matches `Resource.canX` predicate signatures without importing the
- * full class (keeps Action.ts cycle-free). */
+ * full class (keeps Action.ts cycle-free). `canAttach / canDetach`
+ * have no Resource analogue — pivot ops aren't record ops — so they
+ * never fall through. */
 interface RelatedResourceLike {
   canViewAny?(user: unknown): boolean | Promise<boolean>
   canView?(user: unknown, record: unknown): boolean | Promise<boolean>
@@ -300,9 +341,17 @@ export async function safeManagerPolicy(
   const isRecordScoped =
     method === 'canView' || method === 'canEdit' || method === 'canDelete'
     || method === 'canRestore' || method === 'canForceDelete'
+    || method === 'canDetach'
+
+  // M2M follow-up — `canAttach` and `canDetach` are manager-only:
+  // attach/detach are pivot operations, not record operations, so the
+  // related Resource's canCreate/canDelete are the wrong gates. Skip
+  // the Related fall-through for these two and just run the
+  // (potentially default-true) predicate on the manager.
+  const managerOnly = method === 'canAttach' || method === 'canDetach'
 
   try {
-    if (isManagerCanOverridden(M, method)) {
+    if (isManagerCanOverridden(M, method) || managerOnly) {
       const fn = (M as unknown as Record<ManagerCanMethod, (...args: unknown[]) => unknown>)[method]
       const result = isRecordScoped ? fn(user, child, parent) : fn(user, parent)
       return Boolean(await (result as boolean | Promise<boolean>))

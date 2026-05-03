@@ -54,3 +54,23 @@ model Post {
   // `feedback_prisma_hoist_shared_schema.md`.
   sort        Int       @default(0)
 }
+
+// M2M demo — Article <-> Tag with an explicit pivot. Mirrored from
+// playground-pilotiq to keep the hoisted @prisma/client in sync; panels
+// playground doesn't actually use Tag.
+model Tag {
+  id        String      @id @default(cuid())
+  name      String      @unique
+  slug      String      @unique
+  color     String?
+  articles  ArticleTag[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+model ArticleTag {
+  articleId String
+  tagId     String
+  @@id([articleId, tagId])
+  @@map("article_tag")
+}

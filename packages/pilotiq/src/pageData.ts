@@ -44,8 +44,10 @@ import {
 import { RelationTabs, relationTab, type RelationTabMeta } from './schema/RelationTabs.js'
 import {
   modelSave, modelLoadRecord, modelRelationTableRecords, getPrimaryKey,
+  getRelationType,
   type ModelLike, type ModelQuery,
 } from './orm/modelDefaults.js'
+import type { RelationMode } from './RelationManager.js'
 
 // ─── Shared helpers ──────────────────────────────────────────
 
@@ -1203,6 +1205,15 @@ export async function relationManagerData(
 
   if (!await safePolicy(() => R.canEdit(user, parentRecord))) return { ok: false, status: 403 }
 
+  // M2M follow-up — read the relation type off the parent's relations
+  // map once, normalize to the binary `RelationMode` the manager-side
+  // logic uses. `belongsToMany` flips the manager into pivot-mutation
+  // mode (attach/detach instead of create/edit/delete); everything
+  // else (`hasMany`, `hasOne`, `belongsTo`, missing-type fallback)
+  // collapses to `'hasMany'` because their UI surface is the same.
+  const relationType = getRelationType(R.model, scope.relationship)
+  const mode: RelationMode = relationType === 'belongsToMany' ? 'belongsToMany' : 'hasMany'
+
   const Related = findRelatedResource(M, R, cfg)
   // Related Resource is required for: edit/create form auto-wire,
   // child loading on edit, related URL generation. Throw when missing
@@ -1218,11 +1229,11 @@ export async function relationManagerData(
 
   switch (scope.kind) {
     case 'relation-list':
-      return buildRelationListData(pilotiq, R, M, Related, parentRecord, scope, req, user)
+      return buildRelationListData(pilotiq, R, M, Related, parentRecord, scope, req, user, mode)
     case 'relation-create':
-      return buildRelationCreateData(pilotiq, R, M, Related!, parentRecord, scope, req, user)
+      return buildRelationCreateData(pilotiq, R, M, Related!, parentRecord, scope, req, user, mode)
     case 'relation-edit':
-      return buildRelationEditData(pilotiq, R, M, Related!, parentRecord, scope, req, user)
+      return buildRelationEditData(pilotiq, R, M, Related!, parentRecord, scope, req, user, mode)
   }
 }
 
@@ -1235,6 +1246,7 @@ async function buildRelationListData(
   scope: Extract<RelationManagerScope, { kind: 'relation-list' }>,
   req: unknown,
   user: unknown,
+  mode: RelationMode,
 ): Promise<RelationManagerResult> {
   if (!await safeManagerPolicy(M, 'canViewAny', Related, user, parentRecord)) return { ok: false, status: 403 }
 
@@ -1253,6 +1265,7 @@ async function buildRelationListData(
     relationship: scope.relationship,
     parentRecord,
     related:      Related,
+    mode,
   }
   const table = M.table(Table.make(), managerCtx)
   autoWireManagerTable(table, R.model as ModelLike, parentRecord, scope.relationship)
@@ -1305,6 +1318,7 @@ async function buildRelationCreateData(
   scope: Extract<RelationManagerScope, { kind: 'relation-create' }>,
   req: unknown,
   user: unknown,
+  mode: RelationMode,
 ): Promise<RelationManagerResult> {
   if (!await safeManagerPolicy(M, 'canCreate', Related, user, parentRecord)) return { ok: false, status: 403 }
 
@@ -1319,6 +1333,7 @@ async function buildRelationCreateData(
     relationship: scope.relationship,
     parentRecord,
     related:      Related,
+    mode,
   }
   const form = M.form(Form.make(), managerCtx)
   if (Related.model) autoWireManagerForm(form, Related.model)
@@ -1376,6 +1391,7 @@ async function buildRelationEditData(
   scope: Extract<RelationManagerScope, { kind: 'relation-edit' }>,
   req: unknown,
   user: unknown,
+  mode: RelationMode,
 ): Promise<RelationManagerResult> {
   if (!Related.model) {
     throw new Error(
@@ -1408,6 +1424,7 @@ async function buildRelationEditData(
     relationship: scope.relationship,
     parentRecord,
     related:      Related,
+    mode,
   }
   const form = M.form(Form.make(), managerCtx)
   autoWireManagerForm(form, Related.model)

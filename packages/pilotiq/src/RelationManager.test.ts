@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   RelationManager,
   RESERVED_RELATIONSHIP_TOKENS,
+  safeManagerPolicy,
   type RelationManagerContext,
 } from './RelationManager.js'
 import { Form } from './elements/Form.js'
@@ -18,6 +19,7 @@ const stubCtx: RelationManagerContext = {
   parentId:     '1',
   relationship: 'posts',
   parentRecord: { id: '1' },
+  mode:         'hasMany',
 }
 
 describe('RelationManager (static API)', () => {
@@ -179,6 +181,81 @@ describe('RelationManager (static API)', () => {
       assert.equal(RESERVED_RELATIONSHIP_TOKENS.has('posts'),    false)
       assert.equal(RESERVED_RELATIONSHIP_TOKENS.has('comments'), false)
       assert.equal(RESERVED_RELATIONSHIP_TOKENS.has('tags'),     false)
+    })
+
+    it('reserves the M2M tokens', () => {
+      assert.equal(RESERVED_RELATIONSHIP_TOKENS.has('_attach'),      true)
+      assert.equal(RESERVED_RELATIONSHIP_TOKENS.has('_detach'),      true)
+      assert.equal(RESERVED_RELATIONSHIP_TOKENS.has('_bulk-detach'), true)
+    })
+  })
+
+  describe('M2M predicates', () => {
+    it('canAttach + canDetach default to true', async () => {
+      class M extends RelationManager { static override relationship = 'tags' }
+      const parent = { id: 1 }
+      const child  = { id: 9 }
+      assert.equal(await M.canAttach(null, parent),         true)
+      assert.equal(await M.canDetach(null, child, parent),  true)
+    })
+
+    it('canAttach override flows through', async () => {
+      class M extends RelationManager {
+        static override relationship = 'tags'
+        static override async canAttach(_user: unknown, parent: unknown): Promise<boolean> {
+          return (parent as { canManageTags?: boolean }).canManageTags === true
+        }
+      }
+      assert.equal(await M.canAttach(null, { canManageTags: true }),  true)
+      assert.equal(await M.canAttach(null, { canManageTags: false }), false)
+    })
+  })
+
+  describe('safeManagerPolicy — M2M short-circuit', () => {
+    it('canAttach does NOT fall through to the related Resource', async () => {
+      class M extends RelationManager { static override relationship = 'tags' }
+      const Related = {
+        // If fall-through happened, this would be consulted; we want it ignored.
+        canCreate: async () => false,
+      }
+      // Manager hasn't overridden canAttach (default true). With the
+      // managerOnly short-circuit, we should see `true` even though
+      // Related.canCreate returns false.
+      assert.equal(
+        await safeManagerPolicy(M, 'canAttach', Related as never, null, { id: 1 }),
+        true,
+      )
+    })
+
+    it('canDetach does NOT fall through to the related Resource', async () => {
+      class M extends RelationManager { static override relationship = 'tags' }
+      const Related = { canDelete: async () => false }
+      assert.equal(
+        await safeManagerPolicy(M, 'canDetach', Related as never, null, { id: 1 }, { id: 9 }),
+        true,
+      )
+    })
+
+    it('canAttach manager override is honored over the default-true', async () => {
+      class M extends RelationManager {
+        static override relationship = 'tags'
+        static override async canAttach(): Promise<boolean> { return false }
+      }
+      assert.equal(
+        await safeManagerPolicy(M, 'canAttach', undefined, null, { id: 1 }),
+        false,
+      )
+    })
+
+    it('throwing canDetach predicate fails closed', async () => {
+      class M extends RelationManager {
+        static override relationship = 'tags'
+        static override async canDetach(): Promise<boolean> { throw new Error('boom') }
+      }
+      assert.equal(
+        await safeManagerPolicy(M, 'canDetach', undefined, null, { id: 1 }, { id: 9 }),
+        false,
+      )
     })
   })
 })

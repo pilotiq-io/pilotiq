@@ -201,16 +201,115 @@ A follow-up plan will add a `Tabs.dependsOn([fields])` builder that triggers
 manager-tab badge re-fetch when listed fields change, plus a count-aware
 manager list endpoint that returns the current count alongside rows.
 
+## Many-to-many
+
+`belongsToMany` ships in the M2M follow-up. Declare the relation with an
+explicit pivot on the parent's rudder Model, and pilotiq's
+`RelationManager` flips into pivot-mutation mode automatically:
+
+```ts
+// app/Models/Article.ts
+import { Model } from '@rudderjs/orm'
+import { Tag } from './Tag.js'
+
+export class Article extends Model {
+  static override table = 'article'
+  static override relations = {
+    tags: {
+      type:       'belongsToMany' as const,
+      model:      () => Tag,
+      pivotTable: 'article_tag',
+      // foreignPivotKey defaults to 'articleId', relatedPivotKey to 'tagId'.
+    },
+  }
+}
+```
+
+```prisma
+// prisma/schema/app.prisma — explicit pivot table required.
+// Implicit `_ArticleToTag` (Prisma's `@relation` arrays on both sides)
+// is NOT supported because the ORM writes pivot rows directly via
+// `insertMany / deleteAll`, not through Prisma's relation cascades.
+model Article    { id String @id @default(cuid()); /* … */ }
+model Tag        { id String @id @default(cuid()); name String @unique; /* … */ }
+model ArticleTag { articleId String; tagId String; @@id([articleId, tagId]); @@map("article_tag") }
+```
+
+```ts
+// app/Pilotiq/Articles/relations/TagsManager.ts
+import { RelationManager, Action, Column, type RelationManagerContext, type Table } from '@pilotiq/pilotiq'
+
+export class TagsManager extends RelationManager {
+  static override relationship  = 'tags'
+  static override label         = 'Tags'
+  static override labelSingular = 'Tag'
+
+  static override table(table: Table, ctx: RelationManagerContext): Table {
+    return table
+      .columns([Column.make('name').sortable().searchable()])
+      .headerActions([ Action.relationAttach(TagsManager, ctx) ])
+      .recordActions([ Action.relationDetach(TagsManager, ctx) ])
+      .bulkActions([   Action.relationBulkDetach(TagsManager, ctx) ])
+  }
+}
+```
+
+The three new factories:
+
+- `Action.relationAttach(M, ctx)` — header button, opens a modal with a
+  searchable `SelectField` populated from the related Resource's model
+  with already-attached records filtered out. Submit calls
+  `parent.related(rel).attach([id])`.
+- `Action.relationDetach(M, ctx)` — row button, destructive, with a
+  confirm prompt that frames the operation as **detach** (the related
+  record stays in place; only the pivot row is removed). POSTs to
+  `${base}/${slug}/:id/${rel}/${childId}/_detach`.
+- `Action.relationBulkDetach(M, ctx)` — bulk variant of the above.
+  Iterates `ctx.records`, applies `M.canDetach` per row, then calls
+  `parent.related(rel).detach(ids)` once.
+
+All three short-circuit to `visible: false` when `ctx.mode !==
+'belongsToMany'`, which makes them safe to drop into a manager whose
+relation type might switch later.
+
+Two new authorization predicates:
+
+- `static canAttach(user, parentRecord)` — gate the header `Attach`
+  button. Default `true`. Manager-only — does not fall through to the
+  related Resource's `canCreate` because attaching is a pivot
+  operation, not a record creation.
+- `static canDetach(user, record, parentRecord)` — gate per-row detach
+  + bulk-detach. Default `true`. Same manager-only rationale.
+
+The standard `Action.relationCreate / relationEdit / relationDelete`
+factories auto-hide under M2M (no per-pivot-row form, and detach ≠
+delete). To create a brand-new Tag from scratch and attach it, do it
+in two steps: navigate to the Tag Resource, create, then come back to
+the Article and attach. (A combined "create-and-attach" affordance is
+deferred — file a request if you need it.)
+
+### What the M2M manager does NOT support (yet)
+
+- **Pivot extras editing.** `@rudderjs/orm` v1 doesn't surface pivot
+  columns on the read side, so any UI for editing pivot data would be
+  write-only. `attach({ tag1: { addedBy: 'admin' } })` works at the
+  ORM level but the manager has no display surface for it. Wait for
+  ORM `withPivot([…])`.
+- **Reorderable pivot rows.** Needs ORM `orderByPivot('position')` +
+  `withPivot(['position'])`. Same gating.
+- **Polymorphic M2M (`morphedByMany`).** ORM still defers polymorphic
+  relations.
+- **`syncWithoutDetaching` / `toggle`.** The accessor is exposed via
+  `parent.related(rel)`; users with custom needs reach for it directly
+  inside a regular `Action.handler`.
+
 ## Out of scope
 
 These are deferred to follow-up plans and explicitly do **not** ship in
-Plan #11:
+Plan #11 or its M2M follow-up:
 
-- **`belongsToMany` / pivot / many-to-many.** `@rudderjs/orm` does not yet
-  support M2M. When it does, a follow-up plan adds `attach / detach / sync`
-  actions and pivot-form support. Until then, hand-roll a join resource (e.g.
-  `UserRoleResource`) and use two `hasMany` managers.
-- **Polymorphic relations** (`morphMany / morphTo`) — same blocker.
+- **Polymorphic relations** (`morphMany / morphTo` / `morphedByMany`) —
+  not yet in `@rudderjs/orm`.
 - **`RelationGroup`** — tabbing multiple managers under one label. Each
   manager already gets its own tab; grouping is a Tier-2 polish.
 - **Implicit row actions.** The manager's `static table()` does *not*

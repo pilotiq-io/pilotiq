@@ -7,6 +7,7 @@ import { ListArticles }  from './Pages/ListArticles.js'
 import { CreateArticle } from './Pages/CreateArticle.js'
 import { EditArticle }   from './Pages/EditArticle.js'
 import { ViewArticle }   from './Pages/ViewArticle.js'
+import { TagsManager }   from './relations/TagsManager.js'
 
 export class ArticleResource extends Resource {
   static override label         = 'Articles'
@@ -68,5 +69,9 @@ export class ArticleResource extends Resource {
       edit:   EditArticle,
       view:   ViewArticle,
     }
+  }
+
+  static override relations() {
+    return [TagsManager]
   }
 }

@@ -140,6 +140,23 @@ export interface DispatchActionInput extends ActionRequestInput {
    */
   rowField?:  RepeaterField | BuilderField
   formSchema?: Element[]
+  /**
+   * For relation-manager-scoped dispatch: the loaded parent record + ids.
+   * Stamped onto `ctx.relation` so M2M handlers (`relationAttach /
+   * relationBulkDetach`) can call `parent.related(rel).attach / detach`
+   * without re-loading the parent or threading it through closures.
+   * Always set by the manager-scoped `_action` route; absent everywhere
+   * else.
+   */
+  relation?: {
+    parent:       unknown
+    parentId:     string
+    relationship: string
+  }
+  /** When set, supplied user is stamped on `ctx.user`. Routes that
+   *  already resolved the user (auth prelude) pass it through so handlers
+   *  see the same user the route gated on. */
+  user?:    unknown
 }
 
 export interface DispatchActionSuccess {
@@ -197,6 +214,8 @@ export async function dispatchAction(
 
   const ctx: ActionContext = { values: input.values }
   if (input.request !== undefined) ctx.request = input.request
+  if (input.relation !== undefined) ctx.relation = input.relation
+  if (input.user     !== undefined) ctx.user     = input.user
 
   if (input.ids.length === 1) {
     const id = input.ids[0]!

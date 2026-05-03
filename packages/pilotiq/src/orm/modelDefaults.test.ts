@@ -13,6 +13,7 @@ import {
   defaultRelatedQuery,
   resolveRelatedQuery,
   modelRelationTableRecords,
+  getRelationType,
 } from './modelDefaults.js'
 
 // ── Fake ModelLike that records every call so tests can assert on it ──
@@ -409,5 +410,53 @@ describe('modelRelationTableRecords (Plan #11)', () => {
 
     assert.deepEqual(result, { rows: [], total: 0 })
     assert.deepEqual(overrideCalls, [{ parent, name: 'children' }])
+  })
+})
+
+describe('getRelationType (M2M follow-up)', () => {
+  it('reads the type field off a parent model relations map', () => {
+    const M: ModelLike = {
+      async find() { return null },
+      async create() { return null },
+      async update() { return null },
+      async delete() { /* no-op */ },
+      query() { return null as never },
+    }
+    Object.assign(M as object, {
+      relations: {
+        tags:    { type: 'belongsToMany', model: () => null },
+        posts:   { type: 'hasMany',       model: () => null },
+        author:  { type: 'belongsTo',     model: () => null },
+      },
+    })
+    assert.equal(getRelationType(M, 'tags'),   'belongsToMany')
+    assert.equal(getRelationType(M, 'posts'),  'hasMany')
+    assert.equal(getRelationType(M, 'author'), 'belongsTo')
+  })
+
+  it('defaults to hasMany when the relations map is missing', () => {
+    const M: ModelLike = {
+      async find() { return null },
+      async create() { return null },
+      async update() { return null },
+      async delete() { /* no-op */ },
+      query() { return null as never },
+    }
+    assert.equal(getRelationType(M, 'whatever'), 'hasMany')
+  })
+
+  it('defaults to hasMany when the relation entry has no type field', () => {
+    const M: ModelLike = {
+      async find() { return null },
+      async create() { return null },
+      async update() { return null },
+      async delete() { /* no-op */ },
+      query() { return null as never },
+    }
+    Object.assign(M as object, {
+      // Some users author light test stubs without `type` — keep tolerating.
+      relations: { posts: { model: () => null, foreignKey: 'parentId' } },
+    })
+    assert.equal(getRelationType(M, 'posts'), 'hasMany')
   })
 })

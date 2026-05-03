@@ -17,8 +17,13 @@ import {
   relationManagerData, findRelatedResource, safeManagerPolicy,
   widgetData, type WidgetScope,
 } from './pageData.js'
-import { RelationManager, RESERVED_RELATIONSHIP_TOKENS } from './RelationManager.js'
-import { modelSave, modelLoadRecord, getPrimaryKey } from './orm/modelDefaults.js'
+import {
+  RelationManager, RESERVED_RELATIONSHIP_TOKENS,
+  type RelationMode,
+} from './RelationManager.js'
+import {
+  modelSave, modelLoadRecord, getPrimaryKey, getRelationType,
+} from './orm/modelDefaults.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
 import { coerceCellValue, CellCoerceError } from './cells/coerce.js'
@@ -1202,6 +1207,16 @@ export function registerPilotiqRoutes(
       const rel = M.getRelationship()
       const parentBase = `${base}/${slug}/:id/${rel}`
 
+      // M2M follow-up — read the relation type once at registration so
+      // the (R, M)-scoped closures all see the same mode without re-
+      // reading the relations map per request. `R.model` is asserted by
+      // `requireParent` at request time; here it may legitimately be
+      // missing during late binding, in which case we fall back to
+      // 'hasMany' (the safe default — no M2M action injection / no
+      // factory short-circuiting).
+      const relationType = R.model ? getRelationType(R.model, rel) : 'hasMany'
+      const mode: RelationMode = relationType === 'belongsToMany' ? 'belongsToMany' : 'hasMany'
+
       // Common policy prelude: load parent, gate access. Returns the
       // parent record on success or a thrown 403/404 response. Returns
       // `undefined` when the route should bail out (response already sent).
@@ -1276,6 +1291,7 @@ export function registerPilotiqRoutes(
           relationship: rel,
           parentRecord: pre.parent,
           related:      Related,
+          mode,
         })
         if (Related.model) {
           if (!form.getSave())       form.save(modelSave(Related.model))
@@ -1362,6 +1378,7 @@ export function registerPilotiqRoutes(
           relationship: rel,
           parentRecord: pre.parent,
           related:      Related,
+          mode,
         })
         if (!form.getSave())       form.save(modelSave(Related.model))
         if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related.model))
@@ -1549,6 +1566,166 @@ export function registerPilotiqRoutes(
           return res.redirect(listUrl, 303)
         })
       }
+
+      // ── M2M follow-up — manager-scoped action dispatch + detach ─────
+      // Two new routes per relation manager. Mounted unconditionally
+      // (even on hasMany managers) because handler-style actions are
+      // useful beyond M2M — any user-defined `Action.handler(...)` on a
+      // manager table needs a place to dispatch. The detach route is
+      // M2M-specific but cheap enough to register either way; non-M2M
+      // managers' `Action.relationDetach` factories return `visible=false`
+      // anyway, so the URL is unreachable in practice.
+
+      // Action dispatch — POST ${parentBase}/_action/:actionName
+      // Resolves the manager's table elements, finds the named action,
+      // and dispatches it with `ctx.relation = { parent, parentId, rel }`
+      // so M2M handlers can call `parent.related(rel).attach / detach`.
+      // Records hydrate against the related model (the rows visible in
+      // the manager's table are related-model records).
+      router.post(`${parentBase}/_action/:actionName`, async (req, res) => {
+        const json = wantsJson(req)
+        const pre = await requireParent(req, res, json)
+        if (!pre) return
+
+        const Related = findRelatedResource(M, R, cfg)
+        const actionName = req.params['actionName']!
+        const body  = await readFormBody(req)
+        const input = parseActionBody(body)
+
+        // Rebuild the manager's table so the dispatcher can find the
+        // action by name. Pure recreation — same context the page-data
+        // builder uses — so factories that close over `ctx` (URL,
+        // mode, parent record) see the same shape as at page render.
+        const managerCtx = {
+          basePath:     base,
+          parentSlug:   slug,
+          parentId:     pre.recordId,
+          relationship: rel,
+          parentRecord: pre.parent,
+          related:      Related,
+          mode,
+        }
+        const table = M.table(Table.make(), managerCtx)
+        const elements: import('./schema/Element.js').Element[] = [table]
+        // Stamp dispatch URLs so any nested action factories that read
+        // `dispatchUrl` (rare — most read it from the meta at render
+        // time) still see something sensible.
+        const listUrl = parentBase.replace(':id', pre.recordId)
+        tagActionDispatch(elements, listUrl)
+
+        const target = resolveDispatchTarget(elements, actionName)
+        if (!target) {
+          if (json) { res.status(404); return res.json({ ok: false, error: `Action "${actionName}" not found` }) }
+          res.status(404)
+          return res.send(`Action "${actionName}" not found on ${M.name}`)
+        }
+
+        const resolveRecord: ResolveRecord | undefined = Related?.model
+          ? (id: string) => Related.model!.find(id)
+          : undefined
+
+        const result = await dispatchAction(target.action, {
+          ...input,
+          request: req,
+          user:    pre.user,
+          relation: { parent: pre.parent, parentId: pre.recordId, relationship: rel },
+          ...(target.rowField   ? { rowField:   target.rowField   } : {}),
+          ...(target.formSchema ? { formSchema: target.formSchema } : {}),
+        }, resolveRecord)
+
+        if (!result.ok) {
+          if (json) {
+            res.status(result.errors ? 422 : 500)
+            return res.json({ ok: false, error: result.error, ...(result.errors ? { errors: result.errors } : {}) })
+          }
+          res.status(500)
+          return res.send(result.error)
+        }
+        const redirect = normalizeRedirect(result.redirect, base) ?? listUrl
+        if (json) {
+          return res.json({
+            ok: true,
+            redirect,
+            ...(result.notifications ? { notifications: result.notifications } : {}),
+          })
+        }
+        flashNotifications(req, result.notifications)
+        return res.redirect(redirect, 303)
+      })
+
+      // Detach — POST ${parentBase}/:childId/_detach
+      // Direct row-action target for `Action.relationDetach`. Removes the
+      // pivot row only; the related record stays in place. IDOR check:
+      // verify the child is currently attached before calling detach so
+      // a tampered URL can't probe random ids.
+      router.post(`${parentBase}/:childId/_detach`, async (req, res) => {
+        const json = wantsJson(req)
+        const pre = await requireParent(req, res, json)
+        if (!pre) return
+        const childId = req.params['childId']!
+
+        if (mode !== 'belongsToMany') {
+          // Detach is meaningless for hasMany — the user wants `delete`.
+          // Surface a clear 404 instead of silently no-op'ing.
+          res.status(404)
+          return json
+            ? res.json({ ok: false, error: 'Detach is only supported on belongsToMany relations' })
+            : res.send('Detach is only supported on belongsToMany relations')
+        }
+
+        // Manager-only canDetach: pivot ops don't fall through to the
+        // related Resource. We don't have the related child loaded yet —
+        // pass `undefined` for the per-record arg; canDetach gates on
+        // (user, parent) by default and only sees `record` when a
+        // manager has explicitly overridden with a per-row predicate.
+        // Authors who need per-row gating can detect undefined and either
+        // load the child themselves or short-circuit.
+        let child: unknown = undefined
+        const accessor = (pre.parent as { related?: (n: string) => { paginate?: (p: number, pp: number) => Promise<{ data: unknown[] }>; detach?: (ids: unknown) => Promise<unknown> } })
+          ?.related?.(rel)
+        if (!accessor) {
+          res.status(500)
+          const msg = `Parent.related("${rel}") missing — wrong relation type or ORM version?`
+          return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+        }
+        try {
+          // IDOR: confirm the child is currently attached.
+          if (typeof accessor.paginate === 'function') {
+            const Related = findRelatedResource(M, R, cfg)
+            const pk = Related?.model ? getPrimaryKey(Related.model) : 'id'
+            const out = await (accessor as unknown as { where: (col: string, op: string, val: unknown) => { paginate: (p: number, pp: number) => Promise<{ data: unknown[] }> } }).where(pk, '=', childId).paginate(1, 1)
+            child = Array.isArray(out.data) ? out.data[0] : undefined
+          }
+        } catch {
+          // fall through; null child means we couldn't verify — safer to 404
+        }
+        if (child === undefined) { res.status(404); return res.send('Not found') }
+
+        if (!await safeManagerPolicy(M, 'canDetach', undefined, pre.user, pre.parent, child)) return forbidden(res, json)
+
+        if (typeof accessor.detach !== 'function') {
+          res.status(500)
+          const msg = `Parent.related("${rel}").detach missing — wrong relation type?`
+          return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+        }
+
+        try {
+          await accessor.detach([childId])
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Detach failed'
+          res.status(500)
+          return json ? res.json({ ok: false, error: message }) : res.send(message)
+        }
+
+        const listUrl = parentBase.replace(':id', pre.recordId)
+        if (json) {
+          const notifications = [
+            { id: `n-rdetach-${childId}-${Date.now()}`, type: 'success', title: `${M.getLabelSingular()} detached` },
+          ]
+          return res.json({ ok: true, redirect: listUrl, notifications })
+        }
+        return res.redirect(listUrl, 303)
+      })
     }
   }
 

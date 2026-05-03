@@ -237,6 +237,28 @@ export function getParentRelationDescriptor(
   }
 }
 
+/**
+ * Read just the `type` field off a parent's `static relations[name]`.
+ * Returns `'hasMany'` when the relations map is missing the entry or
+ * doesn't expose a string `type` — same lenient default as
+ * `getParentRelationDescriptor`. Used by `relationManagerData` to set
+ * `RelationManagerContext.mode` for action injection / factory short-
+ * circuiting under M2M. Doesn't require the `foreignKey` field that
+ * `getParentRelationDescriptor` insists on, because M2M relations
+ * don't carry one (they have pivot keys instead).
+ */
+export function getRelationType(
+  parentModel: ModelLike,
+  name:        string,
+): string {
+  const relations = (parentModel as unknown as Record<string, unknown>)['relations']
+  if (!relations || typeof relations !== 'object') return 'hasMany'
+  const entry = (relations as Record<string, unknown>)[name]
+  if (!entry || typeof entry !== 'object') return 'hasMany'
+  const e = entry as Record<string, unknown>
+  return typeof e['type'] === 'string' ? (e['type'] as string) : 'hasMany'
+}
+
 // ─── Plan #11: relation helpers ────────────────────────────
 
 /** Minimal shape we need on a parent record to resolve a relation under
