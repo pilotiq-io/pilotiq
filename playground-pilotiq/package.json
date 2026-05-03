@@ -16,6 +16,8 @@
     "@pilotiq/pilotiq": "workspace:*",
     "@pilotiq/tiptap": "workspace:*",
     "@pilotiq/codemirror": "workspace:*",
+    "@pilotiq/recharts": "workspace:*",
+    "recharts": "^2",
     "@codemirror/lang-json": "^6",
     "@codemirror/lang-sql": "^6",
     "@codemirror/commands": "^6",

@@ -692,6 +692,9 @@ importers:
       '@pilotiq/pilotiq':
         specifier: workspace:*
         version: link:../packages/pilotiq
+      '@pilotiq/recharts':
+        specifier: workspace:*
+        version: link:../packages/recharts
       '@pilotiq/tiptap':
         specifier: workspace:*
         version: link:../packages/tiptap
@@ -803,6 +806,9 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.5(react@19.2.5)
+      recharts:
+        specifier: ^2
+        version: 2.15.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2

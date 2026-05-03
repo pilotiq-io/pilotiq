@@ -1,7 +1,6 @@
 import {
   Pilotiq, Global, TextField,
   Form,
-  Heading, Text, Alert, Divider, Card,
 } from '@pilotiq/pilotiq'
 import { themeEditor } from '@pilotiq/pilotiq/plugins'
 import { registerIcons } from '@pilotiq/pilotiq/icons'
@@ -17,6 +16,7 @@ import { FieldTypesDemo } from './pages/FieldTypesDemo.js'
 import { LayoutsDemo } from './pages/LayoutsDemo.js'
 import { RepeaterDemo } from './pages/RepeaterDemo.js'
 import { BuilderDemo } from './pages/BuilderDemo.js'
+import { MyDashboard } from './pages/MyDashboard.js'
 
 // Register the curated lucide baseline so string-typed icons
 // (Action.icon('check'), Column.icon('star'), etc.) resolve at render time.
@@ -68,18 +68,12 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   // is read on the client through the auto-gen `_components.ts` manifest.
   .resources([ArticleResource, UserResource, PostResource])
   .globals([SiteSettings])
-  .pages([SimplePage, ElementsShowcase, ReactiveDemo, FieldTypesDemo, LayoutsDemo, RepeaterDemo, BuilderDemo])
-  .schema(async () => [
-    Heading.make('Welcome to Pilotiq').description('Here\'s a quick overview of your content.'),
-    Alert.make('This is a demo of the new schema system.').info().title('Schema Demo'),
-    Divider.make('Content'),
-    Card.make('Getting Started').description('Quick links to help you get started.').schema([
-      Text.make('Create your first article to get started.'),
-      Alert.make('The schema system supports nested elements inside cards.').success(),
-    ]),
-    Divider.make(),
-    Alert.make('Stats, charts, and tables will be added in the next phase.').warning().title('Coming Soon'),
-  ])
+  .pages([MyDashboard, SimplePage, ElementsShowcase, ReactiveDemo, FieldTypesDemo, LayoutsDemo, RepeaterDemo, BuilderDemo])
+  // Plan #15 — mark MyDashboard as the panel's root page. The custom
+  // root replaces the previous `.schema(async () => [...])` placeholder;
+  // panel.dashboard() registers MyDashboard, collapses its nav URL to
+  // `${base}`, and routes `${base}` to its schema.
+  .dashboard(MyDashboard)
 
 export const pilotiqSimple = Pilotiq.make('Pilotiq simple')
   .path('/simple')

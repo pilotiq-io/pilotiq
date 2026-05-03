@@ -699,6 +699,48 @@ auto-mounts a "Posts" tab. Full guide at [`docs/guide/relations.md`](./relations
 
 ---
 
+## Widgets / dashboards (net-new)
+
+Panels has no equivalent for KPI cards, charts, or embedded "5 newest"
+lists — every dashboard built on top of panels was hand-rolled React
+inside a custom page. Pilotiq treats widgets as schema **Elements** so
+they compose inside `Page.schema()`, `Resource.headerSchema()` /
+`footerSchema()`, and any container the schema understands.
+
+```ts
+import { Page, StatsOverview, Stat } from '@pilotiq/pilotiq'
+import { Chart } from '@pilotiq/recharts'
+
+class UsersStats extends StatsOverview {
+  static override async getStats() {
+    return [
+      Stat.make('Users').value(await User.query().count()).color('primary'),
+      Stat.make('Posts').value(await Post.query().count()).color('success'),
+    ]
+  }
+}
+
+class MyDashboard extends Page {
+  static slug  = ''
+  static label = 'Dashboard'
+  static schema() {
+    return [UsersStats.make(), Chart.make('posts').type('line').getData(/* … */)]
+  }
+}
+
+panel.dashboard(MyDashboard)         // marks the page as the panel root
+```
+
+Widgets are lazy by default (skeleton + `_widget/:id` POST on mount);
+opt-in `.poll(seconds)` adds auto-refresh. The full reference is
+[`docs/guide/widgets.md`](./widgets.md).
+
+> Charts live in `@pilotiq/recharts` (peer-installed, opt-in
+> `registerChartRenderer()` at app boot) — keeps the recharts dependency
+> out of the lean core. See [`docs/packages/recharts.md`](../packages/recharts.md).
+
+---
+
 ## Things that aren't ported (yet)
 
 - **Live updates** (`static live = true`) — not implemented in pilotiq yet.

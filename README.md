@@ -104,6 +104,7 @@ export const admin = Pilotiq.make('Admin')
 - **Theme engine** — 4 style presets (default, nova, maia, lyra), 6 base colors, 17 accent colors, 6 chart palettes, 5 border radii, Google Fonts + Fontshare (Satoshi), icon library selection
 - **Dark mode** — light/dark/system toggle, localStorage persistence, FOUC prevention via inline script
 - **Theme editor** — `.use(themeEditor())` plugin with live preview, save/reset/shuffle, DB persistence
+- **Widgets** — Dashboard primitives as schema Elements: `StatsOverview` (KPI cards via `Stat.make().value().description().icon().chart([…sparkline])`), `Chart` (line/bar/pie/doughnut, per-chart filter dropdown, via `@pilotiq/recharts`), `TableWidget` (slim "5 newest" lists), `View` (escape hatch — mount any React component fed by `getData(ctx)`). Lazy by default with skeleton + `_widget/:id` polling; `.poll(seconds)` for auto-refresh. Mount under `panel.dashboard(MyPage)` for the panel root, or via `Resource.headerSchema() / footerSchema()` above/below the list table. See [`docs/guide/widgets.md`](./docs/guide/widgets.md).
 - **Auto page generation** — `pilotiq()` Vite plugin writes Vike page stubs + `+data.ts` hooks (for SPA nav) at build time
 - **Plugin system** — `.use()` for extending panels
 
@@ -131,6 +132,7 @@ Pro packages are commercial. They live in a separate private repo at `pilotiq-io
 | [`@pilotiq/panels`](./packages/panels) | **Legacy** — Resource builder with vendored pages, full field system, i18n, theme editor |
 | [`@pilotiq/tiptap`](./packages/tiptap) | Tiptap rich-text adapter for `@pilotiq/pilotiq` — slash menu, draggable blocks, custom-block API |
 | [`@pilotiq/codemirror`](./packages/codemirror) | CodeMirror 6 code-editor adapter for `@pilotiq/pilotiq` — `CodeEditorField` with syntax highlight, line numbers, language registry |
+| [`@pilotiq/recharts`](./packages/recharts) | Recharts dashboard chart adapter — `Chart` widget with line / bar / pie / doughnut renderers, per-chart filter dropdown, opt-in `registerChartRenderer()` |
 | [`@pilotiq/lexical`](./packages/lexical) | **Legacy** — Lexical rich-text adapter for `@pilotiq/panels` (sunsets with panels) |
 | [`@pilotiq/media`](./packages/media) | Media library + `MediaPickerField` |
 | [`playground/`](./playground) | **Panels** demo — panels + lexical + media on port 3001 |

@@ -31,7 +31,7 @@ Land in this order. Each step is independently shippable; later steps build on e
 | 12 | ✅ `global-search.md` DONE | ~1 week | `Resource.globalSearch` opt-in + 4 override statics + `searchAllResources` helper + `GET /_search` + Cmd+K palette + sidebar/topbar trigger pill shipped 2026-05-01. |
 | 13 | ✅ `soft-deletes.md` DONE | ~1 week | Resource.softDeletes opt-in + TrashedFilter (auto-inject) + Restore/ForceDelete routes + Action.restore/forceDelete + bulk variants shipped 2026-05-01. Verified rudder ORM already shipped the primitives (Model.softDeletes, restore/forceDelete, withTrashed/onlyTrashed). 885 tests. Two-sided opt-in (Model + Resource) by design. Demo at `playground-pilotiq` PostResource. |
 
-Penciled for later (Tier 3): widgets/dashboards, Repeater/Builder fields, Wizard step validation, resource nesting, sub-navigation, polling/auto-refresh, import/export.
+Penciled for later (Tier 3): Repeater/Builder fields ✅ shipped (Plans #14, #14-followup); widgets/dashboards ✅ shipped (Plan #15); resource nesting, sub-navigation, import/export still open.
 
 ---
 
@@ -275,8 +275,8 @@ Needs `@rudderjs/orm` soft-delete support FIRST. Then:
 - Bulk variants.
 - Authorization (`canForceDelete`, `canRestore`).
 
-### Widgets / Dashboards — Tier 3
-Big. Dashboard widgets (StatsOverview, Chart, Custom) attach to resource header/footer or live on dashboard pages. Defer until users ask. We could ship a v1 with just `StatWidget` (one big number + delta + spark) covering 80% of "give me a dashboard" requests.
+### Widgets / Dashboards — **Plan #15** ✅ DONE
+Dashboard widgets shipped as schema Elements (no parallel `Widget` hierarchy). `StatsOverview` / `Chart` / `TableWidget` / `View` extend `Element` directly; `Stat` is the fluent value object emitted by `StatsOverview.getStats()`. `panel.dashboard(MyPage)` marks a Page as the panel root. Lazy by default (skeleton + `_widget/:id` POST on mount); per-element `.poll(seconds)` for auto-refresh; per-Chart filter dropdown for time-window switches. Resource-level `headerSchema()` / `footerSchema()` slot widgets above/below list tables. Adapter package `@pilotiq/recharts` (peer-installed, opt-in `registerChartRenderer()`) keeps recharts out of the core bundle. Resolved 2026-05-03.
 
 ### Wizard — **Plan #8** (folded into schema-layouts)
 Multi-step form. `Wizard::make([Step::make('a'), Step::make('b')])`. Each step has its own schema; navigation enforces validation per step before advancing. Pairs naturally with reactive fields (Plan #5).

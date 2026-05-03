@@ -4,10 +4,10 @@ import { SchemaRenderer } from '@pilotiq/pilotiq/react'
 
 export default function PilotiqDashboard() {
   const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown>; data?: Record<string, unknown> }
-  const { panel, basePath, schemaData } = (ctx.data ?? ctx.viewProps) as any ?? {}
+  const { panel, basePath, schemaData, _widgetData } = (ctx.data ?? ctx.viewProps) as any ?? {}
   const hasSchema = schemaData && schemaData.length > 0
 
-  if (hasSchema) return <SchemaRenderer elements={schemaData} />
+  if (hasSchema) return <SchemaRenderer elements={schemaData} widgetData={_widgetData} />
 
   return (
     <>
