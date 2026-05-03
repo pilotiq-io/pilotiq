@@ -19,10 +19,12 @@ import {
 } from './pageData.js'
 import {
   RelationManager, RESERVED_RELATIONSHIP_TOKENS,
+  normalizeRelationMode,
   type RelationMode,
 } from './RelationManager.js'
 import {
   modelSave, modelLoadRecord, getPrimaryKey, getRelationType,
+  getMorphRelationDescriptor, computeMorphPayload,
 } from './orm/modelDefaults.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
@@ -1207,15 +1209,16 @@ export function registerPilotiqRoutes(
       const rel = M.getRelationship()
       const parentBase = `${base}/${slug}/:id/${rel}`
 
-      // M2M follow-up — read the relation type once at registration so
-      // the (R, M)-scoped closures all see the same mode without re-
-      // reading the relations map per request. `R.model` is asserted by
+      // Read the relation type once at registration so the (R, M)-
+      // scoped closures all see the same mode without re-reading the
+      // relations map per request. `R.model` is asserted by
       // `requireParent` at request time; here it may legitimately be
       // missing during late binding, in which case we fall back to
-      // 'hasMany' (the safe default — no M2M action injection / no
-      // factory short-circuiting).
+      // 'hasMany' (the safe default — no special action injection / no
+      // factory short-circuiting). See `normalizeRelationMode` for the
+      // M2M / polymorphic mappings.
       const relationType = R.model ? getRelationType(R.model, rel) : 'hasMany'
-      const mode: RelationMode = relationType === 'belongsToMany' ? 'belongsToMany' : 'hasMany'
+      const mode: RelationMode = normalizeRelationMode(relationType)
 
       // Common policy prelude: load parent, gate access. Returns the
       // parent record on success or a thrown 403/404 response. Returns
@@ -1296,6 +1299,29 @@ export function registerPilotiqRoutes(
         if (Related.model) {
           if (!form.getSave())       form.save(modelSave(Related.model))
           if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related.model))
+        }
+
+        // Polymorphic auto-injection — when the parent's relation entry
+        // is `morphMany` / `morphOne`, fill the `{morphName}Id` and
+        // `{morphName}Type` columns on the child before persistence.
+        // Compose with any user-supplied `mutateDataBeforeCreate` and
+        // run AFTER it so morph values overwrite anything the form
+        // body or user hook might have set — the parent record is the
+        // single source of truth for who owns the new child, and a
+        // submitted form field cannot be allowed to tamper with that.
+        if (mode === 'morphMany' && R.model) {
+          const morphDesc = getMorphRelationDescriptor(R.model, rel)
+          if (!morphDesc) {
+            res.status(500)
+            const msg = `RelationManager ${M.name}: relations[${JSON.stringify(rel)}] reports a polymorphic type but is missing morphName.`
+            return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+          }
+          const morphPayload = computeMorphPayload(pre.parent, morphDesc)
+          const existing = form.getMutateDataBeforeCreate()
+          form.mutateDataBeforeCreate(async (data, ctx) => {
+            const next = existing ? await existing(data, ctx) : data
+            return { ...next, ...morphPayload }
+          })
         }
 
         // Stamp parent context onto FormContext so user hooks
@@ -1387,6 +1413,24 @@ export function registerPilotiqRoutes(
         let child: unknown = undefined
         try { child = await Related.model.find(childId) } catch { /* ignore */ }
         if (!child) { res.status(404); return res.send('Not found') }
+
+        // Polymorphic re-stamp on update — same posture as the create
+        // path. Re-injecting the morph columns from the live parent
+        // record ensures a tampered body (`commentableId=…` /
+        // `commentableType=…` posted by an attacker) can't reassign
+        // the child to another polymorphic parent. Composed AFTER any
+        // user `mutateDataBeforeUpdate` so the framework wins.
+        if (mode === 'morphMany' && R.model) {
+          const morphDesc = getMorphRelationDescriptor(R.model, rel)
+          if (morphDesc) {
+            const morphPayload = computeMorphPayload(pre.parent, morphDesc)
+            const existing = form.getMutateDataBeforeUpdate()
+            form.mutateDataBeforeUpdate(async (data, ctx) => {
+              const next = existing ? await existing(data, ctx) : data
+              return { ...next, ...morphPayload }
+            })
+          }
+        }
 
         const formCtx = {
           values,

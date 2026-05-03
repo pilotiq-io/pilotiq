@@ -7,6 +7,7 @@ import {
   type Form, type Table,
 } from '@pilotiq/pilotiq'
 import { Post } from '../../Models/Post.js'
+import { PostsCommentsManager } from './relations/CommentsManager.js'
 
 const ADMIN = '/new-admin'
 
@@ -119,4 +120,9 @@ export class PostResource extends Resource {
       // and drag is enabled out of the box.
       .paginate(10)
   }
+
+  /** Polymorphic follow-up — Comments tab on the post's edit/view page,
+   *  scoped via the `commentable` morph. Mode auto-detects as
+   *  `'morphMany'`; create POST auto-fills the morph columns. */
+  static override relations() { return [PostsCommentsManager] }
 }

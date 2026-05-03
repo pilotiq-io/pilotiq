@@ -74,3 +74,27 @@ model ArticleTag {
   @@id([articleId, tagId])
   @@map("article_tag")
 }
+
+// Polymorphic follow-up — Comment can attach to Post OR Video via the
+// camelCase `commentableId` + `commentableType` columns (rudder ORM
+// camelCase divergence from Laravel snake_case). Reads + writes flow
+// through `Comment.relations.commentable` (morphTo) and
+// `Post.relations.comments` / `Video.relations.comments` (morphMany).
+model Comment {
+  id              String   @id @default(cuid())
+  body            String
+  commentableId   String
+  commentableType String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([commentableId, commentableType])
+}
+
+model Video {
+  id        String   @id @default(cuid())
+  title     String
+  url       String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

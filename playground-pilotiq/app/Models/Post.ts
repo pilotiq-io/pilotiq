@@ -1,5 +1,6 @@
 import { Model } from '@rudderjs/orm'
 import { User } from './User.js'
+import { Comment } from './Comment.js'
 
 export class Post extends Model {
   static override table = 'post'
@@ -10,7 +11,12 @@ export class Post extends Model {
   static override softDeletes = true
 
   static override relations = {
-    author: { type: 'belongsTo' as const, model: () => User, foreignKey: 'authorId' },
+    author:   { type: 'belongsTo' as const, model: () => User, foreignKey: 'authorId' },
+    // Polymorphic follow-up — Post owns Comments via the
+    // `commentable` morph (parent side). Reads compose as
+    // `post.related('comments')` → Comment.where(commentableId, post.id)
+    //                                      .where(commentableType, 'Post')`.
+    comments: { type: 'morphMany' as const, model: () => Comment, morphName: 'commentable' },
   }
 
   id!:          string

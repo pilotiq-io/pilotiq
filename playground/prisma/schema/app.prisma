@@ -75,3 +75,25 @@ model ArticleTag {
   @@id([articleId, tagId])
   @@map("article_tag")
 }
+
+// Mirrored from playground-pilotiq for the hoisted Prisma client
+// (panels playground doesn't surface these models — see
+// `feedback_prisma_hoist_shared_schema.md`).
+model Comment {
+  id              String   @id @default(cuid())
+  body            String
+  commentableId   String
+  commentableType String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([commentableId, commentableType])
+}
+
+model Video {
+  id        String   @id @default(cuid())
+  title     String
+  url       String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

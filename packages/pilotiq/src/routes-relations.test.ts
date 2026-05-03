@@ -533,3 +533,228 @@ describe('relation routes — _action (manager-scoped)', () => {
     assert.equal(res.statusCode, 403)
   })
 })
+
+// ── Polymorphic follow-up: morphMany auto-injection ─────────────────
+
+/** World builder for a polymorphic `morphMany` relation:
+ *    Post.comments  → Comment.commentable
+ *    Video.comments → Comment.commentable
+ *  Children carry `commentableId` + `commentableType`. The discriminator
+ *  defaults to the parent's `class.morphAlias ?? class.name`. */
+function buildMorphWorld() {
+  const commentRows: Row[] = [
+    { id: 'c1', commentableId: 'p1', commentableType: 'Post',  body: 'Existing on post' },
+    { id: 'c2', commentableId: 'v1', commentableType: 'Video', body: 'Existing on video' },
+  ]
+
+  const CommentModel: ModelLike = {
+    async find(id) { return commentRows.find(r => String(r['id']) === String(id)) ?? null },
+    async create(data) {
+      const n: Row = { id: `c${commentRows.length + 1}`, ...data }
+      commentRows.push(n)
+      return n
+    },
+    async update(id, data) {
+      const r = commentRows.find(r => String(r['id']) === String(id))
+      if (r) Object.assign(r, data)
+      return r ?? null
+    },
+    async delete(id) {
+      const i = commentRows.findIndex(r => String(r['id']) === String(id))
+      if (i >= 0) commentRows.splice(i, 1)
+    },
+    query() { return new StubQuery(commentRows) },
+  }
+
+  // Parent factory — returns a record whose constructor.name doubles as
+  // the morph discriminator (mirrors rudder's runtime where the live
+  // record is an instance of `class Post extends Model {}`). We fake the
+  // class identity via `Object.setPrototypeOf`.
+  function makeParentRecord(klass: { name: string; morphAlias?: string; primaryKey?: string }, id: string) {
+    const rec = {
+      [klass.primaryKey ?? 'id']: id,
+      related(_n: string) {
+        return new StubQuery(commentRows.filter(r => r['commentableId'] === id && r['commentableType'] === (klass.morphAlias ?? klass.name)))
+      },
+    }
+    Object.setPrototypeOf(rec, { constructor: klass })
+    return rec
+  }
+
+  const PostClass  = { name: 'Post',  primaryKey: 'id' }
+  const VideoClass = { name: 'Video', primaryKey: 'id' }
+
+  const PostModel: ModelLike = {
+    async find(id) {
+      if (String(id) === 'p1') return makeParentRecord(PostClass, 'p1')
+      return null
+    },
+    async create() { throw new Error('not used') },
+    async update() { throw new Error('not used') },
+    async delete() { /* no-op */ },
+    query() { throw new Error('not used') },
+  }
+  Object.assign(PostModel as object, {
+    relations: { comments: { type: 'morphMany', model: () => CommentModel, morphName: 'commentable' } },
+  })
+
+  const VideoModel: ModelLike = {
+    async find(id) {
+      if (String(id) === 'v1') return makeParentRecord(VideoClass, 'v1')
+      return null
+    },
+    async create() { throw new Error('not used') },
+    async update() { throw new Error('not used') },
+    async delete() { /* no-op */ },
+    query() { throw new Error('not used') },
+  }
+  Object.assign(VideoModel as object, {
+    relations: { comments: { type: 'morphMany', model: () => CommentModel, morphName: 'commentable' } },
+  })
+
+  class CommentResource extends Resource {
+    static override label         = 'Comments'
+    static override labelSingular = 'Comment'
+    static override slug          = 'comments'
+    static override get model() { return CommentModel }
+    static override form(form: Form): Form { return form.schema([TextField.make('body').required()]) }
+  }
+  class CommentsManager extends RelationManager {
+    static override relationship = 'comments'
+    static override table(t: Table): Table { return t.columns([Column.make('body')]) }
+    static override form(f: Form): Form  { return f.schema([TextField.make('body').required()]) }
+  }
+  class PostResource extends Resource {
+    static override label = 'Posts'
+    static override slug  = 'posts'
+    static override get model() { return PostModel }
+    static override relations() { return [CommentsManager] }
+  }
+  class VideoResource extends Resource {
+    static override label = 'Videos'
+    static override slug  = 'videos'
+    static override get model() { return VideoModel }
+    static override relations() { return [CommentsManager] }
+  }
+
+  const panel = Pilotiq.make('T').path('/admin').resources([PostResource, VideoResource, CommentResource])
+  return { panel, PostResource, VideoResource, CommentResource, CommentsManager, commentRows }
+}
+
+describe('relation routes — polymorphic morphMany', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  it('auto-injects commentableId / commentableType on create POST', async () => {
+    const { panel, commentRows } = buildMorphWorld()
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/posts/:id/comments/create' && r.method === 'POST')!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'p1' }, body: { body: 'Polymorphic child' } }),
+    )
+    assert.equal(res.redirectedTo?.code, 303)
+    const created = commentRows.find(r => r['body'] === 'Polymorphic child')
+    assert.ok(created, 'expected the new comment to be persisted')
+    assert.equal(created['commentableId'],   'p1')
+    assert.equal(created['commentableType'], 'Post')
+  })
+
+  it('uses the parent class.name (Video) as the discriminator for the second parent', async () => {
+    const { panel, commentRows } = buildMorphWorld()
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/videos/:id/comments/create' && r.method === 'POST')!
+    await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'v1' }, body: { body: 'On a video' } }),
+    )
+    const created = commentRows.find(r => r['body'] === 'On a video')
+    assert.ok(created)
+    assert.equal(created['commentableId'],   'v1')
+    assert.equal(created['commentableType'], 'Video')
+  })
+
+  it('overwrites tampered commentableId / commentableType in the body (anti-tamper)', async () => {
+    const { panel, commentRows } = buildMorphWorld()
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/posts/:id/comments/create' && r.method === 'POST')!
+    await callHandler(
+      route.handler,
+      fakeReq({
+        params: { id: 'p1' },
+        // Attacker tries to redirect ownership to v1/Video.
+        body: { body: 'Hijacked', commentableId: 'v1', commentableType: 'Video' },
+      }),
+    )
+    const created = commentRows.find(r => r['body'] === 'Hijacked')
+    assert.ok(created)
+    // Framework wins — child still owned by the URL-scoped parent.
+    assert.equal(created['commentableId'],   'p1')
+    assert.equal(created['commentableType'], 'Post')
+  })
+
+  it('composes with a user-supplied mutateDataBeforeCreate (user runs first, framework wins last)', async () => {
+    const { panel, commentRows } = buildMorphWorld()
+    // Mutate the registered manager's form to add a default body via user hook.
+    const M = panel.getConfig().resources[0]!.relations()[0]!
+    ;(M as unknown as { form: (f: Form) => Form }).form = (f: Form) =>
+      f.schema([TextField.make('body').required()])
+       .mutateDataBeforeCreate(async (data) => ({ ...data, audited: true, commentableType: 'Tampered' }))
+
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/posts/:id/comments/create' && r.method === 'POST')!
+    await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'p1' }, body: { body: 'Composed' } }),
+    )
+    const created = commentRows.find(r => r['body'] === 'Composed')
+    assert.ok(created)
+    // User hook ran (audited stamped) AND framework morph injection won
+    // for the morph columns themselves.
+    assert.equal(created['audited'],         true)
+    assert.equal(created['commentableId'],   'p1')
+    assert.equal(created['commentableType'], 'Post')
+  })
+
+  it('honors parent.constructor.morphAlias when set', async () => {
+    const { panel, commentRows } = buildMorphWorld()
+    // Replace PostModel.find to return a record whose ctor exposes morphAlias.
+    const PostR = panel.getConfig().resources[0]!
+    const PostM = PostR.model!
+    const original = PostM.find.bind(PostM)
+    ;(PostM as unknown as { find: (id: unknown) => Promise<unknown> }).find = async (id: unknown) => {
+      const rec = await original(id as string)
+      if (!rec) return rec
+      const klass = { name: 'Post', morphAlias: 'post', primaryKey: 'id' }
+      Object.setPrototypeOf(rec as object, { constructor: klass })
+      return rec
+    }
+
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/posts/:id/comments/create' && r.method === 'POST')!
+    await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'p1' }, body: { body: 'Aliased' } }),
+    )
+    const created = commentRows.find(r => r['body'] === 'Aliased')
+    assert.ok(created)
+    assert.equal(created['commentableType'], 'post')   // alias, not class name
+  })
+
+  it('re-stamps morph columns on edit POST so a tampered body cannot reassign ownership', async () => {
+    const { panel, commentRows } = buildMorphWorld()
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/posts/:id/comments/:childId/edit' && r.method === 'POST')!
+    await callHandler(
+      route.handler,
+      fakeReq({
+        params: { id: 'p1', childId: 'c1' },
+        body:   { body: 'Edited', commentableId: 'v1', commentableType: 'Video' },
+      }),
+    )
+    const c1 = commentRows.find(r => r['id'] === 'c1')!
+    assert.equal(c1['body'],            'Edited')
+    assert.equal(c1['commentableId'],   'p1')
+    assert.equal(c1['commentableType'], 'Post')
+  })
+})

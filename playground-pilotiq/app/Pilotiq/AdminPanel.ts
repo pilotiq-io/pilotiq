@@ -10,6 +10,8 @@ import { ArticleResource } from './Articles/ArticleResource.js'
 import { UserResource }    from './Users/UserResource.js'
 import { PostResource }    from './Posts/PostResource.js'
 import { TagResource }     from './Tags/TagResource.js'
+import { VideoResource }   from './Videos/VideoResource.js'
+import { CommentResource } from './Comments/CommentResource.js'
 import { SimplePage } from './pages/SimplePage.js'
 import { ElementsShowcase } from './pages/ElementsShowcase.js'
 import { ReactiveDemo } from './pages/ReactiveDemo.js'
@@ -67,7 +69,7 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   // Note: `.uploads(...)` is wired in `bootstrap/providers.ts` (server-only)
   // because `localUpload` imports `node:fs/promises` and the panel module
   // is read on the client through the auto-gen `_components.ts` manifest.
-  .resources([ArticleResource, UserResource, PostResource, TagResource])
+  .resources([ArticleResource, UserResource, PostResource, TagResource, VideoResource, CommentResource])
   .globals([SiteSettings])
   .pages([MyDashboard, SimplePage, ElementsShowcase, ReactiveDemo, FieldTypesDemo, LayoutsDemo, RepeaterDemo, BuilderDemo])
   // Plan #15 — mark MyDashboard as the panel's root page. The custom

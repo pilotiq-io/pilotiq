@@ -259,6 +259,103 @@ export function getRelationType(
   return typeof e['type'] === 'string' ? (e['type'] as string) : 'hasMany'
 }
 
+/**
+ * Polymorphic relation descriptor read off a parent's `static relations[name]`.
+ * Returned by `getMorphRelationDescriptor` for `morphMany` / `morphOne` (where
+ * the parent IS the polymorphic owner — `Post.comments`). For `morphTo`, the
+ * `model` thunk is missing on the rudder side (the child has a `types: () =>
+ * [...]` list instead) — `getMorphRelationDescriptor` returns `undefined` in
+ * that case because `RelationManager` on the morphTo side requires
+ * `M.relatedResource` to be set anyway (auto-discovery is impossible).
+ */
+export interface MorphRelationDescriptor {
+  /** Polymorphic relation name. Drives column names: `{morphName}Id`,
+   *  `{morphName}Type`. e.g. `'commentable'` → `commentableId` / `commentableType`. */
+  morphName: string
+  /** Override for the discriminator value persisted in `{morphName}Type`.
+   *  Defaults to `parent.constructor.morphAlias ?? parent.constructor.name`
+   *  when missing. */
+  morphType?: string
+  /** Thunk returning the related (child) model class — present for
+   *  `morphMany` / `morphOne`, absent for `morphTo`. */
+  model?: () => ModelLike
+}
+
+/**
+ * Read a polymorphic-relation entry off a parent model's `static
+ * relations[name]`. Returns `undefined` when the entry is missing,
+ * isn't a polymorphic type, or doesn't carry a string `morphName`.
+ * Lenient on the structural shape so test stubs can supply just the
+ * fields the consumer needs.
+ *
+ * Caller responsibility: the lookup checks
+ * `relations[name].type === 'morphMany' | 'morphOne'`. For `morphTo` —
+ * which has no `model` thunk on the rudder side — this returns
+ * `undefined`. The consumer (relation-create POST handler) only uses
+ * this for the morphMany auto-injection path; morphTo managers don't
+ * need it (they require `static relatedResource` and don't auto-fill
+ * any columns).
+ */
+export function getMorphRelationDescriptor(
+  parentModel: ModelLike,
+  name:        string,
+): MorphRelationDescriptor | undefined {
+  const relations = (parentModel as unknown as Record<string, unknown>)['relations']
+  if (!relations || typeof relations !== 'object') return undefined
+  const entry = (relations as Record<string, unknown>)[name]
+  if (!entry || typeof entry !== 'object') return undefined
+  const e = entry as Record<string, unknown>
+  const type = e['type']
+  if (type !== 'morphMany' && type !== 'morphOne') return undefined
+  if (typeof e['morphName'] !== 'string') return undefined
+  return {
+    morphName: e['morphName'] as string,
+    ...(typeof e['morphType'] === 'string' ? { morphType: e['morphType'] as string } : {}),
+    ...(typeof e['model']    === 'function' ? { model:     e['model']    as () => ModelLike } : {}),
+  }
+}
+
+/**
+ * Compute the `{ <morphName>Id, <morphName>Type }` payload for a
+ * polymorphic write. Mirrors rudder's `Model.morph(name, parent)` but
+ * lives here so pilotiq stays free of a runtime `@rudderjs/orm` dep.
+ *
+ * Resolution rules:
+ * - `<morphName>Id` ← `parent[parent.constructor.primaryKey ?? 'id']`
+ * - `<morphName>Type` ← `descriptor.morphType` if set, else
+ *   `parent.constructor.morphAlias ?? parent.constructor.name`
+ *
+ * Throws when the parent's primary key is unset (matches rudder's
+ * `Model.morph` behavior — a parent must be saved before a child can
+ * be linked).
+ */
+export function computeMorphPayload(
+  parent:     unknown,
+  descriptor: MorphRelationDescriptor,
+): Record<string, unknown> {
+  const ctor = (parent as { constructor?: { name?: string; primaryKey?: string; morphAlias?: string } } | null | undefined)?.constructor
+  const pkColumn = ctor?.primaryKey ?? 'id'
+  const pk = (parent as Record<string, unknown> | null | undefined)?.[pkColumn]
+  if (pk === undefined || pk === null) {
+    throw new Error(
+      `[Pilotiq] computeMorphPayload("${descriptor.morphName}", parent): ` +
+      `parent.${pkColumn} is unset — parent record must be saved before linking a polymorphic child.`,
+    )
+  }
+  const typeAlias = descriptor.morphType ?? ctor?.morphAlias ?? ctor?.name
+  if (typeAlias === undefined) {
+    throw new Error(
+      `[Pilotiq] computeMorphPayload("${descriptor.morphName}", parent): ` +
+      `cannot resolve discriminator — parent has no constructor.name or morphAlias. ` +
+      `Set \`static morphAlias = '<value>'\` on the parent model, or pass \`morphType\` on the relation entry.`,
+    )
+  }
+  return {
+    [`${descriptor.morphName}Id`]:   pk,
+    [`${descriptor.morphName}Type`]: typeAlias,
+  }
+}
+
 // ─── Plan #11: relation helpers ────────────────────────────
 
 /** Minimal shape we need on a parent record to resolve a relation under

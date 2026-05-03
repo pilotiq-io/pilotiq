@@ -5,8 +5,14 @@ import {
   RelationManager,
   RESERVED_RELATIONSHIP_TOKENS,
   safeManagerPolicy,
+  normalizeRelationMode,
   type RelationManagerContext,
 } from './RelationManager.js'
+import {
+  getMorphRelationDescriptor,
+  computeMorphPayload,
+  type ModelLike,
+} from './orm/modelDefaults.js'
 import { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
@@ -257,5 +263,130 @@ describe('RelationManager (static API)', () => {
         false,
       )
     })
+  })
+})
+
+describe('normalizeRelationMode (polymorphic follow-up)', () => {
+  it('maps belongsToMany to its own mode', () => {
+    assert.equal(normalizeRelationMode('belongsToMany'), 'belongsToMany')
+  })
+
+  it('collapses morphMany and morphOne into morphMany', () => {
+    assert.equal(normalizeRelationMode('morphMany'), 'morphMany')
+    assert.equal(normalizeRelationMode('morphOne'),  'morphMany')
+  })
+
+  it('maps morphTo to its own mode', () => {
+    assert.equal(normalizeRelationMode('morphTo'), 'morphTo')
+  })
+
+  it('falls back to hasMany for hasMany / hasOne / belongsTo / unknown / empty', () => {
+    assert.equal(normalizeRelationMode('hasMany'),      'hasMany')
+    assert.equal(normalizeRelationMode('hasOne'),       'hasMany')
+    assert.equal(normalizeRelationMode('belongsTo'),    'hasMany')
+    assert.equal(normalizeRelationMode('unknownType'),  'hasMany')
+    assert.equal(normalizeRelationMode(''),             'hasMany')
+  })
+})
+
+describe('getMorphRelationDescriptor', () => {
+  function modelWithRelations(relations: Record<string, unknown>): ModelLike {
+    const M: ModelLike = {
+      async find()   { return null },
+      async create() { throw new Error('not used') },
+      async update() { throw new Error('not used') },
+      async delete() { /* no-op */ },
+      query()        { throw new Error('not used') },
+    }
+    Object.assign(M as object, { relations })
+    return M
+  }
+
+  it('returns descriptor for morphMany', () => {
+    const M = modelWithRelations({
+      comments: { type: 'morphMany', model: () => ({} as ModelLike), morphName: 'commentable' },
+    })
+    const desc = getMorphRelationDescriptor(M, 'comments')
+    assert.ok(desc)
+    assert.equal(desc.morphName, 'commentable')
+    assert.equal(typeof desc.model, 'function')
+  })
+
+  it('returns descriptor for morphOne', () => {
+    const M = modelWithRelations({
+      avatar: { type: 'morphOne', model: () => ({} as ModelLike), morphName: 'imageable' },
+    })
+    const desc = getMorphRelationDescriptor(M, 'avatar')
+    assert.ok(desc)
+    assert.equal(desc.morphName, 'imageable')
+  })
+
+  it('returns undefined for morphTo (no model thunk on the child side)', () => {
+    const M = modelWithRelations({
+      commentable: { type: 'morphTo', morphName: 'commentable', types: () => [] },
+    })
+    assert.equal(getMorphRelationDescriptor(M, 'commentable'), undefined)
+  })
+
+  it('returns undefined for non-polymorphic relation types', () => {
+    const M = modelWithRelations({
+      posts: { type: 'hasMany', model: () => ({} as ModelLike), foreignKey: 'userId' },
+    })
+    assert.equal(getMorphRelationDescriptor(M, 'posts'), undefined)
+  })
+
+  it('returns undefined when morphName is missing or non-string', () => {
+    const M = modelWithRelations({
+      bad: { type: 'morphMany', model: () => ({} as ModelLike) },
+    })
+    assert.equal(getMorphRelationDescriptor(M, 'bad'), undefined)
+  })
+
+  it('honors morphType override in the relation entry', () => {
+    const M = modelWithRelations({
+      comments: { type: 'morphMany', model: () => ({} as ModelLike), morphName: 'commentable', morphType: 'aliased' },
+    })
+    const desc = getMorphRelationDescriptor(M, 'comments')!
+    assert.equal(desc.morphType, 'aliased')
+  })
+})
+
+describe('computeMorphPayload', () => {
+  function makeRecord(klass: { name?: string; morphAlias?: string; primaryKey?: string }, props: Record<string, unknown>) {
+    const rec = { ...props }
+    Object.setPrototypeOf(rec, { constructor: klass })
+    return rec
+  }
+
+  it('builds {nameId, nameType} from parent.constructor.name and primaryKey', () => {
+    const parent = makeRecord({ name: 'Post', primaryKey: 'id' }, { id: 42 })
+    const payload = computeMorphPayload(parent, { morphName: 'commentable' })
+    assert.deepEqual(payload, { commentableId: 42, commentableType: 'Post' })
+  })
+
+  it('honors parent.constructor.morphAlias over class name', () => {
+    const parent = makeRecord({ name: 'BlogPost', morphAlias: 'post', primaryKey: 'id' }, { id: 7 })
+    const payload = computeMorphPayload(parent, { morphName: 'commentable' })
+    assert.equal(payload['commentableType'], 'post')
+  })
+
+  it('honors descriptor.morphType over the class-level alias', () => {
+    const parent = makeRecord({ name: 'Post', morphAlias: 'post', primaryKey: 'id' }, { id: 7 })
+    const payload = computeMorphPayload(parent, { morphName: 'commentable', morphType: 'override' })
+    assert.equal(payload['commentableType'], 'override')
+  })
+
+  it('uses constructor.primaryKey when set, falls back to id', () => {
+    const parent = makeRecord({ name: 'Tag', primaryKey: 'uuid' }, { uuid: 'abc-123' })
+    const payload = computeMorphPayload(parent, { morphName: 'taggable' })
+    assert.equal(payload['taggableId'], 'abc-123')
+  })
+
+  it('throws when parent primary key is unset', () => {
+    const parent = makeRecord({ name: 'Post', primaryKey: 'id' }, {})
+    assert.throws(
+      () => computeMorphPayload(parent, { morphName: 'commentable' }),
+      /parent\.id is unset/,
+    )
   })
 })

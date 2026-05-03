@@ -34,24 +34,61 @@ export interface RelationManagerContext {
    *  related Resource's policy when the manager hasn't overridden. */
   related?:     ResourceClass | undefined
   /**
-   * Auto-detected from the parent model's `static relations[name].type`.
-   * Drives default action injection (M2M gets attach/detach/bulk-detach
-   * instead of create/edit/delete) and lets `Action.relationCreate /
-   * Edit / Delete` factories short-circuit to hidden under M2M (where
-   * those operations don't make sense — there's no per-pivot-row form,
-   * and detach ≠ delete). Defaults to `'hasMany'` when the relations
-   * map doesn't expose a type field.
+   * Auto-detected from the parent model's `static relations[name].type`
+   * via `normalizeRelationMode`. Drives default action injection:
+   * - `'hasMany'`         → standard create / edit / delete row actions
+   * - `'belongsToMany'`   → attach / detach / bulk-detach instead
+   *                         (`relationCreate / Edit / Delete` factories
+   *                         auto-hide; pivot ops aren't record ops)
+   * - `'morphMany'`       → standard create / edit / delete; the
+   *                         relation-create POST handler auto-injects
+   *                         `{ <morphName>Id, <morphName>Type }` so
+   *                         user code doesn't need `Model.morph(...)`
+   * - `'morphTo'`         → child-side polymorphic; no auto-actions
+   *                         (related class is dynamic — set
+   *                         `static relatedResource` explicitly)
+   *
+   * Defaults to `'hasMany'` when the relations map doesn't expose a
+   * type field.
    */
   mode:         RelationMode
 }
 
-/** Three relation shapes the page-data builder distinguishes. `hasOne`
+/** Five relation shapes the page-data builder distinguishes. `hasOne`
  *  is treated identically to `hasMany` for action defaults (one-row
- *  table is still a table); `belongsToMany` is the M2M variant.
+ *  table is still a table) and `morphOne` similarly folds into
+ *  `'morphMany'`. `belongsToMany` is the M2M variant; `morphMany` is the
+ *  parent-side polymorphic equivalent (auto-injects morph columns on
+ *  create instead of attaching pivot rows); `morphTo` is the child-side
+ *  polymorphic — auto-discovery of the related Resource is impossible
+ *  there (target class is dynamic), so users must set
+ *  `static relatedResource` explicitly on the manager.
+ *
  *  `belongsTo` runs through the same path as `hasMany` for now —
- *  managers on the inverse side are uncommon. Polymorphic shapes
- *  (`morphMany / morphedByMany`) are still gated on ORM support. */
-export type RelationMode = 'hasMany' | 'belongsToMany'
+ *  managers on the inverse side are uncommon. M2M-polymorphic shapes
+ *  (`morphToMany / morphedByMany`) are still gated on ORM support. */
+export type RelationMode = 'hasMany' | 'belongsToMany' | 'morphMany' | 'morphTo'
+
+/**
+ * Map a raw `parentModel.relations[name].type` string to the binary
+ * `RelationMode` the manager plumbing dispatches on. Centralizes the
+ * fall-through rules so `routes.ts`, `pageData.ts`, and any future
+ * call sites stay in lockstep:
+ *
+ * - `belongsToMany`             → `'belongsToMany'`
+ * - `morphMany | morphOne`      → `'morphMany'`  (one-row morph still
+ *                                 a many-shape; UI surface identical)
+ * - `morphTo`                   → `'morphTo'`
+ * - anything else (hasMany /
+ *   hasOne / belongsTo / unset) → `'hasMany'`    (safe default — no
+ *                                 special action injection)
+ */
+export function normalizeRelationMode(relationType: string): RelationMode {
+  if (relationType === 'belongsToMany')                     return 'belongsToMany'
+  if (relationType === 'morphMany' || relationType === 'morphOne') return 'morphMany'
+  if (relationType === 'morphTo')                           return 'morphTo'
+  return 'hasMany'
+}
 
 /**
  * Plan #11 — RelationManager abstract base class.
@@ -80,9 +117,12 @@ export type RelationMode = 'hasMany' | 'belongsToMany'
  *    predicate.
  *
  * Scope (Plan #11): `hasOne`, `hasMany`, `belongsTo` (matches what
- * `@rudderjs/orm` supports today). `belongsToMany` / pivot / polymorphic
- * relations are deferred until the underlying ORM lands them — see
- * `docs/plans/relations.md`.
+ * `@rudderjs/orm` supports today). `belongsToMany` shipped 2026-05-03
+ * via the M2M follow-up. `morphMany` / `morphOne` / `morphTo` shipped
+ * via the polymorphic follow-up — `morphMany` auto-injects morph
+ * columns on create, `morphTo` requires `static relatedResource` (no
+ * single related model to discover). `morphToMany` / `morphedByMany`
+ * remain deferred — see `docs/plans/relations.md`.
  */
 export abstract class RelationManager {
   /**

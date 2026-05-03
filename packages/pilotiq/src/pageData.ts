@@ -47,7 +47,7 @@ import {
   getRelationType,
   type ModelLike, type ModelQuery,
 } from './orm/modelDefaults.js'
-import type { RelationMode } from './RelationManager.js'
+import { normalizeRelationMode, type RelationMode } from './RelationManager.js'
 
 // ─── Shared helpers ──────────────────────────────────────────
 
@@ -1205,14 +1205,15 @@ export async function relationManagerData(
 
   if (!await safePolicy(() => R.canEdit(user, parentRecord))) return { ok: false, status: 403 }
 
-  // M2M follow-up — read the relation type off the parent's relations
-  // map once, normalize to the binary `RelationMode` the manager-side
-  // logic uses. `belongsToMany` flips the manager into pivot-mutation
-  // mode (attach/detach instead of create/edit/delete); everything
-  // else (`hasMany`, `hasOne`, `belongsTo`, missing-type fallback)
-  // collapses to `'hasMany'` because their UI surface is the same.
+  // Read the relation type off the parent's relations map once,
+  // normalize to the four-way `RelationMode` the manager-side logic
+  // uses. `belongsToMany` flips into pivot-mutation mode (attach /
+  // detach), `morphMany|morphOne` collapses to `'morphMany'` (parent-
+  // side polymorphic — auto-fills morph columns on create), `morphTo`
+  // is the child-side polymorphic (no auto-actions; requires explicit
+  // `M.relatedResource`). Everything else collapses to `'hasMany'`.
   const relationType = getRelationType(R.model, scope.relationship)
-  const mode: RelationMode = relationType === 'belongsToMany' ? 'belongsToMany' : 'hasMany'
+  const mode: RelationMode = normalizeRelationMode(relationType)
 
   const Related = findRelatedResource(M, R, cfg)
   // Related Resource is required for: edit/create form auto-wire,
