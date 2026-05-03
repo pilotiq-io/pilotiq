@@ -406,6 +406,8 @@ Inline-displayable leaves that render text, images, icons, and chrome inside a s
 | `Divider` | `Divider.make()`                      | `.label('Section break')` for a labeled `<hr>`.                                            |
 | `Image`   | `Image.make('https://…/avatar.png')`  | `.alt() / .width() / .height() / .size(px)` (square sugar) / `.rounded() / .circle()`.     |
 | `Icon`    | `Icon.make('check-circle')`           | `.size(px) / .color(IconColor) / .label(text)`. String-only — see "Icons" below.            |
+| `Markdown`| `Markdown.make('# Hello\n\n…')`       | Read-only Markdown source; server-renders via `marked`. `.gfm() / .breaks() / .prose() / .size('sm'\|'base'\|'lg')`. |
+| `Html`    | `Html.make('<p>Hello</p>')`           | Raw HTML passthrough. `.prose() / .size('sm'\|'base'\|'lg')`.                               |
 
 ### Text formatting
 
@@ -438,6 +440,27 @@ Icon.make('check-circle').size(20).color('success').label('Done')
 For *component-typed* icons used by `Resource.icon` / `Page.icon` / `Global.icon` statics (where the Vite-plugin manifest can resolve them at render), see the `IconValue` type from `@pilotiq/pilotiq/icons`. The schema-level `Icon` element is intentionally string-only — schema instances are constructed at every render and don't have an "owning class" the manifest can key off.
 
 `Icon.make(name)` returns `null` when the name isn't registered; pair it with `registerIcons()` at boot or use one of the bundled icon packs (`@pilotiq/pilotiq/icons/lucide`).
+
+### Markdown / HTML rendering
+
+Read-only counterparts to `MarkdownField` / `RichTextField`. Use them on detail pages, dashboards, or anywhere you need server-rendered formatted prose without a form around it.
+
+```ts
+Markdown.make([
+  '## Welcome',
+  '',
+  'Thanks for **trying** pilotiq.',
+  '',
+  '- Auto-converted via `marked`',
+  '- GitHub-flavored by default',
+].join('\n'))
+
+Html.make('<p>Already-rendered <strong>HTML</strong> from a legacy column.</p>')
+```
+
+Both wrap in a Tailwind Typography (`prose`) container by default — pass `.prose(false)` for bare output, or `.size('sm' | 'base' | 'lg')` to pick the matching `prose-sm` / `prose-lg` modifier. The playground's `src/index.css` adds `@tailwindcss/typography` via `@plugin`; consumers without the plugin get unstyled-but-correct HTML.
+
+**Trust posture.** Output is **not** sanitized in v1 — same posture as `MarkdownField`. Don't pipe untrusted user input through these primes without an external sanitizer.
 
 ---
 
@@ -520,7 +543,7 @@ src/
 ├── schema/
 │   ├── Element.ts           ← abstract base + ElementMeta
 │   ├── resolveSchema.ts     ← resolver + registerResolver + RenderContext
-│   ├── Text.ts, Heading.ts, Alert.ts, Divider.ts, Image.ts, Icon.ts   ← display leaves
+│   ├── Text.ts, Heading.ts, Alert.ts, Divider.ts, Image.ts, Icon.ts, Markdown.ts, Html.ts   ← display leaves
 │   └── Card.ts, Section.ts, Tabs.ts, Grid.ts       ← containers
 ├── fields/
 │   ├── Field.ts             ← base Field, visibility, validators, FieldMeta

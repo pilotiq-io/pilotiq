@@ -1,5 +1,6 @@
 import {
   Page, Heading, Text, Alert, Divider, Card,
+  Markdown, Html,
   Section, Tabs, Tab, Grid,
   TextField, EmailField, NumberField, SelectField, TextareaField,
   ToggleField, DateField, SlugField,
@@ -41,6 +42,23 @@ export class ElementsShowcase extends Page {
       Divider.make(),
       Text.make('And a labeled divider:'),
       Divider.make('Section break'),
+
+      Divider.make('Markdown / HTML'),
+      Markdown.make([
+        '## Markdown prime',
+        '',
+        'Renders **read-only** Markdown source. Server converts via `marked`,',
+        'client receives finished HTML.',
+        '',
+        '- GitHub-flavored by default',
+        '- Wraps in a `prose` typography container',
+        '- Pair with `MarkdownField` for the editing counterpart',
+      ].join('\n')).size('sm'),
+
+      Html.make(
+        '<p>The <strong>Html prime</strong> takes raw HTML strings — useful for ' +
+        'legacy CMS columns or server-rendered fragments.</p>',
+      ).size('sm'),
 
       // ─── Containers ─────────────────────────────────────────────
       Heading.make('Containers').level(2),

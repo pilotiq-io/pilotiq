@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 
 import {
   MarkdownField,
-  Markdown,
   DEFAULT_MARKDOWN_TOOLBAR,
 } from './MarkdownField.js'
 
@@ -11,10 +10,6 @@ describe('MarkdownField', () => {
   it('emits fieldType "markdown"', () => {
     const meta = MarkdownField.make('body').toMeta()
     assert.equal(meta.fieldType, 'markdown')
-  })
-
-  it('exports an alias `Markdown`', () => {
-    assert.equal(Markdown, MarkdownField)
   })
 
   it('defaults to the full toolbar', () => {

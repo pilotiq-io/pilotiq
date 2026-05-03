@@ -5,6 +5,8 @@ import { resolveSchema, _resetResolverRegistry } from './resolveSchema.js'
 import { Image } from './Image.js'
 import { Icon } from './Icon.js'
 import { Text } from './Text.js'
+import { Markdown } from './Markdown.js'
+import { Html } from './Html.js'
 
 beforeEach(() => _resetResolverRegistry())
 
@@ -101,5 +103,64 @@ describe('Text formatting setters', () => {
     const tree = [Text.make('hi').badge(false)]
     const out = await resolveSchema(tree)
     assert.equal(out[0]!['badge'], undefined)
+  })
+})
+
+describe('Markdown prime', () => {
+  it('serializes converted html + defaults', async () => {
+    const tree = [Markdown.make('# hi\n\n**bold**')]
+    const out = await resolveSchema(tree)
+    assert.equal(out[0]!.type, 'markdown')
+    const html = String(out[0]!['html'])
+    assert.match(html, /<h1[^>]*>hi<\/h1>/)
+    assert.match(html, /<strong>bold<\/strong>/)
+    assert.equal(out[0]!['prose'], true)
+    assert.equal(out[0]!['size'],  undefined)
+  })
+
+  it('prose(false) disables the typographic wrapper flag', async () => {
+    const tree = [Markdown.make('hi').prose(false)]
+    const out = await resolveSchema(tree)
+    assert.equal(out[0]!['prose'], false)
+  })
+
+  it('size() flows through', async () => {
+    const tree = [Markdown.make('hi').size('lg')]
+    const out = await resolveSchema(tree)
+    assert.equal(out[0]!['size'], 'lg')
+  })
+
+  it('breaks() converts single line breaks to <br>', async () => {
+    const tree = [Markdown.make('one\ntwo').breaks()]
+    const out = await resolveSchema(tree)
+    assert.match(String(out[0]!['html']), /<br/)
+  })
+
+  it('default (breaks=false) joins single line breaks', async () => {
+    const tree = [Markdown.make('one\ntwo')]
+    const out = await resolveSchema(tree)
+    assert.doesNotMatch(String(out[0]!['html']), /<br/)
+  })
+})
+
+describe('Html prime', () => {
+  it('passes html through verbatim', async () => {
+    const tree = [Html.make('<p>hi <em>there</em></p>')]
+    const out = await resolveSchema(tree)
+    assert.equal(out[0]!.type, 'html')
+    assert.equal(out[0]!['html'], '<p>hi <em>there</em></p>')
+    assert.equal(out[0]!['prose'], true)
+  })
+
+  it('prose(false) flips the wrapper flag off', async () => {
+    const tree = [Html.make('<p>hi</p>').prose(false)]
+    const out = await resolveSchema(tree)
+    assert.equal(out[0]!['prose'], false)
+  })
+
+  it('size() flows through', async () => {
+    const tree = [Html.make('<p>hi</p>').size('sm')]
+    const out = await resolveSchema(tree)
+    assert.equal(out[0]!['size'], 'sm')
   })
 })

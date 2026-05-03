@@ -1961,6 +1961,23 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
       )
     }
 
+    case 'markdown':
+    case 'html': {
+      const html  = String(el['html']  ?? '')
+      const prose = el['prose'] !== false
+      const size  = el['size'] ? String(el['size']) : undefined
+      const proseCls = prose
+        ? `prose max-w-none ${size === 'sm' ? 'prose-sm' : size === 'lg' ? 'prose-lg' : ''}`.trim()
+        : ''
+      return (
+        <div
+          key={index}
+          className={proseCls || undefined}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      )
+    }
+
     case 'heading': {
       const level = (el['level'] as number) ?? 1
       const content = String(el['content'] ?? '')

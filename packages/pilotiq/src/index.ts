@@ -128,6 +128,8 @@ export { Alert, type AlertType } from './schema/Alert.js'
 export { Divider } from './schema/Divider.js'
 export { Image, type ImageShape } from './schema/Image.js'
 export { Icon, type IconColor } from './schema/Icon.js'
+export { Markdown, type MarkdownProseSize } from './schema/Markdown.js'
+export { Html } from './schema/Html.js'
 
 // Plan #15 — server-data widget elements
 export {
@@ -306,7 +308,6 @@ export { TagsInputField, TagsInput, type TagsSuggestionsResolver } from './field
 export { FileUploadField, FileUpload }     from './fields/FileUploadField.js'
 export {
   MarkdownField,
-  Markdown,
   DEFAULT_MARKDOWN_TOOLBAR,
   type MarkdownToolbarButton,
   type MarkdownAttachmentVisibility,

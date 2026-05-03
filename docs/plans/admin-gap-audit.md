@@ -171,7 +171,7 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 | ✅ `Icon::make` DONE | 1 | Shipped 2026-05-03 cont'd — `Icon.make(registryName).size().color().label()`; resolves through the existing user-extensible icon registry (string-only; component-typed icons go through Resource/Page statics). |
 | `UnorderedList` | 2 | |
 | ✅ `Text` formatting: `color`, `size`, `weight`, `badge` DONE | 1 | Shipped 2026-05-03 cont'd — `.color() / .size() / .weight() / .badge() / .badgeColor()`; bare `Text.make()` keeps the prior `text-sm text-muted-foreground` defaults. `font` deferred — no consumer ask. |
-| Markdown / HTML rendering | 2 | We have RichTextField for editing; need read-only display equivalent. |
+| ✅ Markdown / HTML rendering DONE | 2 | Shipped 2026-05-03 cont'd — `Markdown.make(source).gfm().breaks().prose().size('sm'\|'base'\|'lg')` server-renders via `marked`; `Html.make(html).prose().size()` passes raw strings through. Both wrap in a `prose` Tailwind Typography container by default. Admin-trusted; no sanitizer in v1 (matches `MarkdownField` posture). |
 | **Infolist entries** distinct from primes (label-value pairs) | 2 | Some frameworks treat `TextEntry`/`ImageEntry` as a different category from primes. We could collapse both into our primes since the distinction is mostly template-driven elsewhere. |
 
 ### 8. Forms / Fields (`fields/`)

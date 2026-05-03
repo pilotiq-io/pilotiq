@@ -149,4 +149,3 @@ export class MarkdownField extends Field {
   }
 }
 
-export const Markdown = MarkdownField
