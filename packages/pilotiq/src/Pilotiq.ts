@@ -46,6 +46,15 @@ export interface PilotiqConfig {
   pages:         (typeof Page)[]
   branding:      { title?: string; logo?: string }
   schema?:       SchemaDefinition
+  /**
+   * Plan #15 — homepage page class. When set, `GET ${base}` resolves
+   * this Page's `static schema()` instead of the builder-level
+   * `schema()`. Set via `panel.dashboard(P)`. The page is also added
+   * to `cfg.pages` for nav + canAccess gating, with its nav URL
+   * collapsed back to `${base}` so the sidebar entry deep-links to
+   * the panel root.
+   */
+  dashboardPage?: typeof Page
   theme?:        ThemeConfig
   themeEditor?:  boolean
   guard?:        (req: unknown) => boolean | Promise<boolean>
@@ -102,6 +111,41 @@ export class Pilotiq {
 
   schema(def: SchemaDefinition): this {
     this.config.schema = def
+    return this
+  }
+
+  /**
+   * Plan #15 — mark a Page as the panel-root entry. Sugar for "render
+   * this page's `schema()` at `${base}` instead of the default
+   * dashboard layout."
+   *
+   * Effects:
+   *   1. `GET ${base}` resolves the page's schema (instead of the
+   *      builder-level `schema()` definition).
+   *   2. The page is registered in `cfg.pages` if not already there
+   *      (so canAccess + the action / form-state routes wire up).
+   *   3. Navigation collapses the page's nav URL to `${base}` (no
+   *      trailing slug segment) so the sidebar entry deep-links to
+   *      the panel root.
+   *
+   * The page subclass is plain — no special Page subclass required.
+   * The convention is `static slug = ''` so the regular slug-route
+   * doesn't also catch it; `panel.dashboard()` enforces this by
+   * skipping the page in the slug-route registration.
+   *
+   * @example
+   *   class MyDashboard extends Page {
+   *     static slug = ''
+   *     static label = 'Dashboard'
+   *     static schema() { return [Heading.make('Welcome')] }
+   *   }
+   *   panel.dashboard(MyDashboard)
+   */
+  dashboard(P: typeof Page): this {
+    this.config.dashboardPage = P
+    if (!this.config.pages.includes(P)) {
+      this.config.pages = [...this.config.pages, P]
+    }
     return this
   }
 

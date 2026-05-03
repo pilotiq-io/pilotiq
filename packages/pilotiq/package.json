@@ -41,6 +41,10 @@
     "./uploads": {
       "import": "./dist/uploads/index.js",
       "types": "./dist/uploads/index.d.ts"
+    },
+    "./widgets": {
+      "import": "./dist/widgets/index.js",
+      "types": "./dist/widgets/index.d.ts"
     }
   },
   "scripts": {

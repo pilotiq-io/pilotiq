@@ -16,7 +16,8 @@ import type { ResourceClass, NavigationBadgeColor } from './Resource.js'
 import type { GlobalClass } from './Global.js'
 import { Element } from './schema/Element.js'
 import { Field } from './fields/Field.js'
-import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
+import { resolveSchema, type RenderContext, type SchemaContext } from './schema/resolveSchema.js'
+import { isServerDataElement, type ServerDataElement } from './schema/ServerDataElement.js'
 import { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
@@ -210,10 +211,15 @@ async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<NavItem
   for (let i = 0; i < cfg.pages.length; i++) {
     if (!pageAccess[i]) continue
     const P = cfg.pages[i]!
+    // Plan #15 — the dashboard page collapses its nav URL to `${base}`
+    // so the sidebar entry deep-links to the panel root rather than
+    // `${base}/${P.getSlug()}` (which would 404 — the slug route skips
+    // the dashboard page at boot).
+    const isDashboard = cfg.dashboardPage === P
     const item: RawNavItem = {
       name:  P.name,
       label: P.getNavigationLabel(),
-      url:   `${base}/${P.getSlug()}`,
+      url:   isDashboard ? base : `${base}/${P.getSlug()}`,
       icon:  serializeIcon(P.getNavigationIcon(), P.name),
       _idx:  idx++,
     }
@@ -574,6 +580,80 @@ function pickChildForeignKey(parentModel: ModelLike, name: string): string | und
   return typeof e['foreignKey'] === 'string' ? (e['foreignKey'] as string) : undefined
 }
 
+// ─── Plan #15 server-data widgets ─────────────────────────────
+
+/** Wire-shape of the per-widget data map shipped to the client.
+ *  Lazy elements stamp `null` (renderer paints skeleton + fetches);
+ *  eager elements stamp their resolved payload. Errors stamp
+ *  `{ error: '<message>' }` so the renderer can surface a per-widget
+ *  failure without blanking the page. */
+export type ServerDataMap = Record<string, unknown>
+
+/**
+ * Plan #15 — collect every `ServerDataElement` in the schema tree and
+ * resolve their `getServerData(ctx)` payloads in parallel. Returns a
+ * map keyed by element id, ready to ship as `viewProps._widgetData`.
+ *
+ * Lazy elements (default — `lazy(false)` opts out) skip the hook and
+ * stamp `null` so the renderer paints a skeleton and fetches the
+ * payload via `POST {base}/_widget/:id` on mount. Eager elements
+ * resolve synchronously and ship the data with the page.
+ *
+ * Per-widget errors are caught and surfaced as `{ error: '...' }` —
+ * one flaky `getStats()` shouldn't 500 the entire dashboard.
+ *
+ * Visibility is **not** re-evaluated here. The schema resolver
+ * (`resolveSchema → evaluateVisibility`) drops hidden layout elements
+ * before any widget code runs. Widgets inside still-rendered branches
+ * always resolve (or stamp lazy null).
+ */
+export async function resolveServerDataElements(
+  elements: ReadonlyArray<Element>,
+  ctx:      RenderContext,
+): Promise<ServerDataMap> {
+  const widgets = collectServerDataElements(elements)
+  if (widgets.length === 0) return {}
+  const out: ServerDataMap = {}
+  await Promise.all(widgets.map(async (el) => {
+    const id = el.getId()
+    if (el.isLazy()) {
+      out[id] = null  // sentinel — renderer paints skeleton, fetches on mount
+      return
+    }
+    try {
+      out[id] = await el.resolveServerData(ctx)
+    } catch (err) {
+      out[id] = { error: err instanceof Error ? err.message : 'Widget failed to load' }
+    }
+  }))
+  return out
+}
+
+/** Walk the tree collecting every `ServerDataElement`. Walks into
+ *  containers but stops at Form/Repeater/Builder boundaries — widgets
+ *  inside an editable form don't make sense in v1. */
+function collectServerDataElements(elements: ReadonlyArray<Element>): ServerDataElement[] {
+  const out: ServerDataElement[] = []
+  const walk = (els: ReadonlyArray<Element>): void => {
+    for (const el of els) {
+      if (isServerDataElement(el)) {
+        out.push(el)
+        // Don't recurse into a widget's children — `View` etc. are leaves
+        // for v1 (no nested widgets inside widgets).
+        continue
+      }
+      // Skip walkers that imply per-row resolution — widgets inside
+      // Repeater/Builder rows don't have a stable id space.
+      const type = el.getType()
+      if (type === 'form' || type === 'repeater' || type === 'builder' || type === 'table') continue
+      const children = el.getChildren()
+      if (children) walk(children)
+    }
+  }
+  walk(elements)
+  return out
+}
+
 /** Stamp dispatchUrl on every handler-style Action so the client knows where to POST. */
 export function tagActionDispatch(elements: ReadonlyArray<Element>, baseUrl: string): void {
   for (const action of findActions(elements)) {
@@ -598,12 +678,38 @@ export function tagActionDispatch(elements: ReadonlyArray<Element>, baseUrl: str
 
 export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Record<string, unknown>> {
   const cfg = pilotiq.getConfig()
-  const schemaData = await resolveSchema(cfg.schema, {})
+  const user = await pilotiq.resolveUser(req)
+  const ctx: SchemaContext = uploadCtx(userCtx({ basePath: cfg.path }, user), cfg)
+
+  // Plan #15 — when `panel.dashboard(P)` was called, resolve P's
+  // schema instead of the builder-level `cfg.schema`. Page-scoped
+  // schema means widget elements read like a regular custom page —
+  // including action dispatch, form-state, and `_widget/:id` polling.
+  let elements: Element[]
+  if (cfg.dashboardPage) {
+    elements = await callPageSchema(cfg.dashboardPage, ctx)
+    tagFormActions(elements, cfg.path)
+    tagFormStateUrls(elements, formId => `${cfg.path}/_form/${formId}/state`)
+    tagFormWizardUrls(elements, formId => `${cfg.path}/_form/${formId}/wizard`)
+    tagActionDispatch(elements, cfg.path)
+  } else {
+    elements = []
+    if (cfg.schema) {
+      const def = cfg.schema
+      elements = typeof def === 'function' ? await def(ctx) : def
+    }
+  }
+
+  const widgetData = await resolveServerDataElements(elements, ctx)
+  const schemaData = await resolveSchema(elements, ctx)
+
   return {
     panel:    await panelInfo(pilotiq, req),
+    page:     cfg.dashboardPage ? cfg.dashboardPage.toMeta() : undefined,
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
+    _widgetData: widgetData,
     notifications: consumeFlashedNotifications(req),
   }
 }
@@ -1771,6 +1877,7 @@ export async function customPageData(
   tagFormStateUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/state`)
   tagFormWizardUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/wizard`)
   tagActionDispatch(elements, pageUrl)
+  const widgetData = await resolveServerDataElements(elements, ctx)
   const schemaData = await resolveSchema(elements, ctx)
 
   return {
@@ -1778,10 +1885,133 @@ export async function customPageData(
     panel:    await panelInfo(pilotiq, req),
     page:     PageClass.toMeta(),
     schemaData,
+    _widgetData: widgetData,
     basePath: cfg.path,
     layout:   cfg.layout,
     notifications: consumeFlashedNotifications(req),
   }
+}
+
+// ─── Plan #15 widget polling data builder ────────────────────
+
+/**
+ * Scopes the polling endpoint resolves against. Mirrors the
+ * form-state / wizard scope discriminator.
+ *
+ *   panel: dashboard page (`POST {base}/_widget/:id`)
+ *   page:  custom page (`POST {base}/{pageSlug}/_widget/:id`)
+ *
+ * Resource-scoped (`POST {base}/{slug}/_widget/:id`) lands in Phase E
+ * with the `headerSchema / footerSchema` hooks; not yet implemented.
+ */
+export type WidgetScope =
+  | { kind: 'panel' }
+  | { kind: 'page';  pageSlug: string }
+
+export interface WidgetRequest {
+  id:      string
+  filter?: string
+}
+
+export interface WidgetSuccess {
+  ok:        true
+  data:      unknown
+  timestamp: number
+}
+
+export interface WidgetFailure {
+  ok:     false
+  status: 403 | 404 | 500
+  error:  string
+}
+
+/**
+ * Plan #15 — re-resolve the active page's schema, find the widget by
+ * id, fail-closed via `evaluateVisibility`, then run
+ * `resolveServerData(ctx)` and return the payload.
+ *
+ *   - 404 when the page or widget id doesn't exist.
+ *   - 403 when the layout-level `visible(rule)` says the widget is
+ *     hidden (server doesn't show data for hidden surfaces).
+ *   - 500 when the hook itself throws.
+ *
+ * `body.filter` rides along on `RenderContext.filter` so per-chart
+ * filter dropdowns can re-fetch with the new filter value. Treated as
+ * an opaque string — widget hooks decode it however they want.
+ */
+export async function widgetData(
+  pilotiq: Pilotiq,
+  scope:   WidgetScope,
+  body:    WidgetRequest,
+  req?:    unknown,
+): Promise<WidgetSuccess | WidgetFailure> {
+  const cfg = pilotiq.getConfig()
+  const user = await pilotiq.resolveUser(req)
+
+  let elements: Element[]
+  let ctx: RenderContext
+
+  if (scope.kind === 'panel') {
+    if (!cfg.dashboardPage) return { ok: false, status: 404, error: 'No dashboard page registered' }
+    ctx = uploadCtx(userCtx({ basePath: cfg.path }, user), cfg)
+    elements = await callPageSchema(cfg.dashboardPage, ctx)
+  } else {
+    const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
+    if (!P) return { ok: false, status: 404, error: 'Page not found' }
+    ctx = uploadCtx(userCtx({ basePath: cfg.path }, user), cfg)
+    elements = await callPageSchema(P, ctx)
+  }
+
+  // Stamp the request's filter onto the render context so widget hooks
+  // can branch on it. Opaque string — widgets decode their own format.
+  if (body.filter !== undefined) ctx = { ...ctx, filter: body.filter } as RenderContext
+
+  const widget = findWidgetById(elements, body.id)
+  if (!widget) return { ok: false, status: 404, error: `Widget "${body.id}" not found` }
+
+  // Layout-level visibility re-check — if the widget is hidden by a
+  // visible(rule), refuse to ship data. Same fail-closed posture as
+  // the schema resolver. (Parent-container `visible(false)` would
+  // already drop the widget from the schema tree at SSR time, so a
+  // direct hidden-widget probe here covers the visible-rule-only case.)
+  const layoutCtx: import('./schema/Element.js').LayoutContext = {}
+  if (user !== null && user !== undefined) layoutCtx.user = user
+  if (!await widget.evaluateVisibility(layoutCtx)) {
+    return { ok: false, status: 403, error: 'Widget hidden' }
+  }
+
+  try {
+    const data = await widget.resolveServerData(ctx)
+    return { ok: true, data, timestamp: Date.now() }
+  } catch (err) {
+    return {
+      ok:     false,
+      status: 500,
+      error:  err instanceof Error ? err.message : 'Widget failed',
+    }
+  }
+}
+
+/** Walk the element tree looking for a server-data element with the
+ *  given id. Same walker as `collectServerDataElements` but stops on
+ *  first match. */
+function findWidgetById(elements: ReadonlyArray<Element>, id: string): ServerDataElement | undefined {
+  let found: ServerDataElement | undefined
+  const walk = (els: ReadonlyArray<Element>): void => {
+    for (const el of els) {
+      if (found) return
+      if (isServerDataElement(el)) {
+        if (el.getId() === id) { found = el; return }
+        continue
+      }
+      const type = el.getType()
+      if (type === 'form' || type === 'repeater' || type === 'builder' || type === 'table') continue
+      const children = el.getChildren()
+      if (children) walk(children)
+    }
+  }
+  walk(elements)
+  return found
 }
 
 // ─── Plan #12 global search data builder ─────────────────────

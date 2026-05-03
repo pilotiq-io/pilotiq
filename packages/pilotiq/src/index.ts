@@ -27,6 +27,13 @@ export {
   globalEditData,
   globalViewData,
   customPageData,
+  resolveServerDataElements,
+  widgetData,
+  type ServerDataMap,
+  type WidgetScope,
+  type WidgetRequest,
+  type WidgetSuccess,
+  type WidgetFailure,
   type PageContextLike,
 } from './pageData.js'
 export { Resource, type ResourcePages, type ResourceClass } from './Resource.js'
@@ -118,6 +125,14 @@ export { Text } from './schema/Text.js'
 export { Heading } from './schema/Heading.js'
 export { Alert, type AlertType } from './schema/Alert.js'
 export { Divider } from './schema/Divider.js'
+
+// Plan #15 — server-data widget elements
+export {
+  ServerDataElement,
+  isServerDataElement,
+  stampServerDataMeta,
+} from './schema/ServerDataElement.js'
+export { View, type ViewDataHandler } from './schema/View.js'
 
 // Container elements
 export { Card } from './schema/Card.js'

@@ -15,6 +15,7 @@ import {
   formWizardData,
   searchData,
   relationManagerData, findRelatedResource, safeManagerPolicy,
+  widgetData, type WidgetScope,
 } from './pageData.js'
 import { RelationManager, RESERVED_RELATIONSHIP_TOKENS } from './RelationManager.js'
 import { modelSave, modelLoadRecord, getPrimaryKey } from './orm/modelDefaults.js'
@@ -248,6 +249,49 @@ async function handleFormWizard(
 }
 
 /**
+ * Plan #15 — handle a widget polling POST. Body is `{ filter? }`;
+ * `:id` comes from the URL. Returns `{ ok, data, timestamp }` on
+ * success or `{ ok: false, error }` on failure. Used by lazy-loading
+ * widgets (first fetch on mount) and `poll(seconds)` widgets (interval
+ * re-fetch).
+ */
+interface WidgetBody {
+  filter?: unknown
+}
+
+async function handleWidgetData(
+  req:     AppRequest,
+  res:     AppResponse,
+  pilotiq: Pilotiq,
+  scope:   WidgetScope,
+  id:      string,
+): Promise<unknown> {
+  if (!id) {
+    res.status(400)
+    return res.json({ ok: false, error: 'Missing widget id' })
+  }
+  const body = (await readFormBody(req)) as WidgetBody
+  const filter = typeof body.filter === 'string' ? body.filter : undefined
+
+  try {
+    const result = await widgetData(
+      pilotiq,
+      scope,
+      filter !== undefined ? { id, filter } : { id },
+      req,
+    )
+    if (!result.ok) {
+      res.status(result.status)
+      return res.json({ ok: false, error: result.error })
+    }
+    return res.json({ ok: true, data: result.data, timestamp: result.timestamp })
+  } catch (err) {
+    res.status(500)
+    return res.json({ ok: false, error: err instanceof Error ? err.message : 'Widget request failed' })
+  }
+}
+
+/**
  * Handle a single file upload from a `FileUpload` field. Validates
  * accept / maxSize against the (optional) per-request hints, hands
  * the file off to the configured adapter, returns `{ ok, url }`.
@@ -404,13 +448,35 @@ export function registerPilotiqRoutes(
   }
 
   // ── Dashboard (1-segment) ─────────────────────────────
-  router.get(base, async (req) => {
+  router.get(base, async (req, res) => {
+    // Plan #15 — when `panel.dashboard(P)` is set, gate the dashboard
+    // route through the page's `canAccess` predicate. Same posture as
+    // custom pages — fail-closed on throw.
+    if (cfg.dashboardPage) {
+      const user = await pilotiq.resolveUser(req)
+      if (!await checkPolicy(() => cfg.dashboardPage!.canAccess(user))) {
+        return forbidden(res, wantsJson(req))
+      }
+    }
     return view('pilotiq.dashboard', await dashboardData(pilotiq, req))
   })
 
   // ── File uploads (FileUpload field POST target) ───────
   router.post(`${base}/_uploads`, async (req, res) => {
     return handleUploadRequest(req, res, pilotiq)
+  })
+
+  // ── Plan #15 dashboard widget polling ─────────────────
+  // POST ${base}/_widget/:id — re-resolves the dashboard page schema,
+  // finds widget by id, runs `getServerData(ctx)`. Body: `{ filter? }`.
+  // Mounted unconditionally — widgetData() returns 404 when no
+  // dashboard page is registered, so this stays cheap when unused.
+  router.post(`${base}/_widget/:id`, async (req, res) => {
+    if (cfg.dashboardPage) {
+      const user = await pilotiq.resolveUser(req)
+      if (!await checkPolicy(() => cfg.dashboardPage!.canAccess(user))) return forbidden(res, true)
+    }
+    return handleWidgetData(req, res, pilotiq, { kind: 'panel' }, req.params['id']!)
   })
 
   // ── Plan #12 global search ────────────────────────────
@@ -1553,8 +1619,23 @@ export function registerPilotiqRoutes(
 
   // ── Custom pages (2-segment, slug route) ──────────────
   for (const PageClass of cfg.pages) {
+    // Plan #15 — the dashboard page lives at `${base}` (handled by the
+    // dashboard route above), so skip it here to avoid registering a
+    // duplicate `${base}/${slug}` route or a broken `${base}/` (when
+    // `slug = ''`).
+    if (cfg.dashboardPage === PageClass) continue
+
     const pageSlug = PageClass.getSlug()
     const pageUrl  = `${base}/${pageSlug}`
+
+    // Plan #15 — per-page widget polling endpoint. Mirrors the
+    // panel-scope `${base}/_widget/:id` but resolves the custom page's
+    // schema instead of the dashboard's.
+    router.post(`${pageUrl}/_widget/:id`, async (req, res) => {
+      const user = await pilotiq.resolveUser(req)
+      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, true)
+      return handleWidgetData(req, res, pilotiq, { kind: 'page', pageSlug }, req.params['id']!)
+    })
 
     // Plan #5 partial-resolve endpoint for custom pages with reactive forms.
     // POST ${base}/${pageSlug}/_form/:formId/state

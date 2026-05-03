@@ -14,6 +14,7 @@ import type { BlockMeta } from './Block.js'
 import { Action, type ActionMeta, type ActionVisibilityContext } from '../actions/Action.js'
 import { ActionGroup } from '../actions/ActionGroup.js'
 import { Filter } from '../filters/Filter.js'
+import { isServerDataElement, stampServerDataMeta } from './ServerDataElement.js'
 
 export interface SchemaContext {
   user?: { name?: string; email?: string; [key: string]: unknown }
@@ -68,6 +69,15 @@ export interface RenderContext extends SchemaContext {
    * the affordance at all.
    */
   hasUploadAdapter?: boolean
+  /**
+   * Plan #15 — per-widget filter value rode in on the polling-endpoint
+   * body. Opaque to the framework: each widget's `getData(ctx)` decodes
+   * `ctx.filter` however it wants (`'today' | 'week' | 'month'`, JSON
+   * blob, …). Unset on the initial-render path; set on every polling
+   * fetch when the user picked something from the per-chart filter
+   * dropdown.
+   */
+  filter?: string
   /**
    * Plan #14 row-scoped sugar inside a Repeater. When the resolver is
    * walking a row's inner schema, `row.index` is the row's position and
@@ -242,6 +252,13 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
   // Stamped after toMeta() so subclasses don't have to remember.
   const layout = el.getLayoutPositioning()
   if (layout) meta._layout = layout
+
+  // Plan #15 — stamp `serverData / id / poll / lazy` on every
+  // ServerDataElement so the renderer can find its `_widgetData[id]`
+  // payload. The actual data resolution happens in
+  // `resolveServerDataElements` (a separate pageData pass) — this just
+  // marks the element on the wire.
+  if (isServerDataElement(el)) stampServerDataMeta(el, meta)
 
   // Plan #14 — Repeater rows. Skip the generic `getChildren()` recurse
   // below (the inner schema is rendered per-row, not once on the parent),
