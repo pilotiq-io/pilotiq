@@ -83,6 +83,7 @@ import { getIcon } from '../icons/registry.js'
 import { pickEditableCell } from './cells/EditableCell.js'
 import { WidgetDataProvider } from './WidgetDataContext.js'
 import { StatsOverviewRenderer } from './widgets/StatsOverviewRenderer.js'
+import { getWidgetRenderer } from './widgetRegistry.js'
 
 /** Resolve an icon name through the user-extensible registry. Returns
  * `undefined` when the name isn't registered — callers fall back to
@@ -2025,8 +2026,33 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
     case 'stats':
       return <StatsOverviewRenderer key={index} meta={el} />
 
-    default:
+    default: {
+      // Plan #15 Phase C — server-data widget elements registered by
+      // adapter packages (`@pilotiq/recharts` for `'chart'`, future
+      // `@pilotiq/chartjs`, etc.) dispatch through the runtime widget
+      // registry. The fallback error message points the consumer at the
+      // install command — silent `null` here would let a missing
+      // `registerChartRenderer()` slip through.
+      if (el['serverData'] === true) {
+        const widgetType = String(el.type ?? '')
+        const Renderer = getWidgetRenderer(widgetType)
+        if (Renderer) return <Renderer key={index} meta={el} />
+        return (
+          <div
+            key={index}
+            className="rounded-md border border-amber-500/40 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+            role="alert"
+          >
+            No renderer registered for widget type <code className="font-mono">{widgetType}</code>.
+            {widgetType === 'chart' && (
+              <> Install <code className="font-mono">@pilotiq/recharts</code> and
+              call <code className="font-mono">registerChartRenderer()</code> at app boot.</>
+            )}
+          </div>
+        )
+      }
       return null
+    }
   }
 }
 

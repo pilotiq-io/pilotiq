@@ -1,0 +1,54 @@
+{
+  "name": "@pilotiq/recharts",
+  "version": "0.0.1",
+  "description": "Recharts dashboard chart adapter for @pilotiq/pilotiq — line / bar / pie / doughnut widgets",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pilotiq-io/pilotiq",
+    "directory": "packages/recharts"
+  },
+  "homepage": "https://pilotiq.io",
+  "type": "module",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./register": {
+      "import": "./dist/register.js",
+      "types": "./dist/register.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\"; EXIT=$?; rm -rf dist-test; exit $EXIT"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "@pilotiq/pilotiq": "workspace:*",
+    "react": "^18 || ^19",
+    "react-dom": "^18 || ^19",
+    "recharts": "^2"
+  },
+  "devDependencies": {
+    "@pilotiq/pilotiq": "workspace:*",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "react": "^19",
+    "react-dom": "^19",
+    "recharts": "^2",
+    "typescript": "^5"
+  },
+  "author": "Suleiman Shahbari"
+}

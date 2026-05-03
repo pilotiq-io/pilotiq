@@ -8,6 +8,11 @@ export {
 
 export { SchemaRenderer, type SchemaRendererProps } from './SchemaRenderer.js'
 export { registerFieldRenderer, getFieldRenderer, type FieldRendererProps } from './registry.js'
+export {
+  registerWidgetRenderer,
+  getWidgetRenderer,
+  type WidgetRendererProps,
+} from './widgetRegistry.js'
 
 export {
   FormStateProvider,
