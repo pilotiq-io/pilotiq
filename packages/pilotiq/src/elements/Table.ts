@@ -140,6 +140,13 @@ export interface TableMeta extends ElementMeta {
    * `<tfoot>` row when this is present. */
   summaries?: Record<string, SummaryResult[]>
 
+  /** Per-group summaries — outer key = `_groupValue`, inner = column
+   * name, value = `SummaryResult[]`. Computed only when an active group
+   * is set AND at least one column has summarizers. Renderer emits an
+   * inline summary row at the END of each group band, aligned to the
+   * same columns as the global footer. */
+  groupSummaries?: Record<string, Record<string, SummaryResult[]>>
+
   /** Drag-to-reorder is enabled on this table. The renderer adds a grip
    * handle column and binds HTML5 DnD on each `<tr>`. The actual sort
    * column the order is written back to lives on `reorderableColumn`. */
@@ -204,6 +211,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _groups:        TableGroup<any>[] = []  // eslint-disable-line @typescript-eslint/no-explicit-any
   private _activeGroup?:  string
   private _summaries?:    Record<string, SummaryResult[]>
+  private _groupSummaries?: Record<string, Record<string, SummaryResult[]>>
   private _reorderableColumn?: string
   private _reorderUrl?:   string
 
@@ -414,6 +422,15 @@ export class Table<R = unknown, Q = unknown> extends Element {
     this._summaries = summaries
     return this
   }
+  /** Stamp per-group summary results. Outer key = `_groupValue`,
+   * inner = column name. Set by `loadTableRecords` only when an active
+   * group is set AND at least one column has summarizers. */
+  withGroupSummaries(
+    groupSummaries: Record<string, Record<string, SummaryResult[]>>,
+  ): this {
+    this._groupSummaries = groupSummaries
+    return this
+  }
 
   /** Stamp the reorder POST URL. Called by `tagTableReorderUrls` during
    * `resourceIndexData` so the renderer knows where to send drops. */
@@ -463,6 +480,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return found ?? TableGroup.make(col)
   }
   getSummaries(): Record<string, SummaryResult[]> | undefined { return this._summaries }
+  getGroupSummaries(): Record<string, Record<string, SummaryResult[]>> | undefined { return this._groupSummaries }
   getReorderableColumn(): string | undefined { return this._reorderableColumn }
   isReorderable(): boolean { return this._reorderableColumn !== undefined }
   getReorderUrl(): string | undefined { return this._reorderUrl }
@@ -512,6 +530,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
         ? { groups: this._groups.map(g => g.toMeta()) }
         : {}),
       ...(this._summaries    !== undefined ? { summaries:    this._summaries    } : {}),
+      ...(this._groupSummaries !== undefined ? { groupSummaries: this._groupSummaries } : {}),
       ...(this._reorderableColumn !== undefined ? { reorderable: true as const, reorderableColumn: this._reorderableColumn } : {}),
       ...(this._reorderUrl   !== undefined ? { reorderUrl:  this._reorderUrl  } : {}),
       ...(this._rows         !== undefined ? { rows:        this._rows }        : {}),

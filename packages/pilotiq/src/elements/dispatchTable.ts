@@ -434,6 +434,30 @@ export async function loadTableRecords(
           summaries[col.name] = col.getSummarizers().map(s => s.toResult(values))
         }
         table.withSummaries(summaries)
+
+        // Per-group summaries — one summary set per `_groupValue`. Only
+        // computed when a group is active; otherwise the global tfoot
+        // is the only summary row. Empty-group bucket ('') still gets
+        // its own row when present (mirrors the bucket-to-bottom rule
+        // already used for sorting).
+        if (activeGroup !== undefined) {
+          const buckets: Record<string, Array<Record<string, unknown>>> = {}
+          for (const r of finalRows as Array<Record<string, unknown>>) {
+            const key = String(r['_groupValue'] ?? '')
+            if (!buckets[key]) buckets[key] = []
+            buckets[key].push(r)
+          }
+          const groupSummaries: Record<string, Record<string, SummaryResult[]>> = {}
+          for (const [groupValue, groupRows] of Object.entries(buckets)) {
+            const perCol: Record<string, SummaryResult[]> = {}
+            for (const col of columnsWithSummaries) {
+              const values = groupRows.map(r => r[col.name])
+              perCol[col.name] = col.getSummarizers().map(s => s.toResult(values))
+            }
+            groupSummaries[groupValue] = perCol
+          }
+          table.withGroupSummaries(groupSummaries)
+        }
       }
 
       table.withRows(finalRows as unknown[], total)

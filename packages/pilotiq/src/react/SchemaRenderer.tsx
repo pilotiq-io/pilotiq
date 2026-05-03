@@ -3113,6 +3113,8 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   const pollInterval     = typeof el['pollInterval'] === 'number' ? el['pollInterval'] as number : undefined
   const defaultGroup     = typeof el['defaultGroup'] === 'string' ? el['defaultGroup'] as string : undefined
   const summaries        = el['summaries'] as Record<string, Array<{ kind: string; value: string; label?: string }>> | undefined
+  const groupSummaries   = el['groupSummaries'] as
+    Record<string, Record<string, Array<{ kind: string; value: string; label?: string }>>> | undefined
   const groupOptions     = (el['groups'] as Array<{
     column:       string
     label:        string
@@ -3715,6 +3717,45 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                   )}
                 </TableRow>
                 )}
+                {/* Per-group summary row — emitted at the end of each
+                    group band (last row in group OR last row overall),
+                    aligned to the same columns as the global tfoot.
+                    Suppressed when the group is collapsed since the data
+                    rows themselves are hidden. */}
+                {(() => {
+                  if (!groupSummaries) return null
+                  if (groupValue === undefined) return null
+                  if (isInCollapsedGroup) return null
+                  const isLastInGroup = ri === rows.length - 1
+                    || String(((rows[ri + 1] as Record<string, unknown>)['_groupValue'] ?? '')) !== groupValue
+                  if (!isLastInGroup) return null
+                  const perCol = groupSummaries[groupValue]
+                  if (!perCol || Object.keys(perCol).length === 0) return null
+                  return (
+                    <TableRow key={`group-summary-${id}`} className="bg-muted/20 hover:bg-muted/20">
+                      {reorderColumnVisible && <TableCell />}
+                      {hasBulkActions      && <TableCell />}
+                      {columns.map((col, ci) => {
+                        const name  = String(col['name'] ?? '')
+                        const align = col['alignment'] === 'center' ? 'text-center'
+                                    : col['alignment'] === 'end'    ? 'text-right'
+                                    : 'text-left'
+                        const items = perCol[name]
+                        return (
+                          <TableCell key={ci} className={`text-xs font-medium ${align} px-2 py-1.5`}>
+                            {items?.map((s, i) => (
+                              <div key={i} className="leading-tight">
+                                {s.label && <span className="text-muted-foreground">{s.label}: </span>}
+                                <span>{s.value}</span>
+                              </div>
+                            ))}
+                          </TableCell>
+                        )
+                      })}
+                      {hasRowActions && <TableCell />}
+                    </TableRow>
+                  )
+                })()}
                 </React.Fragment>
               )
             })}

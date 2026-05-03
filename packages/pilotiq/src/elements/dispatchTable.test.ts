@@ -565,6 +565,89 @@ describe('loadTableRecords', () => {
       assert.equal(rows[0]!['_groupTitle'], 'CUSTOM')
     })
 
+    it('per-group summaries: stamps groupSummaries[value][col] when grouping is active', async () => {
+      const t = Table.make<{ amount: number; status: string }>()
+        .columns([
+          Column.make('status'),
+          Column.make('amount').summarize([
+            Sum.make().label('Total'),
+            Count.make().label('Rows'),
+          ]),
+        ])
+        .defaultGroup('status')
+        .records(async () => [
+          { amount: 50,  status: 'draft' },
+          { amount: 75,  status: 'draft' },
+          { amount: 200, status: 'published' },
+        ])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const groupSummaries = meta['groupSummaries'] as
+        Record<string, Record<string, Array<{ kind: string; value: string; label?: string }>>>
+      assert.equal(groupSummaries['draft']!['amount']![0]!.value,     '125')
+      assert.equal(groupSummaries['draft']!['amount']![0]!.label,     'Total')
+      assert.equal(groupSummaries['draft']!['amount']![1]!.value,     '2')
+      assert.equal(groupSummaries['published']!['amount']![0]!.value, '200')
+      assert.equal(groupSummaries['published']!['amount']![1]!.value, '1')
+    })
+
+    it('per-group summaries: omits the meta key entirely when grouping is OFF', async () => {
+      const t = Table.make<{ amount: number }>()
+        .columns([Column.make('amount').summarize([Sum.make()])])
+        .records(async () => [{ amount: 50 }, { amount: 75 }])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      // Global summary still computes; per-group is absent.
+      assert.equal((meta['summaries'] as Record<string, unknown>)['amount'] !== undefined, true)
+      assert.equal(meta['groupSummaries'], undefined)
+    })
+
+    it('per-group summaries: omits when no column has summarizers', async () => {
+      const t = Table.make<{ status: string }>()
+        .columns([Column.make('status')])
+        .defaultGroup('status')
+        .records(async () => [{ status: 'draft' }])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['groupSummaries'], undefined)
+    })
+
+    it('per-group summaries: ?group= override (clears grouping) → no group summaries', async () => {
+      const t = Table.make<{ amount: number; status: string }>()
+        .columns([Column.make('amount').summarize([Sum.make()])])
+        .defaultGroup('status')
+        .records(async () => [
+          { amount: 50,  status: 'draft' },
+          { amount: 75,  status: 'published' },
+        ])
+
+      await loadTableRecords([t], { group: '' })
+      const meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['groupSummaries'], undefined)
+      // Global summary still computes.
+      assert.equal((meta['summaries'] as Record<string, Array<{ value: string }>>)['amount']![0]!.value, '125')
+    })
+
+    it('per-group summaries: empty-group bucket gets its own row when present', async () => {
+      const t = Table.make<{ amount: number; status: string | null }>()
+        .columns([Column.make('amount').summarize([Sum.make()])])
+        .defaultGroup('status')
+        .records(async () => [
+          { amount: 50,  status: 'draft' },
+          { amount: 25,  status: null   },
+        ])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const groupSummaries = meta['groupSummaries'] as
+        Record<string, Record<string, Array<{ value: string }>>>
+      assert.equal(groupSummaries['draft']!['amount']![0]!.value, '50')
+      assert.equal(groupSummaries['']!     ['amount']![0]!.value, '25')
+    })
+
     it('toMeta emits groups[] for the renderer dropdown', async () => {
       const t = Table.make()
         .columns([Column.make('status'), Column.make('author')])

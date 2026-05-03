@@ -12,6 +12,14 @@ per-row `_groupTitle / _groupDescription` stamping + date bucketing +
 collapsible heading rows with localStorage persistence + group selector
 dropdown all landed in a single pass. Tests 1608 → 1644 (+36).
 
+**Follow-up (2026-05-03 cont'd):** per-group summarizers. When an active
+group is set AND at least one column has `summarize([…])`, the dispatcher
+also computes summaries within each group bucket and stamps
+`TableMeta.groupSummaries: Record<groupValue, Record<colName, SummaryResult[]>>`.
+Renderer emits an inline summary row at the END of each group band,
+aligned to the same columns as the global `<tfoot>` and suppressed when
+the group is collapsed. Tests 1644 → 1649 (+5).
+
 **Companion:** the bare-column form (`Table.defaultGroup('col')`)
 remains supported — it's a one-liner alias for the new richer API and
 keeps the existing wire shape intact when the rich form isn't used.
@@ -276,8 +284,6 @@ Estimate: +25-30 tests.
 - **Manual group ordering** — `orderQueryUsing((q, dir) => q)`. Today
   groups appear in insertion order from the row data; v2 can let users
   pin "draft" before "published".
-- **Per-group summarizers** — sum / count within each group's footer
-  row.
 - **`scopeQueryByKey()`** — clicking a group name to navigate to a
   filtered view of just that group.
 - **Group counts in the dropdown** — `"Status (3)"`. Needs a separate
