@@ -131,6 +131,22 @@ export { Icon, type IconColor } from './schema/Icon.js'
 export { Markdown, type MarkdownProseSize } from './schema/Markdown.js'
 export { Html } from './schema/Html.js'
 
+// Plan #16 — read-only entry primitives for `Resource.detail()`.
+export {
+  Entry,
+  isEntry,
+  type EntryMeta,
+  type EntryFormat,
+  type EntryFormatStateHandler,
+  type EntryWeight,
+  type EntryColor,
+  type EntrySize,
+} from './entries/Entry.js'
+export { TextEntry } from './entries/TextEntry.js'
+export { BadgeEntry } from './entries/BadgeEntry.js'
+export { IconEntry, type IconEntryOption } from './entries/IconEntry.js'
+export { ImageEntry, type ImageEntryShape } from './entries/ImageEntry.js'
+
 // Plan #15 — server-data widget elements
 export {
   ServerDataElement,

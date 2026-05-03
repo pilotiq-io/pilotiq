@@ -15,6 +15,7 @@ import { Action, type ActionMeta, type ActionVisibilityContext } from '../action
 import { ActionGroup } from '../actions/ActionGroup.js'
 import { Filter } from '../filters/Filter.js'
 import { isServerDataElement, stampServerDataMeta } from './ServerDataElement.js'
+import { Entry } from '../entries/Entry.js'
 
 export interface SchemaContext {
   user?: { name?: string; email?: string; [key: string]: unknown }
@@ -223,9 +224,12 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
   // SelectField with a resolver-style `options(fn)` may be async.
   // Filters receive ctx too so subclasses like FormFilter can resolve
   // their inner form schemas with the same render context (e.g. the
-  // active user, for option resolvers inside a filter form).
+  // active user, for option resolvers inside a filter form). Entries
+  // (Plan #16) need ctx.record to resolve their state value.
   const meta = await Promise.resolve(
-    el instanceof Field || el instanceof Filter ? el.toMeta(ctx) : el.toMeta(),
+    el instanceof Field || el instanceof Filter || el instanceof Entry
+      ? el.toMeta(ctx)
+      : el.toMeta(),
   ) as ElementMeta
   meta.type = type // ensure type is always set, even if toMeta forgot
 

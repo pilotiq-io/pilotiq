@@ -139,7 +139,7 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 | ✅ "Create & create another" submit DONE | 2 | Shipped 2026-05-03 — secondary outlined submit on `CreatePage` posts `_continueCreate=1`; create POST routes redirect back to `/create` and JSON includes `force:true` so SPA-nav remounts a fresh form on the same URL. |
 | `getHeaderActions` on EditPage (delete/view/replicate buttons in header) | 1 | Already supported via override; document. |
 | Wizard creation (`HasWizard` trait equivalent) | 2 | Tied to Plan #8 (Wizard layout). |
-| `infolist()` distinction on ViewPage (entries vs disabled form) | 2 | Currently `Resource.detail()` returns Elements; need entry components (= primes-as-display, see Schemas section). |
+| ✅ `infolist()` distinction on ViewPage (entries vs disabled form) DONE | 2 | Shipped 2026-05-04 — Plan #16 `infolist-entries.md`. New `src/entries/` directory: `Entry` base + `TextEntry / BadgeEntry / IconEntry / ImageEntry` leaves. Record-bound state via `ctx.record[name]` resolution at meta-build; `formatStateUsing` server-side; built-in formatter chain mirrors `Column`. Plays inside the existing layout primitives — entries inherit `Element.visible / columnSpan`. Demo: `PostResource.detail()` in playground-pilotiq. |
 
 ### 6. Schemas / Layouts (`schema/`)
 
@@ -173,7 +173,7 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 | `UnorderedList` | 2 | |
 | ✅ `Text` formatting: `color`, `size`, `weight`, `badge` DONE | 1 | Shipped 2026-05-03 cont'd — `.color() / .size() / .weight() / .badge() / .badgeColor()`; bare `Text.make()` keeps the prior `text-sm text-muted-foreground` defaults. `font` deferred — no consumer ask. |
 | ✅ Markdown / HTML rendering DONE | 2 | Shipped 2026-05-03 cont'd — `Markdown.make(source).gfm().breaks().prose().size('sm'\|'base'\|'lg')` server-renders via `marked`; `Html.make(html).prose().size()` passes raw strings through. Both wrap in a `prose` Tailwind Typography container by default. Admin-trusted; no sanitizer in v1 (matches `MarkdownField` posture). |
-| **Infolist entries** distinct from primes (label-value pairs) | 2 | Some frameworks treat `TextEntry`/`ImageEntry` as a different category from primes. We could collapse both into our primes since the distinction is mostly template-driven elsewhere. |
+| ✅ **Infolist entries** distinct from primes (label-value pairs) DONE | 2 | Shipped 2026-05-04 — same Plan #16 row above. Decision was to keep entries as a sibling hierarchy (`src/entries/`), NOT collapse into primes: entries are record-bound (resolve `ctx.record[name]` at meta-build), primes carry static content. The two now compose freely inside the same layout primitives. |
 
 ### 8. Forms / Fields (`fields/`)
 

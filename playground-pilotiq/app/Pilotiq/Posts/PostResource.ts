@@ -3,8 +3,10 @@ import {
   TextInputColumn, SelectColumn,
   TextField, MarkdownField, SelectField,
   TernaryFilter, DateRangeFilter,
+  TextEntry, BadgeEntry, IconEntry,
+  Section, Grid,
   minLength,
-  type Form, type Table,
+  type Form, type Table, type Element,
 } from '@pilotiq/pilotiq'
 import { Post } from '../../Models/Post.js'
 import { PostsCommentsManager } from './relations/CommentsManager.js'
@@ -119,6 +121,38 @@ export class PostResource extends Resource {
       // `(sort, asc)` so the visible order matches the persisted column
       // and drag is enabled out of the box.
       .paginate(10)
+  }
+
+  /** Plan #16 demo — read-only infolist entries on the ViewPage. Sibling
+   *  hierarchy to fields: each entry resolves its value from the loaded
+   *  record at meta-build time, runs through built-in formatters
+   *  (`since / dateTime / money / numeric / limit`) or a custom
+   *  `formatStateUsing`, and renders inside the same layout primitives
+   *  forms use (`Section`, `Grid`). Distinct from a "disabled form" — no
+   *  inputs, no submit, no validators. */
+  static override detail(_record: unknown): Element[] {
+    return [
+      Section.make('Overview').schema([
+        Grid.make().columns(2).schema([
+          TextEntry.make('title').size('lg').weight('semibold'),
+          BadgeEntry.make('status').colors({ draft: 'gray', published: 'success' }),
+        ]),
+      ]),
+      Section.make('Details').schema([
+        Grid.make().columns(2).schema([
+          TextEntry.make('authorId').label('Author').inlineLabel().copyable('Copy author id'),
+          TextEntry.make('createdAt').label('Created').since().tooltip('Server timestamp'),
+          TextEntry.make('updatedAt').label('Updated').dateTime(),
+          IconEntry.make('status').label('Live?').options({
+            published: { icon: 'check-circle', color: 'success', label: 'Live'  },
+            draft:     { icon: 'x-circle',     color: 'warning', label: 'Draft' },
+          }),
+        ]),
+      ]),
+      Section.make('Body').schema([
+        TextEntry.make('body').wrap().lineClamp(8).default('No body yet.'),
+      ]),
+    ]
   }
 
   /** Polymorphic follow-up — Comments tab on the post's edit/view page,

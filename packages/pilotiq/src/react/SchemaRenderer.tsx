@@ -64,7 +64,7 @@ import {
 import {
   CalendarIcon, FilterIcon, MoreHorizontalIcon,
   CircleIcon, InboxIcon, GripVerticalIcon,
-  ChevronDownIcon,
+  ChevronDownIcon, CopyIcon, CheckIcon,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { useNavigate, type NavigateFn } from './navigate.js'
@@ -1919,6 +1919,223 @@ function renderText(el: ElementMeta, index: number): React.ReactNode {
   )
 }
 
+/**
+ * Plan #16 — read-only label-value pair for `Resource.detail()` schemas.
+ * Dispatches on `meta.entryType` (`'text' | 'badge' | 'icon' | 'image'`).
+ * Wraps the rendered value in `<EntryShell>` for the shared chrome
+ * (label / helperText / tooltip / copyable trigger).
+ */
+function renderEntry(el: ElementMeta, index: number): React.ReactNode {
+  const entryType = String(el['entryType'] ?? 'text')
+  const value     = el['value']
+  const fallback  = el['default'] ? String(el['default']) : '—'
+
+  let body: React.ReactNode
+  switch (entryType) {
+    case 'text': {
+      const formatted = el['_formatted'] !== undefined
+        ? String(el['_formatted'])
+        : (el['format']
+            ? applyColumnFormat(value, el['format'] as { kind: string; [k: string]: unknown })
+            : (value === null || value === undefined || value === '' ? '' : String(value)))
+
+      const display = formatted === '' ? fallback : formatted
+      const isFallback = formatted === ''
+      const sizeKey   = el['size']   ? String(el['size'])   : 'sm'
+      const colorKey  = el['color']  ? String(el['color'])  : (isFallback ? 'muted' : 'default')
+      const weightKey = el['weight'] ? String(el['weight']) : 'normal'
+      const sizeCls   = TEXT_SIZE_CLASSES[sizeKey]     ?? 'text-sm'
+      const colorCls  = TEXT_COLOR_CLASSES[colorKey]   ?? ''
+      const weightCls = TEXT_WEIGHT_CLASSES[weightKey] ?? ''
+      const lineClamp = el['lineClamp'] as number | undefined
+      const wrap      = el['wrap'] === true
+
+      const style: React.CSSProperties = {}
+      if (lineClamp !== undefined) {
+        style.display = '-webkit-box'
+        style.WebkitLineClamp = lineClamp
+        ;(style as { WebkitBoxOrient?: string }).WebkitBoxOrient = 'vertical'
+        style.overflow = 'hidden'
+      }
+      const wrapCls = wrap ? 'whitespace-pre-wrap' : (lineClamp !== undefined ? '' : 'whitespace-nowrap')
+
+      body = (
+        <span className={`${sizeCls} ${colorCls} ${weightCls} ${wrapCls}`.trim()} style={style}>
+          {display}
+        </span>
+      )
+      break
+    }
+
+    case 'badge': {
+      const isBlank = value === null || value === undefined || value === ''
+      if (isBlank) {
+        body = <span className="text-sm text-muted-foreground">{fallback}</span>
+        break
+      }
+      const map = (el['colors'] as Record<string, string> | undefined) ?? {}
+      const colorKey = map[String(value)] ?? 'gray'
+      const cls = BADGE_COLOR_CLASSES[colorKey] ?? BADGE_COLOR_CLASSES['gray']
+      body = (
+        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
+          {String(value)}
+        </span>
+      )
+      break
+    }
+
+    case 'icon': {
+      const isBlank = value === null || value === undefined || value === ''
+      const map = (el['options'] as Record<string, { icon: string; color?: string; label?: string }> | undefined) ?? {}
+      const opt = isBlank ? undefined : map[String(value)]
+      if (!opt) {
+        body = <span className="text-sm text-muted-foreground">{fallback}</span>
+        break
+      }
+      const Icon = resolveIcon(opt.icon) ?? CircleIcon
+      const colorClass = opt.color ? (COLUMN_COLOR_CLASSES[opt.color] ?? '') : ''
+      const ariaLabel  = opt.label ?? String(value)
+      body = <Icon className={`inline size-5 ${colorClass}`.trim()} aria-label={ariaLabel} />
+      break
+    }
+
+    case 'image': {
+      const isBlank = value === null || value === undefined || value === ''
+      if (isBlank) {
+        body = <span className="text-sm text-muted-foreground">{fallback}</span>
+        break
+      }
+      const url    = String(value)
+      const width  = (el['imageWidth']  as number | undefined) ?? (el['imageSize'] as number | undefined) ?? 64
+      const height = (el['imageHeight'] as number | undefined) ?? (el['imageSize'] as number | undefined) ?? 64
+      const shape  = String(el['imageShape'] ?? 'rounded')
+      const shapeCls = shape === 'circle' ? 'rounded-full' : shape === 'square' ? '' : 'rounded-md'
+      body = (
+        <img
+          src={url}
+          alt=""
+          width={width}
+          height={height}
+          className={`inline-block object-cover ${shapeCls}`.trim()}
+        />
+      )
+      break
+    }
+
+    default:
+      body = <span className="text-sm text-muted-foreground">{fallback}</span>
+  }
+
+  const copyable = el['copyable'] as { label?: string } | undefined
+  const copyValue = el['_formatted'] !== undefined
+    ? String(el['_formatted'])
+    : value === null || value === undefined ? '' : String(value)
+
+  return (
+    <EntryShell
+      key={index}
+      el={el}
+      copyValue={copyable !== undefined ? copyValue : undefined}
+      copyableLabel={copyable?.label}
+    >
+      {body}
+    </EntryShell>
+  )
+}
+
+interface EntryShellProps {
+  el:             ElementMeta
+  copyValue?:     string | undefined
+  copyableLabel?: string | undefined
+  children:       React.ReactNode
+}
+
+function EntryShell({ el, copyValue, copyableLabel, children }: EntryShellProps): React.ReactNode {
+  const label       = String(el['label'] ?? '')
+  const helperText  = el['helperText'] ? String(el['helperText']) : undefined
+  const tooltipText = el['tooltip']    ? String(el['tooltip'])    : undefined
+  const inline      = el['inlineLabel'] === true
+
+  const labelNode = label ? (
+    <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+      <span>{label}</span>
+      {tooltipText && <EntryTooltip text={tooltipText} />}
+    </div>
+  ) : null
+
+  const valueRow = (
+    <div className="flex items-center gap-2">
+      {children}
+      {copyValue !== undefined && (
+        <EntryCopyButton text={copyValue} label={copyableLabel ?? 'Copy'} />
+      )}
+    </div>
+  )
+
+  if (inline) {
+    return (
+      <div className="flex items-baseline gap-3">
+        {labelNode && <div className="min-w-32">{labelNode}</div>}
+        <div className="min-w-0 flex-1">
+          {valueRow}
+          {helperText && <p className="mt-1 text-xs text-muted-foreground">{helperText}</p>}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      {labelNode}
+      {valueRow}
+      {helperText && <p className="text-xs text-muted-foreground">{helperText}</p>}
+    </div>
+  )
+}
+
+function EntryTooltip({ text }: { text: string }): React.ReactNode {
+  const trigger = (
+    <button
+      type="button"
+      className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border text-[10px] text-muted-foreground"
+      aria-label={text}
+    >
+      ?
+    </button>
+  )
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger render={() => trigger} />
+        <TooltipContent>{text}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+function EntryCopyButton({ text, label }: { text: string; label: string }): React.ReactNode {
+  const [copied, setCopied] = useState(false)
+  const handleClick = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      }).catch(() => { /* ignore — older browser / permission denied */ })
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      aria-label={label}
+      title={label}
+      className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+    >
+      {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+    </button>
+  )
+}
+
 function renderElement(el: ElementMeta, index: number): React.ReactNode {
   switch (el.type) {
     case 'text':
@@ -2148,6 +2365,9 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
 
     case 'field':
       return renderField(el, index)
+
+    case 'entry':
+      return renderEntry(el, index)
 
     case 'action':
       return renderAction(el, index)

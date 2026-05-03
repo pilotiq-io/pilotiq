@@ -75,6 +75,48 @@ describe('defaultViewPage', () => {
     const types = elements.map(e => e.getType())
     assert.deepEqual(types, ['heading', 'section'])
   })
+
+  it('Resource.detail() may return Plan #16 entries — they reach the resolver record-aware', async () => {
+    const { TextEntry }  = await import('./entries/TextEntry.js')
+    const { BadgeEntry } = await import('./entries/BadgeEntry.js')
+    const { resolveSchema } = await import('./schema/resolveSchema.js')
+
+    class Post extends Resource {
+      static override label         = 'Posts'
+      static override labelSingular = 'Post'
+      static override slug          = 'posts'
+
+      static override form(form: Form): Form {
+        return form
+          .schema([TextField.make('title')])
+          .loadRecord(async (id) => ({ id, title: `Post ${id}`, status: 'published' }))
+      }
+
+      static override detail(_record: unknown): Element[] {
+        return [
+          TextEntry.make('title').weight('semibold'),
+          BadgeEntry.make('status').colors({ draft: 'gray', published: 'success' }),
+        ]
+      }
+    }
+
+    const ViewPost  = defaultViewPage(Post)
+    const elements  = await Promise.resolve(ViewPost.schema({ recordId: '42', basePath: '' }))
+    const record    = await Post.form(Form.make()).getLoadRecord()!('42', { values: {} })
+    const resolved  = await resolveSchema(elements, { record })
+
+    const titleEntry  = resolved.find(m => m['name'] === 'title')!
+    const statusEntry = resolved.find(m => m['name'] === 'status')!
+
+    assert.equal(titleEntry.type,             'entry')
+    assert.equal(titleEntry['entryType'],     'text')
+    assert.equal(titleEntry['value'],         'Post 42')
+    assert.equal(titleEntry['weight'],        'semibold')
+    assert.equal(statusEntry.type,            'entry')
+    assert.equal(statusEntry['entryType'],    'badge')
+    assert.equal(statusEntry['value'],        'published')
+    assert.deepEqual(statusEntry['colors'],   { draft: 'gray', published: 'success' })
+  })
 })
 
 describe('Resource.resolvePages — view key', () => {
