@@ -57,15 +57,16 @@ model Post {
 
 // M2M demo — Article <-> Tag with an explicit pivot. Mirrored from
 // playground-pilotiq to keep the hoisted @prisma/client in sync; panels
-// playground doesn't actually use Tag.
+// playground doesn't actually use Tag. Pivot is a pure data container —
+// no Prisma `@relation` decorators because rudder ORM writes rows
+// through raw queries, not relation cascades.
 model Tag {
-  id        String      @id @default(cuid())
-  name      String      @unique
-  slug      String      @unique
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
   color     String?
-  articles  ArticleTag[]
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model ArticleTag {

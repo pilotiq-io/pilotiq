@@ -56,16 +56,16 @@ model Post {
 
 // Many-to-many — Article <-> Tag, via an *explicit* pivot table.
 // rudder ORM's `belongsToMany` accessor writes pivot rows directly
-// (no Prisma `@relation` cascade), so the implicit `_ArticleToTag`
-// shape would not work — we model the join as its own table.
+// through raw queries (`insertMany` / `deleteAll`), so neither Tag
+// nor Article needs a Prisma `@relation` array — the pivot table is
+// a pure data container, not part of Prisma's relation graph.
 model Tag {
-  id        String      @id @default(cuid())
-  name      String      @unique
-  slug      String      @unique
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
   color     String?
-  articles  ArticleTag[]
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model ArticleTag {
