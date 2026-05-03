@@ -122,10 +122,12 @@ export {
 } from './schema/resolveSchema.js'
 
 // Display elements
-export { Text } from './schema/Text.js'
+export { Text, type TextColor, type TextSize, type TextWeight } from './schema/Text.js'
 export { Heading } from './schema/Heading.js'
 export { Alert, type AlertType } from './schema/Alert.js'
 export { Divider } from './schema/Divider.js'
+export { Image, type ImageShape } from './schema/Image.js'
+export { Icon, type IconColor } from './schema/Icon.js'
 
 // Plan #15 — server-data widget elements
 export {

@@ -92,7 +92,7 @@ import { getWidgetRenderer } from './widgetRegistry.js'
  * `undefined` when the name isn't registered — callers fall back to
  * their own default. Pilotiq's own chrome (this file's hardcoded
  * imports) never depends on the registry. */
-type IconCmp = ComponentType<{ className?: string; 'aria-hidden'?: boolean | 'true' | 'false'; 'aria-label'?: string }>
+type IconCmp = ComponentType<{ className?: string; style?: React.CSSProperties; 'aria-hidden'?: boolean | 'true' | 'false'; 'aria-label'?: string }>
 function resolveIcon(name: string | undefined): IconCmp | undefined {
   if (!name) return undefined
   return getIcon(name) as IconCmp | undefined
@@ -1863,14 +1863,103 @@ function WizardRenderer({ el, index }: {
 
 // ─── Top-level dispatch ─────────────────────────────────────
 
+const TEXT_COLOR_CLASSES: Record<string, string> = {
+  default:     '',
+  muted:       'text-muted-foreground',
+  primary:     'text-primary',
+  destructive: 'text-destructive',
+  success:     'text-emerald-600 dark:text-emerald-400',
+  warning:     'text-amber-600 dark:text-amber-400',
+  info:        'text-blue-600 dark:text-blue-400',
+}
+
+const TEXT_SIZE_CLASSES: Record<string, string> = {
+  xs:   'text-xs',
+  sm:   'text-sm',
+  base: 'text-base',
+  lg:   'text-lg',
+  xl:   'text-xl',
+}
+
+const TEXT_WEIGHT_CLASSES: Record<string, string> = {
+  normal:   'font-normal',
+  medium:   'font-medium',
+  semibold: 'font-semibold',
+  bold:     'font-bold',
+}
+
+function renderText(el: ElementMeta, index: number): React.ReactNode {
+  const content = String(el['content'] ?? '')
+  const color   = el['color']  ? String(el['color'])  : undefined
+  const size    = el['size']   ? String(el['size'])   : undefined
+  const weight  = el['weight'] ? String(el['weight']) : undefined
+  const isBadge = el['badge'] === true
+
+  if (isBadge) {
+    const badgeKey = el['badgeColor'] ? String(el['badgeColor']) : 'gray'
+    const cls      = BADGE_COLOR_CLASSES[badgeKey] ?? BADGE_COLOR_CLASSES['gray']
+    return (
+      <span
+        key={index}
+        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}
+      >
+        {content}
+      </span>
+    )
+  }
+
+  // Defaults match the previous bare `<p>` for back-compat: text-sm + muted.
+  const sizeCls   = size   ? (TEXT_SIZE_CLASSES[size]     ?? '') : 'text-sm'
+  const colorCls  = color  ? (TEXT_COLOR_CLASSES[color]   ?? '') : 'text-muted-foreground'
+  const weightCls = weight ? (TEXT_WEIGHT_CLASSES[weight] ?? '') : ''
+  return (
+    <p key={index} className={`${sizeCls} ${colorCls} ${weightCls}`.trim()}>
+      {content}
+    </p>
+  )
+}
+
 function renderElement(el: ElementMeta, index: number): React.ReactNode {
   switch (el.type) {
     case 'text':
+      return renderText(el, index)
+
+    case 'image': {
+      const url    = String(el['url'] ?? '')
+      const alt    = String(el['alt'] ?? '')
+      const width  = el['width']  as number | undefined
+      const height = el['height'] as number | undefined
+      const shape  = String(el['shape'] ?? 'square')
+      const shapeCls = shape === 'circle' ? 'rounded-full' : shape === 'rounded' ? 'rounded-md' : ''
       return (
-        <p key={index} className="text-sm text-muted-foreground">
-          {String(el['content'] ?? '')}
-        </p>
+        <img
+          key={index}
+          src={url}
+          alt={alt}
+          {...(width  !== undefined ? { width }  : {})}
+          {...(height !== undefined ? { height } : {})}
+          className={`inline-block object-cover ${shapeCls}`}
+        />
       )
+    }
+
+    case 'icon': {
+      const name  = el['name'] ? String(el['name']) : undefined
+      const size  = (el['size'] as number | undefined) ?? 16
+      const color = String(el['color'] ?? 'default')
+      const label = el['label'] ? String(el['label']) : undefined
+      const Cmp = resolveIcon(name)
+      if (!Cmp) return null
+      const colorClass = COLUMN_COLOR_CLASSES[color] ?? ''
+      return (
+        <Cmp
+          key={index}
+          className={`inline ${colorClass}`}
+          {...(label ? { 'aria-label': label } : { 'aria-hidden': true })}
+          style={{ width: size, height: size }}
+        />
+      )
+    }
 
     case 'heading': {
       const level = (el['level'] as number) ?? 1

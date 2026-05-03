@@ -167,10 +167,10 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 
 | Feature | Tier | Notes |
 |---|---|---|
-| `Image::make` (display) | 1 | Trivial. |
-| `Icon::make` | 1 | Trivial — we already use Lucide. |
+| ✅ `Image::make` (display) DONE | 1 | Shipped 2026-05-03 cont'd — `Image.make(url).alt().width().height().size().rounded()|.circle()`. |
+| ✅ `Icon::make` DONE | 1 | Shipped 2026-05-03 cont'd — `Icon.make(registryName).size().color().label()`; resolves through the existing user-extensible icon registry (string-only; component-typed icons go through Resource/Page statics). |
 | `UnorderedList` | 2 | |
-| `Text` formatting: `color`, `size`, `weight`, `font`, `badge` | 1 | Polish on existing. |
+| ✅ `Text` formatting: `color`, `size`, `weight`, `badge` DONE | 1 | Shipped 2026-05-03 cont'd — `.color() / .size() / .weight() / .badge() / .badgeColor()`; bare `Text.make()` keeps the prior `text-sm text-muted-foreground` defaults. `font` deferred — no consumer ask. |
 | Markdown / HTML rendering | 2 | We have RichTextField for editing; need read-only display equivalent. |
 | **Infolist entries** distinct from primes (label-value pairs) | 2 | Some frameworks treat `TextEntry`/`ImageEntry` as a different category from primes. We could collapse both into our primes since the distinction is mostly template-driven elsewhere. |
 
