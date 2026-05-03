@@ -20,7 +20,8 @@ import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
-import { applyStateUpdate, findForms, findWizardStepFields, selectFormById } from './elements/dispatchForm.js'
+import { applyStateUpdate, findForms, findWizardStepFields, loadRelationRows, selectFormById } from './elements/dispatchForm.js'
+import { isRepeaterField, RepeaterField } from './fields/RepeaterField.js'
 import { validateSchema } from './validation/index.js'
 import { searchAllResources, type GlobalSearchResult } from './search.js'
 import { loadTableRecords, findTables, type QueryParams } from './elements/dispatchTable.js'
@@ -465,6 +466,114 @@ export async function applyFillPipeline<R>(
   return values
 }
 
+/**
+ * Walk the form's top-level Repeaters and replace `values[fieldName]`
+ * with rows fetched from `parent.related(name)` for any
+ * relationship-backed Repeater. Each loaded row stamps `__id` to the
+ * child's primary key so the renderer can round-trip identity through
+ * a hidden input and the save-side diff can match submitted rows back
+ * to existing records.
+ *
+ * No-op when the parent record is null (create mode), when no
+ * relationship-backed Repeaters exist on the form, or when the
+ * resource has no `R.model` (relation queries need it).
+ *
+ * Mutates and returns a fresh values object — never the input.
+ */
+export async function applyRelationshipRepeaterFill(
+  form:        Form,
+  values:      Record<string, unknown>,
+  record:      unknown,
+  parentModel: ModelLike | undefined,
+): Promise<Record<string, unknown>> {
+  if (record == null) return values
+  if (!parentModel)  return values
+  const repeaters = findRelationshipRepeaters(form.getChildren() ?? [])
+  if (repeaters.length === 0) return values
+
+  const out: Record<string, unknown> = { ...values }
+  for (const repeater of repeaters) {
+    const cfg = repeater.getRelationship()!
+    let rows: unknown[]
+    try {
+      rows = await loadRelationRows(parentModel, record, cfg.name)
+    } catch {
+      // Failed lookup (e.g. missing `relations` map on a test stub)
+      // — fall back to whatever value applyFillPipeline produced
+      // rather than wiping the field. Better to render stale data
+      // than to silently empty the row list.
+      continue
+    }
+
+    // The child model is opaque here — we don't have the full
+    // descriptor at this seam, so use the configured override or
+    // peek the parent's relations map for the FK column. Strip it
+    // (and the PK) from each row's payload so the inner schema
+    // doesn't surface them as form values.
+    const pkColumn = pickChildPrimaryKey(parentModel, cfg.name) ?? 'id'
+    const fkColumn = cfg.foreignKey ?? pickChildForeignKey(parentModel, cfg.name)
+
+    out[repeater.name] = rows.map(row => {
+      const r = (row && typeof row === 'object') ? { ...(row as Record<string, unknown>) } : {}
+      const pkValue = r[pkColumn]
+      delete r[pkColumn]
+      if (fkColumn) delete r[fkColumn]
+      const stamped: Record<string, unknown> = { ...r }
+      if (pkValue !== undefined && pkValue !== null) {
+        stamped['__id'] = String(pkValue)
+      }
+      return stamped
+    })
+  }
+  return out
+}
+
+/** Walk the form's children for top-level relationship-backed Repeaters. */
+function findRelationshipRepeaters(elements: ReadonlyArray<Element>): RepeaterField[] {
+  const out: RepeaterField[] = []
+  const walk = (els: ReadonlyArray<Element>): void => {
+    for (const el of els) {
+      if (isRepeaterField(el)) {
+        const r = el as RepeaterField
+        if (r.getRelationship()) out.push(r)
+        // Don't dive into Repeater children — relationship-on-relationship
+        // isn't supported in v1.
+        continue
+      }
+      const children = el.getChildren()
+      if (children && children.length > 0) walk(children)
+    }
+  }
+  walk(elements)
+  return out
+}
+
+/** Read the child model's PK column from the parent's relations map, when present. */
+function pickChildPrimaryKey(parentModel: ModelLike, name: string): string | undefined {
+  const relations = (parentModel as unknown as Record<string, unknown>)['relations']
+  if (!relations || typeof relations !== 'object') return undefined
+  const entry = (relations as Record<string, unknown>)[name]
+  if (!entry || typeof entry !== 'object') return undefined
+  const e = entry as Record<string, unknown>
+  if (typeof e['model'] !== 'function') return undefined
+  try {
+    const child = (e['model'] as () => ModelLike)()
+    return getPrimaryKey(child)
+  } catch {
+    return undefined
+  }
+}
+
+/** Read the FK column from the parent's relations map, when present. */
+function pickChildForeignKey(parentModel: ModelLike, name: string): string | undefined {
+  const relations = (parentModel as unknown as Record<string, unknown>)['relations']
+  if (!relations || typeof relations !== 'object') return undefined
+  const entry = (relations as Record<string, unknown>)[name]
+  if (!entry || typeof entry !== 'object') return undefined
+  const e = entry as Record<string, unknown>
+  return typeof e['foreignKey'] === 'string' ? (e['foreignKey'] as string) : undefined
+}
+
 /** Stamp dispatchUrl on every handler-style Action so the client knows where to POST. */
 export function tagActionDispatch(elements: ReadonlyArray<Element>, baseUrl: string): void {
   for (const action of findActions(elements)) {
@@ -707,7 +816,8 @@ export async function resourceEditData(
     }
     if (!prefill?.values && record != null) {
       const values = await applyFillPipeline(form, record)
-      form.withValues(values)
+      const withRelations = await applyRelationshipRepeaterFill(form, values, record, R.model)
+      form.withValues(withRelations)
     } else if (prefill?.values) {
       form.withValues(prefill.values)
     }

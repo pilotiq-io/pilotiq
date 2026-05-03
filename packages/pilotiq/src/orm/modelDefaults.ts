@@ -188,6 +188,55 @@ export function modelTableRecords(M: ModelLike, table: Table): TableRecordsHandl
   }
 }
 
+// ─── Repeater.relationship — parent relation descriptor ──────
+
+/**
+ * Structural shape of a single entry in the parent model's
+ * `static relations` map (rudder ORM convention). The `model` thunk
+ * defers child-class resolution to call time so circular imports
+ * between sibling models still work.
+ *
+ * Pilotiq doesn't import this from `@rudderjs/orm` — keeping the
+ * shape duck-typed lets users stub a relations map for tests without
+ * pulling in the full ORM.
+ */
+export interface ParentRelationDescriptor {
+  /** Relation type. v1 of `Repeater.relationship` only handles `'hasMany'`. */
+  type:        string
+  /** Thunk returning the child model class (a `ModelLike`). */
+  model:       () => ModelLike
+  /** FK column on the child pointing back at the parent. */
+  foreignKey:  string
+}
+
+/**
+ * Read a single entry off a parent model's `static relations` map.
+ * Returns `undefined` when the map is missing, the named relation is
+ * absent, or the entry doesn't have the required `model` thunk +
+ * `foreignKey` string. Callers (e.g. `Repeater.relationship`'s save
+ * pipeline) throw a clear error from outside to surface configuration
+ * problems eagerly.
+ */
+export function getParentRelationDescriptor(
+  parentModel: ModelLike,
+  name:        string,
+): ParentRelationDescriptor | undefined {
+  const relations = (parentModel as unknown as Record<string, unknown>)['relations']
+  if (!relations || typeof relations !== 'object') return undefined
+  const entry = (relations as Record<string, unknown>)[name]
+  if (!entry || typeof entry !== 'object') return undefined
+  const e = entry as Record<string, unknown>
+  if (typeof e['foreignKey'] !== 'string') return undefined
+  if (typeof e['model']      !== 'function') return undefined
+  // `type` defaults to 'hasMany' when missing — keeps test stubs lean.
+  const type = typeof e['type'] === 'string' ? (e['type'] as string) : 'hasMany'
+  return {
+    type,
+    model:      e['model'] as () => ModelLike,
+    foreignKey: e['foreignKey'] as string,
+  }
+}
+
 // ─── Plan #11: relation helpers ────────────────────────────
 
 /** Minimal shape we need on a parent record to resolve a relation under

@@ -227,6 +227,69 @@ describe('RepeaterField', () => {
       )
     })
 
+    it('relationship() — string form stores config; meta carries name only', () => {
+      const f = RepeaterField.make('items').relationship('items')
+      assert.deepEqual(f.getRelationship(), { name: 'items' })
+      assert.equal(f.isRelationship(), true)
+      // Wire shape: model + foreignKey stay server-only.
+      const meta = f.toMeta()
+      assert.deepEqual(meta.relationship, { name: 'items' })
+    })
+
+    it('relationship() — object form stores model + foreignKey + orderColumn but only name + orderColumn ship over the wire', () => {
+      const FakeModel = { find: () => Promise.resolve(null), create: () => Promise.resolve({}), update: () => Promise.resolve({}), delete: () => Promise.resolve(), query: () => ({}) } as unknown as Parameters<RepeaterField['relationship']>[0] extends string ? never : { model: unknown }
+      const f = RepeaterField.make('items').relationship({
+        name:        'items',
+        model:       FakeModel as never,
+        foreignKey:  'orderId',
+        orderColumn: 'sort',
+      })
+      assert.equal(f.getRelationship()!.name,        'items')
+      assert.equal(f.getRelationship()!.foreignKey,  'orderId')
+      assert.equal(f.getRelationship()!.orderColumn, 'sort')
+      const meta = f.toMeta()
+      // Only `name` and `orderColumn` cross the boundary.
+      assert.deepEqual(meta.relationship, { name: 'items', orderColumn: 'sort' })
+    })
+
+    it('relationship() emits no meta key when not configured', () => {
+      assert.equal('relationship' in RepeaterField.make('x').toMeta(), false)
+    })
+
+    it('orderColumn() requires relationship() first', () => {
+      assert.throws(
+        () => RepeaterField.make('x').orderColumn('sort'),
+        /relationship\(\) to be configured first/,
+      )
+    })
+
+    it('orderColumn() updates the existing relationship config', () => {
+      const f = RepeaterField.make('items').relationship('items').orderColumn('sort')
+      assert.equal(f.getRelationship()!.orderColumn, 'sort')
+      assert.deepEqual(f.toMeta().relationship, { name: 'items', orderColumn: 'sort' })
+    })
+
+    it('relationship() throws when simple() is already configured', () => {
+      assert.throws(
+        () => RepeaterField.make('x').simple(TextField.make('value')).relationship('xs'),
+        /incompatible with simple\(\)/,
+      )
+    })
+
+    it('simple() throws when relationship() is already configured', () => {
+      assert.throws(
+        () => RepeaterField.make('x').relationship('xs').simple(TextField.make('value')),
+        /incompatible with relationship\(\)/,
+      )
+    })
+
+    it('relationship() throws when dehydrated(false)', () => {
+      assert.throws(
+        () => RepeaterField.make('x').dehydrated(false).relationship('xs'),
+        /incompatible with dehydrated\(false\)/,
+      )
+    })
+
     it('itemLabel() stores the function (not on meta — evaluated per row in step 2)', () => {
       const fn = (row: Record<string, unknown>) => String(row['title'] ?? '')
       const f = RepeaterField.make('x').itemLabel(fn)

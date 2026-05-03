@@ -547,6 +547,105 @@ Pass `false` to clear (`.disableOptionsWhenSelectedInSiblingRepeaterItems(false)
 This does not also clear `distinct()` / `live()` — call those
 explicitly if you need them off too.
 
+## Relationship-backed rows — `relationship(name)`
+
+By default a `Repeater` stores its rows as a JSON array on a column of
+the parent record (`order.lineItems = [{ ... }, ...]`). For tightly
+coupled, parent-only data that's perfect — one column, one round-trip.
+But the moment the rows need to be queried independently, soft-deleted
+on their own, referenced by other models, or sorted with cursors, the
+JSON shape gets in the way. `relationship(name)` flips a `Repeater` to
+back its rows with a real `HasMany` relation: each row becomes a real
+child record, persisted via the child model.
+
+```ts
+PostResource.form(form) {
+  return form.schema([
+    TextField.make('title').required(),
+
+    Repeater.make('attachments')
+      .relationship('attachments')      // matches Post.relations.attachments
+      .schema([
+        TextField.make('label').required(),
+        TextField.make('url').required(),
+      ])
+      .reorderable()
+      .orderColumn('sort'),             // optional — writes 0-based index per row
+  ])
+}
+```
+
+The parent declares the relation in the rudder ORM convention:
+
+```ts
+class Post extends Model {
+  static override relations = {
+    attachments: { type: 'hasMany' as const, model: () => Attachment, foreignKey: 'postId' },
+  }
+}
+```
+
+That declaration is everything. The pilotiq pipeline does the rest:
+
+- **Load** — on the edit page, rows are fetched from
+  `parent.related('attachments')` instead of read off the parent
+  record. Each row's primary key is stamped onto `__id` so the
+  renderer can round-trip identity through a hidden input. The PK
+  and FK columns are stripped from the rendered row so the inner
+  schema doesn't accidentally surface them as form values.
+- **Save** — submitted rows are diffed against the existing related
+  rows by `__id`. New rows (no `__id` matching an existing PK) →
+  `Attachment.create({ ...row, postId: parentId })`. Matching rows →
+  `Attachment.update(__id, row)`. Existing rows missing from the
+  submitted set → `Attachment.delete(pk)`. The FK is **not**
+  overwritten on update (the existing row's FK is already correct,
+  and exposing it would let a tampered client re-link a child to a
+  different parent).
+- **Order** — when `orderColumn('sort')` is set, every create / update
+  payload stamps the row's 0-based index into that column. Reordering
+  via drag-and-drop simply rewrites the column on save.
+
+### Object form
+
+Pass an object instead of a string for explicit overrides — useful when
+the parent model doesn't follow the rudder convention or when you want
+to retarget the child model:
+
+```ts
+Repeater.make('attachments')
+  .relationship({
+    name:        'attachments',
+    model:       Attachment,
+    foreignKey:  'postId',
+    orderColumn: 'sort',
+  })
+```
+
+Each field defaults to the value discovered on the parent's `static
+relations` map; explicit settings win. The `model` and `foreignKey`
+keys are server-only — they never cross the wire.
+
+### Limitations and trade-offs
+
+- **`hasMany` only.** v1 doesn't support `belongsTo`, `hasOne`,
+  `belongsToMany`, or polymorphic relations. M2M / pivot is deferred
+  at the framework level alongside the `RelationManager`'s same gap.
+- **Mutually exclusive with `simple()` and `dehydrated(false)`.**
+  Flat `[v, v, ...]` storage can't round-trip through named child
+  columns; a `dehydrated(false)` field never persists, so combining
+  it with `relationship()` would silently drop every row.
+- **No transaction wrapper in v1.** If the parent saves but a child
+  create fails partway through the diff, the parent edit is committed
+  and the failure surfaces as a 500. A transactional wrapper is a
+  follow-up once the ORM lands a `transaction(fn)` primitive.
+- **Builder doesn't ship `relationship` yet.** Heterogeneous rows
+  need a polymorphic `type` column on the child plus per-block
+  dispatch — punted until someone asks.
+- **`mutateDataBeforeCreate` doesn't see relation rows.** They've
+  been extracted before any user-side mutator runs. Mutate the parent
+  data; the child rows go through the inner schema's own mutators on
+  the child model side.
+
 ## Limitations
 
 - **`itemHidden` doesn't re-evaluate on live updates.** Currently

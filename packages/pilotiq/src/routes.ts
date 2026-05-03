@@ -682,7 +682,11 @@ export function registerPilotiqRoutes(
           return res.send('No form found on page')
         }
 
-        const result = await dispatchFormSubmit(form, values, { values, basePath: base })
+        const result = await dispatchFormSubmit(form, values, {
+          values,
+          basePath: base,
+          ...(R.model ? { parentModel: R.model } : {}),
+        })
 
         if (!result.ok) {
           if (json) {
@@ -988,7 +992,12 @@ export function registerPilotiqRoutes(
         const result = await dispatchFormSubmit(
           form,
           values,
-          record !== undefined ? { values, record, basePath: base } : { values, basePath: base },
+          {
+            values,
+            basePath: base,
+            ...(record !== undefined ? { record } : {}),
+            ...(R.model ? { parentModel: R.model } : {}),
+          },
         )
 
         if (!result.ok) {

@@ -1,10 +1,17 @@
 import { Element } from '../schema/Element.js'
 import { Field, type AfterStateUpdatedContext } from '../fields/Field.js'
 import { RepeaterField, isRepeaterField } from '../fields/RepeaterField.js'
+import type { RepeaterRelationshipConfig } from '../fields/RepeaterField.js'
 import { BuilderField, isBuilderField } from '../fields/BuilderField.js'
 import { Form, type FormContext } from './Form.js'
 import { validateSchema, type ValidationErrors } from '../validation/index.js'
 import { resolveSavedNotification, type NotificationMeta } from '../notifications/index.js'
+import {
+  getParentRelationDescriptor,
+  getPrimaryKey,
+  resolveRelatedQuery,
+  type ModelLike,
+} from '../orm/modelDefaults.js'
 
 export interface DispatchSuccess<R> {
   ok:            true
@@ -83,6 +90,13 @@ export async function dispatchFormSubmit<R = unknown>(
   // transform runs. Non-simple repeaters are untouched.
   data = unwrapSimpleRepeaters(children as Element[], data)
 
+  // Pull relationship-backed Repeater values OUT of `data` so the
+  // parent's save handler doesn't try to write them as a JSON column.
+  // The deferral list holds the rows + the field reference; we run
+  // the create/update/delete diff against the relation AFTER the
+  // parent save returns (so we have a parent PK in create mode).
+  const relationshipDeferrals = extractRelationshipRepeaters(children as Element[], data)
+
   const mutate = form.getMutateData()
   if (mutate) data = await mutate(data, { ...ctx, values: data })
 
@@ -102,6 +116,22 @@ export async function dispatchFormSubmit<R = unknown>(
     )
   }
   const record = await persist(data, { ...ctx, values: data })
+
+  // Persist the relationship-backed Repeater diffs against the saved
+  // parent. Runs BEFORE `afterCreate / afterUpdate` so user hooks can
+  // observe the fully-saved tree (parent + children).
+  if (relationshipDeferrals.length > 0) {
+    const parentModel = (ctx as { parentModel?: ModelLike }).parentModel
+    if (!parentModel) {
+      throw new Error(
+        '[Pilotiq] Repeater.relationship: form has relationship-backed rows but no parentModel on the FormContext. ' +
+        'Routes that submit forms with relationship-backed Repeaters must set ctx.parentModel = R.model.',
+      )
+    }
+    for (const deferral of relationshipDeferrals) {
+      await persistRelationshipRows(record, deferral, parentModel)
+    }
+  }
 
   const modeAfter = isCreate ? form.getAfterCreate() : form.getAfterUpdate()
   if (modeAfter) await modeAfter(record, { ...ctx, record, values: data })
@@ -1226,4 +1256,182 @@ async function applyBuilderStateUpdate<R>(
   }
 
   return { values: coerced, dirty: Array.from(dirty) }
+}
+
+// ─── Repeater.relationship — extraction + persistence ────────
+
+interface RelationshipDeferral {
+  field: RepeaterField
+  rows:  Array<Record<string, unknown>>
+  cfg:   RepeaterRelationshipConfig
+}
+
+/**
+ * Walk the form's top-level Repeaters and extract values for any that
+ * have a `relationship(...)` config. Returns the deferral list and
+ * mutates `data` in place by deleting each extracted key — the parent's
+ * save handler doesn't need to see those values (they aren't real
+ * columns on the parent).
+ *
+ * Inner / nested Repeaters aren't supported in v1; we only walk the top
+ * level (consistent with the existing `walkRepeatersTopLevel` helper)
+ * so a relationship-backed Repeater nested inside a JSON-backed
+ * Repeater silently falls back to JSON storage. Documented as a
+ * v1 limitation in `docs/plans/repeater-relationship.md`.
+ */
+export function extractRelationshipRepeaters(
+  elements: Element[],
+  data:     Record<string, unknown>,
+): RelationshipDeferral[] {
+  const out: RelationshipDeferral[] = []
+  walkRepeatersTopLevel(elements, repeater => {
+    const cfg = repeater.getRelationship()
+    if (!cfg) return
+    const value = data[repeater.name]
+    delete data[repeater.name]
+    if (!Array.isArray(value)) return
+    out.push({
+      field: repeater,
+      rows:  value as Array<Record<string, unknown>>,
+      cfg,
+    })
+  })
+  return out
+}
+
+/**
+ * Resolve the child model for a relationship-backed Repeater. Prefers
+ * the user-supplied override on the field's config; falls back to the
+ * parent's `static relations[name].model()` thunk via
+ * `getParentRelationDescriptor`. Throws a clear configuration error
+ * when neither path resolves.
+ */
+function resolveChildModelAndFk(
+  parentModel: ModelLike,
+  cfg:         RepeaterRelationshipConfig,
+): { model: ModelLike; foreignKey: string; type: string } {
+  const descriptor = getParentRelationDescriptor(parentModel, cfg.name)
+  const model      = cfg.model ?? descriptor?.model()
+  const foreignKey = cfg.foreignKey ?? descriptor?.foreignKey
+  const type       = descriptor?.type ?? 'hasMany'
+
+  if (!model) {
+    throw new Error(
+      `[Pilotiq] Repeater.relationship("${cfg.name}"): could not resolve the child model. ` +
+      `Pass it explicitly via .relationship({ name, model: ChildModel }) or declare ` +
+      `the relation on the parent model's static relations map.`,
+    )
+  }
+  if (!foreignKey) {
+    throw new Error(
+      `[Pilotiq] Repeater.relationship("${cfg.name}"): could not resolve the foreign-key column. ` +
+      `Pass it explicitly via .relationship({ name, foreignKey: 'parentId' }) or declare ` +
+      `it on the parent model's static relations map.`,
+    )
+  }
+  if (type !== 'hasMany') {
+    throw new Error(
+      `[Pilotiq] Repeater.relationship("${cfg.name}"): only 'hasMany' is supported in v1 (got '${type}'). ` +
+      `belongsToMany / pivot / polymorphic relations are deferred.`,
+    )
+  }
+
+  return { model, foreignKey, type }
+}
+
+/**
+ * Diff submitted rows against the existing related rows and apply
+ * create / update / delete operations through the child model.
+ *
+ * Identity:
+ *   - Submitted row with `__id` matching an existing PK → update.
+ *   - Submitted row without `__id` (or with one not in the existing
+ *     set) → create. The FK is stamped onto the create payload.
+ *   - Existing PK not present in any submitted `__id` → delete.
+ *
+ * Order:
+ *   - When `cfg.orderColumn` is set, every create / update payload
+ *     stamps it with the row's 0-based index.
+ *
+ * Errors propagate. v1 isn't transactional — partial failure leaves
+ * the parent saved and some children unchanged. See plan doc for the
+ * follow-up.
+ */
+async function persistRelationshipRows(
+  parent:      unknown,
+  deferral:    RelationshipDeferral,
+  parentModel: ModelLike,
+): Promise<void> {
+  const { rows, cfg, field } = deferral
+  const { model, foreignKey } = resolveChildModelAndFk(parentModel, cfg)
+  const pk          = getPrimaryKey(model)
+  const orderColumn = cfg.orderColumn
+  const parentPk    = (parent as Record<string, unknown> | undefined)?.[getPrimaryKey(parentModel)]
+  if (parentPk === undefined || parentPk === null) {
+    throw new Error(
+      `[Pilotiq] Repeater.relationship("${cfg.name}"): parent record has no primary key after save. ` +
+      `Form.save() / handleCreate() must return a record with a primary key set.`,
+    )
+  }
+
+  const existing = await loadRelationRows(parentModel, parent, cfg.name)
+  const existingByPk = new Map<string, Record<string, unknown>>()
+  for (const row of existing) {
+    const key = String((row as Record<string, unknown>)[pk])
+    existingByPk.set(key, row as Record<string, unknown>)
+  }
+
+  const keptPks = new Set<string>()
+
+  for (let idx = 0; idx < rows.length; idx++) {
+    const submitted = rows[idx] ?? {}
+    const submittedId = typeof submitted['__id'] === 'string' ? submitted['__id'] : undefined
+    const isUpdate = submittedId !== undefined && existingByPk.has(submittedId)
+
+    // Strip framework keys before constructing the payload — the
+    // child model never sees `__id`, and the FK + order column are
+    // stamped explicitly below so user-supplied values are ignored
+    // (FK can't be retargeted; order is canonical from row index).
+    const payload: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(submitted)) {
+      if (k === '__id') continue
+      payload[k] = v
+    }
+    if (orderColumn !== undefined) payload[orderColumn] = idx
+
+    if (isUpdate) {
+      // Don't overwrite the FK on update — the existing row's FK is
+      // already correct, and exposing it would let a tampered client
+      // re-link a child to a different parent.
+      delete payload[foreignKey]
+      await model.update(submittedId!, payload)
+      keptPks.add(submittedId!)
+    } else {
+      payload[foreignKey] = parentPk
+      await model.create(payload)
+    }
+    void field
+  }
+
+  for (const [pkVal, _row] of existingByPk) {
+    if (keptPks.has(pkVal)) continue
+    await model.delete(pkVal)
+    void _row
+  }
+}
+
+/**
+ * Read all rows from `parent.related(name)`. Used both by the load-
+ * side fill (in pageData) and the save-side diff (above). Caps at
+ * 10k — admin Repeaters should never get that large; if they do we'll
+ * add explicit pagination.
+ */
+export async function loadRelationRows(
+  parentModel: ModelLike,
+  parent:      unknown,
+  name:        string,
+): Promise<unknown[]> {
+  const q = resolveRelatedQuery(parentModel, parent, name)
+  const result = await q.paginate(1, 10000)
+  return result.data
 }

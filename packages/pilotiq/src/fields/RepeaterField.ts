@@ -2,11 +2,44 @@ import { Element, type ElementMeta, type LayoutContext } from '../schema/Element
 import { Field, type FieldMeta } from './Field.js'
 import type { RenderContext } from '../schema/resolveSchema.js'
 import type { Action, ActionMeta } from '../actions/Action.js'
+import type { ModelLike } from '../orm/modelDefaults.js'
 import {
   RowButton,
   type RowButtonKind,
   type RowButtonsMeta,
 } from './RowButton.js'
+
+/**
+ * Configuration for `Repeater.relationship(...)`. Stores rows in a real
+ * `HasMany` relation on the parent record instead of serializing them
+ * to a JSON column.
+ *
+ * `name` is the only required field — it must match a key on the
+ * parent's `static relations` map (rudder ORM convention). The
+ * `model` + `foreignKey` overrides exist for ORMs that don't follow
+ * that convention; both default to discovery via the parent's
+ * relations map at submit time.
+ *
+ * `orderColumn` is the integer column on the child model that
+ * receives the row's 0-based index after each save. Omit when the
+ * order doesn't need to round-trip through the database.
+ */
+export interface RepeaterRelationshipConfig {
+  /** Relationship key on the parent (e.g. `'attachments'`). */
+  name:         string
+  /** Override the child model. Defaults to `parent.relations[name].model()`. */
+  model?:       ModelLike
+  /** Override the FK column on the child. Defaults to `parent.relations[name].foreignKey`. */
+  foreignKey?:  string
+  /** Optional integer column on the child to receive the row index. */
+  orderColumn?: string
+}
+
+/** Public meta — `model` + `foreignKey` are server-only and stay private. */
+export interface RepeaterRelationshipMeta {
+  name:         string
+  orderColumn?: string
+}
 
 /**
  * Function evaluated once per row at meta-build to derive a human-readable
@@ -135,6 +168,14 @@ export interface RepeaterFieldMeta extends FieldMeta {
     columns: RepeaterTableColumn[]
   }
   /**
+   * Set when `Repeater.relationship(...)` is configured. Tells diagnostics
+   * (and any future client UI) that the row diff is persisted via a
+   * `HasMany` relation rather than a JSON column on the parent. The wire
+   * shape carries only `{ name, orderColumn? }` — `model` and
+   * `foreignKey` stay server-only.
+   */
+  relationship?:    RepeaterRelationshipMeta
+  /**
    * Per-slot chrome overrides for the seven built-in row buttons (add /
    * clone / delete / moveUp / moveDown / reorder / collapse). Authors set
    * these via `.addAction(RowButton.make()…)` etc.; the renderer merges
@@ -181,6 +222,7 @@ export class RepeaterField extends Field {
   private _grid?:            number
   private _tableColumns?:    RepeaterTableColumn[]
   private _buttons:          { [K in RowButtonKind]?: RowButton } = {}
+  private _relationship?:    RepeaterRelationshipConfig
 
   private constructor(name: string) {
     super(name, 'repeater')
@@ -218,6 +260,11 @@ export class RepeaterField extends Field {
    * the schema for these rows.
    */
   simple(field: Field): this {
+    if (this._relationship) {
+      throw new Error(
+        `[Pilotiq] Repeater "${this.name}": simple() is incompatible with relationship() — flat-array storage can't round-trip through child records.`,
+      )
+    }
     this._simple = true
     this._children = [field]
     return this
@@ -319,6 +366,53 @@ export class RepeaterField extends Field {
   }
 
   /**
+   * Persist rows to a `HasMany` relation on the parent record instead
+   * of serializing them to a JSON column. Each row maps to a real child
+   * record; submit creates / updates / deletes children against the
+   * relation transparently.
+   *
+   * Pass either the relationship name as a string (the common case —
+   * `model` + `foreignKey` are auto-discovered from the parent's
+   * `static relations` map) or an object form for explicit overrides.
+   *
+   * Mutually exclusive with `simple()` (the flat `[v, v, …]` storage
+   * shape can't round-trip through child records that need named
+   * columns) and with `dehydrated(false)` (the field's whole purpose
+   * is to write data — silently dropping it would be confusing).
+   * Validators run unchanged.
+   */
+  relationship(arg: string | RepeaterRelationshipConfig): this {
+    if (this._simple) {
+      throw new Error(
+        `[Pilotiq] Repeater "${this.name}": relationship() is incompatible with simple() — relationship-backed rows need named columns on the child model.`,
+      )
+    }
+    if (this.isDehydrated() === false) {
+      throw new Error(
+        `[Pilotiq] Repeater "${this.name}": relationship() is incompatible with dehydrated(false) — the field's purpose is to persist data.`,
+      )
+    }
+    this._relationship = typeof arg === 'string' ? { name: arg } : { ...arg }
+    return this
+  }
+
+  /**
+   * Sugar over `.relationship({ ..., orderColumn: col })`. Sets the
+   * order column on an already-configured relationship; throws when
+   * `relationship()` hasn't been called first so misconfiguration
+   * surfaces eagerly.
+   */
+  orderColumn(col: string): this {
+    if (!this._relationship) {
+      throw new Error(
+        `[Pilotiq] Repeater "${this.name}": orderColumn() requires relationship() to be configured first.`,
+      )
+    }
+    this._relationship.orderColumn = col
+    return this
+  }
+
+  /**
    * Customize the bottom Add button's chrome (label / icon / color /
    * tooltip). Equivalent to `addActionLabel()` plus icon + color
    * overrides — when both are set, this customizer wins (it ships under
@@ -400,6 +494,9 @@ export class RepeaterField extends Field {
   getGrid(): number | undefined { return this._grid }
   getTableColumns(): RepeaterTableColumn[] | undefined { return this._tableColumns }
   isTable(): boolean { return this._tableColumns !== undefined }
+  /** Resolved relationship config (`undefined` when not configured). */
+  getRelationship(): RepeaterRelationshipConfig | undefined { return this._relationship }
+  isRelationship(): boolean { return this._relationship !== undefined }
   /** The configured customizer for a given slot, or `undefined`. */
   getButton(kind: RowButtonKind): RowButton | undefined { return this._buttons[kind] }
   /**
@@ -447,6 +544,11 @@ export class RepeaterField extends Field {
     if (this._simple)                        meta.simple          = true
     if (this._grid !== undefined)            meta.grid            = this._grid
     if (this._tableColumns !== undefined)    meta.table           = { columns: this._tableColumns }
+    if (this._relationship !== undefined) {
+      const r: RepeaterRelationshipMeta = { name: this._relationship.name }
+      if (this._relationship.orderColumn !== undefined) r.orderColumn = this._relationship.orderColumn
+      meta.relationship = r
+    }
     const buttons = serializeRowButtons(this._buttons)
     if (buttons !== undefined)               meta.buttons         = buttons
     return meta

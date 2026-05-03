@@ -193,7 +193,7 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 | `ColorPicker` | 2 | |
 | `Slider` | 2 | |
 | `Hidden` | 1 | Trivial. |
-| `Repeater` (array of sub-schemas) | 3 | Big. Defer until reactive fields land. |
+| ✅ `Repeater` (array of sub-schemas) DONE | 3 | Shipped 2026-05-01 (Plan #14) + extensive Tier-1/2 polish + relationship-backed rows shipped 2026-05-03 (`Repeater.relationship(name)` — stores rows in a `HasMany` relation instead of JSON; create / update / delete diff against the child model; `orderColumn` writes 0-based index). See `repeater-field.md` + `repeater-relationship.md` + `docs/guide/repeater.md`. |
 | ✅ `Builder` (heterogeneous array) DONE | 2 | Shipped 2026-05-02 — `Block.make(name).schema(…).maxItems(n)` + `Builder.make(name).blocks([…])`, `{type, data}` storage envelope, per-block `maxItems`, server-side resolve / coerce / validate / partial-resolve mirroring Repeater. Demo at `/new-admin/builder-demo`. See `builder-field.md` + `docs/guide/builder.md`. |
 | `DateTimePicker` (vs current DateField) | 1 | Add time component to existing. |
 
