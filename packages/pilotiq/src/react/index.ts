@@ -22,6 +22,15 @@ export { NavigateProvider, useNavigate, type NavigateFn } from './navigate.js'
 
 export { ToasterProvider, useToast } from './Toaster.js'
 
+export {
+  WidgetDataProvider,
+  useInitialWidgetData,
+  useWidgetData,
+  type WidgetState,
+  type WidgetMetaLike,
+  type WidgetDataProviderProps,
+} from './WidgetDataContext.js'
+
 export { ThemeProvider, useTheme } from './ThemeProvider.js'
 export { ThemeToggle } from './ThemeToggle.js'
 export { ThemeSettingsPage } from './ThemeSettingsPage.js'

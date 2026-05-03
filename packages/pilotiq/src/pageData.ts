@@ -654,6 +654,27 @@ function collectServerDataElements(elements: ReadonlyArray<Element>): ServerData
   return out
 }
 
+/**
+ * Plan #15 — stamp the polling-endpoint URL on every `ServerDataElement`
+ * in the tree. Mirrors `tagFormStateUrls / tagTableReorderUrls`. Walks
+ * with the same boundaries as `collectServerDataElements` so the wire
+ * stays in sync (no orphan widgets without URLs and vice versa).
+ *
+ * `urlBuilder(id)` typically produces `${base}/_widget/${id}` for
+ * dashboard widgets and `${base}/${pageSlug}/_widget/${id}` for
+ * custom-page widgets — the route handlers for both shapes are wired up
+ * in `routes.ts` (see Phase A.4).
+ */
+export function tagWidgetUrls(
+  elements:   ReadonlyArray<Element>,
+  urlBuilder: (id: string) => string,
+): void {
+  for (const widget of collectServerDataElements(elements)) {
+    if (widget.getWidgetUrl()) continue // user-set wins
+    widget.withWidgetUrl(urlBuilder(widget.getId()))
+  }
+}
+
 /** Stamp dispatchUrl on every handler-style Action so the client knows where to POST. */
 export function tagActionDispatch(elements: ReadonlyArray<Element>, baseUrl: string): void {
   for (const action of findActions(elements)) {
@@ -699,6 +720,11 @@ export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Re
       elements = typeof def === 'function' ? await def(ctx) : def
     }
   }
+
+  // Stamp polling URLs on every widget — panel-scope (no pageSlug
+  // segment) for the dashboard. Done before schema resolve so the URL
+  // rides on each widget's stamped meta.
+  tagWidgetUrls(elements, id => `${cfg.path}/_widget/${id}`)
 
   const widgetData = await resolveServerDataElements(elements, ctx)
   const schemaData = await resolveSchema(elements, ctx)
@@ -1877,6 +1903,9 @@ export async function customPageData(
   tagFormStateUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/state`)
   tagFormWizardUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/wizard`)
   tagActionDispatch(elements, pageUrl)
+  // Page-scope polling URL (mirrors `${base}/${pageSlug}/_widget/:id`
+  // route registered in routes.ts).
+  tagWidgetUrls(elements, id => `${pageUrl}/_widget/${id}`)
   const widgetData = await resolveServerDataElements(elements, ctx)
   const schemaData = await resolveSchema(elements, ctx)
 

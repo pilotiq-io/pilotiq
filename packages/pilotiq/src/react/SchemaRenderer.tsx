@@ -81,6 +81,8 @@ import type { SerializedIcon } from '../icons/types.js'
 import { useToast } from './Toaster.js'
 import { getIcon } from '../icons/registry.js'
 import { pickEditableCell } from './cells/EditableCell.js'
+import { WidgetDataProvider } from './WidgetDataContext.js'
+import { StatsOverviewRenderer } from './widgets/StatsOverviewRenderer.js'
 
 /** Resolve an icon name through the user-extensible registry. Returns
  * `undefined` when the name isn't registered — callers fall back to
@@ -2020,6 +2022,9 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
       // Columns are rendered by their parent table; standalone column is a no-op.
       return null
 
+    case 'stats':
+      return <StatsOverviewRenderer key={index} meta={el} />
+
     default:
       return null
   }
@@ -3535,13 +3540,25 @@ function TableRenderer({ el }: { el: ElementMeta }) {
 
 export interface SchemaRendererProps {
   elements: ElementMeta[]
+  /**
+   * Plan #15 — per-widget initial payload map keyed by element id.
+   * Auto-gen page stubs pass `vp._widgetData` here so widget renderers
+   * can read their first-paint payload through `useInitialWidgetData`.
+   * Optional — pages with no widgets ship `undefined` and the provider
+   * is a no-op.
+   */
+  widgetData?: Record<string, unknown>
 }
 
-export function SchemaRenderer({ elements }: SchemaRendererProps) {
+export function SchemaRenderer({ elements, widgetData }: SchemaRendererProps) {
   if (!elements || elements.length === 0) return null
+  // exactOptionalPropertyTypes: only spread `data` when defined.
+  const providerProps = widgetData !== undefined ? { data: widgetData } : {}
   return (
-    <div className="flex flex-col gap-6">
-      {elements.map((el, i) => renderElement(el, i))}
-    </div>
+    <WidgetDataProvider {...providerProps}>
+      <div className="flex flex-col gap-6">
+        {elements.map((el, i) => renderElement(el, i))}
+      </div>
+    </WidgetDataProvider>
   )
 }

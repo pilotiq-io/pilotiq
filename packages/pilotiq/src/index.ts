@@ -28,6 +28,7 @@ export {
   globalViewData,
   customPageData,
   resolveServerDataElements,
+  tagWidgetUrls,
   widgetData,
   type ServerDataMap,
   type WidgetScope,
@@ -133,6 +134,18 @@ export {
   stampServerDataMeta,
 } from './schema/ServerDataElement.js'
 export { View, type ViewDataHandler } from './schema/View.js'
+export {
+  Stat,
+  type StatMeta,
+  type StatColor,
+  type StatDescriptionIcon,
+  type StatDescriptionIconPosition,
+} from './schema/Stat.js'
+export {
+  StatsOverview,
+  type StatsHandler,
+  type StatsOverviewPayload,
+} from './schema/StatsOverview.js'
 
 // Container elements
 export { Card } from './schema/Card.js'

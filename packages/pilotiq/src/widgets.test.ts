@@ -220,6 +220,38 @@ describe('customPageData — _widgetData wiring', () => {
   })
 })
 
+// ─── Phase A.4 + B: widgetUrl stamping ────────────────────
+
+describe('tagWidgetUrls — meta widgetUrl stamping', () => {
+  it('stamps widgetUrl on every widget meta on a dashboard', async () => {
+    class MyDashboard extends Page {
+      static override slug = ''
+      static override schema() {
+        return [StatsView.make(), CountsView.make()]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').dashboard(MyDashboard)
+    const data = await dashboardData(panel)
+    const schema = data['schemaData'] as Array<Record<string, unknown>>
+    const stats  = schema.find(s => s['id'] === 'StatsView')!
+    const counts = schema.find(s => s['id'] === 'CountsView')!
+    assert.equal(stats['widgetUrl'],  '/admin/_widget/StatsView')
+    assert.equal(counts['widgetUrl'], '/admin/_widget/CountsView')
+  })
+
+  it('stamps page-scoped widgetUrl on a custom page', async () => {
+    class Reports extends Page {
+      static override slug = 'reports'
+      static override schema() { return [CountsView.make()] }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([Reports])
+    const data  = await customPageData(panel, 'reports')
+    const schema = data!['schemaData'] as Array<Record<string, unknown>>
+    const counts = schema.find(s => s['id'] === 'CountsView')!
+    assert.equal(counts['widgetUrl'], '/admin/reports/_widget/CountsView')
+  })
+})
+
 // ─── Phase A.4: widgetData polling endpoint ───────────────
 
 describe('widgetData — panel-scope (dashboard)', () => {

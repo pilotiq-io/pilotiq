@@ -31,6 +31,11 @@ export abstract class ServerDataElement extends Element {
   // `undefined` is treated as `true` everywhere; explicit `false` opts
   // out (synchronous server-side resolve, ships data on first paint).
   protected _lazy?: boolean
+  // Polling-endpoint URL stamped by `pageData.tagWidgetUrls`. The
+  // renderer reads `meta.widgetUrl` to fetch lazy data on mount and to
+  // re-fetch on `poll(seconds)` ticks. Set server-side per page-data
+  // pass — the field never round-trips back from the client.
+  protected _widgetUrl?: string
 
   /**
    * Stable identifier. Required so the polling endpoint can find this
@@ -83,6 +88,19 @@ export abstract class ServerDataElement extends Element {
     return this._lazy !== false
   }
 
+  /** Stamp the polling-endpoint URL. Called by `pageData.tagWidgetUrls`
+   *  during page-data builds — `${base}/_widget/:id` for panel-scope
+   *  dashboards and `${base}/${pageSlug}/_widget/:id` for custom-page
+   *  scope. The renderer reads `meta.widgetUrl` to fetch. */
+  withWidgetUrl(url: string): this {
+    this._widgetUrl = url
+    return this
+  }
+
+  getWidgetUrl(): string | undefined {
+    return this._widgetUrl
+  }
+
   /** Discriminator that pageData / routes use to find server-data
    *  elements without `instanceof` (Vite SSR module-cache duplication
    *  trap — same posture as `findForms`). */
@@ -133,4 +151,6 @@ export function stampServerDataMeta(el: ServerDataElement, meta: ElementMeta): v
   // Always emit `lazy` so the renderer doesn't have to fall back through
   // a default — explicit > implicit on the wire.
   meta['lazy'] = el.isLazy()
+  const widgetUrl = el.getWidgetUrl()
+  if (widgetUrl !== undefined) meta['widgetUrl'] = widgetUrl
 }
