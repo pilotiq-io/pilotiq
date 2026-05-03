@@ -22,6 +22,23 @@ export interface QueryParams {
 const RESERVED_QUERY_KEYS = new Set(['search', 'sort', 'page', 'perPage'])
 
 /**
+ * Optional hooks passed by the caller (`pageData.resourceIndexData`)
+ * to plug Resource-level concerns into the table dispatcher without
+ * giving it a hard dependency on `Resource`.
+ *
+ * `canEdit` is consulted once per row when the table has at least one
+ * editable column (`TextInputColumn / ToggleColumn / SelectColumn`) —
+ * the result gates per-cell edit affordances. Custom-page tables and
+ * relation-manager tables (v1) pass `undefined` and skip per-cell edit.
+ */
+export interface LoadTableHooks {
+  canEdit?: (
+    user:   unknown,
+    record: Record<string, unknown>,
+  ) => boolean | Promise<boolean>
+}
+
+/**
  * Pull filter values out of a flat query-string record. A key matches a
  * filter when its name is registered on the table and the value is a
  * non-empty string. Unknown / empty / reserved keys are dropped.
@@ -119,6 +136,7 @@ export async function loadTableRecords(
   query:    QueryParams = {},
   pathname?: string,
   user?:    unknown,
+  hooks?:   LoadTableHooks,
 ): Promise<void> {
   const tables = findTables(elements)
   if (tables.length === 0) return
@@ -198,6 +216,14 @@ export async function loadTableRecords(
       const columnsWithRecordUrl = (table.getChildren() ?? [])
         .filter((c): c is Column => c instanceof Column && c.hasRecordUrlHandler())
 
+      // Inline-edit columns (`TextInputColumn / ToggleColumn / SelectColumn`).
+      // Per-row stamping is gated on a `canEdit` hook — without it the
+      // dispatcher has no way to authorize the cell, so we skip stamping
+      // entirely and the renderer falls back to the read-only formatter.
+      const editableColumns = (table.getChildren() ?? [])
+        .filter((c): c is Column => c instanceof Column && c.isEditable())
+      const canEditEditableColumns = editableColumns.length > 0 && hooks?.canEdit !== undefined
+
       const recordUrlFn     = table.getRecordUrl()
       const recordClassesFn = table.getRecordClasses()
       const groupColumn     = table.getDefaultGroup()
@@ -208,7 +234,8 @@ export async function loadTableRecords(
         columnsWithRecordUrl.length > 0 ||
         recordUrlFn !== undefined ||
         recordClassesFn !== undefined ||
-        groupColumn !== undefined
+        groupColumn !== undefined ||
+        canEditEditableColumns
 
       const rows = !needsRowMutation
         ? rawRows
@@ -285,6 +312,27 @@ export async function loadTableRecords(
                 }
               }
               out['_columnRecordUrls'] = colUrls
+            }
+
+            if (canEditEditableColumns) {
+              // ONE auth call per row regardless of editable column count
+              // — same record, same answer. Failures or false → no edit
+              // affordance for any column.
+              let allowed = false
+              try { allowed = await hooks!.canEdit!(user, recordObj) }
+              catch { allowed = false }
+              if (allowed) {
+                const editableMap: Record<string, true> = {}
+                const disabledMap: Record<string, true> = {}
+                for (const col of editableColumns) {
+                  editableMap[col.name] = true
+                  if (col.isDisabledFor(recordObj)) disabledMap[col.name] = true
+                }
+                out['_cellEditable'] = editableMap
+                if (Object.keys(disabledMap).length > 0) {
+                  out['_cellDisabled'] = disabledMap
+                }
+              }
             }
 
             return out

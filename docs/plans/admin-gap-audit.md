@@ -56,7 +56,7 @@ Penciled for later (Tier 3): widgets/dashboards, Repeater/Builder fields, Wizard
 | `heading() / description()` on Table | 1 | Trivial. Roll into #2. |
 | `deferLoading()` (skeleton on first paint) | 3 | Edge case. |
 | `queryStringIdentifier()` (multi-table on one page) | 3 | Currently we'd collide on `?sort=...`. |
-| Editable columns (SelectColumn, ToggleColumn, TextInputColumn) | 3 | Inline-edit. Big UX feature; defer until form-modals settle. |
+| ✅ Editable columns (SelectColumn, ToggleColumn, TextInputColumn) DONE | 3 | Shipped 2026-05-03 — inline-edit cells PATCH a single column via `POST {base}/{slug}/:id/_cell/:column`. See `editable-cell-columns.md`. |
 | ✅ `TernaryFilter` (true/false/blank) DONE | 1 | Shipped 2026-05-03 alongside `DateRangeFilter` — see `filter-expansion.md`. |
 | ✅ `Filter` with custom schema (form fields per filter) DONE | 2 | Shipped 2026-05-04 — `FormFilter.make().form([fields…]).handle((q, values) => q).formIndicator(values => string)`. JSON-encoded single URL key. Inner schema resolved with the surrounding `RenderContext` via `resolveSchema`; field `defaultValue`s pre-hydrated from the parsed URL value so the popover round-trips. `parseFormFilterValue / encodeFormFilterValue` exported. |
 | `persistFiltersInSession()` | 3 | Stateful behavior; defer. |
@@ -79,9 +79,9 @@ Penciled for later (Tier 3): widgets/dashboards, Repeater/Builder fields, Wizard
 - `ImageColumn` (avatar / thumbnail)
 - `BooleanColumn` (sugar over IconColumn)
 
-Skip `ColorColumn`, `SelectColumn`/`ToggleColumn`/`TextInputColumn` (inline-edit) for now.
+Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / `TextInputColumn`) shipped separately — see `editable-cell-columns.md`.
 
-**Editable columns** (Tier 3) deserve their own doc — they need PATCH endpoint per cell, optimistic UI, and the form-modal pattern from actions-tier-1.
+**Editable columns** (Tier 3) shipped 2026-05-03 — see `editable-cell-columns.md`. Three new column subclasses (`TextInputColumn`, `ToggleColumn`, `SelectColumn`); per-cell PATCH route at `POST {base}/{slug}/:id/_cell/:column`; per-row server-side `R.canEdit` gate; optimistic UI with rollback toast on failure.
 
 ### 3. Filters (`filters/`)
 

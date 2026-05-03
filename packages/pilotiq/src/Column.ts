@@ -1,5 +1,10 @@
 import { Element, type ElementMeta } from './schema/Element.js'
 import { Summarizer, type SummarizerMeta } from './summarizers/Summarizer.js'
+import type {
+  Validator,
+  ValidatorContext,
+  SerializedRule,
+} from './validation/Validator.js'
 
 /** Cell content alignment. Maps to text-{start|center|end} on the cell. */
 export type ColumnAlignment = 'start' | 'center' | 'end'
@@ -7,8 +12,23 @@ export type ColumnAlignment = 'start' | 'center' | 'end'
 /** Visual variant. The default `text` covers most cases — formatters
  * (dateTime / money / since / numeric / limit) layer on top.
  * `badge` / `icon` / `boolean` / `image` are subclasses that change
- * how the cell is *rendered* rather than just *formatted*. */
-export type ColumnType = 'text' | 'badge' | 'icon' | 'boolean' | 'image'
+ * how the cell is *rendered* rather than just *formatted*.
+ * `textInput` / `toggle` / `select` are inline-edit subclasses — the
+ * renderer mounts an interactive control that PATCHes a single column
+ * via `POST {base}/{slug}/:id/_cell/:column`. */
+export type ColumnType =
+  | 'text' | 'badge' | 'icon' | 'boolean' | 'image'
+  | 'textInput' | 'toggle' | 'select'
+
+/** Per-row predicate for `Column.disabled(fn)` — evaluated server-side
+ * inside `loadTableRecords` so the renderer just reads the result. */
+export type ColumnDisabledFn = (record: Record<string, unknown>) => boolean
+
+/** SelectColumn option shape — mirrors `SelectField`'s static option form. */
+export interface ColumnSelectOption {
+  value: string
+  label: string
+}
 
 /** Font weight preset — maps to a Tailwind `font-*` class. */
 export type ColumnWeight = 'normal' | 'medium' | 'semibold' | 'bold'
@@ -67,6 +87,21 @@ export interface ColumnMeta extends ElementMeta {
    * is stamped onto each row under `row._columnRecordUrls[columnName]`.
    */
   recordUrl?: boolean
+  // ─── Editable cell columns (TextInput / Toggle / Select) ───
+  /** Confirmation message — when set, the renderer gates the PATCH
+   * behind a Dialog confirm before firing. */
+  confirm?: string
+  /** Static disable. Per-row disable (`disabled(fn)`) lands on the row
+   * under `row._cellDisabled[columnName]` — not on the column meta. */
+  disabled?: true
+  /** Mirrored validator descriptors — same shape as `FieldMeta.rules`,
+   * for client-side hint rendering. The actual rules run server-side
+   * inside the `_cell` route. */
+  rules?: SerializedRule[]
+  /** Default debounce (ms) for committed-after-typing PATCHes on
+   * `TextInputColumn`. Stamped on the meta only when explicitly set;
+   * the renderer falls back to its own default. */
+  debounceMs?: number
   // Subclass-specific extras land in `_extra` to keep the meta typed.
   // BadgeColumn — value-to-color map.
   badgeColors?: Record<string, string>
@@ -75,6 +110,23 @@ export interface ColumnMeta extends ElementMeta {
   // ImageColumn — sizing.
   imageSize?:  number
   imageShape?: 'square' | 'circle'
+  // TextInputColumn.
+  inputType?:        'text' | 'number' | 'email' | 'url' | 'tel'
+  inputPlaceholder?: string
+  inputStep?:        number
+  inputMin?:         number
+  inputMax?:         number
+  // ToggleColumn.
+  toggleOnColor?:  ColumnColor
+  toggleOffColor?: ColumnColor
+  toggleOnIcon?:   string
+  toggleOffIcon?:  string
+  // SelectColumn.
+  selectOptions?:  ColumnSelectOption[]
+  selectNullable?: true
+  /** Hide the placeholder option once a value is set. Default: keep
+   * showing it so users can clear the value (matches Filament). */
+  selectablePlaceholder?: false
 }
 
 /**
@@ -114,6 +166,16 @@ export class Column extends Element {
   // `loadTableRecords` over the rendered rows; values land on the
   // table-level summaries map keyed by column name.
   protected _summarizers: Summarizer[] = []
+
+  // ─── Editable cell columns (TextInput / Toggle / Select) ───
+  // Per-cell PATCH validators — same shape as Field validators. Only
+  // consulted when the column is editable (the route handler reads
+  // them server-side). Inert on read-only columns.
+  protected _required = false
+  protected _validators: Validator[] = []
+  protected _confirm?: string
+  protected _staticDisabled = false
+  protected _disabledFn?: ColumnDisabledFn
 
   protected constructor(name: string) {
     super()
@@ -224,6 +286,57 @@ export class Column extends Element {
     return this
   }
 
+  // ─── Editable cell columns ────────────────────────────
+  // These are no-ops on read-only column types but live on the base so
+  // subclass authors don't need to redeclare. `isEditable()` derives
+  // from `_columnType` — TextInputColumn / ToggleColumn / SelectColumn
+  // call `setColumnType()` in their `make()` factory.
+
+  /** Mark the value as required for inline edits. Auto-contributes a
+   * required check unless `validate(required())` is already present
+   * (matches `Field.required()` semantics — see `hasRequiredValidator`). */
+  required(v = true): this { this._required = v; return this }
+
+  /**
+   * Attach one or more server-side validators. Reuses the same `Validator`
+   * type used by `Field.validate()` so existing rules (`required`, `email`,
+   * `minLength`, `unique`, …) work unchanged. Validators run inside the
+   * `POST {…}/_cell/:column` route before `R.model.update`; on failure
+   * the response is `422 { ok:false, errors: { value: string[] } }`.
+   */
+  validate(v: Validator | Validator[]): this {
+    if (Array.isArray(v)) this._validators.push(...v)
+    else this._validators.push(v)
+    return this
+  }
+
+  /**
+   * Gate the PATCH behind a confirm dialog. Renderer opens a Dialog with
+   * `message` before firing the network call; cancel rolls back the
+   * optimistic local state.
+   */
+  confirm(message: string): this { this._confirm = message; return this }
+
+  /**
+   * Render the inline-edit control disabled. Pass `true` (or call with no
+   * args) for static disable; pass a `(record) => boolean` predicate for
+   * per-row disable — evaluated server-side inside `loadTableRecords`,
+   * stashed under `row._cellDisabled[columnName]`.
+   *
+   * Independent from `R.canEdit(user, record)` — the auth check fires
+   * regardless and a forbidden record never sees an editable affordance.
+   */
+  disabled(value: boolean | ColumnDisabledFn = true): this {
+    if (typeof value === 'function') {
+      this._disabledFn = value
+      this._staticDisabled = false
+    } else {
+      this._staticDisabled = value
+      delete this._disabledFn
+    }
+    return this
+  }
+
   // ─── Column-type setter (subclass internal) ───────────
 
   protected setColumnType(t: ColumnType): this {
@@ -248,6 +361,65 @@ export class Column extends Element {
   isRecordUrlDisabled(): boolean { return this._recordUrl === false }
   getSummarizers(): ReadonlyArray<Summarizer> { return this._summarizers }
   hasSummarizers(): boolean { return this._summarizers.length > 0 }
+
+  // ─── Editable getters ─────────────────────────────────
+
+  /** True for `TextInputColumn / ToggleColumn / SelectColumn`. The route
+   * handler + `dispatchTable` per-row stamping consult this. */
+  isEditable(): boolean {
+    return this._columnType === 'textInput'
+      || this._columnType === 'toggle'
+      || this._columnType === 'select'
+  }
+
+  /** Resolve per-row disable for an editable cell. Returns `true` when
+   * the static flag is set or the optional predicate returns truthy.
+   * Errors in the predicate fail closed (disabled) — silently swallowing
+   * a save attempt is the worse outcome here. */
+  isDisabledFor(record: Record<string, unknown>): boolean {
+    if (this._staticDisabled) return true
+    if (this._disabledFn) {
+      try { return Boolean(this._disabledFn(record)) }
+      catch { return true }
+    }
+    return false
+  }
+
+  isRequired(): boolean { return this._required }
+  getValidators(): ReadonlyArray<Validator> { return this._validators }
+
+  /** Run the column's validators against a candidate value. Mirrors
+   * `Field.runValidators` — including the implicit required check when
+   * `_required` is set without an explicit `required()` validator. */
+  async runValidators(value: unknown, ctx?: ValidatorContext): Promise<string[]> {
+    const errors: string[] = []
+    if (this._required && !this.hasRequiredValidator()) {
+      if (value === undefined || value === null || value === '') {
+        errors.push('This field is required')
+      }
+    }
+    for (const v of this._validators) {
+      const result = await v(value, ctx)
+      if (result) errors.push(result)
+    }
+    return errors
+  }
+
+  private hasRequiredValidator(): boolean {
+    return this._validators.some(v => v.serialized?.rule === 'required')
+  }
+
+  /** Serialized rule descriptors mirrored to the client. */
+  protected getSerializedRules(): SerializedRule[] {
+    const rules: SerializedRule[] = []
+    if (this._required && !this.hasRequiredValidator()) {
+      rules.push({ rule: 'required', message: 'This field is required' })
+    }
+    for (const v of this._validators) {
+      if (v.serialized) rules.push(v.serialized)
+    }
+    return rules
+  }
 
   // ─── Serialization ────────────────────────────────────
 
@@ -276,6 +448,16 @@ export class Column extends Element {
     if (this._summarizers.length > 0) meta.summaries = this._summarizers.map(s => s.toMeta())
     if (this._recordUrl === false)        meta.recordUrl = false
     else if (typeof this._recordUrl === 'function') meta.recordUrl = true
+    // Editable cell columns — chrome that the renderer needs to mount
+    // the right inline control. Per-row `_cellEditable / _cellEditUrls /
+    // _cellDisabled` are stamped onto each row by `loadTableRecords` +
+    // `tagCellEditUrls` and aren't part of the column's static meta.
+    if (this.isEditable()) {
+      if (this._confirm !== undefined) meta.confirm = this._confirm
+      if (this._staticDisabled) meta.disabled = true
+      const rules = this.getSerializedRules()
+      if (rules.length > 0) meta.rules = rules
+    }
     this.serializeExtras(meta)
     return meta
   }

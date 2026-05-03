@@ -6,6 +6,7 @@ import { Column } from '../Column.js'
 import { Section } from '../schema/Section.js'
 import { resolveSchema } from '../schema/resolveSchema.js'
 import { Sum, Average, Count, Range } from '../summarizers/Summarizer.js'
+import { TextInputColumn, ToggleColumn, SelectColumn } from '../columns/index.js'
 import {
   parseTableQuery,
   findTables,
@@ -587,6 +588,93 @@ describe('loadTableRecords', () => {
       await loadTableRecords([t], {})
       assert.equal(seen!['tab'],      undefined)
       assert.equal(seen!['tabQuery'], undefined)
+    })
+  })
+
+  describe('editable cell columns', () => {
+    it('stamps _cellEditable on every row when canEdit hook is supplied + returns true', async () => {
+      const t = Table.make<{ id: string; status: string }>()
+        .columns([
+          Column.make('id'),
+          SelectColumn.make('status').options({ a: 'A', b: 'B' }),
+        ])
+        .records(async () => ({ rows: [{ id: '1', status: 'a' }, { id: '2', status: 'b' }], total: 2 }))
+
+      await loadTableRecords([t], {}, undefined, undefined, {
+        canEdit: () => true,
+      })
+      const rows = t.getRows() as Array<Record<string, unknown>>
+      assert.deepEqual(rows[0]!['_cellEditable'], { status: true })
+      assert.deepEqual(rows[1]!['_cellEditable'], { status: true })
+      assert.equal(rows[0]!['_cellDisabled'], undefined)
+    })
+
+    it('skips _cellEditable on rows where canEdit returns false', async () => {
+      const t = Table.make<{ id: string; archived: boolean }>()
+        .columns([
+          Column.make('id'),
+          ToggleColumn.make('featured'),
+        ])
+        .records(async () => ({ rows: [
+          { id: '1', archived: false },
+          { id: '2', archived: true  },
+        ], total: 2 }))
+
+      await loadTableRecords([t], {}, undefined, undefined, {
+        canEdit: (_user, record) => record['archived'] !== true,
+      })
+      const rows = t.getRows() as Array<Record<string, unknown>>
+      assert.deepEqual(rows[0]!['_cellEditable'], { featured: true })
+      assert.equal(rows[1]!['_cellEditable'], undefined)
+    })
+
+    it('stamps _cellDisabled when the column predicate flags the row', async () => {
+      const t = Table.make<{ id: string; archived: boolean }>()
+        .columns([
+          Column.make('id'),
+          SelectColumn.make('status')
+            .options({ a: 'A', b: 'B' })
+            .disabled(record => record['archived'] === true),
+        ])
+        .records(async () => ({ rows: [
+          { id: '1', archived: false },
+          { id: '2', archived: true  },
+        ], total: 2 }))
+
+      await loadTableRecords([t], {}, undefined, undefined, {
+        canEdit: () => true,
+      })
+      const rows = t.getRows() as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_cellDisabled'], undefined)
+      assert.deepEqual(rows[1]!['_cellDisabled'], { status: true })
+      // The flag is independent — disabled rows are still stamped editable.
+      assert.deepEqual(rows[1]!['_cellEditable'], { status: true })
+    })
+
+    it('skips per-row mutation entirely when no canEdit hook is supplied', async () => {
+      const t = Table.make<{ id: string }>()
+        .columns([
+          Column.make('id'),
+          TextInputColumn.make('title'),
+        ])
+        .records(async () => ({ rows: [{ id: '1' }], total: 1 }))
+
+      await loadTableRecords([t], {})
+      const rows = t.getRows() as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_cellEditable'], undefined)
+      assert.equal(rows[0]!['_cellDisabled'], undefined)
+    })
+
+    it('treats canEdit throwing as denial (closed posture)', async () => {
+      const t = Table.make<{ id: string }>()
+        .columns([Column.make('id'), ToggleColumn.make('on')])
+        .records(async () => ({ rows: [{ id: '1' }], total: 1 }))
+
+      await loadTableRecords([t], {}, undefined, undefined, {
+        canEdit: () => { throw new Error('boom') },
+      })
+      const rows = t.getRows() as Array<Record<string, unknown>>
+      assert.equal(rows[0]!['_cellEditable'], undefined)
     })
   })
 })

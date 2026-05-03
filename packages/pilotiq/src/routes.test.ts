@@ -9,6 +9,8 @@ import { Resource } from './Resource.js'
 import { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
+import { TextInputColumn, ToggleColumn, SelectColumn } from './columns/index.js'
+import { minLength } from './validation/index.js'
 import { TextField } from './fields/TextField.js'
 import { Heading } from './schema/Heading.js'
 import { registerPilotiqRoutes } from './routes.js'
@@ -1225,5 +1227,268 @@ describe('Reorderable rows — POST /:slug/_reorder', () => {
     const body = res.sentBody as { ok: boolean; error: string }
     assert.equal(body.ok, false)
     assert.match(body.error, /row 7 missing/)
+  })
+})
+
+describe('Editable cell columns — _cell route', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  /** Minimal in-memory ModelLike — just the surface the _cell route
+   * exercises (`find` + `update`). Optional `update` lets us simulate
+   * the boot guard and ORM-throw paths. */
+  function makeUpdatableModel(seed: Array<Record<string, unknown>>, opts: {
+    omitUpdate?: boolean
+    updateThrows?: boolean
+  } = {}) {
+    const rows = [...seed]
+    const calls: { update: Array<{ id: string; data: Record<string, unknown> }> } = { update: [] }
+    const M: Record<string, unknown> = {
+      primaryKey: 'id',
+      async find(id: string) {
+        return rows.find(r => r['id'] === id) ?? null
+      },
+    }
+    if (!opts.omitUpdate) {
+      M['update'] = async (id: string, data: Record<string, unknown>) => {
+        if (opts.updateThrows) throw new Error('database is on fire')
+        calls.update.push({ id, data })
+        const i = rows.findIndex(r => r['id'] === id)
+        if (i >= 0) rows[i] = { ...rows[i], ...data }
+        return rows[i]
+      }
+    }
+    return { M, rows, calls }
+  }
+
+  function panelWith(R: any) {
+    return Pilotiq.make('T').path('/admin').resources([R])
+  }
+
+  it('throws at boot when an editable column is declared but model.update is missing', () => {
+    const { M } = makeUpdatableModel([], { omitUpdate: true })
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table {
+        return t.columns([Column.make('id'), TextInputColumn.make('title')])
+      }
+    }
+    assert.throws(() => registerPilotiqRoutes(router, panelWith(Posts)),
+      /editable cell column .* update\(id, data\)/)
+  })
+
+  it('registers POST /:slug/:id/_cell/:column when an editable column is present', () => {
+    const { M } = makeUpdatableModel([])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table {
+        return t.columns([Column.make('id'), ToggleColumn.make('featured')])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.ok(paths.includes('POST /admin/posts/:id/_cell/:column'))
+  })
+
+  it('does NOT register the _cell route when no editable columns exist', () => {
+    const { M } = makeUpdatableModel([])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table { return t.columns([Column.make('id')]) }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.equal(paths.includes('POST /admin/posts/:id/_cell/:column'), false)
+  })
+
+  it('happy path: 200 + persists the new value via model.update', async () => {
+    const { M, calls } = makeUpdatableModel([{ id: '1', title: 'old' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table {
+        return t.columns([Column.make('id'), TextInputColumn.make('title')])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({
+      params: { id: '1', column: 'title' },
+      body:   { value: 'new title' },
+    }))
+
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(res.sentBody, { ok: true, value: 'new title', notifications: [] })
+    assert.deepEqual(calls.update, [{ id: '1', data: { title: 'new title' } }])
+  })
+
+  it('400 when the column does not exist on the table', async () => {
+    const { M } = makeUpdatableModel([{ id: '1' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table {
+        return t.columns([Column.make('id'), TextInputColumn.make('title')])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({
+      params: { id: '1', column: 'forged' },
+      body:   { value: 'x' },
+    }))
+    assert.equal(res.statusCode, 400)
+    const body = res.sentBody as { ok: boolean; error: string }
+    assert.equal(body.ok, false)
+    assert.match(body.error, /Unknown column/)
+  })
+
+  it('400 when the column exists but is not editable', async () => {
+    const { M } = makeUpdatableModel([{ id: '1' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table {
+        return t.columns([
+          Column.make('id'),
+          // The boot guard requires at least ONE editable column for
+          // the route to mount; we add a different editable column
+          // here and target a read-only one in the request.
+          TextInputColumn.make('title'),
+          Column.make('readonly'),
+        ])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({
+      params: { id: '1', column: 'readonly' },
+      body:   { value: 'x' },
+    }))
+    assert.equal(res.statusCode, 400)
+    const body = res.sentBody as { ok: boolean; error: string }
+    assert.equal(body.ok, false)
+    assert.match(body.error, /not editable/)
+  })
+
+  it('403 when canEdit returns false', async () => {
+    const { M } = makeUpdatableModel([{ id: '1', title: 'a' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override async canEdit() { return false }
+      static override table(t: Table): Table {
+        return t.columns([Column.make('id'), TextInputColumn.make('title')])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({
+      params: { id: '1', column: 'title' },
+      body:   { value: 'x' },
+    }))
+    assert.equal(res.statusCode, 403)
+  })
+
+  it('404 when the record does not exist', async () => {
+    const { M } = makeUpdatableModel([{ id: '1' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table {
+        return t.columns([Column.make('id'), TextInputColumn.make('title')])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({
+      params: { id: '99', column: 'title' },
+      body:   { value: 'x' },
+    }))
+    assert.equal(res.statusCode, 404)
+  })
+
+  it('422 when a column validator fails', async () => {
+    const { M } = makeUpdatableModel([{ id: '1', title: 'a' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table {
+        return t.columns([
+          Column.make('id'),
+          TextInputColumn.make('title').validate(minLength(3)),
+        ])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({
+      params: { id: '1', column: 'title' },
+      body:   { value: 'ab' },
+    }))
+    assert.equal(res.statusCode, 422)
+    const body = res.sentBody as { ok: boolean; errors: { value: string[] } }
+    assert.equal(body.ok, false)
+    assert.equal(body.errors.value.length, 1)
+    assert.match(body.errors.value[0]!, /at least 3/)
+  })
+
+  it('422 when the cell coerce rejects the body (forged select option)', async () => {
+    const { M } = makeUpdatableModel([{ id: '1', status: 'draft' }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table {
+        return t.columns([
+          Column.make('id'),
+          SelectColumn.make('status').options({ draft: 'Draft', published: 'Published' }),
+        ])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({
+      params: { id: '1', column: 'status' },
+      body:   { value: 'forged' },
+    }))
+    assert.equal(res.statusCode, 422)
+    const body = res.sentBody as { ok: boolean; errors: { value: string[] } }
+    assert.equal(body.ok, false)
+    assert.match(body.errors.value[0]!, /not a valid option/)
+  })
+
+  it('422 when model.update throws', async () => {
+    const { M } = makeUpdatableModel([{ id: '1', title: 'a' }], { updateThrows: true })
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table {
+        return t.columns([Column.make('id'), TextInputColumn.make('title')])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({
+      params: { id: '1', column: 'title' },
+      body:   { value: 'new' },
+    }))
+    assert.equal(res.statusCode, 422)
+    const body = res.sentBody as { ok: boolean; error: string }
+    assert.equal(body.ok, false)
+    assert.match(body.error, /database is on fire/)
   })
 })

@@ -80,6 +80,7 @@ import { useIconFor } from './icon-context.js'
 import type { SerializedIcon } from '../icons/types.js'
 import { useToast } from './Toaster.js'
 import { getIcon } from '../icons/registry.js'
+import { pickEditableCell } from './cells/EditableCell.js'
 
 /** Resolve an icon name through the user-extensible registry. Returns
  * `undefined` when the name isn't registered — callers fall back to
@@ -3434,6 +3435,27 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                     const widthStyle = col['width']
                       ? { width: String(col['width']) }
                       : undefined
+
+                    // Inline-edit cells take priority over read-only chrome.
+                    // `_cellEditable[name]` is set per row by `loadTableRecords`
+                    // only when `R.canEdit(user, row)` passed; the URL was
+                    // stamped by `tagCellEditUrls` immediately after.
+                    const editableMap = recordObj['_cellEditable'] as Record<string, true> | undefined
+                    const editUrlMap  = recordObj['_cellEditUrls'] as Record<string, string> | undefined
+                    const cellDisabledMap = recordObj['_cellDisabled'] as Record<string, true> | undefined
+                    const editUrl = editableMap?.[name] ? editUrlMap?.[name] : undefined
+                    const EditableComp = editUrl !== undefined
+                      ? pickEditableCell(String(col['columnType'] ?? 'text'))
+                      : null
+                    if (EditableComp && editUrl !== undefined) {
+                      const cellDisabled = col['disabled'] === true || cellDisabledMap?.[name] === true
+                      return (
+                        <TableCell key={ci} className={`text-sm text-foreground ${align} p-0`} style={widthStyle}>
+                          <EditableComp url={editUrl} col={col} value={value} disabled={cellDisabled} />
+                        </TableCell>
+                      )
+                    }
+
                     const cellContent = formatCell(value, col, recordObj)
                     const colUrl = resolveColumnUrl(col, tableUrl, colUrls)
                     return (

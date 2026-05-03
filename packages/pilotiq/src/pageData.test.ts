@@ -11,9 +11,11 @@ import {
   resolveActiveTab,
   tagFormStateUrls,
   tagTableReorderUrls,
+  tagCellEditUrls,
 } from './pageData.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
+import { TextInputColumn, ToggleColumn } from './columns/index.js'
 import { Pilotiq } from './Pilotiq.js'
 import { Resource } from './Resource.js'
 import { Global } from './Global.js'
@@ -462,6 +464,65 @@ describe('tagTableReorderUrls (reorderable rows)', () => {
     const t = Table.make().reorderable('sort').withReorderUrl('/x/_reorder')
     tagTableReorderUrls([t], '/y/_reorder')
     assert.equal(t.getReorderUrl(), '/x/_reorder')
+  })
+})
+
+describe('tagCellEditUrls (editable columns)', () => {
+  it('stamps _cellEditUrls only on rows that already carry _cellEditable', () => {
+    const t = Table.make<Record<string, unknown>>()
+      .columns([Column.make('id'), TextInputColumn.make('title')])
+      .withRows([
+        { id: '1', _cellEditable: { title: true } },
+        { id: '2' /* canEdit was false — no editable map */ },
+      ], 2)
+
+    tagCellEditUrls([t], '/admin/posts')
+    const rows = t.getRows() as Array<Record<string, unknown>>
+    assert.deepEqual(rows[0]!['_cellEditUrls'], { title: '/admin/posts/1/_cell/title' })
+    assert.equal(rows[1]!['_cellEditUrls'], undefined)
+  })
+
+  it('skips tables that have no editable columns', () => {
+    const t = Table.make<Record<string, unknown>>()
+      .columns([Column.make('id')])
+      .withRows([{ id: '1' }], 1)
+
+    tagCellEditUrls([t], '/admin/posts')
+    const rows = t.getRows() as Array<Record<string, unknown>>
+    assert.equal(rows[0]!['_cellEditUrls'], undefined)
+  })
+
+  it('builds a URL per editable column on the row', () => {
+    const t = Table.make<Record<string, unknown>>()
+      .columns([
+        Column.make('id'),
+        TextInputColumn.make('title'),
+        ToggleColumn.make('featured'),
+      ])
+      .withRows([
+        { id: '7', _cellEditable: { title: true, featured: true } },
+      ], 1)
+
+    tagCellEditUrls([t], '/admin/posts')
+    const rows = t.getRows() as Array<Record<string, unknown>>
+    assert.deepEqual(rows[0]!['_cellEditUrls'], {
+      title:    '/admin/posts/7/_cell/title',
+      featured: '/admin/posts/7/_cell/featured',
+    })
+  })
+
+  it('encodes the row id and column name', () => {
+    const t = Table.make<Record<string, unknown>>()
+      .columns([Column.make('id'), TextInputColumn.make('weird name')])
+      .withRows([
+        { id: 'a/b', _cellEditable: { 'weird name': true } },
+      ], 1)
+
+    tagCellEditUrls([t], '/admin/posts')
+    const rows = t.getRows() as Array<Record<string, unknown>>
+    assert.deepEqual(rows[0]!['_cellEditUrls'], {
+      'weird name': '/admin/posts/a%2Fb/_cell/weird%20name',
+    })
   })
 })
 

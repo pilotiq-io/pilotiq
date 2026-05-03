@@ -19,6 +19,7 @@ import { Field } from './fields/Field.js'
 import { resolveSchema, type SchemaContext } from './schema/resolveSchema.js'
 import { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
+import { Column } from './Column.js'
 import { applyStateUpdate, findForms, findWizardStepFields, selectFormById } from './elements/dispatchForm.js'
 import { validateSchema } from './validation/index.js'
 import { searchAllResources, type GlobalSearchResult } from './search.js'
@@ -354,6 +355,43 @@ export function tagTableReorderUrls(
 }
 
 /**
+ * Editable cell columns — walk every table on the page and stamp
+ * `_cellEditUrls[colName]` per row, but only on rows that already
+ * carry a `_cellEditable[colName]` marker (set by `loadTableRecords`
+ * after `R.canEdit(user, row)` passed). The dispatcher stays
+ * URL-shape-agnostic; URL building lives here parallel to
+ * `tagFormStateUrls / tagTableReorderUrls`.
+ *
+ * `idOf` extracts the per-row primary key. Defaults to reading `id` —
+ * works for the rudder ORM convention. Resources with a different
+ * primary-key column should pass an override (none in v1).
+ */
+export function tagCellEditUrls(
+  elements:  ReadonlyArray<Element>,
+  resourceUrl: string,
+  idOf:      (row: Record<string, unknown>) => unknown = row => row['id'],
+): void {
+  for (const table of findTables(elements)) {
+    const rows = table.getRows() as ReadonlyArray<Record<string, unknown>> | undefined
+    if (!rows || rows.length === 0) continue
+    // Optimisation: skip the table when none of its columns are editable.
+    const editable = (table.getChildren() ?? []).some(c => c instanceof Column && c.isEditable())
+    if (!editable) continue
+    for (const row of rows) {
+      const editableMap = row['_cellEditable'] as Record<string, true> | undefined
+      if (!editableMap) continue
+      const id = idOf(row)
+      if (id === undefined || id === null || id === '') continue
+      const urls: Record<string, string> = {}
+      for (const colName of Object.keys(editableMap)) {
+        urls[colName] = `${resourceUrl}/${encodeURIComponent(String(id))}/_cell/${encodeURIComponent(colName)}`
+      }
+      ;(row as Record<string, unknown>)['_cellEditUrls'] = urls
+    }
+  }
+}
+
+/**
  * Plan #8 — stamp the wizard step-validate endpoint URL on every form
  * whose descendants include a `Wizard` element. `FormMeta.wizardUrl` is
  * what the client posts to on Next-button clicks; forms without a wizard
@@ -485,8 +523,11 @@ export async function resourceIndexData(
   // for the active tab and splices its `modifyQuery` predicate into the
   // ORM chain alongside filters.
   await resolveActiveTab(elements, query, indexUrl)
-  await loadTableRecords(elements, query, indexUrl, user)
+  await loadTableRecords(elements, query, indexUrl, user, {
+    canEdit: (u, record) => R.canEdit(u, record),
+  })
   tagTableReorderUrls(elements, `${indexUrl}/_reorder`)
+  tagCellEditUrls(elements, indexUrl)
   const schemaData = await resolveSchema(elements, ctx)
 
   return {

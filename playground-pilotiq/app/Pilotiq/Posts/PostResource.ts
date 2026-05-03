@@ -1,7 +1,9 @@
 import {
-  Resource, Column, BadgeColumn, Action,
+  Resource, Column, Action,
+  TextInputColumn, SelectColumn,
   TextField, MarkdownField, SelectField,
   TernaryFilter, DateRangeFilter,
+  minLength,
   type Form, type Table,
 } from '@pilotiq/pilotiq'
 import { Post } from '../../Models/Post.js'
@@ -50,11 +52,20 @@ export class PostResource extends Resource {
     return table
       .reorderable('sort')
       .columns([
-        Column.make('title').sortable().searchable().weight('semibold'),
-        BadgeColumn.make('status').colors({
-          draft:     'gray',
-          published: 'success',
-        }),
+        // Inline-edit demo: typing in the title saves on blur (or after the
+        // 500 ms debounce). Validator runs server-side; failure shows a toast
+        // and rolls the input back to the persisted value.
+        TextInputColumn.make('title')
+          .sortable().searchable()
+          .validate(minLength(3))
+          .placeholder('Untitled')
+          .width('30%'),
+        // Inline-edit demo: pick a status from the dropdown — saves on each
+        // change with no debounce. Replaces the previous BadgeColumn since
+        // the cell IS the affordance.
+        SelectColumn.make('status')
+          .options({ draft: 'Draft', published: 'Published' })
+          .width('140px'),
         Column.make('authorId').label('Author').color('muted'),
         Column.make('createdAt').sortable().since(),
       ])

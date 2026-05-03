@@ -19,6 +19,8 @@ import {
 import { RelationManager, RESERVED_RELATIONSHIP_TOKENS } from './RelationManager.js'
 import { modelSave, modelLoadRecord, getPrimaryKey } from './orm/modelDefaults.js'
 import { Table } from './elements/Table.js'
+import { Column } from './Column.js'
+import { coerceCellValue, CellCoerceError } from './cells/coerce.js'
 import type { ThemeConfig } from './theme/types.js'
 import { presets } from './theme/presets.js'
 import { baseColors } from './theme/base-colors.js'
@@ -377,6 +379,30 @@ export function registerPilotiqRoutes(
     reorderEnabled.set(R.getSlug(), probeColumn)
   }
 
+  // Editable cell columns — fail fast at boot when a Resource declares
+  // at least one TextInput/Toggle/SelectColumn but the bound model
+  // can't persist a single-column update. Mirrors the reorder guard
+  // above. Result is cached per-resource so the route loop below can
+  // decide whether to mount `_cell`.
+  const editableEnabled = new Set<string>()
+  for (const R of cfg.resources) {
+    let hasEditable = false
+    try {
+      hasEditable = (R.table(Table.make()).getChildren() ?? [])
+        .some(c => c instanceof Column && c.isEditable())
+    } catch { continue }
+    if (!hasEditable) continue
+    if (!R.model || typeof R.model.update !== 'function') {
+      throw new Error(
+        `[Pilotiq] ${R.name}.table() declares an editable cell column ` +
+        `(TextInputColumn / ToggleColumn / SelectColumn) but the bound ` +
+        `model has no update(id, data) method. Set Resource.model = M ` +
+        `(rudder ORM convention) or drop the editable column.`,
+      )
+    }
+    editableEnabled.add(R.getSlug())
+  }
+
   // ── Dashboard (1-segment) ─────────────────────────────
   router.get(base, async (req) => {
     return view('pilotiq.dashboard', await dashboardData(pilotiq, req))
@@ -505,6 +531,74 @@ export function registerPilotiqRoutes(
               error: err instanceof Error ? err.message : 'Reorder failed',
             })
           }
+        })
+      }
+
+      // Editable cell columns — POST ${base}/${slug}/:id/_cell/:column
+      // { value: <coerced> }. Only mounted when the resource declares at
+      // least one editable column (boot-time probe populates
+      // `editableEnabled`).
+      if (editableEnabled.has(slug)) {
+        router.post(`${indexUrl}/:id/_cell/:column`, async (req, res) => {
+          const user = await pilotiq.resolveUser(req)
+          if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+
+          const id      = req.params['id']!
+          const colName = req.params['column']!
+
+          // Locate the column on the table. We re-derive `Table.make()`
+          // here (same probe shape used by the boot guard + reorder route)
+          // so the column instance carries its validators / discriminator.
+          const probe = R.table(Table.make())
+          const col = (probe.getChildren() ?? [])
+            .find((c): c is Column => c instanceof Column && c.name === colName)
+          if (!col) {
+            res.status(400)
+            return res.json({ ok: false, error: `Unknown column "${colName}"` })
+          }
+          if (!col.isEditable()) {
+            res.status(400)
+            return res.json({ ok: false, error: `Column "${colName}" is not editable` })
+          }
+
+          // Boot already verified `R.model?.update`; the `!` is safe.
+          const record = await R.model!.find(id)
+          if (record === null || record === undefined) {
+            res.status(404)
+            return res.json({ ok: false, error: 'Record not found' })
+          }
+          if (!await checkPolicy(() => R.canEdit(user, record))) return forbidden(res, true)
+
+          const body = await readFormBody(req)
+          const raw  = (body as { value?: unknown }).value
+
+          let value: unknown
+          try { value = coerceCellValue(col, raw) }
+          catch (err) {
+            const message = err instanceof CellCoerceError ? err.message
+              : err instanceof Error ? err.message
+              : 'Invalid value'
+            res.status(422)
+            return res.json({ ok: false, errors: { value: [message] } })
+          }
+
+          const errors = await col.runValidators(value, { record })
+          if (errors.length > 0) {
+            res.status(422)
+            return res.json({ ok: false, errors: { value: errors } })
+          }
+
+          try {
+            await R.model!.update(id, { [col.name]: value })
+          } catch (err) {
+            res.status(422)
+            return res.json({
+              ok:    false,
+              error: err instanceof Error ? err.message : 'Update failed',
+            })
+          }
+
+          return res.json({ ok: true, value, notifications: [] })
         })
       }
     }

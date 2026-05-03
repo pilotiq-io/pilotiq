@@ -63,6 +63,8 @@ export {
   type ColumnColor,
   type ColumnFormat,
   type FormatStateHandler,
+  type ColumnDisabledFn,
+  type ColumnSelectOption,
 } from './Column.js'
 
 export {
@@ -72,6 +74,11 @@ export {
   type IconOption,
   BooleanColumn,
   ImageColumn,
+  TextInputColumn,
+  type TextInputColumnType,
+  ToggleColumn,
+  SelectColumn,
+  type SelectColumnOptionsInput,
 } from './columns/index.js'
 
 // ─── Column summarizers (footer aggregates) ───────────
