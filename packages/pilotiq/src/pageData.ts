@@ -967,7 +967,7 @@ export async function resourceEditData(
   // navigation strip so users can drill into each manager's table
   // without leaving the parent record context. The "Edit" tab is
   // active here.
-  const relationTabsEl = buildRelationTabs(R, recordId, cfg.path, '__edit', 'edit')
+  const relationTabsEl = buildRelationTabs(R, recordId, cfg.path, '__edit')
   if (relationTabsEl) elements.unshift(relationTabsEl)
 
   const schemaData = await resolveSchema(
@@ -1282,7 +1282,7 @@ async function buildRelationListData(
   tagActionDispatch(elements, listUrl)
   await loadTableRecords(elements, scope.query ?? {}, listUrl, user)
 
-  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship, 'edit')
+  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship)
   if (tabs) elements.unshift(tabs)
 
   const schemaData = await resolveSchema(elements, ctx)
@@ -1347,7 +1347,7 @@ async function buildRelationCreateData(
     if (scope.prefill.errors) form.withErrors(scope.prefill.errors)
   }
 
-  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship, 'edit')
+  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship)
   if (tabs) elements.unshift(tabs)
 
   const ctx: SchemaContext = uploadCtx(userCtx({
@@ -1443,7 +1443,7 @@ async function buildRelationEditData(
     form.withValues(values)
   }
 
-  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship, 'edit')
+  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship)
   if (tabs) elements.unshift(tabs)
 
   const ctx: SchemaContext = uploadCtx(userCtx({
@@ -1483,40 +1483,65 @@ async function buildRelationEditData(
 
 /**
  * Plan #11 — build the `RelationTabs` strip for a parent record. The
- * first tab is the parent's Edit (or View) page, followed by one tab
- * per `R.relations()` manager. `activeKey` selects which tab the
- * renderer highlights; pass `'__edit'` / `'__view'` for the parent
- * tabs or the manager's relationship key for a manager tab.
+ * strip surfaces the per-record sub-navigation: View, Edit, plus one
+ * tab per `R.relations()` manager. `activeKey` selects which tab the
+ * renderer highlights — `'__view'` / `'__edit'` for the parent tabs,
+ * the manager's relationship key for a manager tab.
+ *
+ * Sub-nav follow-up (2026-05-03 cont'd) — emit BOTH `__view` and
+ * `__edit` as sibling tabs (Filament-style record sub-navigation)
+ * instead of one parent tab whose label depends on mode. Tabs are
+ * dropped when the corresponding page role isn't registered (a
+ * Resource overriding `pages()` to omit `view` or `edit` shouldn't
+ * surface a tab that 404s).
  *
  * Returns `undefined` when the resource has no relation managers — the
  * caller can then skip the prepend entirely so resources without
  * relations stay shape-compatible with their existing schemaData.
+ * (View+Edit sub-nav alone isn't worth a tab strip; users navigate
+ * those via headerActions or the back link.)
  */
 function buildRelationTabs(
   R:         ResourceClass,
   recordId:  string,
   basePath:  string,
   activeKey: string,
-  mode:      'edit' | 'view' = 'edit',
 ): RelationTabs | undefined {
   const managers = R.relations()
   if (managers.length === 0) return undefined
 
-  const slug = R.getSlug()
+  const slug  = R.getSlug()
+  const pages = R.resolvePages()
   const tabs: RelationTabMeta[] = []
 
-  // Parent tab — always first. URL depends on mode (Edit vs View).
-  const parentKey = mode === 'view' ? '__view' : '__edit'
-  tabs.push(relationTab({
-    key:       parentKey,
-    label:     mode === 'view' ? 'Details' : 'Edit',
-    url:       mode === 'view'
-                  ? `${basePath}/${slug}/${recordId}`
-                  : `${basePath}/${slug}/${recordId}/edit`,
-    active:    activeKey === parentKey,
-    icon:      R.icon as IconValue | undefined,
-    iconOwner: R.name,
-  }))
+  // View tab — only when the resource has a ViewPage registered.
+  // Defaults always include one; users who pruned ViewPage in their
+  // `static pages()` override get no broken link.
+  if (pages.view) {
+    tabs.push(relationTab({
+      key:       '__view',
+      label:     'View',
+      url:       `${basePath}/${slug}/${recordId}`,
+      active:    activeKey === '__view',
+      icon:      R.icon as IconValue | undefined,
+      iconOwner: R.name,
+    }))
+  }
+
+  // Edit tab — same defensive check.
+  if (pages.edit) {
+    tabs.push(relationTab({
+      key:       '__edit',
+      label:     'Edit',
+      url:       `${basePath}/${slug}/${recordId}/edit`,
+      active:    activeKey === '__edit',
+      // Re-use the resource icon so when ViewPage is pruned, Edit
+      // still carries the visual identity. When both are present, the
+      // icon repeats — acceptable; the labels disambiguate.
+      icon:      R.icon as IconValue | undefined,
+      iconOwner: R.name,
+    }))
+  }
 
   for (const M of managers) {
     let rel = ''
@@ -1808,7 +1833,7 @@ export async function resourceViewData(
 
   // Plan #11 — prepend the relation tabs strip with the "Details" tab
   // active when the resource has relation managers configured.
-  const relationTabsEl = buildRelationTabs(R, recordId, cfg.path, '__view', 'view')
+  const relationTabsEl = buildRelationTabs(R, recordId, cfg.path, '__view')
   if (relationTabsEl) elements.unshift(relationTabsEl)
 
   const schemaData = await resolveSchema(

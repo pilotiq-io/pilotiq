@@ -132,6 +132,30 @@ The manager's row click navigates to the **related Resource's** view URL by
 default (`/admin/posts/:postId`). Override via `Table.recordUrl(fn)` on the
 manager's table to keep navigation in-place.
 
+## Record sub-navigation
+
+When a Resource declares any `relations()`, every record-scoped page —
+View, Edit, and each manager's list / create / edit pages — auto-mounts
+a **`RelationTabs`** strip at the top of the schema. The strip is
+Filament-style record sub-navigation and contains:
+
+```
+[ View ] [ Edit ] [ Manager A ] [ Manager B ] …
+```
+
+The active tab is whichever page you're currently on (`__view`,
+`__edit`, or the manager's `relationship` key). Tabs are plain
+`<a href>` links so cmd-click and middle-click open in a new tab; SPA
+nav keeps the layout mounted. Icons come from `Resource.icon` for the
+`View` / `Edit` tabs and `RelationManager.icon` for each manager tab.
+
+The `View` and `Edit` tabs are dropped automatically when the
+corresponding Page role isn't registered — overriding
+`static pages()` to omit `view: …` or `edit: …` removes the broken
+link. The strip itself is suppressed entirely when a Resource has no
+relation managers (a record with no relations doesn't need a sub-nav
+of one tab).
+
 ## Reserved relationship tokens
 
 A manager's `relationship` cannot collide with one of these reserved URL

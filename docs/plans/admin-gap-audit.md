@@ -31,7 +31,7 @@ Land in this order. Each step is independently shippable; later steps build on e
 | 12 | ✅ `global-search.md` DONE | ~1 week | `Resource.globalSearch` opt-in + 4 override statics + `searchAllResources` helper + `GET /_search` + Cmd+K palette + sidebar/topbar trigger pill shipped 2026-05-01. |
 | 13 | ✅ `soft-deletes.md` DONE | ~1 week | Resource.softDeletes opt-in + TrashedFilter (auto-inject) + Restore/ForceDelete routes + Action.restore/forceDelete + bulk variants shipped 2026-05-01. Verified rudder ORM already shipped the primitives (Model.softDeletes, restore/forceDelete, withTrashed/onlyTrashed). 885 tests. Two-sided opt-in (Model + Resource) by design. Demo at `playground-pilotiq` PostResource. |
 
-Penciled for later (Tier 3): Repeater/Builder fields ✅ shipped (Plans #14, #14-followup); widgets/dashboards ✅ shipped (Plan #15); import/export ✅ shipped (`import-export-actions.md`, 2026-05-03); resource nesting, sub-navigation still open.
+Penciled for later (Tier 3): Repeater/Builder fields ✅ shipped (Plans #14, #14-followup); widgets/dashboards ✅ shipped (Plan #15); import/export ✅ shipped (`import-export-actions.md`, 2026-05-03); sub-navigation ✅ shipped (2026-05-03 cont'd — `RelationTabs` now emits `[View, Edit, …managers]` Filament-style, each parent tab gated on the corresponding page role being registered); resource nesting still open.
 
 **Cross-repo blockers tracked outside pilotiq:**
 - ✅ `belongsToMany` / pivot / M2M — `@rudderjs/orm` shipped pivot support (2026-05-03). Pilotiq's RelationManager M2M follow-up shipped same day — see `relations-m2m.md`.
@@ -116,7 +116,7 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 | Authorization (canView/canCreate/canEdit/canDelete + canAccess) | **1** | **Plan #10.** Currently nothing. |
 | Soft-delete integration (TrashedFilter, Force/Restore actions) | 2 | **Plan #13.** Needs @rudderjs/orm soft-delete support first. |
 | `getEloquentQuery()` override (global scopes) | 1 | Just a hook on `Resource.model.query` we forward through. |
-| Sub-navigation (View/Edit/Manage Relations tabs at record level) | 2 | UX polish; tied to relations. |
+| ✅ Sub-navigation (View/Edit/Manage Relations tabs at record level) DONE | 2 | Shipped 2026-05-03 — `RelationTabs` strip widened from a single mode-dependent parent tab (`Edit` OR `Details`) to sibling `[View, Edit, …managers]` tabs, Filament-style. `__view` / `__edit` tabs gated on `R.resolvePages().view` / `.edit` so a Resource that prunes a page role doesn't surface a 404 link. Strip still suppressed when the resource has no relation managers. 1799 tests. |
 | Resource nesting (`/parent/{id}/child/...` URL) | 3 | Needs route registry + breadcrumb work. |
 | Global search (cmd+K) | 2 | **Plan #12.** |
 | Header / footer widgets per page | 3 | Big — widgets/dashboards system. |

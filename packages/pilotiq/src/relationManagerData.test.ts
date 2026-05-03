@@ -601,16 +601,23 @@ describe('relation tabs auto-mount (Plan #11)', () => {
     assert.ok(tabsMeta, 'expected relation-tabs strip prepended')
 
     const tabs = tabsMeta['tabs'] as Array<{ key: string; label: string; url: string; active: boolean }>
-    assert.equal(tabs.length, 3)            // Edit + Posts + Comments
-    assert.equal(tabs[0]?.key, '__edit')
-    assert.equal(tabs[0]?.label, 'Edit')
-    assert.equal(tabs[0]?.url, '/admin/users/u1/edit')
+    // Sub-nav follow-up: View + Edit are now sibling tabs, so the
+    // strip is `[View, Edit, Posts, Comments]` rather than the prior
+    // `[Edit, Posts, Comments]`.
+    assert.equal(tabs.length, 4)
+    assert.equal(tabs[0]?.key, '__view')
+    assert.equal(tabs[0]?.label, 'View')
+    assert.equal(tabs[0]?.url, '/admin/users/u1')
     assert.equal(tabs[0]?.active, false)
-    assert.equal(tabs[1]?.key, 'posts')
-    assert.equal(tabs[1]?.url, '/admin/users/u1/posts')
-    assert.equal(tabs[1]?.active, true)     // posts is the active tab
-    assert.equal(tabs[2]?.key, 'comments')
-    assert.equal(tabs[2]?.active, false)
+    assert.equal(tabs[1]?.key, '__edit')
+    assert.equal(tabs[1]?.label, 'Edit')
+    assert.equal(tabs[1]?.url, '/admin/users/u1/edit')
+    assert.equal(tabs[1]?.active, false)
+    assert.equal(tabs[2]?.key, 'posts')
+    assert.equal(tabs[2]?.url, '/admin/users/u1/posts')
+    assert.equal(tabs[2]?.active, true)     // posts is the active tab
+    assert.equal(tabs[3]?.key, 'comments')
+    assert.equal(tabs[3]?.active, false)
   })
 
   it('skips the strip entirely when the resource has no relation managers', async () => {
@@ -658,13 +665,17 @@ describe('relation tabs auto-mount (Plan #11)', () => {
     const tabsMeta = schema.find(s => s['type'] === 'relation-tabs') as Record<string, unknown>
     assert.ok(tabsMeta, 'resource-edit should auto-mount RelationTabs')
     const tabs = tabsMeta['tabs'] as Array<{ key: string; active: boolean; url: string }>
-    assert.equal(tabs[0]?.key, '__edit')
-    assert.equal(tabs[0]?.active, true)
-    assert.equal(tabs[1]?.key, 'posts')
-    assert.equal(tabs[1]?.active, false)
+    // Sub-nav: View tab now sits ahead of Edit. Edit stays the active
+    // tab on the resource-edit page.
+    assert.equal(tabs[0]?.key, '__view')
+    assert.equal(tabs[0]?.active, false)
+    assert.equal(tabs[1]?.key, '__edit')
+    assert.equal(tabs[1]?.active, true)
+    assert.equal(tabs[2]?.key, 'posts')
+    assert.equal(tabs[2]?.active, false)
   })
 
-  it('resource-view page prepends RelationTabs with the Details tab active', async () => {
+  it('resource-view page prepends RelationTabs with the View tab active', async () => {
     const postRows: QueryRow[] = []
     const PostModel = stubModel({ rows: postRows })
     const ParentModel: ModelLike = stubModel({ rows: [{ id: 'u1', name: 'Alice' }] })
@@ -690,9 +701,90 @@ describe('relation tabs auto-mount (Plan #11)', () => {
     assert.ok(tabsMeta, 'resource-view should auto-mount RelationTabs')
     const tabs = tabsMeta['tabs'] as Array<{ key: string; label: string; url: string; active: boolean }>
     assert.equal(tabs[0]?.key, '__view')
-    assert.equal(tabs[0]?.label, 'Details')
+    assert.equal(tabs[0]?.label, 'View')
     assert.equal(tabs[0]?.url, '/admin/users/u1')
     assert.equal(tabs[0]?.active, true)
+    // Edit tab is now a sibling on the View page too.
+    assert.equal(tabs[1]?.key, '__edit')
+    assert.equal(tabs[1]?.label, 'Edit')
+    assert.equal(tabs[1]?.url, '/admin/users/u1/edit')
+    assert.equal(tabs[1]?.active, false)
+  })
+
+  it('drops the View tab when ViewPage is pruned via static pages()', async () => {
+    const postRows: QueryRow[] = [{ id: 'p1', parentId: 'u1', title: 'Post One' }]
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = {
+      async find(_id) { return makeParentWithChildren('u1', postRows) },
+      async create() { throw new Error('not used') },
+      async update() { throw new Error('not used') },
+      async delete() { /* ok */ },
+      query() { throw new Error('not used') },
+    }
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override relations() { return [PostsManager] }
+      // Prune ViewPage — defaults shipped one but the user opted out.
+      static override pages() { return { view: undefined as never } }
+    }
+    const panel = Pilotiq.make('NoView-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+
+    const out = await relationManagerData(panel, {
+      kind: 'relation-list', slug: 'users', recordId: 'u1', relationship: 'posts',
+    })
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    const tabsMeta = schema.find(s => s['type'] === 'relation-tabs') as Record<string, unknown>
+    const tabs = tabsMeta['tabs'] as Array<{ key: string }>
+    // No __view, just __edit + the manager.
+    assert.deepEqual(tabs.map(t => t.key), ['__edit', 'posts'])
+  })
+
+  it('drops the Edit tab when EditPage is pruned via static pages()', async () => {
+    const postRows: QueryRow[] = [{ id: 'p1', parentId: 'u1', title: 'Post One' }]
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = {
+      async find(_id) { return makeParentWithChildren('u1', postRows) },
+      async create() { throw new Error('not used') },
+      async update() { throw new Error('not used') },
+      async delete() { /* ok */ },
+      query() { throw new Error('not used') },
+    }
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+      static override table(t: Table): Table { return t.columns([Column.make('title')]) }
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override relations() { return [PostsManager] }
+      static override pages() { return { edit: undefined as never } }
+    }
+    const panel = Pilotiq.make('NoEdit-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+
+    const out = await relationManagerData(panel, {
+      kind: 'relation-list', slug: 'users', recordId: 'u1', relationship: 'posts',
+    })
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    const tabsMeta = schema.find(s => s['type'] === 'relation-tabs') as Record<string, unknown>
+    const tabs = tabsMeta['tabs'] as Array<{ key: string }>
+    assert.deepEqual(tabs.map(t => t.key), ['__view', 'posts'])
   })
 })
 
