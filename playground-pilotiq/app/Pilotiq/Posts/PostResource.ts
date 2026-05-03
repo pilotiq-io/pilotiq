@@ -84,6 +84,21 @@ export class PostResource extends Resource {
       ])
       .headerActions([
         Action.create(PostResource, ADMIN),
+        // Import / Export demo. Export streams the table query (with
+        // current filters / search / sort applied) as CSV. Import opens
+        // a modal with a FileUpload; rows are upserted by `slug` so the
+        // same CSV can be re-uploaded without duplicates.
+        Action.export(PostResource, ADMIN, {
+          columns:  ['id', 'title', 'status', 'authorId', 'createdAt'],
+          filename: () => `posts-${new Date().toISOString().slice(0, 10)}.csv`,
+        }),
+        Action.import(PostResource, ADMIN, {
+          columns:  { Title: 'title', Status: 'status', Author: 'authorId' },
+          // No `upsertBy` — Post has no naturally-unique business key
+          // beyond `id` (which the user wouldn't typically supply on a
+          // CSV import). Toggling to create-only matches the demo's intent
+          // (drag a CSV in → new posts appear).
+        }),
       ])
       .recordActions([
         Action.edit       (PostResource, ADMIN),
@@ -92,6 +107,9 @@ export class PostResource extends Resource {
         Action.forceDelete(PostResource, ADMIN),
       ])
       .bulkActions([
+        Action.bulkExport     (PostResource, ADMIN, {
+          columns: ['id', 'title', 'status'],
+        }),
         Action.bulkDelete     (PostResource, ADMIN),
         Action.bulkRestore    (PostResource, ADMIN),
         Action.bulkForceDelete(PostResource, ADMIN),

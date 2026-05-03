@@ -285,6 +285,53 @@ describe('Action notifications', () => {
   })
 })
 
+describe('Action download envelope', () => {
+  it('handler-returned { download } flows onto DispatchActionSuccess.download', async () => {
+    const a = Action.make('export').handler(() => ({
+      download: { filename: 'x.csv', contentType: 'text/csv', body: 'a\r\n1\r\n' },
+    }))
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.deepEqual(result.download, {
+        filename:    'x.csv',
+        contentType: 'text/csv',
+        body:        'a\r\n1\r\n',
+      })
+    }
+  })
+
+  it('partial download envelope (missing required fields) is dropped', async () => {
+    const a = Action.make('export').handler(() => ({
+      // @ts-expect-error — testing the runtime guard, not the public type.
+      download: { filename: 'x.csv' },
+    }))
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, true)
+    if (result.ok) assert.equal(result.download, undefined)
+  })
+
+  it('absence of download keeps the field undefined on success', async () => {
+    const a = Action.make('save').handler(() => ({ notify: { id: 'n1', type: 'success' as const, title: 'ok' } }))
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, true)
+    if (result.ok) assert.equal(result.download, undefined)
+  })
+
+  it('download + notify can both flow through together', async () => {
+    const a = Action.make('export').handler(() => ({
+      download: { filename: 'x.csv', contentType: 'text/csv', body: 'a\r\n1\r\n' },
+      notify:   { id: 'n2', type: 'success' as const, title: 'Exported' },
+    }))
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.equal(result.download?.filename, 'x.csv')
+      assert.equal(result.notifications?.[0]?.title, 'Exported')
+    }
+  })
+})
+
 describe('findRowExtraActions', () => {
   it('returns extraItemActions registered on Repeater fields', () => {
     const send = Action.make('sendTest').handler(() => undefined)

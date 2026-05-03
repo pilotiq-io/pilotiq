@@ -6,6 +6,7 @@ import {
   type RelationManager,
   type RelationManagerContext,
 } from '../RelationManager.js'
+import { buildImportSchema as buildImportModalSchema } from './importFactory.js'
 
 /**
  * Where an Action renders. `inline` is the default — appears wherever the
@@ -59,15 +60,32 @@ export type NotificationLike =
   | NotificationMeta
   | ReadonlyArray<Notification | NotificationMeta>
 
+/** Download envelope a handler can return to ask the route layer to
+ *  stream a file back instead of issuing the standard JSON / 303
+ *  response. Used by `Action.export / Action.bulkExport`; any handler
+ *  is free to return one. The route writes `Content-Type` +
+ *  `Content-Disposition: attachment; filename="…"` and ends with
+ *  `body`; the client renderer detects the disposition header and
+ *  triggers a browser download via a synthesized `<a download>`. */
+export interface DownloadEnvelope {
+  filename:    string
+  contentType: string
+  body:        string
+}
+
 /**
  * Result a handler may return to influence the response. `void` is the
  * default — the dispatcher 303-redirects to the page the action was
  * triggered from. Returning `{ redirect }` overrides that with an
  * explicit URL. Returning `{ notify }` flashes one or more toast
- * notifications on the next render. Throw an Error to surface as a
- * 500 with the message.
+ * notifications on the next render. Returning `{ download }` triggers
+ * a file download (mutually exclusive with `redirect` — the route
+ * prefers the download branch when both are set). Throw an Error to
+ * surface as a 500 with the message.
  */
-export type ActionResult = void | { redirect?: string; notify?: NotificationLike }
+export type ActionResult =
+  | void
+  | { redirect?: string; notify?: NotificationLike; download?: DownloadEnvelope }
 
 export type ActionHandler = (ctx: ActionContext) => ActionResult | Promise<ActionResult>
 
@@ -147,9 +165,20 @@ interface ResourceLike {
   canCreate?(user: unknown): boolean | Promise<boolean>
   canEdit?(user: unknown, record: unknown): boolean | Promise<boolean>
   canView?(user: unknown, record: unknown): boolean | Promise<boolean>
+  canViewAny?(user: unknown): boolean | Promise<boolean>
   canDelete?(user: unknown, record: unknown): boolean | Promise<boolean>
   canRestore?(user: unknown, record: unknown): boolean | Promise<boolean>
   canForceDelete?(user: unknown, record: unknown): boolean | Promise<boolean>
+  /** Resource model adapter (set when the resource opts into auto-CRUD
+   *  via `static model = M`). Import / Export factories need access to
+   *  `create / update / find / query` to drive their writes / reads. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  model?: any
+  /** Resource table configurator. Export factory calls
+   *  `R.table(Table.make())` to discover columns + the records handler
+   *  for the "filtered" / "all" scope. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  table?(t: any): any
 }
 
 /** Pick the right label form for a count — `labelSingular` for 1,
@@ -171,6 +200,20 @@ function isTrashed(record: unknown, R: ResourceLike): boolean {
   const col = R.deletedAtColumn ?? 'deletedAt'
   const v = (record as Record<string, unknown>)[col]
   return v !== null && v !== undefined
+}
+
+/** Lazy-load the `Table` class for use inside Action handlers. Direct
+ *  module-level import would cycle (Table → Action → Table); dynamic
+ *  import inside a handler runs after both modules have finished
+ *  loading. Cached after first call so we don't pay the import cost
+ *  on every dispatched export. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _TableClass: any | undefined
+async function loadTableClass(): Promise<unknown> {
+  if (_TableClass !== undefined) return _TableClass.make()
+  const mod = await import('../elements/Table.js')
+  _TableClass = mod.Table
+  return _TableClass.make()
 }
 
 /** Call a (possibly undefined) Resource predicate. When unset, the
@@ -533,6 +576,160 @@ export class Action extends Element {
         }
         return { notify: { title: `${n} ${labelForCount(R, n)} permanently deleted`, type: 'success' } as never }
       })
+  }
+
+  // ─── Import / Export factories ────────────────────────────────
+  //
+  // Pre-built CSV / JSON in/out for any Resource that has `R.model`.
+  // `Action.export` walks the configured `R.table()` records handler
+  // in pages (so it picks up the active filter/search/sort by default,
+  // and stays consistent with what the user is looking at). The bulk
+  // variant exports `ctx.records` instead. `Action.import` opens a
+  // form-modal with a `FileUpload`, parses the uploaded file, and runs
+  // create / upsert through `R.model`.
+  //
+  // Internals live in `./exportFactory.ts` and `./importFactory.ts`
+  // — kept out of this file because they need to import `Table` /
+  // field types that themselves import `Action`. Lazy-import inside
+  // the handler avoids the cycle (handlers run at request-time, well
+  // after module load).
+
+  /** Header-placement export — downloads the table as CSV (default) or
+   *  JSON. Visibility defaults to `R.canViewAny(user)`. Drop into
+   *  `headerActions([...])` from inside `Resource.table()`. See
+   *  `docs/plans/import-export-actions.md` for the full options bag. */
+  static export(
+    R: ResourceLike,
+    _basePath: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    opts: import('./exportFactory.js').ExportOptions = {},
+  ): Action {
+    return Action.make('export')
+      .label('Export')
+      .handler(async (ctx) => {
+        const ef = await import('./exportFactory.js')
+        const tableInst = R.table?.(await loadTableClass())
+        if (!tableInst) {
+          return { notify: { title: 'Export not configured (resource has no table())', type: 'error' } as never }
+        }
+        const cols = ef.resolveExportColumns(opts.columns, R)
+        if (cols.length === 0) {
+          return { notify: { title: 'Export has no columns', type: 'error' } as never }
+        }
+        const maxRows  = opts.maxRows ?? 50_000
+        const records  = await ef.collectExportRows(tableInst, ctx, opts.scope ?? 'filtered', maxRows, opts.chunkSize)
+        if (records.length > maxRows) {
+          return { notify: { title: `Export exceeded ${maxRows} rows`, type: 'error' } as never }
+        }
+        const rows     = records.map(r => ef.buildExportRow(r, cols))
+        const format   = opts.format ?? 'csv'
+        const { body, contentType } = ef.encodeExport(rows, cols, format)
+        const filename = typeof opts.filename === 'function'
+          ? opts.filename(ctx)
+          : (opts.filename ?? ef.defaultExportFilename(R.getSlug(), format))
+        return { download: { filename, contentType, body } }
+      })
+      .visible(({ user }) => callPredicate(R.canViewAny, user))
+  }
+
+  /** Bulk-placement export — downloads the rows the user selected via
+   *  the bulk-select checkboxes. Same options as `Action.export` minus
+   *  `scope` (always operates on `ctx.records`). Drop into
+   *  `bulkActions([...])`. */
+  static bulkExport(
+    R: ResourceLike,
+    _basePath: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    opts: Omit<import('./exportFactory.js').ExportOptions, 'scope'> = {},
+  ): Action {
+    return Action.make('bulkExport')
+      .label('Export selected')
+      .bulk()
+      .handler(async (ctx) => {
+        const ef = await import('./exportFactory.js')
+        const cols = ef.resolveExportColumns(opts.columns, R)
+        if (cols.length === 0) {
+          return { notify: { title: 'Export has no columns', type: 'error' } as never }
+        }
+        const records = ctx.records ?? []
+        const maxRows = opts.maxRows ?? 50_000
+        if (records.length > maxRows) {
+          return { notify: { title: `Export exceeded ${maxRows} rows`, type: 'error' } as never }
+        }
+        const rows     = records.map(r => ef.buildExportRow(r, cols))
+        const format   = opts.format ?? 'csv'
+        const { body, contentType } = ef.encodeExport(rows, cols, format)
+        const filename = typeof opts.filename === 'function'
+          ? opts.filename(ctx)
+          : (opts.filename ?? ef.defaultExportFilename(R.getSlug(), format))
+        return { download: { filename, contentType, body } }
+      })
+      .visible(({ user }) => callPredicate(R.canViewAny, user))
+  }
+
+  /** Header-placement import — opens a modal with a `FileUpload` (and a
+   *  Mode select when `upsertBy` is set), parses the uploaded file, and
+   *  walks each row through `R.model.create` / `R.model.update`.
+   *  Visibility defaults to `R.canCreate(user)`. Drop into
+   *  `headerActions([...])` from inside `Resource.table()`. See
+   *  `docs/plans/import-export-actions.md` for the full options bag. */
+  static import(
+    R: ResourceLike,
+    _basePath: string,
+    opts: import('./importFactory.js').ImportOptions = {},
+  ): Action {
+    const upsertable = typeof opts.upsertBy === 'string' && opts.upsertBy.length > 0
+    const a = Action.make('import')
+      .label('Import')
+      .modalHeading(`Import ${R.label ?? `${R.labelSingular}s`}`)
+      .modalSubmitLabel('Import')
+      .modalCancelLabel('Cancel')
+      .handler(async (ctx) => {
+        const M = R.model
+        if (!M || typeof M.create !== 'function') {
+          return { notify: { title: 'Import not configured (resource has no model.create)', type: 'error' } as never }
+        }
+        if (upsertable && typeof M.update !== 'function') {
+          return { notify: { title: 'Upsert import requires model.update', type: 'error' } as never }
+        }
+        const fileUrl = String((ctx.values?.['file'] as unknown) ?? '')
+        if (fileUrl.length === 0) {
+          return { notify: { title: 'No file uploaded', type: 'error' } as never }
+        }
+        const ifac = await import('./importFactory.js')
+        let text: string
+        try {
+          const r = await fetch(fileUrl)
+          if (!r.ok) {
+            return { notify: { title: `Failed to fetch upload (${r.status})`, type: 'error' } as never }
+          }
+          text = await r.text()
+        } catch (err) {
+          return { notify: { title: `Failed to read upload: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
+        }
+        const format = opts.format ?? (fileUrl.toLowerCase().endsWith('.json') ? 'json' : 'csv')
+        let rows: Array<Record<string, unknown>>
+        try {
+          rows = ifac.parseImportText(text, format, opts.columns)
+        } catch (err) {
+          return { notify: { title: `Failed to parse ${format.toUpperCase()}: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
+        }
+        const maxRows = opts.maxRows ?? 10_000
+        if (rows.length > maxRows) {
+          return { notify: { title: `Import too large (${rows.length} > ${maxRows})`, type: 'error' } as never }
+        }
+        const mode = upsertable && (ctx.values?.['mode'] === 'upsert') ? 'upsert' : 'create'
+        const summary = await ifac.runImport(rows, M, mode, opts, ctx)
+        return { notify: ifac.buildImportNotification(summary, { upsert: upsertable }) as never }
+      })
+      .visible(({ user }) => callPredicate(R.canCreate, user))
+
+    // Build the modal-form schema synchronously. importFactory has no
+    // runtime import edge back to Action.ts (only a type-import, erased
+    // at compile time), so the top-of-file static import below is
+    // cycle-free.
+    a.schema(buildImportModalSchema(opts))
+    return a
   }
 
   // ─── Relation-manager factories (Plan #11 polish) ─────────────

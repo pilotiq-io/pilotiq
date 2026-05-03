@@ -31,7 +31,7 @@ Land in this order. Each step is independently shippable; later steps build on e
 | 12 | ✅ `global-search.md` DONE | ~1 week | `Resource.globalSearch` opt-in + 4 override statics + `searchAllResources` helper + `GET /_search` + Cmd+K palette + sidebar/topbar trigger pill shipped 2026-05-01. |
 | 13 | ✅ `soft-deletes.md` DONE | ~1 week | Resource.softDeletes opt-in + TrashedFilter (auto-inject) + Restore/ForceDelete routes + Action.restore/forceDelete + bulk variants shipped 2026-05-01. Verified rudder ORM already shipped the primitives (Model.softDeletes, restore/forceDelete, withTrashed/onlyTrashed). 885 tests. Two-sided opt-in (Model + Resource) by design. Demo at `playground-pilotiq` PostResource. |
 
-Penciled for later (Tier 3): Repeater/Builder fields ✅ shipped (Plans #14, #14-followup); widgets/dashboards ✅ shipped (Plan #15); resource nesting, sub-navigation, import/export still open.
+Penciled for later (Tier 3): Repeater/Builder fields ✅ shipped (Plans #14, #14-followup); widgets/dashboards ✅ shipped (Plan #15); import/export ✅ shipped (`import-export-actions.md`, 2026-05-03); resource nesting, sub-navigation still open.
 
 **Cross-repo blockers tracked outside pilotiq:**
 - `belongsToMany` / pivot / M2M — gated on `@rudderjs/orm`. Plan filed at `~/Projects/rudder/docs/plans/2026-05-03-orm-belongs-to-many.md`. Pilotiq's RelationManager M2M follow-up is gated on it landing.

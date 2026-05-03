@@ -536,6 +536,14 @@ export async function dispatchHandlerAction(
       headers: { 'Accept': 'application/json' },
       body:    fd,
     })
+    // Download branch — handlers that return `{ download }` ask the server
+    // to write the body inline with `Content-Disposition: attachment`. Trip
+    // a browser download via a synthetic `<a download>` and exit early
+    // (no notify drain / no SPA-nav — the file IS the success signal).
+    if (res.ok && triggerDownloadIfAttachment(res)) {
+      await res.blob().then(triggerBlobDownload(res))
+      return
+    }
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
       const message = String((data as { error?: string }).error ?? `Request failed (${res.status})`)
@@ -548,6 +556,37 @@ export async function dispatchHandlerAction(
     else if (typeof window !== 'undefined') navigate(window.location.pathname + window.location.search)
   } catch (err) {
     notify({ type: 'error', title: 'Action failed', body: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/** Returns true when the response carries `Content-Disposition: attachment`,
+ *  which is how the route layer signals a download payload. The header
+ *  match is case-insensitive (different runtimes normalize differently). */
+function triggerDownloadIfAttachment(res: Response): boolean {
+  const cd = res.headers.get('Content-Disposition') ?? res.headers.get('content-disposition') ?? ''
+  return cd.toLowerCase().includes('attachment')
+}
+
+/** Returns a closure that converts the blob into a download by clicking
+ *  a synthetic `<a download="…">`. Filename is parsed from
+ *  `Content-Disposition`'s `filename="…"` parameter; falls back to
+ *  `'download'` when missing. Only mounted when `document` is present
+ *  (no-op in SSR). */
+function triggerBlobDownload(res: Response): (blob: Blob) => void {
+  const cd = res.headers.get('Content-Disposition') ?? res.headers.get('content-disposition') ?? ''
+  const match = cd.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)["']?/i)
+  const filename = (match?.[1] ?? 'download').trim()
+  return (blob) => {
+    if (typeof document === 'undefined' || typeof URL === 'undefined') return
+    const objUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objUrl
+    a.download = filename
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(objUrl)
   }
 }
 

@@ -1,4 +1,4 @@
-import { Action, type ActionContext, type NotificationLike } from '../actions/Action.js'
+import { Action, type ActionContext, type DownloadEnvelope, type NotificationLike } from '../actions/Action.js'
 import type { Element } from '../schema/Element.js'
 import { isRepeaterField, RepeaterField } from '../fields/RepeaterField.js'
 import { isBuilderField, BuilderField } from '../fields/BuilderField.js'
@@ -149,6 +149,10 @@ export interface DispatchActionSuccess {
    * Forwarded by the route layer either inline (JSON dispatch) or as
    * a flash payload through the redirect (HTML dispatch). */
   notifications?: NotificationMeta[]
+  /** File-download envelope the handler emitted via `{ download }`.
+   * The route layer writes `Content-Disposition: attachment` + the
+   * payload body and ignores `redirect` when this is set. */
+  download?: DownloadEnvelope
 }
 
 export interface DispatchActionFailure {
@@ -253,6 +257,7 @@ export async function dispatchAction(
         const notifs = normalizeNotifications(result.notify)
         if (notifs.length > 0) success.notifications = notifs
       }
+      if (isDownloadEnvelope(result.download)) success.download = result.download
     }
     return success
   } catch (err) {
@@ -317,4 +322,15 @@ function normalizeNotifications(input: NotificationLike): NotificationMeta[] {
     else if (n && typeof n === 'object') out.push(n as NotificationMeta)
   }
   return out
+}
+
+/** Structural shape check for the `{ download }` envelope. Defends the
+ * route layer from a handler that returns a partial / wrong-typed
+ * download object. */
+function isDownloadEnvelope(value: unknown): value is DownloadEnvelope {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Record<string, unknown>
+  return typeof v.filename === 'string'
+    && typeof v.contentType === 'string'
+    && typeof v.body === 'string'
 }

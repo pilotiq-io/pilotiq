@@ -52,19 +52,23 @@ interface FakeRes {
   statusCode:    number
   redirectedTo?: { url: string; code: number }
   sentBody?:     unknown
+  headers:       Record<string, string>
   status(code: number): FakeRes
   redirect(url: string, code?: number): FakeRes
   send(body: unknown): FakeRes
   json(body: unknown): FakeRes
+  header(key: string, value: string): FakeRes
 }
 
 function fakeRes(): FakeRes {
   const r: FakeRes = {
     statusCode: 200,
+    headers:    {},
     status(code) { this.statusCode = code; return this },
     redirect(url, code = 302) { this.redirectedTo = { url, code }; return this },
     send(body) { this.sentBody = body; return this },
     json(body) { this.sentBody = body; return this },
+    header(key, value) { this.headers[key] = value; return this },
   }
   return r
 }
@@ -739,6 +743,91 @@ describe('registerPilotiqRoutes — Action handler dispatch', () => {
       fakeReq({ params: { actionName: 'go' }, body: {} }),
     )
     assert.deepEqual(res.redirectedTo, { url: '/somewhere', code: 303 })
+  })
+})
+
+describe('registerPilotiqRoutes — Action download envelope', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  function panelWith(R: any) {
+    return Pilotiq.make('T').path('/admin').resources([R])
+  }
+
+  it('writes Content-Type / Content-Disposition + body for a handler that returns { download }', async () => {
+    const { Action } = await import('./actions/Action.js')
+    class WithDownload extends ArticleResource {
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).actions([
+          Action.make('exportCsv').handler(() => ({
+            download: { filename: 'posts.csv', contentType: 'text/csv; charset=utf-8', body: 'id\r\n1\r\n' },
+          })),
+        ])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(WithDownload))
+    const post = router.list().find(r =>
+      r.method === 'POST' && r.path === '/admin/articles/_action/:actionName',
+    )!
+    const { res } = await callHandlerCapturing(
+      post.handler,
+      fakeReq({ params: { actionName: 'exportCsv' }, body: {} }),
+    )
+    assert.equal(res.headers['Content-Type'], 'text/csv; charset=utf-8')
+    assert.equal(res.headers['Content-Disposition'], 'attachment; filename="posts.csv"')
+    assert.equal(res.sentBody, 'id\r\n1\r\n')
+    // Download wins over redirect — the route should NOT have called .redirect().
+    assert.equal(res.redirectedTo, undefined)
+  })
+
+  it('sanitizes hostile filenames (strips quotes, CR, LF, backslash)', async () => {
+    const { Action } = await import('./actions/Action.js')
+    class Hostile extends ArticleResource {
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).actions([
+          Action.make('exportCsv').handler(() => ({
+            download: {
+              filename:    'evil"\r\n\\name.csv',
+              contentType: 'text/csv',
+              body:        'a',
+            },
+          })),
+        ])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Hostile))
+    const post = router.list().find(r =>
+      r.method === 'POST' && r.path === '/admin/articles/_action/:actionName',
+    )!
+    const { res } = await callHandlerCapturing(
+      post.handler,
+      fakeReq({ params: { actionName: 'exportCsv' }, body: {} }),
+    )
+    // Quotes, CR, LF, backslash all stripped — the surrounding quotes
+    // around filename stay intact and the header is parseable.
+    assert.equal(res.headers['Content-Disposition'], 'attachment; filename="evilname.csv"')
+  })
+
+  it('falls back to "export" when sanitization clears the filename', async () => {
+    const { Action } = await import('./actions/Action.js')
+    class Empty extends ArticleResource {
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).actions([
+          Action.make('exportCsv').handler(() => ({
+            download: { filename: '"""', contentType: 'text/csv', body: 'a' },
+          })),
+        ])
+      }
+    }
+    registerPilotiqRoutes(router, panelWith(Empty))
+    const post = router.list().find(r =>
+      r.method === 'POST' && r.path === '/admin/articles/_action/:actionName',
+    )!
+    const { res } = await callHandlerCapturing(
+      post.handler,
+      fakeReq({ params: { actionName: 'exportCsv' }, body: {} }),
+    )
+    assert.equal(res.headers['Content-Disposition'], 'attachment; filename="export"')
   })
 })
 

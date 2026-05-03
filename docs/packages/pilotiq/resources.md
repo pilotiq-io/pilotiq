@@ -453,6 +453,16 @@ Action.delete(R, basePath, recordId?)   // → POSTs to ${slug}/${id}/delete wit
 
 `recordId` is optional. Pass it for view-page contexts to bake the URL at config time. Omit it for row contexts — the URL keeps the `:id` template and the renderer substitutes per row.
 
+### Import / Export factories
+
+```ts
+Action.export    (R, basePath, opts?)   // header — downloads CSV/JSON
+Action.bulkExport(R, basePath, opts?)   // bulk   — exports ctx.records
+Action.import    (R, basePath, opts?)   // header — upload + create/upsert
+```
+
+`export` walks the table query in pages so the CSV reflects the active filter / search / sort. `import` opens a modal with a `FileUpload`, parses the file, and runs each row through `R.model.create` (or `R.model.update` when `upsertBy` is set). See [Import / Export](./import-export.md) for the full options bag and CSV format details.
+
 **Wire them in two places:**
 
 ```ts

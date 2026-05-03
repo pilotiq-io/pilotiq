@@ -98,6 +98,28 @@ function splitMeta(body: Record<string, unknown>): {
   }
 }
 
+/** Strip control characters (`"\\\r\n`) from a download filename so
+ *  the `Content-Disposition: attachment; filename="…"` header stays
+ *  unbreakable. Defends against a handler that returns a hostile
+ *  filename string. Empty fallback `'export'`. */
+function sanitizeFilename(name: string): string {
+  const cleaned = (name ?? '').replace(/[\r\n"\\]/g, '').trim()
+  return cleaned.length > 0 ? cleaned : 'export'
+}
+
+/** Write an `Action`-handler download envelope as the response. Sets
+ *  `Content-Type` + `Content-Disposition: attachment` and ends with
+ *  the body. Mutually exclusive with redirect — call sites consult
+ *  `result.download` first. */
+function sendDownload(
+  res: AppResponse,
+  env: { filename: string; contentType: string; body: string },
+): void {
+  res.header('Content-Type', env.contentType)
+  res.header('Content-Disposition', `attachment; filename="${sanitizeFilename(env.filename)}"`)
+  res.send(env.body)
+}
+
 /** Plan #10 — send a 403 response. Branches on `Accept: application/json`
  * the same way the action / form dispatch paths do. Used by every route
  * after a `Resource.canX(...)` check fails. We deliberately do NOT
@@ -558,6 +580,11 @@ export function registerPilotiqRoutes(
           res.status(500)
           return res.send(result.error)
         }
+        // Download envelope wins over redirect — `Action.export` and friends
+        // return the file body inline. Notifications dropped on this branch
+        // because the binary response has no JSON envelope to carry them;
+        // the file itself is the success signal.
+        if (result.download) return sendDownload(res, result.download)
         const redirect = normalizeRedirect(result.redirect, base) ?? indexUrl
         if (json) {
           return res.json({
@@ -844,6 +871,7 @@ export function registerPilotiqRoutes(
           res.status(500)
           return res.send(result.error)
         }
+        if (result.download) return sendDownload(res, result.download)
         const redirect = normalizeRedirect(result.redirect, base) ?? createUrl
         if (json) {
           return res.json({
@@ -1150,6 +1178,7 @@ export function registerPilotiqRoutes(
           res.status(500)
           return res.send(result.error)
         }
+        if (result.download) return sendDownload(res, result.download)
         const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
         if (json) {
           return res.json({
@@ -1707,6 +1736,7 @@ export function registerPilotiqRoutes(
         res.status(500)
         return res.send(result.error)
       }
+      if (result.download) return sendDownload(res, result.download)
       const redirect = normalizeRedirect(result.redirect, base) ?? pageUrl
       if (json) {
         return res.json({

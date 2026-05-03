@@ -748,3 +748,481 @@ describe('Action visibility through resolveSchema (non-row placements)', () => {
     assert.equal(result[0]!['disabled'], true)
   })
 })
+
+describe('Action.export factory', () => {
+  /** Lazily-resolved Column class — Column module imports Action, so a
+   *  top-level static import would tighten the cycle. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let ColumnClass: any
+  beforeEach(async () => {
+    if (!ColumnClass) ColumnClass = (await import('../Column.js')).Column
+  })
+
+  /** Build a minimal Resource-like object with an opt-in `table()`
+   *  configurator and visibility predicate. */
+  function makeR(over: {
+    canViewAny?: (user: unknown) => boolean | Promise<boolean>
+    rows?:       Record<string, unknown>[]
+    perPageHint?: number
+    columns?:    Array<string>
+  } = {}) {
+    const rows = over.rows ?? [
+      { id: 1, name: 'Ada',   email: 'ada@example.com' },
+      { id: 2, name: 'Grace', email: 'grace@example.com' },
+    ]
+    const colNames = over.columns ?? ['id', 'name', 'email']
+
+    return {
+      labelSingular: 'User',
+      label:         'Users',
+      getSlug:       () => 'users',
+      ...(over.canViewAny ? { canViewAny: over.canViewAny } : {}),
+      // R.table is called inside the export handler with an empty Table.
+      // We mutate the passed table in-place, mirroring how user code does
+      // it via the fluent builder. Returning the same `t` matches the
+      // contract of `static table(t)`.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      table(t: any) {
+        const cols = colNames.map(n => ColumnClass.make(n))
+        // Records handler — pages 1..N where N covers all rows. Honors
+        // the `perPage` we ask for (so chunking exits cleanly).
+        t.columns(cols)
+        t.records(({ page = 1, perPage = 1000 }: { page?: number; perPage?: number }) => {
+          const start = (page - 1) * perPage
+          return { rows: rows.slice(start, start + perPage), total: rows.length }
+        })
+        return t
+      },
+    }
+  }
+
+  it('returns a CSV download envelope with default filename / contentType', async () => {
+    const a = Action.export(makeR(), '/admin')
+    const result = await a.getHandler()!({ values: {} })
+    const env = (result as { download?: { filename: string; contentType: string; body: string } }).download
+    assert.ok(env, 'expected download envelope')
+    assert.match(env!.filename, /^users-\d{4}-\d{2}-\d{2}\.csv$/)
+    assert.equal(env!.contentType, 'text/csv; charset=utf-8')
+    // Default label is Column.getLabel() which title-cases the key
+    // (`id` → `Id`, `email` → `Email`). Tests pin the title-cased shape
+    // so a Column.getLabel() change here is intentional.
+    assert.equal(env!.body.split('\r\n')[0], 'Id,Name,Email')
+    assert.ok(env!.body.includes('1,Ada,ada@example.com'))
+    assert.ok(env!.body.includes('2,Grace,grace@example.com'))
+  })
+
+  it('honors explicit columns option (string + object form)', async () => {
+    const a = Action.export(makeR(), '/admin', {
+      columns: ['id', { key: 'name', label: 'Full name' }],
+    })
+    const result = await a.getHandler()!({ values: {} })
+    const body = (result as { download: { body: string } }).download.body
+    assert.equal(body.split('\r\n')[0], 'id,Full name')
+    assert.ok(body.includes('1,Ada'))
+    assert.ok(!body.includes('email'))
+  })
+
+  it('column.format(value, record) maps the cell before write', async () => {
+    const a = Action.export(makeR(), '/admin', {
+      columns: [
+        { key: 'id' },
+        { key: 'name', format: (v) => `<<${v}>>` },
+      ],
+    })
+    const body = ((await a.getHandler()!({ values: {} })) as { download: { body: string } }).download.body
+    assert.ok(body.includes('1,<<Ada>>'))
+  })
+
+  it('honors filename option as string and as function', async () => {
+    const a1 = Action.export(makeR(), '/admin', { filename: 'fixed.csv' })
+    const env1 = ((await a1.getHandler()!({ values: {} })) as { download: { filename: string } }).download
+    assert.equal(env1.filename, 'fixed.csv')
+
+    const a2 = Action.export(makeR(), '/admin', {
+      filename: (ctx) => `dynamic-${(ctx.values as { v?: string }).v}.csv`,
+    })
+    const env2 = ((await a2.getHandler()!({ values: { v: '42' } })) as { download: { filename: string } }).download
+    assert.equal(env2.filename, 'dynamic-42.csv')
+  })
+
+  it('format: "json" returns JSON body + JSON content-type', async () => {
+    const a = Action.export(makeR(), '/admin', { format: 'json' })
+    const env = ((await a.getHandler()!({ values: {} })) as { download: { body: string; contentType: string; filename: string } }).download
+    assert.equal(env.contentType, 'application/json')
+    assert.match(env.filename, /\.json$/)
+    const parsed = JSON.parse(env.body)
+    assert.equal(parsed.length, 2)
+    assert.equal(parsed[0].name, 'Ada')
+  })
+
+  it('emits an error notification when maxRows is exceeded', async () => {
+    const big: Record<string, unknown>[] = Array.from({ length: 5 }, (_, i) => ({ id: i, name: `n${i}` }))
+    const a = Action.export(makeR({ rows: big, columns: ['id', 'name'] }), '/admin', { maxRows: 3, chunkSize: 2 })
+    const r = await a.getHandler()!({ values: {} })
+    const notify = (r as { notify?: { type: string; title: string } }).notify
+    assert.equal(notify?.type, 'error')
+    assert.match(notify!.title, /exceeded 3/)
+  })
+
+  it('emits an error notification when the resource has no table()', async () => {
+    const R = { labelSingular: 'X', getSlug: () => 'x' }
+    const a = Action.export(R, '/admin')
+    const r = await a.getHandler()!({ values: {} })
+    const notify = (r as { notify?: { type: string; title: string } }).notify
+    assert.equal(notify?.type, 'error')
+    assert.match(notify!.title, /not configured/)
+  })
+
+  it('emits an error notification when columns resolve to none', async () => {
+    const R = makeR({ columns: [] })
+    const a = Action.export(R, '/admin')
+    const r = await a.getHandler()!({ values: {} })
+    const notify = (r as { notify?: { type: string; title: string } }).notify
+    assert.equal(notify?.type, 'error')
+    assert.match(notify!.title, /no columns/)
+  })
+
+  it('visibility delegates to R.canViewAny — denies hide the action', async () => {
+    const a = Action.export(makeR({ canViewAny: async () => false }), '/admin')
+    const ev = await a.evaluate({ user: { id: 'u' } })
+    assert.equal(ev.visible, false)
+  })
+
+  it('visibility allows when canViewAny is unset (predicate defaults to true)', async () => {
+    const a = Action.export(makeR(), '/admin')
+    const ev = await a.evaluate({ user: { id: 'u' } })
+    assert.equal(ev.visible, true)
+  })
+})
+
+describe('Action.bulkExport factory', () => {
+  function makeR(canViewAny?: (user: unknown) => boolean | Promise<boolean>) {
+    return {
+      labelSingular: 'User',
+      label:         'Users',
+      getSlug:       () => 'users',
+      ...(canViewAny ? { canViewAny } : {}),
+    }
+  }
+
+  it('exports ctx.records with default columns from the records themselves', async () => {
+    const a = Action.bulkExport(makeR(), '/admin', {
+      columns: ['id', 'name'],
+    })
+    const r = await a.getHandler()!({
+      values:  {},
+      records: [{ id: 1, name: 'Ada' }, { id: 2, name: 'Grace' }],
+    })
+    const env = (r as { download: { filename: string; body: string; contentType: string } }).download
+    assert.equal(env.contentType, 'text/csv; charset=utf-8')
+    assert.equal(env.body.split('\r\n')[0], 'id,name')
+    assert.ok(env.body.includes('1,Ada'))
+    assert.ok(env.body.includes('2,Grace'))
+  })
+
+  it('marks placement as bulk', () => {
+    const a = Action.bulkExport(makeR(), '/admin', { columns: ['id'] })
+    assert.equal(a.toMeta().placement, 'bulk')
+  })
+
+  it('exceeds maxRows → error notification', async () => {
+    const a = Action.bulkExport(makeR(), '/admin', {
+      columns: ['id'],
+      maxRows: 1,
+    })
+    const r = await a.getHandler()!({
+      values:  {},
+      records: [{ id: 1 }, { id: 2 }],
+    })
+    const notify = (r as { notify?: { type: string; title: string } }).notify
+    assert.equal(notify?.type, 'error')
+    assert.match(notify!.title, /exceeded 1/)
+  })
+
+  it('format: "json" works for bulk too', async () => {
+    const a = Action.bulkExport(makeR(), '/admin', { columns: ['id'], format: 'json' })
+    const r = await a.getHandler()!({
+      values:  {},
+      records: [{ id: 1 }],
+    })
+    const env = (r as { download: { body: string } }).download
+    assert.deepEqual(JSON.parse(env.body), [{ id: 1 }])
+  })
+
+  it('honors empty records (still emits a header-only CSV)', async () => {
+    const a = Action.bulkExport(makeR(), '/admin', { columns: ['id', 'name'] })
+    const r = await a.getHandler()!({ values: {}, records: [] })
+    const env = (r as { download: { body: string } }).download
+    assert.equal(env.body, 'id,name')
+  })
+})
+
+describe('Action.import factory', () => {
+  /** Build a stand-in `R.model` that records calls and lets tests
+   *  control whether `query().where().paginate()` finds an existing
+   *  row. */
+  function makeModel(over: { existingByKey?: Record<string, Record<string, unknown>> } = {}) {
+    const created: Array<Record<string, unknown>> = []
+    const updated: Array<{ id: string; payload: Record<string, unknown> }> = []
+    return {
+      created,
+      updated,
+      async create(payload: Record<string, unknown>) {
+        created.push(payload)
+        return { id: String(created.length), ...payload }
+      },
+      async update(id: string, payload: Record<string, unknown>) {
+        updated.push({ id, payload })
+        return { id, ...payload }
+      },
+      query() {
+        return {
+          where(col: string, val: unknown) {
+            return {
+              async paginate() {
+                const lookup = over.existingByKey ?? {}
+                const key = `${col}=${String(val)}`
+                const found = lookup[key]
+                return { data: found ? [found] : [] }
+              },
+            }
+          },
+        }
+      },
+    }
+  }
+
+  function makeR(over: {
+    canCreate?: (user: unknown) => boolean | Promise<boolean>
+    model?:     ReturnType<typeof makeModel>
+  } = {}) {
+    return {
+      labelSingular: 'User',
+      label:         'Users',
+      getSlug:       () => 'users',
+      ...(over.canCreate ? { canCreate: over.canCreate } : {}),
+      model:         over.model ?? makeModel(),
+    }
+  }
+
+  /** Stub `globalThis.fetch` to return a static body, restore after the test. */
+  function withFetch(text: string, fn: () => Promise<void>): Promise<void> {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => ({
+      ok:   true,
+      text: async () => text,
+    })) as unknown as typeof fetch
+    return fn().finally(() => { globalThis.fetch = original })
+  }
+
+  it('auto-builds the modal schema with a FileUpload child by default', () => {
+    const a = Action.import(makeR(), '/admin')
+    assert.equal(a.toMeta().confirm, undefined, 'import is form-modal, not a confirm prompt')
+    const schema = a.getSchema()
+    assert.equal(schema.length, 1, 'default modal: just the FileUpload')
+    assert.equal((schema[0] as { name?: unknown }).name, 'file')
+  })
+
+  it('appends a Mode select when upsertBy is set', async () => {
+    const a = Action.import(makeR(), '/admin', { upsertBy: 'email' })
+    // Modal heading preserved
+    const modal = (a.toMeta() as unknown as { modal?: { heading?: string } }).modal
+    assert.equal(modal?.heading, 'Import Users')
+    // Schema is set via .schema() — read it via the same mechanism dispatchAction uses.
+    const schema = a.getSchema()
+    const names = schema.map(el => (el as { name?: unknown }).name)
+    assert.deepEqual(names, ['file', 'mode'])
+  })
+
+  it('CSV happy-path → all rows create through R.model.create', async () => {
+    const model = makeModel()
+    const R = makeR({ model })
+    const a = Action.import(R, '/admin')
+    await withFetch('name,email\r\nAda,ada@x\r\nGrace,grace@x\r\n', async () => {
+      const r = await a.getHandler()!({
+        values: { file: 'http://localhost/uploads/1.csv' },
+      })
+      assert.equal(model.created.length, 2)
+      assert.deepEqual(model.created[0], { name: 'Ada', email: 'ada@x' })
+      assert.deepEqual(model.created[1], { name: 'Grace', email: 'grace@x' })
+      const notify = (r as { notify?: { type: string; title: string } }).notify
+      assert.equal(notify?.type, 'success')
+      assert.match(notify!.title, /2 created/)
+    })
+  })
+
+  it('upsertBy + matching row → R.model.update; non-matching → R.model.create', async () => {
+    const model = makeModel({
+      existingByKey: { 'email=ada@x': { id: '7', name: 'Old', email: 'ada@x' } },
+    })
+    const R = makeR({ model })
+    const a = Action.import(R, '/admin', { upsertBy: 'email' })
+    await withFetch('name,email\r\nAda,ada@x\r\nGrace,grace@x\r\n', async () => {
+      const r = await a.getHandler()!({
+        values: { file: 'http://localhost/uploads/1.csv', mode: 'upsert' },
+      })
+      assert.equal(model.updated.length, 1, 'one match → one update')
+      assert.equal(model.updated[0]!.id, '7')
+      assert.equal(model.created.length, 1, 'non-match → create')
+      const notify = (r as { notify?: { title: string } }).notify
+      assert.match(notify!.title, /1 created.*1 updated/)
+    })
+  })
+
+  it('upsertBy with mode=create → never updates, always creates', async () => {
+    const model = makeModel({
+      existingByKey: { 'email=ada@x': { id: '7', name: 'Old', email: 'ada@x' } },
+    })
+    const R = makeR({ model })
+    const a = Action.import(R, '/admin', { upsertBy: 'email' })
+    await withFetch('name,email\r\nAda,ada@x\r\n', async () => {
+      await a.getHandler()!({
+        values: { file: 'http://localhost/uploads/1.csv', mode: 'create' },
+      })
+      assert.equal(model.updated.length, 0)
+      assert.equal(model.created.length, 1)
+    })
+  })
+
+  it('per-row validate() returning a string skips the row + accumulates as error', async () => {
+    const model = makeModel()
+    const R = makeR({ model })
+    const a = Action.import(R, '/admin', {
+      validate: (row) => (row['name'] === 'Ada' ? 'ada is reserved' : null),
+    })
+    await withFetch('name,email\r\nAda,ada@x\r\nGrace,grace@x\r\n', async () => {
+      const r = await a.getHandler()!({
+        values: { file: 'http://localhost/uploads/1.csv' },
+      })
+      assert.equal(model.created.length, 1, 'only Grace makes it through')
+      const notify = (r as { notify?: { type: string; title: string; body?: string } }).notify
+      assert.equal(notify?.type, 'warning')
+      assert.match(notify!.title, /1 created/)
+      assert.match(notify!.title, /1 skipped/)
+      assert.match(notify!.body ?? '', /Row 1: ada is reserved/)
+    })
+  })
+
+  it('thrown error during create → row counted as skipped + surfaced in notification body', async () => {
+    const failing = {
+      created: [] as Record<string, unknown>[],
+      async create() { throw new Error('db down') },
+      query() { return { where() { return { async paginate() { return { data: [] } } } } } },
+    }
+    const R = makeR({ model: failing as unknown as ReturnType<typeof makeModel> })
+    const a = Action.import(R, '/admin')
+    await withFetch('name\r\nAda\r\n', async () => {
+      const r = await a.getHandler()!({
+        values: { file: 'http://localhost/uploads/1.csv' },
+      })
+      const notify = (r as { notify?: { type: string; body?: string } }).notify
+      assert.equal(notify?.type, 'warning')
+      assert.match(notify!.body ?? '', /Row 1: db down/)
+    })
+  })
+
+  it('opts.columns remap CSV headers to model attribute keys', async () => {
+    const model = makeModel()
+    const R = makeR({ model })
+    const a = Action.import(R, '/admin', {
+      columns: { 'Full Name': 'name', 'Email Address': 'email' },
+    })
+    await withFetch('Full Name,Email Address\r\nAda,ada@x\r\n', async () => {
+      await a.getHandler()!({
+        values: { file: 'http://localhost/uploads/1.csv' },
+      })
+      assert.deepEqual(model.created[0], { name: 'Ada', email: 'ada@x' })
+    })
+  })
+
+  it('beforeCreate hook can mutate the row payload', async () => {
+    const model = makeModel()
+    const R = makeR({ model })
+    const a = Action.import(R, '/admin', {
+      beforeCreate: (row) => ({ ...row, source: 'csv-import' }),
+    })
+    await withFetch('name\r\nAda\r\n', async () => {
+      await a.getHandler()!({
+        values: { file: 'http://localhost/uploads/1.csv' },
+      })
+      assert.deepEqual(model.created[0], { name: 'Ada', source: 'csv-import' })
+    })
+  })
+
+  it('emits an error notification when no file is uploaded', async () => {
+    const a = Action.import(makeR(), '/admin')
+    const r = await a.getHandler()!({ values: {} })
+    const notify = (r as { notify?: { type: string; title: string } }).notify
+    assert.equal(notify?.type, 'error')
+    assert.match(notify!.title, /No file uploaded/)
+  })
+
+  it('emits an error notification when R.model.create is missing', async () => {
+    const R = { labelSingular: 'X', getSlug: () => 'x', model: {} }
+    const a = Action.import(R, '/admin')
+    const r = await a.getHandler()!({ values: { file: 'http://localhost/uploads/1.csv' } })
+    const notify = (r as { notify?: { type: string; title: string } }).notify
+    assert.equal(notify?.type, 'error')
+    assert.match(notify!.title, /no model.create/)
+  })
+
+  it('emits an error notification when row count exceeds maxRows', async () => {
+    const model = makeModel()
+    const R = makeR({ model })
+    const a = Action.import(R, '/admin', { maxRows: 1 })
+    await withFetch('name\r\nA\r\nB\r\n', async () => {
+      const r = await a.getHandler()!({
+        values: { file: 'http://localhost/uploads/1.csv' },
+      })
+      const notify = (r as { notify?: { type: string; title: string } }).notify
+      assert.equal(notify?.type, 'error')
+      assert.match(notify!.title, /too large \(2 > 1\)/)
+      assert.equal(model.created.length, 0, 'no rows written when cap exceeded')
+    })
+  })
+
+  it('JSON format imports parse arrays and single objects', async () => {
+    const model = makeModel()
+    const R = makeR({ model })
+    const a = Action.import(R, '/admin', { format: 'json' })
+    await withFetch('[{"name":"Ada"},{"name":"Grace"}]', async () => {
+      await a.getHandler()!({
+        values: { file: 'http://localhost/uploads/1.json' },
+      })
+      assert.equal(model.created.length, 2)
+    })
+  })
+
+  it('format auto-detects from filename extension when not set', async () => {
+    const model = makeModel()
+    const R = makeR({ model })
+    const a = Action.import(R, '/admin')
+    await withFetch('{"name":"Ada"}', async () => {
+      await a.getHandler()!({
+        values: { file: 'http://localhost/uploads/x.json' },
+      })
+      assert.equal(model.created.length, 1)
+      assert.equal(model.created[0]!['name'], 'Ada')
+    })
+  })
+
+  it('onComplete hook fires once after the import loop with the summary', async () => {
+    const seen: unknown[] = []
+    const a = Action.import(makeR(), '/admin', {
+      onComplete: (s) => { seen.push(s) },
+    })
+    await withFetch('name\r\nA\r\nB\r\n', async () => {
+      await a.getHandler()!({
+        values: { file: 'http://localhost/uploads/1.csv' },
+      })
+    })
+    assert.equal(seen.length, 1)
+    assert.equal((seen[0] as { created: number }).created, 2)
+  })
+
+  it('visibility delegates to R.canCreate — denials hide the action', async () => {
+    const a = Action.import(makeR({ canCreate: async () => false }), '/admin')
+    const ev = await a.evaluate({ user: { id: 'u' } })
+    assert.equal(ev.visible, false)
+  })
+})
