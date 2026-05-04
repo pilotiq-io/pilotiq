@@ -76,6 +76,7 @@ export {
 } from './Column.js'
 
 export {
+  TextColumn,
   BadgeColumn,
   type BadgeColor,
   IconColumn,

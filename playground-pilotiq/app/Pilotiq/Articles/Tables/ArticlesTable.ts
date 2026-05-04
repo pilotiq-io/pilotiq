@@ -1,5 +1,5 @@
 import {
-  Column, BadgeColumn, BooleanColumn,
+  Column, TextColumn, BadgeColumn, BooleanColumn, IconColumn, ImageColumn,
   Action, ActionGroup,
   BooleanFilter, MultiSelectFilter, FormFilter,
   TextField, SelectField,
@@ -24,17 +24,53 @@ export const ArticlesTable = {
         icon:        'inbox',
       })
       .columns([
-        Column.make('title').label('Title').sortable().searchable().weight('semibold')
+        // Image column → renders the URL value as a 40px square thumbnail.
+        // `placeholder('—')` is the fallback when coverImage is null.
+        ImageColumn.make('coverImage').label('Cover').size(40).square()
+          .placeholder('—'),
+        // TextColumn is the canonical text-cell builder; Column.make() is
+        // an alias. Spelled out here for symmetry with the other column
+        // subclasses below.
+        TextColumn.make('title').label('Title').sortable().searchable()
+          .weight('semibold')
           .summarize([Count.make().label('Articles')]),
-        Column.make('slug').label('Slug').searchable().color('muted').lineClamp(1),
+        // Limit truncates the rendered cell to N chars + '…'. Hover for
+        // the full slug via .tooltip().
+        TextColumn.make('slug').label('Slug').searchable().color('muted')
+          .limit(28).tooltip('Full slug'),
         BadgeColumn.make('status').label('Status').sortable().colors({
           draft:     'gray',
           published: 'success',
           archived:  'warning',
         }),
+        // Icon column — different visual from BadgeColumn for the same
+        // value space. Renders just the icon (no label) so it reads as
+        // a glyph at-a-glance. Keep on the demo for parity with the
+        // value→{icon,color} branch of formatCell.
+        IconColumn.make('status').label('').alignment('center')
+          .options({
+            draft:     { icon: 'pencil',        color: 'muted'   },
+            published: { icon: 'check-circle-2', color: 'success' },
+            archived:  { icon: 'archive',       color: 'warning' },
+          })
+          .recordUrl(false),
         BooleanColumn.make('featured').label('Featured').sortable().alignment('center')
           .summarize([Sum.make().label('Featured')]),
-        Column.make('publishedAt').label('Published').sortable().dateTime(),
+        // numeric() — render an integer as a locale-aware number. Demo
+        // counts the article's tags JSON length server-side via
+        // formatStateUsing (the column's underlying value is JSON, so
+        // numeric() alone wouldn't know to count).
+        TextColumn.make('tags').label('Tag count').alignment('end')
+          .formatStateUsing((value) => {
+            try {
+              const arr = JSON.parse(String(value ?? '[]')) as unknown[]
+              return String(arr.length)
+            } catch {
+              return '0'
+            }
+          }),
+        Column.make('publishedAt').label('Published').sortable().dateTime()
+          .placeholder('Not yet'),
         Column.make('createdAt').label('Created').sortable().since(),
       ])
       // Three group options — user picks which one is active via the

@@ -1,3 +1,4 @@
+export { TextColumn }                                     from './TextColumn.js'
 export { BadgeColumn,     type BadgeColor }               from './BadgeColumn.js'
 export { IconColumn,      type IconOption }               from './IconColumn.js'
 export { BooleanColumn }                                  from './BooleanColumn.js'
