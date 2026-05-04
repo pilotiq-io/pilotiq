@@ -732,6 +732,58 @@ export class Action extends Element {
       })
   }
 
+  /**
+   * Bulk replicate — calls `R.model.create(...)` once per selected row
+   * with the source row's attributes minus PK / soft-delete column /
+   * `opts.excludeAttributes`. Optional `opts.beforeReplicaSaved(replica,
+   * source)` runs per-row. Rows that throw during create are skipped
+   * silently so a single bad row doesn't abort the batch (the user sees
+   * the success count on the toast). Visibility delegates to
+   * `R.canCreate(user)`.
+   *
+   * Sibling of `Action.replicate` — same options bag, same strip set,
+   * same authorization gate. Stays on the list page (no per-row
+   * redirect possible for N rows).
+   */
+  static bulkReplicate(
+    R:        ResourceLike,
+    _basePath: string,
+    opts:     ReplicateOptions = {},
+  ): Action {
+    return Action.make('bulkReplicate')
+      .label('Replicate selected')
+      .bulk()
+      .confirm(`Replicate the selected ${labelForCount(R, 0)}?`)
+      .handler(async (ctx) => {
+        const M = R.model
+        if (!M || typeof M.create !== 'function') {
+          return { notify: { title: 'Replicate not configured (resource has no model.create)', type: 'error' } as never }
+        }
+        const records = ctx.records ?? []
+        const pkCol      = (M as { primaryKey?: string }).primaryKey ?? 'id'
+        const trashedCol = R.deletedAtColumn ?? 'deletedAt'
+        const skip = new Set<string>([pkCol, trashedCol, ...(opts.excludeAttributes ?? [])])
+        let n = 0
+        for (const source of records) {
+          if (!source || typeof source !== 'object') continue
+          const allowed = await callPredicate(R.canCreate, ctx.user)
+          if (!allowed) continue
+          let replica: Record<string, unknown> = {}
+          for (const [k, v] of Object.entries(source as Record<string, unknown>)) {
+            if (skip.has(k)) continue
+            replica[k] = v
+          }
+          if (opts.beforeReplicaSaved) {
+            try { replica = await opts.beforeReplicaSaved(replica, source) }
+            catch { continue }
+          }
+          try { await M.create(replica); n++ } catch { /* skip — agg notify shows total */ }
+        }
+        return { notify: { title: `${n} ${labelForCount(R, n)} replicated`, type: 'success' } as never }
+      })
+      .visible(({ user }) => callPredicate(R.canCreate, user))
+  }
+
   // ─── Import / Export factories ────────────────────────────────
   //
   // Pre-built CSV / JSON in/out for any Resource that has `R.model`.

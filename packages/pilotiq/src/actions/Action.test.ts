@@ -1159,6 +1159,141 @@ describe('Action.replicate factory', () => {
   })
 })
 
+describe('Action.bulkReplicate factory', () => {
+  function makeR(over: Partial<{
+    primaryKey: string
+    deletedAtColumn: string
+    canCreate: (...args: unknown[]) => boolean | Promise<boolean>
+    create: (data: Record<string, unknown>) => Promise<unknown>
+  }> = {}): never {
+    const created: Array<Record<string, unknown>> = []
+    const R = {
+      labelSingular: 'Post',
+      label:         'Posts',
+      getSlug:       () => 'posts',
+      ...(over.deletedAtColumn !== undefined ? { deletedAtColumn: over.deletedAtColumn } : {}),
+      ...(over.canCreate ? { canCreate: over.canCreate } : {}),
+      model: {
+        ...(over.primaryKey !== undefined ? { primaryKey: over.primaryKey } : {}),
+        async create(data: Record<string, unknown>) {
+          created.push(data)
+          return over.create ? await over.create(data) : { id: String(created.length), ...data }
+        },
+      },
+      _created: created,
+    } as never
+    return R
+  }
+
+  it('renders as a bulk action with confirm prompt', () => {
+    const R = makeR()
+    const meta = Action.bulkReplicate(R, '/admin').toMeta()
+    assert.equal(meta.placement, 'bulk')
+    assert.match(meta.confirm?.message ?? '', /Replicate the selected/)
+  })
+
+  it('iterates ctx.records and creates one row per source', async () => {
+    const R = makeR()
+    const handler = Action.bulkReplicate(R, '/admin').getHandler()!
+    const result = await handler({
+      records: [
+        { id: '1', title: 'A' },
+        { id: '2', title: 'B' },
+        { id: '3', title: 'C' },
+      ],
+      user: null,
+    })
+    const created = (R as unknown as { _created: Array<Record<string, unknown>> })._created
+    assert.equal(created.length, 3)
+    assert.deepEqual(created.map(r => r['title']), ['A', 'B', 'C'])
+    assert.match((result as { notify: { title: string } }).notify.title, /3 posts replicated/)
+  })
+
+  it('strips PK + soft-delete + excludeAttributes from each replica', async () => {
+    const R = makeR({ primaryKey: 'uuid', deletedAtColumn: 'archivedAt' })
+    const handler = Action.bulkReplicate(R, '/admin', {
+      excludeAttributes: ['slug'],
+    }).getHandler()!
+    await handler({
+      records: [
+        { uuid: 'a', title: 'X', slug: 'x', archivedAt: null },
+        { uuid: 'b', title: 'Y', slug: 'y', archivedAt: '2026-01-01' },
+      ],
+      user: null,
+    })
+    const created = (R as unknown as { _created: Array<Record<string, unknown>> })._created
+    for (const r of created) {
+      assert.equal(r['uuid'],       undefined)
+      assert.equal(r['slug'],       undefined)
+      assert.equal(r['archivedAt'], undefined)
+    }
+  })
+
+  it('runs beforeReplicaSaved per row', async () => {
+    const R = makeR()
+    const handler = Action.bulkReplicate(R, '/admin', {
+      beforeReplicaSaved: (replica) => ({ ...replica, title: `Copy of ${replica['title']}` }),
+    }).getHandler()!
+    await handler({
+      records: [{ id: '1', title: 'A' }, { id: '2', title: 'B' }],
+      user: null,
+    })
+    const created = (R as unknown as { _created: Array<Record<string, unknown>> })._created
+    assert.deepEqual(created.map(r => r['title']), ['Copy of A', 'Copy of B'])
+  })
+
+  it('skips rows whose canCreate returns false', async () => {
+    let calls = 0
+    const R = makeR({ canCreate: async () => { calls++; return calls !== 2 } })
+    const handler = Action.bulkReplicate(R, '/admin').getHandler()!
+    const result = await handler({
+      records: [{ id: '1', title: 'A' }, { id: '2', title: 'B' }, { id: '3', title: 'C' }],
+      user: null,
+    })
+    const created = (R as unknown as { _created: Array<Record<string, unknown>> })._created
+    assert.equal(created.length, 2)
+    assert.match((result as { notify: { title: string } }).notify.title, /^2 posts replicated$/)
+  })
+
+  it('skips rows where create throws and reports only successful count', async () => {
+    let i = 0
+    const R = makeR({ create: async () => {
+      i++
+      if (i === 2) throw new Error('boom')
+      return { id: String(i) }
+    } })
+    const handler = Action.bulkReplicate(R, '/admin').getHandler()!
+    const result = await handler({
+      records: [{ id: '1' }, { id: '2' }, { id: '3' }],
+      user: null,
+    })
+    assert.match((result as { notify: { title: string } }).notify.title, /^2 posts replicated$/)
+  })
+
+  it('returns an error notify when R.model.create is missing', async () => {
+    const R = { labelSingular: 'Post', getSlug: () => 'posts' } as never
+    const handler = Action.bulkReplicate(R, '/admin').getHandler()!
+    const result = await handler({ records: [{ id: '1' }], user: null })
+    const notify = (result as { notify: { title: string; type: string } }).notify
+    assert.match(notify.title, /not configured/i)
+    assert.equal(notify.type, 'error')
+  })
+
+  it('count-aware singular form when n=1', async () => {
+    const R = makeR()
+    const handler = Action.bulkReplicate(R, '/admin').getHandler()!
+    const result = await handler({ records: [{ id: '1', title: 'A' }], user: null })
+    assert.match((result as { notify: { title: string } }).notify.title, /^1 post replicated$/)
+  })
+
+  it('visibility delegates to R.canCreate', async () => {
+    const R1 = makeR({ canCreate: () => true })
+    const R2 = makeR({ canCreate: () => false })
+    assert.equal((await Action.bulkReplicate(R1, '/admin').evaluate({})).visible, true)
+    assert.equal((await Action.bulkReplicate(R2, '/admin').evaluate({})).visible, false)
+  })
+})
+
 describe('Action visibility through resolveSchema (non-row placements)', () => {
   it('drops a header action when visible() returns false', async () => {
     const tree = [
