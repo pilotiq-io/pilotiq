@@ -71,7 +71,7 @@ Resource.make('Article').form((form) => form.schema([
 | `.fileAttachmentsDirectory('articles')` | — | Sub-directory hint forwarded to the panel's `UploadAdapter`. |
 | `.fileAttachmentsVisibility('public' \| 'private')` | — | Adapter-defined visibility hint. |
 | `.mergeTags(['firstName', 'company'])` | `[]` | Identifiers surfaced under "Merge tags" in the slash menu — each becomes a `{{ id }}` chip in the editor. |
-| `.mentions([MentionProvider.make('@').items([…])])` | `[]` | One mention provider per trigger character (`@`, `#`, …). Each provider declares its static items. |
+| `.mentions([MentionProvider.make('@').items([…])])` | `[]` | One mention provider per trigger character (`@`, `#`, …). Items can be static (`.items([…])`) or async (`.itemsUsing(async (query, ctx) => […])`); see "Mentions" below. |
 
 ## Toolbar buttons
 
@@ -249,7 +249,26 @@ renderRichTextToHtml(article.body, {
 
 The renderer always emits a styled `<span class="mention" data-trigger="@" data-id="sleman">@Sleman</span>` — the wrapping span carries the structural attributes so consumers can re-style or rewrite each chip downstream.
 
-> Async / API-backed providers (typing `@a` and fetching matches over the wire) are not part of v1. Items are declared statically at form-build time and inlined into the field meta.
+### Async items — `MentionProvider.itemsUsing(async (query, ctx) => …)`
+
+Static items are declared once at form-build time. For larger or live-changing item sets — search a users table, hit a directory service, gate items by tenant — pass an async resolver instead. The closure runs **server-side** on each keystroke; the editor fetches a tiny per-form endpoint and renders the response.
+
+```ts
+MentionProvider.make('@').itemsUsing(async (query, ctx) => {
+  const matches = await db.users.search(query, { limit: 10 })
+  return matches.map(u => ({ id: u.id, label: u.name }))
+})
+```
+
+`ctx` carries `{ user, record?, request? }` — the same opaque user object configured via `Pilotiq.user(req => …)`, the loaded record on edit-mode forms, and the raw request for adapters that need cookie / header access.
+
+`items()` and `itemsUsing()` are mutually exclusive; the last call wins and a `console.warn` fires when the previously-set items list is silently dropped. Mixing static + async providers on the same field is supported (`@` async for users, `#` static for a fixed channel list).
+
+The wire path is `POST {scope}/_form/{formId}/mentions` with body `{ field, trigger, query }`. Pilotiq stamps the URL onto the field meta when at least one provider has `itemsUsing(fn)` — fields with only static providers stay URL-less and the client never makes a network call.
+
+The endpoint reuses each scope's existing auth gate: resource-create routes through `R.canAccess + R.canCreate`, resource-edit through `R.canAccess + R.canEdit`, global-edit through `G.canAccess + G.canEdit`, custom pages through `Page.canAccess`. A throwing resolver returns `422` with the error message; the popover degrades to "no matches" rather than crashing.
+
+> Async-mention providers inside a Repeater / Builder row are **not** supported in v1 — the row-relative field path doesn't round-trip through the URL. Mount the field at the top level of the form (or a layout container), not inside an array-row.
 
 ## Custom blocks
 

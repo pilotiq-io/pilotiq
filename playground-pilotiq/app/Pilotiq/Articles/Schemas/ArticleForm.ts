@@ -30,10 +30,23 @@ export const ArticleForm = {
         .fileAttachmentsDirectory('articles')
         .mergeTags(['firstName', 'company', 'unsubscribeUrl'])
         .mentions([
-          MentionProvider.make('@').items([
-            { id: 'sleman', label: 'Sleman' },
-            { id: 'admin',  label: 'Admin'  },
-          ]),
+          // Async user provider — resolved server-side via itemsUsing(fn).
+          // Demo data; a real adapter would hit a users table / user-search
+          // endpoint. The closure runs on the server (panel-create or edit
+          // _form/:formId/mentions route); the client fetches each keystroke.
+          MentionProvider.make('@').itemsUsing(async (query) => {
+            const allUsers = [
+              { id: 'sleman',  label: 'Sleman'  },
+              { id: 'admin',   label: 'Admin'   },
+              { id: 'editor',  label: 'Editor'  },
+              { id: 'reviewer', label: 'Reviewer' },
+            ]
+            const needle = query.toLowerCase()
+            return needle
+              ? allUsers.filter(u => u.label.toLowerCase().includes(needle))
+              : allUsers
+          }),
+          // Static channel provider — items inlined into the field meta.
           MentionProvider.make('#').items([
             { id: 'general', label: 'general', group: 'Channels' },
             { id: 'random',  label: 'random',  group: 'Channels' },

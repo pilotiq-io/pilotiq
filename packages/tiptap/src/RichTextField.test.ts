@@ -279,6 +279,130 @@ describe('MentionProvider', () => {
     items.push({ id: 'b', label: 'B' })
     assert.equal(meta.items.length, 1)
   })
+
+  it('static providers report isAsync=false and emit no async flag', () => {
+    const p = MentionProvider.make('@').items([{ id: 'a', label: 'A' }])
+    assert.equal(p.isAsync(), false)
+    const meta = p.toMeta()
+    assert.equal('async' in meta, false)
+  })
+
+  it('itemsUsing(fn) flips isAsync=true and empties the inlined items', () => {
+    const p = MentionProvider.make('@').itemsUsing(async () => [{ id: 'a', label: 'A' }])
+    assert.equal(p.isAsync(), true)
+    const meta = p.toMeta()
+    assert.equal(meta.async, true)
+    assert.deepEqual(meta.items, [])
+  })
+
+  it('runResolver runs the static list when no async fn is set', async () => {
+    const p = MentionProvider.make('@').items([
+      { id: 'sleman', label: 'Sleman' },
+      { id: 'alex',   label: 'Alex'   },
+    ])
+    const items = await p.runResolver('al', { user: null })
+    // Returns the full list — filtering is the menu's job.
+    assert.equal(items.length, 2)
+  })
+
+  it('runResolver awaits an async resolver and forwards query + ctx', async () => {
+    let seenQuery: string | undefined
+    let seenUser:  unknown
+    const p = MentionProvider.make('@').itemsUsing(async (query, ctx) => {
+      seenQuery = query
+      seenUser  = ctx.user
+      return [{ id: query, label: `Hit: ${query}` }]
+    })
+    const items = await p.runResolver('alex', { user: { id: 1 } })
+    assert.equal(seenQuery, 'alex')
+    assert.deepEqual(seenUser, { id: 1 })
+    assert.equal(items.length, 1)
+    assert.equal(items[0]!.id,    'alex')
+    assert.equal(items[0]!.label, 'Hit: alex')
+  })
+
+  it('runResolver coerces non-array returns to []', async () => {
+    const p = MentionProvider.make('@').itemsUsing((async () => null) as never)
+    const items = await p.runResolver('q', {})
+    assert.deepEqual(items, [])
+  })
+
+  it('items() after itemsUsing() warns and switches to static (last call wins)', () => {
+    const orig = console.warn
+    const warnings: string[] = []
+    console.warn = (...args: unknown[]) => warnings.push(String(args[0]))
+    try {
+      const p = MentionProvider.make('@')
+        .itemsUsing(async () => [{ id: 'x', label: 'X' }])
+        .items([{ id: 'a', label: 'A' }])
+      assert.equal(p.isAsync(), false)
+      assert.equal(warnings.length, 1)
+      assert.match(warnings[0]!, /MentionProvider.*items\(\) called after.*itemsUsing/)
+    } finally {
+      console.warn = orig
+    }
+  })
+
+  it('itemsUsing() after items() warns and clears the static list', () => {
+    const orig = console.warn
+    const warnings: string[] = []
+    console.warn = (...args: unknown[]) => warnings.push(String(args[0]))
+    try {
+      const p = MentionProvider.make('@')
+        .items([{ id: 'a', label: 'A' }])
+        .itemsUsing(async () => [{ id: 'x', label: 'X' }])
+      assert.equal(p.isAsync(), true)
+      assert.equal(warnings.length, 1)
+      assert.match(warnings[0]!, /MentionProvider.*itemsUsing\(\) called after.*items\(\)/)
+    } finally {
+      console.warn = orig
+    }
+  })
+})
+
+describe('RichTextField mention resolution', () => {
+  it('hasAsyncMentions() is false when every provider is static', () => {
+    const f = RichTextField.make('body').mentions([
+      MentionProvider.make('@').items([{ id: 'a', label: 'A' }]),
+    ])
+    assert.equal(f.hasAsyncMentions(), false)
+  })
+
+  it('hasAsyncMentions() is true when at least one provider is async', () => {
+    const f = RichTextField.make('body').mentions([
+      MentionProvider.make('@').items([{ id: 'a', label: 'A' }]),
+      MentionProvider.make('#').itemsUsing(async () => []),
+    ])
+    assert.equal(f.hasAsyncMentions(), true)
+  })
+
+  it('resolveMention dispatches by trigger char', async () => {
+    const f = RichTextField.make('body').mentions([
+      MentionProvider.make('@').itemsUsing(async (q) => [{ id: q, label: `User:${q}` }]),
+      MentionProvider.make('#').itemsUsing(async (q) => [{ id: q, label: `Channel:${q}` }]),
+    ])
+    const userHits = await f.resolveMention('@', 'sleman', {})
+    const chanHits = await f.resolveMention('#', 'general', {})
+    assert.equal(userHits?.[0]?.label, 'User:sleman')
+    assert.equal(chanHits?.[0]?.label, 'Channel:general')
+  })
+
+  it('resolveMention returns null for unknown triggers', async () => {
+    const f = RichTextField.make('body').mentions([
+      MentionProvider.make('@').itemsUsing(async () => []),
+    ])
+    const items = await f.resolveMention('!', 'q', {})
+    assert.equal(items, null)
+  })
+
+  it('mentionsUrl is omitted from meta until withMentionsUrl stamps it', () => {
+    const f = RichTextField.make('body').mentions([
+      MentionProvider.make('@').itemsUsing(async () => []),
+    ])
+    assert.equal('mentionsUrl' in f.toMeta(), false)
+    f.withMentionsUrl('/admin/articles/_form/article-form/mentions')
+    assert.equal(f.toMeta().mentionsUrl, '/admin/articles/_form/article-form/mentions')
+  })
 })
 
 describe('RichTextField storage', () => {

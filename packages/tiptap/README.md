@@ -47,6 +47,11 @@ RichTextField.make('body')
     MentionProvider.make('@').items([
       { id: 'sleman', label: 'Sleman' },
     ]),
+    // Async mentions — server-resolved per keystroke.
+    MentionProvider.make('+').itemsUsing(async (query) => {
+      const matches = await db.users.search(query, { limit: 10 })
+      return matches.map(u => ({ id: u.id, label: u.name }))
+    }),
   ])
   .blocks([
     Block.make('callout').label('Callout').icon('💡').schema([
@@ -56,6 +61,6 @@ RichTextField.make('body')
   ])
 ```
 
-`attachFiles` reuses the panel's `UploadAdapter` (`Pilotiq.uploads({ adapter })`); the button is stripped server-side when no adapter is wired. The `table` button inserts a 3×3 table with a header row; while the cursor is inside a table, a floating toolbar with column / row / merge / split / header-toggle / delete buttons sits above it. `mergeTags` adds a "Merge tags" group to the slash menu — each id becomes a `{{ id }}` placeholder substituted at read time via `renderRichTextToHtml(content, { mergeTags })`. Each `MentionProvider` registers its trigger character (`@`, `#`, …) and a static item list; typing the trigger opens a popover, picking an item inserts a chip carrying `id` + cached label.
+`attachFiles` reuses the panel's `UploadAdapter` (`Pilotiq.uploads({ adapter })`); the button is stripped server-side when no adapter is wired. The `table` button inserts a 3×3 table with a header row; while the cursor is inside a table, a floating toolbar with column / row / merge / split / header-toggle / delete buttons sits above it. `mergeTags` adds a "Merge tags" group to the slash menu — each id becomes a `{{ id }}` placeholder substituted at read time via `renderRichTextToHtml(content, { mergeTags })`. Each `MentionProvider` registers its trigger character (`@`, `#`, …) and either a static item list (`.items([…])`) or an async resolver (`.itemsUsing(async (query, ctx) => […])`) — the editor fetches a tiny per-form endpoint for async providers and inlines static items into the field meta.
 
 Full reference: [docs/packages/tiptap.md](../../docs/packages/tiptap.md).

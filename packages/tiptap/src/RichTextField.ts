@@ -1,6 +1,11 @@
 import { Field, type FieldMeta, type FieldType, type RenderContext } from '@pilotiq/pilotiq'
 import { Block, type BlockMeta } from './Block.js'
-import { MentionProvider, type MentionProviderMeta } from './MentionProvider.js'
+import {
+  MentionProvider,
+  type MentionItem,
+  type MentionProviderMeta,
+  type MentionResolverContext,
+} from './MentionProvider.js'
 
 /**
  * Identifier for a single toolbar action. The renderer maps each id to a
@@ -125,6 +130,14 @@ export interface RichTextFieldMeta extends FieldMeta {
    * its static item list. Empty array = no mentions wired.
    */
   mentions: MentionProviderMeta[]
+  /**
+   * Endpoint stamped by `tagRichTextMentionUrls` when this field has at
+   * least one async provider (`MentionProvider.itemsUsing(fn)`). The
+   * client POSTs `{ field, trigger, query }` per keystroke; the server
+   * runs the user resolver and returns `{ ok, items }`. Absent when
+   * every provider on this field is static.
+   */
+  mentionsUrl?: string
 }
 
 /**
@@ -169,6 +182,7 @@ export class RichTextField extends Field {
   private _fileAttachmentsVisibility?:        RichTextAttachmentVisibility
   private _mergeTags:                         string[] = []
   private _mentions:                          MentionProvider[] = []
+  private _mentionsUrl?:                      string
 
   private constructor(name: string) {
     super(name, 'richtext' as FieldType)
@@ -370,6 +384,35 @@ export class RichTextField extends Field {
   getBlocks():       readonly Block[] { return this._blocks }
   getMergeTags():    readonly string[] { return this._mergeTags }
   getMentionProviders(): readonly MentionProvider[] { return this._mentions }
+  /**
+   * `true` iff at least one provider was configured with `itemsUsing(fn)`.
+   * Pilotiq's `tagRichTextMentionUrls` walker uses this to gate URL
+   * stamping — fields with only static providers stay URL-less.
+   */
+  hasAsyncMentions(): boolean {
+    return this._mentions.some(p => p.isAsync())
+  }
+  /**
+   * Look up a provider by trigger char and run its resolver with `query`
+   * and `ctx`. Returns the matched items, or `null` when no provider
+   * carries that trigger. Static providers run too (using their cached
+   * list) — keeps the dispatcher uniform; the client just won't call
+   * the endpoint for static providers.
+   */
+  async resolveMention(trigger: string, query: string, ctx: MentionResolverContext): Promise<MentionItem[] | null> {
+    const provider = this._mentions.find(p => p.getTrigger() === trigger)
+    if (!provider) return null
+    return await provider.runResolver(query, ctx)
+  }
+  /**
+   * Render-time setter — pilotiq stamps the URL after schema resolution
+   * via `tagRichTextMentionUrls`. The setter is idempotent; the last
+   * call wins.
+   */
+  withMentionsUrl(url: string): this {
+    this._mentionsUrl = url
+    return this
+  }
   isSlashEnabled():  boolean { return this._slashCommand }
   getStorage():      RichTextStorage { return this._storage }
   isResizableImages(): boolean { return this._resizableImages }
@@ -448,6 +491,7 @@ export class RichTextField extends Field {
       ...(ctx?.uploadUrl && ctx?.hasUploadAdapter ? { uploadUrl: ctx.uploadUrl } : {}),
       mergeTags:        [...this._mergeTags],
       mentions:         this._mentions.map((p) => p.toMeta()),
+      ...(this._mentionsUrl !== undefined ? { mentionsUrl: this._mentionsUrl } : {}),
     }
   }
 }

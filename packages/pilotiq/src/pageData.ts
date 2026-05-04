@@ -417,6 +417,62 @@ export function tagFormWizardUrls(
   }
 }
 
+/**
+ * Adapter-package async-resolve walker. Stamps the per-form mentions URL
+ * on every field that ducks like a "rich text with at least one async
+ * mention provider". The duck-typed contract lives here (as opposed to
+ * importing from `@pilotiq/tiptap`) so pilotiq core stays adapter-free —
+ * any future field type with an async-resolve trigger can satisfy the
+ * same shape and pick up URL stamping for free.
+ *
+ * Contract:
+ *   - `getType() === 'richtext'`  (fast filter)
+ *   - `hasAsyncMentions(): boolean`
+ *   - `withMentionsUrl(url: string): unknown`
+ *
+ * Walks every form on the page so the URL builder can mint a per-form
+ * URL (mirrors `tagFormStateUrls / tagFormWizardUrls`). The route handler
+ * uses formId in the URL to select the form; the body carries `field`
+ * + `trigger` + `query`. One URL per (form, scope), reused across every
+ * async-mention field on that form.
+ */
+interface AsyncMentionFieldLike {
+  hasAsyncMentions(): boolean
+  withMentionsUrl(url: string): unknown
+}
+
+function isAsyncMentionField(el: Element): el is Element & AsyncMentionFieldLike {
+  if (el.getType() !== 'richtext') return false
+  const candidate = el as unknown as Partial<AsyncMentionFieldLike>
+  return typeof candidate.hasAsyncMentions === 'function'
+      && typeof candidate.withMentionsUrl  === 'function'
+}
+
+export function tagRichTextMentionUrls(
+  elements:   ReadonlyArray<Element>,
+  urlBuilder: (formId: string) => string,
+): void {
+  for (const form of findForms(elements)) {
+    const url = urlBuilder(form.getFormId())
+    let stampedAny = false
+    const visit = (els: ReadonlyArray<Element>): void => {
+      for (const el of els) {
+        // Don't cross into nested forms — each form gets its own URL.
+        if (el !== form && el.getType() === 'form') continue
+        if (isAsyncMentionField(el) && el.hasAsyncMentions()) {
+          el.withMentionsUrl(url)
+          stampedAny = true
+        }
+        const children = el.getChildren()
+        if (children) visit(children)
+      }
+    }
+    const children = form.getChildren()
+    if (children) visit(children)
+    void stampedAny // silence unused — kept locally for readability
+  }
+}
+
 function formHasLiveField(form: Form): boolean {
   let found = false
   const visit = (els: ReadonlyArray<Element>): void => {
@@ -724,6 +780,7 @@ export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Re
     tagFormActions(elements, cfg.path)
     tagFormStateUrls(elements, formId => `${cfg.path}/_form/${formId}/state`)
     tagFormWizardUrls(elements, formId => `${cfg.path}/_form/${formId}/wizard`)
+    tagRichTextMentionUrls(elements, formId => `${cfg.path}/_form/${formId}/mentions`)
     tagActionDispatch(elements, cfg.path)
   } else {
     elements = []
@@ -909,6 +966,7 @@ export async function resourceCreateData(
   tagActionDispatch(elements, createUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/state`)
   tagFormWizardUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/wizard`)
+  tagRichTextMentionUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/mentions`)
   if (prefill) {
     const form = findForms(elements)[0]
     if (form) {
@@ -953,6 +1011,7 @@ export async function resourceEditData(
   tagActionDispatch(elements, editUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/${recordId}/_form/${formId}/state`)
   tagFormWizardUrls(elements, formId => `${cfg.path}/${slug}/${recordId}/_form/${formId}/wizard`)
+  tagRichTextMentionUrls(elements, formId => `${cfg.path}/${slug}/${recordId}/_form/${formId}/mentions`)
 
   // Locate the primary form, load the record, fill values.
   const form = findForms(elements)[0]
@@ -1818,6 +1877,167 @@ export async function formWizardData(
   return { ok: true }
 }
 
+// ─── Async-mention resolve data builder ──────────────────────
+
+export interface MentionResolveRequest {
+  formId:  string
+  field:   string
+  trigger: string
+  query:   string
+}
+
+/** Wire-side shape for a single resolved item — mirrors `MentionItem` from
+ *  `@pilotiq/tiptap`. Pilotiq core doesn't import that package, so the
+ *  duck-typed shape lives here. */
+export interface MentionResolveItem {
+  id:     string
+  label:  string
+  group?: string
+}
+
+export interface MentionResolveSuccess {
+  ok:    true
+  items: MentionResolveItem[]
+}
+
+export interface MentionResolveError {
+  ok:     false
+  status: 404 | 422
+  error:  string
+}
+
+interface AsyncMentionResolverField {
+  resolveMention(
+    trigger: string,
+    query:   string,
+    ctx:     { user?: unknown; record?: unknown; request?: unknown },
+  ): Promise<MentionResolveItem[] | null>
+}
+
+function isMentionResolverField(el: Element): el is Element & AsyncMentionResolverField {
+  if (el.getType() !== 'richtext') return false
+  const candidate = el as unknown as Partial<AsyncMentionResolverField>
+  return typeof candidate.resolveMention === 'function'
+}
+
+/**
+ * Walk a form's tree looking for the named field. Stops at the Repeater
+ * boundary — RichTextField inside a Repeater row is not supported in v1
+ * (the field's name there is row-relative). Mirrors the no-cross posture
+ * of `findFieldByName` inside `dispatchForm.ts`.
+ */
+function findRichTextFieldByName(
+  elements: ReadonlyArray<Element>,
+  name:     string,
+): (Element & AsyncMentionResolverField) | undefined {
+  for (const el of elements) {
+    if (isMentionResolverField(el) && (el as unknown as { name: string }).name === name) {
+      return el
+    }
+    if (isRepeaterField(el)) continue
+    if (el.getType() === 'builder') continue
+    const children = el.getChildren()
+    if (children && children.length > 0) {
+      const hit = findRichTextFieldByName(children, name)
+      if (hit) return hit
+    }
+  }
+  return undefined
+}
+
+/**
+ * Resolve one async-mention round-trip. Locates the page's schema, finds
+ * the form by `formId` and the RichTextField by `field`, calls its
+ * `resolveMention(trigger, query, ctx)`. Returns `{ ok, items }`, a 404
+ * when the form / field / trigger isn't present, or `null` for a missing
+ * page (the route handler turns `null` into a 404 too).
+ *
+ * The dispatcher is duck-typed against the contract in `@pilotiq/tiptap`'s
+ * `RichTextField` — pilotiq core never imports the adapter. Any future
+ * field-type that ships an async-resolve trigger can implement the same
+ * shape and pick up routing for free.
+ */
+export async function mentionResolveData(
+  pilotiq: Pilotiq,
+  scope:   FormStateScope,
+  body:    MentionResolveRequest,
+  req?:    unknown,
+): Promise<MentionResolveSuccess | MentionResolveError | null> {
+  const cfg = pilotiq.getConfig()
+  const user = await pilotiq.resolveUser(req)
+
+  let PageClass: typeof Page | undefined
+  let mode: 'create' | 'edit'
+  let record: unknown = undefined
+  let baseCtxExtras: Record<string, unknown> = {}
+
+  if (scope.kind === 'resource-create' || scope.kind === 'resource-edit') {
+    const R = cfg.resources.find(r => r.getSlug() === scope.slug)
+    if (!R) return null
+    const pages = R.resolvePages()
+    if (scope.kind === 'resource-create') {
+      if (!pages.create) return null
+      PageClass = pages.create
+      mode = 'create'
+    } else {
+      if (!pages.edit) return null
+      PageClass = pages.edit
+      mode = 'edit'
+      baseCtxExtras = { recordId: scope.recordId }
+      if (R.model) {
+        try { record = await R.model.find(scope.recordId) } catch { /* ignore */ }
+      } else {
+        record = { id: scope.recordId }
+      }
+    }
+  } else if (scope.kind === 'global-edit') {
+    const G = cfg.globals.find(g => g.getSlug() === scope.slug)
+    if (!G) return null
+    const pages = G.resolvePages()
+    if (!pages.edit) return null
+    PageClass = pages.edit
+    mode = 'edit'
+  } else {
+    const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
+    if (!P) return null
+    PageClass = P
+    mode = 'edit'
+  }
+
+  if (!PageClass) return null
+
+  const baseCtx: SchemaContext = uploadCtx(userCtx({ mode, basePath: cfg.path, ...baseCtxExtras }, user), cfg)
+  const elements = await callPageSchema(PageClass, baseCtx)
+  const form = selectFormById(findForms(elements), body.formId)
+  if (!form) return { ok: false, status: 404, error: `Form "${body.formId}" not found on page` }
+
+  const field = findRichTextFieldByName(form.getChildren() ?? [], body.field)
+  if (!field) {
+    return { ok: false, status: 404, error: `Rich-text field "${body.field}" not found on form "${body.formId}"` }
+  }
+
+  let items: MentionResolveItem[] | null
+  try {
+    items = await field.resolveMention(body.trigger, body.query, {
+      ...(record !== undefined ? { record } : {}),
+      ...(user   !== null      ? { user   } : {}),
+      request: req,
+    })
+  } catch (err) {
+    return {
+      ok:     false,
+      status: 422,
+      error:  err instanceof Error ? err.message : 'Mention resolver threw',
+    }
+  }
+
+  if (items === null) {
+    return { ok: false, status: 404, error: `No mention provider for trigger "${body.trigger}" on field "${body.field}"` }
+  }
+
+  return { ok: true, items }
+}
+
 export async function resourceViewData(
   pilotiq:  Pilotiq,
   slug:     string,
@@ -1886,6 +2106,7 @@ export async function globalEditData(
   tagFormActions(elements, editUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/state`)
   tagFormWizardUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/wizard`)
+  tagRichTextMentionUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/mentions`)
 
   const form = findForms(elements)[0]
   let record: unknown = undefined
@@ -1962,6 +2183,7 @@ export async function customPageData(
   tagFormActions(elements, pageUrl)
   tagFormStateUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/state`)
   tagFormWizardUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/wizard`)
+  tagRichTextMentionUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/mentions`)
   tagActionDispatch(elements, pageUrl)
   // Page-scope polling URL (mirrors `${base}/${pageSlug}/_widget/:id`
   // route registered in routes.ts).

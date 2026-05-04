@@ -13,6 +13,7 @@ import {
   resourceViewData, globalEditData, globalViewData, customPageData,
   formStateData, type FormStateScope,
   formWizardData,
+  mentionResolveData,
   searchData,
   relationManagerData, findRelatedResource, safeManagerPolicy,
   widgetData, type WidgetScope,
@@ -272,6 +273,65 @@ async function handleFormWizard(
     return res.json({ ok: true })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Wizard step validation failed'
+    res.status(500)
+    return res.json({ ok: false, error: message })
+  }
+}
+
+/**
+ * Async-mention round-trip handler. Body is `{ field, trigger, query }`;
+ * `formId` comes from the URL path. Returns `{ ok, items }` on success
+ * or `{ ok: false, error }` for missing form / field / trigger.
+ *
+ * Each scope (resource-create, resource-edit, global-edit, custom-page)
+ * registers its own route — the auth gate matches the matching `_form/
+ * :formId/state` endpoint so the same `canAccess + canCreate / canEdit`
+ * predicates apply.
+ */
+interface FormMentionsBody {
+  field?:   unknown
+  trigger?: unknown
+  query?:   unknown
+}
+
+async function handleFormMentions(
+  req:     AppRequest,
+  res:     AppResponse,
+  pilotiq: Pilotiq,
+  scope:   FormStateScope,
+  formId:  string,
+): Promise<unknown> {
+  const body = (await readFormBody(req)) as FormMentionsBody
+  const field   = typeof body.field   === 'string' ? body.field   : ''
+  const trigger = typeof body.trigger === 'string' ? body.trigger : ''
+  const query   = typeof body.query   === 'string' ? body.query   : ''
+  if (!formId || !field || trigger.length !== 1) {
+    res.status(400)
+    return res.json({ ok: false, error: 'Missing formId / field / trigger' })
+  }
+
+  // Cap query length — the resolver runs the user's code; the trigger
+  // never sends more than a word's worth of characters in practice.
+  const cappedQuery = query.length > 200 ? query.slice(0, 200) : query
+
+  try {
+    const result = await mentionResolveData(
+      pilotiq,
+      scope,
+      { formId, field, trigger, query: cappedQuery },
+      req,
+    )
+    if (result === null) {
+      res.status(404)
+      return res.json({ ok: false, error: 'Page not found' })
+    }
+    if (!result.ok) {
+      res.status(result.status)
+      return res.json({ ok: false, error: result.error })
+    }
+    return res.json({ ok: true, items: result.items })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Mention resolve failed'
     res.status(500)
     return res.json({ ok: false, error: message })
   }
@@ -734,6 +794,15 @@ export function registerPilotiqRoutes(
         const formId = req.params['formId']!
         return handleFormWizard(req, res, pilotiq, { kind: 'resource-create', slug }, formId)
       })
+
+      // Async-mention endpoint for create-mode forms.
+      router.post(`${base}/${slug}/_form/:formId/mentions`, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, true)
+        const formId = req.params['formId']!
+        return handleFormMentions(req, res, pilotiq, { kind: 'resource-create', slug }, formId)
+      })
     }
 
     // Plan #5 — partial-resolve endpoint for edit-mode forms.
@@ -758,6 +827,17 @@ export function registerPilotiqRoutes(
         const policyRecord = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormWizard(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
+      })
+
+      // Async-mention endpoint for edit-mode forms.
+      router.post(`${base}/${slug}/:id/_form/:formId/mentions`, async (req, res) => {
+        const recordId = req.params['id']!
+        const formId   = req.params['formId']!
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+        const policyRecord = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
+        return handleFormMentions(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
       })
     }
 
@@ -1823,6 +1903,15 @@ export function registerPilotiqRoutes(
         return handleFormWizard(req, res, pilotiq, { kind: 'global-edit', slug }, formId)
       })
 
+      // Async-mention endpoint for the global's edit form.
+      router.post(`${base}/${slug}/_form/:formId/mentions`, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, true)
+        if (!await checkPolicy(() => G.canEdit(user, undefined))) return forbidden(res, true)
+        const formId = req.params['formId']!
+        return handleFormMentions(req, res, pilotiq, { kind: 'global-edit', slug }, formId)
+      })
+
       router.get(editUrl, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
         if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, wantsJson(req))
@@ -1936,6 +2025,14 @@ export function registerPilotiqRoutes(
       if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, true)
       const formId = req.params['formId']!
       return handleFormWizard(req, res, pilotiq, { kind: 'page', pageSlug }, formId)
+    })
+
+    // Async-mention endpoint for custom pages.
+    router.post(`${pageUrl}/_form/:formId/mentions`, async (req, res) => {
+      const user = await pilotiq.resolveUser(req)
+      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, true)
+      const formId = req.params['formId']!
+      return handleFormMentions(req, res, pilotiq, { kind: 'page', pageSlug }, formId)
     })
 
     router.get(pageUrl, async (req, res) => {

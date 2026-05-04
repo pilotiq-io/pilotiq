@@ -92,6 +92,7 @@ function ClientEditor(props: FieldRendererProps) {
   const attachmentVis     = (el['fileAttachmentsVisibility']         as ('public' | 'private') | undefined)
   const mergeTags         = (el['mergeTags']        as string[]              | undefined) ?? []
   const mentionProviders  = (el['mentions']         as MentionProviderMeta[] | undefined) ?? []
+  const mentionsUrl       = (el['mentionsUrl']      as string                | undefined)
 
   const initialContent = parseInitialContent(defaultValue)
   const [serialized, setSerialized] = useState(() => serializeForHidden(initialContent, storage))
@@ -184,6 +185,8 @@ function ClientEditor(props: FieldRendererProps) {
       ...(mentionProviders.length > 0 ? [MentionExtension.configure({
         providers:     mentionProviders,
         onStateChange: handleMentionStateChange,
+        ...(mentionsUrl ? { mentionsUrl } : {}),
+        fieldName:     name,
       })] : [MentionExtension]),
       DragHandleExtension,
     ],

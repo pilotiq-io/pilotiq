@@ -35,6 +35,19 @@ export interface MentionOptions {
    * holds the React state and passes a setter here.
    */
   onStateChange: (state: MentionState | null) => void
+  /**
+   * URL the field's `tagRichTextMentionUrls` walker stamped on the wire-side
+   * meta. Required for async providers (`MentionProvider.itemsUsing(fn)`);
+   * unused when every provider on this field is static. The client POSTs
+   * `{ field, trigger, query }` per keystroke and expects `{ ok, items }`.
+   */
+  mentionsUrl?: string
+  /**
+   * Field path the route handler uses to find the RichTextField on the
+   * page. Equals `Field.name` for non-nested fields. Async-mention
+   * providers inside Repeater rows are not supported in v1.
+   */
+  fieldName?: string
 }
 
 /**
@@ -122,6 +135,8 @@ export const MentionExtension = Node.create<MentionOptions>({
     const providers = this.options.providers
     const emit      = this.options.onStateChange
     const editor    = this.editor
+    const url       = this.options.mentionsUrl
+    const fieldName = this.options.fieldName
 
     return providers.map((provider) =>
       Suggestion({
@@ -129,7 +144,10 @@ export const MentionExtension = Node.create<MentionOptions>({
         char: provider.trigger,
         startOfLine: false,
         allowSpaces: false,
-        items: ({ query }: { query: string }) => filterMentionItems(provider.items, query),
+        items: provider.async
+          ? async ({ query }: { query: string }): Promise<MentionItem[]> =>
+              fetchAsyncMentionItems(url, fieldName, provider.trigger, query)
+          : ({ query }: { query: string }) => filterMentionItems(provider.items, query),
         command: ({ editor: ed, range, props }: { editor: Editor; range: Range; props: MentionItem }) => {
           ed
             .chain()
@@ -181,4 +199,45 @@ function filterMentionItems(items: MentionItem[], query: string): MentionItem[] 
   return items.filter((item) =>
     `${item.label} ${item.id} ${item.group ?? ''}`.toLowerCase().includes(needle),
   )
+}
+
+/**
+ * Async path — POST `{ field, trigger, query }` to the field's
+ * `mentionsUrl` and return the resolved items. Returns `[]` for any
+ * failure (missing URL / network error / non-200 response / malformed
+ * payload) so the menu degrades to "no matches" instead of throwing
+ * inside Suggestion's items pipeline.
+ *
+ * Suggestion handles its own debouncing; we don't need a setTimeout
+ * wrapper. In-flight races aren't tracked here either — Suggestion's
+ * internal sequence handling owns "newer query supersedes older one".
+ */
+async function fetchAsyncMentionItems(
+  url:     string | undefined,
+  field:   string | undefined,
+  trigger: string,
+  query:   string,
+): Promise<MentionItem[]> {
+  if (!url || !field) return []
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept':       'application/json',
+      },
+      body: JSON.stringify({ field, trigger, query }),
+    })
+    if (!res.ok) return []
+    const json = await res.json() as { ok?: boolean; items?: unknown }
+    if (!json.ok || !Array.isArray(json.items)) return []
+    return json.items.filter((item): item is MentionItem =>
+      item != null
+      && typeof item === 'object'
+      && typeof (item as Record<string, unknown>)['id'] === 'string'
+      && typeof (item as Record<string, unknown>)['label'] === 'string',
+    )
+  } catch {
+    return []
+  }
 }

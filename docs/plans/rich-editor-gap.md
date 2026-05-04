@@ -256,8 +256,16 @@ buttons. Brings the new mark extensions needed by those buttons.
   it as a styled `${trigger}${label}` chip. Read-side,
   `renderRichTextToHtml(content, { resolveMention: (trigger, id) => latestLabel })`
   refreshes stale labels at display time; without an override the cached
-  label (stamped at insert) wins. Async / API-backed providers are out of
-  scope for v1 — items are declared statically at form-build time.
+  label (stamped at insert) wins. **Async items landed 2026-05-04 cont'd¹⁴:**
+  `MentionProvider.itemsUsing(async (query, ctx) => …)` resolver runs server-side
+  per keystroke; pilotiq stamps `mentionsUrl` on the field meta when at least
+  one provider is async; new `POST {scope}/_form/{formId}/mentions` route on
+  every page-scope (resource-create / resource-edit / global-edit / custom
+  page) reuses the same auth gate as the matching `_form/:formId/state`
+  endpoint. Walker is duck-typed (`getType()==='richtext'` +
+  `hasAsyncMentions` + `withMentionsUrl`) so pilotiq core stays adapter-free.
+  Async-mention providers inside Repeater rows still out of scope (path
+  doesn't round-trip).
 
 ---
 

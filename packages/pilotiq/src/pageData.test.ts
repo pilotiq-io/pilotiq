@@ -7,12 +7,15 @@ import { ListTabs } from './elements/ListTabs.js'
 import {
   applyFillPipeline,
   formStateData,
+  mentionResolveData,
   panelInfo,
   resolveActiveTab,
   tagFormStateUrls,
+  tagRichTextMentionUrls,
   tagTableReorderUrls,
   tagCellEditUrls,
 } from './pageData.js'
+import { Element } from './schema/Element.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
 import { TextInputColumn, ToggleColumn } from './columns/index.js'
@@ -458,6 +461,94 @@ describe('tagFormStateUrls (Plan #5)', () => {
   })
 })
 
+/**
+ * Minimal duck-typed RichTextField stand-in. The walker uses
+ * `getType() === 'richtext'` + `hasAsyncMentions` + `withMentionsUrl` —
+ * matching the same shape `@pilotiq/tiptap`'s real `RichTextField`
+ * exposes. Pilotiq core never imports the adapter; the walker contract
+ * has to be testable with a plain `Element` subclass.
+ */
+class FakeRichTextField extends Element {
+  readonly name: string
+  private readonly _hasAsync: boolean
+  public stamped: string | undefined = undefined
+
+  constructor(name: string, hasAsync: boolean) {
+    super()
+    this.name = name
+    this._hasAsync = hasAsync
+  }
+  override getType(): string { return 'richtext' }
+  override toMeta(): Record<string, unknown> {
+    return {
+      type: 'field', fieldType: 'richtext', name: this.name,
+      ...(this.stamped !== undefined ? { mentionsUrl: this.stamped } : {}),
+    }
+  }
+  hasAsyncMentions(): boolean { return this._hasAsync }
+  withMentionsUrl(url: string): this { this.stamped = url; return this }
+  async resolveMention(
+    trigger: string,
+    query:   string,
+    _ctx:    Record<string, unknown>,
+  ): Promise<Array<{ id: string; label: string }> | null> {
+    if (trigger === '@') return [{ id: query, label: `User:${query}` }]
+    return null
+  }
+}
+
+describe('tagRichTextMentionUrls (async mention items)', () => {
+  it('stamps mentionsUrl on RichTextFields with async providers', () => {
+    const f = new FakeRichTextField('body', true)
+    const form = Form.make().formId('art').schema([f])
+    tagRichTextMentionUrls([form], (id) => `/admin/articles/_form/${id}/mentions`)
+    assert.equal(f.stamped, '/admin/articles/_form/art/mentions')
+  })
+
+  it('skips RichTextFields with only static providers', () => {
+    const staticField = new FakeRichTextField('body', false)
+    const form = Form.make().formId('art').schema([staticField])
+    tagRichTextMentionUrls([form], (id) => `/x/${id}`)
+    assert.equal(staticField.stamped, undefined)
+  })
+
+  it('walks nested containers to find rich-text fields', () => {
+    const inner = new FakeRichTextField('body', true)
+    const form = Form.make().formId('art').schema([
+      Section.make('s').schema([inner]),
+    ])
+    tagRichTextMentionUrls([form], (id) => `/admin/_form/${id}/mentions`)
+    assert.equal(inner.stamped, '/admin/_form/art/mentions')
+  })
+
+  it('handles multiple forms — each gets its own URL', () => {
+    const a = new FakeRichTextField('body', true)
+    const b = new FakeRichTextField('body', true)
+    const formA = Form.make().formId('a').schema([a])
+    const formB = Form.make().formId('b').schema([b])
+    tagRichTextMentionUrls([formA, formB], (id) => `/x/_form/${id}/mentions`)
+    assert.equal(a.stamped, '/x/_form/a/mentions')
+    assert.equal(b.stamped, '/x/_form/b/mentions')
+  })
+
+  it('skips non-richtext elements that share method names by accident', () => {
+    // The fast filter `getType() === 'richtext'` keeps a coincidental
+    // duck-type collision (e.g. someone naming a custom element with
+    // `withMentionsUrl`) from being mistakenly stamped.
+    class WrongType extends Element {
+      stamped: string | undefined = undefined
+      override getType(): string { return 'custom' }
+      override toMeta(): Record<string, unknown> { return { type: 'custom' } }
+      hasAsyncMentions(): boolean { return true }
+      withMentionsUrl(url: string): this { this.stamped = url; return this }
+    }
+    const wrong = new WrongType()
+    const form = Form.make().formId('f').schema([wrong as unknown as Element])
+    tagRichTextMentionUrls([form], (id) => `/x/${id}`)
+    assert.equal(wrong.stamped, undefined)
+  })
+})
+
 describe('tagTableReorderUrls (reorderable rows)', () => {
   it('stamps reorderUrl on tables with reorderable() opted in', () => {
     const t = Table.make().reorderable('sort').columns([Column.make('id')])
@@ -616,5 +707,99 @@ describe('formStateData (Plan #5)', () => {
     assert.deepEqual(result.dirty.sort(), ['slug', 'title'])
     const formMeta = result.form as { values?: Record<string, unknown> }
     assert.equal(formMeta.values?.['slug'], 'hello-world')
+  })
+})
+
+describe('mentionResolveData (async mention items)', () => {
+  it('returns null when the page scope misses', async () => {
+    class Articles extends Resource {
+      static override label = 'Articles'
+    }
+    const panel = Pilotiq.make('T').path('/admin').resources([Articles])
+    const result = await mentionResolveData(
+      panel,
+      { kind: 'resource-edit', slug: 'missing', recordId: '1' },
+      { formId: 'f', field: 'body', trigger: '@', query: 'a' },
+    )
+    assert.equal(result, null)
+  })
+
+  it('returns 404 when the form id misses on a multi-form page', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [
+          Form.make().formId('one').schema([new FakeRichTextField('body', true)]),
+          Form.make().formId('two').schema([TextField.make('a')]),
+        ]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+    const result = await mentionResolveData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'wrong', field: 'body', trigger: '@', query: 'a' },
+    )
+    assert.notEqual(result, null)
+    if (result === null) throw new Error('expected non-null result')
+    assert.equal((result as { ok: false; status: number }).ok, false)
+    assert.equal((result as { ok: false; status: number }).status, 404)
+  })
+
+  it('returns 404 when the field is not on the form', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([new FakeRichTextField('intro', true)])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+    const result = await mentionResolveData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', field: 'body', trigger: '@', query: 'a' },
+    )
+    assert.notEqual(result, null)
+    assert.equal((result as { ok: false; status: number }).ok, false)
+    assert.equal((result as { ok: false; status: number }).status, 404)
+  })
+
+  it('returns 404 when the trigger has no provider', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([new FakeRichTextField('body', true)])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+    const result = await mentionResolveData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', field: 'body', trigger: '!', query: 'a' },
+    )
+    assert.notEqual(result, null)
+    if (result === null) throw new Error('expected non-null result')
+    assert.equal((result as { ok: false; status: number }).ok, false)
+    assert.equal((result as { ok: false; status: number }).status, 404)
+  })
+
+  it('returns the resolved items for a known trigger', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([new FakeRichTextField('body', true)])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+    const result = await mentionResolveData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', field: 'body', trigger: '@', query: 'sleman' },
+    )
+    assert.notEqual(result, null)
+    if (result === null || !result.ok) throw new Error('expected ok result')
+    assert.equal(result.items.length, 1)
+    assert.equal(result.items[0]!.id,    'sleman')
+    assert.equal(result.items[0]!.label, 'User:sleman')
   })
 })
