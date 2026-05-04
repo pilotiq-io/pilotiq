@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readBlockFieldValue } from './BlockSidePanel.js'
+import { readBlockFieldValue, coerceBlockValues } from './BlockSidePanel.js'
 import { BlockNodeExtension } from '../extensions/BlockNodeExtension.js'
 
 describe('readBlockFieldValue', () => {
@@ -46,6 +46,254 @@ describe('readBlockFieldValue', () => {
   it('treats unknown fieldTypes as plain string', () => {
     assert.equal(readBlockFieldValue({ value: 'whatever' }, { fieldType: 'futuristic' }), 'whatever')
     assert.equal(readBlockFieldValue({ value: 'no type' }, {}), 'no type')
+  })
+})
+
+describe('coerceBlockValues — flat fields', () => {
+  it('passes plain strings through for text / textarea / select', () => {
+    const result = coerceBlockValues(
+      { title: 'hello', body: 'multi\nline', size: 'lg' },
+      [
+        { name: 'title', fieldType: 'text' },
+        { name: 'body',  fieldType: 'textarea' },
+        { name: 'size',  fieldType: 'select' },
+      ],
+    )
+    assert.deepEqual(result, { title: 'hello', body: 'multi\nline', size: 'lg' })
+  })
+
+  it('coerces toggle / checkbox `true` / `false` strings to booleans', () => {
+    const result = coerceBlockValues(
+      { active: 'true', subscribe: 'false' },
+      [
+        { name: 'active',    fieldType: 'toggle' },
+        { name: 'subscribe', fieldType: 'checkbox' },
+      ],
+    )
+    assert.equal(result['active'], true)
+    assert.equal(result['subscribe'], false)
+  })
+
+  it('coerces number / slider, null on empty, raw string on NaN', () => {
+    const result = coerceBlockValues(
+      { count: '42', dial: '7', empty: '', bad: 'abc' },
+      [
+        { name: 'count', fieldType: 'number' },
+        { name: 'dial',  fieldType: 'slider' },
+        { name: 'empty', fieldType: 'number' },
+        { name: 'bad',   fieldType: 'number' },
+      ],
+    )
+    assert.equal(result['count'], 42)
+    assert.equal(result['dial'], 7)
+    assert.equal(result['empty'], null)
+    assert.equal(result['bad'], 'abc')
+  })
+})
+
+describe('coerceBlockValues — deferred V1 field types', () => {
+  it('parses tagsInput JSON-encoded hidden input back to string[]', () => {
+    const result = coerceBlockValues(
+      { tags: '["alpha","beta"]', empty: '' },
+      [
+        { name: 'tags',  fieldType: 'tagsInput' },
+        { name: 'empty', fieldType: 'tagsInput' },
+      ],
+    )
+    assert.deepEqual(result['tags'], ['alpha', 'beta'])
+    assert.deepEqual(result['empty'], [])
+  })
+
+  it('returns [] for tagsInput when JSON parse fails (defensive)', () => {
+    const result = coerceBlockValues(
+      { tags: 'not json' },
+      [{ name: 'tags', fieldType: 'tagsInput' }],
+    )
+    assert.deepEqual(result['tags'], [])
+  })
+
+  it('parses keyValue JSON-encoded hidden input back to object', () => {
+    const result = coerceBlockValues(
+      { meta: '{"author":"sue","year":2026}' },
+      [{ name: 'meta', fieldType: 'keyValue' }],
+    )
+    assert.deepEqual(result['meta'], { author: 'sue', year: 2026 })
+  })
+
+  it('returns {} for keyValue when JSON parse fails or value is array', () => {
+    const r1 = coerceBlockValues({ m: 'bad' }, [{ name: 'm', fieldType: 'keyValue' }])
+    assert.deepEqual(r1['m'], {})
+    const r2 = coerceBlockValues({ m: '["a","b"]' }, [{ name: 'm', fieldType: 'keyValue' }])
+    assert.deepEqual(r2['m'], {})
+  })
+
+  it('passes single-file fileUpload URL through as a string', () => {
+    const result = coerceBlockValues(
+      { hero: '/uploads/cover.png' },
+      [{ name: 'hero', fieldType: 'fileUpload' }],
+    )
+    assert.equal(result['hero'], '/uploads/cover.png')
+  })
+
+  it('parses multi-file fileUpload JSON-encoded array', () => {
+    const result = coerceBlockValues(
+      { gallery: '["/a.png","/b.png"]' },
+      [{ name: 'gallery', fieldType: 'fileUpload', multiple: true }],
+    )
+    assert.deepEqual(result['gallery'], ['/a.png', '/b.png'])
+  })
+
+  it('passes markdown textarea through as a plain string', () => {
+    const result = coerceBlockValues(
+      { body: '# Heading\n\nSome **bold** text.' },
+      [{ name: 'body', fieldType: 'markdown' }],
+    )
+    assert.equal(result['body'], '# Heading\n\nSome **bold** text.')
+  })
+
+  it('parses checkboxList JSON-encoded hidden input back to string[]', () => {
+    const result = coerceBlockValues(
+      { roles: '["admin","editor"]' },
+      [{ name: 'roles', fieldType: 'checkboxList' }],
+    )
+    assert.deepEqual(result['roles'], ['admin', 'editor'])
+  })
+})
+
+describe('coerceBlockValues — Repeater rows', () => {
+  it('coerces each row against the field template recursively', () => {
+    const result = coerceBlockValues(
+      {
+        items: [
+          { title: 'first',  qty: '3', enabled: 'true',  tags: '["x","y"]' },
+          { title: 'second', qty: '',  enabled: 'false', tags: '[]'         },
+        ],
+      },
+      [
+        {
+          name:     'items',
+          fieldType:'repeater',
+          template: [
+            { name: 'title',   fieldType: 'text'      },
+            { name: 'qty',     fieldType: 'number'    },
+            { name: 'enabled', fieldType: 'toggle'    },
+            { name: 'tags',    fieldType: 'tagsInput' },
+          ],
+        },
+      ],
+    )
+    assert.deepEqual(result['items'], [
+      { title: 'first',  qty: 3,    enabled: true,  tags: ['x', 'y'] },
+      { title: 'second', qty: null, enabled: false, tags: []         },
+    ])
+  })
+
+  it('returns [] for a repeater whose value is missing or non-array', () => {
+    const result = coerceBlockValues(
+      { items: undefined as unknown },
+      [{ name: 'items', fieldType: 'repeater', template: [] }],
+    )
+    assert.deepEqual(result['items'], [])
+  })
+
+  it('handles a Repeater nested inside another Repeater', () => {
+    const result = coerceBlockValues(
+      {
+        sections: [
+          {
+            heading: 'A',
+            rows: [
+              { label: 'r1', n: '1' },
+              { label: 'r2', n: '2' },
+            ],
+          },
+        ],
+      },
+      [
+        {
+          name:      'sections',
+          fieldType: 'repeater',
+          template:  [
+            { name: 'heading', fieldType: 'text' },
+            {
+              name:      'rows',
+              fieldType: 'repeater',
+              template:  [
+                { name: 'label', fieldType: 'text' },
+                { name: 'n',     fieldType: 'number' },
+              ],
+            },
+          ],
+        },
+      ],
+    )
+    assert.deepEqual(result['sections'], [
+      {
+        heading: 'A',
+        rows:    [
+          { label: 'r1', n: 1 },
+          { label: 'r2', n: 2 },
+        ],
+      },
+    ])
+  })
+})
+
+describe('coerceBlockValues — Builder rows', () => {
+  it('coerces each row.data against the matching block template', () => {
+    const result = coerceBlockValues(
+      {
+        content: [
+          { type: 'paragraph', data: { text: 'hello',   live: 'true'  } },
+          { type: 'image',     data: { src: '/a.png',   width: '320' } },
+        ],
+      },
+      [
+        {
+          name:      'content',
+          fieldType: 'builder',
+          blocks:    [
+            {
+              name:     'paragraph',
+              template: [
+                { name: 'text', fieldType: 'textarea' },
+                { name: 'live', fieldType: 'toggle'   },
+              ],
+            },
+            {
+              name:     'image',
+              template: [
+                { name: 'src',   fieldType: 'text'   },
+                { name: 'width', fieldType: 'number' },
+              ],
+            },
+          ],
+        },
+      ],
+    )
+    assert.deepEqual(result['content'], [
+      { type: 'paragraph', data: { text: 'hello',  live: true   } },
+      { type: 'image',     data: { src: '/a.png',  width: 320   } },
+    ])
+  })
+
+  it('passes unknown Builder block types through verbatim (no schema match)', () => {
+    const result = coerceBlockValues(
+      {
+        content: [
+          { type: 'unknown', data: { foo: 'bar' } },
+        ],
+      },
+      [{
+        name:      'content',
+        fieldType: 'builder',
+        blocks:    [{ name: 'paragraph', template: [] }],
+      }],
+    )
+    // Unknown type: data is preserved as-is, no coercion attempted.
+    assert.deepEqual(result['content'], [
+      { type: 'unknown', data: { foo: 'bar' } },
+    ])
   })
 })
 

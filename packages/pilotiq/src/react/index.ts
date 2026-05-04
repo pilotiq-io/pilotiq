@@ -28,6 +28,8 @@ export {
   type UseFieldStateResult,
 } from './FormStateContext.js'
 
+export { parseFormDataToNested } from './formStateHelpers.js'
+
 export { NavigateProvider, useNavigate, type NavigateFn } from './navigate.js'
 
 export { ToasterProvider, useToast } from './Toaster.js'

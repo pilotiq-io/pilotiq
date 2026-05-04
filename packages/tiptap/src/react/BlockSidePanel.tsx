@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
-import { FormFields } from '@pilotiq/pilotiq/react'
+import { FormFields, parseFormDataToNested } from '@pilotiq/pilotiq/react'
 import type { BlockMeta } from '../Block.js'
 
 /**
@@ -19,18 +19,22 @@ import type { BlockMeta } from '../Block.js'
  * stored `blockData`. Inputs are uncontrolled (outside `FormStateProvider`,
  * pilotiq's renderers fall back to `defaultValue` automatically).
  *
- * Writes: container-level event delegation on the form element. Each
- * `change` / `input` reads the changed input by `name`, coerces by
- * field-type, splices into a values map, and runs `setNodeMarkup` on
- * the tracked position. The position is kept fresh by mapping it
- * through every editor transaction so live edits elsewhere in the
- * document don't desync the panel.
+ * Writes: container-level event delegation on the form element. Every
+ * change snapshots the entire form via `new FormData(formEl)` →
+ * `parseFormDataToNested` (rebuilds nested arrays/objects from
+ * dotted-path inputs like `myrep.0.title`) → `coerceBlockValues`
+ * (per-fieldType JSON parse / boolean / number coerce so nested-shape
+ * fields round-trip in their canonical wire form). The result is
+ * dispatched through `state.tr.setNodeMarkup` on the tracked position.
+ * The position is kept fresh by mapping it through every editor
+ * transaction so live edits elsewhere in the document don't desync.
  *
- * V1 scope: flat schemas (Text / Textarea / Select / Toggle / Checkbox
- * / Radio / Date / Number / Email / Color / Slider / DateTime / TagsInput
- * / KeyValue). Repeater / Builder / FileUpload / Markdown / RichText
- * inputs render but their value bindings are deferred — those types
- * need a `FormStateProvider` round-trip and aren't wired here yet.
+ * V2 (2026-05-04 cont'd): nested-shape fields now round-trip cleanly:
+ * Repeater (array of subschema rows), Builder (heterogeneous block
+ * rows), TagsInput / KeyValue / FileUpload (JSON-encoded hidden
+ * inputs), Markdown (plain textarea), and the standard primitives
+ * (text / textarea / select / toggle / checkbox / radio / date /
+ * datetime / number / slider / color / toggleButtons / checkboxList).
  */
 export interface BlockSidePanelProps {
   editor:    Editor
@@ -68,9 +72,7 @@ export function BlockSidePanel({
     pos !== null ? readBlockData(editor, pos) : {},
   )
 
-  // Mirror the current values map so onInput delegates can splice
-  // without re-reading the entire form on every keystroke.
-  const valuesRef = useRef<Record<string, unknown>>({ ...initialValuesRef.current })
+  const formRef = useRef<HTMLFormElement | null>(null)
 
   useEffect(() => {
     if (pos === null) return
@@ -105,15 +107,17 @@ export function BlockSidePanel({
     view.dispatch(tr)
   }, [editor, blockType])
 
-  const handleChange = useCallback((event: React.FormEvent<HTMLFormElement>): void => {
-    const target = event.target as (HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null)
-    if (!target || !target.name) return
-    if (!meta) return
-    const fieldMeta = meta.schema.find((f) => f.name === target.name)
-    if (!fieldMeta) return
-    const value = readBlockFieldValue(target, fieldMeta)
-    valuesRef.current = { ...valuesRef.current, [target.name]: value }
-    writeBack(valuesRef.current)
+  const handleChange = useCallback((): void => {
+    const formEl = formRef.current
+    if (!formEl || !meta) return
+    // Snapshot the full form: nested arrays / objects materialize from
+    // dotted-path names (`items.0.title`), JSON-encoded hidden inputs
+    // (TagsInput / KeyValue / FileUpload-multi) sit as JSON strings,
+    // toggle / checkbox hidden inputs sit as `'true' | 'false'`. The
+    // coerce pass below normalizes those to canonical shapes.
+    const raw = parseFormDataToNested(new FormData(formEl))
+    const coerced = coerceBlockValues(raw, meta.schema)
+    writeBack(coerced)
   }, [meta, writeBack])
 
   if (!meta || pos === null) return null
@@ -139,6 +143,7 @@ export function BlockSidePanel({
         </button>
       </header>
       <form
+        ref={formRef}
         onInput={handleChange}
         onChange={handleChange}
         onSubmit={(e) => { e.preventDefault() }}
@@ -154,17 +159,143 @@ export function BlockSidePanel({
 }
 
 /**
- * Read the resolved field value for a given input event target. String
- * passthrough for the common case; explicit coercion for booleans and
- * numerics so the round-trip into the node attrs preserves shape.
+ * Per-fieldType coerce of a nested values map (built by
+ * `parseFormDataToNested`) against the block's schema. Mirrors the
+ * server-side `coerceFormValues` at a small subset suitable for the
+ * side panel — we only run on top-level block fields plus the immediate
+ * children of any Repeater rows / Builder rows.data, which is all the
+ * V2 surface needs.
  *
- * V1 trade-off: TagsInput / KeyValue / FileUpload / Repeater / Builder
- * use richer wire shapes (JSON-encoded arrays, dotted-path child names,
- * etc.) and aren't covered here — the field still renders, but writes
- * land as raw strings until the panel grows a `FormStateProvider`-backed
- * read path.
+ * Non-coerce passthrough for: text, textarea, select, radio, date,
+ * dateTime, email, color, toggleButtons, slug, hidden. (Their wire shape
+ * is already a plain string / array of strings.)
  *
- * Exported for unit tests; prefer using the panel itself.
+ * Coerce branches:
+ * - `toggle` / `checkbox`: 'true' / 'false' string → boolean.
+ * - `number` / `slider`: parse to Number, null on empty, raw string
+ *   passthrough on NaN (so a half-typed value isn't lost).
+ * - `tagsInput`: JSON-encoded string → string[].
+ * - `checkboxList`: JSON-encoded string OR array → string[].
+ * - `keyValue`: JSON-encoded string → Record<string, unknown>.
+ * - `fileUpload`: single → URL string passthrough; multiple →
+ *   JSON-encoded string → string[].
+ * - `repeater`: each row in the array gets recursive coerce against
+ *   the field's `template` (the inner field schema definition).
+ * - `builder`: each row's `data` gets recursive coerce against the
+ *   block matching `row.type` from `field.blocks[]`. Unknown block
+ *   types pass through verbatim — the renderer shows a placeholder
+ *   and the data round-trips intact across config rollbacks.
+ *
+ * Exported for unit tests. Pure — no React, no DOM, no editor.
+ */
+export function coerceBlockValues(
+  raw:    Record<string, unknown>,
+  schema: ReadonlyArray<Record<string, unknown>>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...raw }
+  for (const field of schema) {
+    const name = String(field['name'] ?? '')
+    if (!name) continue
+    const ft = String(field['fieldType'] ?? 'text')
+    const value = out[name]
+    out[name] = coerceField(value, ft, field)
+  }
+  return out
+}
+
+function coerceField(
+  value: unknown,
+  ft:    string,
+  field: Record<string, unknown>,
+): unknown {
+  switch (ft) {
+    case 'toggle':
+    case 'checkbox':
+      return value === 'true' || value === true
+    case 'number':
+    case 'slider':
+      return coerceNumber(value)
+    case 'tagsInput':
+      return parseJsonArray(value)
+    case 'checkboxList':
+      return parseJsonArray(value)
+    case 'keyValue':
+      return parseJsonObject(value)
+    case 'fileUpload': {
+      const multiple = Boolean(field['multiple'])
+      if (multiple) return parseJsonArray(value)
+      return typeof value === 'string' ? value : ''
+    }
+    case 'repeater': {
+      if (!Array.isArray(value)) return []
+      const template = (field['template'] as ReadonlyArray<Record<string, unknown>> | undefined) ?? []
+      return value.map((row) => {
+        if (!row || typeof row !== 'object') return {}
+        return coerceBlockValues(row as Record<string, unknown>, template)
+      })
+    }
+    case 'builder': {
+      if (!Array.isArray(value)) return []
+      const blockMetas = (field['blocks'] as ReadonlyArray<Record<string, unknown>> | undefined) ?? []
+      return value.map((row) => {
+        if (!row || typeof row !== 'object') return { type: '', data: {} }
+        const r = row as Record<string, unknown>
+        const type = String(r['type'] ?? '')
+        const data = (r['data'] as Record<string, unknown> | undefined) ?? {}
+        const block = blockMetas.find((b) => String(b['name'] ?? '') === type)
+        if (!block) return { type, data }
+        const tpl = (block['template'] as ReadonlyArray<Record<string, unknown>> | undefined) ?? []
+        return { type, data: coerceBlockValues(data, tpl) }
+      })
+    }
+    default:
+      return value === undefined ? '' : value
+  }
+}
+
+function coerceNumber(value: unknown): unknown {
+  if (value === '' || value === null || value === undefined) return null
+  if (typeof value === 'number') return value
+  const raw = String(value)
+  if (raw === '') return null
+  const n = Number(raw)
+  return Number.isNaN(n) ? raw : n
+}
+
+function parseJsonArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value
+  if (typeof value !== 'string' || value === '') return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  if (typeof value !== 'string' || value === '') return {}
+  try {
+    const parsed = JSON.parse(value)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch { /* fall through */ }
+  return {}
+}
+
+/**
+ * Read the resolved field value for a given input event target. Kept
+ * for back-compat — V1 used this in the per-event handler. V2 reads
+ * the entire form via `FormData` instead, but this helper still maps
+ * cleanly onto a single-input read for testing and is exported.
+ *
+ * String passthrough for the common case; explicit coercion for
+ * booleans and numerics so the round-trip into the node attrs preserves
+ * shape.
  */
 export function readBlockFieldValue(
   target:    { type?: string; value: string; checked?: boolean },

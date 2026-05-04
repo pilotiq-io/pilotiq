@@ -36,7 +36,7 @@ src/
 
 ---
 
-## Custom-block side panel (V1, 2026-05-04)
+## Custom-block side panel (V2, 2026-05-04)
 
 When a user clicks **Edit** on an inserted custom block, a floating right-docked panel mounts in the editor wrapper and mounts the block's `Block.schema([…])` as a real pilotiq form (via `<FormFields>` from `@pilotiq/pilotiq/react`). Edits write back into `attrs.blockData` on every keystroke — no save button.
 
@@ -46,10 +46,17 @@ When a user clicks **Edit** on an inserted custom block, a floating right-docked
 3. `BlockNodeView`'s Edit button reads `extension.options.onEdit` and calls it with its own `getPos()`.
 4. The host opens `<BlockSidePanel>`, keyed on `pos:blockType` so swapping blocks fully remounts.
 5. Inside the panel: `<FormFields elements={meta.schema} values={initialBlockData} />` renders the same field renderers pilotiq uses everywhere else.
-6. A container-level `onChange/onInput` handler on the panel's `<form>` reads the changed input by `name`, coerces by `fieldType` (booleans, numerics — see `readBlockFieldValue`), splices into a values map, and dispatches `state.tr.setNodeMarkup(pos, null, { blockType, blockData })` directly through the editor view.
+6. A container-level `onChange/onInput` handler on the panel's `<form>` snapshots the **entire form** via `new FormData(formEl)` → `parseFormDataToNested` (re-exported from `@pilotiq/pilotiq/react`; rebuilds nested arrays/objects from dotted-path inputs like `items.0.title`) → `coerceBlockValues` (per-fieldType JSON parse / boolean / number coerce so nested-shape fields land in their canonical wire form). The result is dispatched through `state.tr.setNodeMarkup(pos, null, { blockType, blockData })` directly through the editor view.
 7. The panel listens to every `transaction` and remaps its tracked `pos` so live edits elsewhere in the doc don't desync. If the underlying node disappears (different type at the mapped pos, or null), the panel closes itself.
 
-**V1 field-type coverage.** Flat-shape fields work end-to-end: text / textarea / select / toggle / checkbox / radio / date / datetime / email / number / slider / color. Nested-shape fields (Repeater / Builder / FileUpload / Markdown / KeyValue / TagsInput) render but their value bindings are deferred — those types need a `FormStateProvider`-backed read path and aren't wired yet.
+**V2 field-type coverage.** All pilotiq field renderers serialize through hidden inputs in the form DOM (TagsInput / KeyValue / FileUpload write JSON, Toggle / Checkbox write `'true'/'false'`, Repeater / Builder use dotted-path names) — `parseFormDataToNested` + per-fieldType coerce captures every wire shape with no `FormStateProvider` mount. Working end-to-end:
+
+- **Primitives:** text, textarea, select, radio, toggleButtons, date, dateTime, email, color, number, slider, toggle, checkbox.
+- **JSON-encoded:** tagsInput (string[]), checkboxList (string[]), keyValue (Record<string, unknown>), fileUpload (URL string or string[] when `multiple`).
+- **Plain text:** markdown (raw markdown source).
+- **Nested array fields:** repeater (array of subschema rows; each row's children coerce recursively against `field.template`), builder (heterogeneous rows; `row.data` coerces against the block matching `row.type` from `field.blocks[]`; unknown block types pass through verbatim so config rollbacks don't lose content).
+
+`coerceBlockValues(raw, schema)` is exported from `BlockSidePanel.tsx` for testing — pure helper, no DOM, no React.
 
 **editorRef.** `TiptapEditor` mirrors the `useEditor` instance into a ref so `handleEditBlock` (created before the editor exists) reads the live editor lazily. Re-creating the callback every render would force the editor to rebuild from scratch.
 
