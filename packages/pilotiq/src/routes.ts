@@ -1708,13 +1708,12 @@ export function registerPilotiqRoutes(
         if (!pre) return
         const childId = req.params['childId']!
 
-        if (mode !== 'belongsToMany') {
+        if (mode !== 'belongsToMany' && mode !== 'morphToMany' && mode !== 'morphedByMany') {
           // Detach is meaningless for hasMany — the user wants `delete`.
           // Surface a clear 404 instead of silently no-op'ing.
           res.status(404)
-          return json
-            ? res.json({ ok: false, error: 'Detach is only supported on belongsToMany relations' })
-            : res.send('Detach is only supported on belongsToMany relations')
+          const msg = 'Detach is only supported on M2M relations (belongsToMany, morphToMany, morphedByMany)'
+          return json ? res.json({ ok: false, error: msg }) : res.send(msg)
         }
 
         // Manager-only canDetach: pivot ops don't fall through to the
@@ -1724,20 +1723,28 @@ export function registerPilotiqRoutes(
         // manager has explicitly overridden with a per-row predicate.
         // Authors who need per-row gating can detect undefined and either
         // load the child themselves or short-circuit.
+        // Two distinct accessors are needed under the real
+        // `@rudderjs/orm`:
+        //   - `parent.related(rel)` returns a deferred QueryBuilder
+        //     with `where / paginate` (IDOR read-side check).
+        //   - `parent[rel]()` returns the pivot-mutation accessor with
+        //     `attach / detach / sync` (write-side).
+        // Test stubs may collapse both onto the same `parent.related(rel)`
+        // shape — handle that fallback so existing tests keep passing.
         let child: unknown = undefined
-        const accessor = (pre.parent as { related?: (n: string) => { paginate?: (p: number, pp: number) => Promise<{ data: unknown[] }>; detach?: (ids: unknown) => Promise<unknown> } })
+        const readSide = (pre.parent as { related?: (n: string) => { where?: (...a: unknown[]) => unknown; paginate?: (p: number, pp: number) => Promise<{ data: unknown[] }> } })
           ?.related?.(rel)
-        if (!accessor) {
+        if (!readSide) {
           res.status(500)
           const msg = `Parent.related("${rel}") missing — wrong relation type or ORM version?`
           return json ? res.json({ ok: false, error: msg }) : res.send(msg)
         }
         try {
           // IDOR: confirm the child is currently attached.
-          if (typeof accessor.paginate === 'function') {
+          if (typeof readSide.paginate === 'function') {
             const Related = findRelatedResource(M, R, cfg)
             const pk = Related?.model ? getPrimaryKey(Related.model) : 'id'
-            const out = await (accessor as unknown as { where: (col: string, op: string, val: unknown) => { paginate: (p: number, pp: number) => Promise<{ data: unknown[] }> } }).where(pk, '=', childId).paginate(1, 1)
+            const out = await (readSide as unknown as { where: (col: string, op: string, val: unknown) => { paginate: (p: number, pp: number) => Promise<{ data: unknown[] }> } }).where(pk, '=', childId).paginate(1, 1)
             child = Array.isArray(out.data) ? out.data[0] : undefined
           }
         } catch {
@@ -1747,14 +1754,29 @@ export function registerPilotiqRoutes(
 
         if (!await safeManagerPolicy(M, 'canDetach', undefined, pre.user, pre.parent, child)) return forbidden(res, json)
 
-        if (typeof accessor.detach !== 'function') {
+        // Real ORM: `parent[rel]()` returns the pivot accessor. Test
+        // stubs: `parent.related(rel)` may carry `detach` directly.
+        // Try the prototype-installed instance method first, then fall
+        // back to the read-side shape.
+        let writeAccessor: { detach?: (ids: unknown) => Promise<unknown> } | undefined
+        const inst = (pre.parent as Record<string, unknown>)[rel]
+        if (typeof inst === 'function') {
+          try {
+            const out = (inst as () => unknown).call(pre.parent) as { detach?: (ids: unknown) => Promise<unknown> } | undefined
+            if (out && typeof out.detach === 'function') writeAccessor = out
+          } catch { /* fall through to legacy shape */ }
+        }
+        if (!writeAccessor && typeof (readSide as { detach?: unknown }).detach === 'function') {
+          writeAccessor = readSide as { detach: (ids: unknown) => Promise<unknown> }
+        }
+        if (!writeAccessor) {
           res.status(500)
-          const msg = `Parent.related("${rel}").detach missing — wrong relation type?`
+          const msg = `Pivot accessor missing on ${rel} — wrong relation type or ORM version?`
           return json ? res.json({ ok: false, error: msg }) : res.send(msg)
         }
 
         try {
-          await accessor.detach([childId])
+          await writeAccessor.detach!([childId])
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Detach failed'
           res.status(500)

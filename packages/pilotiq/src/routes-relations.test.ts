@@ -294,8 +294,15 @@ describe('relation routes — edit + delete POST', () => {
 
 // ── M2M follow-up: manager-scoped _action + _detach routes ──────────
 
-/** World builder for a `belongsToMany` Article ↔ Tag relation. */
-function buildM2MWorld() {
+/** World builder for a M2M Article ↔ Tag relation. Defaults to
+ * `belongsToMany`; pass `'morphToMany'` or `'morphedByMany'` to flip the
+ * relations-map type so `getRelationType` resolves to the polymorphic
+ * variant. The runtime accessor surface (where, paginate, attach,
+ * detach) is identical across all three — the rudder ORM stamps +
+ * filters the polymorphic discriminator on the morph variants
+ * automatically, so pilotiq's plumbing is mode-agnostic beyond the
+ * detach 404 gate + visibility predicates. */
+function buildM2MWorld(morphMode: 'belongsToMany' | 'morphToMany' | 'morphedByMany' = 'belongsToMany') {
   const tagRows: Row[] = [
     { id: 't1', name: 'red' },
     { id: 't2', name: 'blue' },
@@ -363,9 +370,9 @@ function buildM2MWorld() {
     query() { throw new Error('not used') },
   }
   // Tag the Article-side relations map with the M2M discriminator so
-  // `getRelationType` flips the manager mode to belongsToMany.
+  // `getRelationType` flips the manager mode to the requested variant.
   Object.assign(ArticleModel as object, {
-    relations: { tags: { type: 'belongsToMany', model: () => TagModel } },
+    relations: { tags: { type: morphMode, model: () => TagModel } },
   })
 
   class TagResource extends Resource {
@@ -450,7 +457,11 @@ describe('relation routes — _detach (M2M)', () => {
       fakeReq({ params: { id: 'u1', childId: 'p1' } }),
     )
     assert.equal(res.statusCode, 404)
+    // Error message lists every M2M mode pilotiq accepts so the user
+    // knows what to declare on the parent's `static relations` map.
     assert.match(String(res.sentBody), /belongsToMany/)
+    assert.match(String(res.sentBody), /morphToMany/)
+    assert.match(String(res.sentBody), /morphedByMany/)
     // Underlying record unchanged.
     assert.ok(postRows.some(r => r['id'] === 'p1'))
   })
@@ -531,6 +542,123 @@ describe('relation routes — _action (manager-scoped)', () => {
       }),
     )
     assert.equal(res.statusCode, 403)
+  })
+})
+
+// ── Polymorphic M2M follow-up: morphToMany / morphedByMany ──────────
+//
+// Both modes share the `belongsToMany` accessor surface (attach /
+// detach / sync). Pilotiq's plumbing is mode-agnostic beyond the
+// `_detach` 404 gate + visibility predicates — the tests below confirm
+// the same routes and stub accessors that worked for `belongsToMany`
+// also work for the morph variants.
+
+describe('relation routes — morphToMany (owning polymorphic side)', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  it('mounts the manager-scoped routes for morphToMany managers', () => {
+    const { panel } = buildM2MWorld('morphToMany')
+    registerPilotiqRoutes(router, panel)
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.ok(paths.includes('POST /admin/articles/:id/tags/_action/:actionName'))
+    assert.ok(paths.includes('POST /admin/articles/:id/tags/:childId/_detach'))
+  })
+
+  it('detaches an attached tag and redirects to the list (morphToMany)', async () => {
+    const { panel, pivot } = buildM2MWorld('morphToMany')
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/articles/:id/tags/:childId/_detach' && r.method === 'POST')!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'a1', childId: 't1' } }),
+    )
+    assert.equal(res.redirectedTo?.url, '/admin/articles/a1/tags')
+    assert.equal(res.redirectedTo?.code, 303)
+    assert.equal(pivot.get('a1')?.has('t1'), false)
+    assert.equal(pivot.get('a1')?.has('t2'), true)
+  })
+
+  it('IDOR-404s when the tag is not attached (morphToMany)', async () => {
+    const { panel, pivot } = buildM2MWorld('morphToMany')
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/articles/:id/tags/:childId/_detach' && r.method === 'POST')!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'a1', childId: 't3' } }),
+    )
+    assert.equal(res.statusCode, 404)
+    assert.equal(pivot.get('a1')?.size, 2)
+  })
+
+  it('dispatches relationAttach with ctx.relation stamped (morphToMany)', async () => {
+    const { panel, pivot } = buildM2MWorld('morphToMany')
+    const TagsManager = panel.getConfig().resources[0]!.relations()[0]!
+    const originalTable = TagsManager.table.bind(TagsManager)
+    ;(TagsManager as unknown as { table: typeof TagsManager.table }).table = (t, ctx) => {
+      return originalTable(t, ctx).headerActions([Action.relationAttach(TagsManager, ctx)])
+    }
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/articles/:id/tags/_action/:actionName' && r.method === 'POST')!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({
+        params: { id: 'a2', actionName: 'relationAttach' },
+        body:   { _attachId: 't3', ids: [] },
+        headers: { accept: 'application/json' },
+      }),
+    )
+    const body = res.sentBody as { ok: boolean }
+    assert.equal(body.ok, true)
+    assert.equal(pivot.get('a2')?.has('t3'), true)
+  })
+})
+
+describe('relation routes — morphedByMany (inverse polymorphic side)', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  it('mounts the manager-scoped routes for morphedByMany managers', () => {
+    const { panel } = buildM2MWorld('morphedByMany')
+    registerPilotiqRoutes(router, panel)
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.ok(paths.includes('POST /admin/articles/:id/tags/_action/:actionName'))
+    assert.ok(paths.includes('POST /admin/articles/:id/tags/:childId/_detach'))
+  })
+
+  it('detaches an attached tag and redirects to the list (morphedByMany)', async () => {
+    const { panel, pivot } = buildM2MWorld('morphedByMany')
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/articles/:id/tags/:childId/_detach' && r.method === 'POST')!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'a1', childId: 't1' } }),
+    )
+    assert.equal(res.redirectedTo?.url, '/admin/articles/a1/tags')
+    assert.equal(res.redirectedTo?.code, 303)
+    assert.equal(pivot.get('a1')?.has('t1'), false)
+  })
+
+  it('dispatches relationAttach with ctx.relation stamped (morphedByMany)', async () => {
+    const { panel, pivot } = buildM2MWorld('morphedByMany')
+    const TagsManager = panel.getConfig().resources[0]!.relations()[0]!
+    const originalTable = TagsManager.table.bind(TagsManager)
+    ;(TagsManager as unknown as { table: typeof TagsManager.table }).table = (t, ctx) => {
+      return originalTable(t, ctx).headerActions([Action.relationAttach(TagsManager, ctx)])
+    }
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/articles/:id/tags/_action/:actionName' && r.method === 'POST')!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({
+        params: { id: 'a2', actionName: 'relationAttach' },
+        body:   { _attachId: 't3', ids: [] },
+        headers: { accept: 'application/json' },
+      }),
+    )
+    const body = res.sentBody as { ok: boolean }
+    assert.equal(body.ok, true)
+    assert.equal(pivot.get('a2')?.has('t3'), true)
   })
 })
 

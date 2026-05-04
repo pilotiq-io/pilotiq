@@ -619,6 +619,149 @@ describe('Action.relation* factories (Plan #11 polish)', () => {
       assert.equal(result.visible, true)
     })
   })
+
+  // ─── Polymorphic M2M follow-up — morphToMany / morphedByMany ──────
+  //
+  // morphToMany (owning polymorphic side, e.g. `Post.tags()`) and
+  // morphedByMany (inverse polymorphic side, e.g. `Tag.posts()`) share
+  // the `belongsToMany` pivot-mutation shape. The three M2M factories
+  // (`relationAttach / Detach / BulkDetach`) and the three "no per-pivot
+  // surface" auto-hides on `relationCreate / Edit / Delete` should treat
+  // all three modes identically.
+
+  describe('M2M factories — morphToMany (owning polymorphic side)', () => {
+    class Tags extends RelationManager {
+      static override relationship  = 'tags'
+      static override label         = 'Tags'
+      static override labelSingular = 'Tag'
+    }
+
+    const morphToManyCtx: RelationManagerContext = {
+      basePath:     '/admin',
+      parentSlug:   'posts',
+      parentId:     '5',
+      relationship: 'tags',
+      parentRecord: { id: '5' },
+      mode:         'morphToMany',
+    }
+
+    it('relationAttach renders as header action under morphToMany mode', () => {
+      const meta = Action.relationAttach(Tags, morphToManyCtx).toMeta()
+      assert.equal(meta.label,     'Attach Tag')
+      assert.equal(meta.placement, 'header')
+    })
+
+    it('relationAttach builds modal-form schema under morphToMany when Related.model is set', () => {
+      const Related = {
+        model: { query: () => ({ paginate: async () => ({ data: [], total: 0 }) }) },
+      } as unknown as RelationManagerContext['related']
+      const a = Action.relationAttach(Tags, { ...morphToManyCtx, related: Related })
+      assert.equal(a.getSchema().length, 1)
+    })
+
+    it('relationAttach visible when canAttach defaults true under morphToMany mode', async () => {
+      const result = await Action.relationAttach(Tags, morphToManyCtx).evaluate({})
+      assert.equal(result.visible, true)
+    })
+
+    it('relationDetach builds detach URL under morphToMany mode', () => {
+      const meta = Action.relationDetach(Tags, morphToManyCtx).toMeta()
+      assert.equal(meta.action, '/admin/posts/5/tags/:id/_detach')
+      assert.equal(meta.method, 'post')
+    })
+
+    it('relationDetach visible when canDetach defaults true under morphToMany mode', async () => {
+      const result = await Action.relationDetach(Tags, morphToManyCtx).evaluate({ record: { id: 9 } })
+      assert.equal(result.visible, true)
+    })
+
+    it('relationBulkDetach visible under morphToMany mode', async () => {
+      const result = await Action.relationBulkDetach(Tags, morphToManyCtx).evaluate({})
+      assert.equal(result.visible, true)
+    })
+
+    it('relationCreate auto-hides under morphToMany (no per-pivot create surface)', async () => {
+      const result = await Action.relationCreate(Tags, morphToManyCtx).evaluate({})
+      assert.equal(result.visible, false)
+    })
+
+    it('relationEdit auto-hides under morphToMany (no per-pivot edit surface)', async () => {
+      const result = await Action.relationEdit(Tags, morphToManyCtx).evaluate({ record: { id: '9' } })
+      assert.equal(result.visible, false)
+    })
+
+    it('relationDelete auto-hides under morphToMany (use relationDetach instead)', async () => {
+      const result = await Action.relationDelete(Tags, morphToManyCtx).evaluate({ record: { id: '9' } })
+      assert.equal(result.visible, false)
+    })
+  })
+
+  describe('M2M factories — morphedByMany (inverse polymorphic side)', () => {
+    class Posts extends RelationManager {
+      static override relationship  = 'posts'
+      static override label         = 'Posts'
+      static override labelSingular = 'Post'
+    }
+
+    const morphedByManyCtx: RelationManagerContext = {
+      basePath:     '/admin',
+      parentSlug:   'tags',
+      parentId:     '5',
+      relationship: 'posts',
+      parentRecord: { id: '5' },
+      mode:         'morphedByMany',
+    }
+
+    it('relationAttach renders as header action under morphedByMany mode', () => {
+      const meta = Action.relationAttach(Posts, morphedByManyCtx).toMeta()
+      assert.equal(meta.label,     'Attach Post')
+      assert.equal(meta.placement, 'header')
+    })
+
+    it('relationAttach builds modal-form schema under morphedByMany when Related.model is set', () => {
+      const Related = {
+        model: { query: () => ({ paginate: async () => ({ data: [], total: 0 }) }) },
+      } as unknown as RelationManagerContext['related']
+      const a = Action.relationAttach(Posts, { ...morphedByManyCtx, related: Related })
+      assert.equal(a.getSchema().length, 1)
+    })
+
+    it('relationAttach visible when canAttach defaults true under morphedByMany mode', async () => {
+      const result = await Action.relationAttach(Posts, morphedByManyCtx).evaluate({})
+      assert.equal(result.visible, true)
+    })
+
+    it('relationDetach builds detach URL under morphedByMany mode', () => {
+      const meta = Action.relationDetach(Posts, morphedByManyCtx).toMeta()
+      assert.equal(meta.action, '/admin/tags/5/posts/:id/_detach')
+      assert.equal(meta.method, 'post')
+    })
+
+    it('relationDetach visible when canDetach defaults true under morphedByMany mode', async () => {
+      const result = await Action.relationDetach(Posts, morphedByManyCtx).evaluate({ record: { id: 9 } })
+      assert.equal(result.visible, true)
+    })
+
+    it('relationBulkDetach visible under morphedByMany mode', async () => {
+      const result = await Action.relationBulkDetach(Posts, morphedByManyCtx).evaluate({})
+      assert.equal(result.visible, true)
+    })
+
+    it('relationCreate auto-hides under morphedByMany (no per-pivot create surface)', async () => {
+      const result = await Action.relationCreate(Posts, morphedByManyCtx).evaluate({})
+      assert.equal(result.visible, false)
+    })
+
+    it('relationEdit auto-hides under morphedByMany (no per-pivot edit surface)', async () => {
+      const result = await Action.relationEdit(Posts, morphedByManyCtx).evaluate({ record: { id: '9' } })
+      assert.equal(result.visible, false)
+    })
+
+    it('relationDelete auto-hides under morphedByMany (use relationDetach instead)', async () => {
+      const result = await Action.relationDelete(Posts, morphedByManyCtx).evaluate({ record: { id: '9' } })
+      assert.equal(result.visible, false)
+    })
+  })
 })
 
 describe('Action soft-delete factories (Plan #13)', () => {

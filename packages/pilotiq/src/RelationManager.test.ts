@@ -280,6 +280,14 @@ describe('normalizeRelationMode (polymorphic follow-up)', () => {
     assert.equal(normalizeRelationMode('morphTo'), 'morphTo')
   })
 
+  it('maps morphToMany to its own mode (polymorphic M2M owning side)', () => {
+    assert.equal(normalizeRelationMode('morphToMany'), 'morphToMany')
+  })
+
+  it('maps morphedByMany to its own mode (polymorphic M2M inverse side)', () => {
+    assert.equal(normalizeRelationMode('morphedByMany'), 'morphedByMany')
+  })
+
   it('falls back to hasMany for hasMany / hasOne / belongsTo / unknown / empty', () => {
     assert.equal(normalizeRelationMode('hasMany'),      'hasMany')
     assert.equal(normalizeRelationMode('hasOne'),       'hasMany')
