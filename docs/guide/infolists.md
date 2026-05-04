@@ -13,6 +13,7 @@ no validators, no submit. Built for `Resource.detail(record)`.
 | `ImageEntry`    | Inline `<img>` from a URL state value. Square / rounded / circle.      |
 | `KeyValueEntry` | Two-column key/value table. Reads objects or JSON-string blobs.        |
 | `ColorEntry`    | Swatch chip + raw value. For hex / rgb / oklch CSS color strings.      |
+| `ComponentEntry`| Escape-hatch — hands rendering to a registered React component.        |
 
 Entries compose inside the same layout primitives forms use — `Section`,
 `Grid`, `Card`, `Tabs`, `Split`, `Group`, `Fieldset`. They inherit
@@ -245,6 +246,90 @@ State value is a CSS color string (`#aabbcc`, `rgb(...)`, `oklch(...)`,
 by default; toggle with `.hideValue()` for a chip-only layout. Same
 `.width / .height / .dimensions / .square / .rounded / .circle` setters
 as `ImageEntry`.
+
+---
+
+## `ComponentEntry`
+
+Escape hatch for cases the built-in entries don't fit — a coordinates
+map, an audit-trail timeline, a syntax-highlighted JSON viewer.
+`ComponentEntry` hands rendering off to a user-supplied React component
+registered at app boot.
+
+```ts
+// app/Pilotiq/Posts/ReadingStats.tsx
+import type { EntryComponentProps } from '@pilotiq/pilotiq/entries'
+
+export function ReadingStats({ value }: EntryComponentProps) {
+  const text  = typeof value === 'string' ? value : ''
+  const words = text.trim() === '' ? 0 : text.trim().split(/\s+/).length
+  return <div>{words.toLocaleString()} words</div>
+}
+```
+
+```ts
+// pages/+Layout.tsx (client-side bootstrap)
+import { registerEntryComponents } from '@pilotiq/pilotiq/entries'
+import { ReadingStats } from '../app/Pilotiq/Posts/ReadingStats.js'
+
+registerEntryComponents({ ReadingStats })
+```
+
+```ts
+// PostResource.ts
+ComponentEntry.make('readingStats')
+  .component('ReadingStats')
+  .state((r) => (r as { body?: string }).body ?? '')
+  .label('Reading stats')
+```
+
+The component receives `{ value }` as its sole prop — `value` is the
+entry's resolved state (honors `.state(path | fn)` like any other
+entry). Use `state(r => composedObject)` when the component needs
+several record fields:
+
+```ts
+ComponentEntry.make('coords')
+  .component('CoordinatesMap')
+  .state((r) => ({ lat: (r as any).lat, lng: (r as any).lng }))
+```
+
+### Subclass form
+
+For repeated use, extend `ComponentEntry` so the component name lives
+on a stable class:
+
+```ts
+export class CoordinatesMap extends ComponentEntry {
+  static override componentName = 'CoordinatesMap'
+}
+
+CoordinatesMap.make('location').label('Where')
+```
+
+The instance setter (`.component('Other')`) overrides the static.
+
+### Failure modes
+
+Both wiring mistakes paint inline error panels rather than throwing:
+
+- **No `component` name** — neither `static componentName` nor
+  `.component('...')` set. Reminder shown.
+- **Component not registered** — name set but no matching entry in the
+  registry. Reminder shown with the exact `registerEntryComponents`
+  snippet.
+
+Render-time errors inside the user component propagate to React's
+nearest error boundary — the chrome around `ComponentEntry` doesn't
+wrap each instance in its own boundary.
+
+### When *not* to use it
+
+If the cosmetic surface of an existing entry is close (e.g. a styled
+text snippet), prefer `TextEntry` + `formatStateUsing` — the wire stays
+tiny and you don't need a registered component. Reach for
+`ComponentEntry` only when the rendering itself isn't expressible
+through the built-in entries.
 
 ---
 

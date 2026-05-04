@@ -149,6 +149,7 @@ export { IconEntry, type IconEntryOption } from './entries/IconEntry.js'
 export { ImageEntry, type ImageEntryShape } from './entries/ImageEntry.js'
 export { KeyValueEntry } from './entries/KeyValueEntry.js'
 export { ColorEntry, type ColorEntryShape } from './entries/ColorEntry.js'
+export { ComponentEntry } from './entries/ComponentEntry.js'
 
 // Plan #15 — server-data widget elements
 export {

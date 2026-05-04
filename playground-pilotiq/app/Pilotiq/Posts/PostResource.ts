@@ -3,7 +3,7 @@ import {
   TextInputColumn, SelectColumn,
   TextField, MarkdownField, SelectField,
   TernaryFilter, DateRangeFilter,
-  TextEntry, BadgeEntry, IconEntry,
+  TextEntry, BadgeEntry, IconEntry, ComponentEntry,
   Section, Grid,
   minLength,
   type Form, type Table, type Element,
@@ -161,6 +161,14 @@ export class PostResource extends Resource {
       ]),
       Section.make('Body').schema([
         TextEntry.make('body').wrap().lineClamp(8).default('No body yet.'),
+        // Escape-hatch entry — hands rendering off to the registered
+        // `ReadingStats` React component. The `state(r => r.body ?? '')`
+        // accessor pre-resolves the body text so the component receives
+        // a plain string in `value`.
+        ComponentEntry.make('readingStats')
+          .label('Reading stats')
+          .component('ReadingStats')
+          .state((r) => (r as { body?: string }).body ?? ''),
       ]),
     ]
   }

@@ -45,6 +45,10 @@
     "./widgets": {
       "import": "./dist/widgets/index.js",
       "types": "./dist/widgets/index.d.ts"
+    },
+    "./entries": {
+      "import": "./dist/entries/index.js",
+      "types": "./dist/entries/index.d.ts"
     }
   },
   "scripts": {

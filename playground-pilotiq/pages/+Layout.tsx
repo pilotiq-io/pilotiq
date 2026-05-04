@@ -6,7 +6,9 @@ import { json } from '@codemirror/lang-json'
 import { sql }  from '@codemirror/lang-sql'
 import { registerChartRenderer } from '@pilotiq/recharts'
 import { registerWidgetComponents } from '@pilotiq/pilotiq/widgets'
-import { ActivityFeed } from '../app/Pilotiq/widgets/ActivityFeed.js'
+import { registerEntryComponents } from '@pilotiq/pilotiq/entries'
+import { ActivityFeed }  from '../app/Pilotiq/widgets/ActivityFeed.js'
+import { ReadingStats }  from '../app/Pilotiq/Posts/ReadingStats.js'
 
 // One-time client-side wiring: tells SchemaRenderer how to render
 // `fieldType: 'richtext'`. Module-level call is idempotent.
@@ -27,6 +29,11 @@ registerChartRenderer()
 // (`ActivityFeedView`) carries `static componentName = 'ActivityFeed'`;
 // core's ViewRenderer looks up the component here at render time.
 registerWidgetComponents({ ActivityFeed })
+
+// Plan #16 follow-up — `ComponentEntry` infolist components. Mirrors the
+// widget registry; each entry's `.component('ReadingStats')` (or static
+// `componentName`) keys into this map to find the React component.
+registerEntryComponents({ ReadingStats })
 
 export default function Layout({ children }: { children: ReactNode }) {
   return <>{children}</>

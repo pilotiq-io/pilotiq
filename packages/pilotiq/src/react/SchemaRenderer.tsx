@@ -86,6 +86,7 @@ import { WidgetDataProvider } from './WidgetDataContext.js'
 import { StatsOverviewRenderer } from './widgets/StatsOverviewRenderer.js'
 import { TableWidgetRenderer } from './widgets/TableWidgetRenderer.js'
 import { ViewRenderer } from './widgets/ViewRenderer.js'
+import { getEntryComponent } from '../entries/registry.js'
 import { getWidgetRenderer } from './widgetRegistry.js'
 
 /** Resolve an icon name through the user-extensible registry. Returns
@@ -2110,6 +2111,39 @@ function renderEntry(el: ElementMeta, index: number): React.ReactNode {
       break
     }
 
+    case 'component': {
+      const componentName = String(el['component'] ?? '')
+      if (!componentName) {
+        body = (
+          <EntryComponentError>
+            ComponentEntry is missing its <code className="font-mono">component</code> name —
+            set <code className="font-mono">static componentName = '...'</code> on the
+            subclass or call <code className="font-mono">.component('...')</code> in the
+            fluent form.
+          </EntryComponentError>
+        )
+        break
+      }
+      const Component = getEntryComponent(componentName)
+      if (!Component) {
+        body = (
+          <EntryComponentError>
+            No component registered under name <code className="font-mono">{componentName}</code>.
+            Register it at app boot:
+            <pre className="mt-2 overflow-x-auto rounded bg-amber-100/60 p-2 text-xs dark:bg-amber-900/30">{`import { registerEntryComponents } from '@pilotiq/pilotiq/entries'\nregisterEntryComponents({ ${componentName}: ${componentName} })`}</pre>
+          </EntryComponentError>
+        )
+        break
+      }
+      // Render-time errors propagate to React's nearest error boundary —
+      // surfacing them inline here would require wrapping every entry in
+      // its own boundary, which v1 doesn't ship. The two pre-render
+      // sentinels above (missing name / missing registration) cover the
+      // typical wiring mistakes.
+      body = <Component value={value} />
+      break
+    }
+
     default:
       body = <span className="text-sm text-muted-foreground">{fallback}</span>
   }
@@ -2181,6 +2215,17 @@ function EntryShell({ el, copyValue, copyableLabel, children }: EntryShellProps)
       {labelNode}
       {valueRow}
       {helperText && <p className="text-xs text-muted-foreground">{helperText}</p>}
+    </div>
+  )
+}
+
+function EntryComponentError({ children }: { children: React.ReactNode }): React.ReactNode {
+  return (
+    <div
+      role="alert"
+      className="rounded-md border border-amber-500/40 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+    >
+      {children}
     </div>
   )
 }
