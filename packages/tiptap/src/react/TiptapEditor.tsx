@@ -31,7 +31,7 @@ import { SlashMenu, type SlashKeyHandlerRef } from './SlashMenu.js'
 import { MentionMenu, type MentionKeyHandlerRef } from './MentionMenu.js'
 import { FloatingToolbar } from './FloatingToolbar.js'
 import { TableFloatingToolbar } from './TableFloatingToolbar.js'
-import { Toolbar, useEditorTick } from './Toolbar.js'
+import { Toolbar, AttachFilesDialog, useEditorTick } from './Toolbar.js'
 
 /**
  * The pilotiq field renderer for `RichTextField`. Registered globally via
@@ -119,6 +119,12 @@ function ClientEditor(props: FieldRendererProps) {
   const mentionState  = mentionDismissed ? null : rawMentionState
   const mentionKeyRef = useRef<((event: KeyboardEvent) => boolean) | null>(null)
 
+  // Lifted upload-dialog state — the toolbar's `attachFiles` button and the
+  // slash menu's "Image" entry both flip this flag. Single source of truth
+  // keeps the dialog mounted in one place (inside `Toolbar`) regardless of
+  // which trigger fired.
+  const [attachOpen, setAttachOpen] = useState(false)
+
   const handleMentionStateChange = useCallback((s: MentionState | null) => {
     if (s === null) setMentionDismissed(false)
     setRawMentionState(s)
@@ -176,6 +182,8 @@ function ClientEditor(props: FieldRendererProps) {
         blocks,
         mergeTags,
         onStateChange: handleStateChange,
+        hasUpload:     Boolean(uploadUrl),
+        onInsertImage: () => setAttachOpen(true),
       })] : []),
       // MergeTagExtension provides the `mergeTag` node type even when no tags
       // are configured — the slash menu is the gate for *inserting* them, but
@@ -283,12 +291,24 @@ function ClientEditor(props: FieldRendererProps) {
           textColors={textColors}
           customTextColors={customTextColors}
           highlightColors={highlightColors}
-          {...(uploadUrl !== undefined ? { uploadUrl } : {})}
+          onAttachOpenChange={setAttachOpen}
+        />
+      )}
+      {/* Single mount for the attach-files dialog — toolbar's `attachFiles`
+          button and slash menu's "Image" entry both flip `attachOpen`.
+          Mounted at the editor level (not the toolbar) so it stays available
+          when the toolbar is hidden via `.toolbar(false)`. */}
+      {editor && (
+        <AttachFilesDialog
+          open={attachOpen}
+          onOpenChange={setAttachOpen}
+          editor={editor}
           fieldName={name}
+          {...(uploadUrl !== undefined ? { uploadUrl } : {})}
           {...(acceptedFileTypes !== undefined ? { acceptedFileTypes } : {})}
           {...(maxAttachmentSize !== undefined ? { maxFileSize: maxAttachmentSize } : {})}
-          {...(attachmentDir !== undefined ? { attachmentDir } : {})}
-          {...(attachmentVis !== undefined ? { attachmentVis } : {})}
+          {...(attachmentDir !== undefined ? { directory: attachmentDir } : {})}
+          {...(attachmentVis !== undefined ? { visibility: attachmentVis } : {})}
         />
       )}
       <EditorContent editor={editor} />

@@ -14,18 +14,12 @@ interface ToolbarProps {
   textColors:       ColorSwatch[]
   customTextColors: boolean
   highlightColors:  ColorSwatch[]
-  /** Panel `_uploads` route URL. When undefined, attachFiles is a no-op. */
-  uploadUrl?:       string
-  /** Field name — sent alongside the upload payload for adapter routing. */
-  fieldName:        string
-  /** MIME-type allowlist for the picker (`['image/*']` etc.). */
-  acceptedFileTypes?: string[]
-  /** Per-file size cap in bytes. */
-  maxFileSize?:     number
-  /** Sub-directory hint forwarded to the adapter. */
-  attachmentDir?:   string
-  /** Adapter visibility hint. */
-  attachmentVis?:   'public' | 'private'
+  /**
+   * Open the upload dialog. The dialog itself is mounted in the parent
+   * (`ClientEditor`) so the slash menu's "Image" entry can share the
+   * same mount — Toolbar just toggles the controlled flag.
+   */
+  onAttachOpenChange: (open: boolean) => void
 }
 
 /**
@@ -39,11 +33,10 @@ interface ToolbarProps {
  */
 export function Toolbar({
   editor, groups, tick, textColors, customTextColors, highlightColors,
-  uploadUrl, fieldName, acceptedFileTypes, maxFileSize, attachmentDir, attachmentVis,
+  onAttachOpenChange,
 }: ToolbarProps) {
   const [linkOpen, setLinkOpen] = useState(false)
   const [linkUrl,  setLinkUrl]  = useState('')
-  const [attachOpen, setAttachOpen] = useState(false)
 
   const filteredGroups = groups
     .map((g) => g.map((id) => TOOLBAR_BUTTONS[id]).filter((b): b is ToolbarButtonDef => Boolean(b?.available)))
@@ -125,7 +118,7 @@ export function Toolbar({
                 }
                 const customClick =
                   btn.custom === 'link'         ? openLinkDialog :
-                  btn.custom === 'attachFiles'  ? () => setAttachOpen(true) :
+                  btn.custom === 'attachFiles'  ? () => onAttachOpenChange(true) :
                   undefined
                 return (
                   <ToolbarButton
@@ -149,17 +142,8 @@ export function Toolbar({
         onRemove={editor.isActive('link') ? removeLink : null}
         isEdit={editor.isActive('link')}
       />
-      <AttachFilesDialog
-        open={attachOpen}
-        onOpenChange={setAttachOpen}
-        editor={editor}
-        fieldName={fieldName}
-        {...(uploadUrl         !== undefined ? { uploadUrl }                          : {})}
-        {...(acceptedFileTypes !== undefined ? { acceptedFileTypes }                  : {})}
-        {...(maxFileSize       !== undefined ? { maxFileSize }                        : {})}
-        {...(attachmentDir     !== undefined ? { directory:  attachmentDir }          : {})}
-        {...(attachmentVis     !== undefined ? { visibility: attachmentVis }          : {})}
-      />
+      {/* Attach-files dialog mount lives in `ClientEditor` (single source of
+          truth — slash-menu Image entry shares the same state). */}
     </>
   )
 }
@@ -209,7 +193,7 @@ function ToolbarButton({ def, editor, onCustomClick }: ToolbarButtonProps) {
   )
 }
 
-function AttachFilesDialog({
+export function AttachFilesDialog({
   open, onOpenChange, editor,
   uploadUrl, fieldName, acceptedFileTypes, maxFileSize, directory, visibility,
 }: {

@@ -130,7 +130,11 @@ Opens on `/`. Built-in items:
 - **Headings** — Heading 1 to 6
 - **Lists** — Bullet list, Numbered list
 - **Align** — Align left, Align center, Align right
+- **Insert** — Table (3×3 with header row), Image *(only when an `UploadAdapter` is registered via `Pilotiq.uploads({ adapter })`)*
 - **Blocks** — every entry in `.blocks([...])`
+- **Merge tags** — every entry in `.mergeTags([...])`
+
+The Image entry shares the same upload dialog as the toolbar's `attachFiles` button — picking it deletes the slash range, then opens the dialog (which handles the actual upload + image insertion). The dialog is mounted at the editor level, so the slash entry works even when the toolbar is hidden via `.toolbar(false)`. The Table entry inserts a 3×3 table with a header row at the cursor; the table-floating-toolbar handles row / column / merge / delete operations once the cursor is inside.
 
 Each registered `Block` becomes a slash item that inserts an inline form. The block's `schema([fields])` defines the form layout — use any pilotiq Field type. The result lives in the document as a single ProseMirror node with `attrs.blockType` and `attrs.blockData`.
 

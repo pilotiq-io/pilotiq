@@ -278,3 +278,19 @@ buttons. Brings the new mark extensions needed by those buttons.
   pilotiq-side authorization context first.
 - `details` collapsible blocks, `grid` blocks, `lead`/`small` size variants.
   Cosmetic, low priority.
+
+## Post-ship follow-ups (2026-05-04 cont'd)
+
+- **Async mention items** (cont'd¹⁴): `MentionProvider.itemsUsing(async fn)` +
+  `_form/:formId/mentions` route — see the Mentions section above for the
+  detailed wire shape.
+- **Slash-menu Image / Table entries** (cont'd¹⁵): two new built-ins under
+  the "Insert" group. Table is unconditional and runs the same
+  `insertTable({rows:3,cols:3,withHeaderRow:true})` chain as the toolbar
+  button. Image is gated on `RichTextField.uploadUrl` being stamped (mirrors
+  the toolbar's `attachFiles` button — only surfaces when an `UploadAdapter`
+  is registered) and shares the same `AttachFilesDialog`. The dialog mount
+  was hoisted from `Toolbar` to `ClientEditor` so the Image entry works
+  even when the toolbar is hidden via `.toolbar(false)`. `SlashCommandOptions`
+  gains `hasUpload: boolean` + `onInsertImage: () => void` — `TiptapEditor`
+  threads `Boolean(uploadUrl)` and `() => setAttachOpen(true)`.

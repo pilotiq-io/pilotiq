@@ -40,6 +40,18 @@ export interface SlashCommandOptions {
    * holds the React state and passes a setter here.
    */
   onStateChange: (state: SlashState | null) => void
+  /**
+   * `true` when the panel has wired an `UploadAdapter` (mirrors the
+   * toolbar's `attachFiles` gating). Drives whether the "Image" entry
+   * appears in the menu — it would have nowhere to upload otherwise.
+   */
+  hasUpload: boolean
+  /**
+   * Called when the user picks the "Image" slash entry. The slash range
+   * is already deleted before this fires; the callback just opens the
+   * shared attach-files dialog (whose UI lives in `Toolbar`).
+   */
+  onInsertImage: () => void
 }
 
 /**
@@ -60,13 +72,17 @@ export const SlashCommandExtension = Extension.create<SlashCommandOptions>({
       blocks:        [],
       mergeTags:     [],
       onStateChange: () => {},
+      hasUpload:     false,
+      onInsertImage: () => {},
     }
   },
 
   addProseMirrorPlugins() {
-    const blocks    = this.options.blocks
-    const mergeTags = this.options.mergeTags
-    const emit      = this.options.onStateChange
+    const blocks        = this.options.blocks
+    const mergeTags     = this.options.mergeTags
+    const emit          = this.options.onStateChange
+    const hasUpload     = this.options.hasUpload
+    const onInsertImage = this.options.onInsertImage
 
     return [
       Suggestion({
@@ -74,7 +90,7 @@ export const SlashCommandExtension = Extension.create<SlashCommandOptions>({
         char: '/',
         startOfLine: false,
         allowSpaces: false,
-        items: ({ query }: { query: string }) => buildItems(blocks, mergeTags, query),
+        items: ({ query }: { query: string }) => buildSlashItems(blocks, mergeTags, query, { hasUpload, onInsertImage }),
         command: ({ editor, range, props }: { editor: Editor; range: Range; props: SlashItem }) => {
           props.command({ editor, range })
         },
@@ -106,9 +122,23 @@ function stateFrom(props: {
   }
 }
 
+export interface SlashInsertEntries {
+  hasUpload:     boolean
+  onInsertImage: () => void
+}
+
 // Built-in items mirror the standard rich-text-editor slash menu. Custom
 // blocks append, then merge-tag placeholders.
-function buildItems(blocks: BlockMeta[], mergeTags: string[], query: string): SlashItem[] {
+//
+// Exported so tests can pin down the menu contents without spinning up an
+// editor instance — the function is pure and deterministic given its
+// inputs.
+export function buildSlashItems(
+  blocks:    BlockMeta[],
+  mergeTags: string[],
+  query:     string,
+  insert:    SlashInsertEntries,
+): SlashItem[] {
   const builtins: SlashItem[] = [
     {
       key: 'paragraph', label: 'Text', icon: '¶', group: 'Basic',
@@ -149,6 +179,31 @@ function buildItems(blocks: BlockMeta[], mergeTags: string[], query: string): Sl
       searchKey: 'divider hr horizontal rule',
       command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
     },
+    // 3×3 table with a header row — same shape as the toolbar `table` button.
+    // No upload gate; tables are pure schema, available everywhere.
+    {
+      key: 'table', label: 'Table', icon: '⊞', group: 'Insert',
+      searchKey: 'table grid rows columns',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range)
+          .insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+    },
+    // Image entry shares the toolbar's attach-files dialog; only surfaced
+    // when the panel has wired an `UploadAdapter`. Without one, the dialog
+    // would post to a missing endpoint — the slash item degrades the same
+    // way the toolbar's `attachFiles` button does (server-stripped at meta
+    // build time when no adapter is set).
+    ...(insert.hasUpload ? [{
+      key: 'image', label: 'Image', icon: '🖼', group: 'Insert',
+      searchKey: 'image upload media file attach',
+      command: ({ editor, range }: { editor: Editor; range: Range }) => {
+        // Drop the slash range first so the user doesn't return to a
+        // dangling `/image` after closing the dialog. Inserting the
+        // actual image happens inside the dialog's upload handler.
+        editor.chain().focus().deleteRange(range).run()
+        insert.onInsertImage()
+      },
+    }] satisfies SlashItem[] : []),
     {
       key: 'align-left', label: 'Align left', icon: '⇤', group: 'Align',
       searchKey: 'align left start',
