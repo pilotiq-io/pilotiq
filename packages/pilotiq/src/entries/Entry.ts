@@ -12,6 +12,16 @@ export type EntryFormatStateHandler = (
   record: Record<string, unknown>,
 ) => string
 
+/**
+ * Override for `Entry.resolveValue`. String form is dotted-path traversal
+ * (`'author.name'`, `'tags.0.name'`); function form runs the user handler
+ * with the full record. Used for joins, computed columns, or anywhere the
+ * value isn't `record[name]`.
+ */
+export type EntryStateResolver =
+  | string
+  | ((record: Record<string, unknown>) => unknown)
+
 /** Built-in formatters — same shape as `ColumnFormat` so the renderer
  *  reuses `applyColumnFormat()` unchanged. */
 export type EntryFormat =
@@ -80,6 +90,7 @@ export abstract class Entry extends Element {
   protected _size?:   EntrySize
   protected _format?: EntryFormat
   protected _formatState?: EntryFormatStateHandler
+  protected _state?: EntryStateResolver
   protected _copyable?: { label?: string }
   protected _lineClamp?: number
   protected _wrap = false
@@ -170,14 +181,39 @@ export abstract class Entry extends Element {
     return this
   }
 
+  /**
+   * Override the default `record[name]` lookup. String form does dotted-
+   * path traversal — `'author.name'`, `'tags.0.label'`; missing
+   * intermediates resolve to `undefined`. Function form runs the
+   * user-supplied accessor with the full record.
+   *
+   * The entry's `name` still drives the auto-derived label and the wire-
+   * side discriminator key, so use `.label(...)` alongside when the path
+   * doesn't read well as a heading.
+   *
+   * @example
+   * TextEntry.make('authorName').state('author.name').label('Author')
+   * TextEntry.make('total').state(r => Number(r.subtotal) + Number(r.tax))
+   */
+  state(resolver: EntryStateResolver): this {
+    this._state = resolver
+    return this
+  }
+
   // ─── Resolution ───────────────────────────────────────
 
-  /** Read the state value out of the loaded record (or values map). Plain
-   *  `record[name]`; nested-path support deferred to a follow-up. */
+  /** Read the state value out of the loaded record. Honors `state()`
+   *  override (string dotted-path or accessor fn) when set; otherwise
+   *  falls back to `record[name]`. */
   resolveValue(ctx?: RenderContext): unknown {
     const record = ctx?.record as Record<string, unknown> | undefined
     if (record === undefined || record === null) return undefined
-    return record[this._name]
+    if (this._state === undefined) return record[this._name]
+    if (typeof this._state === 'function') {
+      try { return this._state(record) }
+      catch { return undefined }
+    }
+    return readDottedPath(record, this._state)
   }
 
   /** Default label = startCase of the attribute name. */
@@ -241,4 +277,28 @@ export abstract class Entry extends Element {
  *  module-cache duplication (`feedback_vite_ssr_module_dup_instanceof`). */
 export function isEntry(el: Element): el is Entry {
   return el.getType() === 'entry'
+}
+
+/** Walk a dotted path against an arbitrary record / array shape; bail to
+ *  `undefined` on any missing intermediate. Numeric segments index into
+ *  arrays. Inlined here rather than reused from `dispatchForm.ts` because
+ *  Entry has no other dependency on the form pipeline and keeping the
+ *  schema layer free of submit-side imports avoids a cycle. */
+function readDottedPath(record: Record<string, unknown>, path: string): unknown {
+  if (path === '') return record
+  const segments = path.split('.')
+  let cur: unknown = record
+  for (const seg of segments) {
+    if (cur === null || cur === undefined) return undefined
+    if (Array.isArray(cur)) {
+      const idx = Number(seg)
+      if (!Number.isInteger(idx)) return undefined
+      cur = cur[idx]
+    } else if (typeof cur === 'object') {
+      cur = (cur as Record<string, unknown>)[seg]
+    } else {
+      return undefined
+    }
+  }
+  return cur
 }

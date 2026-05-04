@@ -60,6 +60,113 @@ describe('TextEntry — state resolution', () => {
   })
 })
 
+describe('Entry.state() — nested-path / accessor override', () => {
+  it('string dotted path reads from a nested record', async () => {
+    const out = await resolveSchema(
+      [TextEntry.make('authorName').state('author.name')],
+      { record: { author: { name: 'Ada Lovelace' } } },
+    )
+    assert.equal((out[0] as EntryMeta).value, 'Ada Lovelace')
+  })
+
+  it('string path with array index', async () => {
+    const out = await resolveSchema(
+      [TextEntry.make('firstTag').state('tags.0.label')],
+      { record: { tags: [{ label: 'physics' }, { label: 'math' }] } },
+    )
+    assert.equal((out[0] as EntryMeta).value, 'physics')
+  })
+
+  it('missing intermediate resolves to undefined (no throw)', async () => {
+    const out = await resolveSchema(
+      [TextEntry.make('authorName').state('author.name')],
+      { record: { author: null } },
+    )
+    assert.equal((out[0] as EntryMeta).value, undefined)
+  })
+
+  it('missing leaf resolves to undefined', async () => {
+    const out = await resolveSchema(
+      [TextEntry.make('authorName').state('author.name')],
+      { record: { author: { email: 'x@y.z' } } },
+    )
+    assert.equal((out[0] as EntryMeta).value, undefined)
+  })
+
+  it('function accessor receives full record', async () => {
+    const out = await resolveSchema(
+      [
+        TextEntry.make('total').state(
+          (r) => Number((r as { subtotal: number }).subtotal) + Number((r as { tax: number }).tax),
+        ),
+      ],
+      { record: { subtotal: 100, tax: 7 } },
+    )
+    assert.equal((out[0] as EntryMeta).value, 107)
+  })
+
+  it('throwing accessor fails soft (value=undefined, no crash)', async () => {
+    const out = await resolveSchema(
+      [TextEntry.make('x').state(() => { throw new Error('boom') })],
+      { record: { x: 1 } },
+    )
+    assert.equal((out[0] as EntryMeta).value, undefined)
+  })
+
+  it('label still derives from name, not the path', async () => {
+    const out = await resolveSchema(
+      [TextEntry.make('authorName').state('author.name')],
+      { record: { author: { name: 'Ada' } } },
+    )
+    assert.equal((out[0] as EntryMeta).label, 'Author Name')
+  })
+
+  it('state() override wins over the implicit record[name] lookup', async () => {
+    const out = await resolveSchema(
+      [TextEntry.make('email').state(() => 'overridden@x.y')],
+      { record: { email: 'shadowed@x.y' } },
+    )
+    assert.equal((out[0] as EntryMeta).value, 'overridden@x.y')
+  })
+
+  it('state() composes with formatStateUsing — formatter receives resolved value', async () => {
+    const out = await resolveSchema(
+      [
+        TextEntry.make('authorName')
+          .state('author.name')
+          .formatStateUsing((v) => String(v).toUpperCase()),
+      ],
+      { record: { author: { name: 'ada' } } },
+    )
+    assert.equal((out[0] as EntryMeta)._formatted, 'ADA')
+  })
+
+  it('numeric path segment against non-array yields undefined', async () => {
+    const out = await resolveSchema(
+      [TextEntry.make('x').state('a.0')],
+      { record: { a: { name: 'oops' } } },
+    )
+    // descends into `a` (an object), then asks for key '0' — yields undefined
+    assert.equal((out[0] as EntryMeta).value, undefined)
+  })
+
+  it('non-integer path segment against array yields undefined', async () => {
+    const out = await resolveSchema(
+      [TextEntry.make('x').state('a.foo')],
+      { record: { a: [1, 2, 3] } },
+    )
+    assert.equal((out[0] as EntryMeta).value, undefined)
+  })
+
+  it('walking past a primitive yields undefined', async () => {
+    const out = await resolveSchema(
+      [TextEntry.make('x').state('a.b')],
+      { record: { a: 'string' } },
+    )
+    assert.equal((out[0] as EntryMeta).value, undefined)
+  })
+})
+
 describe('TextEntry — chrome', () => {
   it('inlineLabel / default / helperText / tooltip', async () => {
     const out = await resolveSchema(

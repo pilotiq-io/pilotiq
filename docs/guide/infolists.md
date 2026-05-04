@@ -77,15 +77,46 @@ final wire shape to the renderer.
 TextEntry.make('email')
 ```
 
-Resolves to `record['email']`. Plain attribute access — nested-path
-lookup is deferred to a follow-up. Use `formatStateUsing((value, record)
-=> string)` when you need to derive a value from sibling fields.
+Resolves to `record['email']` by default — plain attribute access keyed
+on the entry's `name`.
+
+### `state(path | fn)`
+
+Override the default lookup when the value lives at a nested path or
+needs to be derived from the record. Two forms:
 
 ```ts
-TextEntry.make('email').formatStateUsing((v, r) => {
-  if (!v) return '—'
-  return `${v} (verified ${(r as { verifiedAt?: string }).verifiedAt ?? 'no'})`
-})
+// Dotted-path traversal (joined / nested data)
+TextEntry.make('authorName').state('author.name').label('Author')
+
+// Numeric segments index into arrays
+TextEntry.make('firstTag').state('tags.0.label')
+
+// Function accessor (computed values)
+TextEntry.make('total').state(
+  (r) => Number((r as { subtotal: number }).subtotal)
+       + Number((r as { tax: number }).tax),
+)
+```
+
+The entry's `name` still drives the auto-derived label and the wire-side
+discriminator key, so call `.label(...)` alongside `.state(...)` when the
+path doesn't read well as a heading.
+
+Missing intermediates (`record.author === null`) and walking past a
+primitive resolve to `undefined` — no throws. Function accessors that
+throw fail soft (value falls back to `undefined`); the renderer then
+shows the `default(...)` placeholder.
+
+### `formatStateUsing(fn)`
+
+`state()` resolves the *value*; `formatStateUsing` formats it. Compose
+both:
+
+```ts
+TextEntry.make('authorName')
+  .state('author.name')
+  .formatStateUsing((v) => String(v).toUpperCase())
 ```
 
 `formatStateUsing` runs once at resolve. The result is stamped onto

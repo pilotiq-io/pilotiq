@@ -141,6 +141,16 @@ export class PostResource extends Resource {
       Section.make('Details').schema([
         Grid.make().columns(2).schema([
           TextEntry.make('authorId').label('Author').inlineLabel().copyable('Copy author id'),
+          // Function accessor — derives a value from the record without
+          // touching `record.authorIdShort`. String dotted-path also
+          // supported for joined fields (e.g. `.state('author.name')`).
+          TextEntry.make('authorIdShort')
+            .label('Author (short)')
+            .inlineLabel()
+            .state((r) => {
+              const id = (r as { authorId?: string }).authorId
+              return id ? `${id.slice(0, 6)}…` : '—'
+            }),
           TextEntry.make('createdAt').label('Created').since().tooltip('Server timestamp'),
           TextEntry.make('updatedAt').label('Updated').dateTime(),
           IconEntry.make('status').label('Live?').options({
