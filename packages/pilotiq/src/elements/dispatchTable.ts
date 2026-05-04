@@ -213,6 +213,7 @@ export async function loadTableRecords(
       ...(Object.keys(filterValues).length > 0 ? { filters: filterValues } : {}),
       ...(activeTab            ? { tab: activeTab.name }                    : {}),
       ...(activeTab?.getQuery() ? { tabQuery: activeTab.getQuery()! }       : {}),
+      ...(user != null         ? { user }                                  : {}),
       page: effectivePage,
     }
 

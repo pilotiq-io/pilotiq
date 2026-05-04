@@ -51,7 +51,7 @@ export function applyFormDefaults(R: ResourceClass, form: Form, mode: 'create' |
     form.save(M ? modelSave(M) : noSaveHandler(R))
   }
   if (mode !== 'create' && !form.getLoadRecord()) {
-    form.loadRecord(M ? modelLoadRecord(M) : noLoadRecordHandler(R))
+    form.loadRecord(M ? modelLoadRecord(R) : noLoadRecordHandler(R))
   }
 }
 
@@ -72,7 +72,7 @@ export function applyTableDefaults(R: ResourceClass, table: Table): void {
 
   if (table.getRecords()) return
   const M = R.model
-  if (M) table.records(modelTableRecords(M, table))
+  if (M) table.records(modelTableRecords(R, table))
 }
 
 // ─── Base classes for resource page roles ────────────────────

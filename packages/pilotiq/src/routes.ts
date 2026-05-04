@@ -24,7 +24,7 @@ import {
   type RelationMode,
 } from './RelationManager.js'
 import {
-  modelSave, modelLoadRecord, getPrimaryKey, getRelationType,
+  modelSave, modelLoadRecord, findRecord, getPrimaryKey, getRelationType,
   getMorphRelationDescriptor, computeMorphPayload,
 } from './orm/modelDefaults.js'
 import { Table } from './elements/Table.js'
@@ -630,7 +630,7 @@ export function registerPilotiqRoutes(
         }
 
         const resolveRecord: ResolveRecord | undefined = R.model
-          ? (id: string) => R.model!.find(id)
+          ? (id: string) => findRecord(R, id, { user })
           : undefined
 
         const result = await dispatchAction(target.action, {
@@ -734,7 +734,7 @@ export function registerPilotiqRoutes(
           }
 
           // Boot already verified `R.model?.update`; the `!` is safe.
-          const record = await R.model!.find(id)
+          const record = await findRecord(R, id, { user })
           if (record === null || record === undefined) {
             res.status(404)
             return res.json({ ok: false, error: 'Record not found' })
@@ -813,7 +813,7 @@ export function registerPilotiqRoutes(
         const formId   = req.params['formId']!
         const user = await pilotiq.resolveUser(req)
         if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
-        const policyRecord = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormState(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
       })
@@ -824,7 +824,7 @@ export function registerPilotiqRoutes(
         const formId   = req.params['formId']!
         const user = await pilotiq.resolveUser(req)
         if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
-        const policyRecord = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormWizard(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
       })
@@ -835,7 +835,7 @@ export function registerPilotiqRoutes(
         const formId   = req.params['formId']!
         const user = await pilotiq.resolveUser(req)
         if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
-        const policyRecord = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormMentions(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
       })
@@ -986,7 +986,7 @@ export function registerPilotiqRoutes(
         // Load the record once so canView can inspect it. Stub `{ id }`
         // when the resource has no model wired — the user-authored
         // predicate gets to decide what to do with it.
-        const record = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        const record = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canView(user, record))) return forbidden(res, wantsJson(req))
 
         const data = await resourceViewData(pilotiq, slug, recordId, req)
@@ -1001,7 +1001,7 @@ export function registerPilotiqRoutes(
 
         const user = await pilotiq.resolveUser(req)
         if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, json)
-        const record = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        const record = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canDelete(user, record))) return forbidden(res, json)
 
         try {
@@ -1146,7 +1146,7 @@ export function registerPilotiqRoutes(
         const recordId = req.params['id']!
         const user = await pilotiq.resolveUser(req)
         if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
-        const record = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        const record = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, record))) return forbidden(res, wantsJson(req))
 
         const data = await resourceEditData(pilotiq, slug, recordId, undefined, req)
@@ -1163,7 +1163,7 @@ export function registerPilotiqRoutes(
 
         const user = await pilotiq.resolveUser(req)
         if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, json)
-        const policyRecord = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, json)
 
         const ctx: SchemaContext = { mode: 'edit', recordId, basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
@@ -1229,7 +1229,7 @@ export function registerPilotiqRoutes(
 
         const user = await pilotiq.resolveUser(req)
         if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
-        const policyRecord = R.model ? await R.model.find(recordId).catch(() => undefined) : { id: recordId }
+        const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, wantsJson(req))
 
         const json = wantsJson(req)
@@ -1248,7 +1248,7 @@ export function registerPilotiqRoutes(
         }
 
         const resolveRecord: ResolveRecord | undefined = R.model
-          ? (id: string) => R.model!.find(id)
+          ? (id: string) => findRecord(R, id, { user })
           : undefined
 
         const result = await dispatchAction(target.action, {
@@ -1313,7 +1313,7 @@ export function registerPilotiqRoutes(
           else      res.send(`Resource "${R.name}" has relations but no static model`)
           return undefined
         }
-        const parent = await R.model.find(recordId).catch(() => undefined)
+        const parent = await findRecord(R, recordId, { user }).catch(() => undefined)
         if (!parent) { res.status(404); if (json) res.json({ ok: false, error: 'Parent not found' }); else res.send('Parent not found'); return undefined }
         if (!await checkPolicy(() => R.canEdit(user, parent))) { forbidden(res, json); return undefined }
         return { user, parent, recordId }
@@ -1378,7 +1378,7 @@ export function registerPilotiqRoutes(
         })
         if (Related.model) {
           if (!form.getSave())       form.save(modelSave(Related.model))
-          if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related.model))
+          if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related))
         }
 
         // Polymorphic auto-injection — when the parent's relation entry
@@ -1487,11 +1487,11 @@ export function registerPilotiqRoutes(
           mode,
         })
         if (!form.getSave())       form.save(modelSave(Related.model))
-        if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related.model))
+        if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related))
 
         // Re-load child for FormContext so cross-field validators see it.
         let child: unknown = undefined
-        try { child = await Related.model.find(childId) } catch { /* ignore */ }
+        try { child = await findRecord(Related, childId, { user: pre.user }) } catch { /* ignore */ }
         if (!child) { res.status(404); return res.send('Not found') }
 
         // Polymorphic re-stamp on update — same posture as the create
@@ -1564,7 +1564,7 @@ export function registerPilotiqRoutes(
         if (childCheck === null)                       { res.status(404); return res.send('Not found') }
         if ('ok' in childCheck && childCheck.ok === false) return forbidden(res, json)
 
-        const child = await Related.model.find(childId).catch(() => undefined)
+        const child = await findRecord(Related, childId, { user: pre.user }).catch(() => undefined)
         if (!child) { res.status(404); return res.send('Not found') }
 
         if (!await safeManagerPolicy(M, 'canDelete', Related, pre.user, pre.parent, child)) return forbidden(res, json)

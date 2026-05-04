@@ -32,6 +32,12 @@ export interface TableContext<R = unknown> {
    * filter `where` clauses in `modelTableRecords`. Set by the framework;
    * users configure it via `ListTab.modifyQuery(fn)`. */
   tabQuery?: (q: import('../orm/modelDefaults.js').ModelQuery) => import('../orm/modelDefaults.js').ModelQuery
+  /** Whatever `Pilotiq.user(req => …)` returned for the current request.
+   * Forwarded into `Resource.query(ctx)` by `modelTableRecords` so user-
+   * installed scopes (tenant filters, etc.) see the same opaque user
+   * shape that authorization predicates do. Absent on the dispatcher's
+   * input ctx when no user resolver is configured. */
+  user?: unknown
   [key: string]: unknown
 }
 

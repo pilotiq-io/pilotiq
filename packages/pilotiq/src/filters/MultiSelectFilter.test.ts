@@ -20,9 +20,10 @@ class FakeQuery implements ModelQuery {
   async paginate(p: number, pp?: number) { this.ops.push({ op: 'paginate', args: [p, pp] }); return { data: [], total: 0 } }
 }
 
-function fakeModel(): ModelLike & { lastQuery: FakeQuery | null } {
+function fakeModel(): ModelLike & { name: string; model: ModelLike; lastQuery: FakeQuery | null } {
   let lastQuery: FakeQuery | null = null
-  return {
+  const M = {
+    name: 'TestResource',
     async find() { return null },
     async create(d: Record<string, unknown>) { return d },
     async update(_id: string | number, d: Record<string, unknown>) { return d },
@@ -33,7 +34,9 @@ function fakeModel(): ModelLike & { lastQuery: FakeQuery | null } {
       return q
     },
     get lastQuery() { return lastQuery },
-  } as unknown as ModelLike & { lastQuery: FakeQuery | null }
+  } as unknown as ModelLike & { name: string; model: ModelLike; lastQuery: FakeQuery | null }
+  M.model = M
+  return M
 }
 
 describe('parseMultiSelectValue / encodeMultiSelectValue', () => {

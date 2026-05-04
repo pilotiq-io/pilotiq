@@ -312,6 +312,59 @@ Any class extending `@rudderjs/orm`'s `Model` satisfies this structurally via it
 
 ---
 
+## Scoping queries — `Resource.query(ctx)`
+
+Override `static query(ctx)` to install always-on scopes against your resource's table — tenant filters, default ordering, eager-load defaults, status guards, anything you'd otherwise have to remember to chain on every list page and every record load.
+
+```ts
+import { Resource, type ModelQuery, type QueryContext } from '@pilotiq/pilotiq'
+
+export class ArticleResource extends Resource {
+  static override model = Article
+
+  static override query(ctx?: QueryContext): ModelQuery {
+    return super.query(ctx).orderBy('createdAt', 'DESC')
+  }
+}
+```
+
+`super.query(ctx)` returns `this.model.query()` — the default. Returning your own chain on top is the common case; replacing it entirely (e.g. for a non-rudder ORM with a different builder) is also fine.
+
+`ctx.user` is whatever your `Pilotiq.user(req => …)` resolver returned — opaque to the framework, your shape:
+
+```ts
+static override query(ctx?: QueryContext): ModelQuery {
+  const tenantId = (ctx?.user as { tenantId?: string } | undefined)?.tenantId
+  return super.query(ctx).where('tenantId', tenantId ?? null)
+}
+```
+
+**Where the override applies** — every code path that reads from the resource's table:
+
+| Surface                        | Before               | After                                    |
+| ------------------------------ | -------------------- | ---------------------------------------- |
+| List page (`Table.records()`)  | `model.query()`      | `R.query(ctx).where(filters).paginate(…)` |
+| Record load (view / edit page) | `model.find(id)`     | `R.query(ctx).where(pk, id).paginate(1, 1)` |
+| Policy lookup before `canX`    | `model.find(id)`     | same — find-by-PK now scoped             |
+| Action dispatch record load    | `model.find(id)`     | same                                     |
+| Global search (Cmd+K results)  | `model.query().where(…LIKE…)` | `R.query(ctx).where(…LIKE…)`    |
+| `Resource.deleteRecord(id)`    | `model.delete(id)`   | unchanged — operates by PK directly      |
+
+The `findRecord(R, id, ctx?)` helper exported from `@pilotiq/pilotiq` is what pilotiq's routes call for find-by-PK loads. You can use it from your own code (handlers, custom pages) to keep scope semantics consistent:
+
+```ts
+import { findRecord } from '@pilotiq/pilotiq'
+
+const record = await findRecord(ArticleResource, id, { user })
+if (!record) return res.status(404).send('Not found')
+```
+
+**Soft-delete restore / force-delete deliberately bypass `query()`.** They build their own `model.query().withTrashed().where(pk, id)` chain so a scope that hides trashed rows doesn't hide records the operator is trying to recover. If your override needs to apply to those routes too, layer it inside `Resource.canRestore / canForceDelete` instead.
+
+**`getGlobalSearchQuery(needle)`** still wins over `query()` — when set, the override is treated as the entire query (you control the chain, including any tenancy you want to splice in). When unset, the default search query starts from `R.query(ctx)` so scopes apply.
+
+---
+
 ## Action handler dispatch
 
 Actions can render as links (`Action.href(url)`), form-style submits (`Action.method('post').action(url)`), or **handler-style** — a `.handler(ctx)` callback that runs server-side when the button is clicked:

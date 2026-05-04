@@ -2,6 +2,7 @@ import {
   Resource, Section, Grid, Text,
   TextEntry, BadgeEntry, KeyValueEntry, ColorEntry,
   type Form, type Table, type Element,
+  type ModelQuery, type QueryContext,
 } from '@pilotiq/pilotiq'
 import { Newspaper } from 'lucide-react'
 import { Article } from '../../Models/Article.js'
@@ -44,6 +45,19 @@ export class ArticleResource extends Resource {
   // delete on a `role === 'admin'` shape.
   static override async canDelete(user: unknown, _record: unknown): Promise<boolean> {
     return (user as { role?: string })?.role === 'admin'
+  }
+
+  // ── Default query scope ───────────────────────────────────
+  // `Resource.query(ctx)` is the hook list pages, global search, and
+  // per-record loads (view / edit / policy lookups) all route through.
+  // Override to install always-on filters, eager-load defaults, or
+  // tenant scopes. Returning `super.query(ctx).where(...)` composes on
+  // top of whatever the parent class returned.
+  //
+  // This demo orders by `createdAt DESC` so newest articles surface
+  // first by default; column-header sorts still override per-request.
+  static override query(ctx?: QueryContext): ModelQuery {
+    return super.query(ctx).orderBy('createdAt', 'DESC')
   }
 
   static override form(form: Form): Form {

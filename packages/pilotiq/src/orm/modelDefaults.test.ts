@@ -14,6 +14,7 @@ import {
   resolveRelatedQuery,
   modelRelationTableRecords,
   getRelationType,
+  findRecord,
 } from './modelDefaults.js'
 
 // ── Fake ModelLike that records every call so tests can assert on it ──
@@ -234,17 +235,34 @@ describe('Model-driven defaults — Form.loadRecord + Resource.deleteRecord', ()
   }
 
   beforeEach(() => {
-    model = makeFakeModel({ findResult: { id: '7', title: 'Loaded' } })
+    // loadRecord routes through `R.query(ctx).where(pk, id).paginate(1, 1)`
+    // (so a `Resource.query()` override scopes per-record loads too).
+    // Tests therefore configure paginateResult, not findResult — `find()`
+    // is no longer on the load path.
+    model = makeFakeModel({ paginateResult: { data: [{ id: '7', title: 'Loaded' }], total: 1 } })
   })
 
-  it('edit page loadRecord proxies to model.find', async () => {
+  it('edit page loadRecord routes through Resource.query → where(pk, id) → paginate(1, 1)', async () => {
     const Edit = defaultEditPage(ArticleResource)
     const form = (Edit.schema() as Array<unknown>)[1] as Form
     const load = form.getLoadRecord()!
 
     const record = await load('7', { values: {} })
     assert.deepEqual(record, { id: '7', title: 'Loaded' })
-    assert.deepEqual(model.calls, [{ kind: 'find', args: ['7'] }])
+    // No bare `find(id)` call — the load goes through the query builder
+    // so user-installed `Resource.query` scopes apply.
+    assert.equal(model.calls.find(c => c.kind === 'find'), undefined)
+    const ops = model.lastQuery!.ops
+    assert.deepEqual(ops[0], { op: 'where',    args: ['id', '=', '7'] })
+    assert.deepEqual(ops[1], { op: 'paginate', args: [1, 1] })
+  })
+
+  it('edit page loadRecord returns null when the scoped query yields no rows', async () => {
+    model = makeFakeModel({ paginateResult: { data: [], total: 0 } })
+    const Edit = defaultEditPage(ArticleResource)
+    const form = (Edit.schema() as Array<unknown>)[1] as Form
+    const record = await form.getLoadRecord()!('7', { values: {} })
+    assert.equal(record, null)
   })
 
   it('deleteRecord proxies to model.delete', async () => {
@@ -458,5 +476,158 @@ describe('getRelationType (M2M follow-up)', () => {
       relations: { posts: { model: () => null, foreignKey: 'parentId' } },
     })
     assert.equal(getRelationType(M, 'posts'), 'hasMany')
+  })
+})
+
+// ── Resource.query() override + findRecord helper ────────────────────
+
+describe('Resource.query() override', () => {
+  let model: ReturnType<typeof makeFakeModel>
+
+  class ArticleResource extends Resource {
+    static override label = 'Articles'
+    static override slug  = 'articles'
+    static override get model() { return model }
+  }
+
+  beforeEach(() => {
+    model = makeFakeModel({ paginateResult: { data: [], total: 0 } })
+  })
+
+  it('default returns this.model.query()', () => {
+    const q = ArticleResource.query()
+    assert.equal(q, model.lastQuery)
+  })
+
+  it('throws a clear error when called on a Resource without a model', () => {
+    class NoModelResource extends Resource {
+      static override label = 'Bare'
+    }
+    assert.throws(
+      () => NoModelResource.query(),
+      /requires `static model = …` to be set/,
+    )
+  })
+
+  it('subclass override receives ctx and can splice in a where-clause', async () => {
+    class TenantResource extends ArticleResource {
+      static override query(ctx?: { user?: unknown }) {
+        const tenantId = (ctx?.user as { tenantId?: string } | undefined)?.tenantId
+        return super.query(ctx).where('tenantId', tenantId)
+      }
+    }
+    const q = TenantResource.query({ user: { tenantId: 't42' } })
+    const ops = (q as unknown as { ops: Array<{ op: string; args: unknown[] }> }).ops
+    assert.deepEqual(ops[0], { op: 'where', args: ['tenantId', 't42'] })
+  })
+
+  it('list-page Table.records routes through R.query(ctx) — override scopes flow through', async () => {
+    let capturedUser: unknown
+    class TenantResource extends ArticleResource {
+      static override table(table: Table): Table {
+        return table.columns([Column.make('title')])
+      }
+      static override query(ctx?: { user?: unknown }) {
+        capturedUser = ctx?.user
+        return super.query(ctx)
+      }
+    }
+    const table = (await defaultListPage(TenantResource).schema())[1] as unknown as Table
+    const handler = table.getRecords()!
+    await handler({ page: 1, user: { tenantId: 't42' } } as unknown as TableContext)
+    assert.deepEqual(capturedUser, { tenantId: 't42' })
+  })
+
+  it('list-page Table.records does NOT pass user when none is set on ctx', async () => {
+    let capturedCtx: unknown
+    class WatchResource extends ArticleResource {
+      static override table(table: Table): Table { return table.columns([Column.make('title')]) }
+      static override query(ctx?: { user?: unknown }) {
+        capturedCtx = ctx
+        return super.query(ctx)
+      }
+    }
+    const table = (await defaultListPage(WatchResource).schema())[1] as unknown as Table
+    await table.getRecords()!({ page: 1 } as TableContext)
+    assert.equal(capturedCtx, undefined)
+  })
+})
+
+describe('findRecord helper', () => {
+  let model: ReturnType<typeof makeFakeModel>
+
+  class ArticleResource extends Resource {
+    static override label = 'Articles'
+    static override slug  = 'articles'
+    static override get model() { return model }
+  }
+
+  beforeEach(() => {
+    model = makeFakeModel({ paginateResult: { data: [{ id: '7', title: 'Loaded' }], total: 1 } })
+  })
+
+  it('returns the first row from R.query(ctx).where(pk, id).paginate(1, 1)', async () => {
+    const out = await findRecord(ArticleResource, '7')
+    assert.deepEqual(out, { id: '7', title: 'Loaded' })
+    const ops = model.lastQuery!.ops
+    assert.deepEqual(ops[0], { op: 'where',    args: ['id', '=', '7'] })
+    assert.deepEqual(ops[1], { op: 'paginate', args: [1, 1] })
+  })
+
+  it('returns undefined when the scoped query yields no rows', async () => {
+    model = makeFakeModel({ paginateResult: { data: [], total: 0 } })
+    const out = await findRecord(ArticleResource, '7')
+    assert.equal(out, undefined)
+  })
+
+  it('honours a custom `primaryKey` on the model', async () => {
+    model = makeFakeModel({
+      primaryKey: 'uuid',
+      paginateResult: { data: [{ uuid: 'abc' }], total: 1 },
+    })
+    await findRecord(ArticleResource, 'abc')
+    const ops = model.lastQuery!.ops
+    assert.deepEqual(ops[0], { op: 'where', args: ['uuid', '=', 'abc'] })
+  })
+
+  it('threads ctx.user through to R.query', async () => {
+    let capturedUser: unknown
+    class TenantResource extends ArticleResource {
+      static override query(ctx?: { user?: unknown }) {
+        capturedUser = ctx?.user
+        return super.query(ctx)
+      }
+    }
+    await findRecord(TenantResource, '7', { user: { tenantId: 't42' } })
+    assert.deepEqual(capturedUser, { tenantId: 't42' })
+  })
+
+  it('returns undefined when the Resource has no model', async () => {
+    class NoModelResource extends Resource {
+      static override label = 'Bare'
+    }
+    const out = await findRecord(NoModelResource, '7')
+    assert.equal(out, undefined)
+  })
+
+  it('records loaded through findRecord are filterable via override — record outside scope is invisible', async () => {
+    // Simulate a tenant scope: the override emits a where-clause that
+    // narrows results to a specific tenant. The fake query records the
+    // clauses; if we paginate on a non-matching tenant, the fake returns
+    // empty data. Pilotiq treats the missed lookup as "not found", so the
+    // override's scope acts as an authorization fence.
+    model = makeFakeModel({ paginateResult: { data: [], total: 0 } })
+    class TenantResource extends ArticleResource {
+      static override query(ctx?: { user?: unknown }) {
+        const tenantId = (ctx?.user as { tenantId?: string } | undefined)?.tenantId
+        return super.query(ctx).where('tenantId', tenantId ?? null)
+      }
+    }
+    const out = await findRecord(TenantResource, '7', { user: { tenantId: 'other-tenant' } })
+    assert.equal(out, undefined)
+    const ops = model.lastQuery!.ops
+    assert.deepEqual(ops[0], { op: 'where',    args: ['tenantId', 'other-tenant'] })
+    assert.deepEqual(ops[1], { op: 'where',    args: ['id', '=', '7'] })
+    assert.deepEqual(ops[2], { op: 'paginate', args: [1, 1] })
   })
 })

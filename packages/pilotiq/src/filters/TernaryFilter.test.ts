@@ -28,10 +28,11 @@ class FakeQueryNoNull implements ModelQuery {
 
 type FakeQuery = FakeQueryWithNull | FakeQueryNoNull
 
-function fakeModel(opts: { whereNull?: boolean } = { whereNull: true }): ModelLike & { lastQuery: FakeQuery | null } {
+function fakeModel(opts: { whereNull?: boolean } = { whereNull: true }): ModelLike & { name: string; model: ModelLike; lastQuery: FakeQuery | null } {
   let lastQuery: FakeQuery | null = null
   const hasWhereNull = opts.whereNull ?? true
-  return {
+  const M = {
+    name: 'TestResource',
     async find() { return null },
     async create(d: Record<string, unknown>) { return d },
     async update(_id: string | number, d: Record<string, unknown>) { return d },
@@ -42,7 +43,9 @@ function fakeModel(opts: { whereNull?: boolean } = { whereNull: true }): ModelLi
       return q
     },
     get lastQuery() { return lastQuery },
-  } as unknown as ModelLike & { lastQuery: FakeQuery | null }
+  } as unknown as ModelLike & { name: string; model: ModelLike; lastQuery: FakeQuery | null }
+  M.model = M
+  return M
 }
 
 describe('TernaryFilter shape', () => {

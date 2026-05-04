@@ -66,6 +66,33 @@ function makeParentWithChildren(parentId: string | number, childRows: QueryRow[]
   }
 }
 
+/**
+ * Adapt a stub `find(id)` to the `query().where(pk, id).paginate(1, 1)`
+ * shape that pilotiq's `findRecord(R, id, ctx)` now drives. Returns a
+ * `ModelQuery` that captures the last where-clause value and resolves
+ * via the supplied finder on `paginate()`. Lets these tests keep their
+ * `find(id)` stub data without rewriting fixtures into row arrays.
+ */
+function findAdapter(find: (id: string) => Promise<unknown>): ModelQuery {
+  let captured: unknown
+  const q: ModelQuery = {
+    where(...args: unknown[]): ModelQuery {
+      captured = args.length === 2 ? args[1] : args[2]
+      return q
+    },
+    orWhere(...args: unknown[]): ModelQuery {
+      captured = args.length === 2 ? args[1] : args[2]
+      return q
+    },
+    orderBy(): ModelQuery { return q },
+    async paginate() {
+      const r = await find(String(captured))
+      return { data: r ? [r] : [], total: r ? 1 : 0 }
+    },
+  }
+  return q
+}
+
 // ── findRelatedResource — discovery via override + rudder convention ──
 
 describe('findRelatedResource (Plan #11)', () => {
@@ -145,12 +172,17 @@ describe('relationManagerData (Plan #11)', () => {
       ['u1', makeParentWithChildren('u1', postRows)],
       ['u2', makeParentWithChildren('u2', postRows)],
     ])
+    // `query()` drives the new `findRecord(R, id, ctx)` path used to load
+    // parent records (and policy-record lookups). Build a StubQuery over
+    // the parents-as-rows so `where('id', '=', X).paginate(1, 1)` resolves
+    // the same shape `find()` historically returned.
+    const parentRows: QueryRow[] = [...parents.values()].map(p => p as unknown as QueryRow)
     const ParentModel: ModelLike = {
       async find(id) { return parents.get(String(id)) ?? null },
       async create() { throw new Error('not used') },
       async update() { throw new Error('not used') },
       async delete() { /* ok */ },
-      query() { throw new Error('not used') },
+      query() { return new StubQuery(parentRows) },
     }
     Object.assign(ParentModel as object, {
       relations: { posts: { model: () => PostModel } },
@@ -495,7 +527,7 @@ describe('safeManagerPolicy (Plan #11 step 8)', () => {
       async create() { throw new Error('not used') },
       async update() { throw new Error('not used') },
       async delete() { /* ok */ },
-      query() { throw new Error('not used') },
+      query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
     }
     Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
 
@@ -529,7 +561,7 @@ describe('safeManagerPolicy (Plan #11 step 8)', () => {
       async create() { throw new Error('not used') },
       async update() { throw new Error('not used') },
       async delete() { /* ok */ },
-      query() { throw new Error('not used') },
+      query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
     }
     Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
 
@@ -567,7 +599,7 @@ describe('relation tabs auto-mount (Plan #11)', () => {
       async create() { throw new Error('not used') },
       async update() { throw new Error('not used') },
       async delete() { /* ok */ },
-      query() { throw new Error('not used') },
+      query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
     }
     Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
 
@@ -719,7 +751,7 @@ describe('relation tabs auto-mount (Plan #11)', () => {
       async create() { throw new Error('not used') },
       async update() { throw new Error('not used') },
       async delete() { /* ok */ },
-      query() { throw new Error('not used') },
+      query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
     }
     Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
 
@@ -758,7 +790,7 @@ describe('relation tabs auto-mount (Plan #11)', () => {
       async create() { throw new Error('not used') },
       async update() { throw new Error('not used') },
       async delete() { /* ok */ },
-      query() { throw new Error('not used') },
+      query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
     }
     Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
 
@@ -802,7 +834,7 @@ describe('dispatchPageData → relation pages (Plan #11)', () => {
       async create() { throw new Error('not used') },
       async update() { throw new Error('not used') },
       async delete() { /* no-op */ },
-      query() { throw new Error('not used') },
+      query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
     }
     Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
 
@@ -895,7 +927,7 @@ describe('relation-list TrashedFilter auto-inject (Plan #13 polish)', () => {
       async create() { throw new Error('not used') },
       async update() { throw new Error('not used') },
       async delete() { /* ok */ },
-      query() { throw new Error('not used') },
+      query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
     }
     Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
 
@@ -966,7 +998,7 @@ describe('relation-list TrashedFilter auto-inject (Plan #13 polish)', () => {
       async create() { throw new Error('not used') },
       async update() { throw new Error('not used') },
       async delete() { /* ok */ },
-      query() { throw new Error('not used') },
+      query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
     }
     Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
 

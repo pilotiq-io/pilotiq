@@ -91,7 +91,7 @@ export async function searchAllResources(
   if (allowed.length === 0) return []
 
   const perResource = await Promise.all(
-    allowed.map(R => searchResource(R, needle, limitPerResource, cfg.path)),
+    allowed.map(R => searchResource(R, needle, limitPerResource, cfg.path, user)),
   )
 
   // Flatten + cap. Registration order preserved.
@@ -110,9 +110,10 @@ async function searchResource(
   needle: string,
   limit:  number,
   base:   string,
+  user:   unknown,
 ): Promise<GlobalSearchResult[]> {
   try {
-    const q = buildSearchQuery(R, needle)
+    const q = buildSearchQuery(R, needle, user)
     if (!q) return []
 
     const result = await q.paginate(1, limit)
@@ -148,13 +149,17 @@ async function searchResource(
 /**
  * Build the `ModelQuery` we run for a resource. Picks in this order:
  *   1. User override `R.getGlobalSearchQuery(needle)`.
- *   2. Default chain: `R.model.query()` chained with LIKE on each
+ *   2. Default chain: `R.query({ user })` chained with LIKE on each
  *      attribute returned from `R.globallySearchableAttributes()`.
+ *
+ * Routes through `R.query(ctx)` (instead of `R.model.query()` directly)
+ * so user-installed scopes — tenant filters, default ordering, etc. —
+ * apply to global-search hits the same way they apply to list pages.
  *
  * Returns `undefined` when the resource has no model AND no override —
  * pilotiq won't load every record into memory just to LIKE-match.
  */
-function buildSearchQuery(R: ResourceClass, needle: string): ModelQuery | undefined {
+function buildSearchQuery(R: ResourceClass, needle: string, user: unknown): ModelQuery | undefined {
   const override = R.getGlobalSearchQuery(needle)
   if (override) return override
   if (!R.model) return undefined
@@ -163,7 +168,7 @@ function buildSearchQuery(R: ResourceClass, needle: string): ModelQuery | undefi
   if (attrs.length === 0) return undefined
 
   const wildcarded = `%${needle}%`
-  let q = R.model.query()
+  let q = R.query(user != null ? { user } : undefined)
   attrs.forEach((col, i) => {
     q = i === 0
       ? q.where(col,   'LIKE', wildcarded)

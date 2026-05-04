@@ -2,7 +2,7 @@ import type { Element } from './schema/Element.js'
 import type { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import type { Page } from './Page.js'
-import type { ModelLike, ModelQuery } from './orm/modelDefaults.js'
+import type { ModelLike, ModelQuery, QueryContext } from './orm/modelDefaults.js'
 import type { IconValue } from './icons/types.js'
 import { defaultPages } from './defaultPages.js'
 import type { RelationManager } from './RelationManager.js'
@@ -102,6 +102,43 @@ export abstract class Resource {
    * subclasses do so structurally via their static methods.
    */
   static model?: ModelLike
+
+  /**
+   * Hook for scoping every query against this resource's table — list
+   * pages, global search, find-by-PK loads (record load for view / edit
+   * pages, policy lookups). Default returns `this.model.query()`.
+   *
+   * Override to install tenant scopes, default ordering, eager-load
+   * defaults, or any other always-on filter:
+   *
+   * @example
+   * static override query(ctx) {
+   *   return super.query(ctx).where('tenantId', (ctx?.user as any)?.tenantId)
+   * }
+   *
+   * @example
+   * static override query(ctx) {
+   *   return super.query(ctx).orderBy('createdAt', 'DESC')
+   * }
+   *
+   * Soft-delete restore / force-delete routes deliberately bypass this
+   * — they build their own `query().withTrashed()` chain so a scope that
+   * hides trashed rows doesn't hide records the operator is trying to
+   * recover. Everything else routes through here.
+   *
+   * Throws when `static model` isn't set; subclasses without a model
+   * must override `query()` directly to return whatever query builder
+   * they're driving.
+   */
+  static query(_ctx?: QueryContext): ModelQuery {
+    if (!this.model) {
+      throw new Error(
+        `[Pilotiq] ${this.name}.query() requires \`static model = …\` to be set, ` +
+        `or override \`static query(ctx)\` directly to return a custom ModelQuery.`,
+      )
+    }
+    return this.model.query()
+  }
 
   // ─── Plan #13: soft deletes ────────────────────────────────
   // Opt-in: when true, pilotiq routes the standard delete action

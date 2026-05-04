@@ -76,6 +76,32 @@ async function callHandler(handler: (...args: any[]) => unknown, req: any = fake
   return { result, res: res as FakeRes }
 }
 
+/**
+ * Adapt a stub `find(id)` to the `query().where(pk, id).paginate(1, 1)`
+ * shape that pilotiq's `findRecord(R, id, ctx)` now drives. Lets these
+ * tests keep their `find(id)` map-backed stubs without rewriting them
+ * into row arrays.
+ */
+function findAdapter(find: (id: string) => Promise<unknown>): ModelQuery {
+  let captured: unknown
+  const q: ModelQuery = {
+    where(...args: unknown[]): ModelQuery {
+      captured = args.length === 2 ? args[1] : args[2]
+      return q
+    },
+    orWhere(...args: unknown[]): ModelQuery {
+      captured = args.length === 2 ? args[1] : args[2]
+      return q
+    },
+    orderBy(): ModelQuery { return q },
+    async paginate() {
+      const r = await find(String(captured))
+      return { data: r ? [r] : [], total: r ? 1 : 0 }
+    },
+  }
+  return q
+}
+
 // ── World builder ─────────────────────────────────────────────────
 
 function buildWorld() {
@@ -101,7 +127,7 @@ function buildWorld() {
     async create() { throw new Error('not used') },
     async update() { throw new Error('not used') },
     async delete() { /* no-op */ },
-    query() { throw new Error('not used') },
+    query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
   }
   Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
 
@@ -367,7 +393,7 @@ function buildM2MWorld(morphMode: 'belongsToMany' | 'morphToMany' | 'morphedByMa
     async create() { throw new Error('not used') },
     async update() { throw new Error('not used') },
     async delete() { /* no-op */ },
-    query() { throw new Error('not used') },
+    query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
   }
   // Tag the Article-side relations map with the M2M discriminator so
   // `getRelationType` flips the manager mode to the requested variant.
@@ -720,7 +746,7 @@ function buildMorphWorld() {
     async create() { throw new Error('not used') },
     async update() { throw new Error('not used') },
     async delete() { /* no-op */ },
-    query() { throw new Error('not used') },
+    query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
   }
   Object.assign(PostModel as object, {
     relations: { comments: { type: 'morphMany', model: () => CommentModel, morphName: 'commentable' } },
@@ -734,7 +760,7 @@ function buildMorphWorld() {
     async create() { throw new Error('not used') },
     async update() { throw new Error('not used') },
     async delete() { /* no-op */ },
-    query() { throw new Error('not used') },
+    query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
   }
   Object.assign(VideoModel as object, {
     relations: { comments: { type: 'morphMany', model: () => CommentModel, morphName: 'commentable' } },

@@ -1337,6 +1337,29 @@ describe('Editable cell columns — _cell route', () => {
       async find(id: string) {
         return rows.find(r => r['id'] === id) ?? null
       },
+      // `findRecord(R, id, ctx)` — used by the cell-edit policy load —
+      // routes through `R.query(ctx).where(pk, '=', id).paginate(1, 1)`.
+      // Provide a stub query that resolves rows the same way `find()`
+      // does, so existing seed data still resolves through the new path.
+      query() {
+        let captured: unknown
+        const q = {
+          where(...args: unknown[]) {
+            captured = args.length === 2 ? args[1] : args[2]
+            return q
+          },
+          orWhere(...args: unknown[]) {
+            captured = args.length === 2 ? args[1] : args[2]
+            return q
+          },
+          orderBy() { return q },
+          async paginate() {
+            const r = rows.find(r => r['id'] === captured)
+            return { data: r ? [r] : [], total: r ? 1 : 0 }
+          },
+        }
+        return q
+      },
     }
     if (!opts.omitUpdate) {
       M['update'] = async (id: string, data: Record<string, unknown>) => {

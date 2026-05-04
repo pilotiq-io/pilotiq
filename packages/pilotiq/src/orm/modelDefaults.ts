@@ -11,6 +11,31 @@ import type { SaveHandler, LoadRecordHandler, FormContext } from '../elements/Fo
 export type ModelWhereOperator = '=' | '!=' | '>' | '>=' | '<' | '<=' | 'LIKE' | 'IN' | 'NOT IN'
 
 /**
+ * Context passed into `Resource.query(ctx)`. Carries the resolved user so
+ * tenant-scoping / role-driven default ordering / etc. can branch on it.
+ * Optional everywhere; bare `R.query()` calls receive `undefined`.
+ */
+export interface QueryContext {
+  /** Whatever `Pilotiq.user(req => …)` returned for the current request.
+   * `undefined` for anonymous routes or when no user resolver is set. */
+  user?: unknown
+}
+
+/**
+ * Minimal structural shape of a `Resource` class as far as the ORM helpers
+ * here need to see it — `name` for diagnostics, `model` for the default
+ * branch, and `query(ctx?)` for the override hook. Declared here (instead
+ * of importing `ResourceClass` from `../Resource.js`) to avoid a
+ * `Resource → modelDefaults → Resource` import cycle. The real
+ * `Resource` static class is structurally assignable to this shape.
+ */
+export interface ResourceLike {
+  name:    string
+  model?:  ModelLike
+  query(ctx?: QueryContext): ModelQuery
+}
+
+/**
  * Eloquent-style query builder pilotiq drives when it auto-generates
  * `Table.records()` / `Form.save()` / `Form.loadRecord()` from a
  * Resource's `static model`. Any query builder that satisfies this shape
@@ -117,22 +142,63 @@ export function modelSave(M: ModelLike): SaveHandler {
   }
 }
 
-/** Default `Form.loadRecord` handler for resources with `static model = …`. */
-export function modelLoadRecord(M: ModelLike): LoadRecordHandler {
-  return async (id: string): Promise<unknown> => M.find(id)
+/**
+ * Default `Form.loadRecord` handler for resources with `static model = …`.
+ * Routes through `R.query(ctx)` so tenant scopes / default-ordering hooks
+ * the user installed on `Resource.query(ctx)` ALSO scope the per-record
+ * load — without this, a tampered `:id` URL could load a record outside
+ * the user's scope and pass it to the form for editing. Falls back to the
+ * bare `M.find(id)` only when `R.query()` is missing — defensive against
+ * test stubs that hand-roll a partial Resource shape.
+ */
+export function modelLoadRecord(R: ResourceLike): LoadRecordHandler {
+  return async (id: string, ctx): Promise<unknown> => {
+    const user = (ctx as { user?: unknown } | undefined)?.user
+    const found = await findRecord(R, id, user !== undefined ? { user } : undefined)
+    return found ?? null
+  }
 }
 
 /**
- * Build a default `Table.records` handler from a `ModelLike` plus the
- * `Table` instance the page just configured. Reads the column children
- * to drive search (any `Column.searchable()` joins via `LIKE`/`orWhere`)
- * and sort fallback (`Table.defaultSort()` when the URL didn't override).
+ * Find a record by primary key through `R.query(ctx)`. The standard
+ * "load record for edit / view / policy" path — replaces direct
+ * `R.model.find(id)` calls so user `Resource.query` overrides scope the
+ * lookup too. Returns `undefined` when no row matches (or no `R.model`
+ * is set), letting callers convert to 404 / fail closed.
  *
- * The handler hits `model.query().paginate(page, perPage)` once per
- * page render — search/sort/pagination all push down to the ORM rather
- * than loading everything and slicing in memory.
+ * Soft-delete restore / force-delete deliberately bypass this helper —
+ * those paths build their own `query().withTrashed().where(pk, id)` so a
+ * record's own user-installed scope (which typically excludes trashed
+ * rows) doesn't hide a row the operator is trying to recover.
  */
-export function modelTableRecords(M: ModelLike, table: Table): TableRecordsHandler {
+export async function findRecord<T = unknown>(
+  R:   ResourceLike,
+  id:  string | number,
+  ctx?: QueryContext,
+): Promise<T | undefined> {
+  const M = R.model
+  if (!M) return undefined
+  const pk = getPrimaryKey(M)
+  const result = await R.query(ctx).where(pk, '=', id).paginate(1, 1)
+  const data = (result?.data ?? []) as unknown[]
+  return data[0] as T | undefined
+}
+
+/**
+ * Build a default `Table.records` handler from a `Resource` class plus
+ * the `Table` instance the page just configured. Reads the column
+ * children to drive search (any `Column.searchable()` joins via
+ * `LIKE`/`orWhere`) and sort fallback (`Table.defaultSort()` when the
+ * URL didn't override).
+ *
+ * The handler hits `R.query(ctx).paginate(page, perPage)` once per page
+ * render — search/sort/pagination all push down to the ORM rather than
+ * loading everything and slicing in memory. Going through `R.query(ctx)`
+ * (instead of `R.model.query()` directly) means user-installed scopes
+ * — tenant filters, default ordering, soft-delete-default behavior —
+ * apply to list pages out of the box.
+ */
+export function modelTableRecords(R: ResourceLike, table: Table): TableRecordsHandler {
   // Snapshot the column-derived config at handler-construction time so
   // we don't re-walk the children on every request.
   const columns: Column[]    = table.getColumns()
@@ -140,7 +206,8 @@ export function modelTableRecords(M: ModelLike, table: Table): TableRecordsHandl
   const filters             = table.getFilters()
 
   return async (ctx): Promise<TableRecordsResult> => {
-    let q = M.query()
+    const user = (ctx as { user?: unknown }).user
+    let q = R.query(user !== undefined ? { user } : undefined)
 
     if (ctx.search && searchable.length > 0) {
       const needle = `%${ctx.search}%`

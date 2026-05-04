@@ -43,7 +43,7 @@ import {
 } from './RelationManager.js'
 import { RelationTabs, relationTab, type RelationTabMeta } from './schema/RelationTabs.js'
 import {
-  modelSave, modelLoadRecord, modelRelationTableRecords, getPrimaryKey,
+  modelSave, modelLoadRecord, modelRelationTableRecords, findRecord, getPrimaryKey,
   getRelationType,
   type ModelLike, type ModelQuery,
 } from './orm/modelDefaults.js'
@@ -1207,9 +1207,11 @@ function injectManagerTrashedFilter(
  * `FormContext` so user-supplied `mutateDataBeforeCreate` etc. can
  * read them.
  */
-function autoWireManagerForm(form: Form, RelatedModel: ModelLike): void {
+function autoWireManagerForm(form: Form, Related: ResourceClass): void {
+  const RelatedModel = Related.model
+  if (!RelatedModel) return
   if (!form.getSave())       form.save(modelSave(RelatedModel))
-  if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(RelatedModel))
+  if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related))
 }
 
 async function safePolicy(fn: () => Promise<boolean> | boolean): Promise<boolean> {
@@ -1269,7 +1271,7 @@ export async function relationManagerData(
     )
   }
 
-  const parentRecord = await R.model.find(scope.recordId).catch(() => undefined)
+  const parentRecord = await findRecord(R, scope.recordId, { user }).catch(() => undefined)
   if (!parentRecord) return null
 
   if (!await safePolicy(() => R.canEdit(user, parentRecord))) return { ok: false, status: 403 }
@@ -1408,7 +1410,7 @@ async function buildRelationCreateData(
     mode,
   }
   const form = M.form(Form.make(), managerCtx)
-  if (Related.model) autoWireManagerForm(form, Related.model)
+  if (Related.model) autoWireManagerForm(form, Related)
 
   const elements: Element[] = [form]
   tagFormActions(elements, createUrl)
@@ -1480,7 +1482,7 @@ async function buildRelationEditData(
   )
   if (!belongs) return null
 
-  const child = await Related.model.find(scope.childId).catch(() => undefined)
+  const child = await findRecord(Related, scope.childId, { user }).catch(() => undefined)
   if (!child) return null
 
   if (!await safeManagerPolicy(M, 'canEdit', Related, user, parentRecord, child)) return { ok: false, status: 403 }
@@ -1499,7 +1501,7 @@ async function buildRelationEditData(
     mode,
   }
   const form = M.form(Form.make(), managerCtx)
-  autoWireManagerForm(form, Related.model)
+  autoWireManagerForm(form, Related)
 
   const elements: Element[] = [form]
   tagFormActions(elements, editUrl)
@@ -1717,7 +1719,7 @@ export async function formStateData(
       recordId = scope.recordId
       baseCtxExtras = { recordId }
       if (R.model) {
-        try { record = await R.model.find(scope.recordId) } catch { /* ignore */ }
+        try { record = await findRecord(R, scope.recordId, { user }) } catch { /* ignore */ }
       } else if (recordId) {
         record = { id: recordId }
       }
@@ -1840,7 +1842,7 @@ export async function formWizardData(
       mode = 'edit'
       baseCtxExtras = { recordId: scope.recordId }
       if (R.model) {
-        try { record = await R.model.find(scope.recordId) } catch { /* ignore */ }
+        try { record = await findRecord(R, scope.recordId, { user }) } catch { /* ignore */ }
       } else {
         record = { id: scope.recordId }
       }
@@ -1985,7 +1987,7 @@ export async function mentionResolveData(
       mode = 'edit'
       baseCtxExtras = { recordId: scope.recordId }
       if (R.model) {
-        try { record = await R.model.find(scope.recordId) } catch { /* ignore */ }
+        try { record = await findRecord(R, scope.recordId, { user }) } catch { /* ignore */ }
       } else {
         record = { id: scope.recordId }
       }
@@ -2060,7 +2062,7 @@ export async function resourceViewData(
   // that into ctx.record for the action eval pass.
   let record: unknown = undefined
   if (R.model) {
-    try { record = await R.model.find(recordId) } catch { /* ignore */ }
+    try { record = await findRecord(R, recordId, { user }) } catch { /* ignore */ }
   }
 
   // Plan #11 — prepend the relation tabs strip with the "Details" tab
