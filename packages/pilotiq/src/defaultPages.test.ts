@@ -19,6 +19,9 @@ import {
   EditPage,
   ViewPage,
 } from './defaultPages.js'
+import { Step, Wizard } from './schema/Wizard.js'
+import { EmailField } from './fields/EmailField.js'
+import type { ResourceClass } from './Resource.js'
 
 class ArticleResource extends Resource {
   static override label         = 'Articles'
@@ -136,6 +139,76 @@ describe('defaultPages factory', () => {
     const a = CreateArticle.schema() as Array<unknown>
     const b = CreateArticle.schema() as Array<unknown>
     assert.notEqual(a[1], b[1])
+  })
+})
+
+describe('CreatePage wizard mode', () => {
+  it('default getSteps() returns [] — single-page form unchanged', () => {
+    const CreateArticle = defaultCreatePage(ArticleResource) as unknown as typeof CreatePage
+    assert.deepEqual(CreateArticle.getSteps(ArticleResource), [])
+
+    const schema = CreateArticle.schema() as Array<{ getType(): string; getChildren(): unknown[] | undefined }>
+    const form = schema[1] as Form
+    const formChildren = (form.getChildren() ?? []) as Array<{ getType(): string }>
+    assert.equal(formChildren.length, 1)
+    assert.equal(formChildren[0]!.getType(), 'field')
+  })
+
+  it('non-empty getSteps() replaces form children with a single Wizard wrapping the steps', () => {
+    class CreateOnboard extends CreatePage {
+      static override getResource(): ResourceClass { return ArticleResource }
+      static override getSteps(): Step[] {
+        return [
+          Step.make('Account').schema([EmailField.make('email').required()]),
+          Step.make('Profile').schema([TextField.make('name').required()]),
+        ]
+      }
+    }
+
+    const schema = CreateOnboard.schema() as Array<{ getType(): string; getChildren(): unknown[] | undefined }>
+    const form = schema[1] as Form
+    const formChildren = (form.getChildren() ?? []) as Array<{ getType(): string; getChildren(): unknown[] | undefined }>
+    assert.equal(formChildren.length, 1)
+    assert.equal(formChildren[0]!.getType(), 'wizard')
+
+    const stepEls = (formChildren[0]!.getChildren() ?? []) as Array<{ getType(): string }>
+    assert.equal(stepEls.length, 2)
+    assert.equal(stepEls[0]!.getType(), 'step')
+    assert.equal(stepEls[1]!.getType(), 'step')
+  })
+
+  it('wizard mode preserves form lifecycle hooks installed by Resource.form()', () => {
+    class CreateOnboard extends CreatePage {
+      static override getResource(): ResourceClass { return ArticleResource }
+      static override getSteps(): Step[] {
+        return [Step.make('Only').schema([TextField.make('title').required()])]
+      }
+    }
+    const schema = CreateOnboard.schema() as Array<unknown>
+    const form = schema[1] as Form
+    // ArticleResource.form does not call save(); the sentinel from
+    // applyFormDefaults still fires, proving lifecycle wiring survived
+    // the children swap.
+    assert.equal(typeof form.getSave(), 'function')
+    assert.throws(() => (form.getSave() as () => unknown)())
+  })
+
+  it('getWizard() lets subclasses tweak chrome (skippable)', () => {
+    class CreateOnboard extends CreatePage {
+      static override getResource(): ResourceClass { return ArticleResource }
+      static override getSteps(): Step[] {
+        return [Step.make('A').schema([]), Step.make('B').schema([])]
+      }
+      static override getWizard(wizard: Wizard): Wizard {
+        return wizard.skippable().startOnStep(1)
+      }
+    }
+    const schema = CreateOnboard.schema() as Array<{ getChildren(): unknown[] | undefined }>
+    const form = schema[1] as Form
+    const formChildren = (form.getChildren() ?? []) as Array<{ getType(): string; toMeta(): Record<string, unknown> }>
+    const wizardMeta = formChildren[0]!.toMeta()
+    assert.equal(wizardMeta['skippable'],   true)
+    assert.equal(wizardMeta['startOnStep'], 1)
   })
 })
 

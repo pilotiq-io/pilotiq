@@ -15,6 +15,7 @@ import { TrashedFilter } from './filters/TrashedFilter.js'
 import { ListTabs } from './elements/ListTabs.js'
 import type { ListTab } from './Tab.js'
 import { Heading } from './schema/Heading.js'
+import { Wizard, Step } from './schema/Wizard.js'
 import { Action } from './actions/Action.js'
 import type { Element } from './schema/Element.js'
 import type { SchemaContext } from './schema/resolveSchema.js'
@@ -325,6 +326,22 @@ export class CreatePage extends ResourcePage {
     const form = R.form(Form.make())
     applyFormDefaults(R, form, 'create')
     installLifecycleHooks(this, form, 'create')
+
+    // Wizard mode (Filament's `HasWizard` equivalent). When `getSteps()`
+    // returns one or more `Step` instances, the form's children are
+    // replaced with a `Wizard` wrapping those steps. Lifecycle hooks
+    // installed on the form still fire on final-step submit; per-step
+    // validation flows through the existing `tagFormWizardUrls /
+    // formWizardData` pipeline (Plan #8). Custom Wizard chrome
+    // (`skippable`, `startOnStep`, `persist`) goes through `getWizard()`,
+    // which receives the configured Wizard instance and may swap or
+    // tweak it.
+    const steps = this.getSteps(R)
+    if (steps.length > 0) {
+      const wizard = this.getWizard(Wizard.make().steps(steps), R)
+      form.schema([wizard])
+    }
+
     const header = buildHeader(this.getHeader(R), this.getFormActions(R), form.getFormId())
     return [...header, form]
   }
@@ -332,6 +349,46 @@ export class CreatePage extends ResourcePage {
   /** Override to customize the heading rendered above the form. */
   static getHeader(R: ResourceClass): Element[] {
     return [Heading.make(`Create ${R.labelSingular}`).level(1)]
+  }
+
+  /**
+   * Wizard mode opt-in. Override to return one or more steps and the
+   * create flow becomes a multi-step wizard. Per-step validation runs
+   * on Next click; `Form.save()` still fires on final-step submit.
+   *
+   * Default `[]` ships the regular single-page form. When non-empty,
+   * the form's children (whatever `Resource.form()` configured) are
+   * REPLACED with a Wizard wrapping these steps — author the wizard's
+   * fields directly inside the steps, not via `Resource.form().schema()`.
+   *
+   * @example
+   * static override getSteps(R) {
+   *   return [
+   *     Step.make('Account').schema([
+   *       EmailField.make('email').required(),
+   *       TextField.make('password').required(),
+   *     ]),
+   *     Step.make('Profile').schema([
+   *       TextField.make('name').required(),
+   *     ]),
+   *   ]
+   * }
+   */
+  static getSteps(_R: ResourceClass): Step[] { return [] }
+
+  /**
+   * Customize wizard chrome (skippable / startOnStep / persist) before
+   * it lands in the form. The framework calls this with `Wizard.make().steps(getSteps(R))`
+   * already configured; mutate or replace as needed and return.
+   * Default returns the wizard untouched.
+   *
+   * @example
+   * static override getWizard(wizard, _R) {
+   *   return wizard.skippable().persist(false)
+   * }
+   */
+  static getWizard(wizard: Wizard, _R: ResourceClass): Wizard {
+    return wizard
   }
 
   /**
