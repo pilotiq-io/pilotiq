@@ -13,6 +13,7 @@ Action.create('Create post')
 
 Action.delete()                                    // factory: deletes the row
 Action.edit(R, base, recordId)                     // factory: edits
+Action.replicate(R, base, recordId)                // factory: clones the row
 
 Action.make('publish')
   .label('Publish')
@@ -41,6 +42,31 @@ Action.make('reschedule')
 The trigger renders a Dialog with the schema as form. Submit fetches
 with `Accept: application/json`; server returns `{ ok, redirect, notifications }`
 on success or `{ ok: false, errors }` on validation failure.
+
+## Replicate (clone a row)
+
+`Action.replicate(R, base, recordId?, opts?)` is a handler-style factory — load the source row → strip the primary key + soft-delete column → optionally mutate the prepared payload → `R.model.create(...)` → redirect to the new record's edit page.
+
+```ts
+class ListPosts extends ListPage {
+  static override getResource() { return PostResource }
+  static override getRowActions(R, basePath) {
+    return [
+      Action.edit(R, basePath),
+      Action.replicate(R, basePath, undefined, {
+        excludeAttributes: ['slug'],
+        beforeReplicaSaved: (replica) => ({ ...replica, title: `Copy of ${replica.title}` }),
+      }),
+      Action.delete(R, basePath),
+    ]
+  }
+}
+```
+
+- `excludeAttributes` — column names to drop from the replica in addition to the always-stripped PK + soft-delete column. Use it for unique columns the source row holds (`slug`, `email`, etc.) so the duplicate doesn't trip a unique constraint on save.
+- `beforeReplicaSaved(replica, source)` — mutate the prepared payload before it's persisted. Receives the already-stripped attributes plus the source record; return the (possibly modified) attributes to persist. Async.
+
+Visibility delegates to `R.canCreate(user)` — replicating writes a new row, so the gate is `canCreate`, not `canView`. Errors raised by `R.model.create` (e.g. unique-constraint violations) surface as a destructive toast and the user stays on the list.
 
 ## ActionGroup (dropdown)
 

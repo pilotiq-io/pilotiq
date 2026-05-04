@@ -1027,6 +1027,138 @@ describe('Action bulk soft-delete factories (Plan #13)', () => {
   })
 })
 
+describe('Action.replicate factory', () => {
+  function makeR(over: Partial<{
+    primaryKey: string
+    deletedAtColumn: string
+    canCreate: (...args: unknown[]) => boolean | Promise<boolean>
+    create: (data: Record<string, unknown>) => Promise<unknown>
+  }> = {}): never {
+    const created: Array<Record<string, unknown>> = []
+    const R = {
+      labelSingular: 'Post',
+      getSlug:       () => 'posts',
+      ...(over.deletedAtColumn !== undefined ? { deletedAtColumn: over.deletedAtColumn } : {}),
+      ...(over.canCreate ? { canCreate: over.canCreate } : {}),
+      model: {
+        ...(over.primaryKey !== undefined ? { primaryKey: over.primaryKey } : {}),
+        async create(data: Record<string, unknown>) {
+          created.push(data)
+          return over.create ? await over.create(data) : { id: '99', ...data }
+        },
+      },
+      _created: created,
+    } as never
+    return R
+  }
+
+  it('creates a duplicate via R.model.create with the source record minus PK', async () => {
+    const R = makeR()
+    const handler = Action.replicate(R, '/admin').getHandler()!
+    const result = await handler({
+      record: { id: '7', title: 'Hello', body: 'World', deletedAt: null },
+      user:   null,
+    })
+    const created = (R as unknown as { _created: Array<Record<string, unknown>> })._created
+    assert.equal(created.length, 1)
+    assert.equal(created[0]!['title'], 'Hello')
+    assert.equal(created[0]!['body'],  'World')
+    assert.equal(created[0]!['id'],    undefined, 'PK must be stripped')
+    assert.equal(created[0]!['deletedAt'], undefined, 'soft-delete column stripped')
+    const r = result as { redirect: string; notify: { title: string; type: string } }
+    assert.equal(r.redirect, '/admin/posts/99/edit')
+    assert.match(r.notify.title, /Post replicated/)
+    assert.equal(r.notify.type, 'success')
+  })
+
+  it('honors a non-default primary key column', async () => {
+    const R = makeR({ primaryKey: 'uuid', create: async (d) => ({ uuid: 'abc-123', ...d }) })
+    const handler = Action.replicate(R, '/admin').getHandler()!
+    const result = await handler({
+      record: { uuid: 'src-1', title: 'Hello' },
+      user:   null,
+    })
+    const created = (R as unknown as { _created: Array<Record<string, unknown>> })._created
+    assert.equal(created[0]!['uuid'], undefined)
+    assert.equal((result as { redirect: string }).redirect, '/admin/posts/abc-123/edit')
+  })
+
+  it('honors a custom deletedAtColumn', async () => {
+    const R = makeR({ deletedAtColumn: 'archivedAt' })
+    const handler = Action.replicate(R, '/admin').getHandler()!
+    await handler({
+      record: { id: '1', title: 'X', archivedAt: '2026-01-01', deletedAt: 'should-pass' },
+      user:   null,
+    })
+    const created = (R as unknown as { _created: Array<Record<string, unknown>> })._created
+    assert.equal(created[0]!['archivedAt'], undefined, 'custom soft-delete column stripped')
+    assert.equal(created[0]!['deletedAt'], 'should-pass', 'default name no longer special when custom is set')
+  })
+
+  it('drops opts.excludeAttributes from the replica', async () => {
+    const R = makeR()
+    const handler = Action.replicate(R, '/admin', undefined, { excludeAttributes: ['slug', 'email'] }).getHandler()!
+    await handler({
+      record: { id: '1', title: 'Hello', slug: 'hello', email: 'a@b.co' },
+      user:   null,
+    })
+    const created = (R as unknown as { _created: Array<Record<string, unknown>> })._created
+    assert.equal(created[0]!['slug'],  undefined)
+    assert.equal(created[0]!['email'], undefined)
+    assert.equal(created[0]!['title'], 'Hello')
+  })
+
+  it('runs opts.beforeReplicaSaved to mutate the prepared payload', async () => {
+    const R = makeR()
+    const handler = Action.replicate(R, '/admin', undefined, {
+      beforeReplicaSaved: (replica) => ({ ...replica, title: `Copy of ${replica['title']}` }),
+    }).getHandler()!
+    await handler({ record: { id: '1', title: 'Hello' }, user: null })
+    const created = (R as unknown as { _created: Array<Record<string, unknown>> })._created
+    assert.equal(created[0]!['title'], 'Copy of Hello')
+  })
+
+  it('returns an error notify when R.model is missing', async () => {
+    const R = { labelSingular: 'Post', getSlug: () => 'posts' } as never
+    const handler = Action.replicate(R, '/admin').getHandler()!
+    const result = await handler({ record: { id: '1' }, user: null })
+    const notify = (result as { notify: { title: string; type: string } }).notify
+    assert.match(notify.title, /not configured/i)
+    assert.equal(notify.type, 'error')
+  })
+
+  it('returns an error notify when ctx.record is missing', async () => {
+    const R = makeR()
+    const handler = Action.replicate(R, '/admin').getHandler()!
+    const result = await handler({ user: null })
+    const notify = (result as { notify: { title: string; type: string } }).notify
+    assert.match(notify.title, /source record missing/i)
+  })
+
+  it('catches errors thrown by R.model.create and surfaces them', async () => {
+    const R = makeR({ create: async () => { throw new Error('unique constraint failed: posts.slug') } })
+    const handler = Action.replicate(R, '/admin').getHandler()!
+    const result = await handler({ record: { id: '1', slug: 'x' }, user: null })
+    const notify = (result as { notify: { title: string; type: string } }).notify
+    assert.match(notify.title, /unique constraint/i)
+    assert.equal(notify.type, 'error')
+  })
+
+  it('visibility delegates to R.canCreate', async () => {
+    const R1 = makeR({ canCreate: () => true })
+    const R2 = makeR({ canCreate: () => false })
+    assert.equal((await Action.replicate(R1, '/admin').evaluate({})).visible, true)
+    assert.equal((await Action.replicate(R2, '/admin').evaluate({})).visible, false)
+  })
+
+  it('falls back to list page when create() returns no PK on the new record', async () => {
+    const R = makeR({ create: async () => ({}) })
+    const handler = Action.replicate(R, '/admin').getHandler()!
+    const result = await handler({ record: { id: '1', title: 'Hello' }, user: null })
+    assert.equal((result as { redirect: string }).redirect, '/admin/posts')
+  })
+})
+
 describe('Action visibility through resolveSchema (non-row placements)', () => {
   it('drops a header action when visible() returns false', async () => {
     const tree = [

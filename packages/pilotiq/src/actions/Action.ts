@@ -162,6 +162,23 @@ export type VisibilityRule =
 /** Modal width preset — maps to a max-width class on the Dialog popup. */
 export type ActionModalWidth = 'sm' | 'md' | 'lg' | 'xl'
 
+/** Options bag for `Action.replicate`. Both fields optional. */
+export interface ReplicateOptions {
+  /** Attribute names to drop from the replicated payload IN ADDITION TO
+   *  the always-stripped primary key + soft-delete column. Useful for
+   *  unique columns the source row holds (e.g. `slug`, `email`) so the
+   *  duplicate doesn't trip a unique constraint on save. */
+  excludeAttributes?: ReadonlyArray<string>
+  /** Mutate the prepared replica before it's persisted. Receives the
+   *  already-stripped attributes plus the source record; must return the
+   *  attributes to persist (mutate or replace). Useful for stamping
+   *  "Copy of" prefixes onto a name column, regenerating slugs, etc. */
+  beforeReplicaSaved?: (
+    replica: Record<string, unknown>,
+    source:  unknown,
+  ) => Record<string, unknown> | Promise<Record<string, unknown>>
+}
+
 /** Structural shape of a Resource class for the factory functions —
  * matches `Resource.ts` exactly but keeps Action.ts free of an import
  * cycle. The optional fields are the Plan #10 policy predicates; their
@@ -510,6 +527,76 @@ export class Action extends Element {
         if (R.softDeletes && isTrashed(record, R)) return false
         return callPredicate(R.canDelete, user, record)
       })
+  }
+
+  /**
+   * Replicate-action factory — handler-style. Loads the source record
+   * from `ctx.record` (the `_action/:actionName` route already resolves
+   * it through `R.query(ctx)` for row + single-target placements),
+   * strips PK + soft-delete column + any `opts.excludeAttributes`,
+   * optionally runs `opts.beforeReplicaSaved`, and creates a new row
+   * via `R.model.create(...)`. Redirects to the new record's edit page
+   * on success so the user can review + tweak before saving again.
+   *
+   * `recordId` kept in the signature for parity with `delete / edit /
+   * view` so users can swap factories without rewriting call sites; the
+   * dispatcher resolves the source record from the URL and hands it to
+   * the handler as `ctx.record`, so we don't reference `recordId` here.
+   *
+   * Auto-hides when `R.canCreate(user)` returns false — replicating
+   * writes a new row, so the gate is `canCreate`, not `canView`.
+   */
+  static replicate(
+    R:        ResourceLike,
+    basePath: string,
+    recordId?: string,
+    opts:     ReplicateOptions = {},
+  ): Action {
+    void recordId
+    return Action.make('replicate')
+      .label('Replicate')
+      .handler(async (ctx) => {
+        const source = ctx.record
+        if (!source || typeof source !== 'object') {
+          return { notify: { title: 'Replicate failed: source record missing', type: 'error' } as never }
+        }
+        const M = R.model
+        if (!M || typeof M.create !== 'function') {
+          return { notify: { title: 'Replicate not configured (resource has no model.create)', type: 'error' } as never }
+        }
+
+        const pkCol      = (M as { primaryKey?: string }).primaryKey ?? 'id'
+        const trashedCol = R.deletedAtColumn ?? 'deletedAt'
+        const skip = new Set<string>([pkCol, trashedCol, ...(opts.excludeAttributes ?? [])])
+        let replica: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(source as Record<string, unknown>)) {
+          if (skip.has(k)) continue
+          replica[k] = v
+        }
+        if (opts.beforeReplicaSaved) {
+          try { replica = await opts.beforeReplicaSaved(replica, source) }
+          catch (err) {
+            return { notify: { title: `Replicate failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
+          }
+        }
+
+        let created: unknown
+        try {
+          created = await M.create(replica)
+        } catch (err) {
+          return { notify: { title: `Replicate failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
+        }
+
+        const newId = (created as Record<string, unknown> | null | undefined)?.[pkCol]
+        const redirect = newId !== undefined && newId !== null
+          ? `${basePath}/${R.getSlug()}/${String(newId)}/edit`
+          : `${basePath}/${R.getSlug()}`
+        return {
+          redirect,
+          notify: { title: `${R.labelSingular} replicated`, type: 'success' } as never,
+        }
+      })
+      .visible(({ user }) => callPredicate(R.canCreate, user))
   }
 
   /**

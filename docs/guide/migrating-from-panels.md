@@ -418,7 +418,7 @@ class ViewArticle extends ViewPage {
 }
 ```
 
-Factory shapes: `Action.create(R, base)`, `Action.edit(R, base, recordId?)`, `Action.view(R, base, recordId?)`, `Action.delete(R, base, recordId?)`. `recordId` baked at config time (view-page context) vs `:id` template (row context).
+Factory shapes: `Action.create(R, base)`, `Action.edit(R, base, recordId?)`, `Action.view(R, base, recordId?)`, `Action.delete(R, base, recordId?)`, `Action.replicate(R, base, recordId?, opts?)`. `recordId` baked at config time (view-page context) vs `:id` template (row context).
 
 ---
 
