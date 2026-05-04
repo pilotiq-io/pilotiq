@@ -126,11 +126,15 @@ Table.make()
     description: 'Create your first article to get started.',
     icon:        'inbox',
   })
+  .filteredEmptyState({
+    heading:     'No matching articles',
+    description: 'Try a different search or clear filters.',
+    icon:        'search',
+  })
   .columns([ /* … */ ])
 ```
 
-`emptyState` renders when the table has zero rows AND no filter or
-search is active. The icon name resolves through the icon registry.
+`emptyState` renders when the table has zero rows AND no filter or search is active. `filteredEmptyState` is an optional second slot — when set AND a search query or any URL filter key is present, the renderer prefers it. Falls back to `emptyState` (or the framework defaults — "No matching records" with a clear-filters hint) when unset, so opting in is purely additive. Both icons resolve through the icon registry.
 
 ## Editable cell columns
 

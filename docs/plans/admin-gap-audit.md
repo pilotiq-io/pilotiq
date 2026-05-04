@@ -66,7 +66,7 @@ Penciled for later (Tier 3): Repeater/Builder fields ✅ shipped (Plans #14, #14
 | `persistFiltersInSession()` | 3 | Stateful behavior; defer. |
 | ✅ Tabs on list page (filter-by-tab) DONE | 1 | **Plan #7** shipped 2026-05-01 — see TL;DR row. |
 | ✅ `emptyStateHeading/Description/Icon/Actions` DONE | 1 | Shipped with **Plan #2** 2026-04-29 — `Table.emptyState({ heading, description, icon, actions })`. |
-| Filtered-but-empty distinct empty state | 2 | Different copy when search/filter active. |
+| ✅ Filtered-but-empty distinct empty state DONE | 2 | Shipped 2026-05-04 cont'd — `Table.filteredEmptyState({ heading, description, icon })` slot, distinct from `emptyState`. Renderer prefers it when search query OR any URL filter key is active; falls back to `emptyState` (preserving the prior framework defaults — "No matching records" + clear-filters hint) when unset. Additive; opting in is purely a copy customization. |
 | Custom-data sort/search expectations (`$sortColumn`, `$columnSearches`) | already covered | Our `TableContext` already passes these. |
 | Layout components (Stack/Split/Grid for card-listing) | 3 | "Cards listing" mode. Defer. |
 

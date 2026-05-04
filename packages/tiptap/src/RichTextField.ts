@@ -118,7 +118,10 @@ export interface RichTextFieldMeta extends FieldMeta {
   fileAttachmentsDirectory?: string
   /** Adapter-defined visibility hint — `'public'` or `'private'`. */
   fileAttachmentsVisibility?: RichTextAttachmentVisibility
-  /** URL of the panel's `_uploads` route. Stamped via `RenderContext`. */
+  /** URL of the panel's `_uploads` route. Only stamped when both
+   *  `RenderContext.uploadUrl` and `RenderContext.hasUploadAdapter` are
+   *  set — so its presence is itself the "adapter is wired" signal that
+   *  the slash-menu Image entry consults. */
   uploadUrl?: string
   /**
    * Identifier list for `{{ tag }}` placeholders surfaced in the slash menu.

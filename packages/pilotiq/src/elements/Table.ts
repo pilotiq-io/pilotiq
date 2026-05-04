@@ -95,6 +95,14 @@ export interface TableMeta extends ElementMeta {
   description?: string
   striped?:     boolean
   emptyState?:  TableEmptyState
+  /**
+   * Distinct empty-state for the "filter/search active but no rows match"
+   * case. When set AND a search query or one or more URL filter keys are
+   * present, the renderer picks this shape over `emptyState`. When unset,
+   * the renderer falls back to `emptyState` (or the framework defaults
+   * — "No matching records" with a generic clear-filters hint).
+   */
+  filteredEmptyState?: TableEmptyState
 
   /**
    * Per-row URL stamped onto each row's data under the reserved
@@ -194,6 +202,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _description?:  string
   private _striped = false
   private _emptyState?:   TableEmptyState
+  private _filteredEmptyState?: TableEmptyState
 
   // Render-time state
   private _rows?:         R[]
@@ -302,6 +311,22 @@ export class Table<R = unknown, Q = unknown> extends Element {
   /** Customize the "no records" placeholder. */
   emptyState(state: TableEmptyState): this {
     this._emptyState = state
+    return this
+  }
+
+  /**
+   * Customize the "no matching records" placeholder shown when a search
+   * query or filter is active but the result set is empty. Distinct from
+   * `emptyState(...)` so the two cases can read differently — empty
+   * tables typically want a "create your first one" call to action,
+   * while filtered-empty tables want a "clear filters / adjust search"
+   * hint.
+   *
+   * Falls back to `emptyState(...)` (or the framework defaults) when
+   * unset, so opting into the distinction is purely additive.
+   */
+  filteredEmptyState(state: TableEmptyState): this {
+    this._filteredEmptyState = state
     return this
   }
 
@@ -510,6 +535,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
       ...(this._description  !== undefined ? { description: this._description  } : {}),
       ...(this._striped                    ? { striped:     true               } : {}),
       ...(this._emptyState   !== undefined ? { emptyState:  this._emptyState   } : {}),
+      ...(this._filteredEmptyState !== undefined ? { filteredEmptyState: this._filteredEmptyState } : {}),
       ...(this._recordUrl    !== undefined ? { recordUrl:   true as const      } : {}),
       ...(this._recordClasses !== undefined ? { recordClasses: true as const   } : {}),
       ...(this._pollInterval !== undefined ? { pollInterval: this._pollInterval } : {}),

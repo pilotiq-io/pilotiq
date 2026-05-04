@@ -142,6 +142,38 @@ describe('Table Element', () => {
       assert.equal(meta.description, undefined)
       assert.equal(meta.striped,     undefined)
       assert.equal(meta.emptyState,  undefined)
+      assert.equal(meta.filteredEmptyState, undefined)
+    })
+
+    it('filteredEmptyState round-trips independently of emptyState', () => {
+      const meta = Table.make()
+        .emptyState({
+          heading: 'No articles yet',
+          description: 'Create one to get started.',
+        })
+        .filteredEmptyState({
+          heading: 'No matching articles',
+          description: 'Try a different search or clear filters.',
+          icon: 'search',
+        })
+        .toMeta()
+      assert.deepEqual(meta.emptyState, {
+        heading: 'No articles yet',
+        description: 'Create one to get started.',
+      })
+      assert.deepEqual(meta.filteredEmptyState, {
+        heading: 'No matching articles',
+        description: 'Try a different search or clear filters.',
+        icon: 'search',
+      })
+    })
+
+    it('filteredEmptyState alone does not surface emptyState', () => {
+      const meta = Table.make()
+        .filteredEmptyState({ heading: 'No matches' })
+        .toMeta()
+      assert.equal(meta.emptyState, undefined)
+      assert.deepEqual(meta.filteredEmptyState, { heading: 'No matches' })
     })
 
     it('recordClasses sets the meta flag and stores the handler', () => {

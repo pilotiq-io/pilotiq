@@ -3957,9 +3957,14 @@ function TableRenderer({ el }: { el: ElementMeta }) {
   const tableDescription = el['description'] as string | undefined
   const striped          = Boolean(el['striped'])
   const emptyState       = el['emptyState']  as { heading?: string; description?: string; icon?: string } | undefined
+  const filteredEmptyState = el['filteredEmptyState'] as { heading?: string; description?: string; icon?: string } | undefined
   const hasFilterOrSearch = (search !== undefined && search !== '') ||
     Object.keys(activeFilters).length > 0
-  const EmptyIcon = emptyState?.icon ? (resolveIcon(emptyState.icon) ?? InboxIcon) : InboxIcon
+  // Distinct copy when a query / filter is active. Falls back to
+  // `emptyState` when `filteredEmptyState` is not set, preserving the
+  // pre-2026-05-04 behavior for tables that haven't opted in.
+  const activeEmpty = (hasFilterOrSearch && filteredEmptyState) ? filteredEmptyState : emptyState
+  const EmptyIcon = activeEmpty?.icon ? (resolveIcon(activeEmpty.icon) ?? InboxIcon) : InboxIcon
 
   return (
     <div className="flex flex-col gap-3">
@@ -4094,13 +4099,13 @@ function TableRenderer({ el }: { el: ElementMeta }) {
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <EmptyIcon className="size-8 opacity-60" />
                     <p className="text-base font-medium text-foreground">
-                      {emptyState?.heading
+                      {activeEmpty?.heading
                         ?? (hasFilterOrSearch ? 'No matching records' : 'No records yet')}
                     </p>
-                    {(emptyState?.description ||
-                      (hasFilterOrSearch && !emptyState?.description)) && (
+                    {(activeEmpty?.description ||
+                      (hasFilterOrSearch && !activeEmpty?.description)) && (
                       <p className="text-sm">
-                        {emptyState?.description
+                        {activeEmpty?.description
                           ?? 'Try clearing filters or adjusting your search.'}
                       </p>
                     )}
