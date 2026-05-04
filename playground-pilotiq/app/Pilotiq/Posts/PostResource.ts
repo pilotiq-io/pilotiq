@@ -10,6 +10,7 @@ import {
 } from '@pilotiq/pilotiq'
 import { Post } from '../../Models/Post.js'
 import { PostsCommentsManager } from './relations/CommentsManager.js'
+import { PostsTagsManager }     from './relations/TagsManager.js'
 
 const ADMIN = '/new-admin'
 
@@ -175,6 +176,13 @@ export class PostResource extends Resource {
 
   /** Polymorphic follow-up — Comments tab on the post's edit/view page,
    *  scoped via the `commentable` morph. Mode auto-detects as
-   *  `'morphMany'`; create POST auto-fills the morph columns. */
-  static override relations() { return [PostsCommentsManager] }
+   *  `'morphMany'`; create POST auto-fills the morph columns.
+   *
+   *  Polymorphic M2M follow-up — Tags tab via the shared `taggable`
+   *  pivot. Mode auto-detects as `'morphToMany'`; the M2M factories
+   *  (`relationAttach / Detach / BulkDetach`) work identically to the
+   *  `belongsToMany` Article ↔ Tag manager — the only difference is the
+   *  ORM stamps + filters `taggableType = 'Post'` on the shared pivot
+   *  so the same Tag rows can attach to either a Post or a Video. */
+  static override relations() { return [PostsCommentsManager, PostsTagsManager] }
 }

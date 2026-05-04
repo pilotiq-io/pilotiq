@@ -98,3 +98,20 @@ model Video {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// Polymorphic many-to-many follow-up — one shared `taggable` pivot
+// distinguished by `taggableType`. Post.tags() (morphToMany) and
+// Tag.posts() / Tag.videos() (morphedByMany) all flow through this
+// table; the rudder ORM stamps + filters the discriminator for us.
+// The pilotiq RelationManager M2M follow-up plumbs morphToMany +
+// morphedByMany through the same attach / detach / sync surface as
+// the explicit `belongsToMany` Article ↔ Tag pivot above.
+model Taggable {
+  tagId        String
+  taggableId   String
+  taggableType String
+
+  @@id([tagId, taggableId, taggableType])
+  @@index([taggableId, taggableType])
+  @@map("taggable")
+}

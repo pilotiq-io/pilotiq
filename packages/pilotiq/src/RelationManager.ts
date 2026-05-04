@@ -47,6 +47,16 @@ export interface RelationManagerContext {
    * - `'morphTo'`         → child-side polymorphic; no auto-actions
    *                         (related class is dynamic — set
    *                         `static relatedResource` explicitly)
+   * - `'morphToMany'`     → polymorphic many-to-many, owning side
+   *                         (e.g. `Post.tags()`). Same pivot-mutation
+   *                         shape as `belongsToMany`; the ORM stamps +
+   *                         filters the `<morphName>Type` discriminator
+   *                         on every attach / detach / sync, so pilotiq
+   *                         doesn't need to know about it directly.
+   * - `'morphedByMany'`   → polymorphic many-to-many, inverse side
+   *                         (e.g. `Tag.posts()`). One declaration per
+   *                         concrete inverse target — same pivot-mutation
+   *                         shape as `belongsToMany`.
    *
    * Defaults to `'hasMany'` when the relations map doesn't expose a
    * type field.
@@ -54,7 +64,7 @@ export interface RelationManagerContext {
   mode:         RelationMode
 }
 
-/** Five relation shapes the page-data builder distinguishes. `hasOne`
+/** Six relation shapes the page-data builder distinguishes. `hasOne`
  *  is treated identically to `hasMany` for action defaults (one-row
  *  table is still a table) and `morphOne` similarly folds into
  *  `'morphMany'`. `belongsToMany` is the M2M variant; `morphMany` is the
@@ -65,12 +75,21 @@ export interface RelationManagerContext {
  *  `static relatedResource` explicitly on the manager.
  *
  *  `belongsTo` runs through the same path as `hasMany` for now —
- *  managers on the inverse side are uncommon. M2M-polymorphic shapes
- *  (`morphToMany / morphedByMany`) are still gated on ORM support. */
-export type RelationMode = 'hasMany' | 'belongsToMany' | 'morphMany' | 'morphTo'
+ *  managers on the inverse side are uncommon. `morphToMany` (owning
+ *  side) and `morphedByMany` (inverse side) share the `belongsToMany`
+ *  pivot-mutation shape — `attach` / `detach` / `sync` flow through the
+ *  same accessor surface; the ORM stamps + filters the polymorphic
+ *  discriminator on the shared pivot table automatically. */
+export type RelationMode =
+  | 'hasMany'
+  | 'belongsToMany'
+  | 'morphMany'
+  | 'morphTo'
+  | 'morphToMany'
+  | 'morphedByMany'
 
 /**
- * Map a raw `parentModel.relations[name].type` string to the binary
+ * Map a raw `parentModel.relations[name].type` string to the
  * `RelationMode` the manager plumbing dispatches on. Centralizes the
  * fall-through rules so `routes.ts`, `pageData.ts`, and any future
  * call sites stay in lockstep:
@@ -79,6 +98,10 @@ export type RelationMode = 'hasMany' | 'belongsToMany' | 'morphMany' | 'morphTo'
  * - `morphMany | morphOne`      → `'morphMany'`  (one-row morph still
  *                                 a many-shape; UI surface identical)
  * - `morphTo`                   → `'morphTo'`
+ * - `morphToMany`               → `'morphToMany'`   (owning polymorphic
+ *                                 M2M side; pivot-mutation shape)
+ * - `morphedByMany`             → `'morphedByMany'` (inverse polymorphic
+ *                                 M2M side; pivot-mutation shape)
  * - anything else (hasMany /
  *   hasOne / belongsTo / unset) → `'hasMany'`    (safe default — no
  *                                 special action injection)
@@ -87,6 +110,8 @@ export function normalizeRelationMode(relationType: string): RelationMode {
   if (relationType === 'belongsToMany')                     return 'belongsToMany'
   if (relationType === 'morphMany' || relationType === 'morphOne') return 'morphMany'
   if (relationType === 'morphTo')                           return 'morphTo'
+  if (relationType === 'morphToMany')                       return 'morphToMany'
+  if (relationType === 'morphedByMany')                     return 'morphedByMany'
   return 'hasMany'
 }
 
@@ -121,8 +146,11 @@ export function normalizeRelationMode(relationType: string): RelationMode {
  * via the M2M follow-up. `morphMany` / `morphOne` / `morphTo` shipped
  * via the polymorphic follow-up — `morphMany` auto-injects morph
  * columns on create, `morphTo` requires `static relatedResource` (no
- * single related model to discover). `morphToMany` / `morphedByMany`
- * remain deferred — see `docs/plans/relations.md`.
+ * single related model to discover). `morphToMany` (owning side) and
+ * `morphedByMany` (inverse side) shipped 2026-05-04 via the polymorphic
+ * M2M follow-up — both share the `belongsToMany` pivot-mutation shape
+ * (`attach` / `detach` / `sync`); the ORM stamps + filters the
+ * polymorphic discriminator on the shared pivot table automatically.
  */
 export abstract class RelationManager {
   /**

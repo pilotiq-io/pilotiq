@@ -1216,12 +1216,14 @@ export async function relationManagerData(
   if (!await safePolicy(() => R.canEdit(user, parentRecord))) return { ok: false, status: 403 }
 
   // Read the relation type off the parent's relations map once,
-  // normalize to the four-way `RelationMode` the manager-side logic
-  // uses. `belongsToMany` flips into pivot-mutation mode (attach /
-  // detach), `morphMany|morphOne` collapses to `'morphMany'` (parent-
-  // side polymorphic — auto-fills morph columns on create), `morphTo`
-  // is the child-side polymorphic (no auto-actions; requires explicit
-  // `M.relatedResource`). Everything else collapses to `'hasMany'`.
+  // normalize to the six-way `RelationMode` the manager-side logic
+  // uses. `belongsToMany` / `morphToMany` (owning polymorphic) /
+  // `morphedByMany` (inverse polymorphic) all flip into pivot-mutation
+  // mode (attach / detach / sync — same accessor surface), `morphMany|
+  // morphOne` collapses to `'morphMany'` (parent-side polymorphic —
+  // auto-fills morph columns on create), `morphTo` is the child-side
+  // polymorphic (no auto-actions; requires explicit `M.relatedResource`).
+  // Everything else collapses to `'hasMany'`.
   const relationType = getRelationType(R.model, scope.relationship)
   const mode: RelationMode = normalizeRelationMode(relationType)
 

@@ -1,6 +1,7 @@
 import { Model } from '@rudderjs/orm'
 import { User } from './User.js'
 import { Comment } from './Comment.js'
+import { Tag } from './Tag.js'
 
 export class Post extends Model {
   static override table = 'post'
@@ -17,6 +18,12 @@ export class Post extends Model {
     // `post.related('comments')` → Comment.where(commentableId, post.id)
     //                                      .where(commentableType, 'Post')`.
     comments: { type: 'morphMany' as const, model: () => Comment, morphName: 'commentable' },
+    // Polymorphic M2M follow-up — Post owns Tags via the shared
+    // `taggable` pivot (taggableId + taggableType). Reads + writes
+    // flow through `post.related('tags').{paginate, attach, detach}`;
+    // the ORM stamps + filters `taggableType = 'Post'` automatically.
+    // Pivot table is shared with Video (both `morphToMany Tag`).
+    tags:     { type: 'morphToMany' as const, model: () => Tag, pivotTable: 'taggable', morphName: 'taggable' },
   }
 
   id!:          string

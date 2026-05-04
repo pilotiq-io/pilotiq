@@ -210,6 +210,54 @@ function labelForCount(R: ResourceLike, n: number): string {
   return plural ?? `${R.labelSingular.toLowerCase()}s`
 }
 
+/** True when a `RelationManagerContext.mode` denotes a pivot-mutation
+ *  shape — i.e. a many-to-many relation. All three modes share the
+ *  `attach` / `detach` / `sync` accessor surface (the rudder ORM stamps
+ *  + filters the polymorphic discriminator transparently for the morph
+ *  variants). The `relationCreate / Edit / Delete` factories auto-hide
+ *  under any of these modes because per-pivot-row create / edit / delete
+ *  is meaningless — users create the related record via its own Resource,
+ *  then attach via `relationAttach`. */
+function isM2MMode(mode: RelationManagerContext['mode']): boolean {
+  return mode === 'belongsToMany' || mode === 'morphToMany' || mode === 'morphedByMany'
+}
+
+/** Resolve the M2M pivot-mutation accessor for `parent[rel]`. Two
+ *  shapes are supported, in this order:
+ *    1. `parent[rel]()` — the real `@rudderjs/orm` shape installed by
+ *       `_installBelongsToManyMethods` / `_installMorphPivotMethods`
+ *       (e.g. `post.tags()` returns `{ attach, detach, sync }`).
+ *    2. `parent.related(rel)` — legacy / test-double shape that
+ *       returns the accessor directly. Kept so existing pilotiq tests
+ *       built around `parent.related(...)` mocks keep passing.
+ *
+ *  Returns `undefined` when neither shape exposes a callable `attach`
+ *  AND a callable `detach` — caller should surface a clear error
+ *  notification. */
+interface M2MAccessor {
+  attach?(input: unknown): Promise<void>
+  detach?(input?: unknown): Promise<unknown>
+  sync?(desiredIds: ReadonlyArray<string | number>): Promise<unknown>
+}
+function resolveM2MAccessor(parent: unknown, rel: string): M2MAccessor | undefined {
+  if (!parent || typeof parent !== 'object') return undefined
+  // Shape 1: parent[rel]() — real ORM. Prototype-installed method.
+  const inst = (parent as Record<string, unknown>)[rel]
+  if (typeof inst === 'function') {
+    try {
+      const out = (inst as () => unknown).call(parent) as M2MAccessor | undefined
+      if (out && (typeof out.attach === 'function' || typeof out.detach === 'function')) return out
+    } catch { /* fall through to legacy shape */ }
+  }
+  // Shape 2: parent.related(rel) — legacy / test-mock shape.
+  const relatedFn = (parent as { related?: (n: string) => unknown }).related
+  if (typeof relatedFn === 'function') {
+    const out = relatedFn.call(parent, rel) as M2MAccessor | undefined
+    if (out && (typeof out.attach === 'function' || typeof out.detach === 'function')) return out
+  }
+  return undefined
+}
+
 /** Read `record[R.deletedAtColumn ?? 'deletedAt']` and return true when
  *  the row is currently trashed (soft-deleted). Permissive on shape —
  *  bare `null` / `undefined` count as live; any other truthy value is
@@ -790,9 +838,9 @@ export class Action extends Element {
         // M2M managers don't have a per-pivot-row create surface — the
         // related record is created via its own Resource, then attached
         // via `relationAttach`. Auto-hide so dropping this factory into
-        // a `belongsToMany` manager is a no-op (visible=false) instead
-        // of a 404-on-click foot-gun.
-        if (ctx.mode === 'belongsToMany') return false
+        // any M2M manager (belongsToMany / morphToMany / morphedByMany)
+        // is a no-op (visible=false) instead of a 404-on-click foot-gun.
+        if (isM2MMode(ctx.mode)) return false
         return safeManagerPolicy(M, 'canCreate', ctx.related, user, ctx.parentRecord)
       })
   }
@@ -817,8 +865,9 @@ export class Action extends Element {
       .href(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}/edit`)
       .visible(({ user, record }) => {
         // M2M: per-pivot-row "edit" doesn't exist; users edit the
-        // related record via its own Resource. Auto-hide.
-        if (ctx.mode === 'belongsToMany') return false
+        // related record via its own Resource. Auto-hide for every M2M
+        // mode (belongsToMany / morphToMany / morphedByMany).
+        if (isM2MMode(ctx.mode)) return false
         return safeManagerPolicy(M, 'canEdit', ctx.related, user, ctx.parentRecord, record)
       })
   }
@@ -844,11 +893,11 @@ export class Action extends Element {
       .confirm(`Delete this ${singular}?`)
       .visible(async ({ user, record }) => {
         // M2M: "delete" of the related record is destructive in a way
-        // that "detach" isn't — surface only `relationDetach` on M2M
-        // managers. Users who genuinely want to delete the related
-        // record reach for `Action.delete(R)` on the related Resource
-        // instead.
-        if (ctx.mode === 'belongsToMany') return false
+        // that "detach" isn't — surface only `relationDetach` on every
+        // M2M manager (belongsToMany / morphToMany / morphedByMany).
+        // Users who genuinely want to delete the related record reach
+        // for `Action.delete(R)` on the related Resource instead.
+        if (isM2MMode(ctx.mode)) return false
         if (ctx.related?.softDeletes && isTrashed(record, ctx.related as ResourceLike)) return false
         return safeManagerPolicy(M, 'canDelete', ctx.related, user, ctx.parentRecord, record)
       })
@@ -907,17 +956,24 @@ export class Action extends Element {
 
   // ─── M2M relation factories ───────────────────────────────
   //
-  // Sibling of `relationCreate / Edit / Delete` for the `belongsToMany`
-  // mode. Three factories: `relationAttach` (header, modal-form picker
-  // → POST `_action/relationAttach`), `relationDetach` (row, direct
-  // POST to `_detach/:childId`), `relationBulkDetach` (bulk, handler-
+  // Sibling of `relationCreate / Edit / Delete` for every M2M mode
+  // (`belongsToMany`, `morphToMany` (owning polymorphic side),
+  // `morphedByMany` (inverse polymorphic side)). All three modes share
+  // the same `attach` / `detach` / `sync` accessor surface — the rudder
+  // ORM stamps + filters the polymorphic discriminator on the morph
+  // variants automatically, so pilotiq's pivot factories are mode-agnostic
+  // beyond the visibility gate.
+  //
+  // Three factories: `relationAttach` (header, modal-form picker →
+  // POST `_action/relationAttach`), `relationDetach` (row, direct POST
+  // to `_detach/:childId`), `relationBulkDetach` (bulk, handler-
   // dispatched). The first and third route through the manager-scoped
   // `_action/:actionName` endpoint (added in routes.ts) so handlers
   // see `ctx.relation = { parent, parentId, relationship }`.
   //
-  // All three auto-hide outside `mode: 'belongsToMany'` so dropping a
-  // factory into a non-M2M manager is a no-op (visible=false) instead
-  // of a confusing 404.
+  // All three auto-hide outside any M2M mode so dropping a factory into
+  // a non-M2M manager is a no-op (visible=false) instead of a confusing
+  // 404.
 
   /** Header-placement attach factory — opens a modal with a SelectField
    *  listing related records that aren't already attached, and POSTs the
@@ -949,10 +1005,9 @@ export class Action extends Element {
         if (idStr.length === 0) {
           return { notify: { title: 'Pick a record to attach', type: 'error' } as never }
         }
-        const accessor = (rel.parent as { related?: (n: string) => { attach?: (input: unknown) => Promise<void> } })
-          ?.related?.(rel.relationship)
+        const accessor = resolveM2MAccessor(rel.parent, rel.relationship)
         if (!accessor || typeof accessor.attach !== 'function') {
-          return { notify: { title: 'Parent.related().attach is missing — wrong relation type or ORM version?', type: 'error' } as never }
+          return { notify: { title: `Pivot accessor missing on ${rel.relationship} — wrong relation type or ORM version?`, type: 'error' } as never }
         }
         try {
           await accessor.attach([idStr])
@@ -962,7 +1017,7 @@ export class Action extends Element {
         return { notify: { title: `${labelSingular} attached`, type: 'success' } as never }
       })
       .visible(({ user }) => {
-        if (ctx.mode !== 'belongsToMany') return false
+        if (!isM2MMode(ctx.mode)) return false
         return safeManagerPolicy(M, 'canAttach', ctx.related, user, ctx.parentRecord)
       })
 
@@ -971,7 +1026,7 @@ export class Action extends Element {
     // predicate, but still need a schema-less Action so the meta walker
     // doesn't blow up. Static import is fine: `attachFactory` only
     // depends on `SelectField` + ORM helpers, no cycle back to Action.
-    if (ctx.mode === 'belongsToMany' && ctx.related?.model) {
+    if (isM2MMode(ctx.mode) && ctx.related?.model) {
       a.schema(buildAttachModalSchema({
         Related:         ctx.related,
         relationship:    ctx.relationship,
@@ -1001,7 +1056,7 @@ export class Action extends Element {
       .action(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}/_detach`)
       .confirm(`Detach this ${singular}? The ${singular} record stays in place; only the link is removed.`)
       .visible(async ({ user, record }) => {
-        if (ctx.mode !== 'belongsToMany') return false
+        if (!isM2MMode(ctx.mode)) return false
         return safeManagerPolicy(M, 'canDetach', ctx.related, user, ctx.parentRecord, record)
       })
   }
@@ -1039,10 +1094,9 @@ export class Action extends Element {
         if (ids.length === 0) {
           return { notify: { title: 'Nothing to detach (no permitted rows)', type: 'warning' } as never }
         }
-        const accessor = (rel.parent as { related?: (n: string) => { detach?: (input: unknown) => Promise<unknown> } })
-          ?.related?.(rel.relationship)
+        const accessor = resolveM2MAccessor(rel.parent, rel.relationship)
         if (!accessor || typeof accessor.detach !== 'function') {
-          return { notify: { title: 'Parent.related().detach is missing — wrong relation type or ORM version?', type: 'error' } as never }
+          return { notify: { title: `Pivot accessor missing on ${rel.relationship} — wrong relation type or ORM version?`, type: 'error' } as never }
         }
         try {
           await accessor.detach(ids)
@@ -1052,7 +1106,7 @@ export class Action extends Element {
         return { notify: { title: `${ids.length} ${labelPlural} detached`, type: 'success' } as never }
       })
       .visible(({ user }) => {
-        if (ctx.mode !== 'belongsToMany') return false
+        if (!isM2MMode(ctx.mode)) return false
         // Bulk gate uses canAttach as a stand-in for "manager admin" —
         // per-row canDetach is enforced inside the handler.
         return safeManagerPolicy(M, 'canAttach', ctx.related, user, ctx.parentRecord)
