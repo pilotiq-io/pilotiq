@@ -384,6 +384,158 @@ describe('renderRichTextToHtml — escaping', () => {
   })
 })
 
+describe('renderRichTextToHtml — merge tags', () => {
+  it('substitutes a tag from opts.mergeTags (HTML-escaped)', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'Hi ' },
+          { type: 'mergeTag', attrs: { id: 'name' } },
+          { type: 'text', text: '!' },
+        ],
+      }],
+    }
+    assert.equal(
+      renderRichTextToHtml(doc, { mergeTags: { name: 'Sleman <Owner>' } }),
+      '<p>Hi Sleman &lt;Owner&gt;!</p>',
+    )
+  })
+
+  it('falls back to a styled <span> when no map is supplied', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{ type: 'mergeTag', attrs: { id: 'firstName' } }],
+      }],
+    }
+    assert.equal(
+      renderRichTextToHtml(doc),
+      '<p><span class="merge-tag" data-id="firstName">{{ firstName }}</span></p>',
+    )
+  })
+
+  it('falls back to the styled <span> for ids missing from the map', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{ type: 'mergeTag', attrs: { id: 'company' } }],
+      }],
+    }
+    const html = renderRichTextToHtml(doc, { mergeTags: { name: 'X' } })
+    assert.match(html, /<span class="merge-tag" data-id="company">\{\{ company \}\}<\/span>/)
+  })
+
+  it('explicit empty-string substitution still wins over the fallback', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'mergeTag', attrs: { id: 'opt' } }] }],
+    }
+    assert.equal(
+      renderRichTextToHtml(doc, { mergeTags: { opt: '' } }),
+      '<p></p>',
+    )
+  })
+
+  it('drops the chip when id is missing or blank', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'a' },
+          { type: 'mergeTag', attrs: { id: '' } },
+          { type: 'text', text: 'b' },
+        ],
+      }],
+    }
+    assert.equal(renderRichTextToHtml(doc), '<p>ab</p>')
+  })
+})
+
+describe('renderRichTextToHtml — mentions', () => {
+  it('renders the cached label inside a styled <span>', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'cc ' },
+          { type: 'mention', attrs: { id: 'sleman', label: 'Sleman', trigger: '@' } },
+        ],
+      }],
+    }
+    assert.equal(
+      renderRichTextToHtml(doc),
+      '<p>cc <span class="mention" data-trigger="@" data-id="sleman">@Sleman</span></p>',
+    )
+  })
+
+  it('falls back to id when label is blank', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{ type: 'mention', attrs: { id: 'admin', label: '', trigger: '@' } }],
+      }],
+    }
+    assert.match(
+      renderRichTextToHtml(doc),
+      /<span class="mention" data-trigger="@" data-id="admin">@admin<\/span>/,
+    )
+  })
+
+  it('opts.resolveMention overrides the cached label', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{ type: 'mention', attrs: { id: 'sleman', label: 'Old name', trigger: '@' } }],
+      }],
+    }
+    assert.match(
+      renderRichTextToHtml(doc, {
+        resolveMention: (trigger, id) => trigger === '@' && id === 'sleman' ? 'New Name' : undefined,
+      }),
+      /<span class="mention" data-trigger="@" data-id="sleman">@New Name<\/span>/,
+    )
+  })
+
+  it('escapes labels that contain HTML metacharacters', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{ type: 'mention', attrs: { id: 'x', label: '<script>', trigger: '@' } }],
+      }],
+    }
+    assert.match(renderRichTextToHtml(doc), /@&lt;script&gt;/)
+  })
+
+  it('drops the chip when id or trigger is missing', () => {
+    const noId: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{ type: 'mention', attrs: { label: 'L', trigger: '@' } }],
+      }],
+    }
+    assert.equal(renderRichTextToHtml(noId), '<p></p>')
+
+    const noTrig: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{ type: 'mention', attrs: { id: 'i', label: 'L' } }],
+      }],
+    }
+    assert.equal(renderRichTextToHtml(noTrig), '<p></p>')
+  })
+})
+
 describe('renderRichTextToHtml — custom blocks', () => {
   it('unknown nodes emit a data-type wrapper carrying attrs', () => {
     const doc: TiptapNode = {

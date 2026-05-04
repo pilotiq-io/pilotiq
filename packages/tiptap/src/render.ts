@@ -11,16 +11,18 @@
  * but the surrounding markup is constructed by us, not parsed from user
  * input, so there's no place an unexpected tag can sneak in.
  *
- * Coverage matches what `RichTextField` ships in Phases A-F:
+ * Coverage matches what `RichTextField` ships in Phases A-G:
  *   nodes — doc / paragraph / heading / blockquote / codeBlock / bulletList
  *           / orderedList / listItem / horizontalRule / hardBreak / text
  *           / image / table / tableRow / tableCell / tableHeader
+ *           / mergeTag / mention
  *   marks — bold / italic / strike / underline / subscript / superscript
  *           / code / link / textStyle (color) / highlight (color)
  *   attrs — heading.level / orderedList.start / codeBlock.language
  *           / paragraph.textAlign + heading.textAlign
  *           / image.src + alt + title + width + height
  *           / tableCell.colspan + rowspan + colwidth (also tableHeader)
+ *           / mergeTag.id / mention.id + label + trigger
  *   custom blocks — render to `<div data-type="..." data-attrs="...">` so
  *           consumers can replay or style by data-type.
  */
@@ -32,6 +34,22 @@ export interface RenderRichTextOptions {
    * Default emits `<div data-type="..." data-attrs="...">`.
    */
   renderBlock?: (node: TiptapNode) => string
+  /**
+   * Substitution map for `{{ tag }}` placeholders inserted via
+   * `RichTextField.mergeTags(['name', …])`. When the renderer hits a
+   * `mergeTag` node whose `id` is a key in this map, it emits the value
+   * (HTML-escaped). Unmatched ids fall back to a styled `<span class="merge-tag">`
+   * that preserves the placeholder visually.
+   */
+  mergeTags?: Record<string, string>
+  /**
+   * Override the label rendered inside a mention chip at read time. The
+   * editor caches the label on insert (so static snapshots stay self-
+   * contained), but rendered surfaces can call back into a directory or
+   * cache to refresh stale names. Return `undefined` to fall back to the
+   * cached label.
+   */
+  resolveMention?: (trigger: string, id: string) => string | undefined
 }
 
 /** Tiptap JSON node — structural, no runtime dep on `@tiptap/core`. */
@@ -150,6 +168,8 @@ function renderNode(node: unknown, opts: RenderRichTextOptions): string {
     case 'tableRow':       return wrap('tr', n, opts)
     case 'tableCell':      return renderCell('td', n, opts)
     case 'tableHeader':    return renderCell('th', n, opts)
+    case 'mergeTag':       return renderMergeTag(n, opts)
+    case 'mention':        return renderMention(n, opts)
     case 'text':           return renderText(n)
     default:
       if (opts.renderBlock) return opts.renderBlock(n)
@@ -308,6 +328,48 @@ function clampPositiveInt(raw: unknown): number | null {
   const n = typeof raw === 'number' ? raw : Number(raw)
   if (!Number.isFinite(n) || n <= 0) return null
   return Math.trunc(n)
+}
+
+// ─── Merge tags + mentions ───────────────────────────────────────────
+
+/**
+ * Render a `mergeTag` atom — either substitute the value from
+ * `opts.mergeTags` (HTML-escaped) or fall back to a styled `<span>` that
+ * preserves the placeholder visually so server-rendered previews stay
+ * informative when no substitution map is supplied.
+ */
+function renderMergeTag(n: TiptapNode, opts: RenderRichTextOptions): string {
+  const id = String((n.attrs ?? {})['id'] ?? '').trim()
+  if (id === '') return ''
+  const map = opts.mergeTags
+  // Only substitute when the map explicitly carries the id — using
+  // `Object.prototype.hasOwnProperty` so `null` / empty-string substitutions
+  // still win over the fallback span.
+  if (map && Object.prototype.hasOwnProperty.call(map, id)) {
+    return escapeHtml(String(map[id] ?? ''))
+  }
+  return `<span class="merge-tag" data-id="${escapeAttr(id)}">{{ ${escapeHtml(id)} }}</span>`
+}
+
+/**
+ * Render a `mention` atom as a styled `<span>` carrying the cached label.
+ * `opts.resolveMention` can override the label per `(trigger, id)` pair —
+ * useful for refreshing display names from a directory at render time.
+ * Both `id` and `trigger` are required; missing either drops the chip.
+ */
+function renderMention(n: TiptapNode, opts: RenderRichTextOptions): string {
+  const attrs   = (n.attrs ?? {}) as Record<string, unknown>
+  const id      = String(attrs['id']      ?? '').trim()
+  const trigger = String(attrs['trigger'] ?? '').trim()
+  if (id === '' || trigger === '') return ''
+  const cached   = String(attrs['label'] ?? '').trim()
+  const resolved = opts.resolveMention?.(trigger, id)
+  const label    = resolved !== undefined ? resolved : (cached !== '' ? cached : id)
+  return (
+    `<span class="mention" data-trigger="${escapeAttr(trigger)}" data-id="${escapeAttr(id)}">` +
+    escapeHtml(`${trigger}${label}`) +
+    `</span>`
+  )
 }
 
 // ─── Custom blocks ───────────────────────────────────────────────────

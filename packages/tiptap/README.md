@@ -26,7 +26,7 @@ renderRichTextToHtml({ type: 'doc', content: [...] })
 ```
 
 ```ts
-import { RichTextField, Block } from '@pilotiq/tiptap'
+import { RichTextField, Block, MentionProvider } from '@pilotiq/tiptap'
 
 RichTextField.make('body')
   .label('Body')
@@ -42,6 +42,12 @@ RichTextField.make('body')
   .resizableImages()
   .fileAttachmentsAcceptedFileTypes(['image/*'])
   .fileAttachmentsMaxSize(2_000_000)
+  .mergeTags(['firstName', 'company'])
+  .mentions([
+    MentionProvider.make('@').items([
+      { id: 'sleman', label: 'Sleman' },
+    ]),
+  ])
   .blocks([
     Block.make('callout').label('Callout').icon('💡').schema([
       TextField.make('title'),
@@ -50,6 +56,6 @@ RichTextField.make('body')
   ])
 ```
 
-`attachFiles` reuses the panel's `UploadAdapter` (`Pilotiq.uploads({ adapter })`); the button is stripped server-side when no adapter is wired. The `table` button inserts a 3×3 table with a header row; while the cursor is inside a table, a floating toolbar with column / row / merge / split / header-toggle / delete buttons sits above it.
+`attachFiles` reuses the panel's `UploadAdapter` (`Pilotiq.uploads({ adapter })`); the button is stripped server-side when no adapter is wired. The `table` button inserts a 3×3 table with a header row; while the cursor is inside a table, a floating toolbar with column / row / merge / split / header-toggle / delete buttons sits above it. `mergeTags` adds a "Merge tags" group to the slash menu — each id becomes a `{{ id }}` placeholder substituted at read time via `renderRichTextToHtml(content, { mergeTags })`. Each `MentionProvider` registers its trigger character (`@`, `#`, …) and a static item list; typing the trigger opens a popover, picking an item inserts a chip carrying `id` + cached label.
 
 Full reference: [docs/packages/tiptap.md](../../docs/packages/tiptap.md).

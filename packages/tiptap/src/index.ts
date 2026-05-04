@@ -11,6 +11,11 @@ export {
   type ToolbarGroups,
 } from './RichTextField.js'
 export { Block, type BlockMeta } from './Block.js'
+export {
+  MentionProvider,
+  type MentionItem,
+  type MentionProviderMeta,
+} from './MentionProvider.js'
 export { registerTiptap } from './register.js'
 export { TiptapEditor } from './react/TiptapEditor.js'
 export {

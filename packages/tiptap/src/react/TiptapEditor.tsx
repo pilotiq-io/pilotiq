@@ -21,7 +21,14 @@ import {
   type SlashState,
 } from '../extensions/SlashCommandExtension.js'
 import { DragHandleExtension } from '../extensions/DragHandleExtension.js'
+import { MergeTagExtension } from '../extensions/MergeTagExtension.js'
+import {
+  MentionExtension,
+  type MentionState,
+} from '../extensions/MentionExtension.js'
+import type { MentionProviderMeta } from '../MentionProvider.js'
 import { SlashMenu, type SlashKeyHandlerRef } from './SlashMenu.js'
+import { MentionMenu, type MentionKeyHandlerRef } from './MentionMenu.js'
 import { FloatingToolbar } from './FloatingToolbar.js'
 import { TableFloatingToolbar } from './TableFloatingToolbar.js'
 import { Toolbar, useEditorTick } from './Toolbar.js'
@@ -83,6 +90,8 @@ function ClientEditor(props: FieldRendererProps) {
   const maxAttachmentSize = (el['fileAttachmentsMaxSize']            as number   | undefined)
   const attachmentDir     = (el['fileAttachmentsDirectory']          as string   | undefined)
   const attachmentVis     = (el['fileAttachmentsVisibility']         as ('public' | 'private') | undefined)
+  const mergeTags         = (el['mergeTags']        as string[]              | undefined) ?? []
+  const mentionProviders  = (el['mentions']         as MentionProviderMeta[] | undefined) ?? []
 
   const initialContent = parseInitialContent(defaultValue)
   const [serialized, setSerialized] = useState(() => serializeForHidden(initialContent, storage))
@@ -100,6 +109,18 @@ function ClientEditor(props: FieldRendererProps) {
   const handleStateChange = useCallback((s: SlashState | null) => {
     if (s === null) setDismissed(false)
     setRawState(s)
+  }, [])
+
+  // Mention popover state — symmetrical to slash, with its own dismiss latch
+  // so Escape closes the mention popup without affecting slash.
+  const [rawMentionState,  setRawMentionState]  = useState<MentionState | null>(null)
+  const [mentionDismissed, setMentionDismissed] = useState(false)
+  const mentionState  = mentionDismissed ? null : rawMentionState
+  const mentionKeyRef = useRef<((event: KeyboardEvent) => boolean) | null>(null)
+
+  const handleMentionStateChange = useCallback((s: MentionState | null) => {
+    if (s === null) setMentionDismissed(false)
+    setRawMentionState(s)
   }, [])
 
   const editor = useEditor({
@@ -152,8 +173,18 @@ function ClientEditor(props: FieldRendererProps) {
       BlockNodeExtension.configure({ blocks }),
       ...(slashEnabled ? [SlashCommandExtension.configure({
         blocks,
+        mergeTags,
         onStateChange: handleStateChange,
       })] : []),
+      // MergeTagExtension provides the `mergeTag` node type even when no tags
+      // are configured — the slash menu is the gate for *inserting* them, but
+      // the schema needs to know about the node either way (otherwise loading
+      // an existing doc that contains one throws a parse error).
+      MergeTagExtension,
+      ...(mentionProviders.length > 0 ? [MentionExtension.configure({
+        providers:     mentionProviders,
+        onStateChange: handleMentionStateChange,
+      })] : [MentionExtension]),
       DragHandleExtension,
     ],
     content: initialContent ?? '',
@@ -205,6 +236,31 @@ function ClientEditor(props: FieldRendererProps) {
     return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [open])
 
+  // Mirror keyboard handling for the mention popover. Capture-phase listener
+  // anchored to `document` for the same reason the slash menu uses it —
+  // Base UI's focus manager can briefly steal focus to its popup.
+  const mentionOpen = mentionState !== null
+  useEffect(() => {
+    if (!mentionOpen) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMentionDismissed(true)
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Enter') {
+        const handled = mentionKeyRef.current?.(e) ?? false
+        if (handled) {
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [mentionOpen])
+
   useEffect(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
   }, [])
@@ -236,7 +292,61 @@ function ClientEditor(props: FieldRendererProps) {
       {editor && floatingEnabled && <FloatingToolbar editor={editor} />}
       {editor && <TableFloatingToolbar editor={editor} />}
       <SlashPopover state={slashState} keyHandlerRef={slashKeyRef} />
+      <MentionPopover state={mentionState} keyHandlerRef={mentionKeyRef} />
     </div>
+  )
+}
+
+/**
+ * Cursor-anchored popover for the mention menu. Same Floating-UI / virtual-
+ * element pattern as the slash popover — a `clientRect` lambda from the
+ * Suggestion plugin powers a `getBoundingClientRect`-only anchor object.
+ */
+function MentionPopover({
+  state,
+  keyHandlerRef,
+}: {
+  state:         MentionState | null
+  keyHandlerRef: MentionKeyHandlerRef
+}) {
+  const open = state !== null
+
+  const anchor = useMemo(() => {
+    if (!state) return null
+    return {
+      getBoundingClientRect: () => state.clientRect() ?? new DOMRect(0, 0, 0, 0),
+    }
+  }, [state])
+
+  return (
+    <Popover.Root open={open} onOpenChange={() => {}}>
+      <Popover.Portal>
+        <Popover.Positioner
+          anchor={anchor}
+          positionMethod="fixed"
+          side="bottom"
+          align="start"
+          sideOffset={6}
+          className="isolate z-50"
+        >
+          <Popover.Popup
+            initialFocus={false}
+            finalFocus={false}
+            tabIndex={-1}
+            className="origin-(--transform-origin) rounded-md border bg-popover text-popover-foreground shadow-md outline-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
+          >
+            {state && (
+              <MentionMenu
+                trigger={state.trigger}
+                items={state.items}
+                command={state.command}
+                keyHandlerRef={keyHandlerRef}
+              />
+            )}
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   )
 }
 

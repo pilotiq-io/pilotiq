@@ -1,5 +1,6 @@
 import { Field, type FieldMeta, type FieldType, type RenderContext } from '@pilotiq/pilotiq'
 import { Block, type BlockMeta } from './Block.js'
+import { MentionProvider, type MentionProviderMeta } from './MentionProvider.js'
 
 /**
  * Identifier for a single toolbar action. The renderer maps each id to a
@@ -114,6 +115,16 @@ export interface RichTextFieldMeta extends FieldMeta {
   fileAttachmentsVisibility?: RichTextAttachmentVisibility
   /** URL of the panel's `_uploads` route. Stamped via `RenderContext`. */
   uploadUrl?: string
+  /**
+   * Identifier list for `{{ tag }}` placeholders surfaced in the slash menu.
+   * Empty array = no merge tags.
+   */
+  mergeTags: string[]
+  /**
+   * Mention providers — one entry per trigger character (`@`, `#`, …) with
+   * its static item list. Empty array = no mentions wired.
+   */
+  mentions: MentionProviderMeta[]
 }
 
 /**
@@ -156,6 +167,8 @@ export class RichTextField extends Field {
   private _fileAttachmentsMaxSize?:           number
   private _fileAttachmentsDirectory?:         string
   private _fileAttachmentsVisibility?:        RichTextAttachmentVisibility
+  private _mergeTags:                         string[] = []
+  private _mentions:                          MentionProvider[] = []
 
   private constructor(name: string) {
     super(name, 'richtext' as FieldType)
@@ -311,7 +324,52 @@ export class RichTextField extends Field {
     return this
   }
 
+  /**
+   * Surface a `{{ tag }}` placeholder for each id in the slash menu under
+   * the "Merge tags" group. The placeholder stores as a `mergeTag` atom
+   * node and renders read-side via
+   * `renderRichTextToHtml(content, { mergeTags: { name: 'Sleman', … } })` —
+   * the substitution map replaces each id with the resolved value
+   * (HTML-escaped).
+   *
+   * @example
+   * ```ts
+   * RichTextField.make('body').mergeTags(['firstName', 'company'])
+   * ```
+   */
+  mergeTags(tags: string[]): this {
+    this._mergeTags = tags
+    return this
+  }
+
+  /**
+   * Wire one or more mention providers. Each provider owns a trigger
+   * character (`@` / `#` / …) and a static item list. Typing the trigger
+   * opens a popover anchored to the cursor; picking an item inserts a
+   * `mention` atom node carrying `id`, `label`, and `trigger`.
+   *
+   * Read-side rendering uses the cached label by default; pass
+   * `renderRichTextToHtml(content, { resolveMention: (trigger, id) =>
+   * latestLabel })` to override at display time.
+   *
+   * @example
+   * ```ts
+   * RichTextField.make('body').mentions([
+   *   MentionProvider.make('@').items([
+   *     { id: 'sleman', label: 'Sleman' },
+   *     { id: 'alex',   label: 'Alex'   },
+   *   ]),
+   * ])
+   * ```
+   */
+  mentions(providers: MentionProvider[]): this {
+    this._mentions = providers
+    return this
+  }
+
   getBlocks():       readonly Block[] { return this._blocks }
+  getMergeTags():    readonly string[] { return this._mergeTags }
+  getMentionProviders(): readonly MentionProvider[] { return this._mentions }
   isSlashEnabled():  boolean { return this._slashCommand }
   getStorage():      RichTextStorage { return this._storage }
   isResizableImages(): boolean { return this._resizableImages }
@@ -388,6 +446,8 @@ export class RichTextField extends Field {
       ...(this._fileAttachmentsVisibility !== undefined
             ? { fileAttachmentsVisibility: this._fileAttachmentsVisibility } : {}),
       ...(ctx?.uploadUrl && ctx?.hasUploadAdapter ? { uploadUrl: ctx.uploadUrl } : {}),
+      mergeTags:        [...this._mergeTags],
+      mentions:         this._mentions.map((p) => p.toMeta()),
     }
   }
 }

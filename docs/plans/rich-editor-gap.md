@@ -1,6 +1,6 @@
 # RichTextField gap audit + plan
 
-> **Status (2026-05-04 cont'd¹¹):** Phases **A / B / C / D / E / F** landed.
+> **Status (2026-05-04 cont'd¹²):** Phases **A / B / C / D / E / F / G** landed — gap closed.
 >
 > - A/B/C — top-level toolbar with 26 button ids, `toolbarButtons /
 >   enableToolbarButtons / disableToolbarButtons` API, Underline / Subscript /
@@ -45,7 +45,19 @@
 >   a resolved `colwidth: number[]` entry. **65 tests** in `@pilotiq/tiptap`
 >   (was 54).
 >
-> Phase **G** remains — see below.
+> - G — `RichTextField.mergeTags(['firstName', …])` surfaces a "Merge tags"
+>   group in the slash menu; picking an item inserts a `mergeTag` inline atom
+>   node carrying `{ id }`. The editor renders it as a small chip
+>   (`{{ firstName }}`); read-side, `renderRichTextToHtml(content,
+>   { mergeTags })` substitutes the value (HTML-escaped) — unmatched ids
+>   fall back to a styled `<span class="merge-tag" data-id="...">{{ id }}</span>`.
+>   `RichTextField.mentions([MentionProvider.make('@').items([…])])` wires
+>   one Suggestion plugin per provider; each trigger char opens a
+>   cursor-anchored `MentionMenu` popover. Picking an item inserts a
+>   `mention` inline atom node carrying `{ id, label, trigger }`. Read-side,
+>   `renderRichTextToHtml(content, { resolveMention })` lets display
+>   surfaces refresh stale labels; without an override the cached label
+>   wins. **75 tests** in `@pilotiq/tiptap` (was 65). Plan complete.
 
 Aligns `@pilotiq/tiptap` with the reference admin's RichEditor surface.
 Current package ships StarterKit + Placeholder + slash menu + drag handle +
@@ -226,12 +238,26 @@ buttons. Brings the new mark extensions needed by those buttons.
   noise-free.
 - **65 tests** in `@pilotiq/tiptap` (was 54).
 
-### Phase G — merge tags + mentions
+### Phase G — merge tags + mentions  ✅ **DONE 2026-05-04**
 
-- `mergeTags(['name','company'])` — slash menu surface + `{{ }}` rendering at
-  read time.
-- `mentions([MentionProvider.make('@').items({…})])` — Suggestion popover at
-  trigger char; static + async items; server-side label resolution.
+- `mergeTags(string[])` — slash-menu group ("Merge tags") surfaces one item
+  per id; selecting one inserts a new `mergeTag` inline atom node
+  (`{ type: 'mergeTag', attrs: { id: 'firstName' } }`) which renders in the
+  editor as a styled `{{ id }}` chip. Read-side,
+  `renderRichTextToHtml(content, { mergeTags: { firstName: 'Sleman' } })`
+  substitutes from the map (HTML-escaped). Ids missing from the map fall
+  back to `<span class="merge-tag" data-id="...">{{ id }}</span>` so
+  server-rendered previews stay informative.
+- `mentions(MentionProvider[])` — `MentionProvider.make(triggerChar).items([
+  { id, label, group? }, … ])` declares one Suggestion plugin per provider.
+  Mixing trigger characters in the same editor is supported (`@user`,
+  `#room`). Picking an item inserts a `mention` inline atom node
+  (`{ type: 'mention', attrs: { id, label, trigger } }`). The editor renders
+  it as a styled `${trigger}${label}` chip. Read-side,
+  `renderRichTextToHtml(content, { resolveMention: (trigger, id) => latestLabel })`
+  refreshes stale labels at display time; without an override the cached
+  label (stamped at insert) wins. Async / API-backed providers are out of
+  scope for v1 — items are declared statically at form-build time.
 
 ---
 

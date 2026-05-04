@@ -9,6 +9,7 @@ import {
   DEFAULT_HIGHLIGHT_COLORS,
 } from './RichTextField.js'
 import { Block } from './Block.js'
+import { MentionProvider } from './MentionProvider.js'
 
 describe('RichTextField.toMeta', () => {
   it('emits fieldType=richtext with empty defaults', () => {
@@ -221,6 +222,62 @@ describe('RichTextField file attachments', () => {
     assert.equal(meta.fileAttachmentsMaxSize, 2_000_000)
     assert.equal(meta.fileAttachmentsDirectory, 'articles')
     assert.equal(meta.fileAttachmentsVisibility, 'private')
+  })
+})
+
+describe('RichTextField merge tags + mentions', () => {
+  it('mergeTags + mentions default to empty arrays', () => {
+    const meta = RichTextField.make('body').toMeta()
+    assert.deepEqual(meta.mergeTags, [])
+    assert.deepEqual(meta.mentions,  [])
+  })
+
+  it('mergeTags([...]) round-trips through meta', () => {
+    const meta = RichTextField.make('body')
+      .mergeTags(['firstName', 'company'])
+      .toMeta()
+    assert.deepEqual(meta.mergeTags, ['firstName', 'company'])
+  })
+
+  it('mentions([...]) serializes each provider via toMeta()', () => {
+    const meta = RichTextField.make('body')
+      .mentions([
+        MentionProvider.make('@').items([
+          { id: 'sleman', label: 'Sleman' },
+          { id: 'alex',   label: 'Alex', group: 'Team' },
+        ]),
+        MentionProvider.make('#').items([
+          { id: 'general', label: 'general' },
+        ]),
+      ])
+      .toMeta()
+    assert.equal(meta.mentions.length, 2)
+    assert.equal(meta.mentions[0]!.trigger, '@')
+    assert.equal(meta.mentions[0]!.items.length, 2)
+    assert.equal(meta.mentions[0]!.items[0]!.id, 'sleman')
+    assert.equal(meta.mentions[0]!.items[1]!.group, 'Team')
+    assert.equal(meta.mentions[1]!.trigger, '#')
+  })
+})
+
+describe('MentionProvider', () => {
+  it('rejects non-single-character triggers', () => {
+    assert.throws(() => MentionProvider.make(''),  /single character/)
+    assert.throws(() => MentionProvider.make('@@'), /single character/)
+  })
+
+  it('items() replaces the static list', () => {
+    const p = MentionProvider.make('@').items([{ id: 'a', label: 'A' }])
+    assert.equal(p.getTrigger(), '@')
+    assert.equal(p.getItems().length, 1)
+    assert.equal(p.getItems()[0]!.id, 'a')
+  })
+
+  it('toMeta() copies the items array (snapshot, not reference)', () => {
+    const items = [{ id: 'a', label: 'A' }]
+    const meta = MentionProvider.make('@').items(items).toMeta()
+    items.push({ id: 'b', label: 'B' })
+    assert.equal(meta.items.length, 1)
   })
 })
 

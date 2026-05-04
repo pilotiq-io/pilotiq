@@ -70,6 +70,8 @@ Resource.make('Article').form((form) => form.schema([
 | `.fileAttachmentsMaxSize(bytes)` | unlimited | Per-file size cap. The upload route also enforces it. |
 | `.fileAttachmentsDirectory('articles')` | — | Sub-directory hint forwarded to the panel's `UploadAdapter`. |
 | `.fileAttachmentsVisibility('public' \| 'private')` | — | Adapter-defined visibility hint. |
+| `.mergeTags(['firstName', 'company'])` | `[]` | Identifiers surfaced under "Merge tags" in the slash menu — each becomes a `{{ id }}` chip in the editor. |
+| `.mentions([MentionProvider.make('@').items([…])])` | `[]` | One mention provider per trigger character (`@`, `#`, …). Each provider declares its static items. |
 
 ## Toolbar buttons
 
@@ -103,7 +105,7 @@ Default layout (matches the reference admin):
 ]
 ```
 
-Mention-related button ids land in later releases. Configs that target them today are silently dropped.
+Custom palette / palette-popover button ids beyond the ones listed above are silently dropped — the union is intentionally forward-compatible.
 
 ### `attachFiles`
 
@@ -151,9 +153,9 @@ renderRichTextToHtml({ type: 'doc', content: [...] })
 
 The renderer is a pure function — no DOM, no Tiptap runtime, no React. Safe to call from any server context. Coverage:
 
-- **Nodes:** doc / paragraph / heading (1-6) / blockquote / codeBlock / bulletList / orderedList / listItem / horizontalRule / hardBreak / image / table / tableRow / tableCell / tableHeader.
+- **Nodes:** doc / paragraph / heading (1-6) / blockquote / codeBlock / bulletList / orderedList / listItem / horizontalRule / hardBreak / image / table / tableRow / tableCell / tableHeader / mergeTag / mention.
 - **Marks:** bold / italic / strike / underline / subscript / superscript / code / link / textStyle (color) / highlight (color).
-- **Attrs:** heading.level / orderedList.start / codeBlock.language / textAlign on paragraph + heading / image.src + alt + title + width + height / tableCell.colspan + rowspan + colwidth (also on tableHeader).
+- **Attrs:** heading.level / orderedList.start / codeBlock.language / textAlign on paragraph + heading / image.src + alt + title + width + height / tableCell.colspan + rowspan + colwidth (also on tableHeader) / mergeTag.id / mention.id + label + trigger.
 - **Custom blocks:** anything not built-in renders to `<div data-type="..." data-attrs="...">` so consumers can replay or restyle by `data-type`. Override with `renderRichTextToHtml(content, { renderBlock: (node) => ... })`.
 - **Sanitization:** text content is HTML-escaped; link hrefs reject `javascript:` / `data:` / `vbscript:` (fall back to `#`); image srcs with the same schemes drop the `<img>` entirely (no broken `src="#"` re-fetch); image dimensions parse to integers and silently drop bad / non-finite / negative values; color values are allowlisted to hex / rgb / hsl / oklch / named. Surrounding markup is constructed by us, not parsed from user input — the posture matches `Markdown` / `Html` display primes (admin-trusted authors).
 
@@ -192,6 +194,62 @@ Insert a 3×3 table with a header row via the `table` toolbar button (or by addi
 - `lastColumnResizable: false` is on by default — the right-edge handle won't grow the table beyond its container.
 
 Tables are best for small tabular data inline with the article body. For records-as-rows, use a Resource — its `Table` page has filters, sorting, pagination, and editable columns.
+
+## Merge tags
+
+Surface a `{{ tag }}` placeholder for each identifier in the slash menu. Picking one inserts a `mergeTag` inline atom node (`{ type: 'mergeTag', attrs: { id: 'firstName' } }`) that renders in the editor as a small chip:
+
+```ts
+RichTextField.make('body').mergeTags(['firstName', 'company', 'unsubscribeUrl'])
+```
+
+Read-time substitution happens through `renderRichTextToHtml(content, { mergeTags })`. Pass a `Record<string, string>` and each placeholder is replaced with the value (HTML-escaped):
+
+```ts
+renderRichTextToHtml(article.body, {
+  mergeTags: {
+    firstName:      user.firstName,
+    company:        user.company,
+    unsubscribeUrl: `https://example.com/u/${user.id}/unsubscribe`,
+  },
+})
+// '<p>Hi Sleman, …</p>'
+```
+
+When no map (or no key for a given id) is supplied, the renderer emits `<span class="merge-tag" data-id="...">{{ id }}</span>` so server-rendered previews stay informative — useful for "draft" surfaces that show what the message *will* look like, not what it does for a specific recipient.
+
+## Mentions
+
+Wire one or more mention providers — each owns a single trigger character (`@`, `#`, …) and a static item list. Typing the trigger opens a popover anchored to the cursor; picking an item inserts a `mention` inline atom node carrying `id`, `label`, and `trigger`.
+
+```ts
+import { MentionProvider } from '@pilotiq/tiptap'
+
+RichTextField.make('body').mentions([
+  MentionProvider.make('@').items([
+    { id: 'sleman', label: 'Sleman' },
+    { id: 'admin',  label: 'Admin'  },
+  ]),
+  MentionProvider.make('#').items([
+    { id: 'general', label: 'general', group: 'Channels' },
+    { id: 'random',  label: 'random',  group: 'Channels' },
+  ]),
+])
+```
+
+Items can declare an optional `group` string — the popover renders matching items together under that heading.
+
+Read-time rendering uses the cached `label` by default (the editor stamps it at insert, so static snapshots stay self-contained). Pass `resolveMention` to refresh stale display names from a directory:
+
+```ts
+renderRichTextToHtml(article.body, {
+  resolveMention: (trigger, id) => directory.get(`${trigger}${id}`)?.displayName,
+})
+```
+
+The renderer always emits a styled `<span class="mention" data-trigger="@" data-id="sleman">@Sleman</span>` — the wrapping span carries the structural attributes so consumers can re-style or rewrite each chip downstream.
+
+> Async / API-backed providers (typing `@a` and fetching matches over the wire) are not part of v1. Items are declared statically at form-build time and inlined into the field meta.
 
 ## Custom blocks
 

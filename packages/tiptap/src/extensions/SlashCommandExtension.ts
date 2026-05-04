@@ -33,6 +33,8 @@ export interface SlashState {
 export interface SlashCommandOptions {
   /** Custom blocks contributed by RichTextField.blocks([...]). */
   blocks: BlockMeta[]
+  /** Merge-tag identifiers contributed by RichTextField.mergeTags([...]). */
+  mergeTags: string[]
   /**
    * Called whenever the menu should mount, update, or unmount. TiptapEditor
    * holds the React state and passes a setter here.
@@ -56,13 +58,15 @@ export const SlashCommandExtension = Extension.create<SlashCommandOptions>({
   addOptions() {
     return {
       blocks:        [],
+      mergeTags:     [],
       onStateChange: () => {},
     }
   },
 
   addProseMirrorPlugins() {
-    const blocks = this.options.blocks
-    const emit   = this.options.onStateChange
+    const blocks    = this.options.blocks
+    const mergeTags = this.options.mergeTags
+    const emit      = this.options.onStateChange
 
     return [
       Suggestion({
@@ -70,7 +74,7 @@ export const SlashCommandExtension = Extension.create<SlashCommandOptions>({
         char: '/',
         startOfLine: false,
         allowSpaces: false,
-        items: ({ query }: { query: string }) => buildItems(blocks, query),
+        items: ({ query }: { query: string }) => buildItems(blocks, mergeTags, query),
         command: ({ editor, range, props }: { editor: Editor; range: Range; props: SlashItem }) => {
           props.command({ editor, range })
         },
@@ -103,8 +107,8 @@ function stateFrom(props: {
 }
 
 // Built-in items mirror the standard rich-text-editor slash menu. Custom
-// blocks append.
-function buildItems(blocks: BlockMeta[], query: string): SlashItem[] {
+// blocks append, then merge-tag placeholders.
+function buildItems(blocks: BlockMeta[], mergeTags: string[], query: string): SlashItem[] {
   const builtins: SlashItem[] = [
     {
       key: 'paragraph', label: 'Text', icon: '¶', group: 'Basic',
@@ -193,7 +197,23 @@ function buildItems(blocks: BlockMeta[], query: string): SlashItem[] {
     },
   }))
 
-  const all = [...builtins, ...customs]
+  const merges: SlashItem[] = mergeTags.map((id) => ({
+    key:       `merge-tag:${id}`,
+    label:     `{{ ${id} }}`,
+    icon:      '{{}}',
+    group:     'Merge tags',
+    searchKey: `merge tag placeholder ${id}`,
+    command: ({ editor, range }) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({ type: 'mergeTag', attrs: { id } })
+        .run()
+    },
+  }))
+
+  const all = [...builtins, ...customs, ...merges]
   if (!query) return all
 
   const needle = query.toLowerCase()

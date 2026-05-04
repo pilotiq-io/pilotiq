@@ -6,8 +6,8 @@ import {
   DateField,
   type Form,
 } from '@pilotiq/pilotiq'
-import { RichTextField, Block } from '@pilotiq/tiptap'
-import { CodeEditorField }      from '@pilotiq/codemirror'
+import { RichTextField, Block, MentionProvider } from '@pilotiq/tiptap'
+import { CodeEditorField }                       from '@pilotiq/codemirror'
 
 export const ArticleForm = {
   configure(form: Form): Form {
@@ -28,6 +28,17 @@ export const ArticleForm = {
         .fileAttachmentsAcceptedFileTypes(['image/*'])
         .fileAttachmentsMaxSize(2_000_000)
         .fileAttachmentsDirectory('articles')
+        .mergeTags(['firstName', 'company', 'unsubscribeUrl'])
+        .mentions([
+          MentionProvider.make('@').items([
+            { id: 'sleman', label: 'Sleman' },
+            { id: 'admin',  label: 'Admin'  },
+          ]),
+          MentionProvider.make('#').items([
+            { id: 'general', label: 'general', group: 'Channels' },
+            { id: 'random',  label: 'random',  group: 'Channels' },
+          ]),
+        ])
         .blocks([
           Block.make('callout').label('Callout').icon('💡').schema([
             TextField.make('title').label('Title').placeholder('Callout title'),
