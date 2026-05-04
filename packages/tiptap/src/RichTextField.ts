@@ -1,16 +1,105 @@
 import { Field, type FieldMeta, type FieldType, type RenderContext } from '@pilotiq/pilotiq'
 import { Block, type BlockMeta } from './Block.js'
 
-export type RichTextToolbar = 'default' | 'none'
+/**
+ * Identifier for a single toolbar action. The renderer maps each id to a
+ * Tiptap command + an icon. Unknown ids are rendered as nothing — keeps the
+ * surface forward-compatible: a config that targets a button shipped in a
+ * later version stays inert today instead of crashing.
+ *
+ * Buttons that aren't yet shipped (textColor, highlight, attachFiles, table
+ * variants, …) still appear in the union — registering them in user code is
+ * a no-op today and lights up automatically when a later phase wires them.
+ */
+export type ToolbarButtonId =
+  // Inline marks
+  | 'bold' | 'italic' | 'underline' | 'strike' | 'subscript' | 'superscript' | 'code'
+  // Block / heading switches
+  | 'paragraph' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
+  // Alignment
+  | 'alignStart' | 'alignCenter' | 'alignEnd' | 'alignJustify'
+  // Block primitives
+  | 'blockquote' | 'codeBlock' | 'bulletList' | 'orderedList' | 'horizontalRule'
+  // Editing helpers
+  | 'clearFormatting' | 'link' | 'undo' | 'redo'
+  // Reserved — wired in later phases
+  | 'textColor' | 'highlight' | 'attachFiles'
+  | 'table' | 'tableAddColumnBefore' | 'tableAddColumnAfter' | 'tableDeleteColumn'
+  | 'tableAddRowBefore' | 'tableAddRowAfter' | 'tableDeleteRow'
+  | 'tableMergeCells' | 'tableSplitCell'
+  | 'tableToggleHeaderRow' | 'tableToggleHeaderCell' | 'tableDelete'
+
+export type ToolbarGroups = ToolbarButtonId[][]
+
+/** Default top-level toolbar groups — mirrors the reference admin's layout. */
+export const DEFAULT_TOOLBAR_GROUPS: ToolbarGroups = [
+  ['bold', 'italic', 'underline', 'strike', 'subscript', 'superscript', 'link'],
+  ['h2', 'h3'],
+  ['alignStart', 'alignCenter', 'alignEnd'],
+  ['blockquote', 'codeBlock', 'bulletList', 'orderedList'],
+  ['undo', 'redo'],
+]
+
+export type RichTextStorage = 'json' | 'html'
+
+/**
+ * One swatch in a text-color or highlight palette. `value` is what gets
+ * written into the editor (a CSS color); `dark` is an optional override
+ * shown when the editor's parent is in dark mode.
+ */
+export interface ColorSwatch {
+  value: string
+  label: string
+  dark?: string
+}
+
+/**
+ * Tailwind-flavored fallback palette. Used when the field doesn't override
+ * the colors via `.textColors([...])`. Mirrors the reference admin's
+ * "popular Tailwind hues" default.
+ */
+export const DEFAULT_TEXT_COLORS: ColorSwatch[] = [
+  { value: '#ef4444', label: 'Red' },
+  { value: '#f97316', label: 'Orange' },
+  { value: '#eab308', label: 'Yellow' },
+  { value: '#22c55e', label: 'Green' },
+  { value: '#06b6d4', label: 'Cyan' },
+  { value: '#3b82f6', label: 'Blue' },
+  { value: '#a855f7', label: 'Purple' },
+  { value: '#ec4899', label: 'Pink' },
+  { value: '#000000', label: 'Black', dark: '#ffffff' },
+  { value: '#6b7280', label: 'Gray' },
+]
+
+export const DEFAULT_HIGHLIGHT_COLORS: ColorSwatch[] = [
+  { value: '#fef08a', label: 'Yellow' },
+  { value: '#fed7aa', label: 'Orange' },
+  { value: '#fecaca', label: 'Red' },
+  { value: '#bbf7d0', label: 'Green' },
+  { value: '#bfdbfe', label: 'Blue' },
+  { value: '#e9d5ff', label: 'Purple' },
+  { value: '#f5d0fe', label: 'Pink' },
+  { value: '#e5e7eb', label: 'Gray' },
+]
 
 // Inherits `fieldType` from FieldMeta; we don't narrow it here because the
 // `FieldType` union admits `(string & {})` which makes the narrow `'richtext'`
 // literal incompatible during interface extension. `fieldType` is always
 // `'richtext'` at runtime.
 export interface RichTextFieldMeta extends FieldMeta {
-  blocks:       BlockMeta[]
-  slashCommand: boolean
-  toolbar:      RichTextToolbar
+  blocks:           BlockMeta[]
+  slashCommand:     boolean
+  /** Always-on top-level toolbar groups. `null` = hidden. */
+  toolbarGroups:    ToolbarGroups | null
+  /** Selection-anchored quick-format toolbar. */
+  floatingToolbar:  boolean
+  storage:          RichTextStorage
+  /** Text-color palette shown when the `textColor` button opens. */
+  textColors:       ColorSwatch[]
+  /** Whether to expose a free-form color picker below the swatches. */
+  customTextColors: boolean
+  /** Highlight palette shown when the `highlight` button opens. */
+  highlightColors:  ColorSwatch[]
 }
 
 /**
@@ -22,6 +111,12 @@ export interface RichTextFieldMeta extends FieldMeta {
  * RichTextField.make('body')
  *   .label('Article body')
  *   .placeholder('Start writing…')
+ *   .toolbarButtons([
+ *     ['bold', 'italic', 'underline', 'strike', 'link'],
+ *     ['h2', 'h3'],
+ *     ['bulletList', 'orderedList'],
+ *     ['undo', 'redo'],
+ *   ])
  *   .blocks([
  *     Block.make('callout').label('Callout').icon('💡').schema([
  *       TextField.make('title'),
@@ -31,9 +126,17 @@ export interface RichTextFieldMeta extends FieldMeta {
  * ```
  */
 export class RichTextField extends Field {
-  private _blocks:       Block[] = []
-  private _slashCommand  = true
-  private _toolbar:      RichTextToolbar = 'default'
+  private _blocks:          Block[] = []
+  private _slashCommand    = true
+  /** `undefined` = use default, `null` = hidden, array = explicit override. */
+  private _toolbarOverride: ToolbarGroups | null | undefined = undefined
+  private _enabled:         ToolbarButtonId[] = []
+  private _disabled:        ToolbarButtonId[] = []
+  private _floatingToolbar = true
+  private _storage:         RichTextStorage = 'json'
+  private _textColors:      ColorSwatch[] | null = null
+  private _customTextColors = false
+  private _highlightColors: ColorSwatch[] | null = null
 
   private constructor(name: string) {
     super(name, 'richtext' as FieldType)
@@ -56,17 +159,128 @@ export class RichTextField extends Field {
   }
 
   /**
-   * Toolbar profile. v1 has just `'default'` (selection-based bold/italic/link)
-   * and `'none'`. Profile system can grow later.
+   * Replace the top-level toolbar layout. Pass nested arrays — each inner
+   * array becomes a button group separated by a thin divider.
+   *
+   * Pass `null` (or call `toolbar(false)`) to hide the toolbar entirely.
    */
-  toolbar(profile: RichTextToolbar): this {
-    this._toolbar = profile
+  toolbarButtons(groups: ToolbarGroups | null): this {
+    this._toolbarOverride = groups
+    return this
+  }
+
+  /** Add buttons on top of whichever layout is active. */
+  enableToolbarButtons(buttons: ToolbarButtonId[]): this {
+    this._enabled = [...this._enabled, ...buttons]
+    return this
+  }
+
+  /** Remove buttons from whichever layout is active. */
+  disableToolbarButtons(buttons: ToolbarButtonId[]): this {
+    this._disabled = [...this._disabled, ...buttons]
+    return this
+  }
+
+  /**
+   * Toolbar visibility shortcut.
+   *
+   *   - `true` (default) — show the top-level toolbar with the default groups
+   *     unless `toolbarButtons([...])` was called.
+   *   - `false` — hide the top-level toolbar.
+   *
+   * Selection-anchored floating toolbar is controlled separately via
+   * {@link floatingToolbar}.
+   */
+  toolbar(enabled: boolean): this {
+    if (!enabled) this._toolbarOverride = null
+    else if (this._toolbarOverride === null) this._toolbarOverride = undefined
+    return this
+  }
+
+  /** Toggle the selection-anchored quick-format toolbar. Defaults to `true`. */
+  floatingToolbar(enabled: boolean): this {
+    this._floatingToolbar = enabled
+    return this
+  }
+
+  /**
+   * Storage format for the field's value.
+   *
+   *   - `'json'` (default) — Tiptap JSON document, parsed via `JSON.parse`.
+   *   - `'html'` — serialized HTML string, useful for display surfaces that
+   *     can't render JSON (e.g. existing blog/CMS columns).
+   */
+  storage(format: RichTextStorage): this {
+    this._storage = format
+    return this
+  }
+
+  /**
+   * Replace the text-color palette opened by the `textColor` toolbar button.
+   * Pass `null` to fall back to the default Tailwind-derived palette.
+   *
+   * @example
+   * ```ts
+   * RichTextField.make('body').textColors([
+   *   { value: '#1e293b', label: 'Slate' },
+   *   { value: '#dc2626', label: 'Red',   dark: '#fca5a5' },
+   * ])
+   * ```
+   */
+  textColors(palette: ColorSwatch[] | null): this {
+    this._textColors = palette
+    return this
+  }
+
+  /** Show a free-form color picker below the swatches. */
+  customTextColors(enabled = true): this {
+    this._customTextColors = enabled
+    return this
+  }
+
+  /** Replace the highlight palette opened by the `highlight` toolbar button. */
+  highlightColors(palette: ColorSwatch[] | null): this {
+    this._highlightColors = palette
     return this
   }
 
   getBlocks():       readonly Block[] { return this._blocks }
   isSlashEnabled():  boolean { return this._slashCommand }
-  getToolbar():      RichTextToolbar { return this._toolbar }
+  getStorage():      RichTextStorage { return this._storage }
+
+  /**
+   * Resolve the actual button layout — base layout (override or default) with
+   * `enableToolbarButtons` appended to the last group and
+   * `disableToolbarButtons` filtered out across every group. Empty groups
+   * are dropped. Returns `null` when the toolbar is hidden.
+   */
+  getToolbarGroups(): ToolbarGroups | null {
+    const override = this._toolbarOverride
+    const base: ToolbarGroups | null =
+      override === null      ? null :
+      override === undefined ? DEFAULT_TOOLBAR_GROUPS :
+      override
+
+    if (base === null) return null
+
+    const enabled  = this._enabled
+    const disabled = new Set(this._disabled)
+
+    const groups = base.map((group) => group.filter((id) => !disabled.has(id)))
+    if (enabled.length > 0) {
+      const extras = enabled.filter((id) => !disabled.has(id))
+      if (groups.length === 0) groups.push(extras)
+      else {
+        const last = groups[groups.length - 1]!
+        groups[groups.length - 1] = [...last, ...extras]
+      }
+    }
+    return groups.filter((g) => g.length > 0)
+  }
+
+  isFloatingToolbarEnabled(): boolean {
+    return this._floatingToolbar
+  }
 
   override toMeta(ctx?: RenderContext): RichTextFieldMeta {
     // RichTextField has no async resolvers, so the parent always returns
@@ -74,9 +288,14 @@ export class RichTextField extends Field {
     const base = super.toMeta(ctx) as FieldMeta
     return {
       ...base,
-      blocks:       this._blocks.map((b) => b.toMeta()),
-      slashCommand: this._slashCommand,
-      toolbar:      this._toolbar,
+      blocks:           this._blocks.map((b) => b.toMeta()),
+      slashCommand:     this._slashCommand,
+      toolbarGroups:    this.getToolbarGroups(),
+      floatingToolbar:  this._floatingToolbar,
+      storage:          this._storage,
+      textColors:       this._textColors       ?? DEFAULT_TEXT_COLORS,
+      customTextColors: this._customTextColors,
+      highlightColors:  this._highlightColors  ?? DEFAULT_HIGHLIGHT_COLORS,
     }
   }
 }

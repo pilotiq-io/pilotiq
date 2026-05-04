@@ -2,9 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
+import Underline from '@tiptap/extension-underline'
+import Subscript from '@tiptap/extension-subscript'
+import Superscript from '@tiptap/extension-superscript'
+import TextAlign from '@tiptap/extension-text-align'
+import { TextStyle } from '@tiptap/extension-text-style'
+import { Color } from '@tiptap/extension-color'
+import Highlight from '@tiptap/extension-highlight'
 import { Popover } from '@base-ui/react/popover'
 import type { FieldRendererProps } from '@pilotiq/pilotiq/react'
 import type { BlockMeta } from '../Block.js'
+import type { ToolbarGroups, RichTextStorage, ColorSwatch } from '../RichTextField.js'
 import { BlockNodeExtension } from '../extensions/BlockNodeExtension.js'
 import {
   SlashCommandExtension,
@@ -13,21 +21,24 @@ import {
 import { DragHandleExtension } from '../extensions/DragHandleExtension.js'
 import { SlashMenu, type SlashKeyHandlerRef } from './SlashMenu.js'
 import { FloatingToolbar } from './FloatingToolbar.js'
+import { Toolbar, useEditorTick } from './Toolbar.js'
 
 /**
  * The pilotiq field renderer for `RichTextField`. Registered globally via
  * `registerTiptap()`; pilotiq's `SchemaRenderer` looks it up by `fieldType:
  * 'richtext'` and mounts it inline inside the form.
  *
- * Wiring:
- *   - StarterKit + Link + Placeholder (basic text + history + link mark)
+ * Wiring (Phase A):
+ *   - StarterKit + Underline + Subscript + Superscript + TextAlign
+ *   - Placeholder
  *   - BlockNodeExtension (custom-block storage + React NodeView)
  *   - SlashCommandExtension (`/` opens menu, items derived from `blocks`)
  *   - DragHandleExtension (hover gutter handle)
  *
  * Form integration: a hidden `<input type="hidden" name={field}>` carries
- * the editor's JSON output (stringified). The form lifecycle's
- * `coerceFormValues('richtext')` JSON.parses it before save.
+ * the editor's serialized output. Storage format depends on the field's
+ * `.storage('json' | 'html')` setting — JSON parses on the server,
+ * HTML is passed through.
  */
 export function TiptapEditor(props: FieldRendererProps) {
   // useEditor + ProseMirror touch the DOM during construction — render a
@@ -37,10 +48,11 @@ export function TiptapEditor(props: FieldRendererProps) {
   useEffect(() => { setMounted(true) }, [])
 
   if (!mounted) {
-    const initialContent = parseInitialContent(props.defaultValue)
+    const storage = (props.el['storage'] as RichTextStorage | undefined) ?? 'json'
+    const initialValue = serializeForHidden(props.defaultValue, storage)
     return (
       <div className="flex flex-col gap-1">
-        <input type="hidden" name={props.name} value={JSON.stringify(initialContent ?? null)} />
+        <input type="hidden" name={props.name} value={initialValue} />
         <div className="prose prose-sm max-w-none min-h-[180px] rounded-md border border-input bg-transparent px-10 py-3 text-sm text-muted-foreground">
           {props.placeholder ?? 'Start writing…'}
         </div>
@@ -54,12 +66,17 @@ export function TiptapEditor(props: FieldRendererProps) {
 function ClientEditor(props: FieldRendererProps) {
   const { el, name, defaultValue, placeholder, disabled } = props
 
-  const blocks         = (el['blocks']       as BlockMeta[] | undefined) ?? []
-  const slashEnabled   = (el['slashCommand'] as boolean    | undefined) ?? true
-  const toolbarProfile = (el['toolbar']      as string     | undefined) ?? 'default'
+  const blocks            = (el['blocks']           as BlockMeta[]     | undefined) ?? []
+  const slashEnabled      = (el['slashCommand']     as boolean         | undefined) ?? true
+  const toolbarGroups     = (el['toolbarGroups']    as ToolbarGroups   | null | undefined) ?? null
+  const floatingEnabled   = (el['floatingToolbar']  as boolean         | undefined) ?? true
+  const storage           = (el['storage']          as RichTextStorage | undefined) ?? 'json'
+  const textColors        = (el['textColors']       as ColorSwatch[]   | undefined) ?? []
+  const customTextColors  = (el['customTextColors'] as boolean         | undefined) ?? false
+  const highlightColors   = (el['highlightColors']  as ColorSwatch[]   | undefined) ?? []
 
   const initialContent = parseInitialContent(defaultValue)
-  const [serialized, setSerialized] = useState(() => JSON.stringify(initialContent ?? null))
+  const [serialized, setSerialized] = useState(() => serializeForHidden(initialContent, storage))
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Slash-menu state. `rawState` is what the extension last emitted.
@@ -85,6 +102,19 @@ function ClientEditor(props: FieldRendererProps) {
       StarterKit.configure({
         link: { openOnClick: false, autolink: true },
       }),
+      Underline,
+      Subscript,
+      Superscript,
+      // textAlign needs to be told which node types it can target. Headings
+      // + paragraphs are the standard set. Blockquote alignment is handled
+      // by aligning the inner paragraph.
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      // TextStyle is a no-op mark on its own, but Color decorates it with the
+      // `color` attribute so `.setColor(...)` works. Loading them as a pair
+      // keeps the extension surface complete.
+      TextStyle,
+      Color,
+      Highlight.configure({ multicolor: true }),
       Placeholder.configure({ placeholder: placeholder ?? 'Start writing…' }),
       // BlockNodeExtension carries the block registry on its options —
       // NodeViews mount in a separate React tree and can't see context.
@@ -100,12 +130,19 @@ function ClientEditor(props: FieldRendererProps) {
       // Debounce serialization — every keystroke fires onUpdate.
       if (debounceRef.current) clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
-        setSerialized(JSON.stringify(ed.getJSON()))
+        const value = storage === 'html' ? ed.getHTML() : JSON.stringify(ed.getJSON())
+        setSerialized(value)
       }, 250)
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none min-h-[180px] rounded-md border border-input bg-transparent px-10 py-3 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        // Drop the top border-radius when the toolbar is on so the toolbar
+        // and editor body read as a single chrome.
+        class: `prose prose-sm dark:prose-invert max-w-none min-h-[180px] border border-input bg-transparent px-10 py-3 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
+          toolbarGroups && toolbarGroups.length > 0
+            ? 'rounded-b-md border-t-0'
+            : 'rounded-md'
+        }`,
       },
     },
   })
@@ -141,11 +178,25 @@ function ClientEditor(props: FieldRendererProps) {
     if (debounceRef.current) clearTimeout(debounceRef.current)
   }, [])
 
+  // Re-render the toolbar when the selection / marks change so active-state
+  // booleans stay fresh.
+  const tick = useEditorTick(editor)
+
   return (
     <div className="relative flex flex-col gap-1">
       <input type="hidden" name={name} value={serialized} />
+      {editor && toolbarGroups && toolbarGroups.length > 0 && (
+        <Toolbar
+          editor={editor}
+          groups={toolbarGroups}
+          tick={tick}
+          textColors={textColors}
+          customTextColors={customTextColors}
+          highlightColors={highlightColors}
+        />
+      )}
       <EditorContent editor={editor} />
-      {editor && toolbarProfile !== 'none' && <FloatingToolbar editor={editor} />}
+      {editor && floatingEnabled && <FloatingToolbar editor={editor} />}
       <SlashPopover state={slashState} keyHandlerRef={slashKeyRef} />
     </div>
   )
@@ -214,11 +265,34 @@ function SlashPopover({
   )
 }
 
-function parseInitialContent(raw: unknown): object | undefined {
+function parseInitialContent(raw: unknown): object | string | undefined {
   if (raw === undefined || raw === null || raw === '') return undefined
   if (typeof raw === 'object') return raw as object
   if (typeof raw === 'string') {
-    try { return JSON.parse(raw) } catch { return undefined }
+    const trimmed = raw.trim()
+    // Looks like JSON — try to parse. Otherwise treat as HTML and pass to
+    // Tiptap (it accepts an HTML string as `content`).
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try { return JSON.parse(raw) } catch { return raw }
+    }
+    return raw
   }
   return undefined
+}
+
+function serializeForHidden(content: unknown, storage: RichTextStorage): string {
+  if (content === undefined || content === null) {
+    return storage === 'html' ? '' : JSON.stringify(null)
+  }
+  if (storage === 'html') {
+    return typeof content === 'string' ? content : ''
+  }
+  if (typeof content === 'object') return JSON.stringify(content)
+  if (typeof content === 'string') {
+    // Best-effort: a stored JSON string from the server should round-trip.
+    const trimmed = content.trim()
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) return content
+    return JSON.stringify(null)
+  }
+  return JSON.stringify(null)
 }

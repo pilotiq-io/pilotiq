@@ -102,7 +102,8 @@ function stateFrom(props: {
   }
 }
 
-// Built-in items mirror Lexical's default slash menu. Custom blocks append.
+// Built-in items mirror the standard rich-text-editor slash menu. Custom
+// blocks append.
 function buildItems(blocks: BlockMeta[], query: string): SlashItem[] {
   const builtins: SlashItem[] = [
     {
@@ -110,21 +111,15 @@ function buildItems(blocks: BlockMeta[], query: string): SlashItem[] {
       searchKey: 'text paragraph p',
       command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode('paragraph').run(),
     },
-    {
-      key: 'heading-1', label: 'Heading 1', icon: 'H1', group: 'Headings',
-      searchKey: 'heading 1 h1 title',
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode('heading', { level: 1 }).run(),
-    },
-    {
-      key: 'heading-2', label: 'Heading 2', icon: 'H2', group: 'Headings',
-      searchKey: 'heading 2 h2 subtitle',
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode('heading', { level: 2 }).run(),
-    },
-    {
-      key: 'heading-3', label: 'Heading 3', icon: 'H3', group: 'Headings',
-      searchKey: 'heading 3 h3',
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode('heading', { level: 3 }).run(),
-    },
+    ...[1, 2, 3, 4, 5, 6].map((level) => ({
+      key:       `heading-${level}`,
+      label:     `Heading ${level}`,
+      icon:      `H${level}`,
+      group:     'Headings',
+      searchKey: `heading ${level} h${level}${level === 1 ? ' title' : level === 2 ? ' subtitle' : ''}`,
+      command: ({ editor, range }: { editor: Editor; range: Range }) =>
+        editor.chain().focus().deleteRange(range).setNode('heading', { level }).run(),
+    })),
     {
       key: 'bullet-list', label: 'Bullet list', icon: '•', group: 'Lists',
       searchKey: 'bullet list ul unordered',
@@ -149,6 +144,27 @@ function buildItems(blocks: BlockMeta[], query: string): SlashItem[] {
       key: 'hr', label: 'Divider', icon: '—', group: 'Basic',
       searchKey: 'divider hr horizontal rule',
       command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
+    },
+    {
+      key: 'align-left', label: 'Align left', icon: '⇤', group: 'Align',
+      searchKey: 'align left start',
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setTextAlign('left').run(),
+    },
+    {
+      key: 'align-center', label: 'Align center', icon: '⇔', group: 'Align',
+      searchKey: 'align center middle',
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setTextAlign('center').run(),
+    },
+    {
+      key: 'align-right', label: 'Align right', icon: '⇥', group: 'Align',
+      searchKey: 'align right end',
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setTextAlign('right').run(),
+    },
+    {
+      key: 'clear-format', label: 'Clear formatting', icon: '⌫', group: 'Basic',
+      searchKey: 'clear formatting reset',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).clearNodes().unsetAllMarks().run(),
     },
   ]
 
