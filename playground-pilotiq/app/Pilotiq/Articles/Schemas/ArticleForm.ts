@@ -23,7 +23,7 @@ export const ArticleForm = {
       ToggleField.make('featured').label('Featured'),
       DateField.make('publishedAt').label('Published at'),
       RichTextField.make('body').label('Body').placeholder('Start writing…')
-        .enableToolbarButtons(['attachFiles'])
+        .enableToolbarButtons(['attachFiles', 'table'])
         .resizableImages()
         .fileAttachmentsAcceptedFileTypes(['image/*'])
         .fileAttachmentsMaxSize(2_000_000)

@@ -203,6 +203,101 @@ const Icons = {
       <path d="m21 15-5-5L5 21" />
     </svg>
   ),
+  table: (
+    <svg {...ICON_PROPS}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="3" y1="9"  x2="21" y2="9" />
+      <line x1="3" y1="15" x2="21" y2="15" />
+      <line x1="9"  y1="3" x2="9"  y2="21" />
+      <line x1="15" y1="3" x2="15" y2="21" />
+    </svg>
+  ),
+  tableAddColumnBefore: (
+    <svg {...ICON_PROPS}>
+      <rect x="11" y="3" width="10" height="18" rx="1" />
+      <line x1="6" y1="12" x2="2" y2="12" />
+      <line x1="4" y1="10" x2="4" y2="14" />
+    </svg>
+  ),
+  tableAddColumnAfter: (
+    <svg {...ICON_PROPS}>
+      <rect x="3" y="3" width="10" height="18" rx="1" />
+      <line x1="18" y1="12" x2="22" y2="12" />
+      <line x1="20" y1="10" x2="20" y2="14" />
+    </svg>
+  ),
+  tableDeleteColumn: (
+    <svg {...ICON_PROPS}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="9"  y1="3" x2="9"  y2="21" />
+      <line x1="15" y1="3" x2="15" y2="21" />
+      <line x1="10" y1="9"  x2="14" y2="13" />
+      <line x1="14" y1="9"  x2="10" y2="13" />
+    </svg>
+  ),
+  tableAddRowBefore: (
+    <svg {...ICON_PROPS}>
+      <rect x="3" y="11" width="18" height="10" rx="1" />
+      <line x1="12" y1="6" x2="12" y2="2" />
+      <line x1="10" y1="4" x2="14" y2="4" />
+    </svg>
+  ),
+  tableAddRowAfter: (
+    <svg {...ICON_PROPS}>
+      <rect x="3" y="3" width="18" height="10" rx="1" />
+      <line x1="12" y1="18" x2="12" y2="22" />
+      <line x1="10" y1="20" x2="14" y2="20" />
+    </svg>
+  ),
+  tableDeleteRow: (
+    <svg {...ICON_PROPS}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="3" y1="9"  x2="21" y2="9" />
+      <line x1="3" y1="15" x2="21" y2="15" />
+      <line x1="9"  y1="11" x2="13" y2="13" />
+      <line x1="13" y1="11" x2="9"  y2="13" />
+    </svg>
+  ),
+  tableMergeCells: (
+    <svg {...ICON_PROPS}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="3" y1="12" x2="9"  y2="12" />
+      <line x1="15" y1="12" x2="21" y2="12" />
+      <line x1="12" y1="3" x2="12" y2="9" />
+      <line x1="12" y1="15" x2="12" y2="21" />
+    </svg>
+  ),
+  tableSplitCell: (
+    <svg {...ICON_PROPS}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="3"  y1="12" x2="21" y2="12" />
+      <line x1="12" y1="3"  x2="12" y2="21" />
+    </svg>
+  ),
+  tableToggleHeaderRow: (
+    <svg {...ICON_PROPS}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <rect x="3" y="3" width="18" height="6"  fill="currentColor" opacity="0.25" stroke="none" />
+      <line x1="3" y1="9"  x2="21" y2="9" />
+      <line x1="3" y1="15" x2="21" y2="15" />
+    </svg>
+  ),
+  tableToggleHeaderCell: (
+    <svg {...ICON_PROPS}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <rect x="3" y="3" width="9"  height="6"  fill="currentColor" opacity="0.25" stroke="none" />
+      <line x1="3" y1="9"  x2="21" y2="9" />
+      <line x1="3" y1="15" x2="21" y2="15" />
+      <line x1="12" y1="3" x2="12" y2="21" />
+    </svg>
+  ),
+  tableDelete: (
+    <svg {...ICON_PROPS}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="6"  y1="6"  x2="18" y2="18" />
+      <line x1="18" y1="6"  x2="6"  y2="18" />
+    </svg>
+  ),
   undo: (
     <svg {...ICON_PROPS}>
       <path d="M3 7v6h6" />
@@ -329,19 +424,73 @@ export const TOOLBAR_BUTTONS: Record<ToolbarButtonId, ToolbarButtonDef> = {
     // by React state (file picker + alt text + upload progress).
     command: () => {},
   },
-  // ---- Reserved placeholders — wired in later phases. ------------------------
-  table:                   { id: 'table',                   label: 'Table',        available: false, icon: null, command: () => {} },
-  tableAddColumnBefore:    { id: 'tableAddColumnBefore',    label: 'Add column before', available: false, icon: null, command: () => {} },
-  tableAddColumnAfter:     { id: 'tableAddColumnAfter',     label: 'Add column after',  available: false, icon: null, command: () => {} },
-  tableDeleteColumn:       { id: 'tableDeleteColumn',       label: 'Delete column', available: false, icon: null, command: () => {} },
-  tableAddRowBefore:       { id: 'tableAddRowBefore',       label: 'Add row before',  available: false, icon: null, command: () => {} },
-  tableAddRowAfter:        { id: 'tableAddRowAfter',        label: 'Add row after',   available: false, icon: null, command: () => {} },
-  tableDeleteRow:          { id: 'tableDeleteRow',          label: 'Delete row',      available: false, icon: null, command: () => {} },
-  tableMergeCells:         { id: 'tableMergeCells',         label: 'Merge cells',     available: false, icon: null, command: () => {} },
-  tableSplitCell:          { id: 'tableSplitCell',          label: 'Split cell',      available: false, icon: null, command: () => {} },
-  tableToggleHeaderRow:    { id: 'tableToggleHeaderRow',    label: 'Toggle header row',  available: false, icon: null, command: () => {} },
-  tableToggleHeaderCell:   { id: 'tableToggleHeaderCell',   label: 'Toggle header cell', available: false, icon: null, command: () => {} },
-  tableDelete:             { id: 'tableDelete',             label: 'Delete table',    available: false, icon: null, command: () => {} },
+  // ---- Tables (Phase F). ----------------------------------------------------
+  // The "insert table" button is always enabled (creates a table at the cursor);
+  // every cell-action button is gated on `inTable` so the user can't run a
+  // no-op command outside a table. Tiptap returns `false` from these commands
+  // when the cursor is elsewhere — `can()` is the canonical check.
+  table: {
+    id: 'table', label: 'Insert table', available: true, icon: Icons.table,
+    command: (ed) => {
+      ed.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+    },
+  },
+  tableAddColumnBefore: {
+    id: 'tableAddColumnBefore', label: 'Add column before', available: true, icon: Icons.tableAddColumnBefore,
+    isDisabled: (ed) => !ed.can().addColumnBefore(),
+    command:    (ed) => { ed.chain().focus().addColumnBefore().run() },
+  },
+  tableAddColumnAfter: {
+    id: 'tableAddColumnAfter', label: 'Add column after', available: true, icon: Icons.tableAddColumnAfter,
+    isDisabled: (ed) => !ed.can().addColumnAfter(),
+    command:    (ed) => { ed.chain().focus().addColumnAfter().run() },
+  },
+  tableDeleteColumn: {
+    id: 'tableDeleteColumn', label: 'Delete column', available: true, icon: Icons.tableDeleteColumn,
+    isDisabled: (ed) => !ed.can().deleteColumn(),
+    command:    (ed) => { ed.chain().focus().deleteColumn().run() },
+  },
+  tableAddRowBefore: {
+    id: 'tableAddRowBefore', label: 'Add row before', available: true, icon: Icons.tableAddRowBefore,
+    isDisabled: (ed) => !ed.can().addRowBefore(),
+    command:    (ed) => { ed.chain().focus().addRowBefore().run() },
+  },
+  tableAddRowAfter: {
+    id: 'tableAddRowAfter', label: 'Add row after', available: true, icon: Icons.tableAddRowAfter,
+    isDisabled: (ed) => !ed.can().addRowAfter(),
+    command:    (ed) => { ed.chain().focus().addRowAfter().run() },
+  },
+  tableDeleteRow: {
+    id: 'tableDeleteRow', label: 'Delete row', available: true, icon: Icons.tableDeleteRow,
+    isDisabled: (ed) => !ed.can().deleteRow(),
+    command:    (ed) => { ed.chain().focus().deleteRow().run() },
+  },
+  tableMergeCells: {
+    id: 'tableMergeCells', label: 'Merge cells', available: true, icon: Icons.tableMergeCells,
+    isDisabled: (ed) => !ed.can().mergeCells(),
+    command:    (ed) => { ed.chain().focus().mergeCells().run() },
+  },
+  tableSplitCell: {
+    id: 'tableSplitCell', label: 'Split cell', available: true, icon: Icons.tableSplitCell,
+    isDisabled: (ed) => !ed.can().splitCell(),
+    command:    (ed) => { ed.chain().focus().splitCell().run() },
+  },
+  tableToggleHeaderRow: {
+    id: 'tableToggleHeaderRow', label: 'Toggle header row', available: true, icon: Icons.tableToggleHeaderRow,
+    isDisabled: (ed) => !ed.can().toggleHeaderRow(),
+    command:    (ed) => { ed.chain().focus().toggleHeaderRow().run() },
+  },
+  tableToggleHeaderCell: {
+    id: 'tableToggleHeaderCell', label: 'Toggle header cell', available: true, icon: Icons.tableToggleHeaderCell,
+    isDisabled: (ed) => !ed.can().toggleHeaderCell(),
+    isActive:   (ed) => ed.isActive('tableHeader'),
+    command:    (ed) => { ed.chain().focus().toggleHeaderCell().run() },
+  },
+  tableDelete: {
+    id: 'tableDelete', label: 'Delete table', available: true, icon: Icons.tableDelete,
+    isDisabled: (ed) => !ed.can().deleteTable(),
+    command:    (ed) => { ed.chain().focus().deleteTable().run() },
+  },
 }
 
 function makeHeading(level: 1 | 2 | 3 | 4 | 5 | 6, icon: ReactNode): ToolbarButtonDef {

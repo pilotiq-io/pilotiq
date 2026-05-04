@@ -14,7 +14,7 @@ pnpm add @pilotiq/tiptap \
   @tiptap/extension-link @tiptap/extension-placeholder \
   @tiptap/extension-underline @tiptap/extension-subscript @tiptap/extension-superscript \
   @tiptap/extension-text-align @tiptap/extension-text-style @tiptap/extension-color \
-  @tiptap/extension-highlight @tiptap/extension-image
+  @tiptap/extension-highlight @tiptap/extension-image @tiptap/extension-table
 ```
 
 ## Setup
@@ -82,6 +82,12 @@ Alignment      alignStart alignCenter alignEnd alignJustify
 Block prims    blockquote codeBlock bulletList orderedList horizontalRule
 Style          textColor highlight clearFormatting
 Files          attachFiles
+Tables         table
+               tableAddColumnBefore tableAddColumnAfter tableDeleteColumn
+               tableAddRowBefore    tableAddRowAfter    tableDeleteRow
+               tableMergeCells      tableSplitCell
+               tableToggleHeaderRow tableToggleHeaderCell
+               tableDelete
 Editing        link undo redo
 ```
 
@@ -97,7 +103,7 @@ Default layout (matches the reference admin):
 ]
 ```
 
-Reserved button ids land in later releases — `table*`. Configs that target them today are silently dropped.
+Mention-related button ids land in later releases. Configs that target them today are silently dropped.
 
 ### `attachFiles`
 
@@ -145,9 +151,9 @@ renderRichTextToHtml({ type: 'doc', content: [...] })
 
 The renderer is a pure function — no DOM, no Tiptap runtime, no React. Safe to call from any server context. Coverage:
 
-- **Nodes:** doc / paragraph / heading (1-6) / blockquote / codeBlock / bulletList / orderedList / listItem / horizontalRule / hardBreak / image.
+- **Nodes:** doc / paragraph / heading (1-6) / blockquote / codeBlock / bulletList / orderedList / listItem / horizontalRule / hardBreak / image / table / tableRow / tableCell / tableHeader.
 - **Marks:** bold / italic / strike / underline / subscript / superscript / code / link / textStyle (color) / highlight (color).
-- **Attrs:** heading.level / orderedList.start / codeBlock.language / textAlign on paragraph + heading / image.src + alt + title + width + height.
+- **Attrs:** heading.level / orderedList.start / codeBlock.language / textAlign on paragraph + heading / image.src + alt + title + width + height / tableCell.colspan + rowspan + colwidth (also on tableHeader).
 - **Custom blocks:** anything not built-in renders to `<div data-type="..." data-attrs="...">` so consumers can replay or restyle by `data-type`. Override with `renderRichTextToHtml(content, { renderBlock: (node) => ... })`.
 - **Sanitization:** text content is HTML-escaped; link hrefs reject `javascript:` / `data:` / `vbscript:` (fall back to `#`); image srcs with the same schemes drop the `<img>` entirely (no broken `src="#"` re-fetch); image dimensions parse to integers and silently drop bad / non-finite / negative values; color values are allowlisted to hex / rgb / hsl / oklch / named. Surrounding markup is constructed by us, not parsed from user input — the posture matches `Markdown` / `Html` display primes (admin-trusted authors).
 
@@ -173,6 +179,19 @@ The auto-detect is conservative: it only matches the canonical `{ type: 'doc', c
 ## Floating toolbars
 
 The selection-anchored toolbar shows when text is selected and offers the inline marks (B / I / Strike / Code / Link). Toggle via `.floatingToolbar(false)`. The top-level toolbar covers the rest.
+
+A separate **table toolbar** appears above the enclosing `<table>` whenever the cursor is inside one — five logical groups: column ops (add before/after, delete), row ops (add before/after, delete), merge/split, header-row + header-cell toggles, and delete-table. The buttons read `editor.can().<command>()` for their disabled state, so options that don't apply to the current cell render greyed out instead of crashing on a no-op chain. The table toolbar is independent of `.floatingToolbar(...)` (which gates the inline-mark variant) and shows whenever `@tiptap/extension-table` is wired.
+
+## Tables
+
+Insert a 3×3 table with a header row via the `table` toolbar button (or by adding it to a `toolbarButtons` group). While the cursor is inside a table:
+
+- The **table toolbar** floats above the table with cell-management buttons.
+- All `table*` ids in the toolbar union (`tableAddColumnBefore`, `tableAddRowAfter`, `tableMergeCells`, `tableToggleHeaderCell`, `tableDelete`, …) work in the top-level toolbar too.
+- Drag a column-divider to resize. Resize state is stored on the cell as `colwidth: number[]`; the read-side renderer turns it into a `<colgroup>` so `<table>` HTML matches the editor's column proportions.
+- `lastColumnResizable: false` is on by default — the right-edge handle won't grow the table beyond its container.
+
+Tables are best for small tabular data inline with the article body. For records-as-rows, use a Resource — its `Table` page has filters, sorting, pagination, and editable columns.
 
 ## Custom blocks
 

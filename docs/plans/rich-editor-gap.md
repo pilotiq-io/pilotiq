@@ -1,6 +1,6 @@
 # RichTextField gap audit + plan
 
-> **Status (2026-05-04 cont'd¹⁰):** Phases **A / B / C / D / E** landed.
+> **Status (2026-05-04 cont'd¹¹):** Phases **A / B / C / D / E / F** landed.
 >
 > - A/B/C — top-level toolbar with 26 button ids, `toolbarButtons /
 >   enableToolbarButtons / disableToolbarButtons` API, Underline / Subscript /
@@ -32,7 +32,20 @@
 >   entirely instead of emitting `src="#"`. **54 tests** in `@pilotiq/tiptap`
 >   (was 45), **1922 tests** in `@pilotiq/pilotiq`.
 >
-> Phases **F-G** remain — see below.
+> - F — `@tiptap/extension-table` (pinned **3.22.4**) wired in `TiptapEditor`
+>   with `resizable: true` + `lastColumnResizable: false`. All 12 reserved
+>   `table*` ids in `ToolbarButtonId` flipped to `available: true` with icons
+>   + commands + `isDisabled` gates that read off `editor.can().<command>()`.
+>   New `TableFloatingToolbar` mounts above the enclosing `<table>` whenever
+>   the cursor is inside one — viewport-pinned (`position: fixed`), regroups
+>   the cell-management buttons into 5 logical groups. Read-side:
+>   `renderRichTextToHtml` learns `case 'table' | 'tableRow' | 'tableCell' |
+>   'tableHeader'`. Tables wrap a `<tbody>`; cells honor `colspan` /
+>   `rowspan`; a `<colgroup>` is emitted only when at least one cell carries
+>   a resolved `colwidth: number[]` entry. **65 tests** in `@pilotiq/tiptap`
+>   (was 54).
+>
+> Phase **G** remains — see below.
 
 Aligns `@pilotiq/tiptap` with the reference admin's RichEditor surface.
 Current package ships StarterKit + Placeholder + slash menu + drag handle +
@@ -74,7 +87,7 @@ fills the remaining surface in phases.
 | Files | `resizableImages()` | ✅ Phase E |
 | Files | `fileAttachmentsDirectory/Visibility/AcceptedFileTypes/MaxSize` | ✅ Phase E |
 | Files | `preventFileAttachmentPathTampering` | **missing** (out of scope) |
-| Tables | full set (12 buttons) + table toolbar | **missing** |
+| Tables | full set (12 buttons) + table toolbar | ✅ Phase F |
 | Tables | `grid` / `gridDelete` / `details` collapsible | **missing** |
 | Custom blocks | side-panel UI in addition to slash menu | **missing** |
 | Custom blocks | block grouping by `customBlocks(['Group' => […blocks]])` | **missing** |
@@ -188,11 +201,30 @@ buttons. Brings the new mark extensions needed by those buttons.
   / negative / non-finite values. Unsafe srcs (`javascript:` etc.) drop
   the `<img>` entirely rather than emitting a broken `src="#"`.
 
-### Phase F — tables
+### Phase F — tables  ✅ **DONE 2026-05-04**
 
-- `@tiptap/extension-table` + row / cell / header.
-- All 12 table buttons.
-- Floating toolbar variant when cursor is inside a table.
+- `@tiptap/extension-table` (pinned **3.22.4**) wired in `TiptapEditor` with
+  `resizable: true` + `lastColumnResizable: false`. The four nodes ship from
+  one peer dep — `Table`, `TableRow`, `TableHeader`, `TableCell` are imported
+  individually so we can configure `Table` while leaving the others stock.
+- All 12 reserved `table*` ids in `ToolbarButtonId` flipped to `available: true`
+  in `toolbarButtons.tsx` with inline-SVG icons, commands, and `isDisabled`
+  gates that read `editor.can().<command>()`. Outside of a table the cell-
+  action buttons render disabled instead of crashing on a no-op chain.
+- New `TableFloatingToolbar` (`react/TableFloatingToolbar.tsx`) — separate
+  component from the selection-anchored `FloatingToolbar`, anchored to the
+  enclosing `<table>`'s top edge. Visible only while the cursor is inside a
+  table. Regroups the 11 cell-management buttons into five logical groups
+  (column ops, row ops, merge/split, header toggles, delete table). Mounts
+  alongside `FloatingToolbar` and is independent of the `floatingToolbar`
+  field setting (which gates the inline-mark variant).
+- Read-side: `renderRichTextToHtml` learns `case 'table' | 'tableRow' |
+  'tableCell' | 'tableHeader'`. Tables wrap a `<tbody>`; cells honor
+  `colspan` / `rowspan` (default `1` is omitted from output); a `<colgroup>`
+  is emitted only when at least one cell carries a resolved `colwidth:
+  number[]` entry — out-of-the-box tables with no column-resize history stay
+  noise-free.
+- **65 tests** in `@pilotiq/tiptap` (was 54).
 
 ### Phase G — merge tags + mentions
 

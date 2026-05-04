@@ -145,6 +145,119 @@ describe('renderRichTextToHtml — image', () => {
   })
 })
 
+describe('renderRichTextToHtml — tables', () => {
+  it('renders a 2x2 table with a header row + tbody wrapper', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'table',
+        content: [
+          {
+            type: 'tableRow',
+            content: [
+              { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A' }] }] },
+              { type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'B' }] }] },
+            ],
+          },
+          {
+            type: 'tableRow',
+            content: [
+              { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: '1' }] }] },
+              { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: '2' }] }] },
+            ],
+          },
+        ],
+      }],
+    }
+    const html = renderRichTextToHtml(doc)
+    assert.equal(
+      html,
+      '<table><tbody>' +
+        '<tr><th><p>A</p></th><th><p>B</p></th></tr>' +
+        '<tr><td><p>1</p></td><td><p>2</p></td></tr>' +
+      '</tbody></table>',
+    )
+  })
+
+  it('emits a <colgroup> when the first row carries colwidths', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'table',
+        content: [{
+          type: 'tableRow',
+          content: [
+            { type: 'tableCell', attrs: { colwidth: [120] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }] },
+            { type: 'tableCell', attrs: { colwidth: [200] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b' }] }] },
+          ],
+        }],
+      }],
+    }
+    const html = renderRichTextToHtml(doc)
+    assert.match(html, /<colgroup><col style="width: 120px"><col style="width: 200px"><\/colgroup>/)
+  })
+
+  it('honors colspan + rowspan on cells', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'table',
+        content: [{
+          type: 'tableRow',
+          content: [
+            { type: 'tableCell', attrs: { colspan: 2, rowspan: 3 }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'm' }] }] },
+            { type: 'tableCell', attrs: { colspan: 1, rowspan: 1 }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'n' }] }] },
+          ],
+        }],
+      }],
+    }
+    const html = renderRichTextToHtml(doc)
+    assert.match(html, /<td colspan="2" rowspan="3"><p>m<\/p><\/td>/)
+    // Default span values (1) get omitted.
+    assert.match(html, /<td><p>n<\/p><\/td>/)
+  })
+
+  it('drops bad colspan / rowspan / colwidth values', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'table',
+        content: [{
+          type: 'tableRow',
+          content: [
+            { type: 'tableCell', attrs: { colspan: -1, rowspan: 'x', colwidth: ['bad', null] }, content: [] },
+          ],
+        }],
+      }],
+    }
+    const html = renderRichTextToHtml(doc)
+    // colspan / rowspan / colwidth all unparseable → no colgroup, no span
+    // attributes, plain `<td></td>`.
+    assert.equal(
+      html,
+      '<table><tbody><tr><td></td></tr></tbody></table>',
+    )
+  })
+
+  it('mixes resolved + unresolved widths into one colgroup', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'table',
+        content: [{
+          type: 'tableRow',
+          content: [
+            { type: 'tableCell', attrs: { colwidth: [120] },  content: [] },
+            { type: 'tableCell',                                content: [] },
+          ],
+        }],
+      }],
+    }
+    const html = renderRichTextToHtml(doc)
+    assert.match(html, /<colgroup><col style="width: 120px"><col><\/colgroup>/)
+  })
+})
+
 describe('renderRichTextToHtml — marks', () => {
   it('inline marks wrap from innermost to outermost (marks[0] is innermost)', () => {
     const doc: TiptapNode = {

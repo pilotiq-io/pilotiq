@@ -10,6 +10,7 @@ import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
 import Highlight from '@tiptap/extension-highlight'
 import Image from '@tiptap/extension-image'
+import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
 import { Popover } from '@base-ui/react/popover'
 import type { FieldRendererProps } from '@pilotiq/pilotiq/react'
 import type { BlockMeta } from '../Block.js'
@@ -22,6 +23,7 @@ import {
 import { DragHandleExtension } from '../extensions/DragHandleExtension.js'
 import { SlashMenu, type SlashKeyHandlerRef } from './SlashMenu.js'
 import { FloatingToolbar } from './FloatingToolbar.js'
+import { TableFloatingToolbar } from './TableFloatingToolbar.js'
 import { Toolbar, useEditorTick } from './Toolbar.js'
 
 /**
@@ -135,6 +137,15 @@ function ClientEditor(props: FieldRendererProps) {
           ? { enabled: true, alwaysPreserveAspectRatio: true }
           : false,
       }),
+      // Tables — the four nodes ship from one peer (`@tiptap/extension-table`).
+      // `resizable: true` mounts the built-in column-resize NodeView so users
+      // can drag column dividers; `lastColumnResizable: false` keeps the
+      // right-edge handle from creating an unbounded growth target when the
+      // table sits inside a constrained-width form.
+      Table.configure({ resizable: true, lastColumnResizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
       Placeholder.configure({ placeholder: placeholder ?? 'Start writing…' }),
       // BlockNodeExtension carries the block registry on its options —
       // NodeViews mount in a separate React tree and can't see context.
@@ -223,6 +234,7 @@ function ClientEditor(props: FieldRendererProps) {
       )}
       <EditorContent editor={editor} />
       {editor && floatingEnabled && <FloatingToolbar editor={editor} />}
+      {editor && <TableFloatingToolbar editor={editor} />}
       <SlashPopover state={slashState} keyHandlerRef={slashKeyRef} />
     </div>
   )

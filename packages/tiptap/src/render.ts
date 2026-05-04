@@ -11,15 +11,16 @@
  * but the surrounding markup is constructed by us, not parsed from user
  * input, so there's no place an unexpected tag can sneak in.
  *
- * Coverage matches what `RichTextField` ships in Phases A-E:
+ * Coverage matches what `RichTextField` ships in Phases A-F:
  *   nodes — doc / paragraph / heading / blockquote / codeBlock / bulletList
  *           / orderedList / listItem / horizontalRule / hardBreak / text
- *           / image
+ *           / image / table / tableRow / tableCell / tableHeader
  *   marks — bold / italic / strike / underline / subscript / superscript
  *           / code / link / textStyle (color) / highlight (color)
  *   attrs — heading.level / orderedList.start / codeBlock.language
  *           / paragraph.textAlign + heading.textAlign
  *           / image.src + alt + title + width + height
+ *           / tableCell.colspan + rowspan + colwidth (also tableHeader)
  *   custom blocks — render to `<div data-type="..." data-attrs="...">` so
  *           consumers can replay or style by data-type.
  */
@@ -145,6 +146,10 @@ function renderNode(node: unknown, opts: RenderRichTextOptions): string {
     case 'horizontalRule': return '<hr>'
     case 'hardBreak':      return '<br>'
     case 'image':          return renderImage(n)
+    case 'table':          return renderTable(n, opts)
+    case 'tableRow':       return wrap('tr', n, opts)
+    case 'tableCell':      return renderCell('td', n, opts)
+    case 'tableHeader':    return renderCell('th', n, opts)
     case 'text':           return renderText(n)
     default:
       if (opts.renderBlock) return opts.renderBlock(n)
@@ -245,6 +250,64 @@ function pixelAttr(name: string, raw: unknown): string {
   const n = typeof raw === 'number' ? raw : Number(raw)
   if (!Number.isFinite(n) || n <= 0) return ''
   return ` ${name}="${Math.trunc(n)}"`
+}
+
+// ─── Tables ──────────────────────────────────────────────────────────
+
+/**
+ * Render a Tiptap `table` node. The Tiptap table extension stores per-column
+ * widths on individual cells via `colwidth: number[]` — we collect the widths
+ * from the first row and emit a `<colgroup>` so read-side renders match the
+ * editor's column proportions.
+ */
+function renderTable(n: TiptapNode, opts: RenderRichTextOptions): string {
+  const colgroup = buildColgroup(n)
+  return `<table>${colgroup}<tbody>${renderChildren(n, opts)}</tbody></table>`
+}
+
+function buildColgroup(table: TiptapNode): string {
+  const firstRow = table.content?.find((c) => c.type === 'tableRow')
+  if (!firstRow || !firstRow.content) return ''
+  const widths: (number | null)[] = []
+  let hasAnyWidth = false
+  for (const cell of firstRow.content) {
+    if (cell.type !== 'tableCell' && cell.type !== 'tableHeader') continue
+    const colspan = clampPositiveInt(cell.attrs?.['colspan']) ?? 1
+    const colwidth = cell.attrs?.['colwidth']
+    const widthArr = Array.isArray(colwidth)
+      ? colwidth.map((w) => clampPositiveInt(w))
+      : []
+    for (let i = 0; i < colspan; i++) {
+      const w = widthArr[i] ?? null
+      if (w !== null) hasAnyWidth = true
+      widths.push(w)
+    }
+  }
+  // Only emit a colgroup when at least one width is known. Tiptap's table
+  // extension only sets colwidth after the user drags a column-resize handle —
+  // out-of-the-box tables have no widths, so an always-emitted colgroup would
+  // be noise.
+  if (!hasAnyWidth) return ''
+  const cols = widths.map((w) => w !== null ? `<col style="width: ${w}px">` : '<col>')
+  return `<colgroup>${cols.join('')}</colgroup>`
+}
+
+function renderCell(tag: 'td' | 'th', n: TiptapNode, opts: RenderRichTextOptions): string {
+  const attrs = (n.attrs ?? {}) as Record<string, unknown>
+  const colspan = clampPositiveInt(attrs['colspan'])
+  const rowspan = clampPositiveInt(attrs['rowspan'])
+  const span = [
+    colspan && colspan !== 1 ? ` colspan="${colspan}"` : '',
+    rowspan && rowspan !== 1 ? ` rowspan="${rowspan}"` : '',
+  ].join('')
+  return `<${tag}${span}>${renderChildren(n, opts)}</${tag}>`
+}
+
+function clampPositiveInt(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return Math.trunc(n)
 }
 
 // ─── Custom blocks ───────────────────────────────────────────────────

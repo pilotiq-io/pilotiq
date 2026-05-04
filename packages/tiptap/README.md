@@ -8,7 +8,7 @@ pnpm add @pilotiq/tiptap \
   @tiptap/extension-link @tiptap/extension-placeholder \
   @tiptap/extension-underline @tiptap/extension-subscript @tiptap/extension-superscript \
   @tiptap/extension-text-align @tiptap/extension-text-style @tiptap/extension-color \
-  @tiptap/extension-highlight @tiptap/extension-image
+  @tiptap/extension-highlight @tiptap/extension-image @tiptap/extension-table
 ```
 
 ```ts
@@ -36,7 +36,7 @@ RichTextField.make('body')
     ['h2', 'h3'],
     ['textColor', 'highlight'],
     ['bulletList', 'orderedList'],
-    ['attachFiles'],
+    ['attachFiles', 'table'],
     ['undo', 'redo'],
   ])
   .resizableImages()
@@ -50,6 +50,6 @@ RichTextField.make('body')
   ])
 ```
 
-`attachFiles` reuses the panel's `UploadAdapter` (`Pilotiq.uploads({ adapter })`); the button is stripped server-side when no adapter is wired.
+`attachFiles` reuses the panel's `UploadAdapter` (`Pilotiq.uploads({ adapter })`); the button is stripped server-side when no adapter is wired. The `table` button inserts a 3×3 table with a header row; while the cursor is inside a table, a floating toolbar with column / row / merge / split / header-toggle / delete buttons sits above it.
 
 Full reference: [docs/packages/tiptap.md](../../docs/packages/tiptap.md).
