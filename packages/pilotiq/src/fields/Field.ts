@@ -63,6 +63,14 @@ export interface FieldMeta extends ElementMeta {
    * onBlur sub-options.
    */
   live?:        true | LiveOptions
+  /**
+   * Client-side reactivity hook. String body of a function bound with
+   * `$state` (the changed field's new value), `$get(name)`, and
+   * `$set(name, value)`. Compiled and run on the client on every change
+   * — independent of `live()`. Treated as admin-trusted code; CSP
+   * `unsafe-eval` is required. See `docs/plans/after-state-updated-js.md`.
+   */
+  afterStateUpdatedJs?: string
   /** Plan #6 cross-field plumbing. */
   prefix?:      FieldDecoration
   suffix?:      FieldDecoration
@@ -216,6 +224,9 @@ export abstract class Field extends Element {
   // is applied but before the schema is re-resolved.
   protected _live?: true | LiveOptions
   protected _afterStateUpdated?: AfterStateUpdatedHandler
+  // Client-side counterpart to `_afterStateUpdated`. Raw JS string;
+  // compiled + executed on the client on every change. Empty string clears.
+  protected _afterStateUpdatedJs?: string
 
   // Plan #6 cross-field plumbing. All optional, all serialized only when set.
   protected _prefix?: FieldDecoration
@@ -291,10 +302,33 @@ export abstract class Field extends Element {
     return this
   }
 
+  /**
+   * Client-side reactivity hook. The string is compiled into a function
+   * `(($state, $get, $set) => { …body… })` on the client and run
+   * synchronously on every change — independent of `live()` (no server
+   * roundtrip required). Use `$set('other', value)` to populate
+   * dependent fields instantly.
+   *
+   * Treated as admin-trusted code: written at schema-definition time,
+   * never derived from request input. CSP `unsafe-eval` is required;
+   * apps with strict CSPs see the eval fail at runtime (caught + logged,
+   * field stays usable).
+   *
+   * Pass `''` (empty string) to clear. Composes with the server hook
+   * `afterStateUpdated()`: JS runs first synchronously; the server's
+   * response on the next `live()` roundtrip overlays it.
+   */
+  afterStateUpdatedJs(body: string): this {
+    if (body === '') { delete this._afterStateUpdatedJs; return this }
+    this._afterStateUpdatedJs = body
+    return this
+  }
+
   /** Whether this field is configured to trigger live re-resolves. */
   isLive(): boolean { return this._live !== undefined }
   getLiveOptions(): true | LiveOptions | undefined { return this._live }
   getAfterStateUpdated(): AfterStateUpdatedHandler | undefined { return this._afterStateUpdated }
+  getAfterStateUpdatedJs(): string | undefined { return this._afterStateUpdatedJs }
 
   // ─── Cross-field plumbing (Plan #6) ───────────────────
 
@@ -596,6 +630,7 @@ export abstract class Field extends Element {
       ...(this._placeholder ? { placeholder: this._placeholder } : {}),
       ...(rules.length > 0 ? { rules } : {}),
       ...(this._live !== undefined ? { live: this._live } : {}),
+      ...(this._afterStateUpdatedJs !== undefined ? { afterStateUpdatedJs: this._afterStateUpdatedJs } : {}),
       ...(this._prefix !== undefined ? { prefix: this._prefix } : {}),
       ...(this._suffix !== undefined ? { suffix: this._suffix } : {}),
       ...(this._helperText !== undefined ? { helperText: this._helperText } : {}),

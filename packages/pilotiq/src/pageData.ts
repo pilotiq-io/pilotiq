@@ -422,7 +422,17 @@ function formHasLiveField(form: Form): boolean {
   const visit = (els: ReadonlyArray<Element>): void => {
     for (const el of els) {
       if (found) return
-      if (el instanceof Field && el.isLive()) { found = true; return }
+      // Either a server-side `live()` (drives a roundtrip) OR a
+      // client-side `afterStateUpdatedJs(body)` (JS-only) is enough to
+      // mount the controlled-form path: the FormStateProvider holds the
+      // values map either path needs, and the client gates the actual
+      // network POST on `live` separately. Cost of the over-stamp for
+      // JS-only forms is one unused endpoint URL per form — endpoint
+      // never gets hit because the client only POSTs on `live`.
+      if (el instanceof Field && (el.isLive() || el.getAfterStateUpdatedJs() !== undefined)) {
+        found = true
+        return
+      }
       const children = el.getChildren()
       if (children) visit(children)
     }

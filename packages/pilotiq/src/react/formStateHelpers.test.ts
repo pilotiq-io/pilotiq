@@ -5,6 +5,7 @@ import {
   collectFieldDefaults,
   findFieldMeta,
   parseFormDataToNested,
+  readNestedValue,
   writeNestedValue,
 } from './formStateHelpers.js'
 import type { ElementMeta } from '../schema/Element.js'
@@ -264,5 +265,31 @@ describe('writeNestedValue', () => {
     const items = (root['items'] as unknown[])
     assert.equal(items.length, 3)
     assert.deepEqual(items[2], { product: 'C' })
+  })
+})
+
+describe('readNestedValue', () => {
+  it('reads a flat key', () => {
+    assert.equal(readNestedValue({ title: 'Hi' }, 'title'), 'Hi')
+  })
+
+  it('reads a dotted path into an array of objects', () => {
+    const root = { items: [{ product: 'A' }, { product: 'B' }] }
+    assert.equal(readNestedValue(root, 'items.0.product'), 'A')
+    assert.equal(readNestedValue(root, 'items.1.product'), 'B')
+  })
+
+  it('returns undefined when an intermediate segment is missing', () => {
+    assert.equal(readNestedValue({}, 'a.b.c'), undefined)
+  })
+
+  it('returns undefined when an array index is non-integer', () => {
+    const root = { items: [{ x: 1 }] }
+    assert.equal(readNestedValue(root, 'items.foo.x'), undefined)
+  })
+
+  it('returns undefined when an intermediate value is not navigable', () => {
+    const root = { name: 'literal' }
+    assert.equal(readNestedValue(root as Record<string, unknown>, 'name.length'), undefined)
   })
 })

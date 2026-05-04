@@ -445,6 +445,17 @@ describe('tagFormStateUrls (Plan #5)', () => {
     assert.equal(live.getStateUrl(),  '/x/live')
     assert.equal(inert.getStateUrl(), undefined)
   })
+
+  it('also stamps stateUrl on forms with afterStateUpdatedJs but no live()', () => {
+    // JS-only forms still need FormStateProvider mounted (so $get/$set
+    // can read + write the values map). The endpoint URL is unused for
+    // these — the client never POSTs unless a field is `live()`.
+    const form = Form.make().formId('js').schema([
+      TextField.make('title').afterStateUpdatedJs(`$set('slug', $state)`),
+    ])
+    tagFormStateUrls([form], (id) => `/admin/x/_form/${id}/state`)
+    assert.equal(form.getStateUrl(), '/admin/x/_form/js/state')
+  })
 })
 
 describe('tagTableReorderUrls (reorderable rows)', () => {

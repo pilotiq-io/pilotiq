@@ -138,7 +138,7 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 | `getCreatedNotificationTitle` / `getSavedNotificationTitle` / disable notifications | 1 | Needs Plan #3 (notifications) first, then #4. |
 | ✅ "Create & create another" submit DONE | 2 | Shipped 2026-05-03 — secondary outlined submit on `CreatePage` posts `_continueCreate=1`; create POST routes redirect back to `/create` and JSON includes `force:true` so SPA-nav remounts a fresh form on the same URL. |
 | `getHeaderActions` on EditPage (delete/view/replicate buttons in header) | 1 | Already supported via override; document. |
-| Wizard creation (`HasWizard` trait equivalent) | 2 | Tied to Plan #8 (Wizard layout). |
+| ✅ Wizard creation (`HasWizard` trait equivalent) DONE | 2 | Shipped 2026-05-04 cont'd — `CreatePage.getSteps(R) → Step[]` opt-in + `getWizard(wizard, R)` chrome customizer. Non-empty steps replace the form's children with a Wizard wrapping them; lifecycle hooks (`save / validate / mutate*`) survive the swap. Per-step validation reuses Plan #8's `tagFormWizardUrls / formWizardData` pipeline unchanged. EditPage wizard mode deferred (rare use case). |
 | ✅ `infolist()` distinction on ViewPage (entries vs disabled form) DONE | 2 | Shipped 2026-05-04 — Plan #16 `infolist-entries.md`. New `src/entries/` directory: `Entry` base + `TextEntry / BadgeEntry / IconEntry / ImageEntry` leaves. Record-bound state via `ctx.record[name]` resolution at meta-build; `formatStateUsing` server-side; built-in formatter chain mirrors `Column`. Plays inside the existing layout primitives — entries inherit `Element.visible / columnSpan`. Demo: `PostResource.detail()` in playground-pilotiq. |
 
 ### 6. Schemas / Layouts (`schema/`)
@@ -170,7 +170,7 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 |---|---|---|
 | ✅ `Image::make` (display) DONE | 1 | Shipped 2026-05-03 cont'd — `Image.make(url).alt().width().height().size().rounded()|.circle()`. |
 | ✅ `Icon::make` DONE | 1 | Shipped 2026-05-03 cont'd — `Icon.make(registryName).size().color().label()`; resolves through the existing user-extensible icon registry (string-only; component-typed icons go through Resource/Page statics). |
-| `UnorderedList` | 2 | |
+| ✅ `UnorderedList` DONE | 2 | Shipped 2026-05-04 cont'd — `UnorderedList.make(items?: string[]).items([…]).color().size().weight()`. Pure display sibling of `Heading / Text / Alert / Divider`; reuses `TEXT_*_CLASSES` so styling matches neighbouring `Text` nodes. |
 | ✅ `Text` formatting: `color`, `size`, `weight`, `badge` DONE | 1 | Shipped 2026-05-03 cont'd — `.color() / .size() / .weight() / .badge() / .badgeColor()`; bare `Text.make()` keeps the prior `text-sm text-muted-foreground` defaults. `font` deferred — no consumer ask. |
 | ✅ Markdown / HTML rendering DONE | 2 | Shipped 2026-05-03 cont'd — `Markdown.make(source).gfm().breaks().prose().size('sm'\|'base'\|'lg')` server-renders via `marked`; `Html.make(html).prose().size()` passes raw strings through. Both wrap in a `prose` Tailwind Typography container by default. Admin-trusted; no sanitizer in v1 (matches `MarkdownField` posture). |
 | ✅ **Infolist entries** distinct from primes (label-value pairs) DONE | 2 | Shipped 2026-05-04 — same Plan #16 row above. Decision was to keep entries as a sibling hierarchy (`src/entries/`), NOT collapse into primes: entries are record-bound (resolve `ctx.record[name]` at meta-build), primes carry static content. The two now compose freely inside the same layout primitives. |
@@ -209,7 +209,7 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 | `live(onBlur: true)` / `live(debounce: 500)` | 1 | |
 | `$get('otherField')` / `$set('otherField', val)` in callbacks | 1 | Server roundtrip vs JS expression. |
 | `afterStateUpdated(fn)` | 1 | |
-| `afterStateUpdatedJs(string)` | 2 | Client-side reactivity. |
+| ✅ `afterStateUpdatedJs(string)` DONE | 2 | Shipped 2026-05-04 cont'd — `Field.afterStateUpdatedJs(body)`. Body compiled via `new Function` with `$state / $get / $set` bound; cached by source-string identity; runs synchronously on every change (no `live()` required). Composes with the server `afterStateUpdated` — JS runs first, server response (when `live()` is also set) overlays sibling values. Repeater/Builder rows auto-handle dotted-path `$get / $set` via the same nested-value helpers used by `triggerLive`. CSP `unsafe-eval` required (admin-trusted code, never derived from request input). Plan: `docs/plans/after-state-updated-js.md`. |
 | Dependent select options (`SelectField.options(fn)` with $get) | 1 | Most-asked feature. |
 | Conditional `hidden(fn)` / `visible(fn)` re-evaluating live | 1 | We have static visibility; add reactive. |
 
@@ -220,7 +220,7 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 | `prefix()` / `suffix()` (icon or text) | 1 | |
 | `helperText()` / `belowLabel` / `aboveLabel` content slots | 1 | |
 | `placeholder()` | already have on most | Verify all fields. |
-| `inlineLabel()` (label-left layout) | 2 | |
+| ✅ `inlineLabel()` (label-left layout) DONE | 2 | Shipped 2026-05-04 cont'd — `Field.inlineLabel(v=true)` mirrors the `Entry.inlineLabel` shipped with Plan #16. `FieldShell` swaps to `flex items-baseline gap-3` with a `min-w-32` label column when set; default label-above unchanged. Bare `inlineLabel(false)` clears. |
 | `dehydrated(false)` (don't submit) | 1 | |
 | `dehydrateStateUsing(fn)` (transform on submit) | 1 | We have `mutateData` form-level; field-level finer-grained. |
 | `formatStateUsing(fn)` (display transform) | 1 | |

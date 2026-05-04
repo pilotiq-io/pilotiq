@@ -12,8 +12,10 @@ import {
   collectFieldDefaults,
   findFieldMeta,
   parseFormDataToNested,
+  readNestedValue,
   writeNestedValue,
 } from './formStateHelpers.js'
+import { runJsHandler } from './fieldJsHandler.js'
 import { useToast } from './Toaster.js'
 
 export type FieldStatus = 'idle' | 'pending'
@@ -183,12 +185,65 @@ export function FormStateProvider({
 
   const stateUrl = (formMeta as { stateUrl?: string })['stateUrl']
 
+  /**
+   * Tier-2 follow-up to Plan #5 — fire `Field.afterStateUpdatedJs(body)`
+   * if the named field declares one. Independent of `live()`: runs
+   * synchronously on every change, no debounce, no roundtrip.
+   *
+   * `$get / $set` proxy this provider's values map. Dotted-path names
+   * (Repeater / Builder rows) read + write nested. `$state` is the
+   * just-set value; `$get(thisField)` returns the same value (we
+   * overlay it onto the snapshot so the handler sees a consistent
+   * post-write view of the form). `$set` calls `setValuesState`
+   * directly so React rerenders affected controlled inputs without
+   * re-firing `live` / re-firing JS for the sibling (mirrors
+   * server-side `$set` semantics — a write is not a user change).
+   */
+  const runFieldJs = useCallback((name: string, value: unknown): void => {
+    const fieldMeta = findFieldMeta(formMetaRef.current, name)
+    const body = (fieldMeta as { afterStateUpdatedJs?: string } | undefined)?.afterStateUpdatedJs
+    if (!body) return
+
+    // Snapshot the values map with the just-changed field overlaid so
+    // `$get(name)` is consistent with `$state`. Cheap shallow clone —
+    // only allocated when a JS handler is actually present.
+    const snapshot: Record<string, unknown> = { ...valuesRef.current }
+    if (name.includes('.')) writeNestedValue(snapshot, name, value)
+    else snapshot[name] = value
+
+    const $get = (n: string): unknown => {
+      if (n.includes('.')) return readNestedValue(snapshot, n)
+      return snapshot[n]
+    }
+    const $set = (n: string, v: unknown): void => {
+      if (n.includes('.')) {
+        setValuesState((prev) => {
+          const next = { ...prev }
+          writeNestedValue(next, n, v)
+          return next
+        })
+        return
+      }
+      setValuesState((prev) => {
+        if (Object.is(prev[n], v)) return prev
+        return { ...prev, [n]: v }
+      })
+    }
+
+    runJsHandler({ body, fieldName: name, state: value, $get, $set })
+  }, [])
+
   const setValue = useCallback((name: string, value: unknown): void => {
     setValuesState((prev) => {
       if (Object.is(prev[name], value)) return prev
       return { ...prev, [name]: value }
     })
-  }, [])
+    // Fire the client-side JS hook synchronously after the state write.
+    // Dotted-name fields don't go through here (their setter is a no-op
+    // in `useFieldState`); they fire JS via `triggerLive` instead so we
+    // never double-fire for the same change.
+    runFieldJs(name, value)
+  }, [runFieldJs])
 
   const performLivePost = useCallback(async (name: string, valueOverride?: unknown): Promise<void> => {
     if (!stateUrl) return
@@ -283,6 +338,14 @@ export function FormStateProvider({
   }, [stateUrl, fetchImpl, notify, onMetaUpdate, formRef])
 
   const triggerLive = useCallback((name: string, valueOverride?: unknown): void => {
+    // Dotted-name fields (Repeater / Builder rows) bypass the controlled
+    // `setValue` path entirely — fire their JS hook here so a row-scoped
+    // afterStateUpdatedJs runs even without `live()`. Top-level fields
+    // already had JS dispatched via `setValue`; skip to avoid double-fire.
+    if (name.includes('.') && valueOverride !== undefined) {
+      runFieldJs(name, valueOverride)
+    }
+
     if (!stateUrl) return
     const fieldMeta = findFieldMeta(formMetaRef.current, name)
     const liveCfg = fieldMeta?.['live']

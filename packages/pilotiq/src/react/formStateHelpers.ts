@@ -189,3 +189,30 @@ export function writeNestedValue(
 ): void {
   writeNestedPath(root, path.split('.'), value)
 }
+
+/** Read a single value from a nested structure along a dotted path.
+ *  Returns `undefined` for missing paths or when an intermediate
+ *  segment is not a navigable container. Used by `afterStateUpdatedJs`
+ *  to expose `$get('items.0.name')` to the JS handler. */
+export function readNestedValue(
+  root: Record<string, unknown>,
+  path: string,
+): unknown {
+  const segments = path.split('.')
+  let cursor: unknown = root
+  for (const seg of segments) {
+    if (cursor === null || cursor === undefined) return undefined
+    if (Array.isArray(cursor)) {
+      const idx = Number(seg)
+      if (!Number.isInteger(idx)) return undefined
+      cursor = cursor[idx]
+      continue
+    }
+    if (typeof cursor === 'object') {
+      cursor = (cursor as Record<string, unknown>)[seg]
+      continue
+    }
+    return undefined
+  }
+  return cursor
+}

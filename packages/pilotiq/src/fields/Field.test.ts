@@ -303,6 +303,51 @@ describe('Field.afterStateUpdated (Plan #5)', () => {
   })
 })
 
+describe('Field.afterStateUpdatedJs (Tier-2 follow-up to Plan #5)', () => {
+  it('stores the raw string body', () => {
+    const body = `$set('slug', String($state).toLowerCase())`
+    const f = TextField.make('title').afterStateUpdatedJs(body)
+    assert.equal(f.getAfterStateUpdatedJs(), body)
+  })
+
+  it('default is undefined', () => {
+    assert.equal(TextField.make('x').getAfterStateUpdatedJs(), undefined)
+  })
+
+  it('toMeta emits afterStateUpdatedJs when set', () => {
+    const body = `$set('total', Number($state) * 2)`
+    const meta = NumberField.make('qty').afterStateUpdatedJs(body).toMeta()
+    assert.equal(meta.afterStateUpdatedJs, body)
+  })
+
+  it('toMeta omits the key when unset', () => {
+    const meta = TextField.make('x').toMeta()
+    assert.equal('afterStateUpdatedJs' in meta, false)
+  })
+
+  it('empty string clears the flag', () => {
+    const f = TextField.make('x').afterStateUpdatedJs(`$set('a', 1)`).afterStateUpdatedJs('')
+    assert.equal(f.getAfterStateUpdatedJs(), undefined)
+    assert.equal('afterStateUpdatedJs' in f.toMeta(), false)
+  })
+
+  it('is independent of live() — can be set without it', () => {
+    const f = TextField.make('x').afterStateUpdatedJs(`$set('y', $state)`)
+    assert.equal(f.isLive(), false)
+    assert.notEqual(f.getAfterStateUpdatedJs(), undefined)
+  })
+
+  it('coexists with the server-side afterStateUpdated handler', () => {
+    const fn = () => {}
+    const body = `$set('y', $state)`
+    const f = TextField.make('x').afterStateUpdated(fn).afterStateUpdatedJs(body)
+    assert.equal(f.getAfterStateUpdated(),    fn)
+    assert.equal(f.getAfterStateUpdatedJs(),  body)
+    const meta = f.toMeta()
+    assert.equal(meta.afterStateUpdatedJs, body)
+  })
+})
+
 describe('Field cross-field plumbing (Plan #6)', () => {
   describe('prefix / suffix / helperText', () => {
     it('emits prefix as a plain string', () => {

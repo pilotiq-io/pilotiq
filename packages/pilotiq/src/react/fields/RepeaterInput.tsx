@@ -359,11 +359,17 @@ export function RepeaterInput({
     if (!name.includes('.')) return  // top-level fields handle their own live trigger
     const fieldMeta = findFieldMeta(formState.formMeta, name)
     const liveCfg   = fieldMeta?.['live']
-    if (!liveCfg) return
-    const onBlurMode = typeof liveCfg === 'object' && liveCfg !== null
-      && (liveCfg as { onBlur?: boolean }).onBlur === true
-    if (eventKind === 'change' && onBlurMode) return
-    if (eventKind === 'blur'   && !onBlurMode) return
+    const hasJs     = (fieldMeta as { afterStateUpdatedJs?: string } | undefined)?.afterStateUpdatedJs !== undefined
+    if (!liveCfg && !hasJs) return
+    if (liveCfg) {
+      const onBlurMode = typeof liveCfg === 'object' && liveCfg !== null
+        && (liveCfg as { onBlur?: boolean }).onBlur === true
+      if (eventKind === 'change' && onBlurMode) return
+      if (eventKind === 'blur'   && !onBlurMode) return
+    } else {
+      // JS-only handlers always fire immediately on change.
+      if (eventKind === 'blur') return
+    }
     formState.triggerLive(name, value)
   }
   const onContainerChange = (e: React.ChangeEvent<HTMLDivElement>): void => {

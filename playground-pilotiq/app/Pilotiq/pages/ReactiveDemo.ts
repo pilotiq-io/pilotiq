@@ -14,6 +14,10 @@ import {
  *     dropdown to re-resolve via `options(({ $get }) => …)`.
  *   - Conditional `Section.visible(({ $get }) => …)` — shipping address
  *     fields appear only when "Has shipping" toggle is on.
+ *   - Tier-2 follow-up: `afterStateUpdatedJs(string)` — client-only
+ *     reactivity. The "Heading" field's slug populates instantly with
+ *     no roundtrip; compare against the title→slug above which waits
+ *     for the 350 ms debounce + server roundtrip.
  *
  * No DB required; the form's save handler echoes data back to the toast.
  */
@@ -85,6 +89,25 @@ export class ReactiveDemo extends Page {
           TextField.make('slug')
             .label('Slug')
             .placeholder('auto-generated from title'),
+
+          // Client-only reactivity counterpart — `afterStateUpdatedJs`
+          // compiles the body via `new Function` and runs it on every
+          // keystroke without a server roundtrip. Notice there is no
+          // `live()` on this field — the JS hook is independent.
+          TextField.make('heading')
+            .label('Heading')
+            .placeholder('Type and watch headingSlug update instantly')
+            .afterStateUpdatedJs(`
+              const slug = String($state ?? '')
+                .trim().toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+              $set('headingSlug', slug)
+            `),
+
+          TextField.make('headingSlug')
+            .label('Heading slug (instant)')
+            .placeholder('updates as you type — no server roundtrip'),
 
           // Dependent select — country drives the state options.
           SelectField.make('country')
