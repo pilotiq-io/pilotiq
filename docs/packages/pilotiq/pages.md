@@ -184,13 +184,109 @@ class EditArticle extends EditPage {
 
 Override surface:
 - **`ListPage`**: `getHeader(R)`, `getHeaderActions(R, basePath)`, `getRowActions(R, basePath)`.
-- **`CreatePage`**: `getHeader(R)`, `getFormActions(R)` plus form lifecycle (`mutateFormDataBefore/AfterFill`, `mutateData`, `mutateDataBeforeCreate`, `beforeSave`, `beforeCreate`, `afterCreate`, `afterSave`, `handleCreate`, `getRedirectUrl`, `getCreatedNotificationTitle`).
-- **`EditPage`**: same surface but with `…BeforeUpdate / handleUpdate / getSavedNotificationTitle`.
+- **`CreatePage`**: `getHeader(R)`, `getFormActions(R, basePath)` plus form lifecycle (`mutateFormDataBefore/AfterFill`, `mutateData`, `mutateDataBeforeCreate`, `beforeSave`, `beforeCreate`, `afterCreate`, `afterSave`, `handleCreate`, `getRedirectUrl`, `getCreatedNotificationTitle`).
+- **`EditPage`**: same surface but with `getFormActions(R, basePath, recordId?)`, `…BeforeUpdate / handleUpdate / getSavedNotificationTitle`.
 - **`ViewPage`**: `getHeader(R, record)`, `getActions(R, recordId, basePath)`.
 
 The `defaultListPage(R)` / `defaultCreatePage(R)` / etc. factories return anonymous subclasses of the matching base bound to `R`, so they're equivalent to a one-line `class extends ListPage { static override getResource() { return R } }`.
 
 For the full lifecycle hook surface and ordering, see [Resources › Submit lifecycle](./resources.md#submit-lifecycle) and [docs/guide/migrating-from-panels.md › Form lifecycle hooks](../../guide/migrating-from-panels.md#form-lifecycle-hooks).
+
+### EditPage header actions — Delete / View / etc.
+
+`EditPage.getFormActions(R, basePath, recordId)` is the slot for the cluster of buttons rendered to the right of the page heading. The default returns just a primary `Save changes` submit; override it to mix in destructive / navigational actions next to Save:
+
+```ts
+class EditArticle extends EditPage {
+  static override getResource() { return ArticleResource }
+
+  static override getFormActions(R, basePath, recordId) {
+    return [
+      Action.delete(R, basePath, recordId),
+      Action.view  (R, basePath, recordId),
+      Action.make('submit').label('Save changes').submit(),
+    ]
+  }
+}
+```
+
+Why one slot for both submit and non-submit buttons: every Action attached to the page heading renders in the same right-aligned cluster — the submit is auto-targeted at the form below via the HTML `form=` attribute, and non-submit buttons go through their own dispatch path (handler, href, or method-form). A single ordered list keeps the visual order under your control.
+
+`recordId` is baked into the URLs the factories produce (`/admin/articles/42/delete` instead of `/admin/articles/:id/delete`) so the buttons work in the page-header context — no row-level `:id` placeholder substitution needed.
+
+The same widening lands on `CreatePage.getFormActions(R, basePath)` — useful when overrides want to drop in a Cancel link that points back to the index:
+
+```ts
+class CreateArticle extends CreatePage {
+  static override getResource() { return ArticleResource }
+  static override getFormActions(R, basePath) {
+    return [
+      Action.make('cancel').label('Cancel').href(`${basePath}/${R.getSlug()}`).outlined(),
+      Action.make('submit').label(`Create ${R.labelSingular}`).submit(),
+    ]
+  }
+}
+```
+
+---
+
+## Custom resource pages
+
+The four built-in resource page roles (List / Create / Edit / View) cover the common CRUD surface. For anything else — an analytics dashboard scoped to a resource, a manage-imports page, a publish-schedule calendar — register a regular `Page` subclass alongside the resource and tell pilotiq to nest it under the resource in the sidebar:
+
+```ts
+import { Page, Heading, Card } from '@pilotiq/pilotiq'
+
+class PostsAnalytics extends Page {
+  static override slug  = 'post-analytics'
+  static override label = 'Analytics'
+  static override icon  = 'bar-chart-3'
+
+  // Nest under the PostResource sidebar item. Value is the JS class
+  // name of the parent (NOT the slug) — Plan #9 navigation metadata.
+  static override navigationParentItem = 'PostResource'
+
+  static override schema() {
+    return [
+      Heading.make('Posts analytics').level(1),
+      Card.make().schema([/* charts, stat cards, etc. */]),
+    ]
+  }
+}
+```
+
+Register it as a regular standalone page on the panel:
+
+```ts
+Pilotiq.make('Admin')
+  .path('/admin')
+  .resources([PostResource])
+  .pages([PostsAnalytics])
+```
+
+What you get:
+
+- **Sidebar nesting** — `PostsAnalytics` renders as a child item under `PostResource` in the sidebar. Same nav-tree machinery that powers `navigationGroup` / `navigationSort` / `navigationBadge`.
+- **Authorization** — `static async canAccess(user)` runs the same gate every other Page does. Throwing fails closed.
+- **Active state** — the nav item highlights based on URL prefix; visiting `/admin/post-analytics` keeps `PostResource` expanded.
+
+The trade-off: the URL is a panel-level sibling (`/admin/post-analytics`), not a child of the resource (`/admin/posts/analytics`). True URL nesting is on the Tier-3 backlog — it requires a route-registry change to deconflict with the existing `${slug}/:id` view route. The current pattern covers ~95% of "extra page tied to a resource" cases without that complexity.
+
+**Linking from a resource page** — the panel's `basePath` is whatever you set on `Pilotiq.make().path(...)`, so build hrefs in your `getRowActions` / `getHeaderActions` overrides as `${basePath}/post-analytics`:
+
+```ts
+class ListPosts extends ListPage {
+  static override getResource() { return PostResource }
+  static override getHeaderActions(R, basePath) {
+    return [
+      Action.create(R, basePath),
+      Action.make('analytics').label('Analytics').href(`${basePath}/post-analytics`).outlined(),
+    ]
+  }
+}
+```
+
+For pages that need parameters (e.g. a per-record analytics page), use a custom Page with route params via `Pilotiq.make().pages(...)` and read the request params inside `schema(ctx)`. The schema context carries `recordId` only when pilotiq's own role-based routing populated it; for ad-hoc URL parameters, read from `ctx.request` (the underlying Hono `Context`).
 
 ---
 

@@ -440,6 +440,63 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
     assert.equal(filledActions[0]!.getHref!(), '/admin/articles/7/edit')
   })
 
+  it('CreatePage.getFormActions receives basePath so overrides can use Action.* factories', () => {
+    let capturedBase: string | undefined
+    class Create extends CreatePage {
+      static override getResource() { return ArticleResource }
+      static override getFormActions(_R: typeof ArticleResource, basePath: string = '') {
+        capturedBase = basePath
+        return [Action.make('submit').label('Create').submit()]
+      }
+    }
+    Create.schema({ basePath: '/admin' })
+    assert.equal(capturedBase, '/admin')
+  })
+
+  it('EditPage.getFormActions receives basePath + recordId so overrides can use Action.delete / .view factories', () => {
+    let capturedBase:     string    | undefined
+    let capturedRecordId: string    | undefined
+    class Edit extends EditPage {
+      static override getResource() { return ArticleResource }
+      static override getFormActions(_R: typeof ArticleResource, basePath: string = '', recordId?: string) {
+        capturedBase     = basePath
+        capturedRecordId = recordId
+        return [Action.make('submit').label('Save').submit()]
+      }
+    }
+    Edit.schema({ basePath: '/admin', recordId: '42' })
+    assert.equal(capturedBase, '/admin')
+    assert.equal(capturedRecordId, '42')
+  })
+
+  it('EditPage.getFormActions can stamp Action.delete / .view alongside Save in the page header', () => {
+    class Edit extends EditPage {
+      static override getResource() { return ArticleResource }
+      static override getFormActions(R: typeof ArticleResource, basePath: string = '', recordId?: string) {
+        return [
+          Action.delete(R, basePath, recordId),
+          Action.view  (R, basePath, recordId),
+          Action.make('submit').label('Save changes').submit(),
+        ]
+      }
+    }
+    const elements = Edit.schema({ basePath: '/admin', recordId: '42' }) as Array<{
+      getType(): string
+      toMeta(): Record<string, unknown>
+    }>
+    // Heading is first, with the three actions attached.
+    const heading = elements[0]!
+    assert.equal(heading.getType(), 'heading')
+    const headingActions = (heading as unknown as { getChildren(): Action[] }).getChildren?.() ?? []
+    const names = headingActions.map(a => a.name)
+    assert.deepEqual(names, ['delete', 'view', 'submit'])
+    // recordId is baked into the destructive / view URLs (no `:id` placeholder)
+    const del = headingActions.find(a => a.name === 'delete')!
+    assert.equal(del.getActionUrl(), '/admin/articles/42/delete')
+    const view = headingActions.find(a => a.name === 'view')!
+    assert.equal(view.getHref(), '/admin/articles/42')
+  })
+
   it('getResource() throws a helpful error when not overridden', () => {
     class Anonymous extends ListPage {}
     assert.throws(

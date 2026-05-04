@@ -321,8 +321,9 @@ export class CreatePage extends ResourcePage {
     return this.label ?? `Create ${this.getResource().labelSingular}`
   }
 
-  static override schema(): Element[] {
+  static override schema(ctx?: SchemaContext): Element[] {
     const R = this.getResource()
+    const basePath = (ctx?.['basePath'] as string | undefined) ?? ''
     const form = R.form(Form.make())
     applyFormDefaults(R, form, 'create')
     installLifecycleHooks(this, form, 'create')
@@ -342,7 +343,7 @@ export class CreatePage extends ResourcePage {
       form.schema([wizard])
     }
 
-    const header = buildHeader(this.getHeader(R), this.getFormActions(R), form.getFormId())
+    const header = buildHeader(this.getHeader(R), this.getFormActions(R, basePath), form.getFormId())
     return [...header, form]
   }
 
@@ -399,8 +400,12 @@ export class CreatePage extends ResourcePage {
    * `/create` instead of the new record's `/edit` page. Override to
    * customize (drop the secondary button, add a Cancel link, etc.) or
    * return `[]` to suppress.
+   *
+   * `basePath` is the panel's mount path (e.g. `/admin`). Pass it
+   * through to `Action.create / .href / etc.` factories that need a
+   * full URL — same surface as `ListPage.getRowActions(R, basePath)`.
    */
-  static getFormActions(R: ResourceClass): Action[] {
+  static getFormActions(R: ResourceClass, _basePath: string = ''): Action[] {
     return [
       Action.make('submit').label(`Create ${R.labelSingular}`).submit(),
       Action.make('createAnother')
@@ -444,12 +449,14 @@ export class EditPage extends ResourcePage {
     return this.label ?? `Edit ${this.getResource().labelSingular}`
   }
 
-  static override schema(): Element[] {
+  static override schema(ctx?: SchemaContext): Element[] {
     const R = this.getResource()
+    const basePath = (ctx?.['basePath'] as string | undefined) ?? ''
+    const recordId = ctx?.['recordId'] as string | undefined
     const form = R.form(Form.make())
     applyFormDefaults(R, form, 'edit')
     installLifecycleHooks(this, form, 'edit')
-    const header = buildHeader(this.getHeader(R), this.getFormActions(R), form.getFormId())
+    const header = buildHeader(this.getHeader(R), this.getFormActions(R, basePath, recordId), form.getFormId())
     return [...header, form]
   }
 
@@ -462,8 +469,24 @@ export class EditPage extends ResourcePage {
    * Action buttons rendered to the right of the page heading. Default:
    * a single submit button labeled "Save changes". The submit action is
    * auto-targeted at the form below via the HTML `form` attribute.
+   *
+   * `basePath` and `recordId` let overrides drop in `Action.delete /
+   * .view / .replicate(R, basePath)` factories alongside Save without
+   * hardcoding the panel mount path. Filament-style "delete this
+   * record" / "view" / "replicate" buttons cluster right of the heading
+   * with the Save button — they're all rendered as a single right-
+   * aligned action group.
+   *
+   * @example
+   * static override getFormActions(R, basePath) {
+   *   return [
+   *     Action.delete(R, basePath),
+   *     Action.view  (R, basePath),
+   *     Action.make('submit').label('Save changes').submit(),
+   *   ]
+   * }
    */
-  static getFormActions(_R: ResourceClass): Action[] {
+  static getFormActions(_R: ResourceClass, _basePath: string = '', _recordId?: string): Action[] {
     return [
       Action.make('submit').label('Save changes').submit(),
     ]
