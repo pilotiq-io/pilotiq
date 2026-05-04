@@ -30,7 +30,7 @@ export interface ToolbarButtonDef {
    * fire a chain — the editor surface keeps its own state for these and the
    * default click handler doesn't run a chain.
    */
-  custom?: 'link' | 'textColor' | 'highlight'
+  custom?: 'link' | 'textColor' | 'highlight' | 'attachFiles'
 }
 
 const ICON_PROPS = {
@@ -196,6 +196,13 @@ const Icons = {
       <path d="m14 6 6 6" />
     </svg>
   ),
+  attachFiles: (
+    <svg {...ICON_PROPS}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="9" cy="9" r="2" />
+      <path d="m21 15-5-5L5 21" />
+    </svg>
+  ),
   undo: (
     <svg {...ICON_PROPS}>
       <path d="M3 7v6h6" />
@@ -316,8 +323,13 @@ export const TOOLBAR_BUTTONS: Record<ToolbarButtonId, ToolbarButtonDef> = {
     isActive: (ed) => ed.isActive('highlight'),
     command:  () => {},
   },
+  attachFiles: {
+    id: 'attachFiles', label: 'Attach files', available: true, icon: Icons.attachFiles, custom: 'attachFiles',
+    // Click-handling lives in the toolbar — opens a Base UI dialog driven
+    // by React state (file picker + alt text + upload progress).
+    command: () => {},
+  },
   // ---- Reserved placeholders — wired in later phases. ------------------------
-  attachFiles:             { id: 'attachFiles',             label: 'Attach files', available: false, icon: null, command: () => {} },
   table:                   { id: 'table',                   label: 'Table',        available: false, icon: null, command: () => {} },
   tableAddColumnBefore:    { id: 'tableAddColumnBefore',    label: 'Add column before', available: false, icon: null, command: () => {} },
   tableAddColumnAfter:     { id: 'tableAddColumnAfter',     label: 'Add column after',  available: false, icon: null, command: () => {} },

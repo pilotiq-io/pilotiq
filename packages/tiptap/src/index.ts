@@ -4,6 +4,7 @@ export {
   DEFAULT_TEXT_COLORS,
   DEFAULT_HIGHLIGHT_COLORS,
   type ColorSwatch,
+  type RichTextAttachmentVisibility,
   type RichTextFieldMeta,
   type RichTextStorage,
   type ToolbarButtonId,
@@ -12,3 +13,10 @@ export {
 export { Block, type BlockMeta } from './Block.js'
 export { registerTiptap } from './register.js'
 export { TiptapEditor } from './react/TiptapEditor.js'
+export {
+  renderRichTextToHtml,
+  isRichTextValue,
+  type RenderRichTextOptions,
+  type TiptapNode,
+  type TiptapMark,
+} from './render.js'

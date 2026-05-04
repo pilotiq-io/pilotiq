@@ -2,8 +2,12 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { resolveSchema, _resetResolverRegistry } from '../schema/resolveSchema.js'
-import { TextEntry } from './TextEntry.js'
+import { TextEntry, type TextEntryMeta } from './TextEntry.js'
 import { Entry, isEntry, type EntryMeta } from './Entry.js'
+import {
+  registerRichTextRenderer,
+  _resetRichTextRegistryForTests,
+} from '../richtext/registry.js'
 
 beforeEach(() => _resetResolverRegistry())
 
@@ -310,6 +314,64 @@ describe('TextEntry — copyable', () => {
       { record: { email: 'a@b.c' } },
     )
     assert.deepEqual((out[0] as EntryMeta).copyable, { label: 'Copy email' })
+  })
+})
+
+describe('TextEntry — richtext auto-render', () => {
+  beforeEach(() => _resetRichTextRegistryForTests())
+
+  it('no-ops without a registered renderer', async () => {
+    const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] }
+    const out = await resolveSchema([TextEntry.make('body')], { record: { body: doc } })
+    const meta = out[0] as TextEntryMeta
+    assert.equal(meta._formatted, undefined)
+    assert.equal(meta.richtext, undefined)
+  })
+
+  it('stamps _formatted + richtext: true when a renderer is registered and the value matches', async () => {
+    registerRichTextRenderer(
+      () => '<p>rendered</p>',
+      (v) => typeof v === 'object' && v !== null && (v as { type?: unknown }).type === 'doc',
+    )
+    const doc = { type: 'doc', content: [] }
+    const out = await resolveSchema([TextEntry.make('body')], { record: { body: doc } })
+    const meta = out[0] as TextEntryMeta
+    assert.equal(meta._formatted, '<p>rendered</p>')
+    assert.equal(meta.richtext, true)
+  })
+
+  it('skips auto-render when formatStateUsing is set (user formatter wins)', async () => {
+    registerRichTextRenderer(() => '<p>rendered</p>', () => true)
+    const doc = { type: 'doc', content: [] }
+    const out = await resolveSchema(
+      [TextEntry.make('body').formatStateUsing(() => 'plain')],
+      { record: { body: doc } },
+    )
+    const meta = out[0] as TextEntryMeta
+    assert.equal(meta._formatted, 'plain')
+    assert.equal(meta.richtext, undefined)
+  })
+
+  it('skips auto-render when format is set (built-in formatter wins)', async () => {
+    registerRichTextRenderer(() => '<p>rendered</p>', () => true)
+    const out = await resolveSchema(
+      [TextEntry.make('publishedAt').dateTime()],
+      { record: { publishedAt: '2026-01-01T00:00:00Z' } },
+    )
+    const meta = out[0] as TextEntryMeta
+    assert.equal(meta.richtext, undefined)
+    assert.ok(meta.format)
+  })
+
+  it('skips auto-render when value does not match the detector', async () => {
+    registerRichTextRenderer(
+      () => '<p>rendered</p>',
+      (v) => typeof v === 'object' && v !== null && (v as { type?: unknown }).type === 'doc',
+    )
+    const out = await resolveSchema([TextEntry.make('body')], { record: { body: 'plain text' } })
+    const meta = out[0] as TextEntryMeta
+    assert.equal(meta._formatted, undefined)
+    assert.equal(meta.richtext, undefined)
   })
 })
 

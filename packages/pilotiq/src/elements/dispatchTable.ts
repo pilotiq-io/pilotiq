@@ -7,6 +7,7 @@ import { Column } from '../Column.js'
 import { ListTab } from '../Tab.js'
 import { isRepeaterField } from '../fields/RepeaterField.js'
 import { isBuilderField } from '../fields/BuilderField.js'
+import { tryRenderRichText, getRichTextRenderer } from '../richtext/registry.js'
 import type { SummaryResult } from '../summarizers/Summarizer.js'
 
 export interface QueryParams {
@@ -243,6 +244,23 @@ export async function loadTableRecords(
       const columnsWithFormatter = (table.getChildren() ?? [])
         .filter((c): c is Column => c instanceof Column && c.hasFormatter())
 
+      // Plain-text columns that may carry Tiptap rich-text content.
+      // Auto-rendered by the registered richtext renderer (Phase D —
+      // wired by `registerTiptap()`). Conservative: only default-text
+      // columns without an explicit `formatStateUsing` / `format` /
+      // editable-input override. Without a registered renderer the
+      // per-row pass is skipped entirely so non-tiptap apps pay nothing.
+      const richTextColumns = getRichTextRenderer() !== undefined
+        ? (table.getChildren() ?? [])
+            .filter((c): c is Column =>
+              c instanceof Column
+              && c.getColumnType() === 'text'
+              && !c.hasFormatter()
+              && !c.hasFormat()
+              && !c.isEditable(),
+            )
+        : []
+
       // Columns with their own per-row recordUrl handler — overrides
       // the table-level `Table.recordUrl` for clicks on that column.
       const columnsWithRecordUrl = (table.getChildren() ?? [])
@@ -282,7 +300,8 @@ export async function loadTableRecords(
         recordUrlFn !== undefined ||
         recordClassesFn !== undefined ||
         groupColumn !== undefined ||
-        canEditEditableColumns
+        canEditEditableColumns ||
+        richTextColumns.length > 0
 
       const rows = !needsRowMutation
         ? rawRows
@@ -320,6 +339,26 @@ export async function loadTableRecords(
                 }
               }
               out['_formatted'] = formatted
+            }
+
+            if (richTextColumns.length > 0) {
+              const formatted = (out['_formatted'] as Record<string, string> | undefined) ?? {}
+              const rich:      Record<string, true> = {}
+              for (const col of richTextColumns) {
+                // `formatStateUsing` already won — skip when the column
+                // had a result stamped in the prior loop (formatStateUsing
+                // and richTextColumns are mutually exclusive at filter
+                // time, so this is defensive).
+                if (formatted[col.name] !== undefined) continue
+                const html = tryRenderRichText(recordObj[col.name])
+                if (html === null) continue
+                formatted[col.name] = html
+                rich[col.name]      = true
+              }
+              if (Object.keys(rich).length > 0) {
+                out['_formatted']     = formatted
+                out['_richtextCells'] = rich
+              }
             }
 
             if (recordUrlFn !== undefined) {

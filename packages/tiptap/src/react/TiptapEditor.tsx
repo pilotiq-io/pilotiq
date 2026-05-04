@@ -9,6 +9,7 @@ import TextAlign from '@tiptap/extension-text-align'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
 import Highlight from '@tiptap/extension-highlight'
+import Image from '@tiptap/extension-image'
 import { Popover } from '@base-ui/react/popover'
 import type { FieldRendererProps } from '@pilotiq/pilotiq/react'
 import type { BlockMeta } from '../Block.js'
@@ -74,6 +75,12 @@ function ClientEditor(props: FieldRendererProps) {
   const textColors        = (el['textColors']       as ColorSwatch[]   | undefined) ?? []
   const customTextColors  = (el['customTextColors'] as boolean         | undefined) ?? false
   const highlightColors   = (el['highlightColors']  as ColorSwatch[]   | undefined) ?? []
+  const resizableImages   = (el['resizableImages']  as boolean         | undefined) ?? false
+  const uploadUrl         = (el['uploadUrl']        as string          | undefined)
+  const acceptedFileTypes = (el['fileAttachmentsAcceptedFileTypes'] as string[] | undefined)
+  const maxAttachmentSize = (el['fileAttachmentsMaxSize']            as number   | undefined)
+  const attachmentDir     = (el['fileAttachmentsDirectory']          as string   | undefined)
+  const attachmentVis     = (el['fileAttachmentsVisibility']         as ('public' | 'private') | undefined)
 
   const initialContent = parseInitialContent(defaultValue)
   const [serialized, setSerialized] = useState(() => serializeForHidden(initialContent, storage))
@@ -115,6 +122,19 @@ function ClientEditor(props: FieldRendererProps) {
       TextStyle,
       Color,
       Highlight.configure({ multicolor: true }),
+      Image.configure({
+        // Inline images break under prose's `figure` margin reset; the
+        // editor uses block images by default, matching the read-side
+        // renderer's `<img>` output.
+        inline: false,
+        // Most upload adapters return URLs — base64 inflates the doc and
+        // re-uploads on every save. Opt back in only if your adapter
+        // explicitly stores data URLs.
+        allowBase64: false,
+        resize: resizableImages
+          ? { enabled: true, alwaysPreserveAspectRatio: true }
+          : false,
+      }),
       Placeholder.configure({ placeholder: placeholder ?? 'Start writing…' }),
       // BlockNodeExtension carries the block registry on its options —
       // NodeViews mount in a separate React tree and can't see context.
@@ -193,6 +213,12 @@ function ClientEditor(props: FieldRendererProps) {
           textColors={textColors}
           customTextColors={customTextColors}
           highlightColors={highlightColors}
+          {...(uploadUrl !== undefined ? { uploadUrl } : {})}
+          fieldName={name}
+          {...(acceptedFileTypes !== undefined ? { acceptedFileTypes } : {})}
+          {...(maxAttachmentSize !== undefined ? { maxFileSize: maxAttachmentSize } : {})}
+          {...(attachmentDir !== undefined ? { attachmentDir } : {})}
+          {...(attachmentVis !== undefined ? { attachmentVis } : {})}
         />
       )}
       <EditorContent editor={editor} />

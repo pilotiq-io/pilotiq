@@ -1971,6 +1971,7 @@ function renderEntry(el: ElementMeta, index: number): React.ReactNode {
 
       const display = formatted === '' ? fallback : formatted
       const isFallback = formatted === ''
+      const isRichText = el['richtext'] === true && !isFallback
       const sizeKey   = el['size']   ? String(el['size'])   : 'sm'
       const colorKey  = el['color']  ? String(el['color'])  : (isFallback ? 'muted' : 'default')
       const weightKey = el['weight'] ? String(el['weight']) : 'normal'
@@ -1988,6 +1989,25 @@ function renderEntry(el: ElementMeta, index: number): React.ReactNode {
         style.overflow = 'hidden'
       }
       const wrapCls = wrap ? 'whitespace-pre-wrap' : (lineClamp !== undefined ? '' : 'whitespace-nowrap')
+
+      if (isRichText) {
+        // Server-rendered HTML from a registered richtext renderer (e.g.
+        // `@pilotiq/tiptap`). Wrap in `prose` for sensible default
+        // styling — matches the read-only `Markdown` / `Html` primes.
+        const proseSize = sizeKey === 'lg' || sizeKey === 'xl'
+          ? 'prose-lg'
+          : sizeKey === 'sm' || sizeKey === 'xs'
+            ? 'prose-sm'
+            : ''
+        body = (
+          <div
+            className={`prose max-w-none dark:prose-invert ${proseSize} ${colorCls} ${weightCls}`.trim()}
+            style={style}
+            dangerouslySetInnerHTML={{ __html: display }}
+          />
+        )
+        break
+      }
 
       body = (
         <span className={`${sizeCls} ${colorCls} ${weightCls} ${wrapCls}`.trim()} style={style}>
@@ -2927,11 +2947,13 @@ function formatCell(
   const fallback   = (col['default'] as string | undefined)
 
   // Per-row server-eval result wins over everything.
-  const formatted  = (row?.['_formatted'] as Record<string, string> | undefined)?.[String(col['name'] ?? '')]
+  const colName    = String(col['name'] ?? '')
+  const formatted  = (row?.['_formatted'] as Record<string, string> | undefined)?.[colName]
+  const richtext   = (row?.['_richtextCells'] as Record<string, true> | undefined)?.[colName] === true
   const isBlank    = value === null || value === undefined || value === ''
 
   if (formatted !== undefined && formatted !== '') {
-    return wrapCell(formatted, col)
+    return wrapCell(formatted, col, richtext)
   }
   if (isBlank) {
     return <span className="text-muted-foreground">{fallback ?? '—'}</span>
@@ -2982,8 +3004,10 @@ function formatCell(
 
 /** Apply text-rendering chrome (color, weight, line-clamp, wrap, tooltip)
  * to a stringified cell value. Used by the text and per-row formatter
- * paths so styling stays consistent. */
-function wrapCell(content: string, col: ElementMeta): React.ReactNode {
+ * paths so styling stays consistent. When `asHtml` is true the content
+ * is server-rendered HTML (e.g. from the registered richtext renderer)
+ * and gets injected via `dangerouslySetInnerHTML`. */
+function wrapCell(content: string, col: ElementMeta, asHtml = false): React.ReactNode {
   const color    = col['color']    as string | undefined
   const weight   = col['weight']   as string | undefined
   const tooltip  = col['tooltip']  as string | undefined
@@ -2996,6 +3020,17 @@ function wrapCell(content: string, col: ElementMeta): React.ReactNode {
   const clampStyle = clamp !== undefined
     ? { display: '-webkit-box', WebkitLineClamp: String(clamp), WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }
     : undefined
+
+  if (asHtml) {
+    return (
+      <span
+        className={`prose prose-sm max-w-none dark:prose-invert ${colorCls} ${weightCls} ${wrapCls}`.trim()}
+        title={tooltip}
+        style={clampStyle}
+        dangerouslySetInnerHTML={{ __html: content }}
+      />
+    )
+  }
 
   const node = (
     <span

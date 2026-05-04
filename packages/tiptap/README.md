@@ -8,13 +8,21 @@ pnpm add @pilotiq/tiptap \
   @tiptap/extension-link @tiptap/extension-placeholder \
   @tiptap/extension-underline @tiptap/extension-subscript @tiptap/extension-superscript \
   @tiptap/extension-text-align @tiptap/extension-text-style @tiptap/extension-color \
-  @tiptap/extension-highlight
+  @tiptap/extension-highlight @tiptap/extension-image
 ```
 
 ```ts
-// Once, in your client entry.
+// Once, in your client entry. Wires the editor for `RichTextField` AND the
+// server-side rich-text renderer used by `TextEntry` / `Table` columns.
 import { registerTiptap } from '@pilotiq/tiptap'
 registerTiptap()
+```
+
+```ts
+// Render Tiptap content to HTML on the server. Pure function — no DOM,
+// no Tiptap runtime. Safe to call from any server context.
+import { renderRichTextToHtml } from '@pilotiq/tiptap'
+renderRichTextToHtml({ type: 'doc', content: [...] })
 ```
 
 ```ts
@@ -28,8 +36,12 @@ RichTextField.make('body')
     ['h2', 'h3'],
     ['textColor', 'highlight'],
     ['bulletList', 'orderedList'],
+    ['attachFiles'],
     ['undo', 'redo'],
   ])
+  .resizableImages()
+  .fileAttachmentsAcceptedFileTypes(['image/*'])
+  .fileAttachmentsMaxSize(2_000_000)
   .blocks([
     Block.make('callout').label('Callout').icon('💡').schema([
       TextField.make('title'),
@@ -37,5 +49,7 @@ RichTextField.make('body')
     ]),
   ])
 ```
+
+`attachFiles` reuses the panel's `UploadAdapter` (`Pilotiq.uploads({ adapter })`); the button is stripped server-side when no adapter is wired.
 
 Full reference: [docs/packages/tiptap.md](../../docs/packages/tiptap.md).

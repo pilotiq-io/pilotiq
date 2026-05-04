@@ -178,6 +178,52 @@ describe('RichTextField color palettes', () => {
   })
 })
 
+describe('RichTextField file attachments', () => {
+  it('defaults: resizableImages=false; no attachment options; toolbar strips attachFiles when no adapter', () => {
+    const meta = RichTextField.make('body')
+      .toolbarButtons([['bold', 'attachFiles']])
+      .toMeta()
+    assert.equal(meta.resizableImages, false)
+    assert.equal('fileAttachmentsAcceptedFileTypes' in meta, false)
+    assert.equal('fileAttachmentsMaxSize'            in meta, false)
+    assert.equal('fileAttachmentsDirectory'          in meta, false)
+    assert.equal('fileAttachmentsVisibility'         in meta, false)
+    assert.equal('uploadUrl'                         in meta, false)
+    // attachFiles stripped from the resolved groups when no adapter is wired.
+    assert.deepEqual(meta.toolbarGroups, [['bold']])
+  })
+
+  it('preserves attachFiles + stamps uploadUrl when adapter is wired', () => {
+    const meta = RichTextField.make('body')
+      .toolbarButtons([['bold', 'attachFiles']])
+      .toMeta({ uploadUrl: '/admin/_uploads', hasUploadAdapter: true })
+    assert.deepEqual(meta.toolbarGroups, [['bold', 'attachFiles']])
+    assert.equal(meta.uploadUrl, '/admin/_uploads')
+  })
+
+  it('drops a toolbar group entirely when attachFiles was its only button', () => {
+    const meta = RichTextField.make('body')
+      .toolbarButtons([['bold'], ['attachFiles']])
+      .toMeta()
+    assert.deepEqual(meta.toolbarGroups, [['bold']])
+  })
+
+  it('exposes resize + size + accept + directory + visibility', () => {
+    const meta = RichTextField.make('body')
+      .resizableImages()
+      .fileAttachmentsAcceptedFileTypes(['image/*'])
+      .fileAttachmentsMaxSize(2_000_000)
+      .fileAttachmentsDirectory('articles')
+      .fileAttachmentsVisibility('private')
+      .toMeta()
+    assert.equal(meta.resizableImages, true)
+    assert.deepEqual(meta.fileAttachmentsAcceptedFileTypes, ['image/*'])
+    assert.equal(meta.fileAttachmentsMaxSize, 2_000_000)
+    assert.equal(meta.fileAttachmentsDirectory, 'articles')
+    assert.equal(meta.fileAttachmentsVisibility, 'private')
+  })
+})
+
 describe('RichTextField storage', () => {
   it('defaults to json', () => {
     const meta = RichTextField.make('body').toMeta()

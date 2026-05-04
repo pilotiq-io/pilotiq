@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { Table } from './Table.js'
@@ -8,6 +8,10 @@ import { Section } from '../schema/Section.js'
 import { resolveSchema } from '../schema/resolveSchema.js'
 import { Sum, Average, Count, Range } from '../summarizers/Summarizer.js'
 import { TextInputColumn, ToggleColumn, SelectColumn } from '../columns/index.js'
+import {
+  registerRichTextRenderer,
+  _resetRichTextRegistryForTests,
+} from '../richtext/registry.js'
 import {
   parseTableQuery,
   parseActiveGroup,
@@ -230,6 +234,74 @@ describe('loadTableRecords', () => {
       // _formatted is present but the broken column's key is absent.
       const formatted = rows[0]!['_formatted'] as Record<string, string>
       assert.equal(formatted['priority'], undefined)
+    })
+
+    describe('richtext columns', () => {
+      beforeEach(() => _resetRichTextRegistryForTests())
+      afterEach(() => _resetRichTextRegistryForTests())
+
+      it('skips per-row work when no renderer is registered', async () => {
+        const t = Table.make()
+          .columns([Column.make('body')])
+          .records(async () => [
+            { id: '1', body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }] } },
+          ])
+
+        await loadTableRecords([t], {})
+        const meta = (await resolveSchema([t]))[0]!
+        const rows = meta['rows'] as Array<Record<string, unknown>>
+        assert.equal(rows[0]!['_formatted'], undefined)
+        assert.equal(rows[0]!['_richtextCells'], undefined)
+      })
+
+      it('stamps _formatted + _richtextCells when registered renderer matches', async () => {
+        registerRichTextRenderer(
+          () => '<p>auto</p>',
+          (v) => typeof v === 'object' && v !== null && (v as { type?: unknown }).type === 'doc',
+        )
+        const t = Table.make()
+          .columns([Column.make('body'), Column.make('title')])
+          .records(async () => [
+            { id: '1', title: 'untouched', body: { type: 'doc', content: [] } },
+            { id: '2', title: 'plain',     body: 'plain text' },
+          ])
+
+        await loadTableRecords([t], {})
+        const meta = (await resolveSchema([t]))[0]!
+        const rows = meta['rows'] as Array<Record<string, unknown>>
+        const r0 = rows[0] as Record<string, unknown>
+        assert.deepEqual(r0['_formatted'],     { body: '<p>auto</p>' })
+        assert.deepEqual(r0['_richtextCells'], { body: true })
+        // Plain text rows skip the stamp entirely.
+        const r1 = rows[1] as Record<string, unknown>
+        assert.equal(r1['_formatted'],     undefined)
+        assert.equal(r1['_richtextCells'], undefined)
+      })
+
+      it('skips columns with formatStateUsing (user formatter wins)', async () => {
+        registerRichTextRenderer(() => '<p>auto</p>', () => true)
+        const t = Table.make()
+          .columns([Column.make('body').formatStateUsing(() => 'manual')])
+          .records(async () => [{ id: '1', body: { type: 'doc', content: [] } }])
+
+        await loadTableRecords([t], {})
+        const meta = (await resolveSchema([t]))[0]!
+        const rows = meta['rows'] as Array<Record<string, unknown>>
+        assert.deepEqual(rows[0]!['_formatted'], { body: 'manual' })
+        assert.equal(rows[0]!['_richtextCells'], undefined)
+      })
+
+      it('skips columns with built-in format', async () => {
+        registerRichTextRenderer(() => '<p>auto</p>', () => true)
+        const t = Table.make()
+          .columns([Column.make('publishedAt').dateTime()])
+          .records(async () => [{ id: '1', publishedAt: '2026-01-01T00:00:00Z' }])
+
+        await loadTableRecords([t], {})
+        const meta = (await resolveSchema([t]))[0]!
+        const rows = meta['rows'] as Array<Record<string, unknown>>
+        assert.equal(rows[0]!['_richtextCells'], undefined)
+      })
     })
 
     it('does not stamp _visibleActions when no row actions have rules', async () => {

@@ -1,5 +1,7 @@
 import { registerFieldRenderer } from '@pilotiq/pilotiq/react'
+import { registerRichTextRenderer } from '@pilotiq/pilotiq/richtext'
 import { TiptapEditor } from './react/TiptapEditor.js'
+import { renderRichTextToHtml, isRichTextValue } from './render.js'
 
 /**
  * Register the Tiptap editor as the pilotiq renderer for `fieldType: 'richtext'`.
@@ -11,9 +13,15 @@ import { TiptapEditor } from './react/TiptapEditor.js'
  * registerTiptap()
  * ```
  *
+ * Also wires the read-side renderer (`@pilotiq/pilotiq/richtext`) so that
+ * `TextEntry` / `TextColumn` auto-detect Tiptap content and render finished
+ * HTML on `ViewPage` / list tables — without shipping the editor parser to
+ * display-only pages.
+ *
  * Without this call, `RichTextField` form fields render as nothing —
  * pilotiq's SchemaRenderer can't find a renderer for the `'richtext'` type.
  */
 export function registerTiptap(): void {
   registerFieldRenderer('richtext', TiptapEditor)
+  registerRichTextRenderer(renderRichTextToHtml, isRichTextValue)
 }

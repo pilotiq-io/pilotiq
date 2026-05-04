@@ -14,6 +14,18 @@ interface ToolbarProps {
   textColors:       ColorSwatch[]
   customTextColors: boolean
   highlightColors:  ColorSwatch[]
+  /** Panel `_uploads` route URL. When undefined, attachFiles is a no-op. */
+  uploadUrl?:       string
+  /** Field name — sent alongside the upload payload for adapter routing. */
+  fieldName:        string
+  /** MIME-type allowlist for the picker (`['image/*']` etc.). */
+  acceptedFileTypes?: string[]
+  /** Per-file size cap in bytes. */
+  maxFileSize?:     number
+  /** Sub-directory hint forwarded to the adapter. */
+  attachmentDir?:   string
+  /** Adapter visibility hint. */
+  attachmentVis?:   'public' | 'private'
 }
 
 /**
@@ -27,9 +39,11 @@ interface ToolbarProps {
  */
 export function Toolbar({
   editor, groups, tick, textColors, customTextColors, highlightColors,
+  uploadUrl, fieldName, acceptedFileTypes, maxFileSize, attachmentDir, attachmentVis,
 }: ToolbarProps) {
   const [linkOpen, setLinkOpen] = useState(false)
   const [linkUrl,  setLinkUrl]  = useState('')
+  const [attachOpen, setAttachOpen] = useState(false)
 
   const filteredGroups = groups
     .map((g) => g.map((id) => TOOLBAR_BUTTONS[id]).filter((b): b is ToolbarButtonDef => Boolean(b?.available)))
@@ -109,12 +123,16 @@ export function Toolbar({
                     />
                   )
                 }
+                const customClick =
+                  btn.custom === 'link'         ? openLinkDialog :
+                  btn.custom === 'attachFiles'  ? () => setAttachOpen(true) :
+                  undefined
                 return (
                   <ToolbarButton
                     key={btn.id}
                     def={btn}
                     editor={editor}
-                    onCustomClick={btn.custom === 'link' ? openLinkDialog : undefined}
+                    onCustomClick={customClick}
                   />
                 )
               })}
@@ -130,6 +148,17 @@ export function Toolbar({
         onApply={applyLink}
         onRemove={editor.isActive('link') ? removeLink : null}
         isEdit={editor.isActive('link')}
+      />
+      <AttachFilesDialog
+        open={attachOpen}
+        onOpenChange={setAttachOpen}
+        editor={editor}
+        fieldName={fieldName}
+        {...(uploadUrl         !== undefined ? { uploadUrl }                          : {})}
+        {...(acceptedFileTypes !== undefined ? { acceptedFileTypes }                  : {})}
+        {...(maxFileSize       !== undefined ? { maxFileSize }                        : {})}
+        {...(attachmentDir     !== undefined ? { directory:  attachmentDir }          : {})}
+        {...(attachmentVis     !== undefined ? { visibility: attachmentVis }          : {})}
       />
     </>
   )
@@ -178,6 +207,161 @@ function ToolbarButton({ def, editor, onCustomClick }: ToolbarButtonProps) {
       </Tooltip.Portal>
     </Tooltip.Root>
   )
+}
+
+function AttachFilesDialog({
+  open, onOpenChange, editor,
+  uploadUrl, fieldName, acceptedFileTypes, maxFileSize, directory, visibility,
+}: {
+  open:               boolean
+  onOpenChange:       (open: boolean) => void
+  editor:             Editor
+  uploadUrl?:         string
+  fieldName:          string
+  acceptedFileTypes?: string[]
+  maxFileSize?:       number
+  directory?:         string
+  visibility?:        'public' | 'private'
+}) {
+  const [file, setFile]     = useState<File | null>(null)
+  const [alt,  setAlt]      = useState('')
+  const [busy, setBusy]     = useState(false)
+  const [error, setError]   = useState<string | null>(null)
+
+  // Reset transient state every time the dialog opens — otherwise the
+  // previous upload's filename / alt text would leak into the next one.
+  useEffect(() => {
+    if (open) { setFile(null); setAlt(''); setError(null); setBusy(false) }
+  }, [open])
+
+  const accept = acceptedFileTypes?.join(',') ?? 'image/*'
+
+  const onPickFile = (f: File | null): void => {
+    setError(null)
+    if (!f) { setFile(null); return }
+    if (maxFileSize !== undefined && f.size > maxFileSize) {
+      setError(`File exceeds the maximum size of ${formatBytes(maxFileSize)}.`)
+      setFile(null)
+      return
+    }
+    setFile(f)
+    if (alt === '') setAlt(stripExtension(f.name))
+  }
+
+  const onUpload = async (): Promise<void> => {
+    if (!file) return
+    if (!uploadUrl) {
+      setError('No upload route configured for this panel.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('fieldName', fieldName)
+      if (directory)  fd.append('directory',  directory)
+      if (visibility) fd.append('visibility', visibility)
+      const res = await fetch(uploadUrl, {
+        method: 'POST',
+        body: fd,
+        headers: { Accept: 'application/json' },
+      })
+      const data = await res.json().catch(() => ({} as { ok?: boolean; url?: string; error?: string }))
+      if (!res.ok || !data.ok || !data.url) {
+        setError(data.error ?? `Upload failed (status ${res.status}).`)
+        return
+      }
+      // Image vs non-image file. Tiptap's StarterKit doesn't ship a generic
+      // file/attachment node, so for non-images we fall back to inserting
+      // a link mark on the filename — same shape MarkdownField uses.
+      if (file.type.startsWith('image/')) {
+        editor.chain().focus().setImage({ src: data.url, alt: alt || file.name }).run()
+      } else {
+        editor.chain().focus()
+          .insertContent({
+            type: 'text',
+            text: alt || file.name,
+            marks: [{ type: 'link', attrs: { href: data.url } }],
+          })
+          .run()
+      }
+      onOpenChange(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/50 transition-opacity duration-150 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0" />
+        <Dialog.Popup className="fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] sm:max-w-md translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg transition-[opacity,transform] duration-150 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:scale-95 data-[ending-style]:opacity-0">
+          <Dialog.Title className="text-lg leading-none font-semibold">
+            Attach file
+          </Dialog.Title>
+          <div className="flex flex-col gap-3">
+            <input
+              type="file"
+              accept={accept}
+              disabled={busy}
+              onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm file:me-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-muted/80"
+            />
+            {file && (
+              <input
+                type="text"
+                value={alt}
+                onChange={(e) => setAlt(e.target.value)}
+                placeholder="Alt text (described for screen readers)"
+                disabled={busy}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            )}
+            {maxFileSize !== undefined && (
+              <p className="text-xs text-muted-foreground">
+                Maximum size: {formatBytes(maxFileSize)}.
+              </p>
+            )}
+            {error && (
+              <p className="text-xs text-destructive">{error}</p>
+            )}
+          </div>
+          <div className="flex flex-row-reverse items-center gap-2">
+            <button
+              type="button"
+              onClick={onUpload}
+              disabled={!file || busy}
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none"
+            >
+              {busy ? 'Uploading…' : 'Insert'}
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              disabled={busy}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
+function stripExtension(name: string): string {
+  const i = name.lastIndexOf('.')
+  return i > 0 ? name.slice(0, i) : name
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 function LinkDialog({

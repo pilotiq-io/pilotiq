@@ -22,17 +22,23 @@ export const ArticleForm = {
       ]),
       ToggleField.make('featured').label('Featured'),
       DateField.make('publishedAt').label('Published at'),
-      RichTextField.make('body').label('Body').placeholder('Start writing…').blocks([
-        Block.make('callout').label('Callout').icon('💡').schema([
-          TextField.make('title').label('Title').placeholder('Callout title'),
-          TextareaField.make('content').label('Content').required(),
-          SelectField.make('tone').label('Tone').options([
-            { value: 'info',    label: 'Info' },
-            { value: 'warning', label: 'Warning' },
-            { value: 'success', label: 'Success' },
+      RichTextField.make('body').label('Body').placeholder('Start writing…')
+        .enableToolbarButtons(['attachFiles'])
+        .resizableImages()
+        .fileAttachmentsAcceptedFileTypes(['image/*'])
+        .fileAttachmentsMaxSize(2_000_000)
+        .fileAttachmentsDirectory('articles')
+        .blocks([
+          Block.make('callout').label('Callout').icon('💡').schema([
+            TextField.make('title').label('Title').placeholder('Callout title'),
+            TextareaField.make('content').label('Content').required(),
+            SelectField.make('tone').label('Tone').options([
+              { value: 'info',    label: 'Info' },
+              { value: 'warning', label: 'Warning' },
+              { value: 'success', label: 'Success' },
+            ]),
           ]),
         ]),
-      ]),
       CodeEditorField.make('metadata')
         .label('Metadata (JSON)')
         .language('json')

@@ -82,6 +82,8 @@ export const DEFAULT_HIGHLIGHT_COLORS: ColorSwatch[] = [
   { value: '#e5e7eb', label: 'Gray' },
 ]
 
+export type RichTextAttachmentVisibility = 'public' | 'private'
+
 // Inherits `fieldType` from FieldMeta; we don't narrow it here because the
 // `FieldType` union admits `(string & {})` which makes the narrow `'richtext'`
 // literal incompatible during interface extension. `fieldType` is always
@@ -100,6 +102,18 @@ export interface RichTextFieldMeta extends FieldMeta {
   customTextColors: boolean
   /** Highlight palette shown when the `highlight` button opens. */
   highlightColors:  ColorSwatch[]
+  /** Allow drag-resize of inserted images via a corner handle. */
+  resizableImages:  boolean
+  /** MIME-type allowlist for the `attachFiles` picker (e.g. `['image/*']`). */
+  fileAttachmentsAcceptedFileTypes?: string[]
+  /** Per-file size cap in bytes; the upload route also enforces this. */
+  fileAttachmentsMaxSize?: number
+  /** Sub-directory hint forwarded to the upload adapter. */
+  fileAttachmentsDirectory?: string
+  /** Adapter-defined visibility hint — `'public'` or `'private'`. */
+  fileAttachmentsVisibility?: RichTextAttachmentVisibility
+  /** URL of the panel's `_uploads` route. Stamped via `RenderContext`. */
+  uploadUrl?: string
 }
 
 /**
@@ -137,6 +151,11 @@ export class RichTextField extends Field {
   private _textColors:      ColorSwatch[] | null = null
   private _customTextColors = false
   private _highlightColors: ColorSwatch[] | null = null
+  private _resizableImages = false
+  private _fileAttachmentsAcceptedFileTypes?: string[]
+  private _fileAttachmentsMaxSize?:           number
+  private _fileAttachmentsDirectory?:         string
+  private _fileAttachmentsVisibility?:        RichTextAttachmentVisibility
 
   private constructor(name: string) {
     super(name, 'richtext' as FieldType)
@@ -244,9 +263,62 @@ export class RichTextField extends Field {
     return this
   }
 
+  /**
+   * Allow drag-resizing of inserted images via a corner handle. Off by
+   * default — when enabled, the editor mounts a NodeView that wraps the
+   * image in a resize-aware wrapper and writes `width` / `height` attrs
+   * back into the document.
+   */
+  resizableImages(enabled = true): this {
+    this._resizableImages = enabled
+    return this
+  }
+
+  /**
+   * Restrict the `attachFiles` picker to specific MIME types — passed
+   * verbatim to the file input's `accept` attribute and re-checked
+   * server-side by the upload route.
+   *
+   * @example
+   * ```ts
+   * RichTextField.make('body').fileAttachmentsAcceptedFileTypes(['image/*'])
+   * ```
+   */
+  fileAttachmentsAcceptedFileTypes(types: string[]): this {
+    this._fileAttachmentsAcceptedFileTypes = types
+    return this
+  }
+
+  /** Per-file size cap in bytes for `attachFiles`. */
+  fileAttachmentsMaxSize(bytes: number): this {
+    this._fileAttachmentsMaxSize = bytes
+    return this
+  }
+
+  /**
+   * Sub-directory hint forwarded to the upload adapter alongside the
+   * `attachFiles` payload. Adapters honor it differently (`localUpload`
+   * writes to `<root>/<directory>/...`, S3 prepends to the key, etc.).
+   */
+  fileAttachmentsDirectory(d: string): this {
+    this._fileAttachmentsDirectory = d
+    return this
+  }
+
+  /** Adapter-defined visibility hint — `'public'` or `'private'`. */
+  fileAttachmentsVisibility(v: RichTextAttachmentVisibility): this {
+    this._fileAttachmentsVisibility = v
+    return this
+  }
+
   getBlocks():       readonly Block[] { return this._blocks }
   isSlashEnabled():  boolean { return this._slashCommand }
   getStorage():      RichTextStorage { return this._storage }
+  isResizableImages(): boolean { return this._resizableImages }
+  getFileAttachmentsAcceptedFileTypes(): string[] | undefined { return this._fileAttachmentsAcceptedFileTypes }
+  getFileAttachmentsMaxSize(): number | undefined { return this._fileAttachmentsMaxSize }
+  getFileAttachmentsDirectory(): string | undefined { return this._fileAttachmentsDirectory }
+  getFileAttachmentsVisibility(): RichTextAttachmentVisibility | undefined { return this._fileAttachmentsVisibility }
 
   /**
    * Resolve the actual button layout — base layout (override or default) with
@@ -286,16 +358,36 @@ export class RichTextField extends Field {
     // RichTextField has no async resolvers, so the parent always returns
     // the sync FieldMeta branch — cast away the union for the spread.
     const base = super.toMeta(ctx) as FieldMeta
+    // Strip `attachFiles` server-side when the panel hasn't registered an
+    // upload adapter — same posture as `MarkdownField` and the editor
+    // chrome stays clean. `uploadUrl` is the wire-side URL for the picker
+    // dialog; only stamped when adapter is wired (otherwise the button is
+    // already gone from the toolbar groups).
+    const groups = this.getToolbarGroups()
+    const filteredGroups = ctx?.hasUploadAdapter
+      ? groups
+      : groups?.map(g => g.filter(b => b !== 'attachFiles'))
+                .filter(g => g.length > 0) ?? null
     return {
       ...base,
       blocks:           this._blocks.map((b) => b.toMeta()),
       slashCommand:     this._slashCommand,
-      toolbarGroups:    this.getToolbarGroups(),
+      toolbarGroups:    filteredGroups,
       floatingToolbar:  this._floatingToolbar,
       storage:          this._storage,
       textColors:       this._textColors       ?? DEFAULT_TEXT_COLORS,
       customTextColors: this._customTextColors,
       highlightColors:  this._highlightColors  ?? DEFAULT_HIGHLIGHT_COLORS,
+      resizableImages:  this._resizableImages,
+      ...(this._fileAttachmentsAcceptedFileTypes !== undefined
+            ? { fileAttachmentsAcceptedFileTypes: this._fileAttachmentsAcceptedFileTypes } : {}),
+      ...(this._fileAttachmentsMaxSize !== undefined
+            ? { fileAttachmentsMaxSize: this._fileAttachmentsMaxSize } : {}),
+      ...(this._fileAttachmentsDirectory !== undefined
+            ? { fileAttachmentsDirectory: this._fileAttachmentsDirectory } : {}),
+      ...(this._fileAttachmentsVisibility !== undefined
+            ? { fileAttachmentsVisibility: this._fileAttachmentsVisibility } : {}),
+      ...(ctx?.uploadUrl && ctx?.hasUploadAdapter ? { uploadUrl: ctx.uploadUrl } : {}),
     }
   }
 }

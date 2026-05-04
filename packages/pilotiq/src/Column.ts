@@ -354,6 +354,10 @@ export class Column extends Element {
   getColumnType(): ColumnType { return this._columnType }
   getFormatStateHandler(): FormatStateHandler | undefined { return this._formatState }
   hasFormatter(): boolean { return this._formatState !== undefined }
+  /** True when a built-in `format` spec (`dateTime / since / money /
+   *  numeric / limit`) is configured. Used by walkers that want to skip
+   *  columns the user has already chosen formatting for. */
+  hasFormat(): boolean { return this._format !== undefined }
   getRecordUrlHandler(): ColumnRecordUrlHandler | undefined {
     return typeof this._recordUrl === 'function' ? this._recordUrl : undefined
   }

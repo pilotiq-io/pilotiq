@@ -24,6 +24,10 @@
     "./register": {
       "import": "./dist/register.js",
       "types": "./dist/register.d.ts"
+    },
+    "./render": {
+      "import": "./dist/render.js",
+      "types": "./dist/render.d.ts"
     }
   },
   "scripts": {
@@ -50,6 +54,7 @@
     "@tiptap/extension-text-style": "3.22.4",
     "@tiptap/extension-color": "3.22.4",
     "@tiptap/extension-highlight": "3.22.4",
+    "@tiptap/extension-image": "3.22.4",
     "@tiptap/suggestion": "^3",
     "react": "^18 || ^19",
     "react-dom": "^18 || ^19"
@@ -70,6 +75,7 @@
     "@tiptap/extension-text-style": "3.22.4",
     "@tiptap/extension-color": "3.22.4",
     "@tiptap/extension-highlight": "3.22.4",
+    "@tiptap/extension-image": "3.22.4",
     "@tiptap/suggestion": "^3",
     "@types/node": "^20",
     "@types/react": "^19",

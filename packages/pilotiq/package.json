@@ -49,6 +49,10 @@
     "./entries": {
       "import": "./dist/entries/index.js",
       "types": "./dist/entries/index.d.ts"
+    },
+    "./richtext": {
+      "import": "./dist/richtext/index.js",
+      "types": "./dist/richtext/index.d.ts"
     }
   },
   "scripts": {

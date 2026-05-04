@@ -1,12 +1,38 @@
 # RichTextField gap audit + plan
 
-> **Status (2026-05-04):** Phases **A / B / C** landed in this pass — top-level
-> toolbar with 26 button ids, `toolbarButtons / enableToolbarButtons /
-> disableToolbarButtons` API, Underline / Subscript / Superscript / TextAlign
-> / TextStyle / Color / Highlight extensions, palette popovers (`textColors` /
-> `customTextColors` / `highlightColors`), slash-menu expansion (h1-h6 +
-> alignment + clear-format), and `.storage('json' | 'html')` option. **23
-> tests** in `@pilotiq/tiptap`. Phases **D-G** remain — see below.
+> **Status (2026-05-04 cont'd¹⁰):** Phases **A / B / C / D / E** landed.
+>
+> - A/B/C — top-level toolbar with 26 button ids, `toolbarButtons /
+>   enableToolbarButtons / disableToolbarButtons` API, Underline / Subscript /
+>   Superscript / TextAlign / TextStyle / Color / Highlight extensions, palette
+>   popovers (`textColors` / `customTextColors` / `highlightColors`), slash-menu
+>   expansion (h1-h6 + alignment + clear-format), `.storage('json' | 'html')`.
+> - D — `renderRichTextToHtml(content, opts?)` server-safe renderer +
+>   `isRichTextValue` detector in `@pilotiq/tiptap` (also exported from
+>   `@pilotiq/tiptap/render`); `@pilotiq/pilotiq/richtext` registry
+>   (`registerRichTextRenderer`); `registerTiptap()` wires both. `TextEntry`
+>   auto-renders rich text and stamps `richtext: true`; default-text columns
+>   in `Table` auto-render too via `_richtextCells` (skipped when no renderer
+>   is registered or when an explicit `formatStateUsing` / `format` /
+>   editable-input column wins).
+> - E — `attachFiles` toolbar button (Phase A reserved id flipped to
+>   `available: true`) opens a Base UI dialog with file picker + alt-text
+>   input + size guard + error surface. Upload posts multipart to the
+>   panel's `_uploads` route (reuses pilotiq's existing `UploadAdapter`)
+>   and inserts an Image node (or a link mark for non-images). Server-side,
+>   the toolbar's `attachFiles` button + meta `uploadUrl` are stripped when
+>   no adapter is registered (`RenderContext.hasUploadAdapter`), matching
+>   `MarkdownField`'s posture. `RichTextField` gains `resizableImages() /
+>   fileAttachmentsAcceptedFileTypes / fileAttachmentsMaxSize /
+>   fileAttachmentsDirectory / fileAttachmentsVisibility`. `@tiptap/extension-image`
+>   wired with `inline: false`, `allowBase64: false`, and the built-in
+>   resize NodeView when `resizableImages()`. Read-side: `renderRichTextToHtml`
+>   gains a `case 'image'` emitting `<img src alt title width height>` with
+>   `sanitizeUrl` on src; bad srcs (`javascript:` etc) drop the `<img>`
+>   entirely instead of emitting `src="#"`. **54 tests** in `@pilotiq/tiptap`
+>   (was 45), **1922 tests** in `@pilotiq/pilotiq`.
+>
+> Phases **F-G** remain — see below.
 
 Aligns `@pilotiq/tiptap` with the reference admin's RichEditor surface.
 Current package ships StarterKit + Placeholder + slash menu + drag handle +
@@ -44,10 +70,10 @@ fills the remaining surface in phases.
 | Style | clear formatting | **missing** |
 | Style | `lead` / `small` size variants | **missing** |
 | Headings | h4/h5/h6 in slash + paragraph reset | **missing** |
-| Files | `attachFiles` button + Image node + upload pipeline | **missing** |
-| Files | `resizableImages()` | **missing** |
-| Files | `fileAttachmentsDisk/Directory/Visibility/AcceptedFileTypes/MaxSize` | **missing** |
-| Files | `preventFileAttachmentPathTampering` | **missing** |
+| Files | `attachFiles` button + Image node + upload pipeline | ✅ Phase E |
+| Files | `resizableImages()` | ✅ Phase E |
+| Files | `fileAttachmentsDirectory/Visibility/AcceptedFileTypes/MaxSize` | ✅ Phase E |
+| Files | `preventFileAttachmentPathTampering` | **missing** (out of scope) |
 | Tables | full set (12 buttons) + table toolbar | **missing** |
 | Tables | `grid` / `gridDelete` / `details` collapsible | **missing** |
 | Custom blocks | side-panel UI in addition to slash menu | **missing** |
@@ -112,21 +138,55 @@ buttons. Brings the new mark extensions needed by those buttons.
 - Toolbar buttons `textColor`, `highlight` open a Base UI Popover with the
   palette.
 
-### Phase D — read-side renderer
+### Phase D — read-side renderer  ✅ **DONE 2026-05-04**
 
-- `renderRichTextToHtml(content, opts)` — accepts JSON or HTML, returns
-  sanitized HTML. Server-safe; no DOM dependency.
-- TextEntry / TextColumn integration — when value is detected as Tiptap JSON,
-  pipe through this renderer.
+- `renderRichTextToHtml(content, opts?)` in `@pilotiq/tiptap` — accepts a
+  Tiptap JSON document (object or JSON-encoded string), renders to HTML.
+  Pure function: no DOM, no Tiptap runtime, no React. Raw HTML strings pass
+  through. Coverage matches Phases A-C (paragraph/heading/blockquote/list/
+  hr/break, all marks, custom-block fallback to `<div data-type=…>`).
+  HTML-escapes text content; sanitizes link hrefs (blocks `javascript:` /
+  `data:` / `vbscript:`); allowlists color values.
+- `isRichTextValue(v)` conservative detector — matches only the canonical
+  `{ type: 'doc', content: [...] }` shape.
+- `@pilotiq/pilotiq/richtext` registry — `registerRichTextRenderer(render,
+  detect)` + `getRichTextRenderer / tryRenderRichText`. Adapter packages
+  register at boot.
+- `registerTiptap()` now wires both the field renderer AND the read-side
+  renderer in one call.
+- `TextEntry`: auto-renders Tiptap content; stamps server-rendered HTML on
+  `_formatted` and flips `richtext: true`. The renderer dispatches via
+  `dangerouslySetInnerHTML` and wraps in `prose`.
+- `Table` default-text columns: per-row auto-render in `loadTableRecords`;
+  stamps `row._formatted[col]` + `row._richtextCells[col] = true`. Skipped
+  when the column has `formatStateUsing` / `format` / is editable, when no
+  renderer is registered, or when the row's value isn't recognizable Tiptap.
 
-### Phase E — file attachments + image insertion
+### Phase E — file attachments + image insertion  ✅ **DONE 2026-05-04**
 
 - Reuse pilotiq's `UploadAdapter` via `RenderContext.hasUploadAdapter`.
-- New `attachFiles` toolbar button → Base UI dialog → upload → insert Image.
-- `resizableImages()` — drag-handle on image NodeView.
-- Field options: `fileAttachmentsAcceptedFileTypes`, `fileAttachmentsMaxSize`,
-  `fileAttachmentsDirectory`, `fileAttachmentsVisibility`. Drive both the
-  upload call and the picker filter.
+- `attachFiles` toolbar button (id was reserved in Phase A's union) flipped
+  to `available: true` with an icon and a `custom: 'attachFiles'` route.
+- Click → Base UI Dialog with file picker, alt-text input, size guard,
+  inline error surface, busy state. Upload posts multipart to the panel's
+  `_uploads` route (`POST {base}/_uploads`); on success the response
+  `{ ok, url }` is fed to `editor.chain().setImage({ src, alt })` for
+  images, or `insertContent` with a `link` mark on the filename for
+  non-images (Tiptap StarterKit doesn't ship a generic file node).
+- `RichTextField`: `resizableImages() / fileAttachmentsAcceptedFileTypes
+  / fileAttachmentsMaxSize / fileAttachmentsDirectory /
+  fileAttachmentsVisibility` setters; meta exposes them all + `uploadUrl`
+  (only stamped when adapter is wired). `attachFiles` button is also
+  stripped server-side from `toolbarGroups` when no adapter is wired
+  (matches `MarkdownField`).
+- `@tiptap/extension-image` (pinned **3.22.4**) wired in `TiptapEditor`
+  with `inline: false`, `allowBase64: false`, and the extension's built-in
+  resize NodeView when `resizableImages()`.
+- Read-side: `renderRichTextToHtml` gains `case 'image'` — emits
+  `<img src alt title width height>` with `sanitizeUrl` on `src`,
+  HTML-escaped `alt` / `title`, and integer width/height that drops bad
+  / negative / non-finite values. Unsafe srcs (`javascript:` etc.) drop
+  the `<img>` entirely rather than emitting a broken `src="#"`.
 
 ### Phase F — tables
 
