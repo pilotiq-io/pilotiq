@@ -5,12 +5,14 @@ record-bound counterpart to a form field: same composability, same
 chrome surface (color / weight / size / tooltip), no input components,
 no validators, no submit. Built for `Resource.detail(record)`.
 
-| Entry        | Renders                                                                |
-|--------------|------------------------------------------------------------------------|
-| `TextEntry`  | Plain text. Default. Honors all built-in formatters.                   |
-| `BadgeEntry` | Pill / chip with a per-value color preset (`gray`, `success`, …).      |
-| `IconEntry`  | Icon + a11y label, picked from a per-value option map.                 |
-| `ImageEntry` | Inline `<img>` from a URL state value. Square / rounded / circle.     |
+| Entry           | Renders                                                                |
+|-----------------|------------------------------------------------------------------------|
+| `TextEntry`     | Plain text. Default. Honors all built-in formatters.                   |
+| `BadgeEntry`    | Pill / chip with a per-value color preset (`gray`, `success`, …).      |
+| `IconEntry`     | Icon + a11y label, picked from a per-value option map.                 |
+| `ImageEntry`    | Inline `<img>` from a URL state value. Square / rounded / circle.      |
+| `KeyValueEntry` | Two-column key/value table. Reads objects or JSON-string blobs.        |
+| `ColorEntry`    | Swatch chip + raw value. For hex / rgb / oklch CSS color strings.      |
 
 Entries compose inside the same layout primitives forms use — `Section`,
 `Grid`, `Card`, `Tabs`, `Split`, `Group`, `Fieldset`. They inherit
@@ -179,6 +181,39 @@ independently; `.dimensions(px)` is a square-image shortcut. Three
 shapes: `.square()` / `.rounded()` (default) / `.circle()`. `Entry.size`
 (text-size) is inherited but doesn't affect image rendering — use
 `dimensions()` for pixels.
+
+---
+
+## `KeyValueEntry`
+
+```ts
+KeyValueEntry.make('headers')
+  .keyLabel('Header')
+  .valueLabel('Value')
+```
+
+The state value can be a plain object **or** a JSON-encoded string —
+the renderer parses strings on the way out, so it pairs cleanly with
+`KeyValueField` (which serializes to a JSON blob on submit). Nested
+values render as their JSON string for compactness; non-JSON strings
+fall through to the entry's `default()` fallback.
+
+Useful for debug surfaces — request headers, webhook payloads, plan
+metadata — anywhere you'd otherwise dump `<pre>{JSON.stringify(...)}</pre>`.
+
+---
+
+## `ColorEntry`
+
+```ts
+ColorEntry.make('brandColor').dimensions(28).circle()
+```
+
+State value is a CSS color string (`#aabbcc`, `rgb(...)`, `oklch(...)`,
+…) rendered as a colored chip. The raw value is shown beside the swatch
+by default; toggle with `.hideValue()` for a chip-only layout. Same
+`.width / .height / .dimensions / .square / .rounded / .circle` setters
+as `ImageEntry`.
 
 ---
 

@@ -1919,9 +1919,38 @@ function renderText(el: ElementMeta, index: number): React.ReactNode {
   )
 }
 
+/** Coerce a `KeyValueEntry` state value (object | JSON string | …) into a
+ *  flat record. Returns `null` when the value is empty or non-decodable. */
+function normalizeKeyValueValue(value: unknown): Record<string, unknown> | null {
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>
+      }
+    } catch {
+      // Non-JSON string — fall through to null so the renderer shows the
+      // fallback rather than misrepresenting it as a one-row map.
+    }
+    return null
+  }
+  if (Array.isArray(value)) return null
+  if (typeof value === 'object') return value as Record<string, unknown>
+  return null
+}
+
+/** Render a single kv cell value — primitives become their string form;
+ *  nested objects/arrays JSON-stringify for compactness. */
+function formatKeyValueCell(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
 /**
  * Plan #16 — read-only label-value pair for `Resource.detail()` schemas.
- * Dispatches on `meta.entryType` (`'text' | 'badge' | 'icon' | 'image'`).
+ * Dispatches on `meta.entryType` (`'text' | 'badge' | 'icon' | 'image' | 'keyValue' | 'color'`).
  * Wraps the rendered value in `<EntryShell>` for the shared chrome
  * (label / helperText / tooltip / copyable trigger).
  */
@@ -2022,6 +2051,65 @@ function renderEntry(el: ElementMeta, index: number): React.ReactNode {
       break
     }
 
+    case 'keyValue': {
+      const parsed = normalizeKeyValueValue(value)
+      const keys   = parsed ? Object.keys(parsed) : []
+      if (!parsed || keys.length === 0) {
+        body = <span className="text-sm text-muted-foreground">{fallback}</span>
+        break
+      }
+      const keyLabel   = el['keyLabel']   ? String(el['keyLabel'])   : 'Key'
+      const valueLabel = el['valueLabel'] ? String(el['valueLabel']) : 'Value'
+      body = (
+        <table className="w-full border border-border text-sm">
+          <thead>
+            <tr className="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <th className="border-b border-border px-2 py-1">{keyLabel}</th>
+              <th className="border-b border-border px-2 py-1">{valueLabel}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {keys.map(k => (
+              <tr key={k} className="border-t border-border first:border-t-0">
+                <td className="px-2 py-1 align-top font-mono text-xs">{k}</td>
+                <td className="px-2 py-1 align-top font-mono text-xs break-all">
+                  {formatKeyValueCell(parsed[k])}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )
+      break
+    }
+
+    case 'color': {
+      const isBlank = value === null || value === undefined || value === ''
+      if (isBlank) {
+        body = <span className="text-sm text-muted-foreground">{fallback}</span>
+        break
+      }
+      const hex    = String(value)
+      const width  = (el['colorWidth']  as number | undefined) ?? (el['colorSize'] as number | undefined) ?? 24
+      const height = (el['colorHeight'] as number | undefined) ?? (el['colorSize'] as number | undefined) ?? 24
+      const shape  = String(el['colorShape'] ?? 'rounded')
+      const shapeCls = shape === 'circle' ? 'rounded-full' : shape === 'square' ? '' : 'rounded-md'
+      const showValue = el['showValue'] !== false
+      body = (
+        <span className="inline-flex items-center gap-2">
+          <span
+            className={`inline-block border border-border ${shapeCls}`.trim()}
+            style={{ width, height, backgroundColor: hex }}
+            aria-label={hex}
+          />
+          {showValue && (
+            <span className="font-mono text-xs text-muted-foreground">{hex}</span>
+          )}
+        </span>
+      )
+      break
+    }
+
     default:
       body = <span className="text-sm text-muted-foreground">{fallback}</span>
   }
@@ -2029,7 +2117,11 @@ function renderEntry(el: ElementMeta, index: number): React.ReactNode {
   const copyable = el['copyable'] as { label?: string } | undefined
   const copyValue = el['_formatted'] !== undefined
     ? String(el['_formatted'])
-    : value === null || value === undefined ? '' : String(value)
+    : value === null || value === undefined
+      ? ''
+      : typeof value === 'object'
+        ? JSON.stringify(value)
+        : String(value)
 
   return (
     <EntryShell

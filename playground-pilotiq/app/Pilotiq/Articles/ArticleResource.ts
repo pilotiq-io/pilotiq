@@ -1,4 +1,8 @@
-import { Resource, Section, Text, type Form, type Table, type Element } from '@pilotiq/pilotiq'
+import {
+  Resource, Section, Grid, Text,
+  TextEntry, BadgeEntry, KeyValueEntry, ColorEntry,
+  type Form, type Table, type Element,
+} from '@pilotiq/pilotiq'
 import { Newspaper } from 'lucide-react'
 import { Article } from '../../Models/Article.js'
 import { ArticleForm }   from './Schemas/ArticleForm.js'
@@ -51,13 +55,33 @@ export class ArticleResource extends Resource {
   }
 
   static override detail(record: unknown): Element[] {
-    const r = record as { id?: string; title?: string; slug?: string | null; status?: string } | null
-    if (!r) return [Text.make('Article not found.')]
+    if (!record) return [Text.make('Article not found.')]
     return [
       Section.make('Overview').schema([
-        Text.make(`Title: ${r.title ?? '(untitled)'}`),
-        Text.make(`Slug: ${r.slug ?? '(none)'}`),
-        Text.make(`Status: ${r.status ?? 'draft'}`),
+        Grid.make().columns(2).schema([
+          TextEntry.make('title').size('lg').weight('semibold'),
+          BadgeEntry.make('status').colors({ draft: 'gray', published: 'success' }),
+          TextEntry.make('slug').default('(none)').inlineLabel().copyable('Copy slug'),
+          TextEntry.make('createdAt').label('Created').since(),
+        ]),
+      ]),
+      // Plan #16 follow-up — KeyValueEntry / ColorEntry demos.
+      // `accentColor` is a hex string column; `metadata` is a JSON-blob
+      // string column. KeyValueEntry's renderer parses JSON strings,
+      // and ColorEntry renders the hex as a swatch with the value beside.
+      Section.make('Branding').schema([
+        Grid.make().columns(2).schema([
+          ColorEntry.make('accentColor').dimensions(28).circle()
+            .tooltip('Hero accent on the public site').default('No accent set'),
+          TextEntry.make('publishedAt').label('Published').since().default('Unpublished'),
+        ]),
+      ]),
+      Section.make('Metadata').schema([
+        KeyValueEntry.make('metadata')
+          .keyLabel('Property')
+          .valueLabel('Value')
+          .helperText('Stored as a JSON blob; admins edit raw.')
+          .default('No metadata set.'),
       ]),
     ]
   }

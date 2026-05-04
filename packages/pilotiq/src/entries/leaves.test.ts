@@ -2,9 +2,11 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { resolveSchema, _resetResolverRegistry } from '../schema/resolveSchema.js'
-import { BadgeEntry } from './BadgeEntry.js'
-import { IconEntry }  from './IconEntry.js'
-import { ImageEntry } from './ImageEntry.js'
+import { BadgeEntry }    from './BadgeEntry.js'
+import { IconEntry }     from './IconEntry.js'
+import { ImageEntry }    from './ImageEntry.js'
+import { KeyValueEntry } from './KeyValueEntry.js'
+import { ColorEntry }    from './ColorEntry.js'
 import type { EntryMeta } from './Entry.js'
 
 beforeEach(() => _resetResolverRegistry())
@@ -145,6 +147,136 @@ describe('ImageEntry', () => {
   })
 })
 
+describe('KeyValueEntry', () => {
+  it('serializes the discriminator + value', async () => {
+    const out = await resolveSchema(
+      [KeyValueEntry.make('headers')],
+      { record: { headers: { 'X-Source': 'admin', 'X-Trace': 'abc' } } },
+    )
+    const m = out[0] as EntryMeta
+    assert.equal(m.entryType, 'keyValue')
+    assert.deepEqual(m.value, { 'X-Source': 'admin', 'X-Trace': 'abc' })
+  })
+
+  it('emits default key/value labels', async () => {
+    const out = await resolveSchema(
+      [KeyValueEntry.make('headers')],
+      { record: { headers: {} } },
+    )
+    const m = out[0] as EntryMeta & { keyLabel?: string; valueLabel?: string }
+    assert.equal(m.keyLabel,   'Key')
+    assert.equal(m.valueLabel, 'Value')
+  })
+
+  it('keyLabel / valueLabel overrides', async () => {
+    const out = await resolveSchema(
+      [KeyValueEntry.make('headers').keyLabel('Header').valueLabel('Setting')],
+      { record: { headers: {} } },
+    )
+    const m = out[0] as EntryMeta & { keyLabel?: string; valueLabel?: string }
+    assert.equal(m.keyLabel,   'Header')
+    assert.equal(m.valueLabel, 'Setting')
+  })
+
+  it('passes raw object through (renderer-side normalization)', async () => {
+    const out = await resolveSchema(
+      [KeyValueEntry.make('meta')],
+      { record: { meta: { count: 3, nested: { a: 1 } } } },
+    )
+    const m = out[0] as EntryMeta
+    assert.deepEqual(m.value, { count: 3, nested: { a: 1 } })
+  })
+
+  it('passes JSON-string values through unmodified (renderer parses)', async () => {
+    const json = '{"a":1,"b":"two"}'
+    const out  = await resolveSchema(
+      [KeyValueEntry.make('settings')],
+      { record: { settings: json } },
+    )
+    assert.equal((out[0] as EntryMeta).value, json)
+  })
+})
+
+describe('ColorEntry', () => {
+  it('serializes the discriminator + value', async () => {
+    const out = await resolveSchema(
+      [ColorEntry.make('brandColor')],
+      { record: { brandColor: '#d97757' } },
+    )
+    const m = out[0] as EntryMeta
+    assert.equal(m.entryType, 'color')
+    assert.equal(m.value,     '#d97757')
+  })
+
+  it('default size 24×24, rounded shape, value visible', async () => {
+    const out = await resolveSchema(
+      [ColorEntry.make('c')],
+      { record: { c: '#000' } },
+    )
+    const m = out[0] as EntryMeta & {
+      colorWidth?: number; colorHeight?: number; colorSize?: number
+      colorShape?: string; showValue?: boolean
+    }
+    assert.equal(m.colorWidth,  24)
+    assert.equal(m.colorHeight, 24)
+    assert.equal(m.colorSize,   24)
+    assert.equal(m.colorShape,  'rounded')
+    assert.equal(m.showValue,   undefined)
+  })
+
+  it('width / height set independently — no size shorthand', async () => {
+    const out = await resolveSchema(
+      [ColorEntry.make('c').width(64).height(32)],
+      { record: { c: '#fff' } },
+    )
+    const m = out[0] as EntryMeta & {
+      colorWidth?: number; colorHeight?: number; colorSize?: number
+    }
+    assert.equal(m.colorWidth,  64)
+    assert.equal(m.colorHeight, 32)
+    assert.equal(m.colorSize,   undefined)
+  })
+
+  it('dimensions() sugar fills both', async () => {
+    const out = await resolveSchema(
+      [ColorEntry.make('c').dimensions(48)],
+      { record: { c: '#aabbcc' } },
+    )
+    const m = out[0] as EntryMeta & { colorWidth?: number; colorSize?: number }
+    assert.equal(m.colorWidth, 48)
+    assert.equal(m.colorSize,  48)
+  })
+
+  it('shape — square / rounded / circle', async () => {
+    const cases: { make: () => ColorEntry; expected: string }[] = [
+      { make: () => ColorEntry.make('c').square(),  expected: 'square' },
+      { make: () => ColorEntry.make('c').rounded(), expected: 'rounded' },
+      { make: () => ColorEntry.make('c').circle(),  expected: 'circle' },
+    ]
+    for (const { make, expected } of cases) {
+      const out = await resolveSchema([make()], { record: { c: '#fff' } })
+      const m = out[0] as EntryMeta & { colorShape?: string }
+      assert.equal(m.colorShape, expected)
+    }
+  })
+
+  it('hideValue() flips showValue=false', async () => {
+    const out = await resolveSchema(
+      [ColorEntry.make('c').hideValue()],
+      { record: { c: '#000' } },
+    )
+    assert.equal((out[0] as EntryMeta & { showValue?: boolean }).showValue, false)
+  })
+
+  it('hideValue(false) restores default (omits showValue)', async () => {
+    const out = await resolveSchema(
+      [ColorEntry.make('c').hideValue().hideValue(false)],
+      { record: { c: '#000' } },
+    )
+    assert.equal((out[0] as EntryMeta & { showValue?: boolean }).showValue, undefined)
+  })
+})
+
 describe('Phase 2 leaf — common Entry inheritance', () => {
   it('every leaf inherits label / state / formatStateUsing', async () => {
     const out = await resolveSchema(
@@ -152,11 +284,23 @@ describe('Phase 2 leaf — common Entry inheritance', () => {
         BadgeEntry.make('status').label('Stage'),
         IconEntry.make('verified').formatStateUsing(v => (v ? 'Y' : 'N')),
         ImageEntry.make('avatarUrl').helperText('Profile picture'),
+        KeyValueEntry.make('headers').inlineLabel(),
+        ColorEntry.make('brandColor').tooltip('Hex sRGB'),
       ],
-      { record: { status: 'draft', verified: false, avatarUrl: 'a.png' } },
+      {
+        record: {
+          status:      'draft',
+          verified:    false,
+          avatarUrl:   'a.png',
+          headers:     { 'X-Foo': '1' },
+          brandColor:  '#d97757',
+        },
+      },
     )
-    assert.equal(out[0]!['label'],     'Stage')
-    assert.equal(out[1]!['_formatted'], 'N')
-    assert.equal(out[2]!['helperText'], 'Profile picture')
+    assert.equal(out[0]!['label'],       'Stage')
+    assert.equal(out[1]!['_formatted'],  'N')
+    assert.equal(out[2]!['helperText'],  'Profile picture')
+    assert.equal(out[3]!['inlineLabel'], true)
+    assert.equal(out[4]!['tooltip'],     'Hex sRGB')
   })
 })
