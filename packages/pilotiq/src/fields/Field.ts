@@ -68,6 +68,12 @@ export interface FieldMeta extends ElementMeta {
   suffix?:      FieldDecoration
   helperText?:  string
   /**
+   * Render the label to the left of the input rather than above it.
+   * Mirrors `Entry.inlineLabel()` for cross-surface symmetry — same flag
+   * shape, same default (label-above) when omitted.
+   */
+  inlineLabel?: boolean
+  /**
    * Default value for create-mode (no record). Display-time wins over
    * this when a record / values map is present (see `renderFormChild`
    * — values from the form state override meta defaults).
@@ -215,6 +221,7 @@ export abstract class Field extends Element {
   protected _prefix?: FieldDecoration
   protected _suffix?: FieldDecoration
   protected _helperText?: string
+  protected _inlineLabel = false
   protected _default?: unknown
   protected _dehydrated = true
   protected _formatStateUsing?: FormatStateUsingHandler
@@ -303,6 +310,13 @@ export abstract class Field extends Element {
 
   /** Helper text rendered below the input — typically a constraint hint. */
   helperText(text: string): this { this._helperText = text; return this }
+
+  /**
+   * Render the label to the left of the input rather than above it.
+   * Mirrors `Entry.inlineLabel()`. Default is label-above; pass `false`
+   * to clear the flag.
+   */
+  inlineLabel(v = true): this { this._inlineLabel = v; return this }
 
   /**
    * Default value for create-mode (no record). On edit, the loaded
@@ -585,6 +599,7 @@ export abstract class Field extends Element {
       ...(this._prefix !== undefined ? { prefix: this._prefix } : {}),
       ...(this._suffix !== undefined ? { suffix: this._suffix } : {}),
       ...(this._helperText !== undefined ? { helperText: this._helperText } : {}),
+      ...(this._inlineLabel ? { inlineLabel: true } : {}),
       ...(this._default !== undefined ? { defaultValue: this._default } : {}),
       ...(formattedValue !== undefined ? { formattedValue } : {}),
     }

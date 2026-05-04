@@ -333,6 +333,23 @@ describe('Field cross-field plumbing (Plan #6)', () => {
     })
   })
 
+  describe('inlineLabel()', () => {
+    it('emits inlineLabel=true on meta when set', () => {
+      const meta = TextField.make('amount').inlineLabel().toMeta()
+      assert.equal(meta.inlineLabel, true)
+    })
+
+    it('omits inlineLabel when unset', () => {
+      const meta = TextField.make('amount').toMeta()
+      assert.equal('inlineLabel' in meta, false)
+    })
+
+    it('inlineLabel(false) clears the flag', () => {
+      const meta = TextField.make('amount').inlineLabel().inlineLabel(false).toMeta()
+      assert.equal('inlineLabel' in meta, false)
+    })
+  })
+
   describe('default()', () => {
     it('emits defaultValue on meta when set', () => {
       const meta = TextField.make('x').default('hello').toMeta()

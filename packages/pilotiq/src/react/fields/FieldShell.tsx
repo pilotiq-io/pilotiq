@@ -26,6 +26,7 @@ export function FieldShell({ el, name, label, required, children }: FieldShellPr
   const prefix     = el['prefix']     as string | { icon: string } | undefined
   const suffix     = el['suffix']     as string | { icon: string } | undefined
   const helperText = el['helperText'] as string | undefined
+  const inline     = el['inlineLabel'] === true
 
   const labelEl = label !== '' ? (
     <label htmlFor={name} className="text-sm font-medium leading-none">
@@ -42,6 +43,20 @@ export function FieldShell({ el, name, label, required, children }: FieldShellPr
       </div>
     )
     : children
+
+  if (inline) {
+    return (
+      <div className="flex items-baseline gap-3">
+        {labelEl && <div className="min-w-32 pt-2">{labelEl}</div>}
+        <div className="min-w-0 flex-1">
+          {input}
+          {helperText && (
+            <p className="mt-1 text-xs text-muted-foreground">{helperText}</p>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-1.5">
