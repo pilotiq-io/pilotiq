@@ -22,11 +22,11 @@ Land in this order. Each step is independently shippable; later steps build on e
 | 4 | ✅ `page-lifecycle-hooks.md` DONE | ~1 day | Form lifecycle split (create/update), fill-side hooks, page-class overrides, default success toasts shipped 2026-04-30. |
 | 5 | ✅ `reactive-fields.md` DONE | ~3 days | `live()` + `$get/$set` + `afterStateUpdated` + dependent options + reactive visibility shipped 2026-04-30 (server) and 2026-05-01 (client + demo). |
 | 6 | ✅ `field-types-expansion.md` DONE | ~3 days | Hidden / Checkbox / Radio / CheckboxList / Slider / ColorPicker / DateTimePicker / KeyValue / FileUpload + Field cross-field plumbing (prefix/suffix/helperText/default/dehydrated/formatStateUsing) + UploadAdapter contract + localUpload + `_uploads` route shipped 2026-05-01. Demo at `/new-admin/field-types-demo`. |
-| 7 | `list-page-tabs.md` | ~1 day | High value (every "Drafts / Published / Archived" view), small scope, layers on existing Tabs primitive. |
+| 7 | ✅ `list-page-tabs.md` DONE | ~1 day | Filament-style query-shortcut tabs above the table — `ListTab.make(name).label().query(fn).badge(fn)` + `ListTabs` element + `ListPage.getTabs()` opt-in + `?tab=` URL key. Shipped 2026-05-01; polish 2026-05-03 (walkers switched to `getType()` for Vite SSR module-cache safety; canonical paramless URL for the default tab). |
 | 8 | ✅ `schema-layouts.md` DONE | ~2 days | Wizard / Step, Fieldset, Split, Group, Element-level visibility + columnSpan/columnStart, Section polish (icon/badge/aside/compact/persistCollapsed), wizard step-validate endpoint shipped 2026-05-01. Demo at `/new-admin/layouts-demo`. |
 | 8.5 | ✅ `icon-system.md` DONE | ~1 day | Component-typed `Resource.icon = Newspaper` via Vite-plugin manifest + string registry for schema-time icons. Multi-library (lucide / tabler / heroicons / phosphor). Shipped 2026-04-30 as a prereq for #9. |
-| 9 | `resource-navigation.md` | ~1 day | navigationGroup, navigationSort, navigationBadge, recordTitleAttribute. Cosmetic but expected. Builds on icon-system (above). |
-| 10 | `authorization.md` | ~2 days | Resource policies (canView/canCreate/canEdit/canDelete). Pairs with @rudderjs/auth wiring. |
+| 9 | ✅ `resource-navigation.md` DONE | ~1 day | Resource/Global/Page nav metadata (`navigationGroup`/`Sort`/`Label`/`Icon`/`Badge`/`BadgeColor`/`ParentItem` + `recordTitleAttribute`); `panelInfo()` builds a unified `navigation: NavItem[]` tree consumed by Sidebar + Topbar; per-request badge resolution in parallel with errors swallowed. Shipped 2026-04-30. |
+| 10 | ✅ `authorization.md` DONE | ~2 days | `Resource.canAccess/canViewAny/canView/canCreate/canEdit/canDelete` + `Global.canAccess/canView/canEdit` + `Page.canAccess` (all async, default `true`) + `Pilotiq.user(req => userOrNull)` opaque resolver. All 10 route handlers + `panelInfo()` nav filter + `Action.create/edit/view/delete` auto-`.visible()` rules. 403 on policy fail (≠ 401). Shipped 2026-04-30. |
 | 11 | ✅ `relations.md` DONE | ~2 weeks | RelationManager. Shipped 2026-05-01: class + ORM contract + data builder + IDOR + routes + Vike stubs + auto-Tabs + auth fall-through + reactive-integration doc + playground demo (`User → Posts`) + guide. 834 tests. Scoped to hasOne/hasMany/belongsTo; pivot/M2M deferred. Manager-row-action ergonomics polish (`RelationManagerContext` threaded into `static table()` + `Action.relation*(M, ctx)` factories) shipped 2026-05-01 as a follow-up. **M2M follow-up shipped 2026-05-03** (`relations-m2m.md`): `RelationMode` + auto-detection + `canAttach / canDetach` predicates + `Action.relationAttach / relationDetach / relationBulkDetach` factories + manager-scoped `_action / _detach` routes + Article ↔ Tag playground demo. ORM blocker for `belongsToMany` cleared same day. 1758 tests. **Polymorphic follow-up shipped 2026-05-03** (`relations-polymorphic.md`): `RelationMode` widened to `'morphMany' / 'morphTo'`, `normalizeRelationMode` helper, `getMorphRelationDescriptor` + `computeMorphPayload`, auto-injection of `<morphName>Id` + `<morphName>Type` on create + edit (anti-tamper — framework wins after user hooks), Comment ↔ Post / Video playground demo. `morphToMany / morphedByMany` remain deferred. 1797 tests. |
 | 12 | ✅ `global-search.md` DONE | ~1 week | `Resource.globalSearch` opt-in + 4 override statics + `searchAllResources` helper + `GET /_search` + Cmd+K palette + sidebar/topbar trigger pill shipped 2026-05-01. |
 | 13 | ✅ `soft-deletes.md` DONE | ~1 week | Resource.softDeletes opt-in + TrashedFilter (auto-inject) + Restore/ForceDelete routes + Action.restore/forceDelete + bulk variants shipped 2026-05-01. Verified rudder ORM already shipped the primitives (Model.softDeletes, restore/forceDelete, withTrashed/onlyTrashed). 885 tests. Two-sided opt-in (Model + Resource) by design. Demo at `playground-pilotiq` PostResource. |
@@ -54,18 +54,18 @@ Penciled for later (Tier 3): Repeater/Builder fields ✅ shipped (Plans #14, #14
 | ✅ `summaries()` (Sum/Avg/Count/Range row at footer) DONE | 2 | Shipped 2026-05-04 — `Column.summarize([Sum/Average/Count/Range])`; per-page only; `<tfoot>` row. **Per-group summary rows (2026-05-03):** when an active group is set, `loadTableRecords` also computes per-bucket summaries and stamps `TableMeta.groupSummaries`; renderer emits an inline summary row at the end of each group band. Cross-page aggregation deferred. |
 | ✅ `reorderable(column)` (drag-to-reorder rows) DONE | 2 | Shipped 2026-05-04 — `Table.reorderable('sort')` + optional `ModelLike.reorder?(ids)` contract + `POST {base}/{slug}/_reorder` + grip-handle column with native HTML5 DnD. Drag locks off when filters/search/non-default-sort/page>1 are active so only the canonical order round-trips. |
 | ✅ `poll(interval)` (auto-refresh) DONE | 2 | Shipped 2026-05-04 — SPA-friendly via vike navigate; pauses on hidden tab. |
-| `recordUrl(fn)` (entire row clickable) | 2 | One-liner in renderer. |
-| `striped()` | 1 | Trivial. Roll into #2. |
+| ✅ `recordUrl(fn)` (entire row clickable) DONE | 2 | `Table.recordUrl(fn)` stamps `row._recordUrl`; renderer wraps each data cell in `<a href>` (preserves new-tab / cmd-click / a11y). Per-column override `Column.recordUrl(fn) / .recordUrl(false)`. |
+| ✅ `striped()` DONE | 1 | Shipped with **Plan #2** 2026-04-29. |
 | ✅ `recordClasses(fn)` (per-row CSS) DONE | 2 | Shipped 2026-05-04 — server-side per-row eval, stamped under `_recordClasses`. |
-| `heading() / description()` on Table | 1 | Trivial. Roll into #2. |
+| ✅ `heading() / description()` on Table DONE | 1 | Shipped with **Plan #2** 2026-04-29. |
 | `deferLoading()` (skeleton on first paint) | 3 | Edge case. |
 | `queryStringIdentifier()` (multi-table on one page) | 3 | Currently we'd collide on `?sort=...`. |
 | ✅ Editable columns (SelectColumn, ToggleColumn, TextInputColumn) DONE | 3 | Shipped 2026-05-03 — inline-edit cells PATCH a single column via `POST {base}/{slug}/:id/_cell/:column`. See `editable-cell-columns.md`. |
 | ✅ `TernaryFilter` (true/false/blank) DONE | 1 | Shipped 2026-05-03 alongside `DateRangeFilter` — see `filter-expansion.md`. |
 | ✅ `Filter` with custom schema (form fields per filter) DONE | 2 | Shipped 2026-05-04 — `FormFilter.make().form([fields…]).handle((q, values) => q).formIndicator(values => string)`. JSON-encoded single URL key. Inner schema resolved with the surrounding `RenderContext` via `resolveSchema`; field `defaultValue`s pre-hydrated from the parsed URL value so the popover round-trips. `parseFormFilterValue / encodeFormFilterValue` exported. |
 | `persistFiltersInSession()` | 3 | Stateful behavior; defer. |
-| Tabs on list page (filter-by-tab) | **1** | **Plan #7.** Layers on existing Tabs primitive. |
-| `emptyStateHeading/Description/Icon/Actions` | 1 | We render bare "No records yet." Easy. Roll into #2. |
+| ✅ Tabs on list page (filter-by-tab) DONE | 1 | **Plan #7** shipped 2026-05-01 — see TL;DR row. |
+| ✅ `emptyStateHeading/Description/Icon/Actions` DONE | 1 | Shipped with **Plan #2** 2026-04-29 — `Table.emptyState({ heading, description, icon, actions })`. |
 | Filtered-but-empty distinct empty state | 2 | Different copy when search/filter active. |
 | Custom-data sort/search expectations (`$sortColumn`, `$columnSearches`) | already covered | Our `TableContext` already passes these. |
 | Layout components (Stack/Split/Grid for card-listing) | 3 | "Cards listing" mode. Defer. |
@@ -111,15 +111,15 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 
 | Feature | Tier | Notes |
 |---|---|---|
-| `navigationGroup` / `navigationSort` / `navigationLabel` / `navigationBadge` / `navigationParentItem` | **1** | **Plan #9.** Currently sidebar is flat. |
-| `recordTitleAttribute` | 1 | Roll into #9; needed by global search later. |
-| Authorization (canView/canCreate/canEdit/canDelete + canAccess) | **1** | **Plan #10.** Currently nothing. |
+| ✅ `navigationGroup` / `navigationSort` / `navigationLabel` / `navigationBadge` / `navigationParentItem` DONE | 1 | **Plan #9** shipped 2026-04-30 — see TL;DR row. |
+| ✅ `recordTitleAttribute` DONE | 1 | Shipped with **Plan #9** 2026-04-30. Consumed by **Plan #12** global search. |
+| ✅ Authorization (canView/canCreate/canEdit/canDelete + canAccess) DONE | 1 | **Plan #10** shipped 2026-04-30 — see TL;DR row. |
 | Soft-delete integration (TrashedFilter, Force/Restore actions) | 2 | **Plan #13.** Needs @rudderjs/orm soft-delete support first. |
 | `getEloquentQuery()` override (global scopes) | 1 | Just a hook on `Resource.model.query` we forward through. |
 | ✅ Sub-navigation (View/Edit/Manage Relations tabs at record level) DONE | 2 | Shipped 2026-05-03 — `RelationTabs` strip widened from a single mode-dependent parent tab (`Edit` OR `Details`) to sibling `[View, Edit, …managers]` tabs, Filament-style. `__view` / `__edit` tabs gated on `R.resolvePages().view` / `.edit` so a Resource that prunes a page role doesn't surface a 404 link. Strip still suppressed when the resource has no relation managers. 1799 tests. |
 | Resource nesting (`/parent/{id}/child/...` URL) | 3 | Needs route registry + breadcrumb work. |
 | Global search (cmd+K) | 2 | **Plan #12.** |
-| Header / footer widgets per page | 3 | Big — widgets/dashboards system. |
+| ✅ Header / footer widgets per page DONE | 3 | Shipped 2026-05-03 cont'd as **Plan #15 Phase E** — `Resource.headerSchema()` / `footerSchema()` slot widgets above/below the list table; resource-scope `_widget/:id` polling endpoint reuses the widget contract. |
 | Custom resource pages (sibling of List/Create/Edit/View) | 1 | Mostly already supported via `Resource.pages()`; need to document the pattern + add nav-integration. |
 
 ### 5. Pages (`Page.ts`, `defaultPages.ts`)
@@ -130,12 +130,12 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 
 | Feature | Tier | Notes |
 |---|---|---|
-| `mutateFormDataBeforeFill` / `afterFill` | **1** | **Plan #4.** Add to `Form` lifecycle. |
-| `mutateFormDataBeforeCreate` / `BeforeSave` | **1** | We have `mutateData` already; rename to align + add timing. |
-| `beforeFill` / `afterFill` / `beforeCreate` / `afterCreate` / `beforeSave` / `afterSave` (sentinel hooks) | 1 | We have `beforeSave` / `afterSave`. Add the rest. |
-| `handleRecordCreation` / `handleRecordUpdate` (override the save itself) | 1 | We already support this via `Form.save()`. Document. |
-| `getRedirectUrl()` / customizable post-save redirect | 1 | We have `redirectAfterSave`. Document the override surface. |
-| `getCreatedNotificationTitle` / `getSavedNotificationTitle` / disable notifications | 1 | Needs Plan #3 (notifications) first, then #4. |
+| ✅ `mutateFormDataBeforeFill` / `afterFill` DONE | 1 | Shipped with **Plan #4** 2026-04-30 — fill-side mutators on `Form`. |
+| ✅ `mutateFormDataBeforeCreate` / `BeforeSave` DONE | 1 | Shipped with **Plan #4** 2026-04-30 — split lifecycle (`beforeCreate` / `beforeSave`). |
+| ✅ `beforeFill` / `afterFill` / `beforeCreate` / `afterCreate` / `beforeSave` / `afterSave` (sentinel hooks) DONE | 1 | Full sextet shipped with **Plan #4** 2026-04-30. |
+| ✅ `handleRecordCreation` / `handleRecordUpdate` (override the save itself) DONE | 1 | `Form.save(fn)` documented in `docs/guide/lifecycle.md`. |
+| ✅ `getRedirectUrl()` / customizable post-save redirect DONE | 1 | `Form.redirectAfterSave(fn)` plus page-class `static getRedirectUrl(record)` (auto-wired through `defaultPages.ts`). |
+| ✅ `getCreatedNotificationTitle` / `getSavedNotificationTitle` / disable notifications DONE | 1 | Page-class statics override default toast titles; returning `null` suppresses the toast entirely. Shipped with **Plan #4** 2026-04-30. |
 | ✅ "Create & create another" submit DONE | 2 | Shipped 2026-05-03 — secondary outlined submit on `CreatePage` posts `_continueCreate=1`; create POST routes redirect back to `/create` and JSON includes `force:true` so SPA-nav remounts a fresh form on the same URL. |
 | `getHeaderActions` on EditPage (delete/view/replicate buttons in header) | 1 | Already supported via override; document. |
 | ✅ Wizard creation (`HasWizard` trait equivalent) DONE | 2 | Shipped 2026-05-04 cont'd — `CreatePage.getSteps(R) → Step[]` opt-in + `getWizard(wizard, R)` chrome customizer. Non-empty steps replace the form's children with a Wizard wrapping them; lifecycle hooks (`save / validate / mutate*`) survive the swap. Per-step validation reuses Plan #8's `tagFormWizardUrls / formWizardData` pipeline unchanged. EditPage wizard mode deferred (rare use case). |
@@ -149,16 +149,16 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 
 | Feature | Tier | Notes |
 |---|---|---|
-| `Wizard` / `Step` (multi-step form layout) | 2 | **Plan #8.** Pairs with reactive fields. |
-| `Fieldset` (grouped fields with label/border) | 1 | Trivial. Roll into #8. |
-| `Split` / `Flex` (horizontal flex layout) | 2 | Useful for two-column forms. |
-| `Group` (logical grouping w/o visual chrome) | 1 | Trivial wrapper. |
-| `columnSpan` / `columnStart` / `columnOrder` (positional control inside Grid) | 1 | Schema layouts feel cramped without these. Roll into #8. |
+| ✅ `Wizard` / `Step` (multi-step form layout) DONE | 2 | **Plan #8** shipped 2026-05-01 — multi-step form + per-step validation endpoint (`tagFormWizardUrls / formWizardData`). `CreatePage.getSteps()` opt-in landed 2026-05-04 cont'd. EditPage wizard mode deferred (rare). |
+| ✅ `Fieldset` (grouped fields with label/border) DONE | 1 | Shipped with **Plan #8** 2026-05-01 — `Fieldset.make(label).columns(n).schema([…])`. |
+| ✅ `Split` / `Flex` (horizontal flex layout) DONE | 2 | Shipped with **Plan #8** 2026-05-01 — `Split.make().from('md').schema([…])`. |
+| ✅ `Group` (logical grouping w/o visual chrome) DONE | 1 | Shipped with **Plan #8** 2026-05-01 — chromeless container; inherits `Element.visible / columnSpan`. |
+| ✅ `columnSpan` / `columnStart` / `columnOrder` (positional control inside Grid) DONE | 1 | `columnSpan` shipped with **Plan #8** as an `Element` base; `columnStart`/`columnOrder` deliberately deferred (no consumer ask). |
 | ✅ `Section.dense()` DONE | 2 | Shipped 2026-05-03 — orthogonal to `compact()`: tightens inner grid gap (gap-2 vs gap-4) without changing outer padding. |
 | Container queries (`gridContainer()`, `@md:`) | 3 | |
-| `aside()` / `compact()` / `collapsed()` / `collapsible()` / `persistCollapsed` on Section | 2 | Section is currently inert; usability win. |
-| Section `description()` / `icon()` / `badge()` | 1 | Trivial. Roll into #8. |
-| `hidden(fn)` / `visible(fn)` on layouts (we have on Fields) | 1 | Easy uplift. |
+| ✅ `aside()` / `compact()` / `collapsed()` / `collapsible()` / `persistCollapsed` on Section DONE | 2 | Shipped with **Plan #8** 2026-05-01 — Section polish (icon/badge/aside/compact/persistCollapsed). |
+| ✅ Section `description()` / `icon()` / `badge()` DONE | 1 | Shipped with **Plan #8** 2026-05-01. |
+| ✅ `hidden(fn)` / `visible(fn)` on layouts DONE | 1 | Shipped with **Plan #8** 2026-05-01 — `Element.visible(fn)` evaluates per-render and prunes both the element and its children from the resolved schema. |
 
 ### 7. Primes (display elements within `schema/`)
 
@@ -185,45 +185,45 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 
 | Type | Tier | Notes |
 |---|---|---|
-| `Checkbox` (single) | 1 | Distinct from Toggle. |
-| `Radio` | 1 | |
-| `CheckboxList` | 1 | |
+| ✅ `Checkbox` (single) DONE | 1 | Shipped with **Plan #6** 2026-05-01 — distinct from Toggle. |
+| ✅ `Radio` DONE | 1 | Shipped with **Plan #6** 2026-05-01. |
+| ✅ `CheckboxList` DONE | 1 | Shipped with **Plan #6** 2026-05-01. |
 | ✅ `ToggleButtons` (segmented control) DONE | 2 | Shipped 2026-05-04 — `ToggleButtons.make().options([...])`, sugar over Radio with chip rendering; same data semantics as Radio (single-select string), no separate coercion. Multi-select stays out of scope; reach for `CheckboxList`. |
-| `FileUpload` | 1 | Pairs with `@pilotiq/media`. Big-ish. |
+| ✅ `FileUpload` DONE | 1 | Shipped with **Plan #6** 2026-05-01 — wires through pilotiq's `UploadAdapter` + `_uploads` route + `localUpload` reference adapter. |
 | ✅ `MarkdownEditor` DONE | 2 | Shipped 2026-05-04 cont'd — `MarkdownField.make(name).toolbarButtons([…]) / .disableToolbarButtons([…]) / .minHeight(css) / .maxHeight(css) / .fileAttachmentsDirectory(d) / .fileAttachmentsVisibility('public'\|'private')`. Plain `<textarea>` + formatting toolbar (10 buttons by default) + tabbed live preview rendered client-side via `marked`. Stores raw markdown — same wire format as `TextareaField`, no new coerce branch. `attachFiles` reuses the existing `_uploads` route + `UploadAdapter`; the button is stripped server-side (via new `RenderContext.hasUploadAdapter` flag stamped by `uploadCtx`) when no adapter is registered. Plan doc: `docs/plans/markdown-editor.md`. |
 | ✅ `CodeEditor` DONE | 2 | Shipped 2026-05-04 cont'd — separate adapter package `@pilotiq/codemirror` (mirrors `@pilotiq/tiptap`). `CodeEditorField.make(name).language(id).height(css).lineNumbers(b).lineWrapping(b).indentWithTabs(b).indentSize(n).theme('auto'\|'light'\|'dark').readOnly(b)`. Languages registered via `registerCodeLanguage(id, factory)` (string-id only; CM `Extension` values aren't JSON-serializable). v1 ships highlight + indent + line numbers + theme. Plan doc: `docs/plans/code-editor.md`. |
-| `KeyValue` (dynamic key-value list) | 2 | |
+| ✅ `KeyValue` (dynamic key-value list) DONE | 2 | Shipped with **Plan #6** 2026-05-01. |
 | ✅ `TagsInput` DONE | 2 | Shipped 2026-05-04 — `TagsInput.make().suggestions([...]|fn) / .separator(',') / .splitKeys(['Enter']) / .reorderable() / .maxTags(n)`. `string[]` value, JSON-encoded in a single hidden input; new `tagsInput` coerce branch parses back. Backspace pops last chip; suggestion popover filters by typed prefix. |
-| `ColorPicker` | 2 | |
-| `Slider` | 2 | |
-| `Hidden` | 1 | Trivial. |
+| ✅ `ColorPicker` DONE | 2 | Shipped with **Plan #6** 2026-05-01. |
+| ✅ `Slider` DONE | 2 | Shipped with **Plan #6** 2026-05-01. |
+| ✅ `Hidden` DONE | 1 | Shipped with **Plan #6** 2026-05-01. |
 | ✅ `Repeater` (array of sub-schemas) DONE | 3 | Shipped 2026-05-01 (Plan #14) + extensive Tier-1/2 polish + relationship-backed rows shipped 2026-05-03 (`Repeater.relationship(name)` — stores rows in a `HasMany` relation instead of JSON; create / update / delete diff against the child model; `orderColumn` writes 0-based index). See `repeater-field.md` + `repeater-relationship.md` + `docs/guide/repeater.md`. |
 | ✅ `Builder` (heterogeneous array) DONE | 2 | Shipped 2026-05-02 — `Block.make(name).schema(…).maxItems(n)` + `Builder.make(name).blocks([…])`, `{type, data}` storage envelope, per-block `maxItems`, server-side resolve / coerce / validate / partial-resolve mirroring Repeater. Demo at `/new-admin/builder-demo`. See `builder-field.md` + `docs/guide/builder.md`. |
-| `DateTimePicker` (vs current DateField) | 1 | Add time component to existing. |
+| ✅ `DateTimePicker` (vs current DateField) DONE | 1 | Shipped with **Plan #6** 2026-05-01 — `DateTimeField`. |
 
 **Reactivity (Plan #5):**
 
 | Feature | Tier | Notes |
 |---|---|---|
-| `live()` (re-render schema on field change) | 1 | Foundation. |
-| `live(onBlur: true)` / `live(debounce: 500)` | 1 | |
-| `$get('otherField')` / `$set('otherField', val)` in callbacks | 1 | Server roundtrip vs JS expression. |
-| `afterStateUpdated(fn)` | 1 | |
+| ✅ `live()` (re-render schema on field change) DONE | 1 | Shipped with **Plan #5** 2026-05-01. |
+| ✅ `live(onBlur: true)` / `live(debounce: 500)` DONE | 1 | Shipped with **Plan #5** 2026-05-01. |
+| ✅ `$get('otherField')` / `$set('otherField', val)` in callbacks DONE | 1 | Shipped with **Plan #5** 2026-05-01 — bound on the server `afterStateUpdated` context. |
+| ✅ `afterStateUpdated(fn)` DONE | 1 | Shipped with **Plan #5** 2026-05-01. |
 | ✅ `afterStateUpdatedJs(string)` DONE | 2 | Shipped 2026-05-04 cont'd — `Field.afterStateUpdatedJs(body)`. Body compiled via `new Function` with `$state / $get / $set` bound; cached by source-string identity; runs synchronously on every change (no `live()` required). Composes with the server `afterStateUpdated` — JS runs first, server response (when `live()` is also set) overlays sibling values. Repeater/Builder rows auto-handle dotted-path `$get / $set` via the same nested-value helpers used by `triggerLive`. CSP `unsafe-eval` required (admin-trusted code, never derived from request input). Plan: `docs/plans/after-state-updated-js.md`. |
-| Dependent select options (`SelectField.options(fn)` with $get) | 1 | Most-asked feature. |
-| Conditional `hidden(fn)` / `visible(fn)` re-evaluating live | 1 | We have static visibility; add reactive. |
+| ✅ Dependent select options (`SelectField.options(fn)` with $get) DONE | 1 | Shipped with **Plan #5** 2026-05-01 — option resolvers receive `$get` and re-run on `live()`. |
+| ✅ Conditional `hidden(fn)` / `visible(fn)` re-evaluating live DONE | 1 | Shipped with **Plan #5** 2026-05-01 — `Field.visible(fn)` re-evaluates on the next `live()` round-trip. |
 
 **Field-level features (Plan #6 catch-all):**
 
 | Feature | Tier | Notes |
 |---|---|---|
-| `prefix()` / `suffix()` (icon or text) | 1 | |
-| `helperText()` / `belowLabel` / `aboveLabel` content slots | 1 | |
+| ✅ `prefix()` / `suffix()` (icon or text) DONE | 1 | Shipped with **Plan #6** 2026-05-01 — accepts string OR `{ icon, label }`; renders inside the field's input shell. |
+| ✅ `helperText()` DONE | 1 | Shipped with **Plan #6** 2026-05-01. `belowLabel` / `aboveLabel` content slots deliberately deferred (no consumer ask). |
 | `placeholder()` | already have on most | Verify all fields. |
 | ✅ `inlineLabel()` (label-left layout) DONE | 2 | Shipped 2026-05-04 cont'd — `Field.inlineLabel(v=true)` mirrors the `Entry.inlineLabel` shipped with Plan #16. `FieldShell` swaps to `flex items-baseline gap-3` with a `min-w-32` label column when set; default label-above unchanged. Bare `inlineLabel(false)` clears. |
-| `dehydrated(false)` (don't submit) | 1 | |
-| `dehydrateStateUsing(fn)` (transform on submit) | 1 | We have `mutateData` form-level; field-level finer-grained. |
-| `formatStateUsing(fn)` (display transform) | 1 | |
+| ✅ `dehydrated(false)` (don't submit) DONE | 1 | Shipped with **Plan #6** 2026-05-01 — field omits its value from the POST body when `dehydrated(false)`. |
+| `dehydrateStateUsing(fn)` (transform on submit) | 1 | We have `mutateData` form-level; field-level finer-grained. Deferred — no consumer ask. |
+| ✅ `formatStateUsing(fn)` (display transform) DONE | 1 | Shipped with **Plan #6** 2026-05-01 — evaluated server-side at meta-build, stamped onto `FieldMeta._formatted` like `Column.formatStateUsing`. |
 | `unique()` validator with DB check | ✅ | `unique({ model, column?, ignoreRecord=true, where?, caseInsensitive?, message? })` — async validator awaited by `validateSchema`. Uses `M.query().where(col, value).paginate(1, 2)` (no new ORM contract). Ignores own record on edit. (2026-05-04 cont'd) |
 | `validationAttribute()` (label override in errors) | 1 | Trivial. |
 | `autofocus()` | 1 | Trivial. |
@@ -310,7 +310,7 @@ This audit refines but doesn't replace the Phase 3 status:
   - **Scaffolder CLI** — separate. Audit doesn't change this.
   - **Pro packages (collab/AI)** — separate. Audit doesn't change this.
 
-- The audit's tier-1 items (#1 actions ✅, #2 column types ✅, #3 notifications ✅, #4 page lifecycle ✅, #5 reactive fields ✅, #6 field types ✅, #7 list-page tabs ✅, #8 schema-layouts ✅, #8.5 icon-system ✅, #9 nav metadata ✅, #10 authorization ✅, #12 global search ✅) all shipped in Phase 3. The remaining mainline items are #11 relations (~2 weeks, big enough to need its own planning cycle) and #13 soft-deletes (blocked on @rudderjs/orm support).
+- All numbered audit plans (#1-#15) shipped in Phase 3 — including #11 relations (hasOne/hasMany/belongsTo + M2M + polymorphic), #13 soft-deletes (after rudder ORM landed the primitives), #14 Repeater/Builder, and #15 widgets/dashboards (Phases A-F via the `@pilotiq/recharts` adapter). Plus the standalone `rich-editor-gap.md` (Phases A-G) closed 2026-05-04 cont'd¹² — the `@pilotiq/tiptap` adapter now matches the reference admin's RichEditor surface end-to-end (top-level toolbar + slash menu + draggable blocks + custom blocks + tables + image / file uploads + merge tags + mentions + server-safe HTML renderer). Mainline parity work is essentially done; remaining open lines in the inventory tables are explicit Tier-3 deferrals.
 
 - `actions-tier-1.md` stays as planned and ships alongside #2 onwards.
 
