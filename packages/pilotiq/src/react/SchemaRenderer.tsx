@@ -2247,6 +2247,23 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
         : <hr key={index} className="border-border" />
     }
 
+    case 'unorderedList': {
+      const items   = (el['items'] as unknown[] | undefined) ?? []
+      const color   = el['color']  ? String(el['color'])  : undefined
+      const size    = el['size']   ? String(el['size'])   : undefined
+      const weight  = el['weight'] ? String(el['weight']) : undefined
+      const sizeCls   = size   ? (TEXT_SIZE_CLASSES[size]     ?? '') : 'text-sm'
+      const colorCls  = color  ? (TEXT_COLOR_CLASSES[color]   ?? '') : ''
+      const weightCls = weight ? (TEXT_WEIGHT_CLASSES[weight] ?? '') : ''
+      return (
+        <ul key={index} className={`list-disc list-inside space-y-1 ${sizeCls} ${colorCls} ${weightCls}`.trim()}>
+          {items.map((item, i) => (
+            <li key={i}>{String(item)}</li>
+          ))}
+        </ul>
+      )
+    }
+
     case 'card': {
       const title = el['title'] ? String(el['title']) : undefined
       const description = el['description'] ? String(el['description']) : undefined

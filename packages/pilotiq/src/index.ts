@@ -126,6 +126,7 @@ export { Text, type TextColor, type TextSize, type TextWeight } from './schema/T
 export { Heading } from './schema/Heading.js'
 export { Alert, type AlertType } from './schema/Alert.js'
 export { Divider } from './schema/Divider.js'
+export { UnorderedList } from './schema/UnorderedList.js'
 export { Image, type ImageShape } from './schema/Image.js'
 export { Icon, type IconColor } from './schema/Icon.js'
 export { Markdown, type MarkdownProseSize } from './schema/Markdown.js'

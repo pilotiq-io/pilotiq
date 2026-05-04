@@ -7,6 +7,7 @@ import { Icon } from './Icon.js'
 import { Text } from './Text.js'
 import { Markdown } from './Markdown.js'
 import { Html } from './Html.js'
+import { UnorderedList } from './UnorderedList.js'
 
 beforeEach(() => _resetResolverRegistry())
 
@@ -162,5 +163,37 @@ describe('Html prime', () => {
     const tree = [Html.make('<p>hi</p>').size('sm')]
     const out = await resolveSchema(tree)
     assert.equal(out[0]!['size'], 'sm')
+  })
+})
+
+describe('UnorderedList prime', () => {
+  it('serializes items array + defaults', async () => {
+    const tree = [UnorderedList.make(['one', 'two', 'three'])]
+    const out  = await resolveSchema(tree)
+    assert.equal(out[0]!.type, 'unorderedList')
+    assert.deepEqual(out[0]!['items'], ['one', 'two', 'three'])
+    assert.equal(out[0]!['color'],  undefined)
+    assert.equal(out[0]!['size'],   undefined)
+    assert.equal(out[0]!['weight'], undefined)
+  })
+
+  it('items() replaces the list', async () => {
+    const tree = [UnorderedList.make(['old']).items(['a', 'b'])]
+    const out  = await resolveSchema(tree)
+    assert.deepEqual(out[0]!['items'], ['a', 'b'])
+  })
+
+  it('make() with no args yields an empty list', async () => {
+    const tree = [UnorderedList.make()]
+    const out  = await resolveSchema(tree)
+    assert.deepEqual(out[0]!['items'], [])
+  })
+
+  it('color / size / weight flow through', async () => {
+    const tree = [UnorderedList.make(['x']).color('muted').size('lg').weight('semibold')]
+    const out  = await resolveSchema(tree)
+    assert.equal(out[0]!['color'],  'muted')
+    assert.equal(out[0]!['size'],   'lg')
+    assert.equal(out[0]!['weight'], 'semibold')
   })
 })
