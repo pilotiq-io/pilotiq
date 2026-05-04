@@ -1,22 +1,25 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react'
 import type { BlockMeta } from '../Block.js'
 
 /**
- * Generic React NodeView for the `block` ProseMirror node. Reads the
- * block type from `node.attrs.blockType`, looks up its `BlockMeta` in
- * `BlockNodeExtension.options.blocks`, and renders an inline display/edit form.
+ * Generic React NodeView for the `pilotiqBlock` ProseMirror node. Reads
+ * the block type from `node.attrs.blockType`, looks up its `BlockMeta`
+ * in `BlockNodeExtension.options.blocks`, and renders a compact inline
+ * summary card with an "Edit" button.
  *
- * Two modes:
- *   - **Collapsed:** label + a one-line summary of filled fields. Click to
- *     expand. Shows a "Remove" button when expanded.
- *   - **Expanded:** stack of `<input>` / `<textarea>` / `<select>` per
- *     schema field, wired to update `node.attrs.blockData`.
+ * Editing happens in a side panel hosted by `TiptapEditor`, NOT inline.
+ * The NodeView fires `BlockNodeExtension.options.onEdit(getPos())` when
+ * the Edit button is clicked; the host opens its panel anchored to the
+ * editor wrapper. NodeViews live in a separate React tree from the host
+ * editor, so the bridge has to go through extension options — context
+ * doesn't cross trees.
  *
- * Same data model as `@pilotiq/lexical`'s `BlockNodeComponent`.
+ * If no `onEdit` is wired (e.g. a consumer that uses `BlockNodeExtension`
+ * standalone without `TiptapEditor`'s panel), the Edit button is hidden.
  */
 export function BlockNodeView(props: NodeViewProps) {
-  const { editor, node, updateAttributes, deleteNode } = props
+  const { editor, node, getPos, deleteNode } = props
   const blockType = String(node.attrs['blockType'] ?? '')
   const blockData = (node.attrs['blockData'] as Record<string, unknown> | undefined) ?? {}
 
@@ -25,9 +28,8 @@ export function BlockNodeView(props: NodeViewProps) {
   // instead — set by RichTextField via BlockNodeExtension.configure({ blocks }).
   const blockExt = editor.extensionManager.extensions.find((e) => e.name === 'pilotiqBlock')
   const blocks   = (blockExt?.options['blocks'] as BlockMeta[] | undefined) ?? []
+  const onEdit   = blockExt?.options['onEdit'] as ((pos: number) => void) | undefined
   const meta     = blocks.find((b) => b.name === blockType)
-
-  const [expanded, setExpanded] = useState(false)
 
   // Self-heal: a block with no `blockType` is malformed — almost always
   // means a stale node from a prior buggy insert. Delete it on mount so
@@ -45,10 +47,6 @@ export function BlockNodeView(props: NodeViewProps) {
     )
   }
 
-  const setField = (name: string, value: unknown): void => {
-    updateAttributes({ blockData: { ...blockData, [name]: value } })
-  }
-
   const summary = meta.schema
     .map((f) => {
       const v = blockData[f.name]
@@ -57,26 +55,36 @@ export function BlockNodeView(props: NodeViewProps) {
     .filter(Boolean)
     .join(' · ') || meta.label
 
+  const handleEdit = (): void => {
+    if (!onEdit) return
+    const pos = getPos()
+    if (typeof pos !== 'number') return
+    onEdit(pos)
+  }
+
   return (
     <NodeViewWrapper className="pilotiq-block my-3 rounded-lg border bg-muted/30">
       <div className="flex items-start justify-between gap-2 px-3 py-2">
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="flex items-center gap-2 text-left text-sm"
+          onClick={handleEdit}
+          disabled={!onEdit}
+          className="flex items-center gap-2 text-left text-sm disabled:cursor-default"
         >
           {meta.icon && <span aria-hidden="true">{meta.icon}</span>}
           <span className="font-medium">{meta.label}</span>
           <span className="text-xs text-muted-foreground line-clamp-1">{summary}</span>
         </button>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            {expanded ? 'Collapse' : 'Edit'}
-          </button>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={handleEdit}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Edit
+            </button>
+          )}
           <button
             type="button"
             onClick={() => deleteNode()}
@@ -86,76 +94,6 @@ export function BlockNodeView(props: NodeViewProps) {
           </button>
         </div>
       </div>
-      {expanded && (
-        <div className="flex flex-col gap-3 border-t px-3 py-3">
-          {meta.schema.map((f) => (
-            <BlockFieldInput
-              key={f.name}
-              meta={f}
-              value={blockData[f.name]}
-              onChange={(v) => setField(f.name, v)}
-            />
-          ))}
-        </div>
-      )}
     </NodeViewWrapper>
-  )
-}
-
-const inputClass =
-  'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50'
-
-interface BlockFieldInputProps {
-  meta:     { name: string; label?: string; fieldType?: string; placeholder?: string; [k: string]: unknown }
-  value:    unknown
-  onChange: (value: unknown) => void
-}
-
-function BlockFieldInput({ meta, value, onChange }: BlockFieldInputProps) {
-  const name        = String(meta.name)
-  const label       = String(meta['label'] ?? name)
-  const fieldType   = String(meta['fieldType'] ?? 'text')
-  const placeholder = meta['placeholder'] ? String(meta['placeholder']) : undefined
-  const stringValue = value !== undefined && value !== null ? String(value) : ''
-
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      {fieldType === 'textarea' ? (
-        <textarea
-          value={stringValue}
-          placeholder={placeholder}
-          onChange={(e) => onChange(e.target.value)}
-          rows={Number(meta['rows']) || 3}
-          className={`${inputClass} h-auto min-h-[4.5rem]`}
-        />
-      ) : fieldType === 'select' ? (
-        <select
-          value={stringValue}
-          onChange={(e) => onChange(e.target.value)}
-          className={inputClass}
-        >
-          <option value="">{placeholder ?? 'Select…'}</option>
-          {((meta['options'] as Array<{ value: string; label: string }> | undefined) ?? []).map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-      ) : fieldType === 'toggle' ? (
-        <input
-          type="checkbox"
-          checked={value === true || value === 'true'}
-          onChange={(e) => onChange(e.target.checked)}
-          className="h-4 w-4 rounded border-input"
-        />
-      ) : (
-        <input
-          type={fieldType === 'number' ? 'number' : fieldType === 'email' ? 'email' : fieldType === 'date' ? 'date' : 'text'}
-          value={stringValue}
-          placeholder={placeholder}
-          onChange={(e) => onChange(e.target.value)}
-          className={inputClass}
-        />
-      )}
-    </label>
   )
 }

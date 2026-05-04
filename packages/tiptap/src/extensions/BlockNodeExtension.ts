@@ -21,6 +21,15 @@ export interface BlockNodeOptions {
    * registry data via React context.
    */
   blocks: BlockMeta[]
+  /**
+   * Bridge from the NodeView's separate React tree back to the editor's
+   * own tree, where the side panel lives. Set by `TiptapEditor` so the
+   * "Edit" button on each block can request the panel open against this
+   * specific node. `undefined` means no host is listening — the NodeView
+   * falls back to a no-op (does not render an Edit affordance, or does
+   * so disabled, depending on the consumer's chrome).
+   */
+  onEdit?: (pos: number) => void
 }
 
 /**
@@ -48,6 +57,9 @@ export const BlockNodeExtension = Node.create<BlockNodeOptions>({
   draggable: true,
 
   addOptions() {
+    // `onEdit` intentionally omitted — `exactOptionalPropertyTypes` makes
+    // an explicit `undefined` non-assignable to the optional field, and
+    // the host wires it via `BlockNodeExtension.configure({ onEdit })`.
     return { blocks: [] }
   },
 

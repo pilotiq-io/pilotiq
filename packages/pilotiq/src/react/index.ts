@@ -6,7 +6,12 @@ export {
   type ComponentRegistry,
 } from './icon-context.js'
 
-export { SchemaRenderer, type SchemaRendererProps } from './SchemaRenderer.js'
+export {
+  SchemaRenderer,
+  type SchemaRendererProps,
+  FormFields,
+  type FormFieldsProps,
+} from './SchemaRenderer.js'
 export { registerFieldRenderer, getFieldRenderer, type FieldRendererProps } from './registry.js'
 export {
   registerWidgetRenderer,

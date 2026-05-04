@@ -287,7 +287,13 @@ Block.make('callout').label('Callout').icon('💡').schema([
 ])
 ```
 
-The block's NodeView mounts the schema as an inline form. Editing fills `attrs.blockData`. Removing the block deletes the node.
+Each inserted block renders as a compact summary card inside the document — block icon, label, and a one-line preview of the filled fields. Clicking **Edit** opens a side panel docked to the right of the editor; the panel mounts the block's schema as a real pilotiq form (via the `<FormFields>` renderer from `@pilotiq/pilotiq/react`) so every field type that pilotiq supports works consistently across the rest of your forms. Editing writes back into `attrs.blockData` on every keystroke — no save button, no roundtrip.
+
+The panel tracks its position through every editor transaction, so live edits elsewhere in the document don't desync the panel. If the block is deleted while the panel is open, the panel closes itself.
+
+**Field-type coverage in V1:** `TextField`, `TextareaField`, `SelectField`, `ToggleField`, `CheckboxField`, `RadioField`, `DateField`, `DateTimePickerField`, `EmailField`, `NumberField`, `SliderField`, `ColorPickerField`, and any other flat-shape field — all flow through unchanged. Nested-shape fields (`RepeaterField`, `BuilderField`, `FileUploadField`, `MarkdownField`, `KeyValueField`, `TagsInputField`) render but their value bindings are deferred — those types need a `FormStateProvider` round-trip and aren't wired in V1. Use them inside the side panel cautiously.
+
+**Layout caveat:** the panel is positioned `absolute` to the right of the editor wrapper. On narrow form layouts it may extend into adjacent content; this is intentional — the panel doesn't push the editor sideways or reflow the page.
 
 ## Migration from `@pilotiq/lexical`
 

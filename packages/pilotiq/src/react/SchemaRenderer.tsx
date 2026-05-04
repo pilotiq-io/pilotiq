@@ -106,6 +106,47 @@ const alertStyles: Record<string, string> = {
   danger:  'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200',
 }
 
+/**
+ * Render a flat list of resolved field-meta as standalone form inputs,
+ * outside any pilotiq Form wrapper. Useful for embedding the schema
+ * input layer in custom surfaces (e.g. the rich-text custom-block side
+ * panel) where the consumer drives reads/writes directly on a host
+ * `<form>` via DOM event delegation.
+ *
+ * Behavior:
+ *   - Each field renders through the same `renderField` switch the
+ *     SchemaRenderer uses for in-form fields, so chrome (label, helper
+ *     text, prefix/suffix) and field-type coverage stay in lockstep.
+ *   - `values`, when supplied, overrides each field's `defaultValue`
+ *     so the consumer can prefill from external state.
+ *   - Inputs are uncontrolled (`defaultValue`-based) — outside a
+ *     `FormStateProvider`, `useFieldState` falls back automatically.
+ *     The host captures changes via container-level event delegation.
+ *
+ * Not for: container layouts (Card / Tabs / Section / Wizard), Action
+ * triggers, or anything beyond a flat field list. Use SchemaRenderer
+ * for full pages.
+ */
+export interface FormFieldsProps {
+  elements:  ElementMeta[]
+  values?:   Record<string, unknown>
+}
+
+export function FormFields({ elements, values }: FormFieldsProps): React.ReactElement {
+  return (
+    <>
+      {elements.map((el, i) => {
+        if (el['type'] !== 'field') return null
+        const name = String(el['name'] ?? '')
+        const merged = values && name in values
+          ? { ...el, defaultValue: values[name] } as ElementMeta
+          : el
+        return renderField(merged, i)
+      })}
+    </>
+  )
+}
+
 // ─── Field rendering ────────────────────────────────────────
 //
 // Each input lives in its own file under `react/fields/`. This file

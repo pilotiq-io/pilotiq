@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Underline from '@tiptap/extension-underline'
@@ -32,6 +32,7 @@ import { MentionMenu, type MentionKeyHandlerRef } from './MentionMenu.js'
 import { FloatingToolbar } from './FloatingToolbar.js'
 import { TableFloatingToolbar } from './TableFloatingToolbar.js'
 import { Toolbar, AttachFilesDialog, useEditorTick } from './Toolbar.js'
+import { BlockSidePanel } from './BlockSidePanel.js'
 
 /**
  * The pilotiq field renderer for `RichTextField`. Registered globally via
@@ -130,6 +131,36 @@ function ClientEditor(props: FieldRendererProps) {
     setRawMentionState(s)
   }, [])
 
+  // Custom-block side panel — opens when a block's NodeView fires its
+  // Edit button. The NodeView lives in a separate React tree and reaches
+  // us via `BlockNodeExtension.options.onEdit` (set during configure()
+  // below). Stores `pos` + `blockType` at open-time; `BlockSidePanel`
+  // tracks the position forward through transactions and writes attrs
+  // back via setNodeMarkup. Closing nullifies the slot — re-opening
+  // remounts the panel fresh, including a re-snapshot of `blockData`.
+  const [selectedBlock, setSelectedBlock] = useState<{ pos: number; blockType: string } | null>(null)
+  const handleEditBlock = useCallback((pos: number) => {
+    // We resolve `blockType` here against the current doc so a stale
+    // pos (e.g. the block was just deleted before the click landed)
+    // produces a no-op rather than an empty panel.
+    setSelectedBlock((prev) => {
+      // Read from the editor lazily — the editor ref isn't stable yet
+      // on the very first render where this callback is created, so
+      // defer the lookup to call time.
+      const ed = editorRef.current
+      if (!ed) return prev
+      const node = (ed.state.doc as unknown as { nodeAt: (p: number) => { type: { name: string }; attrs: Record<string, unknown> } | null }).nodeAt(pos)
+      if (!node || node.type.name !== 'pilotiqBlock') return prev
+      return { pos, blockType: String(node.attrs['blockType'] ?? '') }
+    })
+  }, [])
+  const closeBlockPanel = useCallback(() => { setSelectedBlock(null) }, [])
+
+  // editorRef gives the onEdit callback access to the editor instance
+  // without re-creating the callback on every render (which would force
+  // the extension config to re-evaluate, triggering a full editor reset).
+  const editorRef = useRef<Editor | null>(null)
+
   const editor = useEditor({
     editable: !disabled,
     extensions: [
@@ -177,7 +208,10 @@ function ClientEditor(props: FieldRendererProps) {
       Placeholder.configure({ placeholder: placeholder ?? 'Start writing…' }),
       // BlockNodeExtension carries the block registry on its options —
       // NodeViews mount in a separate React tree and can't see context.
-      BlockNodeExtension.configure({ blocks }),
+      // `onEdit` is the bridge back to the host editor's tree where the
+      // side panel lives; the NodeView's Edit button calls it with its
+      // own `getPos()`.
+      BlockNodeExtension.configure({ blocks, onEdit: handleEditBlock }),
       ...(slashEnabled ? [SlashCommandExtension.configure({
         blocks,
         mergeTags,
@@ -276,6 +310,13 @@ function ClientEditor(props: FieldRendererProps) {
     if (debounceRef.current) clearTimeout(debounceRef.current)
   }, [])
 
+  // Mirror the editor instance into a ref so callbacks captured during
+  // `useEditor`'s extension config (notably the BlockNode `onEdit`
+  // bridge) can reach the live editor without re-creating themselves
+  // every render. Re-creation would force the editor to rebuild from
+  // scratch on every keystroke.
+  useEffect(() => { editorRef.current = editor ?? null }, [editor])
+
   // Re-render the toolbar when the selection / marks change so active-state
   // booleans stay fresh.
   const tick = useEditorTick(editor)
@@ -316,6 +357,16 @@ function ClientEditor(props: FieldRendererProps) {
       {editor && <TableFloatingToolbar editor={editor} />}
       <SlashPopover state={slashState} keyHandlerRef={slashKeyRef} />
       <MentionPopover state={mentionState} keyHandlerRef={mentionKeyRef} />
+      {editor && selectedBlock && (
+        <BlockSidePanel
+          key={`${selectedBlock.pos}:${selectedBlock.blockType}`}
+          editor={editor}
+          initialPos={selectedBlock.pos}
+          blockType={selectedBlock.blockType}
+          blocks={blocks}
+          onClose={closeBlockPanel}
+        />
+      )}
     </div>
   )
 }
