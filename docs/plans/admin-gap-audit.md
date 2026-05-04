@@ -17,7 +17,7 @@ Land in this order. Each step is independently shippable; later steps build on e
 | # | Plan doc | Effort | Why this order |
 |---|---|---|---|
 | 1 | ✅ `actions-tier-1.md` DONE | ~3 days | Slots, form-modal actions, variants, visibility, ActionGroup all shipped 2026-04-29. |
-| 2 | ✅ `column-types.md` DONE | ~2 days | TextColumn formatters + Badge/Icon/Boolean/ImageColumn + Table chrome (heading/description/striped/emptyState) shipped 2026-04-29. |
+| 2 | ✅ `column-types.md` DONE | ~2 days | TextColumn formatters + Badge/Icon/Boolean/ImageColumn + Table chrome (heading/description/striped/emptyState) shipped 2026-04-29; explicit `TextColumn` subclass + per-column-type test files + `docs/guide/columns.md` + Articles demo coverage landed 2026-05-04 cont'd. |
 | 3 | ✅ `notifications.md` DONE | ~1 day | Notification builder + Toaster + JSON-response wiring shipped 2026-04-29. Flash across 303 redirects via `@rudderjs/session` shipped 2026-04-30 (`flash-notifications.md`). |
 | 4 | ✅ `page-lifecycle-hooks.md` DONE | ~1 day | Form lifecycle split (create/update), fill-side hooks, page-class overrides, default success toasts shipped 2026-04-30. |
 | 5 | ✅ `reactive-fields.md` DONE | ~3 days | `live()` + `$get/$set` + `afterStateUpdated` + dependent options + reactive visibility shipped 2026-04-30 (server) and 2026-05-01 (client + demo). |
