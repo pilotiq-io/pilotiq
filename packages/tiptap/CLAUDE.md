@@ -58,6 +58,13 @@ When a user clicks **Edit** on an inserted custom block, a floating right-docked
 
 `coerceBlockValues(raw, schema)` is exported from `BlockSidePanel.tsx` for testing — pure helper, no DOM, no React.
 
+**Polish (2026-05-05):**
+
+- **`Mod-e`** (Cmd+E / Ctrl+E) — when the current selection is a NodeSelection on a `pilotiqBlock`, opens its side panel. Wired via `BlockNodeExtension.addKeyboardShortcuts()`. Returns `false` (yields to the browser default) when no block is selected, so Safari's *Use Selection for Find* still works in plain text.
+- **ESC** closes the panel via a bubble-phase `document` listener. Slash and mention menus listen capture-phase + `stopPropagation`, so ESC inside an open slash menu only closes the menu and never bubbles down to the panel.
+- **Focus management.** On open, the previously focused element is captured and the first focusable inside the panel is focused. While mounted, `Tab` / `Shift+Tab` cycles within the panel's focusables (soft trap — clicks elsewhere still work). On close, the previously focused element is re-focused.
+- **Width memory.** The panel has a left-edge resize handle (1px hover-highlighted strip) and persists its width in `localStorage` under `pilotiq.tiptap.sidePanel.width`, clamped `[240, 600]` (default 320). Pure helper `clampPanelWidth(value)` is exported for tests; falls back to the default for `null` / `undefined` / empty-string / non-finite values, otherwise clamps numeric strings + numbers into range.
+
 **editorRef.** `TiptapEditor` mirrors the `useEditor` instance into a ref so `handleEditBlock` (created before the editor exists) reads the live editor lazily. Re-creating the callback every render would force the editor to rebuild from scratch.
 
 ---

@@ -112,4 +112,23 @@ export const BlockNodeExtension = Node.create<BlockNodeOptions>({
         }),
     }
   },
+
+  // `Mod-e` opens the side panel for the currently NodeSelected block.
+  // Returns false when no block is selected so the browser's default
+  // (Safari "Use Selection for Find", etc.) still applies in plain text.
+  addKeyboardShortcuts() {
+    return {
+      'Mod-e': () => {
+        const onEdit = this.options.onEdit
+        if (!onEdit) return false
+        const sel = this.editor.state.selection as unknown as {
+          node?: { type: { name: string } }
+          from:  number
+        }
+        if (sel.node?.type.name !== this.name) return false
+        onEdit(sel.from)
+        return true
+      },
+    }
+  },
 })

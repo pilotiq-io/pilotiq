@@ -3,6 +3,22 @@ import type { Editor } from '@tiptap/react'
 import { FormFields, parseFormDataToNested } from '@pilotiq/pilotiq/react'
 import type { BlockMeta } from '../Block.js'
 
+const PANEL_WIDTH_STORAGE_KEY = 'pilotiq.tiptap.sidePanel.width'
+const PANEL_WIDTH_DEFAULT     = 320
+const PANEL_WIDTH_MIN         = 240
+const PANEL_WIDTH_MAX         = 600
+
+// Keys that point at any tabbable / interactive element inside the panel.
+// Same intent as Filament's focus-trap helper but kept inline — small one-off.
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
 /**
  * Floating right-docked side panel for editing a custom block's schema
  * fields. Mounted by `TiptapEditor` once the user clicks the Edit button
@@ -72,7 +88,90 @@ export function BlockSidePanel({
     pos !== null ? readBlockData(editor, pos) : {},
   )
 
+  const asideRef = useRef<HTMLElement | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
+
+  // Width memory — survives panel close/reopen and full reload via
+  // localStorage. SSR-safe via the readStoredPanelWidth fallback.
+  const [width, setWidth] = useState<number>(() => readStoredPanelWidth())
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try { window.localStorage?.setItem(PANEL_WIDTH_STORAGE_KEY, String(width)) }
+    catch { /* private mode / quota — width still works for the session */ }
+  }, [width])
+
+  const onResizeStart = useCallback((e: React.MouseEvent<HTMLDivElement>): void => {
+    e.preventDefault()
+    const startX     = e.clientX
+    const startWidth = width
+    const onMove = (ev: MouseEvent): void => {
+      // Panel is right-docked, so dragging the *left* edge to the left
+      // should grow the panel.
+      const delta = startX - ev.clientX
+      setWidth(clampPanelWidth(startWidth + delta))
+    }
+    const onUp = (): void => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup',   onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup',   onUp)
+  }, [width])
+
+  // Save focus on mount, focus the first focusable inside the panel,
+  // restore previous focus on unmount. Mount-only effect — re-mounting
+  // the panel for a different block (key={pos:blockType}) re-runs this.
+  useEffect(() => {
+    const previouslyFocused = (typeof document !== 'undefined'
+      ? document.activeElement
+      : null) as HTMLElement | null
+    const aside = asideRef.current
+    if (aside) {
+      const first = aside.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
+      first?.focus()
+    }
+    return () => {
+      // Try/catch — the previously focused element may have been removed
+      // (e.g. an editor selection refresh nuked the surrounding NodeView).
+      try { previouslyFocused?.focus?.() } catch { /* noop */ }
+    }
+  }, [])
+
+  // ESC closes; Tab / Shift+Tab cycles within the panel. Bubble-phase
+  // listener — slash and mention menus' capture-phase ESC handlers fire
+  // first and stopPropagation, so ESC inside an open slash menu only
+  // closes the menu. ESC anywhere else (panel inputs, editor) closes
+  // the panel.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        onClose()
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const aside = asideRef.current
+      if (!aside) return
+      const active = document.activeElement as Node | null
+      if (!active || !aside.contains(active)) return
+      const focusables = Array.from(
+        aside.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      ).filter((el) => !el.hasAttribute('disabled'))
+      if (focusables.length === 0) return
+      const first = focusables[0]!
+      const last  = focusables[focusables.length - 1]!
+      if (e.shiftKey && active === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   useEffect(() => {
     if (pos === null) return
@@ -124,10 +223,22 @@ export function BlockSidePanel({
 
   return (
     <aside
+      ref={asideRef}
       role="dialog"
       aria-label={`Edit ${meta.label}`}
-      className="absolute top-0 left-full ml-4 w-80 max-h-[calc(100vh-2rem)] overflow-y-auto rounded-lg border bg-background shadow-lg z-30"
+      style={{ width }}
+      className="absolute top-0 left-full ml-4 max-h-[calc(100vh-2rem)] overflow-y-auto rounded-lg border bg-background shadow-lg z-30"
     >
+      {/* Left-edge resize handle. Thin strip, hover-highlighted, full
+          height of the panel; mousedown starts a drag tracked at
+          document level so leaving the strip doesn't end the drag. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize panel"
+        onMouseDown={onResizeStart}
+        className="absolute left-0 top-0 h-full w-1 cursor-ew-resize hover:bg-border/80"
+      />
       <header className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background px-3 py-2">
         <div className="flex items-center gap-2 min-w-0">
           {meta.icon && <span aria-hidden="true">{meta.icon}</span>}
@@ -156,6 +267,40 @@ export function BlockSidePanel({
       </form>
     </aside>
   )
+}
+
+/**
+ * Clamp + sanitize a candidate panel width. Falls back to the default
+ * for non-finite values (NaN, ±Infinity, garbage from localStorage), and
+ * clamps finite values into [PANEL_WIDTH_MIN, PANEL_WIDTH_MAX]. Pure;
+ * exported for unit tests and re-used inline by the resize handler.
+ */
+export function clampPanelWidth(value: unknown): number {
+  // Explicit "no value" — null/undefined/empty-string land here from the
+  // localStorage round-trip and should fall back to the default rather
+  // than clamp upward via `Number(null) === 0`.
+  if (value === null || value === undefined || value === '') return PANEL_WIDTH_DEFAULT
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return PANEL_WIDTH_DEFAULT
+  if (n < PANEL_WIDTH_MIN) return PANEL_WIDTH_MIN
+  if (n > PANEL_WIDTH_MAX) return PANEL_WIDTH_MAX
+  return n
+}
+
+/**
+ * Read the stored panel width from localStorage, sanitized through
+ * `clampPanelWidth`. Returns the default on SSR, in private-mode
+ * browsers (where access throws), or when no value has been persisted.
+ */
+function readStoredPanelWidth(): number {
+  if (typeof window === 'undefined') return PANEL_WIDTH_DEFAULT
+  try {
+    const raw = window.localStorage?.getItem(PANEL_WIDTH_STORAGE_KEY)
+    if (raw === null || raw === undefined) return PANEL_WIDTH_DEFAULT
+    return clampPanelWidth(raw)
+  } catch {
+    return PANEL_WIDTH_DEFAULT
+  }
 }
 
 /**
