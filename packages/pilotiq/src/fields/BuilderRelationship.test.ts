@@ -500,3 +500,269 @@ describe('Builder.relationship — load (applyRelationshipBuilderFill)', () => {
     )
   })
 })
+
+describe('Builder.relationship — morphMany', () => {
+  // Parent shape: `Post.blocks: morphMany([], 'blockable')` — child carries
+  // `blockableId` + `blockableType` instead of an FK column. Mirrors the
+  // existing `Post.comments: morphMany` wiring shipped via the polymorphic
+  // RelationManager follow-up.
+  //
+  // `computeMorphPayload(parent, descriptor)` reads `<morphName>Type` off
+  // the parent **record**'s `constructor.morphAlias ?? constructor.name` —
+  // so the parent record returned by `Form.save()` (or stamped onto the
+  // load context) has to be a class instance, not a plain object literal.
+  // This factory builds both the model + a matching record class.
+  function makeMorphParentSetup(opts: {
+    childModel:    ModelLike
+    childRows:     FakeRecord[]
+    relationName:  string
+    morphName:     string
+    morphAlias?:   string
+  }) {
+    const { childModel, childRows, relationName, morphName, morphAlias } = opts
+    const idCol   = `${morphName}Id`
+    const typeCol = `${morphName}Type`
+
+    class Post {
+      id?: string
+      constructor(init?: Partial<{ id: string }>) { Object.assign(this, init) }
+    }
+    if (morphAlias && morphAlias !== 'Post') {
+      ;(Post as unknown as { morphAlias: string }).morphAlias = morphAlias
+    }
+
+    const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => makeQuery([]),
+      relatedQuery: (parentRecord) => {
+        const parentId   = (parentRecord as Record<string, unknown>)['id']
+        const parentType = (parentRecord as { constructor?: { morphAlias?: string; name?: string } })
+          .constructor?.morphAlias
+          ?? (parentRecord as { constructor?: { name?: string } }).constructor?.name
+        const filtered = childRows.filter(r =>
+          String(r[idCol]) === String(parentId) && r[typeCol] === parentType,
+        )
+        return makeQuery(filtered)
+      },
+      relations: {
+        [relationName]: { type: 'morphMany', morphName, model: () => childModel },
+      },
+    }
+    return { parentModel, makeRecord: (id: string) => new Post({ id }) }
+  }
+
+  it('create — stamps <morphName>Id + <morphName>Type instead of an FK column', async () => {
+    const child = makeFakeChildModel([])
+    const { parentModel, makeRecord } = makeMorphParentSetup({
+      childModel: child.model, childRows: child.rows,
+      relationName: 'blocks', morphName: 'blockable',
+    })
+
+    const form = Form.make()
+      .schema([
+        BuilderField.make('content').relationship('blocks').blocks([HEADING_BLOCK(), PARAGRAPH_BLOCK()]),
+      ])
+      .save(async () => makeRecord('p1'))
+
+    const submittedRows = [
+      { type: 'heading',   data: { text: 'Hello' } },
+      { type: 'paragraph', data: { body: 'World' } },
+    ]
+    const result = await dispatchFormSubmit(
+      form,
+      { content: submittedRows },
+      { values: { content: submittedRows }, parentModel },
+    )
+    assert.equal(result.ok, true)
+    const creates = child.calls.filter(c => c.kind === 'create') as Array<{ kind: 'create'; data: Record<string, unknown> }>
+    assert.equal(creates.length, 2)
+    for (const c of creates) {
+      assert.equal(c.data['blockableId'],   'p1')
+      assert.equal(c.data['blockableType'], 'Post')
+      assert.equal('pageId' in c.data, false)
+    }
+    assert.equal(creates[0]!.data['type'], 'heading')
+    assert.equal(creates[1]!.data['type'], 'paragraph')
+  })
+
+  it('update — does not overwrite morph cols on update (defense against re-link)', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', blockableId: 'p1', blockableType: 'Post', type: 'heading',   data: { text: 'A' } },
+      { id: 'c2', blockableId: 'p1', blockableType: 'Post', type: 'paragraph', data: { body: 'B' } },
+    ])
+    const { parentModel, makeRecord } = makeMorphParentSetup({
+      childModel: child.model, childRows: child.rows,
+      relationName: 'blocks', morphName: 'blockable',
+    })
+
+    const form = Form.make()
+      .schema([
+        BuilderField.make('content').relationship('blocks').blocks([HEADING_BLOCK(), PARAGRAPH_BLOCK()]),
+      ])
+      .save(async () => makeRecord('p1'))
+
+    const submittedRows = [
+      // Tampered client tries to send blockableType=Video; framework wins last.
+      { __id: 'c1', type: 'heading',   data: { text: 'A2' }, blockableType: 'Video' },
+      { __id: 'c2', type: 'paragraph', data: { body: 'B2' } },
+    ]
+    const result = await dispatchFormSubmit(
+      form,
+      { content: submittedRows },
+      { values: { content: submittedRows }, record: makeRecord('p1'), parentModel },
+    )
+    assert.equal(result.ok, true)
+    const updates = child.calls.filter(c => c.kind === 'update') as Array<{ kind: 'update'; id: string | number; data: Record<string, unknown> }>
+    assert.equal(updates.length, 2)
+    for (const u of updates) {
+      assert.equal('blockableId'   in u.data, false)
+      assert.equal('blockableType' in u.data, false)
+    }
+  })
+
+  it('delete — existing PKs missing from submitted set are deleted (same shape as hasMany)', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', blockableId: 'p1', blockableType: 'Post', type: 'heading',   data: { text: 'A' } },
+      { id: 'c2', blockableId: 'p1', blockableType: 'Post', type: 'paragraph', data: { body: 'B' } },
+    ])
+    const { parentModel, makeRecord } = makeMorphParentSetup({
+      childModel: child.model, childRows: child.rows,
+      relationName: 'blocks', morphName: 'blockable',
+    })
+
+    const form = Form.make()
+      .schema([
+        BuilderField.make('content').relationship('blocks').blocks([HEADING_BLOCK(), PARAGRAPH_BLOCK()]),
+      ])
+      .save(async () => makeRecord('p1'))
+
+    const submittedRows = [{ __id: 'c1', type: 'heading', data: { text: 'A' } }]
+    const result = await dispatchFormSubmit(
+      form,
+      { content: submittedRows },
+      { values: { content: submittedRows }, record: makeRecord('p1'), parentModel },
+    )
+    assert.equal(result.ok, true)
+    const deletes = child.calls.filter(c => c.kind === 'delete') as Array<{ kind: 'delete'; id: string | number }>
+    assert.deepEqual(deletes.map(c => String(c.id)), ['c2'])
+  })
+
+  it('orderColumn writes 0-based index on every morph create + update', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', blockableId: 'p1', blockableType: 'Post', type: 'heading', data: { text: 'A' }, sort: 5 },
+    ])
+    const { parentModel, makeRecord } = makeMorphParentSetup({
+      childModel: child.model, childRows: child.rows,
+      relationName: 'blocks', morphName: 'blockable',
+    })
+
+    const form = Form.make()
+      .schema([
+        BuilderField.make('content')
+          .relationship('blocks')
+          .orderColumn('sort')
+          .blocks([HEADING_BLOCK(), PARAGRAPH_BLOCK()]),
+      ])
+      .save(async () => makeRecord('p1'))
+
+    const submittedRows = [
+      {            type: 'paragraph', data: { body: 'first' } },
+      { __id: 'c1', type: 'heading',   data: { text: 'second' } },
+    ]
+    const result = await dispatchFormSubmit(
+      form,
+      { content: submittedRows },
+      { values: { content: submittedRows }, record: makeRecord('p1'), parentModel },
+    )
+    assert.equal(result.ok, true)
+    const create = child.calls.find(c => c.kind === 'create') as { kind: 'create'; data: Record<string, unknown> }
+    const update = child.calls.find(c => c.kind === 'update') as { kind: 'update'; id: string | number; data: Record<string, unknown> }
+    assert.equal(create.data['sort'], 0)
+    assert.equal(update.data['sort'], 1)
+  })
+
+  it('morphType — explicit override on the relation entry wins over constructor name', async () => {
+    const child = makeFakeChildModel([])
+    // Real-world parent class anchored as `Post`; the morph descriptor's
+    // explicit `morphType` should win over `Post.morphAlias` /
+    // `Post.constructor.name`.
+    class Post {
+      id?: string
+      constructor(init?: Partial<{ id: string }>) { Object.assign(this, init) }
+    }
+    const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => makeQuery([]),
+      relatedQuery: () => makeQuery([]),
+      relations: {
+        blocks: { type: 'morphMany', morphName: 'blockable', morphType: 'CustomDiscriminator', model: () => child.model },
+      },
+    }
+
+    const form = Form.make()
+      .schema([
+        BuilderField.make('content').relationship('blocks').blocks([HEADING_BLOCK()]),
+      ])
+      .save(async () => new Post({ id: 'p1' }))
+
+    const submittedRows = [{ type: 'heading', data: { text: 'A' } }]
+    const result = await dispatchFormSubmit(
+      form,
+      { content: submittedRows },
+      { values: { content: submittedRows }, parentModel },
+    )
+    assert.equal(result.ok, true)
+    const create = child.calls.find(c => c.kind === 'create') as { kind: 'create'; data: Record<string, unknown> }
+    assert.equal(create.data['blockableType'], 'CustomDiscriminator')
+  })
+
+  it('morphMany config without the model thunk surfaces a clear error', async () => {
+    const child = makeFakeChildModel([])
+    class Post {
+      id?: string
+      constructor(init?: Partial<{ id: string }>) { Object.assign(this, init) }
+    }
+    const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => makeQuery([]),
+      relatedQuery: () => makeQuery([]),
+      relations: {
+        // `model` thunk missing — `getMorphRelationDescriptor` returns
+        // `undefined` here per its `typeof model === 'function'` check, so
+        // the resolver falls through to the hasMany branch which then
+        // demands a `foreignKey` override. The user-facing message stays
+        // useful: configure-the-relation.
+        blocks: { type: 'morphMany', morphName: 'blockable' },
+      },
+    }
+
+    const form = Form.make()
+      .schema([
+        BuilderField.make('content').relationship('blocks').blocks([HEADING_BLOCK()]),
+      ])
+      .save(async () => new Post({ id: 'p1' }))
+
+    const submittedRows = [{ type: 'heading', data: { text: 'A' } }]
+    await assert.rejects(
+      () => dispatchFormSubmit(
+        form,
+        { content: submittedRows },
+        { values: { content: submittedRows }, parentModel },
+      ),
+      /could not resolve the child model/,
+    )
+    void child
+  })
+})

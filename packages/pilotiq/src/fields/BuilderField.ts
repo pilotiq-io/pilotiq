@@ -25,10 +25,21 @@ import {
  * per-block inner-schema values verbatim) — plus the standard FK + PK,
  * and an optional `sort` column when `orderColumn` is set.
  *
- * `model` + `foreignKey` overrides exist for ORMs that don't follow the
- * convention; both default to discovery via `parent.relations[name]` at
- * submit time. `typeColumn` + `dataColumn` default to `'type'` and
- * `'data'` — same as Filament.
+ * Two relation modes are supported:
+ *
+ *   - `hasMany`   — single foreign key on the child. `model` + `foreignKey`
+ *                   overrides exist for ORMs that don't follow the
+ *                   convention; both default to discovery via
+ *                   `parent.relations[name]` at submit time.
+ *   - `morphMany` — polymorphic owner side. The child carries
+ *                   `<morphName>Id` + `<morphName>Type` columns (the
+ *                   morph stamp). Resolved entirely off the parent's
+ *                   `relations[name]` morph descriptor — no `foreignKey`
+ *                   override; the column names are driven by `morphName`.
+ *                   `morphOne` collapses into the same branch.
+ *
+ * `typeColumn` + `dataColumn` default to `'type'` and `'data'` — same as
+ * Filament.
  */
 export interface BuilderRelationshipConfig {
   /** Relationship key on the parent (e.g. `'blocks'`). */
@@ -337,11 +348,18 @@ export class BuilderField extends Field {
   }
 
   /**
-   * Persist rows to a `HasMany` relation on the parent record instead of
-   * serializing them to a JSON column. Each row maps to a real child record
-   * carrying a `type` discriminator + a JSON `data` payload (column names
-   * configurable). Submit creates / updates / deletes children against the
-   * relation transparently.
+   * Persist rows to a `HasMany` (or `MorphMany` / `MorphOne`) relation on
+   * the parent record instead of serializing them to a JSON column. Each
+   * row maps to a real child record carrying a `type` discriminator + a
+   * JSON `data` payload (column names configurable). Submit creates /
+   * updates / deletes children against the relation transparently.
+   *
+   * For `morphMany`, the child also carries `<morphName>Id` +
+   * `<morphName>Type` columns; the framework stamps both on every create
+   * (and refuses to overwrite them on update) so a tampered POST body
+   * can't reassign a row to a different polymorphic parent. The morph
+   * shape is read off the parent's `static relations[name]` descriptor —
+   * no `foreignKey` override applies.
    *
    * Pass either the relationship name as a string (the common case —
    * `model` + `foreignKey` are auto-discovered from the parent's
