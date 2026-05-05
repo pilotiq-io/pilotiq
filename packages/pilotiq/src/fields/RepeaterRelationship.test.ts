@@ -782,3 +782,461 @@ describe('Repeater.relationship — morphMany', () => {
     void child
   })
 })
+
+/**
+ * Test harness for M2M relations — `parent[rel]()` returns a recorded
+ * accessor with `attach` / `detach` / `sync`. Mirrors `_makeBelongsToManyAccessor`
+ * from the rudder ORM (the per-relation accessor returned by
+ * `Model.belongsToMany`). Tests assert against `pivotCalls` directly so
+ * we can verify the exact sequence of operations against the pivot.
+ */
+function makeM2MParentSetup(opts: {
+  childModel:    ModelLike
+  childRows:     FakeRecord[]
+  relationName:  string
+  /** When set, the related rows on load are filtered to those whose
+   *  PK appears in the pivot. Lets `applyRelationshipRepeaterFill`
+   *  return the right slice. */
+  attachedIds?:  Set<string | number>
+}) {
+  const { childModel, childRows, relationName } = opts
+  const attachedIds = opts.attachedIds ?? new Set<string | number>(childRows.map(r => r['id'] as string | number))
+  const pivotCalls: Array<
+    | { kind: 'attach'; ids: Array<string | number> }
+    | { kind: 'detach'; ids: Array<string | number> | undefined }
+    | { kind: 'sync';   desired: Array<string | number> }
+  > = []
+
+  class Parent {
+    id?: string
+    constructor(init?: Partial<{ id: string }>) { Object.assign(this, init) }
+    [relationName]() {
+      return {
+        attach: async (input: ReadonlyArray<string | number> | Record<string, Record<string, unknown>>) => {
+          const ids = Array.isArray(input)
+            ? [...input]
+            : Object.keys(input).map(k => /^\d+$/.test(k) ? Number(k) : k)
+          for (const id of ids) attachedIds.add(id)
+          pivotCalls.push({ kind: 'attach', ids })
+        },
+        detach: async (ids?: ReadonlyArray<string | number>) => {
+          if (ids === undefined) {
+            const removed = [...attachedIds]
+            attachedIds.clear()
+            pivotCalls.push({ kind: 'detach', ids: undefined })
+            return removed.length
+          }
+          for (const id of ids) attachedIds.delete(id)
+          pivotCalls.push({ kind: 'detach', ids: [...ids] })
+          return ids.length
+        },
+        sync: async (desiredIds: ReadonlyArray<string | number>) => {
+          pivotCalls.push({ kind: 'sync', desired: [...desiredIds] })
+          return { attached: [], detached: [] }
+        },
+      }
+    }
+  }
+
+  const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+    primaryKey: 'id',
+    find:   async () => null,
+    create: async () => ({}),
+    update: async () => ({}),
+    delete: async () => {},
+    query:  () => makeQuery([]),
+    // Resolve "currently attached" rows for the parent — read from the
+    // pivot snapshot. Drives both `loadRelationRows` (in the diff loop)
+    // and `applyRelationshipRepeaterFill` (in load mode).
+    relatedQuery: () => makeQuery(childRows.filter(r => attachedIds.has(r['id'] as string | number))),
+    relations: {
+      [relationName]: { type: 'belongsToMany', model: () => childModel, pivotTable: 'pivot' },
+    },
+  }
+  return {
+    parentModel,
+    pivotCalls,
+    attachedIds,
+    makeRecord: (id: string) => new Parent({ id }),
+  }
+}
+
+describe('Repeater.relationship — belongsToMany', () => {
+  // Parent shape: `Article.tags: belongsToMany(Tag, pivotTable: 'article_tag')`.
+  // Child Tag rows have NO FK column — pivot table holds the link.
+  // Submit semantics: create-row → M.create + accessor.attach; update-row
+  // → M.update (pivot untouched); delete-row → accessor.detach (no
+  // M.delete, child may be attached to other parents).
+
+  it('create — M.create the related child then attach via accessor (no FK on payload)', async () => {
+    const child = makeFakeChildModel([])
+    const setup = makeM2MParentSetup({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'tags',
+      attachedIds:  new Set(),
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags')
+          .relationship('tags')
+          .schema([TextField.make('name').required()]),
+      ])
+      .save(async () => setup.makeRecord('a1'))
+
+    const submittedRows = [{ name: 'red' }, { name: 'blue' }]
+    const result = await dispatchFormSubmit(
+      form,
+      { tags: submittedRows },
+      { values: { tags: submittedRows }, parentModel: setup.parentModel },
+    )
+    assert.equal(result.ok, true)
+    const creates = child.calls.filter(c => c.kind === 'create') as Array<{ kind: 'create'; data: Record<string, unknown> }>
+    assert.equal(creates.length, 2)
+    assert.equal(creates[0]!.data['name'], 'red')
+    assert.equal(creates[1]!.data['name'], 'blue')
+    // No FK / morph cols stamped on the related child — pivot covers it.
+    for (const c of creates) {
+      assert.equal('articleId'   in c.data, false)
+      assert.equal('taggableId'   in c.data, false)
+      assert.equal('taggableType' in c.data, false)
+    }
+    // One attach per new row, in row order.
+    const attachCalls = setup.pivotCalls.filter(c => c.kind === 'attach') as Array<{ kind: 'attach'; ids: Array<string | number> }>
+    assert.equal(attachCalls.length, 2)
+    assert.equal(attachCalls[0]!.ids.length, 1)
+    assert.equal(attachCalls[1]!.ids.length, 1)
+    // No pivot detach.
+    assert.equal(setup.pivotCalls.filter(c => c.kind === 'detach').length, 0)
+  })
+
+  it('update — __id matching an attached PK routes through M.update; pivot untouched', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', name: 'red' },
+      { id: 'c2', name: 'blue' },
+    ])
+    const setup = makeM2MParentSetup({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'tags',
+      attachedIds:  new Set(['c1', 'c2']),
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags')
+          .relationship('tags')
+          .schema([TextField.make('name')]),
+      ])
+      .save(async () => setup.makeRecord('a1'))
+
+    const submittedRows = [
+      { __id: 'c1', name: 'crimson' },
+      { __id: 'c2', name: 'navy' },
+    ]
+    const result = await dispatchFormSubmit(
+      form,
+      { tags: submittedRows },
+      { values: { tags: submittedRows }, record: setup.makeRecord('a1'), parentModel: setup.parentModel },
+    )
+    assert.equal(result.ok, true)
+    const updates = child.calls.filter(c => c.kind === 'update') as Array<{ kind: 'update'; id: string | number; data: Record<string, unknown> }>
+    assert.equal(updates.length, 2)
+    assert.equal(updates[0]!.data['name'], 'crimson')
+    assert.equal(updates[1]!.data['name'], 'navy')
+    // No pivot operations — update doesn't touch attach/detach.
+    assert.equal(setup.pivotCalls.length, 0)
+  })
+
+  it('delete — existing attached PK omitted from submitted set is detached only (no M.delete)', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', name: 'red' },
+      { id: 'c2', name: 'blue' },
+      { id: 'c3', name: 'green' },
+    ])
+    const setup = makeM2MParentSetup({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'tags',
+      attachedIds:  new Set(['c1', 'c2', 'c3']),
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags')
+          .relationship('tags')
+          .schema([TextField.make('name')]),
+      ])
+      .save(async () => setup.makeRecord('a1'))
+
+    const submittedRows = [{ __id: 'c1', name: 'red' }]
+    const result = await dispatchFormSubmit(
+      form,
+      { tags: submittedRows },
+      { values: { tags: submittedRows }, record: setup.makeRecord('a1'), parentModel: setup.parentModel },
+    )
+    assert.equal(result.ok, true)
+    // No M.delete on the related child — only pivot detach.
+    assert.equal(child.calls.filter(c => c.kind === 'delete').length, 0)
+    const detachCalls = setup.pivotCalls.filter(c => c.kind === 'detach') as Array<{ kind: 'detach'; ids: Array<string | number> | undefined }>
+    // Each missing PK gets its own detach call.
+    const detachedIds = detachCalls
+      .flatMap(c => c.ids ?? [])
+      .map(id => String(id))
+      .sort()
+    assert.deepEqual(detachedIds, ['c2', 'c3'])
+  })
+
+  it('mixed — single submit performs create+attach, update, and detach in one diff', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', name: 'red' },
+      { id: 'c2', name: 'blue' },
+    ])
+    const setup = makeM2MParentSetup({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'tags',
+      attachedIds:  new Set(['c1', 'c2']),
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags')
+          .relationship('tags')
+          .schema([TextField.make('name')]),
+      ])
+      .save(async () => setup.makeRecord('a1'))
+
+    const submittedRows = [
+      { __id: 'c1', name: 'crimson' },
+      {            name: 'fresh' },
+    ]
+    const result = await dispatchFormSubmit(
+      form,
+      { tags: submittedRows },
+      { values: { tags: submittedRows }, record: setup.makeRecord('a1'), parentModel: setup.parentModel },
+    )
+    assert.equal(result.ok, true)
+    assert.equal(child.calls.filter(c => c.kind === 'create').length, 1)
+    assert.equal(child.calls.filter(c => c.kind === 'update').length, 1)
+    assert.equal(child.calls.filter(c => c.kind === 'delete').length, 0)
+    assert.equal(setup.pivotCalls.filter(c => c.kind === 'attach').length, 1)
+    const detachCalls = setup.pivotCalls.filter(c => c.kind === 'detach') as Array<{ kind: 'detach'; ids: Array<string | number> | undefined }>
+    const detachedIds = detachCalls.flatMap(c => c.ids ?? []).map(id => String(id))
+    assert.deepEqual(detachedIds, ['c2'])
+  })
+
+  it('descriptor lookup — explicit cfg.model wins over the relation entry thunk', async () => {
+    const child = makeFakeChildModel([])
+    const otherChild = makeFakeChildModel([])
+    const setup = makeM2MParentSetup({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'tags',
+      attachedIds:  new Set(),
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags')
+          .relationship({ name: 'tags', model: otherChild.model })
+          .schema([TextField.make('name')]),
+      ])
+      .save(async () => setup.makeRecord('a1'))
+
+    const submittedRows = [{ name: 'red' }]
+    const result = await dispatchFormSubmit(
+      form,
+      { tags: submittedRows },
+      { values: { tags: submittedRows }, parentModel: setup.parentModel },
+    )
+    assert.equal(result.ok, true)
+    // Override model received the create, NOT the descriptor's model.
+    assert.equal(otherChild.calls.filter(c => c.kind === 'create').length, 1)
+    assert.equal(child.calls.filter(c => c.kind === 'create').length, 0)
+  })
+
+  it('orderColumn — rejected under M2M v1 with a clear error', async () => {
+    const child = makeFakeChildModel([])
+    const setup = makeM2MParentSetup({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'tags',
+      attachedIds:  new Set(),
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags')
+          .relationship('tags')
+          .orderColumn('sort')
+          .schema([TextField.make('name')]),
+      ])
+      .save(async () => setup.makeRecord('a1'))
+
+    const submittedRows = [{ name: 'red' }]
+    await assert.rejects(
+      () => dispatchFormSubmit(
+        form,
+        { tags: submittedRows },
+        { values: { tags: submittedRows }, parentModel: setup.parentModel },
+      ),
+      /orderColumn\(\) is not supported under 'belongsToMany'/,
+    )
+  })
+
+  it('missing accessor — clear error when parent exposes neither parent[rel]() nor a legacy related() shape', async () => {
+    const child = makeFakeChildModel([])
+    // Parent missing the prototype `tags()` method AND missing `related`.
+    const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => makeQuery([]),
+      relatedQuery: () => makeQuery([]),
+      relations: {
+        tags: { type: 'belongsToMany', model: () => child.model, pivotTable: 'pivot' },
+      },
+    }
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags')
+          .relationship('tags')
+          .schema([TextField.make('name')]),
+      ])
+      .save(async () => ({ id: 'a1' }))
+
+    const submittedRows = [{ name: 'red' }]
+    await assert.rejects(
+      () => dispatchFormSubmit(
+        form,
+        { tags: submittedRows },
+        { values: { tags: submittedRows }, parentModel },
+      ),
+      /could not resolve the pivot-mutation accessor/,
+    )
+  })
+})
+
+describe('Repeater.relationship — morphToMany', () => {
+  // Parent shape: `Post.tags: morphToMany(Tag, pivotTable: 'taggable',
+  // morphName: 'taggable')`. The accessor handles the polymorphic stamp
+  // on the pivot row internally — pilotiq doesn't see the morph cols.
+  // Behavior is identical to belongsToMany from pilotiq's perspective.
+
+  it('create — same path as belongsToMany; the accessor handles polymorphic stamping internally', async () => {
+    const child = makeFakeChildModel([])
+    const attachedIds = new Set<string | number>()
+    const pivotCalls: Array<{ kind: 'attach'; ids: Array<string | number> }> = []
+    class Post {
+      id?: string
+      constructor(init?: Partial<{ id: string }>) { Object.assign(this, init) }
+      tags() {
+        return {
+          attach: async (input: ReadonlyArray<string | number>) => {
+            for (const id of input) attachedIds.add(id)
+            pivotCalls.push({ kind: 'attach', ids: [...input] })
+          },
+          detach: async () => 0,
+          sync:   async () => ({ attached: [], detached: [] }),
+        }
+      }
+    }
+    const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => makeQuery([]),
+      relatedQuery: () => makeQuery([]),
+      relations: {
+        tags: { type: 'morphToMany', model: () => child.model, pivotTable: 'taggable', morphName: 'taggable' },
+      },
+    }
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags')
+          .relationship('tags')
+          .schema([TextField.make('name').required()]),
+      ])
+      .save(async () => new Post({ id: 'p1' }))
+
+    const submittedRows = [{ name: 'red' }, { name: 'blue' }]
+    const result = await dispatchFormSubmit(
+      form,
+      { tags: submittedRows },
+      { values: { tags: submittedRows }, parentModel },
+    )
+    assert.equal(result.ok, true)
+    assert.equal(child.calls.filter(c => c.kind === 'create').length, 2)
+    assert.equal(pivotCalls.filter(c => c.kind === 'attach').length, 2)
+  })
+})
+
+describe('Repeater.relationship — morphedByMany', () => {
+  // Parent shape: `Tag.posts: morphedByMany(Post, pivotTable: 'taggable',
+  // morphName: 'taggable')`. Inverse polymorphic side. Same accessor surface.
+
+  it('detach-only on row removal (parallel to belongsToMany / morphToMany)', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', title: 'first' },
+      { id: 'c2', title: 'second' },
+    ])
+    const attachedIds = new Set<string | number>(['c1', 'c2'])
+    const pivotCalls: Array<{ kind: 'detach'; ids: Array<string | number> | undefined }> = []
+    class Tag {
+      id?: string
+      constructor(init?: Partial<{ id: string }>) { Object.assign(this, init) }
+      posts() {
+        return {
+          attach: async () => {},
+          detach: async (ids?: ReadonlyArray<string | number>) => {
+            if (ids === undefined) { attachedIds.clear(); pivotCalls.push({ kind: 'detach', ids: undefined }); return 0 }
+            for (const id of ids) attachedIds.delete(id)
+            pivotCalls.push({ kind: 'detach', ids: [...ids] })
+            return ids.length
+          },
+          sync: async () => ({ attached: [], detached: [] }),
+        }
+      }
+    }
+    const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => makeQuery([]),
+      relatedQuery: () => makeQuery(child.rows.filter(r => attachedIds.has(r['id'] as string | number))),
+      relations: {
+        posts: { type: 'morphedByMany', model: () => child.model, pivotTable: 'taggable', morphName: 'taggable' },
+      },
+    }
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('posts')
+          .relationship('posts')
+          .schema([TextField.make('title')]),
+      ])
+      .save(async () => new Tag({ id: 't1' }))
+
+    const submittedRows = [{ __id: 'c1', title: 'first' }]
+    const result = await dispatchFormSubmit(
+      form,
+      { posts: submittedRows },
+      { values: { posts: submittedRows }, record: new Tag({ id: 't1' }), parentModel },
+    )
+    assert.equal(result.ok, true)
+    // Detach c2; never touch M.delete.
+    assert.equal(child.calls.filter(c => c.kind === 'delete').length, 0)
+    const detachedIds = pivotCalls.flatMap(c => c.ids ?? []).map(id => String(id))
+    assert.deepEqual(detachedIds, ['c2'])
+  })
+})

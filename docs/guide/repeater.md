@@ -625,11 +625,70 @@ Each field defaults to the value discovered on the parent's `static
 relations` map; explicit settings win. The `model` and `foreignKey`
 keys are server-only — they never cross the wire.
 
+### Many-to-many relations
+
+`relationship()` also supports the M2M family — `belongsToMany`,
+`morphToMany`, and `morphedByMany`. The semantic is "embed inline-edited
+related records":
+
+```ts
+class Article extends Model {
+  static override relations = {
+    tags: { type: 'belongsToMany' as const, model: () => Tag, pivotTable: 'article_tag' },
+  }
+  tags() { return Model.belongsToMany(this, 'tags') }
+}
+
+ArticleResource.form(form) {
+  return form.schema([
+    TextField.make('title'),
+    Repeater.make('tags')
+      .relationship('tags')
+      .schema([
+        TextField.make('name').required(),
+        TextField.make('slug'),
+      ]),
+  ])
+}
+```
+
+What changes from the `hasMany` case:
+
+- **Create row** — `Tag.create(payload)` runs first, then
+  `article.tags().attach([newTag.id])` writes the pivot row. The pivot
+  is the link; the related model has no FK column.
+- **Update row** — `Tag.update(__id, payload)` runs as before; the
+  pivot is left alone (the link is already correct).
+- **Delete row** — `article.tags().detach([__id])` removes the pivot
+  link only. **The related Tag is NOT deleted** — it may be attached
+  to other articles. A `cascadeDelete` opt-in is a follow-up; for
+  v1 detach-only is the safe default.
+
+`morphToMany` and `morphedByMany` work the same way — the rudder ORM
+accessor handles polymorphic stamping (`<morphName>Type`) on the pivot
+row transparently.
+
+#### M2M caveats
+
+- **`orderColumn()` is rejected** under M2M. Pivot-side ordering needs
+  ORM `orderByPivot` which v1 doesn't expose; throwing here beats
+  silently writing into a non-existent column on the related model.
+  Re-order manually for now.
+- **Pivot-extras editing is deferred.** ORM v1 doesn't surface pivot
+  reads, so per-row pivot columns (e.g. `addedBy`, custom `sortOrder`)
+  can't round-trip through the form. Track this against ORM `withPivot`.
+- **Builder.relationship doesn't support M2M.** Builder rows are
+  heterogeneous `{ type, data }` envelopes — the pivot semantics don't
+  compose cleanly with that shape. Use `Repeater.relationship` if your
+  rows are homogeneous, or open an issue if you have a use case for
+  per-block-type pivot dispatch.
+
 ### Limitations and trade-offs
 
-- **`hasMany` only.** v1 doesn't support `belongsTo`, `hasOne`,
-  `belongsToMany`, or polymorphic relations. M2M / pivot is deferred
-  at the framework level alongside the `RelationManager`'s same gap.
+- **Five relation types supported.** `hasMany`, `morphMany`, `morphOne`,
+  and the M2M family (`belongsToMany`, `morphToMany`, `morphedByMany`).
+  `belongsTo` / `hasOne` are deferred — they imply a single child, which
+  the Repeater doesn't model naturally.
 - **Mutually exclusive with `simple()` and `dehydrated(false)`.**
   Flat `[v, v, ...]` storage can't round-trip through named child
   columns; a `dehydrated(false)` field never persists, so combining

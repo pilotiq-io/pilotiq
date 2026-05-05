@@ -327,6 +327,56 @@ export function getRelationType(
 }
 
 /**
+ * Many-to-many relation descriptor read off a parent's `static
+ * relations[name]`. Returned by `getM2MRelationDescriptor` for the
+ * three M2M variants (`belongsToMany`, `morphToMany`, `morphedByMany`).
+ *
+ * Shape is intentionally minimal — pilotiq's M2M dispatch uses the
+ * `parent[rel]()` accessor for pivot writes, so neither `pivotTable`
+ * nor `morphName` need to surface here. The `model` thunk is the only
+ * field consumed by `Repeater.relationship`'s save pipeline (for
+ * `M.create` / `M.update` calls on the related child).
+ */
+export interface M2MRelationDescriptor {
+  /** Relation type. Discriminator for the `Repeater.relationship` M2M
+   *  branches; all three share the same persist-side dispatch but the
+   *  type round-trips into error messages and tests. */
+  type:  'belongsToMany' | 'morphToMany' | 'morphedByMany'
+  /** Thunk returning the related (child) model class. */
+  model: () => ModelLike
+}
+
+/**
+ * Read a many-to-many relation entry off a parent model's `static
+ * relations[name]`. Returns `undefined` when the entry is missing,
+ * isn't an M2M type, or doesn't carry a `model` thunk. Lenient on
+ * the structural shape so test stubs can supply just `{ type, model }`.
+ *
+ * Caller responsibility: the lookup checks `relations[name].type`
+ * against the three M2M variants. Other relation types (hasMany,
+ * morphMany, etc.) return `undefined` so callers (e.g.
+ * `resolveChildAndAttachment`) can fall through to the corresponding
+ * descriptor lookup.
+ */
+export function getM2MRelationDescriptor(
+  parentModel: ModelLike,
+  name:        string,
+): M2MRelationDescriptor | undefined {
+  const relations = (parentModel as unknown as Record<string, unknown>)['relations']
+  if (!relations || typeof relations !== 'object') return undefined
+  const entry = (relations as Record<string, unknown>)[name]
+  if (!entry || typeof entry !== 'object') return undefined
+  const e    = entry as Record<string, unknown>
+  const type = e['type']
+  if (type !== 'belongsToMany' && type !== 'morphToMany' && type !== 'morphedByMany') return undefined
+  if (typeof e['model'] !== 'function') return undefined
+  return {
+    type:  type as M2MRelationDescriptor['type'],
+    model: e['model'] as () => ModelLike,
+  }
+}
+
+/**
  * Polymorphic relation descriptor read off a parent's `static relations[name]`.
  * Returned by `getMorphRelationDescriptor` for `morphMany` / `morphOne` (where
  * the parent IS the polymorphic owner — `Post.comments`). For `morphTo`, the

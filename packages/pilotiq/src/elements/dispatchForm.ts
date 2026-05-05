@@ -10,12 +10,14 @@ import { resolveSavedNotification, type NotificationMeta } from '../notification
 import {
   getParentRelationDescriptor,
   getMorphRelationDescriptor,
+  getM2MRelationDescriptor,
   computeMorphPayload,
   getPrimaryKey,
   resolveRelatedQuery,
   type ModelLike,
   type MorphRelationDescriptor,
 } from '../orm/modelDefaults.js'
+import { resolveM2MAccessor } from '../orm/m2mAccessor.js'
 
 export interface DispatchSuccess<R> {
   ok:            true
@@ -1311,34 +1313,82 @@ export function extractRelationshipRepeaters(
 }
 
 /**
- * Resolved attachment shape for a relationship-backed Repeater. Mirrors
- * `BuilderChildAttachment` — `hasMany` uses a single FK column,
- * `morphMany` uses the `<morphName>Id` + `<morphName>Type` morph stamp.
- * `morphOne` collapses into the morphMany branch (storage shape is
- * identical; "one row" is a schema concern enforced upstream).
+ * Resolved attachment shape for a relationship-backed Repeater. Five
+ * variants reflect the persisted-relation kinds we know how to write
+ * back from a Repeater submit:
+ *
+ *   - `hasMany`        — single FK column on the child.
+ *   - `morphMany`      — polymorphic owner side; `<morphName>Id` +
+ *                        `<morphName>Type` stamped on the child.
+ *                        `morphOne` collapses into this kind (storage
+ *                        shape is identical; "one row" is enforced
+ *                        upstream).
+ *   - `belongsToMany`  — pivot-table M2M; the child has no parent
+ *                        attachment column, so create + attach goes
+ *                        through `parent[rel]().attach([childPk])` and
+ *                        delete-from-row goes through `.detach([pk])`.
+ *   - `morphToMany`    — polymorphic pivot M2M; pivot row carries
+ *                        `<morphName>Type` + the parent's PK, written
+ *                        transparently by the accessor.
+ *   - `morphedByMany`  — inverse polymorphic pivot. Same accessor
+ *                        surface.
+ *
+ * The three M2M variants carry only the relation name — the persist
+ * pipeline reaches the accessor via `resolveM2MAccessor(parent, relation)`.
  */
 type RepeaterChildAttachment =
-  | { kind: 'hasMany';   model: ModelLike; foreignKey: string }
-  | { kind: 'morphMany'; model: ModelLike; morph:      MorphRelationDescriptor }
+  | { kind: 'hasMany';        model: ModelLike; foreignKey: string }
+  | { kind: 'morphMany';      model: ModelLike; morph:      MorphRelationDescriptor }
+  | { kind: 'belongsToMany';  model: ModelLike; relation:   string }
+  | { kind: 'morphToMany';    model: ModelLike; relation:   string }
+  | { kind: 'morphedByMany';  model: ModelLike; relation:   string }
 
 /**
  * Resolve the child model + parent-attachment shape for a
- * relationship-backed Repeater. Two supported modes:
+ * relationship-backed Repeater. Five supported modes:
  *
- *   - `hasMany`   — single foreign key on the child. Falls back to
- *                   `cfg.model` / `cfg.foreignKey` overrides when the
- *                   parent's `static relations[name]` doesn't expose them.
- *   - `morphMany` — polymorphic owner side. Reads the morph descriptor
- *                   off the parent's `static relations[name]`.
- *                   `morphOne` collapses into the same branch.
+ *   - `hasMany`         — single foreign key on the child.
+ *   - `morphMany` / `morphOne` — polymorphic owner side.
+ *   - `belongsToMany`   — pivot-table M2M.
+ *   - `morphToMany` / `morphedByMany` — polymorphic pivot M2M.
+ *
+ * Detection order: M2M descriptor (covers all three M2M variants) →
+ * morph descriptor (morphMany / morphOne) → hasMany. The order matters
+ * because `getParentRelationDescriptor` accepts entries with
+ * `foreignKey: string` even if the type is M2M, so checking M2M first
+ * keeps mis-shaped entries from falling through to the hasMany branch.
+ *
+ * `cfg.orderColumn` is rejected under M2M because pivot-side ordering
+ * needs ORM `orderByPivot` which v1 doesn't expose. Throwing here
+ * beats silently writing into a non-existent column on the related
+ * model.
  *
  * Throws a clear configuration error when the relation type isn't one
- * of those two, or when descriptor lookup fails entirely.
+ * of the five, or when descriptor lookup fails entirely.
  */
 function resolveChildAndAttachment(
   parentModel: ModelLike,
   cfg:         RepeaterRelationshipConfig,
 ): RepeaterChildAttachment {
+  const m2mDescriptor = getM2MRelationDescriptor(parentModel, cfg.name)
+  if (m2mDescriptor) {
+    if (cfg.orderColumn !== undefined) {
+      throw new Error(
+        `[Pilotiq] Repeater.relationship("${cfg.name}"): orderColumn() is not supported under ` +
+        `'${m2mDescriptor.type}' v1. Pivot-side ordering needs ORM \`orderByPivot\` which is deferred.`,
+      )
+    }
+    const model = cfg.model ?? m2mDescriptor.model()
+    if (!model) {
+      throw new Error(
+        `[Pilotiq] Repeater.relationship("${cfg.name}"): could not resolve the related model. ` +
+        `Pass it explicitly via .relationship({ name, model: RelatedModel }) or declare ` +
+        `the relation's \`model\` thunk on the parent model's static relations map.`,
+      )
+    }
+    return { kind: m2mDescriptor.type, model, relation: cfg.name }
+  }
+
   const parentDescriptor = getParentRelationDescriptor(parentModel, cfg.name)
   const morphDescriptor  = getMorphRelationDescriptor(parentModel, cfg.name)
   const type             = parentDescriptor?.type
@@ -1381,8 +1431,8 @@ function resolveChildAndAttachment(
   }
   if (type !== 'hasMany') {
     throw new Error(
-      `[Pilotiq] Repeater.relationship("${cfg.name}"): only 'hasMany' and 'morphMany' / 'morphOne' are supported (got '${type}'). ` +
-      `belongsToMany / morphToMany / morphedByMany are deferred.`,
+      `[Pilotiq] Repeater.relationship("${cfg.name}"): unsupported relation type '${type}'. ` +
+      `Supported: hasMany, morphMany, morphOne, belongsToMany, morphToMany, morphedByMany.`,
     )
   }
 
@@ -1430,6 +1480,23 @@ async function persistRelationshipRows(
     ? computeMorphPayload(parent, attachment.morph)
     : undefined
 
+  // Resolve the M2M pivot-mutation accessor once — fails closed with a
+  // clear error if the parent doesn't expose `parent[rel]()` or a
+  // legacy `parent.related(rel)` shape returning attach/detach.
+  const isM2M = attachment.kind === 'belongsToMany'
+             || attachment.kind === 'morphToMany'
+             || attachment.kind === 'morphedByMany'
+  const m2mAccessor = isM2M
+    ? resolveM2MAccessor(parent, (attachment as { relation: string }).relation)
+    : undefined
+  if (isM2M && !m2mAccessor) {
+    throw new Error(
+      `[Pilotiq] Repeater.relationship("${cfg.name}"): could not resolve the pivot-mutation accessor on the parent record. ` +
+      `Expected \`parent.${cfg.name}()\` to return \`{ attach, detach, sync }\` (rudder ORM convention). ` +
+      `Make sure the parent model declares the relation under \`static relations\` and that the prototype method is installed.`,
+    )
+  }
+
   const existing = await loadRelationRows(parentModel, parent, cfg.name)
   const existingByPk = new Map<string, Record<string, unknown>>()
   for (const row of existing) {
@@ -1461,10 +1528,11 @@ async function persistRelationshipRows(
       // the FK is already correct; for morphMany the `<morphName>Id`
       // + `<morphName>Type` cols are too. Defense against a tampered
       // client trying to re-link the child to a different (poly)
-      // parent.
+      // parent. M2M variants have no parent-attachment column on the
+      // child to strip — pivot lives on its own table.
       if (attachment.kind === 'hasMany') {
         delete payload[attachment.foreignKey]
-      } else {
+      } else if (attachment.kind === 'morphMany') {
         for (const k of Object.keys(morphStamp!)) delete payload[k]
       }
       await model.update(submittedId!, payload)
@@ -1472,17 +1540,40 @@ async function persistRelationshipRows(
     } else {
       if (attachment.kind === 'hasMany') {
         payload[attachment.foreignKey] = parentPk
-      } else {
+        await model.create(payload)
+      } else if (attachment.kind === 'morphMany') {
         Object.assign(payload, morphStamp)
+        await model.create(payload)
+      } else {
+        // M2M: create the related record first, then attach via the
+        // pivot accessor. The accessor handles polymorphic stamping
+        // (`<morphName>Type`) transparently for morphToMany /
+        // morphedByMany.
+        const created = await model.create(payload)
+        const newPk   = (created as Record<string, unknown> | null | undefined)?.[pk]
+        if (newPk === undefined || newPk === null) {
+          throw new Error(
+            `[Pilotiq] Repeater.relationship("${cfg.name}"): newly created related record has no primary key — ` +
+            `cannot attach pivot row. Check that \`${(model as { name?: string }).name ?? 'related model'}.create()\` ` +
+            `returns a record with the primary key set.`,
+          )
+        }
+        await m2mAccessor!.attach!([newPk as string | number])
       }
-      await model.create(payload)
     }
     void field
   }
 
   for (const [pkVal, _row] of existingByPk) {
     if (keptPks.has(pkVal)) continue
-    await model.delete(pkVal)
+    if (isM2M) {
+      // Detach the pivot link only — the related record may still be
+      // attached to other parents. `cascadeDelete` opt-in is a Tier-2
+      // follow-up.
+      await m2mAccessor!.detach!([pkVal])
+    } else {
+      await model.delete(pkVal)
+    }
     void _row
   }
 }
@@ -1571,6 +1662,23 @@ function resolveBuilderChildAndAttachment(
   parentModel: ModelLike,
   cfg:         BuilderRelationshipConfig,
 ): BuilderChildAttachment {
+  // Detect M2M first — a `belongsToMany` / `morphToMany` /
+  // `morphedByMany` entry has no `foreignKey`, so it would silently
+  // fall through to the hasMany branch below and surface a less-useful
+  // "could not resolve foreign-key" error. Builder rows
+  // (`{ type, data }`) don't compose with M2M pivot semantics, so this
+  // is the surface where we point users at Repeater.relationship.
+  const m2mDescriptor = getM2MRelationDescriptor(parentModel, cfg.name)
+  if (m2mDescriptor) {
+    throw new Error(
+      `[Pilotiq] Builder.relationship("${cfg.name}"): unsupported relation type '${m2mDescriptor.type}'. ` +
+      `Only 'hasMany' and 'morphMany' / 'morphOne' are supported on Builder.relationship in v1. ` +
+      `belongsToMany / morphToMany / morphedByMany are not supported — the heterogeneous {type, data} ` +
+      `envelope doesn't compose cleanly with M2M pivot semantics. Use a hasMany or morphMany relation, ` +
+      `or use Repeater.relationship if your rows are homogeneous.`,
+    )
+  }
+
   const parentDescriptor = getParentRelationDescriptor(parentModel, cfg.name)
   const morphDescriptor  = getMorphRelationDescriptor(parentModel, cfg.name)
   const type             = parentDescriptor?.type
@@ -1613,8 +1721,11 @@ function resolveBuilderChildAndAttachment(
   }
   if (type !== 'hasMany') {
     throw new Error(
-      `[Pilotiq] Builder.relationship("${cfg.name}"): only 'hasMany' and 'morphMany' / 'morphOne' are supported (got '${type}'). ` +
-      `belongsToMany / morphToMany / morphedByMany are deferred.`,
+      `[Pilotiq] Builder.relationship("${cfg.name}"): unsupported relation type '${type}'. ` +
+      `Only 'hasMany' and 'morphMany' / 'morphOne' are supported on Builder.relationship in v1. ` +
+      `belongsToMany / morphToMany / morphedByMany are not supported — the heterogeneous {type, data} ` +
+      `envelope doesn't compose cleanly with M2M pivot semantics. Use a hasMany or morphMany relation, ` +
+      `or use Repeater.relationship if your rows are homogeneous.`,
     )
   }
 

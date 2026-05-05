@@ -766,3 +766,46 @@ describe('Builder.relationship — morphMany', () => {
     void child
   })
 })
+
+describe('Builder.relationship — M2M deferral', () => {
+  // Builder rows are heterogeneous `{ type, data }` envelopes — the
+  // pivot semantics of belongsToMany / morphToMany / morphedByMany
+  // don't compose with that shape. Per-block-type model dispatch is the
+  // right answer if a consumer ever asks. Until then, raise a clear
+  // error pointing at Repeater.relationship.
+  it('belongsToMany — clear "deferred" error from resolveBuilderChildAndAttachment', async () => {
+    const child = makeFakeChildModel([])
+    class Article {
+      id?: string
+      constructor(init?: Partial<{ id: string }>) { Object.assign(this, init) }
+    }
+    const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => makeQuery([]),
+      relatedQuery: () => makeQuery([]),
+      relations: {
+        content: { type: 'belongsToMany', model: () => child.model, pivotTable: 'pivot' },
+      },
+    }
+
+    const form = Form.make()
+      .schema([
+        BuilderField.make('content').relationship('content').blocks([HEADING_BLOCK()]),
+      ])
+      .save(async () => new Article({ id: 'p1' }))
+
+    const submittedRows = [{ type: 'heading', data: { text: 'X' } }]
+    await assert.rejects(
+      () => dispatchFormSubmit(
+        form,
+        { content: submittedRows },
+        { values: { content: submittedRows }, parentModel },
+      ),
+      /unsupported relation type 'belongsToMany'/,
+    )
+  })
+})

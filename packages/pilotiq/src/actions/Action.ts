@@ -12,6 +12,7 @@ import {
   getParentRelationDescriptor,
   type ModelLike,
 } from '../orm/modelDefaults.js'
+import { resolveM2MAccessor } from '../orm/m2mAccessor.js'
 import { buildImportSchema as buildImportModalSchema } from './importFactory.js'
 import { buildAttachModalSchema } from './attachFactory.js'
 
@@ -287,42 +288,6 @@ function labelForCount(R: ResourceLike, n: number): string {
  *  then attach via `relationAttach`. */
 function isM2MMode(mode: RelationManagerContext['mode']): boolean {
   return mode === 'belongsToMany' || mode === 'morphToMany' || mode === 'morphedByMany'
-}
-
-/** Resolve the M2M pivot-mutation accessor for `parent[rel]`. Two
- *  shapes are supported, in this order:
- *    1. `parent[rel]()` — the real `@rudderjs/orm` shape installed by
- *       `_installBelongsToManyMethods` / `_installMorphPivotMethods`
- *       (e.g. `post.tags()` returns `{ attach, detach, sync }`).
- *    2. `parent.related(rel)` — legacy / test-double shape that
- *       returns the accessor directly. Kept so existing pilotiq tests
- *       built around `parent.related(...)` mocks keep passing.
- *
- *  Returns `undefined` when neither shape exposes a callable `attach`
- *  AND a callable `detach` — caller should surface a clear error
- *  notification. */
-interface M2MAccessor {
-  attach?(input: unknown): Promise<void>
-  detach?(input?: unknown): Promise<unknown>
-  sync?(desiredIds: ReadonlyArray<string | number>): Promise<unknown>
-}
-function resolveM2MAccessor(parent: unknown, rel: string): M2MAccessor | undefined {
-  if (!parent || typeof parent !== 'object') return undefined
-  // Shape 1: parent[rel]() — real ORM. Prototype-installed method.
-  const inst = (parent as Record<string, unknown>)[rel]
-  if (typeof inst === 'function') {
-    try {
-      const out = (inst as () => unknown).call(parent) as M2MAccessor | undefined
-      if (out && (typeof out.attach === 'function' || typeof out.detach === 'function')) return out
-    } catch { /* fall through to legacy shape */ }
-  }
-  // Shape 2: parent.related(rel) — legacy / test-mock shape.
-  const relatedFn = (parent as { related?: (n: string) => unknown }).related
-  if (typeof relatedFn === 'function') {
-    const out = relatedFn.call(parent, rel) as M2MAccessor | undefined
-    if (out && (typeof out.attach === 'function' || typeof out.detach === 'function')) return out
-  }
-  return undefined
 }
 
 /**
