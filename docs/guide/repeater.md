@@ -161,11 +161,11 @@ fails-closed-as-**visible** (the row stays shown + `console.warn`) —
 the inverse of layout `visible()`'s posture, because a misbehaving rule
 should never silently hide data the user is editing.
 
-> `itemHidden` is evaluated at form-render time (initial SSR and full
-> re-renders after submit). Live state-update re-resolves don't
-> dynamically toggle hide/show on existing rows; the user must submit
-> the form to reapply visibility. Reactive `itemHidden` is tracked for
-> a future revision.
+> `itemHidden` re-evaluates on every server resolve. Pair the row's
+> trigger field with `live()` (or call `live()` on a sibling top-level
+> field that the rule reads) to get instant hide/show as the user
+> types. Without `live()`, the gate is still re-evaluated on initial
+> SSR and after submit — just not between keystrokes.
 
 Reorder skips hidden rows: pressing ↑ on the row below a hidden row
 hops the visible row over the hidden one. Drag-and-drop drops only
@@ -213,6 +213,12 @@ authorization.
 A throwing predicate fails-open (capability stays enabled + warn) —
 mirroring `itemHidden`'s posture, since a misbehaving rule shouldn't
 silently lock the user out of editing data.
+
+`itemCanDelete / itemCanClone / itemCanReorder` re-evaluate on every
+server resolve, same as `itemHidden`. Mark the rule's trigger field
+`live()` and the matching button on each row appears / disappears as
+the user types. The renderer syncs the four flags by row id so locally
+added rows + uncontrolled-input typed values survive each round-trip.
 
 ## Nested Repeaters
 

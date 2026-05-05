@@ -1,4 +1,4 @@
-import React, { useContext, useId, useMemo, useState } from 'react'
+import React, { useContext, useEffect, useId, useMemo, useState } from 'react'
 import { PlusIcon } from 'lucide-react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { Button } from '../ui/button.js'
@@ -18,6 +18,7 @@ import {
   DEFAULT_CLONE,
   DEFAULT_DELETE,
 } from './rowChromeButton.js'
+import { syncRowGates } from './syncRowGates.js'
 
 /**
  * Pure reorder helper — used by both the HTML5 DnD path and the
@@ -203,6 +204,18 @@ export function RepeaterInput({
     [],
   )
   const [rows, setRows] = useState<RowState[]>(initialRows)
+  // Reactive `itemHidden / itemCanDelete / itemCanClone / itemCanReorder`:
+  // local row state owns identity / order / count (so client adds, deletes
+  // and reorders survive), but the four gate flags are re-resolved by the
+  // server on every `live()` POST. Sync them by row id whenever a fresh
+  // `meta.rows` arrives — `setRows` is a no-op when nothing changed
+  // (helper returns the same reference) so idempotent server responses
+  // don't trigger a render cascade.
+  const metaRows = meta.rows
+  useEffect(() => {
+    if (!metaRows) return
+    setRows(prev => syncRowGates(prev, metaRows))
+  }, [metaRows])
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
     accordion ? {} : initSeedCollapsed(initialRows, formId, name, defaultCollapsed, collapsible),
   )

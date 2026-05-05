@@ -7,6 +7,7 @@ import { FormIdContext, useFormState } from '../FormStateContext.js'
 import { findFieldMeta } from '../formStateHelpers.js'
 import { useIconFor } from '../icon-context.js'
 import { reorderRows, ExtraActionStrip, buildGridContainer } from './RepeaterInput.js'
+import { syncRowGates } from './syncRowGates.js'
 import type { RowButtonsMeta } from '../../fields/RowButton.js'
 import {
   RowChromeIconButton,
@@ -166,6 +167,15 @@ export function BuilderInput({
     [],
   )
   const [rows, setRows] = useState<RowState[]>(initialRows)
+  // Reactive `itemHidden / itemCanDelete / itemCanClone / itemCanReorder`:
+  // mirrors the sync wired into `RepeaterInput`. Local rows own identity /
+  // order / count; the server re-evaluates the four gate flags on every
+  // `live()` POST and we apply the deltas by row id.
+  const metaRows = meta.rows
+  useEffect(() => {
+    if (!metaRows) return
+    setRows(prev => syncRowGates(prev, metaRows))
+  }, [metaRows])
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
     accordion ? {} : initSeedCollapsed(initialRows, formId, name, defaultCollapsed, collapsible),
   )

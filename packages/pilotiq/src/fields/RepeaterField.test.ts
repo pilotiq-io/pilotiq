@@ -835,6 +835,68 @@ describe('RepeaterField', () => {
     })
   })
 
+  // Live-reactive gates: when `Form.live()` re-resolves the schema after a
+  // sibling field changes, `itemHidden / itemCan*` re-run with the fresh
+  // values. The server-side check is "every `resolveSchema` call produces
+  // gate flags from the current values map" — combined with `applyStateUpdate`
+  // we round-trip a sibling-change cycle. The renderer-side sync (in
+  // `RepeaterInput`) is unit-tested in `react/fields/syncRowGates.test.ts`.
+  describe('reactive `itemHidden / itemCan*` (Form.live re-resolve)', () => {
+    function repeater() {
+      return RepeaterField.make('items').schema([
+        TextField.make('product'),
+        ToggleField.make('archived'),
+      ])
+    }
+
+    function metaOf(m: unknown): RepeaterFieldMeta {
+      return m as RepeaterFieldMeta
+    }
+
+    it('a sibling-row value flip re-evaluates the row\'s itemHidden', async () => {
+      const f = repeater().itemHidden(({ values }) => Boolean(values?.['archived']))
+
+      const before = metaOf(
+        (await resolveSchema(
+          [f],
+          { values: { items: [{ product: 'A', archived: false }] } },
+        ))[0],
+      )
+      assert.equal(before.rows[0]?.hidden, undefined)
+
+      // Simulate the live POST: archive the row. The server's resolveSchema
+      // call (driven by `formStateData`) sees the new value and stamps hidden.
+      const after = metaOf(
+        (await resolveSchema(
+          [f],
+          { values: { items: [{ product: 'A', archived: true }] } },
+        ))[0],
+      )
+      assert.equal(after.rows[0]?.hidden, true)
+    })
+
+    it('a row-scoped value flip re-evaluates that row\'s itemCanDelete', async () => {
+      const f = repeater().itemCanDelete(({ values }) => values?.['archived'] !== true)
+
+      const before = metaOf(
+        (await resolveSchema(
+          [f],
+          { values: { items: [{ product: 'A', archived: false }] } },
+        ))[0],
+      )
+      assert.equal(before.rows[0]?.canDelete, undefined)
+
+      const after = metaOf(
+        (await resolveSchema(
+          [f],
+          { values: { items: [{ product: 'A', archived: true }] } },
+        ))[0],
+      )
+      // Same row id, same product — only `archived` changed; gate stamps now.
+      assert.equal(after.rows[0]?.canDelete, false)
+    })
+  })
+
   describe('coerceFormValues (Step 3)', () => {
     function repeater() {
       return RepeaterField.make('items').schema([

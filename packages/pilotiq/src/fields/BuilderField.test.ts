@@ -558,6 +558,49 @@ describe('BuilderField', () => {
     })
   })
 
+  // Live-reactive gate flow mirrors Repeater's. The renderer-side sync (in
+  // `BuilderInput`) is unit-tested in `react/fields/syncRowGates.test.ts`.
+  describe('reactive `itemHidden / itemCan*` (Form.live re-resolve)', () => {
+    function builder() {
+      return BuilderField.make('content').blocks([
+        Block.make('heading').schema([TextField.make('text')]),
+        Block.make('paragraph').schema([TextField.make('body')]),
+      ])
+    }
+
+    function metaOf(m: unknown): BuilderFieldMeta {
+      return m as BuilderFieldMeta
+    }
+
+    it('a row\'s value flip re-evaluates its itemHidden on the next resolve', async () => {
+      const f = builder().itemHidden(({ values }) => (values as Record<string, unknown>)['text'] === 'skip')
+
+      const before = metaOf((await resolveSchema([f], {
+        values: { content: [{ type: 'heading', data: { text: 'keep' } }] },
+      }))[0])
+      assert.equal(before.rows[0]?.hidden, undefined)
+
+      const after = metaOf((await resolveSchema([f], {
+        values: { content: [{ type: 'heading', data: { text: 'skip' } }] },
+      }))[0])
+      assert.equal(after.rows[0]?.hidden, true)
+    })
+
+    it('a row-scoped value flip re-evaluates that row\'s itemCanDelete', async () => {
+      const f = builder().itemCanDelete(({ values }) => (values as Record<string, unknown>)['text'] !== 'locked')
+
+      const before = metaOf((await resolveSchema([f], {
+        values: { content: [{ type: 'heading', data: { text: 'free' } }] },
+      }))[0])
+      assert.equal(before.rows[0]?.canDelete, undefined)
+
+      const after = metaOf((await resolveSchema([f], {
+        values: { content: [{ type: 'heading', data: { text: 'locked' } }] },
+      }))[0])
+      assert.equal(after.rows[0]?.canDelete, false)
+    })
+  })
+
   // ─── Coercion ─────────────────────────────────────────────
 
   describe('coerceFormValues', () => {
