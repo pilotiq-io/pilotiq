@@ -11,6 +11,7 @@ import { Color } from '@tiptap/extension-color'
 import Highlight from '@tiptap/extension-highlight'
 import Image from '@tiptap/extension-image'
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
+import { Details, DetailsSummary, DetailsContent } from '@tiptap/extension-details'
 import { Popover } from '@base-ui/react/popover'
 import type { FieldRendererProps } from '@pilotiq/pilotiq/react'
 import type { BlockMeta } from '../Block.js'
@@ -208,6 +209,13 @@ function ClientEditor(props: FieldRendererProps) {
       TableRow,
       TableHeader,
       TableCell,
+      // Collapsible `<details>` blocks. `persist: true` round-trips the
+      // open/closed state through the document attrs so SSR + reload pick up
+      // the same state the author left it in. The default summary text on
+      // insert ("Title") gives the user something to overwrite.
+      Details.configure({ persist: true, HTMLAttributes: { class: 'details' } }),
+      DetailsSummary,
+      DetailsContent,
       Placeholder.configure({ placeholder: placeholder ?? 'Start writing…' }),
       // BlockNodeExtension carries the block registry on its options —
       // NodeViews mount in a separate React tree and can't see context.

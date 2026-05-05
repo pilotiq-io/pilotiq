@@ -91,6 +91,7 @@ Tables         table
                tableMergeCells      tableSplitCell
                tableToggleHeaderRow tableToggleHeaderCell
                tableDelete
+Disclosure     details
 Editing        link undo redo
 ```
 
@@ -133,7 +134,7 @@ Opens on `/`. Built-in items:
 - **Headings** — Heading 1 to 6
 - **Lists** — Bullet list, Numbered list
 - **Align** — Align left, Align center, Align right
-- **Insert** — Table (3×3 with header row), Image *(only when an `UploadAdapter` is registered via `Pilotiq.uploads({ adapter })`)*
+- **Insert** — Table (3×3 with header row), Collapsible block (`<details>`), Image *(only when an `UploadAdapter` is registered via `Pilotiq.uploads({ adapter })`)*
 - **Style** — Lead, Small
 - **Blocks** — every entry in `.blocks([...])`
 - **Merge tags** — every entry in `.mergeTags([...])`
@@ -161,7 +162,7 @@ renderRichTextToHtml({ type: 'doc', content: [...] })
 
 The renderer is a pure function — no DOM, no Tiptap runtime, no React. Safe to call from any server context. Coverage:
 
-- **Nodes:** doc / paragraph / heading (1-6) / blockquote / codeBlock / bulletList / orderedList / listItem / horizontalRule / hardBreak / image / table / tableRow / tableCell / tableHeader / mergeTag / mention.
+- **Nodes:** doc / paragraph / heading (1-6) / blockquote / codeBlock / bulletList / orderedList / listItem / horizontalRule / hardBreak / image / table / tableRow / tableCell / tableHeader / details / detailsSummary / detailsContent / mergeTag / mention.
 - **Marks:** bold / italic / strike / underline / subscript / superscript / code / link / textStyle (color) / highlight (color).
 - **Attrs:** heading.level / orderedList.start / codeBlock.language / textAlign on paragraph + heading / image.src + alt + title + width + height / tableCell.colspan + rowspan + colwidth (also on tableHeader) / mergeTag.id / mention.id + label + trigger.
 - **Custom blocks:** anything not built-in renders to `<div data-type="..." data-attrs="...">` so consumers can replay or restyle by `data-type`. Override with `renderRichTextToHtml(content, { renderBlock: (node) => ... })`.
@@ -202,6 +203,16 @@ Insert a 3×3 table with a header row via the `table` toolbar button (or by addi
 - `lastColumnResizable: false` is on by default — the right-edge handle won't grow the table beyond its container.
 
 Tables are best for small tabular data inline with the article body. For records-as-rows, use a Resource — its `Table` page has filters, sorting, pagination, and editable columns.
+
+## Collapsible blocks
+
+Insert a native `<details>` block via `/` → **Collapsible block** in the slash menu, or add `'details'` to a `toolbarButtons` group. Each block is a node trio (`details` / `detailsSummary` / `detailsContent`); the editor renders a click-to-toggle disclosure widget, and the read-side renderer emits standard HTML:
+
+```html
+<details><summary>Click to expand</summary><p>Hidden content</p></details>
+```
+
+The open / closed state is persisted on the document — `Details.configure({ persist: true })` is the default so SSR + reload pick up the state the author left it in. When `attrs.open === true`, the renderer adds the platform `open` attribute to the `<details>` tag.
 
 ## Merge tags
 

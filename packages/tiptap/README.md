@@ -8,7 +8,8 @@ pnpm add @pilotiq/tiptap \
   @tiptap/extension-link @tiptap/extension-placeholder \
   @tiptap/extension-underline @tiptap/extension-subscript @tiptap/extension-superscript \
   @tiptap/extension-text-align @tiptap/extension-text-style @tiptap/extension-color \
-  @tiptap/extension-highlight @tiptap/extension-image @tiptap/extension-table
+  @tiptap/extension-highlight @tiptap/extension-image @tiptap/extension-table \
+  @tiptap/extension-details
 ```
 
 ```ts
@@ -36,7 +37,7 @@ RichTextField.make('body')
     ['h2', 'h3'],
     ['textColor', 'highlight'],
     ['bulletList', 'orderedList'],
-    ['attachFiles', 'table'],
+    ['attachFiles', 'table', 'details'],
     ['undo', 'redo'],
   ])
   .resizableImages()

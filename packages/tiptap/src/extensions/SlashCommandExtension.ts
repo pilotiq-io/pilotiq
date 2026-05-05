@@ -188,6 +188,16 @@ export function buildSlashItems(
         editor.chain().focus().deleteRange(range)
           .insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
     },
+    // Collapsible `<details>` block. `setDetails` wraps the cursor's
+    // paragraph in a details node with an empty summary; the user starts
+    // typing the summary and presses Enter to drop into the body. No
+    // upload gate — pure schema, available everywhere.
+    {
+      key: 'details', label: 'Collapsible block', icon: '▸', group: 'Insert',
+      searchKey: 'details collapsible disclosure summary toggle expand',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).setDetails().run(),
+    },
     // Image entry shares the toolbar's attach-files dialog; only surfaced
     // when the panel has wired an `UploadAdapter`. Without one, the dialog
     // would post to a missing endpoint — the slash item degrades the same

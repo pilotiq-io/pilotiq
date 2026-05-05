@@ -396,6 +396,76 @@ describe('renderRichTextToHtml — escaping', () => {
   })
 })
 
+describe('renderRichTextToHtml — details (collapsible blocks)', () => {
+  it('renders a closed details block with summary + content', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'details',
+        content: [
+          { type: 'detailsSummary', content: [{ type: 'text', text: 'Click me' }] },
+          { type: 'detailsContent', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hidden' }] }] },
+        ],
+      }],
+    }
+    assert.equal(
+      renderRichTextToHtml(doc),
+      '<details><summary>Click me</summary><p>Hidden</p></details>',
+    )
+  })
+
+  it('emits the `open` attribute when attrs.open is true', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'details',
+        attrs: { open: true },
+        content: [
+          { type: 'detailsSummary', content: [{ type: 'text', text: 'S' }] },
+          { type: 'detailsContent', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'B' }] }] },
+        ],
+      }],
+    }
+    assert.equal(
+      renderRichTextToHtml(doc),
+      '<details open><summary>S</summary><p>B</p></details>',
+    )
+  })
+
+  it('treats anything other than `true` as closed (including the string "true")', () => {
+    const mk = (open: unknown): TiptapNode => ({
+      type: 'doc',
+      content: [{
+        type: 'details',
+        attrs: { open },
+        content: [
+          { type: 'detailsSummary', content: [{ type: 'text', text: 's' }] },
+          { type: 'detailsContent', content: [{ type: 'paragraph' }] },
+        ],
+      }],
+    })
+    // Tiptap stores `open` as a real boolean — anything else is treated as
+    // closed so a corrupted attr doesn't accidentally pop everything open.
+    assert.match(renderRichTextToHtml(mk('true')), /^<details>/)
+    assert.match(renderRichTextToHtml(mk(1)),       /^<details>/)
+    assert.match(renderRichTextToHtml(mk(null)),    /^<details>/)
+  })
+
+  it('escapes summary text content', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'details',
+        content: [
+          { type: 'detailsSummary', content: [{ type: 'text', text: '<script>' }] },
+          { type: 'detailsContent', content: [{ type: 'paragraph' }] },
+        ],
+      }],
+    }
+    assert.match(renderRichTextToHtml(doc), /<summary>&lt;script&gt;<\/summary>/)
+  })
+})
+
 describe('renderRichTextToHtml — merge tags', () => {
   it('substitutes a tag from opts.mergeTags (HTML-escaped)', () => {
     const doc: TiptapNode = {

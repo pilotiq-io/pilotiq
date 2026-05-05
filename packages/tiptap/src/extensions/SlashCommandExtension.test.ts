@@ -79,4 +79,28 @@ describe('SlashCommandExtension built-ins', () => {
     assert.equal(lead!.group,  'Style')
     assert.equal(small!.group, 'Style')
   })
+
+  it('always exposes the Details entry under the Insert group', () => {
+    const items = buildSlashItems([], [], '', {
+      hasUpload: false,
+      onInsertImage: () => {},
+    })
+    const details = items.find((i) => i.key === 'details')
+    assert.ok(details, 'expected a "details" slash entry')
+    assert.equal(details!.label, 'Collapsible block')
+    assert.equal(details!.group, 'Insert')
+  })
+
+  it('Details search matches "collapsible" / "summary" / "toggle"', () => {
+    for (const q of ['collapsible', 'summary', 'toggle']) {
+      const items = buildSlashItems([], [], q, {
+        hasUpload: false,
+        onInsertImage: () => {},
+      })
+      assert.ok(
+        items.some((i) => i.key === 'details'),
+        `expected the Details entry to match search query "${q}"`,
+      )
+    }
+  })
 })

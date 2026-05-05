@@ -15,6 +15,7 @@
  *   nodes — doc / paragraph / heading / blockquote / codeBlock / bulletList
  *           / orderedList / listItem / horizontalRule / hardBreak / text
  *           / image / table / tableRow / tableCell / tableHeader
+ *           / details / detailsSummary / detailsContent
  *           / mergeTag / mention
  *   marks — bold / italic / strike / underline / subscript / superscript
  *           / code / link / textStyle (color) / highlight (color)
@@ -169,6 +170,13 @@ function renderNode(node: unknown, opts: RenderRichTextOptions): string {
     case 'tableRow':       return wrap('tr', n, opts)
     case 'tableCell':      return renderCell('td', n, opts)
     case 'tableHeader':    return renderCell('th', n, opts)
+    case 'details':        return renderDetails(n, opts)
+    case 'detailsSummary': return wrap('summary', n, opts)
+    // The editor's NodeView wraps content in a `<div data-type="detailsContent">`
+    // for click handling, but the read-side HTML doesn't need a wrapper —
+    // a `<details>` block's content sits directly after the `<summary>` per
+    // the platform spec, which matches reader expectations.
+    case 'detailsContent': return renderChildren(n, opts)
     case 'mergeTag':       return renderMergeTag(n, opts)
     case 'mention':        return renderMention(n, opts)
     case 'text':           return renderText(n)
@@ -331,6 +339,19 @@ function clampPositiveInt(raw: unknown): number | null {
   const n = typeof raw === 'number' ? raw : Number(raw)
   if (!Number.isFinite(n) || n <= 0) return null
   return Math.trunc(n)
+}
+
+// ─── Details (collapsible blocks) ────────────────────────────────────
+
+/**
+ * Render a `details` node. The `open` attribute round-trips the editor's
+ * open/closed state when `Details.configure({ persist: true })` is set —
+ * matches the platform `<details open>` attribute exactly so a reader's
+ * snapshot reflects how the author last left it.
+ */
+function renderDetails(n: TiptapNode, opts: RenderRichTextOptions): string {
+  const isOpen = n.attrs?.['open'] === true
+  return `<details${isOpen ? ' open' : ''}>${renderChildren(n, opts)}</details>`
 }
 
 // ─── Merge tags + mentions ───────────────────────────────────────────

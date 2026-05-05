@@ -36,6 +36,8 @@ export type ToolbarButtonId =
   | 'tableAddRowBefore' | 'tableAddRowAfter' | 'tableDeleteRow'
   | 'tableMergeCells' | 'tableSplitCell'
   | 'tableToggleHeaderRow' | 'tableToggleHeaderCell' | 'tableDelete'
+  // Collapsible `<details>` block — single button, opt-in via `.toolbarButtons`.
+  | 'details'
 
 export type ToolbarGroups = ToolbarButtonId[][]
 

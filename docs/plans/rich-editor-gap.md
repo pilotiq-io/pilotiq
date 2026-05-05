@@ -100,7 +100,8 @@ fills the remaining surface in phases.
 | Files | `fileAttachmentsDirectory/Visibility/AcceptedFileTypes/MaxSize` | ✅ Phase E |
 | Files | `preventFileAttachmentPathTampering` | **missing** (out of scope) |
 | Tables | full set (12 buttons) + table toolbar | ✅ Phase F |
-| Tables | `grid` / `gridDelete` / `details` collapsible | **missing** |
+| Tables | `details` collapsible | ✅ ([details-blocks.md](./details-blocks.md)) |
+| Tables | `grid` / `gridDelete` | **missing** |
 | Custom blocks | side-panel UI in addition to slash menu | **missing** |
 | Custom blocks | block grouping by `customBlocks(['Group' => […blocks]])` | **missing** |
 | Merge tags | `{{ tag }}` insertion + render-time substitution | **missing** |
@@ -276,8 +277,9 @@ buttons. Brings the new mark extensions needed by those buttons.
 - Private-image signed URLs.
 - `data-id` tamper guard (`preventFileAttachmentPathTampering`) — needs
   pilotiq-side authorization context first.
-- `details` collapsible blocks, `grid` blocks, `lead`/`small` size variants.
-  Cosmetic, low priority.
+- `grid` blocks. Cosmetic, low priority.
+  (`lead`/`small` shipped 2026-05-05 cont'd⁴; `details` shipped 2026-05-05
+  cont'd⁷ — see [details-blocks.md](./details-blocks.md).)
 
 ## Post-ship follow-ups (2026-05-04 cont'd)
 

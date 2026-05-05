@@ -314,6 +314,13 @@ const Icons = {
       <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
     </svg>
   ),
+  details: (
+    <svg {...ICON_PROPS}>
+      <polyline points="6 9 12 15 18 9" />
+      <line x1="3" y1="4" x2="21" y2="4" />
+      <line x1="3" y1="20" x2="21" y2="20" />
+    </svg>
+  ),
 }
 
 /** Lookup table for every recognized button id. */
@@ -507,6 +514,16 @@ export const TOOLBAR_BUTTONS: Record<ToolbarButtonId, ToolbarButtonDef> = {
     id: 'tableDelete', label: 'Delete table', available: true, icon: Icons.tableDelete,
     isDisabled: (ed) => !ed.can().deleteTable(),
     command:    (ed) => { ed.chain().focus().deleteTable().run() },
+  },
+  // Wraps the current paragraph in a `<details>` node with an empty summary
+  // and the existing content as the body. `setDetails` is shipped by the
+  // `@tiptap/extension-details` package; `unsetDetails` (toggle off) sits
+  // behind a separate slash entry to keep the toolbar surface compact.
+  details: {
+    id: 'details', label: 'Collapsible block', available: true, icon: Icons.details,
+    isActive:   (ed) => ed.isActive('details'),
+    isDisabled: (ed) => !ed.can().setDetails(),
+    command:    (ed) => { ed.chain().focus().setDetails().run() },
   },
 }
 
