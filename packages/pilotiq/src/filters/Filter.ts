@@ -12,10 +12,12 @@ import type { RenderContext } from '../schema/resolveSchema.js'
  * - `'dateRange'`   — pair of date / datetime inputs encoded as `from..to`.
  * - `'form'`        — arbitrary-schema multi-field popover; URL value is
  *                     a JSON-encoded object keyed by inner-field name.
+ * - `'queryBuilder'` — composable rules with per-column constraints; URL
+ *                     value is a JSON-encoded `{ operator, rules }` tree.
  *
  * Extends naturally — future kinds may include `'numberRange'`.
  */
-export type FilterKind = 'select' | 'multiSelect' | 'boolean' | 'ternary' | 'dateRange' | 'form'
+export type FilterKind = 'select' | 'multiSelect' | 'boolean' | 'ternary' | 'dateRange' | 'form' | 'queryBuilder'
 
 export interface FilterMeta extends ElementMeta {
   type:        'filter'
@@ -40,6 +42,12 @@ export interface FilterMeta extends ElementMeta {
    * the inputs round-trip across navigations.
    */
   formSchema?: ElementMeta[]
+  /**
+   * `kind === 'queryBuilder'` — declared constraints (one per queryable
+   * column) the user can pick from when adding a rule. Wire shape comes
+   * from `Constraint.toMeta()`.
+   */
+  constraints?: Array<Record<string, unknown>>
   /**
    * Active-filter indicator pill text. Present only when the filter has an
    * active value. Default format is `"<label>: <displayValue>"`; users can

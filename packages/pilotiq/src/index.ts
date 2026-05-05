@@ -278,6 +278,29 @@ export {
   type FormFilterIndicatorHandler,
 } from './filters/FormFilter.js'
 export {
+  QueryBuilderFilter,
+  parseQueryBuilderValue,
+  encodeQueryBuilderValue,
+  emptyQueryBuilderTree,
+  applyTreeToQuery,
+  type QueryBuilderTree,
+  type QueryBuilderRule,
+  type QueryBuilderQueryHandler,
+  type QueryBuilderIndicatorHandler,
+} from './filters/QueryBuilderFilter.js'
+export {
+  Constraint,
+  TextConstraint,
+  NumberConstraint,
+  DateConstraint,
+  SelectConstraint,
+  BooleanConstraint,
+  type ConstraintMeta,
+  type ConstraintOperator,
+  type ConstraintOperatorName,
+  type ConstraintValueKind,
+} from './filters/queryBuilder/index.js'
+export {
   dispatchFormSubmit,
   findForms,
   selectForm,

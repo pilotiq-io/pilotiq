@@ -77,6 +77,18 @@ import {
   encodeMultiSelectValue,
 } from '../filters/MultiSelectFilter.js'
 import { encodeFormFilterValue } from '../filters/FormFilter.js'
+import {
+  parseQueryBuilderValue,
+  encodeQueryBuilderValue,
+  type QueryBuilderRule,
+  type QueryBuilderTree,
+} from '../filters/QueryBuilderFilter.js'
+import type {
+  ConstraintMeta,
+  ConstraintOperator,
+  ConstraintOperatorName,
+  ConstraintValueKind,
+} from '../filters/queryBuilder/Constraint.js'
 import { useIconFor } from './icon-context.js'
 import type { SerializedIcon } from '../icons/types.js'
 import { useToast } from './Toaster.js'
@@ -1374,7 +1386,11 @@ function FilterPopover({ filters, prefix }: { filters: ElementMeta[]; prefix?: s
           </button>
         )}
       />
-      <PopoverContent align="start" className="w-72 p-3">
+      <PopoverContent align="start" className={
+        filters.some(f => f['kind'] === 'queryBuilder')
+          ? 'w-[36rem] max-w-[calc(100vw-2rem)] p-3'
+          : 'w-72 p-3'
+      }>
         <div className="flex flex-col gap-3">
           {filters.map((f, i) => renderFilterControl(f, i, prefix))}
         </div>
@@ -3497,12 +3513,387 @@ function FilterForm({
   )
 }
 
+/**
+ * Composable advanced filter for `kind === 'queryBuilder'`. Renders a
+ * stack of condition rows (constraint + operator + value), an "Add
+ * condition" button, and Apply / Clear submit. The whole tree is
+ * JSON-encoded into a single URL key on Apply (see
+ * `encodeQueryBuilderValue`).
+ *
+ * State is local — typing into a value input doesn't navigate. Only the
+ * Apply button writes the URL. This mirrors `FilterForm`'s behavior and
+ * keeps the popover quiet under the cursor.
+ */
+function FilterQueryBuilder({
+  name, label, defaultValue, constraints, prefix,
+}: {
+  name:         string
+  label:        string
+  defaultValue: string
+  constraints:  ConstraintMeta[]
+  prefix?:      string | undefined
+}) {
+  const navigate = useNavigate()
+  const initialTree = parseQueryBuilderValue(defaultValue)
+  const [rules, setRules] = useState<QueryBuilderRule[]>(initialTree.rules)
+  const hasValue = defaultValue !== '' && initialTree.rules.length > 0
+
+  const constraintMap = new Map<string, ConstraintMeta>()
+  for (const c of constraints) constraintMap.set(c.name, c)
+
+  const addRule = (): void => {
+    const first = constraints[0]
+    if (!first) return
+    setRules(prev => [...prev, {
+      constraint: first.name,
+      operator:   first.defaultOperator ?? first.operators[0]?.name ?? 'equals',
+      value:      undefined,
+    }])
+  }
+
+  const removeRule = (index: number): void => {
+    setRules(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const updateRule = (index: number, patch: Partial<QueryBuilderRule>): void => {
+    setRules(prev => prev.map((r, i) => i === index ? { ...r, ...patch } : r))
+  }
+
+  const onConstraintChange = (index: number, constraintName: string): void => {
+    const c = constraintMap.get(constraintName)
+    if (!c) return
+    // Reset operator + value when switching constraints — operator sets
+    // and value shapes don't carry between e.g. Text and Number.
+    updateRule(index, {
+      constraint: constraintName,
+      operator:   c.defaultOperator ?? c.operators[0]?.name ?? 'equals',
+      value:      undefined,
+    })
+  }
+
+  const onOperatorChange = (index: number, operatorName: string): void => {
+    // Switching operator can change the value shape (text → numberRange).
+    // Reset value to undefined to avoid carrying garbage across.
+    updateRule(index, {
+      operator: operatorName as ConstraintOperatorName,
+      value:    undefined,
+    })
+  }
+
+  const onApply = (e?: React.FormEvent | React.MouseEvent): void => {
+    e?.preventDefault()
+    if (typeof window === 'undefined') return
+    const tree: QueryBuilderTree = { operator: 'and', rules }
+    const encoded = encodeQueryBuilderValue(tree)
+    const url = new URL(window.location.href)
+    const k = prefixK(prefix, name)
+    if (encoded === '') url.searchParams.delete(k)
+    else                url.searchParams.set(k, encoded)
+    url.searchParams.delete(prefixK(prefix, 'page'))
+    void navigate(url.pathname + url.search)
+  }
+
+  const onClear = (): void => {
+    setRules([])
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    url.searchParams.delete(prefixK(prefix, name))
+    url.searchParams.delete(prefixK(prefix, 'page'))
+    void navigate(url.pathname + url.search)
+  }
+
+  if (constraints.length === 0) {
+    return (
+      <div className="text-muted-foreground text-xs">
+        {label}: no constraints declared.
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2 min-w-[24rem]">
+      <span className="text-muted-foreground text-xs">{label} — match all conditions</span>
+      <form onSubmit={onApply} className="flex flex-col gap-2">
+        {rules.length === 0 && (
+          <div className="text-muted-foreground text-xs italic">No conditions yet.</div>
+        )}
+        {rules.map((rule, i) => (
+          <QueryBuilderRow
+            key={i}
+            rule={rule}
+            constraints={constraints}
+            constraintMeta={constraintMap.get(rule.constraint)}
+            onConstraintChange={(v) => onConstraintChange(i, v)}
+            onOperatorChange={(v) => onOperatorChange(i, v)}
+            onValueChange={(v) => updateRule(i, { value: v })}
+            onRemove={() => removeRule(i)}
+          />
+        ))}
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={addRule}
+            className="inline-flex h-8 items-center justify-center rounded-md border border-dashed border-input bg-background px-3 text-xs font-medium hover:bg-accent hover:text-accent-foreground"
+          >
+            + Add condition
+          </button>
+          <div className="flex-1" />
+          <button
+            type="submit"
+            className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Apply
+          </button>
+          {(hasValue || rules.length > 0) && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="inline-flex h-8 items-center justify-center rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent hover:text-accent-foreground"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </form>
+    </div>
+  )
+}
+
+/**
+ * One condition row inside `FilterQueryBuilder`. Three controls
+ * left-to-right: constraint picker, operator picker, value input. The
+ * value input dispatches off the operator's `valueKind` — `none` hides
+ * it entirely, `numberRange` / `dateRange` mount a pair, otherwise a
+ * single typed input.
+ */
+function QueryBuilderRow({
+  rule, constraints, constraintMeta,
+  onConstraintChange, onOperatorChange, onValueChange, onRemove,
+}: {
+  rule:               QueryBuilderRule
+  constraints:        ConstraintMeta[]
+  constraintMeta:     ConstraintMeta | undefined
+  onConstraintChange: (name: string) => void
+  onOperatorChange:   (name: string) => void
+  onValueChange:      (value: unknown) => void
+  onRemove:           () => void
+}) {
+  const operators: ConstraintOperator[] = constraintMeta?.operators ?? []
+  const activeOp = operators.find(o => o.name === rule.operator)
+  const valueKind: ConstraintValueKind = activeOp?.valueKind ?? 'text'
+
+  return (
+    <div className="flex items-start gap-1.5 rounded-md border border-input bg-background p-2">
+      <div className="flex flex-1 flex-wrap items-center gap-1.5">
+        <Select value={rule.constraint} onValueChange={(v) => onConstraintChange(typeof v === 'string' ? v : '')}>
+          <SelectTrigger size="sm" className="h-8 w-36 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {constraints.map(c => (
+              <SelectItem key={c.name} value={c.name}>{c.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={rule.operator} onValueChange={(v) => onOperatorChange(typeof v === 'string' ? v : '')}>
+          <SelectTrigger size="sm" className="h-8 w-32 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {operators.map(o => (
+              <SelectItem key={o.name} value={o.name}>{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <QueryBuilderValueInput
+          kind={valueKind}
+          value={rule.value}
+          options={constraintMeta?.options}
+          onChange={onValueChange}
+        />
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="Remove condition"
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      >
+        ×
+      </button>
+    </div>
+  )
+}
+
+/**
+ * Operator-aware value control. Switches over the constraint operator's
+ * `valueKind` and mounts the matching input. Value shapes:
+ * - `text / number / date / dateTime / select`  → scalar
+ * - `multiSelect`                                → string[]
+ * - `numberRange / dateRange`                    → [string, string]
+ * - `boolean / none`                              → null / undefined
+ */
+function QueryBuilderValueInput({
+  kind, value, options, onChange,
+}: {
+  kind:     ConstraintValueKind
+  value:    unknown
+  options:  Array<{ value: string; label: string }> | undefined
+  onChange: (next: unknown) => void
+}) {
+  if (kind === 'none' || kind === 'boolean') return null
+
+  if (kind === 'select') {
+    const opts = options ?? []
+    const v = value === undefined || value === null ? '' : String(value)
+    return (
+      <Select value={v} onValueChange={(next) => onChange(typeof next === 'string' ? next : '')}>
+        <SelectTrigger size="sm" className="h-8 min-w-32 text-xs">
+          <SelectValue placeholder="Pick…" />
+        </SelectTrigger>
+        <SelectContent>
+          {opts.map(o => (
+            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    )
+  }
+
+  if (kind === 'multiSelect') {
+    const opts = options ?? []
+    const list = Array.isArray(value) ? value.map(v => String(v)) : []
+    const toggle = (val: string): void => {
+      if (list.includes(val)) onChange(list.filter(v => v !== val))
+      else                    onChange([...list, val])
+    }
+    return (
+      <div className="flex flex-wrap items-center gap-1">
+        {opts.map(o => {
+          const active = list.includes(o.value)
+          return (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => toggle(o.value)}
+              className={
+                'inline-flex h-7 items-center rounded-md border px-2 text-xs ' +
+                (active
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-input bg-background hover:bg-accent')
+              }
+            >
+              {o.label}
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
+  if (kind === 'numberRange') {
+    const [min, max] = Array.isArray(value) ? [value[0], value[1]] : [undefined, undefined]
+    return (
+      <div className="flex items-center gap-1">
+        <Input
+          type="number"
+          className="h-8 w-24 text-xs"
+          value={min === undefined || min === null ? '' : String(min)}
+          onChange={(e) => onChange([e.target.value, max ?? ''])}
+          placeholder="Min"
+        />
+        <span className="text-muted-foreground text-xs">–</span>
+        <Input
+          type="number"
+          className="h-8 w-24 text-xs"
+          value={max === undefined || max === null ? '' : String(max)}
+          onChange={(e) => onChange([min ?? '', e.target.value])}
+          placeholder="Max"
+        />
+      </div>
+    )
+  }
+
+  if (kind === 'dateRange') {
+    const [from, to] = Array.isArray(value) ? [value[0], value[1]] : [undefined, undefined]
+    return (
+      <div className="flex items-center gap-1">
+        <Input
+          type="date"
+          className="h-8 w-36 text-xs"
+          value={from === undefined || from === null ? '' : String(from)}
+          onChange={(e) => onChange([e.target.value, to ?? ''])}
+        />
+        <span className="text-muted-foreground text-xs">→</span>
+        <Input
+          type="date"
+          className="h-8 w-36 text-xs"
+          value={to === undefined || to === null ? '' : String(to)}
+          onChange={(e) => onChange([from ?? '', e.target.value])}
+        />
+      </div>
+    )
+  }
+
+  if (kind === 'date' || kind === 'dateTime') {
+    const v = value === undefined || value === null ? '' : String(value)
+    return (
+      <Input
+        type={kind === 'dateTime' ? 'datetime-local' : 'date'}
+        className="h-8 w-44 text-xs"
+        value={v}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    )
+  }
+
+  if (kind === 'number') {
+    const v = value === undefined || value === null ? '' : String(value)
+    return (
+      <Input
+        type="number"
+        className="h-8 w-32 text-xs"
+        value={v}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Value"
+      />
+    )
+  }
+
+  // Default: text
+  const v = value === undefined || value === null ? '' : String(value)
+  return (
+    <Input
+      type="text"
+      className="h-8 min-w-32 flex-1 text-xs"
+      value={v}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="Value"
+    />
+  )
+}
+
 function renderFilterControl(el: ElementMeta, index: number, prefix?: string | undefined): React.ReactNode {
   const name        = String(el['name'] ?? '')
   const label       = String(el['label'] ?? name)
   const kind        = String(el['kind'] ?? 'select')
   const value       = el['value'] ? String(el['value']) : ''
   const placeholder = el['placeholder'] ? String(el['placeholder']) : 'All'
+
+  if (kind === 'queryBuilder') {
+    const constraints = (el['constraints'] as ConstraintMeta[] | undefined) ?? []
+    return (
+      <FilterQueryBuilder
+        key={index}
+        name={name}
+        label={label}
+        defaultValue={value}
+        constraints={constraints}
+        prefix={prefix}
+      />
+    )
+  }
 
   if (kind === 'form') {
     const formSchema = (el['formSchema'] as ElementMeta[] | undefined) ?? []

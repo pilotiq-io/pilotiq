@@ -2,6 +2,8 @@ import {
   Column, TextColumn, BadgeColumn, BooleanColumn, IconColumn, ImageColumn,
   Action, ActionGroup,
   BooleanFilter, MultiSelectFilter, FormFilter,
+  QueryBuilderFilter,
+  TextConstraint, NumberConstraint, DateConstraint, SelectConstraint, BooleanConstraint,
   TextField, SelectField,
   Notification,
   Sum, Count,
@@ -130,6 +132,25 @@ export const ArticlesTable = {
             if (slugContains)  parts.push(`slug~"${slugContains}"`)
             return parts.length > 0 ? `Advanced: ${parts.join(', ')}` : 'Advanced'
           }),
+        // Filament-style QueryBuilder — composable runtime conditions.
+        // Each row picks a constraint (column) + operator + value; the
+        // tree JSON-encodes into a single URL key and AND-chains every
+        // rule into the list query.
+        QueryBuilderFilter.make('runtime')
+          .label('Runtime filter')
+          .constraints([
+            TextConstraint.make('title').label('Title'),
+            TextConstraint.make('slug').label('Slug'),
+            SelectConstraint.make('status').label('Status').options([
+              { value: 'draft',     label: 'Draft' },
+              { value: 'published', label: 'Published' },
+              { value: 'archived',  label: 'Archived' },
+            ]),
+            BooleanConstraint.make('featured').label('Featured'),
+            DateConstraint.make('publishedAt').label('Published'),
+            DateConstraint.make('createdAt').label('Created'),
+            NumberConstraint.make('viewCount').label('View count'),
+          ]),
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
