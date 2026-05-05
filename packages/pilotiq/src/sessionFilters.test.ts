@@ -68,6 +68,18 @@ describe('writePersistedListQuery', () => {
     assert.deepEqual(session.data[key], { status: 'draft' })
   })
 
+  it('skips Tier-3 prefixed page keys (Table.queryStringIdentifier)', () => {
+    const session = makeSession()
+    const req = { session }
+    const key = listFiltersKey('/admin', 'posts')
+    writePersistedListQuery(req, key, {
+      orders_status: 'draft',
+      orders_page:   '3',
+      page:          '4',  // bare also dropped
+    })
+    assert.deepEqual(session.data[key], { orders_status: 'draft' })
+  })
+
   it('preserves empty-string values (explicit-clear marker)', () => {
     const session = makeSession()
     const req = { session }

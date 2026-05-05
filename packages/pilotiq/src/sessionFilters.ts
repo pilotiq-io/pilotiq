@@ -35,6 +35,16 @@ const PREFIX = 'pilotiq:filters:'
  *  own state slot. */
 const EXCLUDED_KEYS = new Set(['page', 'tab'])
 
+/** Drop URL keys that are pagination-shaped — bare `page` and any
+ *  `<prefix>_page` from a `Table.queryStringIdentifier(prefix)` (Tier-3).
+ *  Heuristic: a filter literally named `something_page` would also be
+ *  dropped, but that's an unusual filter name and the alternative
+ *  (resolving the schema before persist runs) buys nothing in practice. */
+function isPageKey(key: string): boolean {
+  if (key === 'page') return true
+  return key.endsWith('_page')
+}
+
 interface StorableSession {
   get<T>(key: string, fallback?: T): T | undefined
   put(key: string, value: unknown): void
@@ -94,6 +104,7 @@ export function writePersistedListQuery(
   const slice: Record<string, string> = {}
   for (const [k, v] of Object.entries(query)) {
     if (EXCLUDED_KEYS.has(k)) continue
+    if (isPageKey(k))         continue
     if (typeof v !== 'string') continue
     slice[k] = v
   }

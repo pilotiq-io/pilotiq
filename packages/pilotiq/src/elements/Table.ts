@@ -190,6 +190,14 @@ export interface TableMeta extends ElementMeta {
    * fetch rows after mount. Empty when `deferLoading` is off. */
   tableUrl?: string
 
+  /** Tier-3 — when set, the table's URL state (search / sort / page /
+   * perPage / group / filter values) is namespaced under the identifier
+   * so multiple tables on one page don't fight over `?search=` etc.
+   * `?orders_search=foo&invoices_sort=date:desc`. Off by default — bare
+   * keys are still used when no identifier is set. Custom-page-only:
+   * resource list pages have one table by default and don't need it. */
+  queryStringIdentifier?: string
+
   // Render-time state — populated by the framework after `records()` runs.
   rows?:        unknown[]
   total?:       number
@@ -243,6 +251,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _reorderUrl?:   string
   private _deferred = false
   private _tableUrl?:     string
+  private _queryStringIdentifier?: string
 
   private constructor() { super() }
 
@@ -500,6 +509,28 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
+  /**
+   * Namespace this table's URL state under an identifier so multiple
+   * tables on the same page don't collide on `?search=` / `?sort=` /
+   * `?page=` / filter keys. With `queryStringIdentifier('orders')`, every
+   * key is read and written as `orders_<key>` (e.g. `?orders_search=foo`,
+   * `?orders_sort=date:desc`, `?orders_status=open`). Off by default —
+   * resource list pages have one Table and don't need a prefix.
+   *
+   * The empty string is rejected (would silently disable namespacing
+   * while implying it's on); identifiers must match `[A-Za-z0-9_-]+`
+   * so they don't smuggle reserved characters into URL keys.
+   */
+  queryStringIdentifier(id: string): this {
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+      throw new Error(
+        `Table.queryStringIdentifier: invalid id ${JSON.stringify(id)} — must match /^[A-Za-z0-9_-]+$/`,
+      )
+    }
+    this._queryStringIdentifier = id
+    return this
+  }
+
   /** Render-time setter — the column rows are actually banded by for
    * this request, after `?group=` and `defaultGroup(...)` are reconciled.
    * Set by `loadTableRecords`. Empty string explicitly clears (URL
@@ -547,6 +578,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   getReorderUrl(): string | undefined { return this._reorderUrl }
   isDeferred(): boolean { return this._deferred }
   getTableUrl(): string | undefined { return this._tableUrl }
+  getQueryStringIdentifier(): string | undefined { return this._queryStringIdentifier }
 
   /** Convenience: the `Column` children only. */
   getColumns(): Column[] {
@@ -599,6 +631,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
       ...(this._reorderUrl   !== undefined ? { reorderUrl:  this._reorderUrl  } : {}),
       ...(this._deferred                   ? { deferred:    true as const   } : {}),
       ...(this._tableUrl     !== undefined ? { tableUrl:    this._tableUrl   } : {}),
+      ...(this._queryStringIdentifier !== undefined
+        ? { queryStringIdentifier: this._queryStringIdentifier } : {}),
       ...(this._rows         !== undefined ? { rows:        this._rows }        : {}),
       ...(this._total        !== undefined ? { total:       this._total }       : {}),
       ...(this._currentSort  !== undefined ? { currentSort: this._currentSort } : {}),

@@ -20,8 +20,33 @@ export interface QueryParams {
   [key: string]: unknown
 }
 
-/** Reserved query keys consumed by the framework — anything else is a filter. */
+/** Reserved query keys consumed by the framework — anything else is a filter.
+ * Listed bare; `prefixedReservedKeys(prefix)` derives the namespaced set
+ * when a `Table.queryStringIdentifier(...)` is in play. */
 const RESERVED_QUERY_KEYS = new Set(['search', 'sort', 'page', 'perPage', 'group'])
+
+/**
+ * Build the prefixed key a `Table.queryStringIdentifier(prefix)` reads /
+ * writes for `key`. Empty / undefined prefix returns the bare key (the
+ * default — resource-list tables don't namespace).
+ *
+ * Convention: `${prefix}_${key}` (underscore separator). Identifiers are
+ * validated against `[A-Za-z0-9_-]+` upstream so the join can't accidentally
+ * collide with another key.
+ */
+export function prefixedKey(prefix: string | undefined, key: string): string {
+  return prefix === undefined || prefix === '' ? key : `${prefix}_${key}`
+}
+
+/**
+ * Reserved-key set scoped to a single table. With no prefix, it's the
+ * bare framework set; with a prefix, it's the namespaced equivalents so
+ * the filter walker can drop them by exact match.
+ */
+function prefixedReservedKeys(prefix: string | undefined): Set<string> {
+  if (prefix === undefined || prefix === '') return RESERVED_QUERY_KEYS
+  return new Set([...RESERVED_QUERY_KEYS].map(k => `${prefix}_${k}`))
+}
 
 /**
  * Optional hooks passed by the caller (`pageData.resourceIndexData`)
@@ -44,18 +69,36 @@ export interface LoadTableHooks {
  * Pull filter values out of a flat query-string record. A key matches a
  * filter when its name is registered on the table and the value is a
  * non-empty string. Unknown / empty / reserved keys are dropped.
+ *
+ * `prefix` (Tier-3) namespaces both the reserved-key skip set and the
+ * filter-name match — `?orders_status=open` reads `'status'` for the
+ * `orders` table when `prefix='orders'`. With no prefix the bare keys
+ * apply (default).
  */
 export function parseFilterValues(
   query:   QueryParams,
   filters: ReadonlyArray<Filter>,
+  prefix?: string,
 ): Record<string, string> {
   if (filters.length === 0) return {}
   const filterNames = new Set(filters.map(f => f.name))
+  const reserved    = prefixedReservedKeys(prefix)
+  const stripPrefix = prefix !== undefined && prefix !== ''
+    ? `${prefix}_`
+    : ''
   const out: Record<string, string> = {}
   for (const [key, val] of Object.entries(query)) {
-    if (RESERVED_QUERY_KEYS.has(key)) continue
-    if (!filterNames.has(key)) continue
-    if (typeof val === 'string' && val !== '') out[key] = val
+    if (reserved.has(key)) continue
+    // Strip the table's prefix when present; un-prefixed keys belong to
+    // some other namespace on the page so they can't match this table's
+    // filters.
+    let logicalKey = key
+    if (stripPrefix !== '') {
+      if (!key.startsWith(stripPrefix)) continue
+      logicalKey = key.slice(stripPrefix.length)
+    }
+    if (!filterNames.has(logicalKey)) continue
+    if (typeof val === 'string' && val !== '') out[logicalKey] = val
   }
   return out
 }
@@ -65,20 +108,27 @@ export function parseFilterValues(
  * into a normalized `TableContext` payload. Unknown / malformed values
  * round to the nearest sane default — pagination floors to 1, perPage
  * to a positive integer when present. Whitespace is trimmed.
+ *
+ * `prefix` (Tier-3) reads the namespaced keys instead — `orders_search /
+ * orders_sort / orders_page / orders_perPage` for `prefix='orders'`. With
+ * no prefix the bare framework keys are read (the default).
  */
-export function parseTableQuery(q: QueryParams = {}): {
+export function parseTableQuery(q: QueryParams = {}, prefix?: string): {
   search:  string | undefined
   sort:    { column: string; direction: SortDirection } | undefined
   page:    number | undefined
   perPage: number | undefined
 } {
-  const search = typeof q.search === 'string' && q.search.trim() !== ''
-    ? q.search.trim()
+  const k = (key: string): string => prefixedKey(prefix, key)
+  const searchRaw = q[k('search')]
+  const search = typeof searchRaw === 'string' && searchRaw.trim() !== ''
+    ? searchRaw.trim()
     : undefined
 
   let sort: { column: string; direction: SortDirection } | undefined
-  if (typeof q.sort === 'string' && q.sort.trim() !== '') {
-    const [colRaw, dirRaw] = q.sort.split(':')
+  const sortRaw = q[k('sort')]
+  if (typeof sortRaw === 'string' && sortRaw.trim() !== '') {
+    const [colRaw, dirRaw] = sortRaw.split(':')
     const column = colRaw?.trim()
     if (column) {
       const direction: SortDirection = dirRaw?.trim() === 'desc' ? 'desc' : 'asc'
@@ -86,12 +136,12 @@ export function parseTableQuery(q: QueryParams = {}): {
     }
   }
 
-  const pageRaw = q.page
+  const pageRaw = q[k('page')]
   const page = pageRaw !== undefined
     ? Math.max(1, Math.floor(Number(pageRaw)) || 1)
     : undefined
 
-  const perPageRaw = q.perPage
+  const perPageRaw = q[k('perPage')]
   const perPage = perPageRaw !== undefined && Number(perPageRaw) > 0
     ? Math.floor(Number(perPageRaw))
     : undefined
@@ -113,10 +163,11 @@ export function parseTableQuery(q: QueryParams = {}): {
  *   absent              → fall back to `defaultGroup`.
  */
 export function parseActiveGroup(
-  query: QueryParams,
-  table: Table,
+  query:  QueryParams,
+  table:  Table,
+  prefix?: string,
 ): string | undefined {
-  const raw = query['group']
+  const raw = query[prefixedKey(prefix, 'group')]
   if (typeof raw === 'string') {
     if (raw === '') return undefined  // explicit clear
     const registered = table.getGroups().map(g => g.getColumn())
@@ -174,9 +225,14 @@ export async function loadTableRecords(
   const tables = findTables(elements)
   if (tables.length === 0) return
 
-  const { search, sort, page, perPage } = parseTableQuery(query)
-
   await Promise.all(tables.map(async (table) => {
+    // Tier-3 — when the table opts into `queryStringIdentifier(...)`, all
+    // of its URL state lives under `${prefix}_<key>` (search / sort / page
+    // / perPage / group / filter values). Bare keys still apply for the
+    // common case of one Table per page.
+    const prefix = table.getQueryStringIdentifier()
+    const { search, sort, page, perPage } = parseTableQuery(query, prefix)
+
     // Carry per-table defaults forward when the URL didn't override them.
     // Reorderable tables fall back to `(reorderableColumn, asc)` when no
     // explicit `defaultSort` is set, so the visible order matches the
@@ -192,7 +248,7 @@ export async function loadTableRecords(
     // Filter elements so the renderer can show the active selection, and
     // pass them through TableContext for the records handler to consume.
     const tableFilters = table.getFilters()
-    const filterValues = parseFilterValues(query, tableFilters)
+    const filterValues = parseFilterValues(query, tableFilters, prefix)
     for (const filter of tableFilters) {
       const v = filterValues[filter.name]
       if (v !== undefined) filter.withValue(v)
@@ -291,7 +347,7 @@ export async function loadTableRecords(
       // there). Empty-string "explicit clear" is distinct from `undefined`
       // ("never reconciled") so we can tell tests-skipping-loadTableRecords
       // apart from URL-cleared.
-      const activeGroupCol  = parseActiveGroup(query, table)
+      const activeGroupCol  = parseActiveGroup(query, table, prefix)
       table.withActiveGroup(activeGroupCol ?? '')
       // Resolve to a TableGroup instance — synth a no-metadata instance
       // for bare-column / unregistered columns so per-row stamping has

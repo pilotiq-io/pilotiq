@@ -1283,7 +1283,7 @@ function renderChildren(children: ElementMeta[] | undefined, gap = 'gap-4'): Rea
  *
  * Renders nothing when no filter has an indicator.
  */
-function ActiveFiltersBar({ filters }: { filters: ElementMeta[] }) {
+function ActiveFiltersBar({ filters, prefix }: { filters: ElementMeta[]; prefix?: string | undefined }) {
   const navigate = useNavigate()
   const active   = filters.filter(f => typeof f['indicator'] === 'string' && f['indicator'] !== '')
   if (active.length === 0) return null
@@ -1291,16 +1291,16 @@ function ActiveFiltersBar({ filters }: { filters: ElementMeta[] }) {
   const clear = (name: string): void => {
     if (typeof window === 'undefined') return
     const url = new URL(window.location.href)
-    url.searchParams.delete(name)
-    url.searchParams.delete('page')
+    url.searchParams.delete(prefixK(prefix, name))
+    url.searchParams.delete(prefixK(prefix, 'page'))
     void navigate(url.pathname + url.search)
   }
 
   const clearAll = (): void => {
     if (typeof window === 'undefined') return
     const url = new URL(window.location.href)
-    for (const f of active) url.searchParams.delete(String(f['name'] ?? ''))
-    url.searchParams.delete('page')
+    for (const f of active) url.searchParams.delete(prefixK(prefix, String(f['name'] ?? '')))
+    url.searchParams.delete(prefixK(prefix, 'page'))
     void navigate(url.pathname + url.search)
   }
 
@@ -1348,7 +1348,7 @@ function ActiveFiltersBar({ filters }: { filters: ElementMeta[] }) {
  * filter form is no longer needed — keeps the search input in its own
  * lightweight form for native Enter-to-submit.
  */
-function FilterPopover({ filters }: { filters: ElementMeta[] }) {
+function FilterPopover({ filters, prefix }: { filters: ElementMeta[]; prefix?: string | undefined }) {
   const activeCount = filters.filter(f => {
     const v = f['value']
     return typeof v === 'string' && v !== ''
@@ -1376,7 +1376,7 @@ function FilterPopover({ filters }: { filters: ElementMeta[] }) {
       />
       <PopoverContent align="start" className="w-72 p-3">
         <div className="flex flex-col gap-3">
-          {filters.map((f, i) => renderFilterControl(f, i))}
+          {filters.map((f, i) => renderFilterControl(f, i, prefix))}
         </div>
       </PopoverContent>
     </Popover>
@@ -2847,24 +2847,82 @@ interface TableUrlState {
   group?:  string
 }
 
+/**
+ * Prefix a reserved / filter URL key by the table's `queryStringIdentifier`
+ * (Tier-3). With no identifier the bare key is returned. Mirror of the
+ * server-side `prefixedKey` in `elements/dispatchTable.ts` — kept inline
+ * to avoid a runtime import.
+ */
+function prefixK(prefix: string | undefined, key: string): string {
+  return prefix === undefined || prefix === '' ? key : `${prefix}_${key}`
+}
+
+/**
+ * Hidden inputs that mirror the current URL's non-search query state into
+ * a `<form method="get">` so a native Enter-submit doesn't drop the table's
+ * sort / page / filter selections (or any unrelated app-level params).
+ * Excludes the search key itself so the visible `<Input name="search">`
+ * is the authoritative source for that value. Page key is dropped on
+ * search submit so users land on page 1 of the new result set.
+ *
+ * SSR-safe: returns an empty fragment when there's no `window` so the
+ * server-rendered HTML doesn't churn between SSR and hydration; the
+ * form's normal reset-on-submit then preserves nothing — but the only
+ * cost is that JS-disabled clients lose stale filter state on Enter.
+ */
+function SearchFormHiddenInputs({ prefix }: { prefix: string | undefined }): React.ReactElement {
+  if (typeof window === 'undefined') return <></>
+  const sp = new URLSearchParams(window.location.search)
+  const skipKeys = new Set([
+    prefixK(prefix, 'search'),
+    prefixK(prefix, 'page'),
+  ])
+  const inputs: React.ReactElement[] = []
+  let i = 0
+  for (const [k, v] of sp) {
+    if (skipKeys.has(k)) continue
+    inputs.push(<input key={i++} type="hidden" name={k} value={v} />)
+  }
+  return <>{inputs}</>
+}
+
 function buildTableQuery(
   state:        TableUrlState,
   override:     TableUrlState,
   pathname:     string,
   filterValues: Record<string, string> = {},
+  prefix?:      string,
 ): string {
   const merged: TableUrlState = { ...state, ...override }
   const params = new URLSearchParams()
+  // Preserve URL params that don't belong to *this* table. Filter values
+  // for the current table arrive via `filterValues`; everything else on
+  // the URL (other tables' state, app-level params) round-trips verbatim
+  // so `buildTableQuery` only ever rewrites its own slice.
+  if (typeof window !== 'undefined') {
+    const ours = new Set([
+      prefixK(prefix, 'search'),
+      prefixK(prefix, 'sort'),
+      prefixK(prefix, 'page'),
+      prefixK(prefix, 'perPage'),
+      prefixK(prefix, 'group'),
+      ...Object.keys(filterValues).map(n => prefixK(prefix, n)),
+    ])
+    for (const [k, v] of new URLSearchParams(window.location.search)) {
+      if (ours.has(k)) continue
+      params.set(k, v)
+    }
+  }
   // Carry forward active filter values so sort/pagination links don't
   // accidentally clear them. Filter names can't collide with reserved
   // keys (search/sort/page/perPage/group) — that's enforced upstream.
   for (const [name, val] of Object.entries(filterValues)) {
-    if (val) params.set(name, val)
+    if (val) params.set(prefixK(prefix, name), val)
   }
-  if (merged.search)    params.set('search', merged.search)
-  if (merged.sort)      params.set('sort', `${merged.sort.column}:${merged.sort.direction}`)
-  if (merged.page && merged.page > 1) params.set('page', String(merged.page))
-  if (merged.group !== undefined) params.set('group', merged.group)
+  if (merged.search)    params.set(prefixK(prefix, 'search'), merged.search)
+  if (merged.sort)      params.set(prefixK(prefix, 'sort'), `${merged.sort.column}:${merged.sort.direction}`)
+  if (merged.page && merged.page > 1) params.set(prefixK(prefix, 'page'), String(merged.page))
+  if (merged.group !== undefined) params.set(prefixK(prefix, 'group'), merged.group)
   const qs = params.toString()
   // Always anchor to a real pathname — Vike's client-side router treats
   // a bare `?qs` href as a fresh URL with empty pathname, which routes
@@ -3102,13 +3160,14 @@ function rowId(row: unknown, index: number): string {
  * the URL rather than serialized as `&name=`.
  */
 function FilterSelect({
-  name, label, defaultValue, placeholder, options,
+  name, label, defaultValue, placeholder, options, prefix,
 }: {
   name:         string
   label:        string
   defaultValue: string
   placeholder:  string
   options:      Array<{ value: string; label: string }>
+  prefix?:      string | undefined
 }) {
   const [value, setValue] = useState(defaultValue)
   const navigate           = useNavigate()
@@ -3118,10 +3177,11 @@ function FilterSelect({
     setValue(v)
     if (typeof window === 'undefined') return
     const url = new URL(window.location.href)
-    if (v === '') url.searchParams.delete(name)
-    else          url.searchParams.set(name, v)
+    const k   = prefixK(prefix, name)
+    if (v === '') url.searchParams.delete(k)
+    else          url.searchParams.set(k, v)
     // Filter changes reset pagination — first page of the new result set.
-    url.searchParams.delete('page')
+    url.searchParams.delete(prefixK(prefix, 'page'))
     // SPA navigate via context (vike's navigate when mounted under the
     // Vike-generated +Layout). Fallback is full reload — see useNavigate.
     void navigate(url.pathname + url.search)
@@ -3211,7 +3271,7 @@ function TableGroupPicker({
  * off the filter name. Empty pair drops the URL key.
  */
 function FilterDateRange({
-  name, label, defaultValue, placeholder, includesTime, minDate, maxDate,
+  name, label, defaultValue, placeholder, includesTime, minDate, maxDate, prefix,
 }: {
   name:         string
   label:        string
@@ -3220,6 +3280,7 @@ function FilterDateRange({
   includesTime: boolean
   minDate?:     string
   maxDate?:     string
+  prefix?:      string | undefined
 }) {
   const initial = parseDateRangeValue(defaultValue)
   const [from, setFrom] = useState(initial.from ?? '')
@@ -3232,9 +3293,10 @@ function FilterDateRange({
     if (typeof window === 'undefined') return
     const url     = new URL(window.location.href)
     const encoded = encodeDateRangeValue({ from: nextFrom, to: nextTo })
-    if (encoded === '') url.searchParams.delete(name)
-    else                url.searchParams.set(name, encoded)
-    url.searchParams.delete('page')
+    const k       = prefixK(prefix, name)
+    if (encoded === '') url.searchParams.delete(k)
+    else                url.searchParams.set(k, encoded)
+    url.searchParams.delete(prefixK(prefix, 'page'))
     void navigate(url.pathname + url.search)
   }
 
@@ -3302,12 +3364,13 @@ function FilterDateRange({
  * URL value for the filter's name. Empty selection drops the URL key.
  */
 function FilterMultiSelect({
-  name, label, defaultValue, options,
+  name, label, defaultValue, options, prefix,
 }: {
   name:         string
   label:        string
   defaultValue: string
   options:      Array<{ value: string; label: string }>
+  prefix?:      string | undefined
 }) {
   const [selected, setSelected] = useState<string[]>(() => parseMultiSelectValue(defaultValue))
   const navigate                = useNavigate()
@@ -3317,9 +3380,10 @@ function FilterMultiSelect({
     if (typeof window === 'undefined') return
     const url     = new URL(window.location.href)
     const encoded = encodeMultiSelectValue(next)
-    if (encoded === '') url.searchParams.delete(name)
-    else                url.searchParams.set(name, encoded)
-    url.searchParams.delete('page')
+    const k       = prefixK(prefix, name)
+    if (encoded === '') url.searchParams.delete(k)
+    else                url.searchParams.set(k, encoded)
+    url.searchParams.delete(prefixK(prefix, 'page'))
     void navigate(url.pathname + url.search)
   }
 
@@ -3368,12 +3432,13 @@ function FilterMultiSelect({
  * outer page-level Form works on full submit.
  */
 function FilterForm({
-  name, label, defaultValue, formSchema,
+  name, label, defaultValue, formSchema, prefix,
 }: {
   name:         string
   label:        string
   defaultValue: string
   formSchema:   ElementMeta[]
+  prefix?:      string | undefined
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const navigate = useNavigate()
@@ -3397,17 +3462,18 @@ function FilterForm({
     if (typeof window === 'undefined') return
     const url     = new URL(window.location.href)
     const encoded = encodeFormFilterValue(values)
-    if (encoded === '') url.searchParams.delete(name)
-    else                url.searchParams.set(name, encoded)
-    url.searchParams.delete('page')
+    const k       = prefixK(prefix, name)
+    if (encoded === '') url.searchParams.delete(k)
+    else                url.searchParams.set(k, encoded)
+    url.searchParams.delete(prefixK(prefix, 'page'))
     void navigate(url.pathname + url.search)
   }
 
   const onClear = (): void => {
     if (typeof window === 'undefined') return
     const url = new URL(window.location.href)
-    url.searchParams.delete(name)
-    url.searchParams.delete('page')
+    url.searchParams.delete(prefixK(prefix, name))
+    url.searchParams.delete(prefixK(prefix, 'page'))
     void navigate(url.pathname + url.search)
   }
 
@@ -3438,7 +3504,7 @@ function FilterForm({
   )
 }
 
-function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
+function renderFilterControl(el: ElementMeta, index: number, prefix?: string | undefined): React.ReactNode {
   const name        = String(el['name'] ?? '')
   const label       = String(el['label'] ?? name)
   const kind        = String(el['kind'] ?? 'select')
@@ -3454,6 +3520,7 @@ function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
         label={label}
         defaultValue={value}
         formSchema={formSchema}
+        prefix={prefix}
       />
     )
   }
@@ -3467,6 +3534,7 @@ function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
         defaultValue={value}
         placeholder={placeholder}
         options={[{ value: '1', label: 'Yes' }, { value: '0', label: 'No' }]}
+        prefix={prefix}
       />
     )
   }
@@ -3480,6 +3548,7 @@ function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
         label={label}
         defaultValue={value}
         options={options}
+        prefix={prefix}
       />
     )
   }
@@ -3496,6 +3565,7 @@ function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
         defaultValue={value}
         placeholder={placeholder}
         includesTime={includesTime}
+        prefix={prefix}
         {...(minDate !== undefined ? { minDate } : {})}
         {...(maxDate !== undefined ? { maxDate } : {})}
       />
@@ -3513,6 +3583,7 @@ function renderFilterControl(el: ElementMeta, index: number): React.ReactNode {
       defaultValue={value}
       placeholder={placeholder}
       options={options}
+      prefix={prefix}
     />
   )
 }
@@ -3893,6 +3964,13 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
   const perPage     = el['perPage'] as number | undefined
   const searchable  = Boolean(el['searchable'])
   const currentPath = (el['currentPath'] as string | undefined) ?? ''
+  // Tier-3 — when the table opts into `Table.queryStringIdentifier(...)`,
+  // every URL key (search / sort / page / perPage / group / filter names)
+  // gets prefixed with `${id}_` so multiple tables on one page don't
+  // collide on `?search=` etc. Bare keys still apply when unset.
+  const queryPrefix = typeof el['queryStringIdentifier'] === 'string'
+    ? el['queryStringIdentifier'] as string
+    : undefined
 
   // Reorderable rows — grip column + HTML5 DnD wiring. Rows live in
   // local state during a drag so the optimistic reorder happens
@@ -3911,7 +3989,8 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
     ? undefined
     : (() => {
         const sp = new URLSearchParams(window.location.search)
-        return sp.has('group') ? sp.get('group')! : undefined
+        const k = prefixK(queryPrefix, 'group')
+        return sp.has(k) ? sp.get(k)! : undefined
       })()
 
   // Collapsible groups — per-group fold state. Keyed by `_groupValue`
@@ -4138,9 +4217,14 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
             <div className="flex items-center gap-2">
               {searchable && (
                 <form method="get" action={currentPath || undefined} className="flex items-end gap-2">
+                  {/* Carry the table's own non-search slice forward via hidden
+                      inputs so a native form submit (Enter) preserves sort /
+                      page / filters. Other tables' params on the URL also
+                      survive via the same loop. */}
+                  <SearchFormHiddenInputs prefix={queryPrefix} />
                   <Input
                     type="search"
-                    name="search"
+                    name={prefixK(queryPrefix, 'search')}
                     defaultValue={search ?? ''}
                     placeholder="Search…"
                     className="h-9 w-64"
@@ -4153,7 +4237,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
                 </form>
               )}
               {hasFilters && (
-                <FilterPopover filters={filters} />
+                <FilterPopover filters={filters} prefix={queryPrefix} />
               )}
               {hasGroupPicker && (
                 <TableGroupPicker
@@ -4167,6 +4251,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
                       { page: 1, group: value },
                       currentPath,
                       activeFilters,
+                      queryPrefix,
                     )
                     navigate(href)
                   }}
@@ -4181,7 +4266,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
           )}
         </div>
       )}
-      {hasFilters && <ActiveFiltersBar filters={filters} />}
+      {hasFilters && <ActiveFiltersBar filters={filters} prefix={queryPrefix} />}
       {hasBulkActions && someChecked && (
         <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
           <span className="text-muted-foreground">
@@ -4231,7 +4316,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
                   )
                 }
                 const next = nextSortDir(currentSort, name)
-                const href = buildTableQuery(state, { sort: next, page: 1 }, currentPath, activeFilters)
+                const href = buildTableQuery(state, { sort: next, page: 1 }, currentPath, activeFilters, queryPrefix)
                 return (
                   <TableHead key={i} className="text-xs uppercase tracking-wider">
                     <a href={href} className="inline-flex items-center gap-1 hover:text-foreground">
@@ -4515,7 +4600,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
           <div className="flex items-center gap-2">
             {currentPage > 1 && (
               <a
-                href={buildTableQuery(state, { page: currentPage - 1 }, currentPath, activeFilters)}
+                href={buildTableQuery(state, { page: currentPage - 1 }, currentPath, activeFilters, queryPrefix)}
                 className="rounded-md border px-3 py-1 text-xs hover:bg-muted"
               >
                 ← Previous
@@ -4523,7 +4608,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
             )}
             {currentPage < totalPages && (
               <a
-                href={buildTableQuery(state, { page: currentPage + 1 }, currentPath, activeFilters)}
+                href={buildTableQuery(state, { page: currentPage + 1 }, currentPath, activeFilters, queryPrefix)}
                 className="rounded-md border px-3 py-1 text-xs hover:bg-muted"
               >
                 Next →

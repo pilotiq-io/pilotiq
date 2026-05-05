@@ -1063,3 +1063,98 @@ describe('loadTableRecords', () => {
 })
 
 type ElementMetaLike = Record<string, unknown>
+
+// ─── queryStringIdentifier (Tier-3) ────────────────────────────
+
+import { SelectFilter } from '../filters/SelectFilter.js'
+import { parseFilterValues } from './dispatchTable.js'
+
+describe('Table.queryStringIdentifier', () => {
+  it('round-trips into the resolved meta', async () => {
+    const t = Table.make().columns([Column.make('id')]).queryStringIdentifier('orders')
+    const meta = (await resolveSchema([t]))[0]!
+    assert.equal(meta['queryStringIdentifier'], 'orders')
+  })
+
+  it('rejects empty / invalid identifiers at config time', () => {
+    assert.throws(() => Table.make().queryStringIdentifier(''),  /invalid id/)
+    assert.throws(() => Table.make().queryStringIdentifier('a b'), /invalid id/)
+    assert.throws(() => Table.make().queryStringIdentifier('a/b'), /invalid id/)
+  })
+
+  it('parseTableQuery reads namespaced keys when prefix is set', () => {
+    assert.deepEqual(parseTableQuery({
+      orders_search:  '  hi  ',
+      orders_sort:    'date:desc',
+      orders_page:    '3',
+      orders_perPage: '25',
+      // Bare keys belong to some other table on the page — must not leak.
+      search:         'noise',
+      sort:           'noise:asc',
+    }, 'orders'), {
+      search:  'hi',
+      sort:    { column: 'date', direction: 'desc' },
+      page:    3,
+      perPage: 25,
+    })
+  })
+
+  it('parseFilterValues respects prefix + filter-name match', () => {
+    const filters = [SelectFilter.make('status').options([
+      { value: 'draft',     label: 'Draft' },
+      { value: 'published', label: 'Published' },
+    ])]
+    const out = parseFilterValues({
+      orders_status: 'draft',
+      orders_other:  'ignored',  // not a registered filter
+      status:        'noise',    // bare keys belong to another table
+    }, filters, 'orders')
+    assert.deepEqual(out, { status: 'draft' })
+  })
+
+  it('parseActiveGroup reads the prefixed ?<id>_group key', () => {
+    const t = Table.make().columns([Column.make('status')]).defaultGroup('status')
+    assert.equal(parseActiveGroup({ orders_group: 'status' }, t, 'orders'), 'status')
+    // Bare ?group= no longer applies when prefix is set.
+    assert.equal(parseActiveGroup({ group: 'status' }, t, 'orders'), 'status' /* falls through to defaultGroup */)
+    assert.equal(parseActiveGroup({ orders_group: '' },    t, 'orders'), undefined)
+  })
+
+  it('two tables on one page parse independent prefixed slices', async () => {
+    let ordersCtx:   Record<string, unknown> | null = null
+    let invoicesCtx: Record<string, unknown> | null = null
+    const orders = Table.make<{ id: string }>()
+      .queryStringIdentifier('orders')
+      .columns([Column.make('id')])
+      .records(async (ctx) => { ordersCtx = { ...ctx }; return [] })
+    const invoices = Table.make<{ id: string }>()
+      .queryStringIdentifier('invoices')
+      .columns([Column.make('id')])
+      .records(async (ctx) => { invoicesCtx = { ...ctx }; return [] })
+
+    await loadTableRecords([orders, invoices], {
+      orders_search:    'pizza',
+      orders_sort:      'date:desc',
+      invoices_page:    '4',
+      invoices_sort:    'amount:asc',
+    })
+
+    assert.equal((ordersCtx   as ElementMetaLike | null)?.['search'],  'pizza')
+    assert.deepEqual((ordersCtx   as ElementMetaLike | null)?.['sort'],   { column: 'date',   direction: 'desc' })
+    assert.equal((invoicesCtx as ElementMetaLike | null)?.['search'],  undefined)
+    assert.deepEqual((invoicesCtx as ElementMetaLike | null)?.['sort'],   { column: 'amount', direction: 'asc' })
+    assert.equal((invoicesCtx as ElementMetaLike | null)?.['page'],    4)
+  })
+
+  it('without prefix, bare keys still apply (back-compat)', async () => {
+    let seen: Record<string, unknown> | null = null
+    const t = Table.make<{ id: string }>()
+      .columns([Column.make('id')])
+      .records(async (ctx) => { seen = { ...ctx }; return [] })
+
+    await loadTableRecords([t], { search: 'q', sort: 'name:asc', page: '2' })
+    assert.equal((seen as ElementMetaLike | null)?.['search'], 'q')
+    assert.deepEqual((seen as ElementMetaLike | null)?.['sort'], { column: 'name', direction: 'asc' })
+    assert.equal((seen as ElementMetaLike | null)?.['page'], 2)
+  })
+})
