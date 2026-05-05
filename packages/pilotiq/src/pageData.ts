@@ -46,6 +46,7 @@ import { RelationTabs, relationTab, type RelationTabMeta } from './schema/Relati
 import {
   modelSave, modelLoadRecord, modelRelationTableRecords, findRecord, getPrimaryKey,
   getRelationType,
+  getMorphRelationDescriptor,
   type ModelLike, type ModelQuery,
 } from './orm/modelDefaults.js'
 import { normalizeRelationMode, type RelationMode } from './RelationManager.js'
@@ -592,15 +593,21 @@ export async function applyRelationshipRepeaterFill(
     // descriptor at this seam, so use the configured override or
     // peek the parent's relations map for the FK column. Strip it
     // (and the PK) from each row's payload so the inner schema
-    // doesn't surface them as form values.
-    const pkColumn = pickChildPrimaryKey(parentModel, cfg.name) ?? 'id'
-    const fkColumn = cfg.foreignKey ?? pickChildForeignKey(parentModel, cfg.name)
+    // doesn't surface them as form values. For morphMany the
+    // attachment is two columns instead of one — strip both.
+    const pkColumn   = pickChildPrimaryKey(parentModel, cfg.name) ?? 'id'
+    const fkColumn   = cfg.foreignKey ?? pickChildForeignKey(parentModel, cfg.name)
+    const morph      = getMorphRelationDescriptor(parentModel, cfg.name)
+    const morphIdCol = morph ? `${morph.morphName}Id`   : undefined
+    const morphTyCol = morph ? `${morph.morphName}Type` : undefined
 
     out[repeater.name] = rows.map(row => {
       const r = (row && typeof row === 'object') ? { ...(row as Record<string, unknown>) } : {}
       const pkValue = r[pkColumn]
       delete r[pkColumn]
-      if (fkColumn) delete r[fkColumn]
+      if (fkColumn)   delete r[fkColumn]
+      if (morphIdCol) delete r[morphIdCol]
+      if (morphTyCol) delete r[morphTyCol]
       const stamped: Record<string, unknown> = { ...r }
       if (pkValue !== undefined && pkValue !== null) {
         stamped['__id'] = String(pkValue)

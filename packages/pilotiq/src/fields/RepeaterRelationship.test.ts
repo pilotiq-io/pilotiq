@@ -490,3 +490,295 @@ describe('Repeater.relationship — load (applyRelationshipRepeaterFill)', () =>
     assert.equal((rows[0] as Record<string, unknown>)['label'], 'A')
   })
 })
+
+describe('Repeater.relationship — morphMany', () => {
+  // Parent shape: `Order.items: morphMany(Item, 'itemable')` — child
+  // carries `itemableId` + `itemableType` instead of an FK column.
+  // `computeMorphPayload(parent, descriptor)` reads the discriminator off
+  // the parent **record**'s `constructor.morphAlias ?? constructor.name`,
+  // so the parent record returned by `Form.save()` has to be a class
+  // instance (not a plain object literal).
+  function makeMorphParentSetup(opts: {
+    childModel:    ModelLike
+    childRows:     FakeRecord[]
+    relationName:  string
+    morphName:     string
+  }) {
+    const { childModel, childRows, relationName, morphName } = opts
+    const idCol   = `${morphName}Id`
+    const typeCol = `${morphName}Type`
+
+    class Order {
+      id?: string
+      constructor(init?: Partial<{ id: string }>) { Object.assign(this, init) }
+    }
+
+    const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => makeQuery([]),
+      relatedQuery: (parentRecord) => {
+        const parentId   = (parentRecord as Record<string, unknown>)['id']
+        const parentType = (parentRecord as { constructor?: { morphAlias?: string; name?: string } })
+          .constructor?.morphAlias
+          ?? (parentRecord as { constructor?: { name?: string } }).constructor?.name
+        const filtered = childRows.filter(r =>
+          String(r[idCol]) === String(parentId) && r[typeCol] === parentType,
+        )
+        return makeQuery(filtered)
+      },
+      relations: {
+        [relationName]: { type: 'morphMany', morphName, model: () => childModel },
+      },
+    }
+    return { parentModel, makeRecord: (id: string) => new Order({ id }) }
+  }
+
+  it('create — stamps <morphName>Id + <morphName>Type instead of an FK column', async () => {
+    const child = makeFakeChildModel([])
+    const { parentModel, makeRecord } = makeMorphParentSetup({
+      childModel: child.model, childRows: child.rows,
+      relationName: 'items', morphName: 'itemable',
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items')
+          .relationship('items')
+          .schema([TextField.make('label').required()]),
+      ])
+      .save(async () => makeRecord('p1'))
+
+    const submittedRows = [{ label: 'A' }, { label: 'B' }]
+    const result = await dispatchFormSubmit(
+      form,
+      { items: submittedRows },
+      { values: { items: submittedRows }, parentModel },
+    )
+    assert.equal(result.ok, true)
+    const creates = child.calls.filter(c => c.kind === 'create') as Array<{ kind: 'create'; data: Record<string, unknown> }>
+    assert.equal(creates.length, 2)
+    for (const c of creates) {
+      assert.equal(c.data['itemableId'],   'p1')
+      assert.equal(c.data['itemableType'], 'Order')
+      assert.equal('orderId' in c.data, false)
+    }
+    assert.equal(creates[0]!.data['label'], 'A')
+    assert.equal(creates[1]!.data['label'], 'B')
+  })
+
+  it('update — does not overwrite morph cols on update (defense against re-link)', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', itemableId: 'p1', itemableType: 'Order', label: 'A' },
+      { id: 'c2', itemableId: 'p1', itemableType: 'Order', label: 'B' },
+    ])
+    const { parentModel, makeRecord } = makeMorphParentSetup({
+      childModel: child.model, childRows: child.rows,
+      relationName: 'items', morphName: 'itemable',
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items')
+          .relationship('items')
+          .schema([TextField.make('label')]),
+      ])
+      .save(async () => makeRecord('p1'))
+
+    const submittedRows = [
+      // Tampered client tries to send itemableType=Invoice; framework wins last.
+      { __id: 'c1', label: 'A2', itemableType: 'Invoice' },
+      { __id: 'c2', label: 'B2' },
+    ]
+    const result = await dispatchFormSubmit(
+      form,
+      { items: submittedRows },
+      { values: { items: submittedRows }, record: makeRecord('p1'), parentModel },
+    )
+    assert.equal(result.ok, true)
+    const updates = child.calls.filter(c => c.kind === 'update') as Array<{ kind: 'update'; id: string | number; data: Record<string, unknown> }>
+    assert.equal(updates.length, 2)
+    for (const u of updates) {
+      assert.equal('itemableId'   in u.data, false)
+      assert.equal('itemableType' in u.data, false)
+    }
+  })
+
+  it('delete — existing PKs missing from submitted set are deleted (same shape as hasMany)', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', itemableId: 'p1', itemableType: 'Order', label: 'A' },
+      { id: 'c2', itemableId: 'p1', itemableType: 'Order', label: 'B' },
+      { id: 'c3', itemableId: 'p1', itemableType: 'Order', label: 'C' },
+    ])
+    const { parentModel, makeRecord } = makeMorphParentSetup({
+      childModel: child.model, childRows: child.rows,
+      relationName: 'items', morphName: 'itemable',
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items')
+          .relationship('items')
+          .schema([TextField.make('label')]),
+      ])
+      .save(async () => makeRecord('p1'))
+
+    const submittedRows = [{ __id: 'c1', label: 'A' }]
+    const result = await dispatchFormSubmit(
+      form,
+      { items: submittedRows },
+      { values: { items: submittedRows }, record: makeRecord('p1'), parentModel },
+    )
+    assert.equal(result.ok, true)
+    const deletes = child.calls.filter(c => c.kind === 'delete') as Array<{ kind: 'delete'; id: string | number }>
+    assert.deepEqual(deletes.map(c => String(c.id)).sort(), ['c2', 'c3'])
+  })
+
+  it('orderColumn writes 0-based index on every morph create + update', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', itemableId: 'p1', itemableType: 'Order', label: 'A', sort: 5 },
+    ])
+    const { parentModel, makeRecord } = makeMorphParentSetup({
+      childModel: child.model, childRows: child.rows,
+      relationName: 'items', morphName: 'itemable',
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items')
+          .relationship('items')
+          .orderColumn('sort')
+          .schema([TextField.make('label')]),
+      ])
+      .save(async () => makeRecord('p1'))
+
+    const submittedRows = [
+      {            label: 'first' },
+      { __id: 'c1', label: 'second' },
+    ]
+    const result = await dispatchFormSubmit(
+      form,
+      { items: submittedRows },
+      { values: { items: submittedRows }, record: makeRecord('p1'), parentModel },
+    )
+    assert.equal(result.ok, true)
+    const create = child.calls.find(c => c.kind === 'create') as { kind: 'create'; data: Record<string, unknown> }
+    const update = child.calls.find(c => c.kind === 'update') as { kind: 'update'; id: string | number; data: Record<string, unknown> }
+    assert.equal(create.data['sort'], 0)
+    assert.equal(update.data['sort'], 1)
+  })
+
+  it('morphType — explicit override on the relation entry wins over constructor name', async () => {
+    const child = makeFakeChildModel([])
+    class Order {
+      id?: string
+      constructor(init?: Partial<{ id: string }>) { Object.assign(this, init) }
+    }
+    const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => makeQuery([]),
+      relatedQuery: () => makeQuery([]),
+      relations: {
+        items: { type: 'morphMany', morphName: 'itemable', morphType: 'CustomDiscriminator', model: () => child.model },
+      },
+    }
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items')
+          .relationship('items')
+          .schema([TextField.make('label')]),
+      ])
+      .save(async () => new Order({ id: 'p1' }))
+
+    const submittedRows = [{ label: 'A' }]
+    const result = await dispatchFormSubmit(
+      form,
+      { items: submittedRows },
+      { values: { items: submittedRows }, parentModel },
+    )
+    assert.equal(result.ok, true)
+    const create = child.calls.find(c => c.kind === 'create') as { kind: 'create'; data: Record<string, unknown> }
+    assert.equal(create.data['itemableType'], 'CustomDiscriminator')
+  })
+
+  it('load — applyRelationshipRepeaterFill strips morph cols from rendered rows', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', itemableId: 'p1', itemableType: 'Order', label: 'A' },
+      { id: 'c2', itemableId: 'p1', itemableType: 'Order', label: 'B' },
+    ])
+    const { parentModel, makeRecord } = makeMorphParentSetup({
+      childModel: child.model, childRows: child.rows,
+      relationName: 'items', morphName: 'itemable',
+    })
+
+    const form = Form.make().schema([
+      TextField.make('title'),
+      RepeaterField.make('items')
+        .relationship('items')
+        .schema([TextField.make('label')]),
+    ])
+
+    const out = await applyRelationshipRepeaterFill(form, { title: 'P' }, makeRecord('p1'), parentModel)
+    assert.deepEqual(out['items'], [
+      { __id: 'c1', label: 'A' },
+      { __id: 'c2', label: 'B' },
+    ])
+    // Morph cols should NOT leak into the rendered row payload.
+    for (const row of out['items'] as Array<Record<string, unknown>>) {
+      assert.equal('itemableId'   in row, false)
+      assert.equal('itemableType' in row, false)
+      assert.equal('id'           in row, false)
+    }
+  })
+
+  it('morphMany config without the model thunk surfaces a clear error', async () => {
+    const child = makeFakeChildModel([])
+    class Order {
+      id?: string
+      constructor(init?: Partial<{ id: string }>) { Object.assign(this, init) }
+    }
+    const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => makeQuery([]),
+      relatedQuery: () => makeQuery([]),
+      relations: {
+        // No `model` thunk — getMorphRelationDescriptor returns
+        // undefined, so the resolver falls through to the hasMany
+        // branch which then asks for foreignKey. The user-facing fix
+        // is the same: configure-the-relation.
+        items: { type: 'morphMany', morphName: 'itemable' },
+      },
+    }
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items')
+          .relationship('items')
+          .schema([TextField.make('label')]),
+      ])
+      .save(async () => new Order({ id: 'p1' }))
+
+    const submittedRows = [{ label: 'A' }]
+    await assert.rejects(
+      () => dispatchFormSubmit(
+        form,
+        { items: submittedRows },
+        { values: { items: submittedRows }, parentModel },
+      ),
+      /could not resolve the child model/,
+    )
+    void child
+  })
+})

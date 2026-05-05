@@ -1311,20 +1311,59 @@ export function extractRelationshipRepeaters(
 }
 
 /**
- * Resolve the child model for a relationship-backed Repeater. Prefers
- * the user-supplied override on the field's config; falls back to the
- * parent's `static relations[name].model()` thunk via
- * `getParentRelationDescriptor`. Throws a clear configuration error
- * when neither path resolves.
+ * Resolved attachment shape for a relationship-backed Repeater. Mirrors
+ * `BuilderChildAttachment` — `hasMany` uses a single FK column,
+ * `morphMany` uses the `<morphName>Id` + `<morphName>Type` morph stamp.
+ * `morphOne` collapses into the morphMany branch (storage shape is
+ * identical; "one row" is a schema concern enforced upstream).
  */
-function resolveChildModelAndFk(
+type RepeaterChildAttachment =
+  | { kind: 'hasMany';   model: ModelLike; foreignKey: string }
+  | { kind: 'morphMany'; model: ModelLike; morph:      MorphRelationDescriptor }
+
+/**
+ * Resolve the child model + parent-attachment shape for a
+ * relationship-backed Repeater. Two supported modes:
+ *
+ *   - `hasMany`   — single foreign key on the child. Falls back to
+ *                   `cfg.model` / `cfg.foreignKey` overrides when the
+ *                   parent's `static relations[name]` doesn't expose them.
+ *   - `morphMany` — polymorphic owner side. Reads the morph descriptor
+ *                   off the parent's `static relations[name]`.
+ *                   `morphOne` collapses into the same branch.
+ *
+ * Throws a clear configuration error when the relation type isn't one
+ * of those two, or when descriptor lookup fails entirely.
+ */
+function resolveChildAndAttachment(
   parentModel: ModelLike,
   cfg:         RepeaterRelationshipConfig,
-): { model: ModelLike; foreignKey: string; type: string } {
-  const descriptor = getParentRelationDescriptor(parentModel, cfg.name)
-  const model      = cfg.model ?? descriptor?.model()
-  const foreignKey = cfg.foreignKey ?? descriptor?.foreignKey
-  const type       = descriptor?.type ?? 'hasMany'
+): RepeaterChildAttachment {
+  const parentDescriptor = getParentRelationDescriptor(parentModel, cfg.name)
+  const morphDescriptor  = getMorphRelationDescriptor(parentModel, cfg.name)
+  const type             = parentDescriptor?.type
+                        ?? (morphDescriptor ? 'morphMany' : 'hasMany')
+
+  if (type === 'morphMany' || type === 'morphOne') {
+    const model = cfg.model ?? morphDescriptor?.model?.()
+    if (!model) {
+      throw new Error(
+        `[Pilotiq] Repeater.relationship("${cfg.name}"): could not resolve the child model. ` +
+        `Pass it explicitly via .relationship({ name, model: ChildModel }) or declare ` +
+        `the relation's \`model\` thunk on the parent model's static relations map.`,
+      )
+    }
+    if (!morphDescriptor) {
+      throw new Error(
+        `[Pilotiq] Repeater.relationship("${cfg.name}"): polymorphic relation entry is missing \`morphName\`. ` +
+        `Set \`relations.${cfg.name} = { type: 'morphMany', morphName: '<name>', model: () => ChildModel }\` on the parent.`,
+      )
+    }
+    return { kind: 'morphMany', model, morph: morphDescriptor }
+  }
+
+  const model      = cfg.model ?? parentDescriptor?.model()
+  const foreignKey = cfg.foreignKey ?? parentDescriptor?.foreignKey
 
   if (!model) {
     throw new Error(
@@ -1342,12 +1381,12 @@ function resolveChildModelAndFk(
   }
   if (type !== 'hasMany') {
     throw new Error(
-      `[Pilotiq] Repeater.relationship("${cfg.name}"): only 'hasMany' is supported in v1 (got '${type}'). ` +
-      `belongsToMany / pivot / polymorphic relations are deferred.`,
+      `[Pilotiq] Repeater.relationship("${cfg.name}"): only 'hasMany' and 'morphMany' / 'morphOne' are supported (got '${type}'). ` +
+      `belongsToMany / morphToMany / morphedByMany are deferred.`,
     )
   }
 
-  return { model, foreignKey, type }
+  return { kind: 'hasMany', model, foreignKey }
 }
 
 /**
@@ -1374,7 +1413,8 @@ async function persistRelationshipRows(
   parentModel: ModelLike,
 ): Promise<void> {
   const { rows, cfg, field } = deferral
-  const { model, foreignKey } = resolveChildModelAndFk(parentModel, cfg)
+  const attachment  = resolveChildAndAttachment(parentModel, cfg)
+  const { model }   = attachment
   const pk          = getPrimaryKey(model)
   const orderColumn = cfg.orderColumn
   const parentPk    = (parent as Record<string, unknown> | undefined)?.[getPrimaryKey(parentModel)]
@@ -1384,6 +1424,11 @@ async function persistRelationshipRows(
       `Form.save() / handleCreate() must return a record with a primary key set.`,
     )
   }
+
+  // Compute the morph stamp once — `computeMorphPayload` is pure.
+  const morphStamp = attachment.kind === 'morphMany'
+    ? computeMorphPayload(parent, attachment.morph)
+    : undefined
 
   const existing = await loadRelationRows(parentModel, parent, cfg.name)
   const existingByPk = new Map<string, Record<string, unknown>>()
@@ -1400,9 +1445,10 @@ async function persistRelationshipRows(
     const isUpdate = submittedId !== undefined && existingByPk.has(submittedId)
 
     // Strip framework keys before constructing the payload — the
-    // child model never sees `__id`, and the FK + order column are
-    // stamped explicitly below so user-supplied values are ignored
-    // (FK can't be retargeted; order is canonical from row index).
+    // child model never sees `__id`, and the parent attachment cols
+    // are stamped explicitly below so user-supplied values are
+    // ignored (FK / morph cols can't be retargeted; order is
+    // canonical from row index).
     const payload: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(submitted)) {
       if (k === '__id') continue
@@ -1411,14 +1457,24 @@ async function persistRelationshipRows(
     if (orderColumn !== undefined) payload[orderColumn] = idx
 
     if (isUpdate) {
-      // Don't overwrite the FK on update — the existing row's FK is
-      // already correct, and exposing it would let a tampered client
-      // re-link a child to a different parent.
-      delete payload[foreignKey]
+      // Don't overwrite the parent attachment on update — for hasMany
+      // the FK is already correct; for morphMany the `<morphName>Id`
+      // + `<morphName>Type` cols are too. Defense against a tampered
+      // client trying to re-link the child to a different (poly)
+      // parent.
+      if (attachment.kind === 'hasMany') {
+        delete payload[attachment.foreignKey]
+      } else {
+        for (const k of Object.keys(morphStamp!)) delete payload[k]
+      }
       await model.update(submittedId!, payload)
       keptPks.add(submittedId!)
     } else {
-      payload[foreignKey] = parentPk
+      if (attachment.kind === 'hasMany') {
+        payload[attachment.foreignKey] = parentPk
+      } else {
+        Object.assign(payload, morphStamp)
+      }
       await model.create(payload)
     }
     void field

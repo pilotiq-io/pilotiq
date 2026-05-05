@@ -404,10 +404,17 @@ export class RepeaterField extends Field {
   }
 
   /**
-   * Persist rows to a `HasMany` relation on the parent record instead
-   * of serializing them to a JSON column. Each row maps to a real child
-   * record; submit creates / updates / deletes children against the
-   * relation transparently.
+   * Persist rows to a `HasMany` (or `MorphMany` / `MorphOne`) relation on
+   * the parent record instead of serializing them to a JSON column. Each
+   * row maps to a real child record; submit creates / updates / deletes
+   * children against the relation transparently.
+   *
+   * For `morphMany`, the child also carries `<morphName>Id` +
+   * `<morphName>Type` columns; the framework stamps both on every create
+   * (and refuses to overwrite them on update) so a tampered POST body
+   * can't reassign a row to a different polymorphic parent. The morph
+   * shape is read off the parent's `static relations[name]` descriptor —
+   * no `foreignKey` override applies.
    *
    * Pass either the relationship name as a string (the common case —
    * `model` + `foreignKey` are auto-discovered from the parent's
