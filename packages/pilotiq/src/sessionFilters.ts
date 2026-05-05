@@ -28,8 +28,21 @@ function getSession(req: unknown): StorableSession | undefined {
   return session as StorableSession
 }
 
-export function listFiltersKey(basePath: string, slug: string): string {
-  return `${PREFIX}${basePath}:${slug}`
+// Per-tab slot key. `tab === ''` is the "no tab" / "default tab" slot —
+// resources without ListTabs always store under it. Tab name comes from
+// `?tab=<name>` verbatim — keying by the URL value (not by the tab's
+// "default" status) keeps writers + readers symmetric without the
+// route handler having to know the schema's default-tab name.
+export function listFiltersKey(basePath: string, slug: string, tab: string = ''): string {
+  return `${PREFIX}${basePath}:${slug}:slot:${tab}`
+}
+
+// Pointer to whichever tab the user was last on. Read on bare-URL visits
+// to decide which slot to restore — without it, bare visits would always
+// restore the no-tab slot (a regression vs v1, where one slot held
+// whatever tab+filters combo the user last applied).
+export function lastTabKey(basePath: string, slug: string): string {
+  return `${PREFIX}${basePath}:${slug}:lastTab`
 }
 
 export function readPersistedListQuery(
@@ -68,8 +81,37 @@ export function writePersistedListQuery(
   session.put(key, slice)
 }
 
-export function encodePersistedQuery(slice: Record<string, string>): string {
+export function readPersistedLastTab(
+  req: unknown,
+  basePath: string,
+  slug: string,
+): string | undefined {
+  const session = getSession(req)
+  if (!session) return undefined
+  const v = session.get<unknown>(lastTabKey(basePath, slug))
+  if (typeof v !== 'string') return undefined
+  return v
+}
+
+export function writePersistedLastTab(
+  req: unknown,
+  basePath: string,
+  slug: string,
+  tab: string,
+): void {
+  const session = getSession(req)
+  if (!session) return
+  const key = lastTabKey(basePath, slug)
+  if (session.get<string>(key) === tab) return
+  session.put(key, tab)
+}
+
+export function encodePersistedQuery(
+  slice: Record<string, string>,
+  tab:   string = '',
+): string {
   const params = new URLSearchParams()
+  if (tab !== '') params.set('tab', tab)
   for (const [k, v] of Object.entries(slice)) {
     if (v === '') continue
     params.set(k, v)

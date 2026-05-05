@@ -1641,19 +1641,21 @@ describe('persistFiltersInSession — list-page filter restore', () => {
     return router.list().find(r => r.method === 'GET' && r.path === '/admin/posts')!
   }
 
-  it('writes the active query slice to session on a non-bare visit', async () => {
+  it('writes the active query slice + lastTab pointer to session on a non-bare visit', async () => {
     const route = getList(PersistedPosts)
     const { session, data } = makeStore()
     const req = fakeReq({ query: { status: 'draft', sort: 'id:desc', page: '2' } })
     req.session = session
     await callHandlerCapturing(route.handler, req)
-    assert.deepEqual(data['pilotiq:filters:/admin:posts'], { status: 'draft', sort: 'id:desc' })
+    assert.deepEqual(data['pilotiq:filters:/admin:posts:slot:'], { status: 'draft', sort: 'id:desc' })
+    assert.equal(data['pilotiq:filters:/admin:posts:lastTab'], '')
   })
 
   it('redirects bare visits to the persisted slice', async () => {
     const route = getList(PersistedPosts)
     const { session, data } = makeStore()
-    data['pilotiq:filters:/admin:posts'] = { status: 'draft', sort: 'id:desc' }
+    data['pilotiq:filters:/admin:posts:slot:']  = { status: 'draft', sort: 'id:desc' }
+    data['pilotiq:filters:/admin:posts:lastTab'] = ''
     const req = fakeReq({ query: {} })
     req.session = session
     const { res } = await callHandlerCapturing(route.handler, req)
@@ -1662,12 +1664,15 @@ describe('persistFiltersInSession — list-page filter restore', () => {
     assert.equal(url.pathname, '/admin/posts')
     assert.equal(url.searchParams.get('status'), 'draft')
     assert.equal(url.searchParams.get('sort'),   'id:desc')
+    // No `?tab=` for the no-tab restore.
+    assert.equal(url.searchParams.get('tab'), null)
   })
 
   it('does NOT redirect when the persisted slice is empty', async () => {
     const route = getList(PersistedPosts)
     const { session, data } = makeStore()
-    data['pilotiq:filters:/admin:posts'] = {}
+    data['pilotiq:filters:/admin:posts:slot:']  = {}
+    data['pilotiq:filters:/admin:posts:lastTab'] = ''
     const req = fakeReq({ query: {} })
     req.session = session
     const { res } = await callHandlerCapturing(route.handler, req)
@@ -1677,11 +1682,39 @@ describe('persistFiltersInSession — list-page filter restore', () => {
   it('does NOT redirect when the persisted slice is only empty-string clears', async () => {
     const route = getList(PersistedPosts)
     const { session, data } = makeStore()
-    data['pilotiq:filters:/admin:posts'] = { status: '' }
+    data['pilotiq:filters:/admin:posts:slot:']  = { status: '' }
+    data['pilotiq:filters:/admin:posts:lastTab'] = ''
     const req = fakeReq({ query: {} })
     req.session = session
     const { res } = await callHandlerCapturing(route.handler, req)
     assert.equal(res.redirectedTo, undefined)
+  })
+
+  it('per-tab keying — switching tabs writes to distinct slots; bare visit restores the last tab + its slice', async () => {
+    const route = getList(PersistedPosts)
+    const { session, data } = makeStore()
+    // Visit ?tab=drafts&status=draft.
+    let req = fakeReq({ query: { tab: 'drafts', status: 'draft' } })
+    req.session = session
+    await callHandlerCapturing(route.handler, req)
+    assert.deepEqual(data['pilotiq:filters:/admin:posts:slot:drafts'], { status: 'draft' })
+    assert.equal(data['pilotiq:filters:/admin:posts:lastTab'], 'drafts')
+    // Then ?tab=published&sort=title:asc.
+    req = fakeReq({ query: { tab: 'published', sort: 'title:asc' } })
+    req.session = session
+    await callHandlerCapturing(route.handler, req)
+    assert.deepEqual(data['pilotiq:filters:/admin:posts:slot:published'], { sort: 'title:asc' })
+    assert.equal(data['pilotiq:filters:/admin:posts:lastTab'], 'published')
+    // Drafts slot still intact.
+    assert.deepEqual(data['pilotiq:filters:/admin:posts:slot:drafts'], { status: 'draft' })
+    // Bare visit restores the published slot (last tab).
+    req = fakeReq({ query: {} })
+    req.session = session
+    const { res } = await callHandlerCapturing(route.handler, req)
+    assert.equal(res.redirectedTo?.code, 302)
+    const url = new URL(res.redirectedTo!.url, 'http://test')
+    assert.equal(url.searchParams.get('tab'),  'published')
+    assert.equal(url.searchParams.get('sort'), 'title:asc')
   })
 
   it('skips persistence entirely when the resource opts out', async () => {
@@ -1826,7 +1859,10 @@ describe('deferLoading — list-page skeleton + _table fetch', () => {
     registerPilotiqRoutes(router, Pilotiq.make('T').path('/admin').resources([Persisted]))
     const listRoute = router.list().find(r => r.method === 'GET' && r.path === '/admin/items')!
 
-    const data: Record<string, unknown> = { 'pilotiq:filters:/admin:items': { search: 'hello' } }
+    const data: Record<string, unknown> = {
+      'pilotiq:filters:/admin:items:slot:':  { search: 'hello' },
+      'pilotiq:filters:/admin:items:lastTab': '',
+    }
     const session = {
       get<T>(k: string, fallback?: T): T | undefined {
         return (k in data ? data[k] : fallback) as T | undefined

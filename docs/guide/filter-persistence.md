@@ -49,10 +49,12 @@ Everything in the URL query string EXCEPT `page` and `tab`:
 - `search`, `sort`, `perPage`, `group`
 
 `page` resets to 1 on every restore — landing back on a stale page
-number after the result set has changed isn't useful. `tab` has its own
-URL semantics (each tab can have its own canonical link) and isn't
-included in the persistence key, so all tabs of a single resource share
-one filter slot in v1.
+number after the result set has changed isn't useful. `tab` has its
+own URL semantics; each tab gets its own filter slot under
+`pilotiq:filters:<basePath>:<slug>:slot:<tabName>`, plus a
+`…:lastTab` pointer that records which tab the user last had active.
+A bare visit reads the pointer, restores that tab's slot, and emits
+the redirect URL with `?tab=<lastTab>` re-attached.
 
 Empty-string filter values (`?status=`, the URL pattern emitted by
 clicking the × on an active-filter pill) are written through to the
@@ -75,14 +77,12 @@ filter.
    `Set-Cookie` header.
 
 To reset persisted filters in code, point a session driver at the same
-storage (cookie / Redis) and `forget('pilotiq:filters:<basePath>:<slug>')`.
+storage (cookie / Redis) and `forget` the per-tab slot keys
+(`pilotiq:filters:<basePath>:<slug>:slot:<tabName>`) plus the
+`…:lastTab` pointer.
 
-## Limitations (v1)
+## Limitations
 
-- **One slot per resource, not per tab.** All tabs of a resource share
-  one filter slot. Switching tabs from a different page lands at the
-  default tab with the previously-active filters reapplied. File a
-  consumer-driven bug if you want per-tab keying.
 - **No per-table-on-page disambiguation.** If a custom page hosts
   multiple tables, only the resource's own list page is in scope —
   custom-page tables are not persisted by this flag.

@@ -11,6 +11,8 @@ import {
   listFiltersKey,
   readPersistedListQuery,
   writePersistedListQuery,
+  readPersistedLastTab,
+  writePersistedLastTab,
   encodePersistedQuery,
 } from './sessionFilters.js'
 import {
@@ -702,15 +704,17 @@ export function registerPilotiqRoutes(
         if (R.persistFiltersInSession) {
           const query = (req.query as Record<string, unknown> | undefined) ?? {}
           const sessionSlug = resourceBase.slice(base.length + 1)
-          const key   = listFiltersKey(base, sessionSlug)
           if (Object.keys(query).length === 0) {
-            const stored = readPersistedListQuery(req, key)
+            const restoreTab = readPersistedLastTab(req, base, sessionSlug) ?? ''
+            const stored = readPersistedListQuery(req, listFiltersKey(base, sessionSlug, restoreTab))
             if (stored) {
-              const qs = encodePersistedQuery(stored)
+              const qs = encodePersistedQuery(stored, restoreTab)
               if (qs !== '') return res.redirect(`${indexUrl}?${qs}`, 302)
             }
           } else {
-            writePersistedListQuery(req, key, query)
+            const tab = typeof query['tab'] === 'string' ? query['tab'] : ''
+            writePersistedListQuery(req, listFiltersKey(base, sessionSlug, tab), query)
+            writePersistedLastTab(req, base, sessionSlug, tab)
           }
         }
 
