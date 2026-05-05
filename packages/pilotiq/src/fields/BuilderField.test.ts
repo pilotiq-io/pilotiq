@@ -895,4 +895,96 @@ describe('BuilderField', () => {
       assert.equal(builder.rows[0]!.extraActions, undefined)
     })
   })
+
+  describe('relationship(...) — setter / getter / meta', () => {
+    it('string form stores the relationship name', () => {
+      const f = BuilderField.make('content')
+        .relationship('blocks')
+        .blocks([Block.make('heading').schema([TextField.make('text')])])
+      const cfg = f.getRelationship()
+      assert.equal(f.isRelationship(), true)
+      assert.equal(cfg?.name, 'blocks')
+      assert.equal(cfg?.model,       undefined)
+      assert.equal(cfg?.foreignKey,  undefined)
+      assert.equal(cfg?.typeColumn,  undefined)
+      assert.equal(cfg?.dataColumn,  undefined)
+      assert.equal(cfg?.orderColumn, undefined)
+    })
+
+    it('object form copies all explicit overrides verbatim', () => {
+      const f = BuilderField.make('content')
+        .relationship({
+          name:        'blocks',
+          foreignKey:  'pageId',
+          typeColumn:  'kind',
+          dataColumn:  'payload',
+          orderColumn: 'sort',
+        })
+        .blocks([Block.make('heading').schema([TextField.make('text')])])
+      const cfg = f.getRelationship()
+      assert.equal(cfg?.name,        'blocks')
+      assert.equal(cfg?.foreignKey,  'pageId')
+      assert.equal(cfg?.typeColumn,  'kind')
+      assert.equal(cfg?.dataColumn,  'payload')
+      assert.equal(cfg?.orderColumn, 'sort')
+    })
+
+    it('orderColumn() sugar sets the order column when relationship is configured', () => {
+      const f = BuilderField.make('content')
+        .relationship('blocks')
+        .orderColumn('sort')
+        .blocks([Block.make('heading').schema([TextField.make('text')])])
+      assert.equal(f.getRelationship()?.orderColumn, 'sort')
+    })
+
+    it('orderColumn() throws when relationship() not called first', () => {
+      assert.throws(
+        () => BuilderField.make('content').orderColumn('sort'),
+        /requires relationship\(\) to be configured first/,
+      )
+    })
+
+    it('relationship() is incompatible with dehydrated(false)', () => {
+      assert.throws(
+        () => BuilderField.make('content').dehydrated(false).relationship('blocks'),
+        /incompatible with dehydrated\(false\)/,
+      )
+    })
+
+    it('toMeta serializes relationship under meta.relationship — only name when no overrides', () => {
+      const meta = BuilderField.make('content')
+        .relationship('blocks')
+        .blocks([Block.make('heading').schema([TextField.make('text')])])
+        .toMeta() as BuilderFieldMeta
+      assert.deepEqual(meta.relationship, { name: 'blocks' })
+    })
+
+    it('toMeta omits server-only model + foreignKey, preserves typeColumn / dataColumn / orderColumn', () => {
+      const meta = BuilderField.make('content')
+        .relationship({
+          name:        'blocks',
+          foreignKey:  'pageId',
+          typeColumn:  'kind',
+          dataColumn:  'payload',
+          orderColumn: 'sort',
+        })
+        .blocks([Block.make('heading').schema([TextField.make('text')])])
+        .toMeta() as BuilderFieldMeta
+      assert.deepEqual(meta.relationship, {
+        name:        'blocks',
+        typeColumn:  'kind',
+        dataColumn:  'payload',
+        orderColumn: 'sort',
+      })
+      assert.equal('model'      in (meta.relationship as object), false)
+      assert.equal('foreignKey' in (meta.relationship as object), false)
+    })
+
+    it('toMeta omits relationship key entirely when not configured', () => {
+      const meta = BuilderField.make('content')
+        .blocks([Block.make('heading').schema([TextField.make('text')])])
+        .toMeta() as BuilderFieldMeta
+      assert.equal(meta.relationship, undefined)
+    })
+  })
 })

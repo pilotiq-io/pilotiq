@@ -153,13 +153,18 @@ plumbing in the renderer):
 | `.itemNumbers(bool=true)` | Prefixes the per-row label with its 1-based index. |
 | `.reorderableWithButtons(bool=true)` | Forces button-only reorder (default is drag-with-button-fallback). |
 
-The bigger-surface gaps (`relationship`, `grid`, `simple`, `table`,
+The bigger-surface gaps (`grid`, `simple`, `table`,
 `accordion`, `disableOptionsWhenSelectedInSiblingRepeaterItems`)
 are tracked separately and out of scope for this plan.
 **`extraItemActions` shipped 2026-05-04 cont'd** — see
 `docs/guide/repeater.md` and `project_pilotiq_extra_item_actions.md`.
 **`distinct()` shipped 2026-05-04 cont'd** — see `docs/guide/repeater.md`
 ("Cross-row uniqueness").
+**`relationship()` shipped 2026-05-05 cont'd** — heterogeneous-row
+sibling of `Repeater.relationship`; rows persist as child records
+carrying a `type` discriminator + JSON `data` payload (column names
+configurable). hasMany only in v1. See `builder-relationship.md` and
+`docs/guide/builder.md` ("Relationship-backed rows").
 
 ## Out of scope
 

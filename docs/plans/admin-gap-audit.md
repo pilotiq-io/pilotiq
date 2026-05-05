@@ -198,7 +198,7 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 | ✅ `Slider` DONE | 2 | Shipped with **Plan #6** 2026-05-01. |
 | ✅ `Hidden` DONE | 1 | Shipped with **Plan #6** 2026-05-01. |
 | ✅ `Repeater` (array of sub-schemas) DONE | 3 | Shipped 2026-05-01 (Plan #14) + extensive Tier-1/2 polish + relationship-backed rows shipped 2026-05-03 (`Repeater.relationship(name)` — stores rows in a `HasMany` relation instead of JSON; create / update / delete diff against the child model; `orderColumn` writes 0-based index). See `repeater-field.md` + `repeater-relationship.md` + `docs/guide/repeater.md`. |
-| ✅ `Builder` (heterogeneous array) DONE | 2 | Shipped 2026-05-02 — `Block.make(name).schema(…).maxItems(n)` + `Builder.make(name).blocks([…])`, `{type, data}` storage envelope, per-block `maxItems`, server-side resolve / coerce / validate / partial-resolve mirroring Repeater. Demo at `/new-admin/builder-demo`. See `builder-field.md` + `docs/guide/builder.md`. |
+| ✅ `Builder` (heterogeneous array) DONE | 2 | Shipped 2026-05-02 — `Block.make(name).schema(…).maxItems(n)` + `Builder.make(name).blocks([…])`, `{type, data}` storage envelope, per-block `maxItems`, server-side resolve / coerce / validate / partial-resolve mirroring Repeater. Relationship-backed rows shipped 2026-05-05 (`Builder.relationship(name)` — stores rows as child records carrying `type` discriminator + JSON `data` payload; same hasMany-only / no-transaction posture as `Repeater.relationship`). Demo at `/new-admin/builder-demo`. See `builder-field.md` + `builder-relationship.md` + `docs/guide/builder.md`. |
 | ✅ `DateTimePicker` (vs current DateField) DONE | 1 | Shipped with **Plan #6** 2026-05-01 — `DateTimeField`. |
 
 **Reactivity (Plan #5):**

@@ -638,9 +638,11 @@ keys are server-only — they never cross the wire.
   create fails partway through the diff, the parent edit is committed
   and the failure surfaces as a 500. A transactional wrapper is a
   follow-up once the ORM lands a `transaction(fn)` primitive.
-- **Builder doesn't ship `relationship` yet.** Heterogeneous rows
-  need a polymorphic `type` column on the child plus per-block
-  dispatch — punted until someone asks.
+- **Builder ships its own `relationship(...)` sibling.** See
+  `docs/guide/builder.md` — Builder rows persist as child records
+  carrying a `type` discriminator + a JSON `data` payload (column
+  names configurable). Same hasMany-only / no-transaction posture
+  as Repeater.
 - **`mutateDataBeforeCreate` doesn't see relation rows.** They've
   been extracted before any user-side mutator runs. Mutate the parent
   data; the child rows go through the inner schema's own mutators on

@@ -23,6 +23,7 @@ import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
 import { applyStateUpdate, findForms, findWizardStepFields, loadRelationRows, selectFormById } from './elements/dispatchForm.js'
 import { isRepeaterField, RepeaterField } from './fields/RepeaterField.js'
+import { isBuilderField, BuilderField } from './fields/BuilderField.js'
 import { validateSchema } from './validation/index.js'
 import { searchAllResources, type GlobalSearchResult } from './search.js'
 import { loadTableRecords, findTables, type QueryParams } from './elements/dispatchTable.js'
@@ -614,6 +615,118 @@ function findRelationshipRepeaters(elements: ReadonlyArray<Element>): RepeaterFi
         // isn't supported in v1.
         continue
       }
+      // Don't dive into Builder children either — relationship-backed
+      // Builders are resolved separately by `findRelationshipBuilders`.
+      if (isBuilderField(el)) continue
+      const children = el.getChildren()
+      if (children && children.length > 0) walk(children)
+    }
+  }
+  walk(elements)
+  return out
+}
+
+/**
+ * Walk the form's top-level Builders and replace `values[fieldName]` with
+ * rows fetched from `parent.related(name)` for any relationship-backed
+ * Builder. Each loaded row stamps `__id` (child PK) + `type` (block
+ * discriminator) + `data` (per-block JSON payload) so the renderer can
+ * round-trip the heterogeneous envelope.
+ *
+ * Mirrors `applyRelationshipRepeaterFill`. No-op when the parent record
+ * is null (create mode), the resource has no `R.model`, or no
+ * relationship-backed Builders exist on the form.
+ */
+export async function applyRelationshipBuilderFill(
+  form:        Form,
+  values:      Record<string, unknown>,
+  record:      unknown,
+  parentModel: ModelLike | undefined,
+): Promise<Record<string, unknown>> {
+  if (record == null) return values
+  if (!parentModel)  return values
+  const builders = findRelationshipBuilders(form.getChildren() ?? [])
+  if (builders.length === 0) return values
+
+  const out: Record<string, unknown> = { ...values }
+  for (const builder of builders) {
+    const cfg = builder.getRelationship()!
+    let rows: unknown[]
+    try {
+      rows = await loadRelationRows(parentModel, record, cfg.name)
+    } catch {
+      // Failed lookup (e.g. missing `relations` map on a test stub) —
+      // fall back to whatever value applyFillPipeline produced rather
+      // than wiping the field. Better stale than silently empty.
+      continue
+    }
+
+    const pkColumn   = pickChildPrimaryKey(parentModel, cfg.name) ?? 'id'
+    const fkColumn   = cfg.foreignKey ?? pickChildForeignKey(parentModel, cfg.name)
+    const typeColumn = cfg.typeColumn ?? 'type'
+    const dataColumn = cfg.dataColumn ?? 'data'
+
+    out[builder.name] = rows.map(row => {
+      const r = (row && typeof row === 'object') ? { ...(row as Record<string, unknown>) } : {}
+      const pkValue   = r[pkColumn]
+      const blockType = typeof r[typeColumn] === 'string' ? (r[typeColumn] as string) : ''
+      const dataRaw   = r[dataColumn]
+      const blockData = parseBuilderDataPayload(dataRaw)
+
+      const stamped: Record<string, unknown> = {
+        type: blockType,
+        data: blockData,
+      }
+      if (pkValue !== undefined && pkValue !== null) {
+        stamped['__id'] = String(pkValue)
+      }
+      // Non-`type` / `data` / FK / PK columns aren't surfaced — the
+      // JSON envelope is the source of truth for per-block fields. If
+      // a user denormalizes a column, they handle it via per-block
+      // mutate hooks, not by leaking the column into row values.
+      void fkColumn
+      return stamped
+    })
+  }
+  return out
+}
+
+/**
+ * Normalize the JSON payload column into a plain object. Prisma
+ * hydrates `Json` columns to objects; some adapters return strings.
+ * Anything that isn't a parseable object falls back to `{}` so the
+ * inner schema renders fresh defaults.
+ */
+function parseBuilderDataPayload(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>
+  }
+  if (typeof raw === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>
+      }
+    } catch {
+      // fall through to {}
+    }
+  }
+  return {}
+}
+
+/** Walk the form's children for top-level relationship-backed Builders. */
+function findRelationshipBuilders(elements: ReadonlyArray<Element>): BuilderField[] {
+  const out: BuilderField[] = []
+  const walk = (els: ReadonlyArray<Element>): void => {
+    for (const el of els) {
+      if (isBuilderField(el)) {
+        const b = el as BuilderField
+        if (b.getRelationship()) out.push(b)
+        continue
+      }
+      // Don't dive into Repeater children either — both array-row
+      // boundaries are walker stops here.
+      if (isRepeaterField(el)) continue
       const children = el.getChildren()
       if (children && children.length > 0) walk(children)
     }
@@ -1024,8 +1137,9 @@ export async function resourceEditData(
     }
     if (!prefill?.values && record != null) {
       const values = await applyFillPipeline(form, record)
-      const withRelations = await applyRelationshipRepeaterFill(form, values, record, R.model)
-      form.withValues(withRelations)
+      const withRelations  = await applyRelationshipRepeaterFill(form, values, record, R.model)
+      const withBuilders   = await applyRelationshipBuilderFill(form, withRelations, record, R.model)
+      form.withValues(withBuilders)
     } else if (prefill?.values) {
       form.withValues(prefill.values)
     }

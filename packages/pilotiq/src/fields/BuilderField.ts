@@ -3,6 +3,7 @@ import { Block, type BlockMeta } from '../schema/Block.js'
 import { Field, type FieldMeta } from './Field.js'
 import type { RenderContext } from '../schema/resolveSchema.js'
 import type { Action, ActionMeta } from '../actions/Action.js'
+import type { ModelLike } from '../orm/modelDefaults.js'
 import {
   RowButton,
   type RowButtonKind,
@@ -13,6 +14,44 @@ import {
   normalizeGridConfig,
   type RepeaterGridConfig,
 } from './RepeaterField.js'
+
+/**
+ * Configuration for `Builder.relationship(...)`. Heterogeneous-row sibling
+ * of `RepeaterRelationshipConfig`.
+ *
+ * `name` matches a key on the parent model's `static relations` map. The
+ * child model carries a discriminator column (default `type`, holds the
+ * block name) and a JSON payload column (default `data`, holds the
+ * per-block inner-schema values verbatim) — plus the standard FK + PK,
+ * and an optional `sort` column when `orderColumn` is set.
+ *
+ * `model` + `foreignKey` overrides exist for ORMs that don't follow the
+ * convention; both default to discovery via `parent.relations[name]` at
+ * submit time. `typeColumn` + `dataColumn` default to `'type'` and
+ * `'data'` — same as Filament.
+ */
+export interface BuilderRelationshipConfig {
+  /** Relationship key on the parent (e.g. `'blocks'`). */
+  name:         string
+  /** Override the child model. Defaults to `parent.relations[name].model()`. */
+  model?:       ModelLike
+  /** Override the FK column on the child. Defaults to `parent.relations[name].foreignKey`. */
+  foreignKey?:  string
+  /** Discriminator column on the child holding the block name. Default `'type'`. */
+  typeColumn?:  string
+  /** JSON payload column on the child holding the per-block fields. Default `'data'`. */
+  dataColumn?:  string
+  /** Optional integer column on the child to receive the row index. */
+  orderColumn?: string
+}
+
+/** Public meta — `model` + `foreignKey` are server-only and stay private. */
+export interface BuilderRelationshipMeta {
+  name:         string
+  typeColumn?:  string
+  dataColumn?:  string
+  orderColumn?: string
+}
 
 /**
  * Function evaluated once per row at meta-build to derive a human-readable
@@ -72,6 +111,14 @@ export interface BuilderFieldMeta extends FieldMeta {
   rows:                BuilderRowMeta[]
   /** Picker entries — every block registered via `.blocks([…])`. */
   blocks:              BlockMeta[]
+  /**
+   * Set when `Builder.relationship(...)` is configured. Tells diagnostics
+   * + future UI hooks that submitted rows persist as child records on a
+   * `HasMany` relation; behavior is otherwise server-side. The serialized
+   * shape carries only `{ name, typeColumn?, dataColumn?, orderColumn? }`
+   * — `model` and `foreignKey` are server-only.
+   */
+  relationship?:       BuilderRelationshipMeta
   minItems?:           number
   maxItems?:           number
   defaultBlock?:       string
@@ -156,6 +203,7 @@ export class BuilderField extends Field {
   private _extraItemActions:      Action[] = []
   private _grid?:                 RepeaterGridConfig
   private _buttons:               { [K in RowButtonKind]?: RowButton } = {}
+  private _relationship?:         BuilderRelationshipConfig
 
   private constructor(name: string) {
     super(name, 'builder')
@@ -289,6 +337,48 @@ export class BuilderField extends Field {
   }
 
   /**
+   * Persist rows to a `HasMany` relation on the parent record instead of
+   * serializing them to a JSON column. Each row maps to a real child record
+   * carrying a `type` discriminator + a JSON `data` payload (column names
+   * configurable). Submit creates / updates / deletes children against the
+   * relation transparently.
+   *
+   * Pass either the relationship name as a string (the common case —
+   * `model` + `foreignKey` are auto-discovered from the parent's
+   * `static relations` map; `typeColumn` / `dataColumn` default to
+   * `'type'` / `'data'`) or an object form for explicit overrides.
+   *
+   * Mutually exclusive with `dehydrated(false)` — the field's whole purpose
+   * is to write data, so silently dropping it would be confusing.
+   * Validators run unchanged.
+   */
+  relationship(arg: string | BuilderRelationshipConfig): this {
+    if (this.isDehydrated() === false) {
+      throw new Error(
+        `[Pilotiq] Builder "${this.name}": relationship() is incompatible with dehydrated(false) — the field's purpose is to persist data.`,
+      )
+    }
+    this._relationship = typeof arg === 'string' ? { name: arg } : { ...arg }
+    return this
+  }
+
+  /**
+   * Sugar over `.relationship({ ..., orderColumn: col })`. Sets the order
+   * column on an already-configured relationship; throws when
+   * `relationship()` hasn't been called first so misconfiguration surfaces
+   * eagerly.
+   */
+  orderColumn(col: string): this {
+    if (!this._relationship) {
+      throw new Error(
+        `[Pilotiq] Builder "${this.name}": orderColumn() requires relationship() to be configured first.`,
+      )
+    }
+    this._relationship.orderColumn = col
+    return this
+  }
+
+  /**
    * Customize the bottom Add button's chrome. Equivalent to
    * `addActionLabel()` plus icon / color / tooltip overrides; the
    * customizer wins when both are set (it ships under `meta.buttons.add`
@@ -350,6 +440,9 @@ export class BuilderField extends Field {
   getItemHidden():                BuilderItemHiddenRule | undefined { return this._itemHidden }
   getExtraItemActions():          Action[]                          { return this._extraItemActions }
   getGrid():                      RepeaterGridConfig | undefined    { return this._grid }
+  /** Resolved relationship config (`undefined` when not configured). */
+  getRelationship():              BuilderRelationshipConfig | undefined { return this._relationship }
+  isRelationship():               boolean                           { return this._relationship !== undefined }
   /** The configured customizer for a given slot, or `undefined`. */
   getButton(kind: RowButtonKind): RowButton | undefined             { return this._buttons[kind] }
 
@@ -388,6 +481,13 @@ export class BuilderField extends Field {
     if (this._addActionLabel    !== undefined) meta.addActionLabel    = this._addActionLabel
     if (this._addActionAlignment !== 'start')  meta.addActionAlignment = this._addActionAlignment
     if (this._grid              !== undefined) meta.grid              = this._grid
+    if (this._relationship      !== undefined) {
+      const r: BuilderRelationshipMeta = { name: this._relationship.name }
+      if (this._relationship.typeColumn  !== undefined) r.typeColumn  = this._relationship.typeColumn
+      if (this._relationship.dataColumn  !== undefined) r.dataColumn  = this._relationship.dataColumn
+      if (this._relationship.orderColumn !== undefined) r.orderColumn = this._relationship.orderColumn
+      meta.relationship = r
+    }
     const buttons = serializeRowButtons(this._buttons)
     if (buttons !== undefined)                 meta.buttons           = buttons
     return meta

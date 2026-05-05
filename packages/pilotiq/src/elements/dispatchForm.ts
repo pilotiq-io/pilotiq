@@ -3,6 +3,7 @@ import { Field, type AfterStateUpdatedContext } from '../fields/Field.js'
 import { RepeaterField, isRepeaterField } from '../fields/RepeaterField.js'
 import type { RepeaterRelationshipConfig } from '../fields/RepeaterField.js'
 import { BuilderField, isBuilderField } from '../fields/BuilderField.js'
+import type { BuilderRelationshipConfig } from '../fields/BuilderField.js'
 import { Form, type FormContext } from './Form.js'
 import { validateSchema, type ValidationErrors } from '../validation/index.js'
 import { resolveSavedNotification, type NotificationMeta } from '../notifications/index.js'
@@ -96,6 +97,10 @@ export async function dispatchFormSubmit<R = unknown>(
   // the create/update/delete diff against the relation AFTER the
   // parent save returns (so we have a parent PK in create mode).
   const relationshipDeferrals = extractRelationshipRepeaters(children as Element[], data)
+  // Same trick for Builders. Heterogeneous-row sibling — each row is a
+  // `{ __id?, type, data }` envelope persisted as a child carrying a
+  // discriminator column + a JSON payload column.
+  const builderRelationshipDeferrals = extractRelationshipBuilders(children as Element[], data)
 
   const mutate = form.getMutateData()
   if (mutate) data = await mutate(data, { ...ctx, values: data })
@@ -120,16 +125,19 @@ export async function dispatchFormSubmit<R = unknown>(
   // Persist the relationship-backed Repeater diffs against the saved
   // parent. Runs BEFORE `afterCreate / afterUpdate` so user hooks can
   // observe the fully-saved tree (parent + children).
-  if (relationshipDeferrals.length > 0) {
+  if (relationshipDeferrals.length > 0 || builderRelationshipDeferrals.length > 0) {
     const parentModel = (ctx as { parentModel?: ModelLike }).parentModel
     if (!parentModel) {
       throw new Error(
-        '[Pilotiq] Repeater.relationship: form has relationship-backed rows but no parentModel on the FormContext. ' +
-        'Routes that submit forms with relationship-backed Repeaters must set ctx.parentModel = R.model.',
+        '[Pilotiq] Repeater/Builder.relationship: form has relationship-backed rows but no parentModel on the FormContext. ' +
+        'Routes that submit forms with relationship-backed Repeaters/Builders must set ctx.parentModel = R.model.',
       )
     }
     for (const deferral of relationshipDeferrals) {
       await persistRelationshipRows(record, deferral, parentModel)
+    }
+    for (const deferral of builderRelationshipDeferrals) {
+      await persistRelationshipBuilderRows(record, deferral, parentModel)
     }
   }
 
@@ -1434,4 +1442,149 @@ export async function loadRelationRows(
   const q = resolveRelatedQuery(parentModel, parent, name)
   const result = await q.paginate(1, 10000)
   return result.data
+}
+
+// ─── Builder.relationship — extraction + persistence ─────────
+
+interface BuilderRelationshipDeferral {
+  field: BuilderField
+  rows:  Array<Record<string, unknown>>
+  cfg:   BuilderRelationshipConfig
+}
+
+/**
+ * Walk the form's top-level Builders and extract values for any that have
+ * a `relationship(...)` config. Same shape + posture as
+ * `extractRelationshipRepeaters`; mutates `data` in place by deleting each
+ * extracted key. Heterogeneous-row sibling — each row is a
+ * `{ __id?, type, data: {…} }` envelope after `coerceBuilderValue`.
+ */
+export function extractRelationshipBuilders(
+  elements: Element[],
+  data:     Record<string, unknown>,
+): BuilderRelationshipDeferral[] {
+  const out: BuilderRelationshipDeferral[] = []
+  walkBuildersTopLevel(elements, builder => {
+    const cfg = builder.getRelationship()
+    if (!cfg) return
+    const value = data[builder.name]
+    delete data[builder.name]
+    if (!Array.isArray(value)) return
+    out.push({
+      field: builder,
+      rows:  value as Array<Record<string, unknown>>,
+      cfg,
+    })
+  })
+  return out
+}
+
+/**
+ * Resolve the child model for a relationship-backed Builder. Mirrors
+ * `resolveChildModelAndFk` from the Repeater path — accepts the user's
+ * override on the field's config or falls back to
+ * `getParentRelationDescriptor`. Throws a clear configuration error when
+ * neither path resolves.
+ */
+function resolveBuilderChildModelAndFk(
+  parentModel: ModelLike,
+  cfg:         BuilderRelationshipConfig,
+): { model: ModelLike; foreignKey: string } {
+  const descriptor = getParentRelationDescriptor(parentModel, cfg.name)
+  const model      = cfg.model ?? descriptor?.model()
+  const foreignKey = cfg.foreignKey ?? descriptor?.foreignKey
+  const type       = descriptor?.type ?? 'hasMany'
+
+  if (!model) {
+    throw new Error(
+      `[Pilotiq] Builder.relationship("${cfg.name}"): could not resolve the child model. ` +
+      `Pass it explicitly via .relationship({ name, model: ChildModel }) or declare ` +
+      `the relation on the parent model's static relations map.`,
+    )
+  }
+  if (!foreignKey) {
+    throw new Error(
+      `[Pilotiq] Builder.relationship("${cfg.name}"): could not resolve the foreign-key column. ` +
+      `Pass it explicitly via .relationship({ name, foreignKey: 'parentId' }) or declare ` +
+      `it on the parent model's static relations map.`,
+    )
+  }
+  if (type !== 'hasMany') {
+    throw new Error(
+      `[Pilotiq] Builder.relationship("${cfg.name}"): only 'hasMany' is supported in v1 (got '${type}'). ` +
+      `belongsToMany / pivot / polymorphic relations are deferred.`,
+    )
+  }
+
+  return { model, foreignKey }
+}
+
+/**
+ * Diff submitted Builder rows against the existing related rows and apply
+ * create / update / delete operations through the child model. Same
+ * identity rules as the Repeater pair — `__id` matches an existing PK →
+ * update, missing → create, existing PK absent from submitted set →
+ * delete. Each row writes its `type` discriminator + JSON `data` payload
+ * to the configured columns.
+ */
+async function persistRelationshipBuilderRows(
+  parent:      unknown,
+  deferral:    BuilderRelationshipDeferral,
+  parentModel: ModelLike,
+): Promise<void> {
+  const { rows, cfg } = deferral
+  const { model, foreignKey } = resolveBuilderChildModelAndFk(parentModel, cfg)
+  const pk          = getPrimaryKey(model)
+  const typeColumn  = cfg.typeColumn ?? 'type'
+  const dataColumn  = cfg.dataColumn ?? 'data'
+  const orderColumn = cfg.orderColumn
+  const parentPk    = (parent as Record<string, unknown> | undefined)?.[getPrimaryKey(parentModel)]
+  if (parentPk === undefined || parentPk === null) {
+    throw new Error(
+      `[Pilotiq] Builder.relationship("${cfg.name}"): parent record has no primary key after save. ` +
+      `Form.save() / handleCreate() must return a record with a primary key set.`,
+    )
+  }
+
+  const existing = await loadRelationRows(parentModel, parent, cfg.name)
+  const existingByPk = new Map<string, Record<string, unknown>>()
+  for (const row of existing) {
+    const key = String((row as Record<string, unknown>)[pk])
+    existingByPk.set(key, row as Record<string, unknown>)
+  }
+
+  const keptPks = new Set<string>()
+
+  for (let idx = 0; idx < rows.length; idx++) {
+    const submitted   = rows[idx] ?? {}
+    const submittedId = typeof submitted['__id'] === 'string' ? submitted['__id'] : undefined
+    const isUpdate    = submittedId !== undefined && existingByPk.has(submittedId)
+
+    const blockType = typeof submitted['type'] === 'string' ? submitted['type'] : ''
+    const blockData = (submitted['data'] && typeof submitted['data'] === 'object')
+      ? submitted['data']
+      : {}
+
+    const payload: Record<string, unknown> = {
+      [typeColumn]: blockType,
+      [dataColumn]: blockData,
+    }
+    if (orderColumn !== undefined) payload[orderColumn] = idx
+
+    if (isUpdate) {
+      // Don't overwrite the FK on update — same defense as the Repeater
+      // path. A tampered client can't re-link a child to a different
+      // parent through this surface.
+      await model.update(submittedId!, payload)
+      keptPks.add(submittedId!)
+    } else {
+      payload[foreignKey] = parentPk
+      await model.create(payload)
+    }
+  }
+
+  for (const [pkVal] of existingByPk) {
+    if (keptPks.has(pkVal)) continue
+    await model.delete(pkVal)
+  }
 }

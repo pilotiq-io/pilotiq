@@ -216,6 +216,120 @@ Same option set as Repeater (`caseInsensitive / ignoreNulls /
 message`) — see the [Repeater guide](./repeater.md) for full
 discussion.
 
+## Relationship-backed rows — `relationship(name)`
+
+By default a `Builder` stores its rows as a JSON column on the parent
+record. The same arguments that drive `Repeater.relationship` apply
+here — independent queryability, partial updates, soft-delete on rows,
+FK references, database-side sort. The Builder sibling behaves
+identically except each row carries a `type` discriminator + a JSON
+`data` payload to preserve the heterogeneous shape.
+
+```ts
+PageResource.form(form) {
+  return form.schema([
+    TextField.make('title').required(),
+
+    Builder.make('content')
+      .relationship('blocks')         // matches Page.relations.blocks
+      .blocks([
+        Block.make('heading').schema([TextField.make('text').required()]),
+        Block.make('paragraph').schema([TextField.make('body').required()]),
+        Block.make('image').schema([
+          TextField.make('url').required(),
+          TextField.make('alt'),
+        ]),
+      ])
+      .reorderable()
+      .orderColumn('sort'),           // optional — writes 0-based index per row
+  ])
+}
+```
+
+The parent declares the relation in the rudder ORM convention; the
+child carries a discriminator column (`type`), a JSON payload column
+(`data`), the FK, and an optional sort column:
+
+```prisma
+model Page {
+  id     Int        @id @default(autoincrement())
+  title  String
+  blocks PageBlock[]
+}
+
+model PageBlock {
+  id     Int    @id @default(autoincrement())
+  pageId Int
+  type   String
+  data   Json
+  sort   Int    @default(0)
+  page   Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+}
+```
+
+```ts
+class Page {
+  static relations = {
+    blocks: { type: 'hasMany', model: () => PageBlock, foreignKey: 'pageId' },
+  }
+}
+```
+
+Object form for explicit overrides (custom column names, ORMs that don't
+follow the discovery convention):
+
+```ts
+Builder.make('content')
+  .relationship({
+    name:        'blocks',
+    model:       PageBlock,           // default = parent.relations[name].model()
+    foreignKey:  'pageId',            // default = parent.relations[name].foreignKey
+    typeColumn:  'kind',              // default 'type'
+    dataColumn:  'payload',           // default 'data'
+    orderColumn: 'sort',
+  })
+```
+
+### Behavior
+
+- **Load.** On edit-mode page load, rows come from
+  `parent.related('blocks')` ordered by `orderColumn` (or PK ascending
+  by default). Each loaded row stamps `__id` (child PK), `type` (block
+  name), and `data` (per-block payload, JSON-parsed if the ORM returns
+  a string). The PK + FK + type/data columns are stripped from the
+  rendered row payload — the JSON envelope is the source of truth.
+- **Save.** The pipeline diffs submitted rows against existing children:
+  `__id` matches an existing PK → update; missing or unmatched → create
+  (with FK stamped); existing PK absent from the submitted set →
+  delete. The FK is **not** rewritten on update — a tampered client
+  can't re-link a child to a different parent through this surface.
+- **Type changes.** A row's `type` may change between submits — the
+  pipeline writes the new `type` + new `data` payload as-is. Inner
+  schema validation runs over the post-change payload, so block
+  switches with a malformed payload still surface inline errors.
+- **`orderColumn`.** When set, every create + update payload stamps
+  the row's 0-based index. Reorder-only saves (drag-and-drop, no
+  content change) flow through update with the new index.
+- **Validation.** Unchanged. Per-row errors (`<field>.<i>.data.<child>`),
+  total `min/maxItems`, per-block-type `Block.maxItems`, and
+  `Field.distinct()` cross-row uniqueness all run BEFORE the relation
+  diff so a failed row never reaches the persistence loop.
+
+### Caveats
+
+- **`hasMany` only.** Same v1 scope as Repeater — `belongsTo`, `hasOne`,
+  `belongsToMany`, polymorphic relations are deferred.
+- **No transaction wrapper.** Partial failure leaves the parent saved.
+  Same posture as Repeater.relationship; follow-up once an
+  ORM-side `transaction(fn)` lands.
+- **Mutually exclusive with `dehydrated(false)`** — the field's whole
+  purpose is to persist data; silently dropping it would be confusing.
+- **`mutateDataBeforeCreate` doesn't see relation rows.** They've been
+  extracted before user-side mutators run. Mutate per-block via inner
+  schema field-level lifecycle if you need it.
+- **Per-block-type model dispatch.** A future revision could let each
+  block point at a different child model. v1 stays single-model.
+
 ## Stale block types
 
 If a previously-used block name is removed from `.blocks([…])`, existing
