@@ -15,6 +15,7 @@ import type { Page } from './Page.js'
 import type { ResourceClass, NavigationBadgeColor } from './Resource.js'
 import type { GlobalClass } from './Global.js'
 import { resourceBasePath, globalBasePath, pageBasePath, clusterBasePath } from './clusterPaths.js'
+import type { ClusterClass } from './Cluster.js'
 import { Element } from './schema/Element.js'
 import { Field } from './fields/Field.js'
 import { resolveSchema, type RenderContext, type SchemaContext } from './schema/resolveSchema.js'
@@ -177,26 +178,22 @@ async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<NavItem
     Promise.all(cfg.clusters.map(C => safeAccess(() => C.canAccess(user)))),
   ])
 
-  // Index clusters by their JS class name (used as the parent key when
-  // a child references one) and by their access bit (gated children
-  // drop without checking their own predicate).
-  const clusterAccessByName = new Map<string, boolean>()
-  cfg.clusters.forEach((C, i) => clusterAccessByName.set(C.name, !!clusterAccess[i]))
+  // Identity-keyed so two clusters that happen to share a `.name`
+  // (minifier collisions, hot-reload duplicate imports) don't clobber.
+  const clusterAccessByClass = new Map<ClusterClass, boolean>()
+  cfg.clusters.forEach((C, i) => clusterAccessByClass.set(C, !!clusterAccess[i]))
 
-  // First pass — walk children, compute access including the cluster's
-  // gate. Track which children effectively land per cluster so the
-  // cluster's own URL can deep-link to the first accessible one.
-  const firstChildUrlByCluster = new Map<string, string>()
-  const recordChildUrl = (clusterName: string, url: string) => {
-    if (!firstChildUrlByCluster.has(clusterName)) firstChildUrlByCluster.set(clusterName, url)
+  const firstChildUrlByCluster = new Map<ClusterClass, string>()
+  const recordChildUrl = (cluster: ClusterClass, url: string) => {
+    if (!firstChildUrlByCluster.has(cluster)) firstChildUrlByCluster.set(cluster, url)
   }
 
   for (let i = 0; i < cfg.resources.length; i++) {
     const R = cfg.resources[i]!
     if (!resourceAccess[i]) continue
-    if (R.cluster && !clusterAccessByName.get(R.cluster.name)) continue
+    if (R.cluster && !clusterAccessByClass.get(R.cluster)) continue
     const url = resourceBasePath(base, R)
-    if (R.cluster) recordChildUrl(R.cluster.name, url)
+    if (R.cluster) recordChildUrl(R.cluster, url)
     const item: RawNavItem = {
       name:  R.name,
       label: R.getNavigationLabel(),
@@ -218,12 +215,12 @@ async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<NavItem
   for (let i = 0; i < cfg.globals.length; i++) {
     if (!globalAccess[i]) continue
     const G = cfg.globals[i]!
-    if (G.cluster && !clusterAccessByName.get(G.cluster.name)) continue
+    if (G.cluster && !clusterAccessByClass.get(G.cluster)) continue
     // Globals default `navigationGroup` to `'Settings'`. Allow `null` as
     // an explicit opt-out → render at top level.
     const group = G.navigationGroup === null ? undefined : G.navigationGroup
     const url = globalBasePath(base, G)
-    if (G.cluster) recordChildUrl(G.cluster.name, url)
+    if (G.cluster) recordChildUrl(G.cluster, url)
     const item: RawNavItem = {
       name:  G.name,
       label: G.getNavigationLabel(),
@@ -243,14 +240,14 @@ async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<NavItem
   for (let i = 0; i < cfg.pages.length; i++) {
     if (!pageAccess[i]) continue
     const P = cfg.pages[i]!
-    if (P.cluster && !clusterAccessByName.get(P.cluster.name)) continue
-    // Plan #15 — the dashboard page collapses its nav URL to `${base}`
-    // so the sidebar entry deep-links to the panel root rather than
+    if (P.cluster && !clusterAccessByClass.get(P.cluster)) continue
+    // The dashboard page collapses its nav URL to `${base}` so the
+    // sidebar entry deep-links to the panel root rather than
     // `${base}/${P.getSlug()}` (which would 404 — the slug route skips
     // the dashboard page at boot).
     const isDashboard = cfg.dashboardPage === P
     const url = isDashboard ? base : pageBasePath(base, P)
-    if (P.cluster && !isDashboard) recordChildUrl(P.cluster.name, url)
+    if (P.cluster && !isDashboard) recordChildUrl(P.cluster, url)
     const item: RawNavItem = {
       name:  P.name,
       label: P.getNavigationLabel(),
@@ -281,7 +278,7 @@ async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<NavItem
         url = cfg.dashboardPage === C.landingPage ? base : pageBasePath(base, C.landingPage)
       }
     }
-    if (url === undefined) url = firstChildUrlByCluster.get(C.name)
+    if (url === undefined) url = firstChildUrlByCluster.get(C)
     if (url === undefined) continue   // empty cluster — drop entirely
     const item: RawNavItem = {
       name:  C.name,
@@ -428,15 +425,9 @@ export function tagTableReorderUrls(
   }
 }
 
-/**
- * Tier-3 — mark every table on the page as deferred and stamp the
- * `_table` JSON endpoint URL the renderer will fetch from after mount.
- * Called by `resourceIndexData` when `Resource.deferLoading = true`,
- * BEFORE `loadTableRecords` runs so the records handler short-circuits.
- * The `_table` endpoint then re-runs the same data builder with the
- * flag clear, so the JSON response carries everything a non-deferred
- * render would have.
- */
+// Marks every Table on the page deferred and stamps the URL the
+// renderer will fetch from after mount. Must run BEFORE `loadTableRecords`
+// so the records handler short-circuits.
 export function tagTableDeferred(
   elements: ReadonlyArray<Element>,
   url:      string,
@@ -1046,9 +1037,6 @@ export async function resourceIndexData(
   // for the active tab and splices its `modifyQuery` predicate into the
   // ORM chain alongside filters.
   await resolveActiveTab(elements, query, indexUrl)
-  // Tier-3 — `Resource.deferLoading` flips every Table on the page into
-  // skeleton-on-first-paint mode. Marker + URL stamping happens BEFORE
-  // `loadTableRecords` so the records handler short-circuits.
   if (R.deferLoading) tagTableDeferred(elements, `${indexUrl}/_table`)
   await loadTableRecords(elements, query, indexUrl, user, {
     canEdit: (u, record) => R.canEdit(u, record),
@@ -1071,20 +1059,10 @@ export async function resourceIndexData(
   }
 }
 
-/**
- * Tier-3 deferred-load JSON endpoint payload — `GET {base}/{slug}/_table`
- * re-runs the resource list page's data builder with the deferred flag
- * cleared, walks the resolved schema for every `TableMeta`, and returns
- * them as a flat array. Order matches schema order so the renderer can
- * pair them up by index when a page somehow declares multiple tables
- * (singletons are the common case). Server-data widget resolution and
- * page-level chrome (panel nav, resource header, page meta) are skipped
- * — those are already painted from the SSR pass and have their own
- * polling endpoint.
- *
- * Returns `null` when the resource isn't registered or has no index
- * page (route handler 404s in that case).
- */
+// Deferred-load JSON endpoint payload — `GET {base}/{slug}/_table`
+// re-runs the list-page builder without the deferred flag, then returns
+// every resolved `TableMeta` as a flat array. Returns null on missing
+// resource / index page (route 404s).
 export async function resourceTableData(
   pilotiq: Pilotiq,
   slug:    string,
@@ -1105,10 +1083,6 @@ export async function resourceTableData(
   const elements = await callPageSchema(PageClass, ctx)
   tagActionDispatch(elements, indexUrl)
   await resolveActiveTab(elements, query, indexUrl)
-  // No `tagTableDeferred` call — this endpoint is the deferred fetch
-  // target, so records MUST load. `loadTableRecords` runs the full
-  // pipeline; per-row formatters / record-url stamping / summaries
-  // all match what the SSR pass would have produced.
   await loadTableRecords(elements, query, indexUrl, user, {
     canEdit: (u, record) => R.canEdit(u, record),
   })
@@ -1120,12 +1094,6 @@ export async function resourceTableData(
   return { tables }
 }
 
-/**
- * Recursively walk a resolved schemaData tree and collect every
- * `TableMeta` (anything where `meta.type === 'table'`). Used by
- * `resourceTableData` to project just the table portion of a list
- * page's resolved schema for the deferred-load JSON endpoint.
- */
 function collectTableMetas(
   metas: ReadonlyArray<Record<string, unknown>>,
 ): Record<string, unknown>[] {

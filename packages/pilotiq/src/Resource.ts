@@ -8,6 +8,7 @@ import { defaultPages } from './defaultPages.js'
 import type { RelationManager } from './RelationManager.js'
 import type { SchemaContext } from './schema/resolveSchema.js'
 import type { ClusterClass } from './Cluster.js'
+import { resourceBasePath } from './clusterPaths.js'
 
 /** Map of resource page roles to Page subclasses. */
 export interface ResourcePages {
@@ -175,37 +176,15 @@ export abstract class Resource {
    * matches rudder's `'deletedAt'`. */
   static deletedAtColumn: string = 'deletedAt'
 
-  // ─── Filter persistence (Tier-3) ───────────────────────────
-  // Opt-in: when true, the GET list handler stashes the URL filter
-  // slice on `req.session` after every visit and redirects bare
-  // visits (no query params at all) back to the last-applied state.
-  // Storage is per `(basePath, slug)` — `tab` is not part of the
-  // key in v1, so different tabs of the same resource share one
-  // filter slot. `page` is also excluded from persistence so users
-  // always land on page 1 after a restore. Helpers live in
-  // `src/sessionFilters.ts`; routing wires them up in `routes.ts`.
-
-  /** Persist the active list filters / search / sort on the user's
-   *  session so revisiting the resource from the sidebar lands back
-   *  on the same view. Default `false`. No-ops silently when
-   *  `@rudderjs/session` isn't installed on the host app. */
+  /** Persist the active list filter / search / sort slice on the
+   *  user's session so revisiting the resource lands on the same view.
+   *  No-ops silently when `@rudderjs/session` isn't mounted. */
   static persistFiltersInSession: boolean = false
 
-  // ─── Defer loading (Tier-3) ────────────────────────────────
-  // Opt-in: when true, list-page renders skip `Table.records()` on the
-  // SSR pass and stamp `meta.deferred = true` + `meta.tableUrl` on each
-  // Table in the page. The renderer paints a skeleton on first frame
-  // and fetches the actual rows from `GET {base}/{slug}/_table` after
-  // mount, scoped to the current URL query (filters / search / sort /
-  // page / group). Useful when `Table.records()` is slow enough that
-  // an initial blocking paint feels broken.
-
   /** Skip server-side row loading on list pages; the client paints a
-   *  skeleton on first frame and fetches rows asynchronously from
-   *  `GET {base}/{slug}/_table`. Default `false`. URL chrome (filter
-   *  pills, current search, pagination shell, active group) still
-   *  mirrors on the SSR pass so the skeleton frame doesn't reset
-   *  user-visible state. */
+   *  skeleton and fetches rows from `GET {base}/{slug}/_table` after
+   *  mount. URL chrome (filters / search / page / group) still mirrors
+   *  on the SSR pass so the skeleton frame doesn't reset visible state. */
   static deferLoading: boolean = false
 
   // ─── Plan #12: global search ───────────────────────────────
@@ -276,8 +255,7 @@ export abstract class Resource {
    */
   static getGlobalSearchResultUrl(record: unknown, base: string): string {
     const r = record as Record<string, unknown> | null | undefined
-    const slug = this.getSlug()
-    const prefix = this.cluster ? `${base}/${this.cluster.getSlug()}/${slug}` : `${base}/${slug}`
+    const prefix = resourceBasePath(base, this)
     if (!r) return prefix
     const id = r['id']
     if (id === undefined || id === null) return prefix

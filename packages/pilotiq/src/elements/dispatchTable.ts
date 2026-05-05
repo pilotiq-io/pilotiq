@@ -20,29 +20,12 @@ export interface QueryParams {
   [key: string]: unknown
 }
 
-/** Reserved query keys consumed by the framework — anything else is a filter.
- * Listed bare; `prefixedReservedKeys(prefix)` derives the namespaced set
- * when a `Table.queryStringIdentifier(...)` is in play. */
 const RESERVED_QUERY_KEYS = new Set(['search', 'sort', 'page', 'perPage', 'group'])
 
-/**
- * Build the prefixed key a `Table.queryStringIdentifier(prefix)` reads /
- * writes for `key`. Empty / undefined prefix returns the bare key (the
- * default — resource-list tables don't namespace).
- *
- * Convention: `${prefix}_${key}` (underscore separator). Identifiers are
- * validated against `[A-Za-z0-9_-]+` upstream so the join can't accidentally
- * collide with another key.
- */
 export function prefixedKey(prefix: string | undefined, key: string): string {
   return prefix === undefined || prefix === '' ? key : `${prefix}_${key}`
 }
 
-/**
- * Reserved-key set scoped to a single table. With no prefix, it's the
- * bare framework set; with a prefix, it's the namespaced equivalents so
- * the filter walker can drop them by exact match.
- */
 function prefixedReservedKeys(prefix: string | undefined): Set<string> {
   if (prefix === undefined || prefix === '') return RESERVED_QUERY_KEYS
   return new Set([...RESERVED_QUERY_KEYS].map(k => `${prefix}_${k}`))
@@ -65,16 +48,6 @@ export interface LoadTableHooks {
   ) => boolean | Promise<boolean>
 }
 
-/**
- * Pull filter values out of a flat query-string record. A key matches a
- * filter when its name is registered on the table and the value is a
- * non-empty string. Unknown / empty / reserved keys are dropped.
- *
- * `prefix` (Tier-3) namespaces both the reserved-key skip set and the
- * filter-name match — `?orders_status=open` reads `'status'` for the
- * `orders` table when `prefix='orders'`. With no prefix the bare keys
- * apply (default).
- */
 export function parseFilterValues(
   query:   QueryParams,
   filters: ReadonlyArray<Filter>,
@@ -103,16 +76,6 @@ export function parseFilterValues(
   return out
 }
 
-/**
- * Parse the URL `?sort=col[:asc|:desc]&search=&page=&perPage=` query string
- * into a normalized `TableContext` payload. Unknown / malformed values
- * round to the nearest sane default — pagination floors to 1, perPage
- * to a positive integer when present. Whitespace is trimmed.
- *
- * `prefix` (Tier-3) reads the namespaced keys instead — `orders_search /
- * orders_sort / orders_page / orders_perPage` for `prefix='orders'`. With
- * no prefix the bare framework keys are read (the default).
- */
 export function parseTableQuery(q: QueryParams = {}, prefix?: string): {
   search:  string | undefined
   sort:    { column: string; direction: SortDirection } | undefined
@@ -226,10 +189,6 @@ export async function loadTableRecords(
   if (tables.length === 0) return
 
   await Promise.all(tables.map(async (table) => {
-    // Tier-3 — when the table opts into `queryStringIdentifier(...)`, all
-    // of its URL state lives under `${prefix}_<key>` (search / sort / page
-    // / perPage / group / filter values). Bare keys still apply for the
-    // common case of one Table per page.
     const prefix = table.getQueryStringIdentifier()
     const { search, sort, page, perPage } = parseTableQuery(query, prefix)
 
@@ -278,14 +237,9 @@ export async function loadTableRecords(
     const ctxFn = activeTab?.getContextFn()
     const finalCtx = ctxFn ? ctxFn(ctx) : ctx
 
-    // Tier-3 — when `Resource.deferLoading = true` the SSR pass marks
-    // the table deferred and the client fetches rows from `tableUrl`
-    // after mount. Skip the records handler + per-row work here; URL
-    // state still mirrors at the bottom of the iteration so the
-    // skeleton frame's chrome (current sort / search / page) is
-    // accurate. The `_table` JSON endpoint reuses this same function
-    // with the deferred flag clear, so the response carries everything
-    // a non-deferred render would have.
+    // Skip records + per-row work when the table is deferred (the client
+    // refetches via `tableUrl`); URL state still mirrors below so the
+    // skeleton frame keeps current sort / search / page accurate.
     const handler = table.getRecords()
     if (handler && !table.isDeferred()) {
       const result = await handler(finalCtx)

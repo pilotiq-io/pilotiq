@@ -3,19 +3,9 @@ import type { NavigationBadgeColor, NavigationBadgeHandler } from './Resource.js
 import type { Page } from './Page.js'
 
 /**
- * A `Cluster` is a Filament-style logical container that groups Resources,
- * Globals, and custom Pages under a shared URL prefix and a single sidebar
- * entry.
- *
- * Resources / Globals / Pages opt in via `static cluster: typeof MyCluster`.
- * URLs gain the cluster slug as a prefix (e.g. `/admin/products/categories`
- * instead of `/admin/categories`). The cluster itself appears as one entry
- * in the sidebar; clicking it deep-links to the first accessible child
- * (or to `static landingPage` when set).
- *
- * Children stay reachable in the nav — typically nested under the cluster
- * entry (`buildNavigation` parents them by class name) — but the cluster
- * is the navigable identity for the group.
+ * URL-prefix container that groups Resources, Globals, and custom Pages
+ * under a shared slug and a single sidebar entry. Children opt in via
+ * `static cluster = MyCluster`.
  */
 export abstract class Cluster {
   /** Human-readable label for the cluster nav entry, e.g. `'Content'`. */

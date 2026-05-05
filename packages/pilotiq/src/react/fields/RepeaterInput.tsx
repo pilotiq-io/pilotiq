@@ -204,13 +204,6 @@ export function RepeaterInput({
     [],
   )
   const [rows, setRows] = useState<RowState[]>(initialRows)
-  // Reactive `itemHidden / itemCanDelete / itemCanClone / itemCanReorder`:
-  // local row state owns identity / order / count (so client adds, deletes
-  // and reorders survive), but the four gate flags are re-resolved by the
-  // server on every `live()` POST. Sync them by row id whenever a fresh
-  // `meta.rows` arrives — `setRows` is a no-op when nothing changed
-  // (helper returns the same reference) so idempotent server responses
-  // don't trigger a render cascade.
   const metaRows = meta.rows
   useEffect(() => {
     if (!metaRows) return

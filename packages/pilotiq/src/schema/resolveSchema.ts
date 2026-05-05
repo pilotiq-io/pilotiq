@@ -8,7 +8,6 @@ import {
 } from '../fields/RepeaterField.js'
 import {
   BuilderField,
-  type BuilderItemHiddenRule,
   type BuilderRowMeta,
 } from '../fields/BuilderField.js'
 import type { BlockMeta } from './Block.js'
@@ -364,7 +363,7 @@ async function resolveRepeaterRows(
       || canReorderFn !== undefined
     const layoutCtx = needsLayoutCtx ? buildLayoutContext(rowCtx) : undefined
     if (hiddenFn !== undefined && layoutCtx !== undefined) {
-      const hidden = await evalItemHidden(hiddenFn, layoutCtx, field.name)
+      const hidden = await evalItemHidden(hiddenFn, layoutCtx, `Repeater "${field.name}"`)
       if (hidden) row.hidden = true
     }
     if (canDeleteFn !== undefined && layoutCtx !== undefined) {
@@ -460,24 +459,19 @@ function coerceSimpleRowValues(raw: unknown, innerName: string): Record<string, 
   return { [innerName]: raw }
 }
 
-/**
- * Evaluate `Repeater.itemHidden(rule)` against a row's `LayoutContext`.
- *
- * Fail-closed-as-visible: when the predicate throws, the row stays visible
- * and we log a warning. This is the inverse of `Element.evaluateVisibility`
- * (which fails-closed-as-hidden) — a misbehaving `itemHidden` should never
- * silently hide data the user is editing.
- */
+// Fail-closed-as-visible: a throwing predicate keeps the row visible —
+// inverse of `Element.evaluateVisibility` because silently hiding data the
+// user is editing is the worse failure mode.
 async function evalItemHidden(
-  rule:      RepeaterItemHiddenRule,
-  ctx:       LayoutContext,
-  fieldName: string,
+  rule:    RepeaterItemHiddenRule,
+  ctx:     LayoutContext,
+  ownerId: string,
 ): Promise<boolean> {
   if (typeof rule === 'boolean') return rule
   try {
     return Boolean(await rule(ctx))
   } catch (err) {
-    console.warn(`[pilotiq] itemHidden() on Repeater "${fieldName}" threw:`, err)
+    console.warn(`[pilotiq] itemHidden() on ${ownerId} threw:`, err)
     return false
   }
 }
@@ -589,7 +583,7 @@ async function resolveBuilderRows(
       || canReorderFn !== undefined
     const layoutCtx = needsLayoutCtx ? buildLayoutContext(rowCtx) : undefined
     if (hiddenFn !== undefined && layoutCtx !== undefined) {
-      const hidden = await evalBuilderItemHidden(hiddenFn, layoutCtx, field.name)
+      const hidden = await evalItemHidden(hiddenFn, layoutCtx, `Builder "${field.name}"`)
       if (hidden) row.hidden = true
     }
     if (canDeleteFn !== undefined && layoutCtx !== undefined) {
@@ -675,20 +669,6 @@ function coerceBuilderRow(raw: unknown): BuilderRowEntry {
 function readBuilderRowId(row: BuilderRowEntry, fieldName: string, index: number): string {
   if (typeof row.__id === 'string' && row.__id.length > 0) return row.__id
   return `${fieldName}-${index}`
-}
-
-async function evalBuilderItemHidden(
-  rule:      BuilderItemHiddenRule,
-  ctx:       LayoutContext,
-  fieldName: string,
-): Promise<boolean> {
-  if (typeof rule === 'boolean') return rule
-  try {
-    return Boolean(await rule(ctx))
-  } catch (err) {
-    console.warn(`[pilotiq] itemHidden() on Builder "${fieldName}" threw:`, err)
-    return false
-  }
 }
 
 /**

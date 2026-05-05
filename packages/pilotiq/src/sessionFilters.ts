@@ -1,45 +1,14 @@
-/**
- * Resource-list filter persistence — stash the active URL filter slice on
- * the user's session so revisiting `/admin/<slug>` from the sidebar lands
- * back on the same filtered view they last had open.
- *
- * Opt-in per resource via `Resource.persistFiltersInSession = true`. Sits
- * on top of `@rudderjs/session`'s built-in key/value store via the same
- * duck-typed bridge as `notifications/flash.ts` — pilotiq doesn't peer
- * depend on `@rudderjs/session`; helpers no-op silently when no session is
- * mounted on the request.
- *
- * Design notes:
- *
- * - Storage is per `(basePath, slug)`; `tab` is intentionally not part of
- *   the key (v1 limitation — all tabs of a resource share one slot). Add
- *   per-tab keying when a consumer asks.
- *
- * - `page` and `tab` URL params are skipped on write — pagination resets
- *   to 1 on every restore, and tab has its own URL semantics. Everything
- *   else (filter values, `group`, `search`, `sort`, `perPage`) round-trips
- *   verbatim so unknown future filter names work without changes here.
- *
- * - Empty-string values are preserved on write (they encode "user
- *   explicitly cleared this filter") but stripped on restore (an empty
- *   filter contributes nothing to the redirect URL).
- *
- * - "Bare visit" detection lives in the route layer (`Object.keys(query)
- *   .length === 0`) so this module stays a pure session adapter — easier
- *   to unit-test in isolation.
- */
+// Duck-typed adapter over `@rudderjs/session` — pilotiq doesn't peer
+// depend, so helpers no-op silently when no session is mounted on the
+// request.
 
 const PREFIX = 'pilotiq:filters:'
 
-/** URL params NOT persisted — pagination resets on restore, tab has its
- *  own state slot. */
 const EXCLUDED_KEYS = new Set(['page', 'tab'])
 
-/** Drop URL keys that are pagination-shaped — bare `page` and any
- *  `<prefix>_page` from a `Table.queryStringIdentifier(prefix)` (Tier-3).
- *  Heuristic: a filter literally named `something_page` would also be
- *  dropped, but that's an unusual filter name and the alternative
- *  (resolving the schema before persist runs) buys nothing in practice. */
+// Heuristic also catches `<prefix>_page` from `Table.queryStringIdentifier`.
+// A filter literally named `something_page` would be dropped too, but
+// that's an unusual filter name.
 function isPageKey(key: string): boolean {
   if (key === 'page') return true
   return key.endsWith('_page')
@@ -50,12 +19,6 @@ interface StorableSession {
   put(key: string, value: unknown): void
 }
 
-/**
- * Pull a `StorableSession` off any request-like object. Mirrors the
- * duck-typing in `notifications/flash.ts` — `AppRequest` doesn't declare
- * `session` so pilotiq compiles against unaugmented `AppRequest` and
- * still finds a real `SessionInstance` when one's mounted.
- */
 function getSession(req: unknown): StorableSession | undefined {
   if (!req || typeof req !== 'object') return undefined
   const session = (req as { session?: unknown }).session
@@ -65,14 +28,10 @@ function getSession(req: unknown): StorableSession | undefined {
   return session as StorableSession
 }
 
-/** Session-storage key for a given list page. */
 export function listFiltersKey(basePath: string, slug: string): string {
   return `${PREFIX}${basePath}:${slug}`
 }
 
-/** Read the persisted query slice. Returns `undefined` when no session is
- *  mounted, no entry exists, or the entry shape is unexpected (corrupted
- *  cookie / driver returned wrong type). */
 export function readPersistedListQuery(
   req: unknown,
   key: string,
@@ -90,10 +49,6 @@ export function readPersistedListQuery(
   return out
 }
 
-/** Stash the filter-relevant slice of the current URL query on the session.
- *  Excludes `page` / `tab`; preserves empty strings (explicit clear).
- *  No-ops when the value would be deep-equal to what's already stored —
- *  saves a `Set-Cookie` round-trip on no-op revisits. */
 export function writePersistedListQuery(
   req: unknown,
   key: string,
@@ -113,9 +68,6 @@ export function writePersistedListQuery(
   session.put(key, slice)
 }
 
-/** Build a query string from a persisted slice. Empty values are dropped
- *  (they were retained on write to mark explicit-clear, but contribute
- *  nothing to a restore URL). Returns `''` when nothing is restorable. */
 export function encodePersistedQuery(slice: Record<string, string>): string {
   const params = new URLSearchParams()
   for (const [k, v] of Object.entries(slice)) {

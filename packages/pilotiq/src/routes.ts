@@ -44,6 +44,7 @@ import { HUE_NAMES } from './theme/colors.js'
 import { migrateThemeOverrides } from './theme/migrate.js'
 import { radiusMap } from './theme/radius.js'
 import { resourceBasePath, globalBasePath, pageBasePath } from './clusterPaths.js'
+import type { ClusterClass } from './Cluster.js'
 
 /** True when the client wants a JSON response (modal-form action submitting
  * via fetch), false for a browser-style form post that wants a 303 redirect.
@@ -154,26 +155,6 @@ async function checkPolicy(fn: () => boolean | Promise<boolean>): Promise<boolea
   try { return Boolean(await fn()) } catch { return false }
 }
 
-/**
- * Cluster-level auth gate. When a resource / global / page lives inside
- * a cluster, the cluster's `canAccess(user)` runs alongside the child's
- * own predicates — both must pass. Throwing → fail closed. Items
- * without a cluster always pass.
- */
-async function checkClusterAccess(
-  owner: { cluster?: { canAccess: (user: unknown) => boolean | Promise<boolean> } },
-  user:  unknown,
-): Promise<boolean> {
-  if (!owner.cluster) return true
-  return checkPolicy(() => owner.cluster!.canAccess(user))
-}
-
-/**
- * Owner-level access gate that AND's the cluster's `canAccess` (when the
- * owner is inside a cluster) with the owner's own `canAccess`. Use this
- * as the first gate on every Resource / Global / Page route — clusters
- * compose: a child's predicate never runs when the cluster denies.
- */
 async function policyAccess(
   owner: {
     canAccess: (user: unknown) => boolean | Promise<boolean>
@@ -181,8 +162,13 @@ async function policyAccess(
   },
   user: unknown,
 ): Promise<boolean> {
-  if (!await checkClusterAccess(owner, user)) return false
-  return checkPolicy(() => owner.canAccess(user))
+  const [ownerOk, clusterOk] = await Promise.all([
+    checkPolicy(() => owner.canAccess(user)),
+    owner.cluster
+      ? checkPolicy(() => owner.cluster!.canAccess(user))
+      : Promise.resolve(true),
+  ])
+  return ownerOk && clusterOk
 }
 
 /**
@@ -514,37 +500,27 @@ export function registerPilotiqRoutes(
   const cfg = pilotiq.getConfig()
   const base = cfg.path
 
-  // Clusters — fail fast at boot. A silent 404 or shadow-routing at
-  // request time is much harder to debug than a clear boot error.
-  // Dangling-reference checks run even when `cfg.clusters` is empty —
-  // a child that names an unregistered cluster is broken regardless.
-  for (const R of cfg.resources) {
-    if (R.cluster === undefined) continue
-    if (!cfg.clusters.includes(R.cluster)) {
-      throw new Error(
-        `[Pilotiq] Resource ${R.name} references cluster ${R.cluster.name} which is not registered. ` +
-        `Add it to Pilotiq.clusters([…]).`,
-      )
+  // Fail fast at boot — a silent 404 at request time is much harder to
+  // debug than a clear error here. Dangling-reference checks run even
+  // when `cfg.clusters` is empty.
+  const clusterSet = new Set(cfg.clusters)
+  const assertClusterRegistered = (
+    kind:  'Resource' | 'Global' | 'Page',
+    items: Array<{ name: string; cluster?: ClusterClass }>,
+  ): void => {
+    for (const item of items) {
+      if (item.cluster === undefined) continue
+      if (!clusterSet.has(item.cluster)) {
+        throw new Error(
+          `[Pilotiq] ${kind} ${item.name} references cluster ${item.cluster.name} which is not registered. ` +
+          `Add it to Pilotiq.clusters([…]).`,
+        )
+      }
     }
   }
-  for (const G of cfg.globals) {
-    if (G.cluster === undefined) continue
-    if (!cfg.clusters.includes(G.cluster)) {
-      throw new Error(
-        `[Pilotiq] Global ${G.name} references cluster ${G.cluster.name} which is not registered. ` +
-        `Add it to Pilotiq.clusters([…]).`,
-      )
-    }
-  }
-  for (const P of cfg.pages) {
-    if (P.cluster === undefined) continue
-    if (!cfg.clusters.includes(P.cluster)) {
-      throw new Error(
-        `[Pilotiq] Page ${P.name} references cluster ${P.cluster.name} which is not registered. ` +
-        `Add it to Pilotiq.clusters([…]).`,
-      )
-    }
-  }
+  assertClusterRegistered('Resource', cfg.resources)
+  assertClusterRegistered('Global',   cfg.globals)
+  assertClusterRegistered('Page',     cfg.pages)
 
   if (cfg.clusters.length > 0) {
     const seenClusterSlug = new Set<string>()
@@ -564,33 +540,27 @@ export function registerPilotiqRoutes(
       seenClusterSlug.add(s)
     }
     // Top-level (no cluster) child slugs must not collide with cluster
-    // slugs — the URL `<panel-base>/<slug>` would resolve to the
-    // cluster first under the cluster-aware findByPath.
-    for (const R of cfg.resources) {
-      if (R.cluster) continue
-      if (seenClusterSlug.has(R.getSlug())) {
-        throw new Error(
-          `[Pilotiq] Resource ${R.name} slug "${R.getSlug()}" collides with a registered cluster slug. ` +
-          `Either rename the resource or move it inside the cluster.`,
-        )
+    // slugs — `<panel-base>/<slug>` would resolve to the cluster first.
+    const assertNoSlugCollision = <T extends { name: string; cluster?: ClusterClass; getSlug(): string }>(
+      kind:  'Resource' | 'Global' | 'Page',
+      items: T[],
+      skip?: (item: T) => boolean,
+    ): void => {
+      for (const item of items) {
+        if (item.cluster || (skip?.(item) ?? false)) continue
+        if (seenClusterSlug.has(item.getSlug())) {
+          const hint = kind === 'Resource'
+            ? ` Either rename the resource or move it inside the cluster.`
+            : ''
+          throw new Error(
+            `[Pilotiq] ${kind} ${item.name} slug "${item.getSlug()}" collides with a registered cluster slug.${hint}`,
+          )
+        }
       }
     }
-    for (const G of cfg.globals) {
-      if (G.cluster) continue
-      if (seenClusterSlug.has(G.getSlug())) {
-        throw new Error(
-          `[Pilotiq] Global ${G.name} slug "${G.getSlug()}" collides with a registered cluster slug.`,
-        )
-      }
-    }
-    for (const P of cfg.pages) {
-      if (P.cluster || P === cfg.dashboardPage) continue
-      if (seenClusterSlug.has(P.getSlug())) {
-        throw new Error(
-          `[Pilotiq] Page ${P.name} slug "${P.getSlug()}" collides with a registered cluster slug.`,
-        )
-      }
-    }
+    assertNoSlugCollision('Resource', cfg.resources)
+    assertNoSlugCollision('Global',   cfg.globals)
+    assertNoSlugCollision('Page',     cfg.pages, P => P === cfg.dashboardPage)
     // landingPage sanity — a cluster's landing page must be inside the
     // cluster (or the redirect would jump out of the cluster URL space).
     for (const C of cfg.clusters) {
@@ -729,14 +699,9 @@ export function registerPilotiqRoutes(
         if (!await policyAccess(R, user))  return forbidden(res, wantsJson(req))
         if (!await checkPolicy(() => R.canViewAny(user))) return forbidden(res, wantsJson(req))
 
-        // Tier-3 filter persistence — when the resource opts in,
-        // bare visits (no query params at all) restore the last-known
-        // filter slice; non-bare visits write the current slice back
-        // to the session for the next time. No-ops silently when
-        // `@rudderjs/session` isn't installed on the host.
         if (R.persistFiltersInSession) {
           const query = (req.query as Record<string, unknown> | undefined) ?? {}
-          const sessionSlug = R.cluster ? `${R.cluster.getSlug()}/${slug}` : slug
+          const sessionSlug = resourceBase.slice(base.length + 1)
           const key   = listFiltersKey(base, sessionSlug)
           if (Object.keys(query).length === 0) {
             const stored = readPersistedListQuery(req, key)
@@ -753,11 +718,6 @@ export function registerPilotiqRoutes(
         return view('pilotiq.slug', data ?? {})
       })
 
-      // Plan #15 — resource-scope widget polling. Re-resolves the list
-      // page schema (so widgets from `Resource.headerSchema()` /
-      // `footerSchema()` are reachable), runs `R.canAccess + R.canViewAny`
-      // in front of the per-widget `evaluateVisibility` check, then
-      // returns the resolved payload. Body: `{ filter? }`.
       router.post(`${indexUrl}/_widget/:id`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
         if (!await policyAccess(R, user))  return forbidden(res, true)
@@ -765,14 +725,6 @@ export function registerPilotiqRoutes(
         return handleWidgetData(req, res, pilotiq, { kind: 'resource', slug }, req.params['id']!)
       })
 
-      // Tier-3 — `Resource.deferLoading` JSON endpoint. Re-runs the
-      // list-page data builder with the deferred flag clear so the
-      // records handler actually loads, then returns every resolved
-      // `TableMeta` flat. The renderer fetches this on mount when
-      // `meta.deferred + meta.tableUrl` are stamped on the SSR Table.
-      // Same auth gates as the GET list page; query string mirrors the
-      // page's URL so filter / sort / page / search / group state all
-      // round-trip into the response.
       if (R.deferLoading) {
         router.get(`${indexUrl}/_table`, async (req, res) => {
           const user = await pilotiq.resolveUser(req)

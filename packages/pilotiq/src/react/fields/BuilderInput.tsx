@@ -167,10 +167,6 @@ export function BuilderInput({
     [],
   )
   const [rows, setRows] = useState<RowState[]>(initialRows)
-  // Reactive `itemHidden / itemCanDelete / itemCanClone / itemCanReorder`:
-  // mirrors the sync wired into `RepeaterInput`. Local rows own identity /
-  // order / count; the server re-evaluates the four gate flags on every
-  // `live()` POST and we apply the deltas by row id.
   const metaRows = meta.rows
   useEffect(() => {
     if (!metaRows) return

@@ -1,24 +1,8 @@
-/**
- * Sync per-row gate flags (`hidden / canDelete / canClone / canReorder`)
- * from server-resolved row meta into the client's local row-state list.
- *
- * Match by `id` — the server resolves whatever rows the client posted up
- * during a `live()` re-resolve, so row IDs in `fresh` correspond 1:1 to
- * rows in `prev` (any row missing from `fresh` is left untouched, which
- * covers the "client added a row faster than the server response could
- * arrive" race).
- *
- * Preserves every other field on the row (`children, itemLabel,
- * extraActions, type, unknownType`) so locally-mounted uncontrolled inputs
- * don't unmount and lose typed-but-unsubmitted values. The four sync'd
- * fields are pure presentation chrome — toggling them never re-renders an
- * inner field.
- *
- * Returns `prev` reference unchanged when no flag differs across all rows
- * — the `useEffect` caller in `RepeaterInput / BuilderInput` short-circuits
- * `setRows` so we don't trigger a render cascade on idempotent server
- * responses.
- */
+// Match by `id`: rows in `fresh` come from server re-resolve of whatever
+// rows the client posted, so any row missing from `fresh` (a client-added
+// row that arrived after the live() request fired) is left untouched.
+// Returns `prev` reference unchanged when no flag differs — caller's
+// `setRows` then no-ops, avoiding a render cascade on idempotent responses.
 export interface RowGateMeta {
   id:          string
   hidden?:     boolean

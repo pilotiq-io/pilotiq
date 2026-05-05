@@ -1,4 +1,4 @@
-import { type ElementMeta, type LayoutContext } from '../schema/Element.js'
+import { type ElementMeta } from '../schema/Element.js'
 import { Block, type BlockMeta } from '../schema/Block.js'
 import { Field, type FieldMeta } from './Field.js'
 import type { RenderContext } from '../schema/resolveSchema.js'
@@ -14,6 +14,7 @@ import {
   normalizeGridConfig,
   type RepeaterGridConfig,
   type RepeaterItemCanRule,
+  type RepeaterItemHiddenRule,
 } from './RepeaterField.js'
 
 /**
@@ -86,16 +87,8 @@ export type BuilderItemLabel = (
  * Throwing → row stays visible (fail-closed-as-visible — same posture as
  * Repeater).
  */
-export type BuilderItemHiddenRule =
-  | boolean
-  | ((ctx: LayoutContext) => boolean | Promise<boolean>)
+export type BuilderItemHiddenRule = RepeaterItemHiddenRule
 
-/**
- * Per-row capability gate. Identical shape to `RepeaterItemCanRule` —
- * re-exported here so users importing from `@pilotiq/pilotiq` only see
- * the Builder-flavoured name. Used by `itemCanDelete / itemCanClone /
- * itemCanReorder`. See `RepeaterItemCanRule` for the contract.
- */
 export type BuilderItemCanRule = RepeaterItemCanRule
 
 /** Position of the `Add block` button under the field's row stack. */

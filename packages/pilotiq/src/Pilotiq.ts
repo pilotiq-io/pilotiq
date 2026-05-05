@@ -112,12 +112,6 @@ export class Pilotiq {
     return this
   }
 
-  /**
-   * Register clusters — Filament-style URL-prefix containers that group
-   * Resources / Globals / Pages under a shared slug + a single sidebar
-   * entry. Children opt in by setting `static cluster = MyCluster` on
-   * their class.
-   */
   clusters(c: ClusterClass[]): this {
     this.config.clusters = c
     return this

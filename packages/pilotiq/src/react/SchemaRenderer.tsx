@@ -2847,40 +2847,34 @@ interface TableUrlState {
   group?:  string
 }
 
-/**
- * Prefix a reserved / filter URL key by the table's `queryStringIdentifier`
- * (Tier-3). With no identifier the bare key is returned. Mirror of the
- * server-side `prefixedKey` in `elements/dispatchTable.ts` — kept inline
- * to avoid a runtime import.
- */
+// Mirror of `prefixedKey` in `elements/dispatchTable.ts`. Kept inline so
+// SchemaRenderer doesn't drag the server-side dispatcher into the client
+// bundle.
 function prefixK(prefix: string | undefined, key: string): string {
   return prefix === undefined || prefix === '' ? key : `${prefix}_${key}`
 }
 
-/**
- * Hidden inputs that mirror the current URL's non-search query state into
- * a `<form method="get">` so a native Enter-submit doesn't drop the table's
- * sort / page / filter selections (or any unrelated app-level params).
- * Excludes the search key itself so the visible `<Input name="search">`
- * is the authoritative source for that value. Page key is dropped on
- * search submit so users land on page 1 of the new result set.
- *
- * SSR-safe: returns an empty fragment when there's no `window` so the
- * server-rendered HTML doesn't churn between SSR and hydration; the
- * form's normal reset-on-submit then preserves nothing — but the only
- * cost is that JS-disabled clients lose stale filter state on Enter.
- */
+let cachedSearchString: string | null = null
+let cachedSearchParams: URLSearchParams | null = null
+
+function getCurrentSearchParams(): URLSearchParams | null {
+  if (typeof window === 'undefined') return null
+  const s = window.location.search
+  if (s === cachedSearchString && cachedSearchParams) return cachedSearchParams
+  cachedSearchString = s
+  cachedSearchParams = new URLSearchParams(s)
+  return cachedSearchParams
+}
+
 function SearchFormHiddenInputs({ prefix }: { prefix: string | undefined }): React.ReactElement {
-  if (typeof window === 'undefined') return <></>
-  const sp = new URLSearchParams(window.location.search)
-  const skipKeys = new Set([
-    prefixK(prefix, 'search'),
-    prefixK(prefix, 'page'),
-  ])
+  const sp = getCurrentSearchParams()
+  if (!sp) return <></>
+  const searchKey = prefixK(prefix, 'search')
+  const pageKey = prefixK(prefix, 'page')
   const inputs: React.ReactElement[] = []
   let i = 0
   for (const [k, v] of sp) {
-    if (skipKeys.has(k)) continue
+    if (k === searchKey || k === pageKey) continue
     inputs.push(<input key={i++} type="hidden" name={k} value={v} />)
   }
   return <>{inputs}</>
@@ -2895,11 +2889,10 @@ function buildTableQuery(
 ): string {
   const merged: TableUrlState = { ...state, ...override }
   const params = new URLSearchParams()
-  // Preserve URL params that don't belong to *this* table. Filter values
-  // for the current table arrive via `filterValues`; everything else on
-  // the URL (other tables' state, app-level params) round-trips verbatim
-  // so `buildTableQuery` only ever rewrites its own slice.
-  if (typeof window !== 'undefined') {
+  // Foreign URL params (other tables' state, app-level params) round-trip
+  // verbatim so this builder only ever rewrites its own slice.
+  const currentParams = getCurrentSearchParams()
+  if (currentParams) {
     const ours = new Set([
       prefixK(prefix, 'search'),
       prefixK(prefix, 'sort'),
@@ -2908,7 +2901,7 @@ function buildTableQuery(
       prefixK(prefix, 'group'),
       ...Object.keys(filterValues).map(n => prefixK(prefix, n)),
     ])
-    for (const [k, v] of new URLSearchParams(window.location.search)) {
+    for (const [k, v] of currentParams) {
       if (ours.has(k)) continue
       params.set(k, v)
     }
