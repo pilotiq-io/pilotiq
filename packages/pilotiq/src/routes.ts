@@ -1568,6 +1568,25 @@ export function registerPilotiqRoutes(
         return res.redirect(redirect, 303)
       })
 
+      // View — GET ${resourceBase}/:id/${rel}/:childId  (Phase A nested
+      // resources). 5-segment URL. The literal `${parentBase}/create`
+      // route is registered above and Hono prefers static segments over
+      // wildcards, but the `childId === 'create'` guard belt-and-suspenders
+      // against any router that doesn't.
+      router.get(`${parentBase}/:childId`, async (req, res) => {
+        const json = wantsJson(req)
+        const pre = await requireParent(req, res, json)
+        if (!pre) return
+        const childId = req.params['childId']!
+        if (childId === 'create')                     { res.status(404); return res.send('Not found') }
+        const data = await relationManagerData(pilotiq, {
+          kind: 'relation-view', slug, recordId: pre.recordId, relationship: rel, childId,
+        }, req)
+        if (data === null)                            { res.status(404); return res.send('Not found') }
+        if ('ok' in data && data.ok === false)        return forbidden(res, json)
+        return view('pilotiq.relation-view', data)
+      })
+
       // Edit — GET ${resourceBase}/:id/${rel}/:childId/edit
       router.get(`${parentBase}/:childId/edit`, async (req, res) => {
         const json = wantsJson(req)

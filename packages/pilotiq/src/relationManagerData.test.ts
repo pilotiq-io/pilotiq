@@ -8,6 +8,7 @@ import { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
 import { TextField } from './fields/TextField.js'
+import { Heading } from './schema/Heading.js'
 import { findRelatedResource, relationManagerData, dispatchPageData, resourceEditData, resourceViewData, safeManagerPolicy } from './pageData.js'
 import { PilotiqRegistry } from './PilotiqRegistry.js'
 import type { ModelLike, ModelQuery } from './orm/modelDefaults.js'
@@ -339,6 +340,18 @@ describe('relationManagerData (Plan #11)', () => {
       })
       assert.deepEqual(out, { ok: false, status: 403 })
     })
+
+    it('403 on relation-view when manager.canView fails', async () => {
+      const { panel } = buildWorld({
+        managerOverrides: {
+          canView: async () => false,
+        } as Partial<typeof RelationManager>,
+      })
+      const out = await relationManagerData(panel, {
+        kind: 'relation-view', slug: 'users', recordId: 'u1', relationship: 'posts', childId: 'p1',
+      })
+      assert.deepEqual(out, { ok: false, status: 403 })
+    })
   })
 
   describe('relation-list scope', () => {
@@ -396,6 +409,82 @@ describe('relationManagerData (Plan #11)', () => {
       const formMeta = schema.find(s => s['type'] === 'form') as Record<string, unknown>
       assert.equal((formMeta['values'] as Record<string, unknown>)['title'], 'Draft')
       assert.deepEqual((formMeta['errors'] as Record<string, string[]>)['title'], ['Required'])
+    })
+  })
+
+  describe('relation-view scope', () => {
+    it('loads child + verifies it belongs to the parent (anti-IDOR)', async () => {
+      const { panel } = buildWorld({
+        managerOverrides: {
+          // Override detail() so we can assert the child + parent reach the
+          // schema. Heading text echoes the child's title.
+          detail(record: unknown, parentRecord: unknown) {
+            const child = record as Record<string, unknown>
+            const parent = parentRecord as Record<string, unknown>
+            return [Heading.make(`${parent['id']}: ${child['title']}`)]
+          },
+        } as Partial<typeof RelationManager>,
+      })
+      const out = await relationManagerData(panel, {
+        kind: 'relation-view', slug: 'users', recordId: 'u1', relationship: 'posts', childId: 'p1',
+      })
+      assert.notEqual(out, null)
+      const data = out as Record<string, unknown>
+      assert.equal(data['pageType'], 'relation-view')
+      assert.equal(data['mode'], 'view')
+      assert.equal(data['childId'], 'p1')
+
+      const schema = data['schemaData'] as Array<Record<string, unknown>>
+      const heading = schema.find(s => s['type'] === 'heading') as Record<string, unknown>
+      // detail(child, parent) was invoked with both records.
+      assert.equal(heading['content'], 'u1: Post One')
+    })
+
+    it('returns null when the child belongs to a different parent (IDOR)', async () => {
+      const { panel } = buildWorld()
+      // p3 is u2's post — trying to view it under u1 must fail.
+      const out = await relationManagerData(panel, {
+        kind: 'relation-view', slug: 'users', recordId: 'u1', relationship: 'posts', childId: 'p3',
+      })
+      assert.equal(out, null)
+    })
+
+    it('returns null when the child does not exist at all', async () => {
+      const { panel } = buildWorld()
+      const out = await relationManagerData(panel, {
+        kind: 'relation-view', slug: 'users', recordId: 'u1', relationship: 'posts', childId: 'nonexistent',
+      })
+      assert.equal(out, null)
+    })
+
+    it('renders an empty schema (RelationTabs only) when the manager does not override detail()', async () => {
+      const { panel } = buildWorld()
+      const out = await relationManagerData(panel, {
+        kind: 'relation-view', slug: 'users', recordId: 'u1', relationship: 'posts', childId: 'p1',
+      })
+      const data = out as Record<string, unknown>
+      const schema = data['schemaData'] as Array<Record<string, unknown>>
+      // Default Manager.detail() returns []; the only element on the
+      // page is the RelationTabs strip prepended by buildRelationTabs.
+      assert.equal(schema.length, 1)
+      assert.equal(schema[0]!['type'], 'relation-tabs')
+    })
+
+    it('marks the manager tab active in the RelationTabs strip', async () => {
+      const { panel } = buildWorld()
+      const out = await relationManagerData(panel, {
+        kind: 'relation-view', slug: 'users', recordId: 'u1', relationship: 'posts', childId: 'p1',
+      })
+      const data = out as Record<string, unknown>
+      const schema = data['schemaData'] as Array<Record<string, unknown>>
+      const tabs = schema.find(s => s['type'] === 'relation-tabs') as Record<string, unknown>
+      const tabList = tabs['tabs'] as Array<Record<string, unknown>>
+      const postsTab = tabList.find(t => t['key'] === 'posts')
+      assert.ok(postsTab, 'posts manager tab should be present')
+      assert.equal(postsTab!['active'], true)
+      // Sibling parent tabs render but are inactive.
+      const viewTab = tabList.find(t => t['key'] === '__view')
+      assert.equal(viewTab?.['active'], false)
     })
   })
 
