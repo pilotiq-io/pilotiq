@@ -37,7 +37,7 @@ RichTextField.make('body')
     ['h2', 'h3'],
     ['textColor', 'highlight'],
     ['bulletList', 'orderedList'],
-    ['attachFiles', 'table', 'details'],
+    ['attachFiles', 'table', 'details', 'grid', 'gridDelete'],
     ['undo', 'redo'],
   ])
   .resizableImages()

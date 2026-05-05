@@ -103,4 +103,45 @@ describe('SlashCommandExtension built-ins', () => {
       )
     }
   })
+
+  it('exposes Two-column and Three-column grid entries under Insert', () => {
+    const items = buildSlashItems([], [], '', {
+      hasUpload: false,
+      onInsertImage: () => {},
+    })
+    const two   = items.find((i) => i.key === 'grid-2')
+    const three = items.find((i) => i.key === 'grid-3')
+    assert.ok(two,   'expected a "grid-2" slash entry')
+    assert.ok(three, 'expected a "grid-3" slash entry')
+    assert.equal(two!.label,   'Two-column grid')
+    assert.equal(two!.group,   'Insert')
+    assert.equal(three!.label, 'Three-column grid')
+    assert.equal(three!.group, 'Insert')
+  })
+
+  it('Grid search matches "columns" / "split" / "layout"', () => {
+    for (const q of ['columns', 'split', 'layout']) {
+      const items = buildSlashItems([], [], q, {
+        hasUpload: false,
+        onInsertImage: () => {},
+      })
+      assert.ok(
+        items.some((i) => i.key === 'grid-2'),
+        `expected the Two-column grid entry to match search query "${q}"`,
+      )
+    }
+  })
+
+  it('Three-column grid distinguishes by "three" / "3"', () => {
+    for (const q of ['three', '3']) {
+      const items = buildSlashItems([], [], q, {
+        hasUpload: false,
+        onInsertImage: () => {},
+      })
+      assert.ok(
+        items.some((i) => i.key === 'grid-3'),
+        `expected the Three-column grid entry to match search query "${q}"`,
+      )
+    }
+  })
 })

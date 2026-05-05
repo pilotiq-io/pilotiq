@@ -198,6 +198,21 @@ export function buildSlashItems(
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).setDetails().run(),
     },
+    // Multi-column grid layout. Two distinct entries (2-col + 3-col) so
+    // the user picks the column count from the slash menu directly,
+    // matching how the toolbar's `grid` button defaults to 2 cols.
+    {
+      key: 'grid-2', label: 'Two-column grid', icon: '⊞', group: 'Insert',
+      searchKey: 'grid columns layout 2 two split side',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).setGrid({ columns: 2 }).run(),
+    },
+    {
+      key: 'grid-3', label: 'Three-column grid', icon: '⊞', group: 'Insert',
+      searchKey: 'grid columns layout 3 three split',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).setGrid({ columns: 3 }).run(),
+    },
     // Image entry shares the toolbar's attach-files dialog; only surfaced
     // when the panel has wired an `UploadAdapter`. Without one, the dialog
     // would post to a missing endpoint — the slash item degrades the same

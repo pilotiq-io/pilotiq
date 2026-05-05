@@ -92,6 +92,7 @@ Tables         table
                tableToggleHeaderRow tableToggleHeaderCell
                tableDelete
 Disclosure     details
+Layout         grid gridDelete
 Editing        link undo redo
 ```
 
@@ -134,7 +135,7 @@ Opens on `/`. Built-in items:
 - **Headings** — Heading 1 to 6
 - **Lists** — Bullet list, Numbered list
 - **Align** — Align left, Align center, Align right
-- **Insert** — Table (3×3 with header row), Collapsible block (`<details>`), Image *(only when an `UploadAdapter` is registered via `Pilotiq.uploads({ adapter })`)*
+- **Insert** — Table (3×3 with header row), Collapsible block (`<details>`), Two-column grid, Three-column grid, Image *(only when an `UploadAdapter` is registered via `Pilotiq.uploads({ adapter })`)*
 - **Style** — Lead, Small
 - **Blocks** — every entry in `.blocks([...])`
 - **Merge tags** — every entry in `.mergeTags([...])`
@@ -162,7 +163,7 @@ renderRichTextToHtml({ type: 'doc', content: [...] })
 
 The renderer is a pure function — no DOM, no Tiptap runtime, no React. Safe to call from any server context. Coverage:
 
-- **Nodes:** doc / paragraph / heading (1-6) / blockquote / codeBlock / bulletList / orderedList / listItem / horizontalRule / hardBreak / image / table / tableRow / tableCell / tableHeader / details / detailsSummary / detailsContent / mergeTag / mention.
+- **Nodes:** doc / paragraph / heading (1-6) / blockquote / codeBlock / bulletList / orderedList / listItem / horizontalRule / hardBreak / image / table / tableRow / tableCell / tableHeader / details / detailsSummary / detailsContent / grid / gridColumn / mergeTag / mention.
 - **Marks:** bold / italic / strike / underline / subscript / superscript / code / link / textStyle (color) / highlight (color).
 - **Attrs:** heading.level / orderedList.start / codeBlock.language / textAlign on paragraph + heading / image.src + alt + title + width + height / tableCell.colspan + rowspan + colwidth (also on tableHeader) / mergeTag.id / mention.id + label + trigger.
 - **Custom blocks:** anything not built-in renders to `<div data-type="..." data-attrs="...">` so consumers can replay or restyle by `data-type`. Override with `renderRichTextToHtml(content, { renderBlock: (node) => ... })`.
@@ -213,6 +214,18 @@ Insert a native `<details>` block via `/` → **Collapsible block** in the slash
 ```
 
 The open / closed state is persisted on the document — `Details.configure({ persist: true })` is the default so SSR + reload pick up the state the author left it in. When `attrs.open === true`, the renderer adds the platform `open` attribute to the `<details>` tag.
+
+## Multi-column grids
+
+Insert a 2- or 3-column grid via the slash menu (`/` → **Two-column grid** / **Three-column grid**) or add `'grid'` to a `toolbarButtons` group. Pair `'gridDelete'` to unwrap the enclosing grid back into a flat sequence of paragraphs. Schema constrains column count to 2 or 3 — there's no path to a 1-col or 4+-col grid through any surface (toolbar, slash, paste).
+
+```html
+<div class="pilotiq-grid pilotiq-grid-cols-2"><div><p>Left</p></div><div><p>Right</p></div></div>
+```
+
+The package ships **no CSS** — pair the class names with a Tailwind rule (`.pilotiq-grid { display: grid; gap: 1rem } .pilotiq-grid-cols-2 { grid-template-columns: repeat(2, 1fr) } .pilotiq-grid-cols-3 { grid-template-columns: repeat(3, 1fr) }`) or whatever your stylesheet shape prefers. Same posture as `lead` / `small` size marks: consumer owns the styling.
+
+The toolbar's `grid` button defaults to 2 columns when clicked — most-common-case UX. The slash entries cover both column counts directly.
 
 ## Merge tags
 

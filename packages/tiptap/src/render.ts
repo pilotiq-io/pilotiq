@@ -16,6 +16,7 @@
  *           / orderedList / listItem / horizontalRule / hardBreak / text
  *           / image / table / tableRow / tableCell / tableHeader
  *           / details / detailsSummary / detailsContent
+ *           / grid / gridColumn
  *           / mergeTag / mention
  *   marks — bold / italic / strike / underline / subscript / superscript
  *           / code / link / textStyle (color) / highlight (color)
@@ -177,6 +178,8 @@ function renderNode(node: unknown, opts: RenderRichTextOptions): string {
     // a `<details>` block's content sits directly after the `<summary>` per
     // the platform spec, which matches reader expectations.
     case 'detailsContent': return renderChildren(n, opts)
+    case 'grid':           return renderGrid(n, opts)
+    case 'gridColumn':     return wrap('div', n, opts)
     case 'mergeTag':       return renderMergeTag(n, opts)
     case 'mention':        return renderMention(n, opts)
     case 'text':           return renderText(n)
@@ -352,6 +355,30 @@ function clampPositiveInt(raw: unknown): number | null {
 function renderDetails(n: TiptapNode, opts: RenderRichTextOptions): string {
   const isOpen = n.attrs?.['open'] === true
   return `<details${isOpen ? ' open' : ''}>${renderChildren(n, opts)}</details>`
+}
+
+// ─── Grid (multi-column layout) ──────────────────────────────────────
+
+/**
+ * Render a `grid` node. The `data-columns` attribute round-trips the
+ * editor's column count; class names mirror the editor's `renderHTML` so
+ * one stylesheet paints both surfaces (consumer owns the CSS — same
+ * posture as `lead` / `small`).
+ *
+ * Out-of-range column counts (anything other than 2 or 3) clamp to 2 —
+ * the schema enforces it on the editor side, but a tampered Tiptap JSON
+ * fed straight to the renderer shouldn't paint a `grid-cols-99` class.
+ */
+function renderGrid(n: TiptapNode, opts: RenderRichTextOptions): string {
+  const cols = clampGridColumnsForRender(n.attrs?.['columns'])
+  return `<div class="pilotiq-grid pilotiq-grid-cols-${cols}">${renderChildren(n, opts)}</div>`
+}
+
+function clampGridColumnsForRender(raw: unknown): 2 | 3 {
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  if (!Number.isFinite(n)) return 2
+  const trunc = Math.trunc(n)
+  return trunc === 3 ? 3 : 2
 }
 
 // ─── Merge tags + mentions ───────────────────────────────────────────

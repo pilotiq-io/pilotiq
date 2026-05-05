@@ -321,6 +321,19 @@ const Icons = {
       <line x1="3" y1="20" x2="21" y2="20" />
     </svg>
   ),
+  grid: (
+    <svg {...ICON_PROPS}>
+      <rect x="3"  y="4" width="8" height="16" rx="1" />
+      <rect x="13" y="4" width="8" height="16" rx="1" />
+    </svg>
+  ),
+  gridDelete: (
+    <svg {...ICON_PROPS}>
+      <rect x="3"  y="4" width="8" height="16" rx="1" />
+      <rect x="13" y="4" width="8" height="16" rx="1" />
+      <line x1="2" y1="22" x2="22" y2="2" />
+    </svg>
+  ),
 }
 
 /** Lookup table for every recognized button id. */
@@ -524,6 +537,22 @@ export const TOOLBAR_BUTTONS: Record<ToolbarButtonId, ToolbarButtonDef> = {
     isActive:   (ed) => ed.isActive('details'),
     isDisabled: (ed) => !ed.can().setDetails(),
     command:    (ed) => { ed.chain().focus().setDetails().run() },
+  },
+  // Multi-column grid layout. Toolbar button defaults to 2 columns — most-
+  // common-case UX. Users wanting 3 columns reach for the slash menu's
+  // dedicated entry. `gridDelete` unwraps the enclosing grid; greyed out
+  // when the cursor isn't inside one.
+  grid: {
+    id: 'grid', label: '2-column grid', available: true, icon: Icons.grid,
+    isActive:   () => false,
+    isDisabled: (ed) => !ed.can().setGrid({ columns: 2 }),
+    command:    (ed) => { ed.chain().focus().setGrid({ columns: 2 }).run() },
+  },
+  gridDelete: {
+    id: 'gridDelete', label: 'Remove grid', available: true, icon: Icons.gridDelete,
+    isActive:   (ed) => ed.isActive('grid'),
+    isDisabled: (ed) => !ed.can().unsetGrid(),
+    command:    (ed) => { ed.chain().focus().unsetGrid().run() },
   },
 }
 

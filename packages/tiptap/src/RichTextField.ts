@@ -38,6 +38,10 @@ export type ToolbarButtonId =
   | 'tableToggleHeaderRow' | 'tableToggleHeaderCell' | 'tableDelete'
   // Collapsible `<details>` block — single button, opt-in via `.toolbarButtons`.
   | 'details'
+  // Multi-column grid layout. `grid` inserts a 2-column grid by default;
+  // `gridDelete` unwraps the enclosing grid. Both default-off — opt-in via
+  // `.toolbarButtons([...])`.
+  | 'grid' | 'gridDelete'
 
 export type ToolbarGroups = ToolbarButtonId[][]
 

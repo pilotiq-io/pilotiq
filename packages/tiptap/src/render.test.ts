@@ -466,6 +466,76 @@ describe('renderRichTextToHtml — details (collapsible blocks)', () => {
   })
 })
 
+describe('renderRichTextToHtml — grid (multi-column blocks)', () => {
+  it('renders a 2-column grid with paragraph children in each column', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'grid',
+        attrs: { columns: 2 },
+        content: [
+          { type: 'gridColumn', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Left' }] }] },
+          { type: 'gridColumn', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Right' }] }] },
+        ],
+      }],
+    }
+    assert.equal(
+      renderRichTextToHtml(doc),
+      '<div class="pilotiq-grid pilotiq-grid-cols-2"><div><p>Left</p></div><div><p>Right</p></div></div>',
+    )
+  })
+
+  it('renders a 3-column grid with the matching class', () => {
+    const doc: TiptapNode = {
+      type: 'doc',
+      content: [{
+        type: 'grid',
+        attrs: { columns: 3 },
+        content: [
+          { type: 'gridColumn', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A' }] }] },
+          { type: 'gridColumn', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'B' }] }] },
+          { type: 'gridColumn', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'C' }] }] },
+        ],
+      }],
+    }
+    assert.match(renderRichTextToHtml(doc), /^<div class="pilotiq-grid pilotiq-grid-cols-3">/)
+  })
+
+  it('clamps invalid column counts to 2 so a tampered attr never paints `cols-99`', () => {
+    const mk = (columns: unknown): TiptapNode => ({
+      type: 'doc',
+      content: [{
+        type: 'grid',
+        attrs: { columns },
+        content: [
+          { type: 'gridColumn', content: [{ type: 'paragraph' }] },
+          { type: 'gridColumn', content: [{ type: 'paragraph' }] },
+        ],
+      }],
+    })
+    assert.match(renderRichTextToHtml(mk(99)),        /pilotiq-grid-cols-2/)
+    assert.match(renderRichTextToHtml(mk(1)),         /pilotiq-grid-cols-2/)
+    assert.match(renderRichTextToHtml(mk(NaN)),       /pilotiq-grid-cols-2/)
+    assert.match(renderRichTextToHtml(mk(undefined)), /pilotiq-grid-cols-2/)
+    assert.match(renderRichTextToHtml(mk('abc')),     /pilotiq-grid-cols-2/)
+  })
+
+  it('coerces numeric strings — Tiptap JSON sometimes round-trips attrs as strings', () => {
+    const mk = (columns: unknown): TiptapNode => ({
+      type: 'doc',
+      content: [{
+        type: 'grid',
+        attrs: { columns },
+        content: [
+          { type: 'gridColumn', content: [{ type: 'paragraph' }] },
+          { type: 'gridColumn', content: [{ type: 'paragraph' }] },
+        ],
+      }],
+    })
+    assert.match(renderRichTextToHtml(mk('3')), /pilotiq-grid-cols-3/)
+  })
+})
+
 describe('renderRichTextToHtml — merge tags', () => {
   it('substitutes a tag from opts.mergeTags (HTML-escaped)', () => {
     const doc: TiptapNode = {

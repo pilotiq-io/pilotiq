@@ -12,6 +12,7 @@ import Highlight from '@tiptap/extension-highlight'
 import Image from '@tiptap/extension-image'
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
 import { Details, DetailsSummary, DetailsContent } from '@tiptap/extension-details'
+import { Grid, GridColumn } from '../extensions/GridExtension.js'
 import { Popover } from '@base-ui/react/popover'
 import type { FieldRendererProps } from '@pilotiq/pilotiq/react'
 import type { BlockMeta } from '../Block.js'
@@ -216,6 +217,12 @@ function ClientEditor(props: FieldRendererProps) {
       Details.configure({ persist: true, HTMLAttributes: { class: 'details' } }),
       DetailsSummary,
       DetailsContent,
+      // Multi-column grid blocks (`grid` + `gridColumn`). Custom node pair —
+      // Tiptap doesn't ship a first-party grid extension. Schema constrains
+      // grids to 2 or 3 columns; consumer owns the CSS for `pilotiq-grid` /
+      // `pilotiq-grid-cols-N`.
+      Grid,
+      GridColumn,
       Placeholder.configure({ placeholder: placeholder ?? 'Start writing…' }),
       // BlockNodeExtension carries the block registry on its options —
       // NodeViews mount in a separate React tree and can't see context.
