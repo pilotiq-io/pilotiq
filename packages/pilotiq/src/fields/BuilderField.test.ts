@@ -599,6 +599,35 @@ describe('BuilderField', () => {
       }))[0])
       assert.equal(after.rows[0]?.canDelete, false)
     })
+
+    it('a row\'s value flip re-evaluates its itemLabel', async () => {
+      const f = builder().itemLabel((data) => String((data as Record<string, unknown>)['text'] ?? 'Untitled'))
+
+      const before = metaOf((await resolveSchema([f], {
+        values: { content: [{ type: 'heading', data: { text: 'Hello' } }] },
+      }))[0])
+      assert.equal(before.rows[0]?.itemLabel, 'Hello')
+
+      const after = metaOf((await resolveSchema([f], {
+        values: { content: [{ type: 'heading', data: { text: 'World' } }] },
+      }))[0])
+      assert.equal(after.rows[0]?.itemLabel, 'World')
+    })
+
+    it('a row\'s value flip re-evaluates its extraItemActions visibility', async () => {
+      const promote = Action.make('promote').label('Promote').visible(({ values }) => (values as Record<string, unknown>)?.['text'] === 'ready')
+      const f = builder().extraItemActions([promote])
+
+      const before = metaOf((await resolveSchema([f], {
+        values: { content: [{ type: 'heading', data: { text: 'draft' } }] },
+      }))[0])
+      assert.equal(before.rows[0]?.extraActions, undefined)
+
+      const after = metaOf((await resolveSchema([f], {
+        values: { content: [{ type: 'heading', data: { text: 'ready' } }] },
+      }))[0])
+      assert.equal(after.rows[0]?.extraActions?.length, 1)
+    })
   })
 
   // ─── Coercion ─────────────────────────────────────────────

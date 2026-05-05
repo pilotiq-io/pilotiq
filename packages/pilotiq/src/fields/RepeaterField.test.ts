@@ -895,6 +895,50 @@ describe('RepeaterField', () => {
       // Same row id, same product — only `archived` changed; gate stamps now.
       assert.equal(after.rows[0]?.canDelete, false)
     })
+
+    it('a row-scoped value flip re-evaluates that row\'s itemLabel', async () => {
+      const f = repeater().itemLabel(row => String(row['product'] ?? 'Untitled'))
+
+      const before = metaOf(
+        (await resolveSchema(
+          [f],
+          { values: { items: [{ product: 'Widget' }] } },
+        ))[0],
+      )
+      assert.equal(before.rows[0]?.itemLabel, 'Widget')
+
+      const after = metaOf(
+        (await resolveSchema(
+          [f],
+          { values: { items: [{ product: 'Gear' }] } },
+        ))[0],
+      )
+      // Same row id; the value changed so the label re-resolves.
+      assert.equal(after.rows[0]?.itemLabel, 'Gear')
+    })
+
+    it('a row-scoped value flip re-evaluates that row\'s extraItemActions visibility', async () => {
+      const send = Action.make('send').label('Send').visible(({ values }) => values?.['archived'] !== true)
+      const f = repeater().extraItemActions([send])
+
+      const before = metaOf(
+        (await resolveSchema(
+          [f],
+          { values: { items: [{ product: 'A', archived: false }] } },
+        ))[0],
+      )
+      assert.equal(before.rows[0]?.extraActions?.length, 1)
+
+      const after = metaOf(
+        (await resolveSchema(
+          [f],
+          { values: { items: [{ product: 'A', archived: true }] } },
+        ))[0],
+      )
+      // Action's visibility predicate now returns false → action drops from
+      // the row; row.extraActions becomes undefined (length-0 collapsed).
+      assert.equal(after.rows[0]?.extraActions, undefined)
+    })
   })
 
   describe('coerceFormValues (Step 3)', () => {

@@ -6,8 +6,6 @@ import { syncRowGates, type RowGateMeta } from './syncRowGates.js'
 interface TestRow extends RowGateMeta {
   // Local-only fields the helper must preserve verbatim.
   children?:    unknown[]
-  itemLabel?:   string
-  extraActions?: unknown[]
   type?:        string
   unknownType?: boolean
 }
@@ -54,20 +52,18 @@ describe('syncRowGates', () => {
     assert.equal(out[2]?.canDelete,  false)
   })
 
-  it('preserves local-only fields (children / itemLabel / extraActions / type / unknownType)', () => {
+  it('preserves local-only fields (children / type / unknownType) — never echoed back from server', () => {
     const children = [{ kind: 'placeholder' }]
-    const extras   = [{ kind: 'action' }]
     const prev: TestRow[] = [
-      row('a', { children, itemLabel: 'Apple',  extraActions: extras, type: 'heading', unknownType: false }),
-      row('b', { children, itemLabel: 'Banana', type: 'paragraph' }),
+      row('a', { children, type: 'heading', unknownType: false }),
+      row('b', { children, type: 'paragraph' }),
     ]
     const out = syncRowGates(prev, [{ id: 'a', hidden: true }, { id: 'b' }])
     assert.equal(out[0]?.children,     children)
-    assert.equal(out[0]?.itemLabel,    'Apple')
-    assert.equal(out[0]?.extraActions, extras)
     assert.equal(out[0]?.type,         'heading')
+    assert.equal(out[0]?.unknownType,  false)
     assert.equal(out[0]?.hidden,       true)
-    assert.equal(out[1]?.itemLabel,    'Banana')
+    assert.equal(out[1]?.children,     children)
     assert.equal(out[1]?.type,         'paragraph')
   })
 
@@ -119,5 +115,88 @@ describe('syncRowGates', () => {
     assert.equal(out[0]?.canDelete,  undefined)
     assert.equal(out[0]?.canClone,   undefined)
     assert.equal(out[0]?.canReorder, undefined)
+  })
+
+  describe('itemLabel sync', () => {
+    it('updates itemLabel when fresh meta carries a different string', () => {
+      const prev: TestRow[] = [row('a', { itemLabel: 'Apple' })]
+      const out = syncRowGates(prev, [{ id: 'a', itemLabel: 'Apricot' }])
+      assert.notEqual(out, prev)
+      assert.equal(out[0]?.itemLabel, 'Apricot')
+    })
+
+    it('clears itemLabel when fresh meta drops it (label fn returned non-string this resolve)', () => {
+      const prev: TestRow[] = [row('a', { itemLabel: 'Apple' })]
+      const out = syncRowGates(prev, [{ id: 'a' }])
+      assert.notEqual(out, prev)
+      assert.equal(out[0]?.itemLabel, undefined)
+      assert.ok(!('itemLabel' in (out[0] ?? {})))
+    })
+
+    it('stamps itemLabel when fresh meta adds it (was missing on prev)', () => {
+      const prev: TestRow[] = [row('a')]
+      const out = syncRowGates(prev, [{ id: 'a', itemLabel: 'Apple' }])
+      assert.notEqual(out, prev)
+      assert.equal(out[0]?.itemLabel, 'Apple')
+    })
+
+    it('keeps reference identity when itemLabel is byte-identical across resolves', () => {
+      const prev: TestRow[] = [row('a', { itemLabel: 'Apple' })]
+      const out = syncRowGates(prev, [{ id: 'a', itemLabel: 'Apple' }])
+      assert.equal(out, prev)
+    })
+  })
+
+  describe('extraActions sync', () => {
+    it('updates extraActions when the action list changes shape', () => {
+      const prevActions = [{ name: 'send', label: 'Send' }]
+      const freshActions = [{ name: 'send', label: 'Send' }, { name: 'archive', label: 'Archive' }]
+      const prev: TestRow[] = [row('a', { extraActions: prevActions })]
+      const out = syncRowGates(prev, [{ id: 'a', extraActions: freshActions }])
+      assert.notEqual(out, prev)
+      assert.equal(out[0]?.extraActions, freshActions)
+    })
+
+    it('updates extraActions when an action toggles disabled mid-form (visibility re-resolved)', () => {
+      const prevActions  = [{ name: 'send', label: 'Send', disabled: false }]
+      const freshActions = [{ name: 'send', label: 'Send', disabled: true }]
+      const prev: TestRow[] = [row('a', { extraActions: prevActions })]
+      const out = syncRowGates(prev, [{ id: 'a', extraActions: freshActions }])
+      assert.notEqual(out, prev)
+      assert.equal(out[0]?.extraActions, freshActions)
+    })
+
+    it('clears extraActions when fresh meta drops them (every action failed visibility)', () => {
+      const prev: TestRow[] = [row('a', { extraActions: [{ name: 'send' }] })]
+      const out = syncRowGates(prev, [{ id: 'a' }])
+      assert.notEqual(out, prev)
+      assert.equal(out[0]?.extraActions, undefined)
+      assert.ok(!('extraActions' in (out[0] ?? {})))
+    })
+
+    it('treats fresh empty array same as undefined (clears prev)', () => {
+      const prev: TestRow[] = [row('a', { extraActions: [{ name: 'send' }] })]
+      const out = syncRowGates(prev, [{ id: 'a', extraActions: [] }])
+      assert.notEqual(out, prev)
+      assert.equal(out[0]?.extraActions, undefined)
+    })
+
+    it('keeps reference identity when extraActions are byte-identical across resolves', () => {
+      const actions = [{ name: 'send', label: 'Send' }]
+      const prev: TestRow[] = [row('a', { extraActions: actions })]
+      const out = syncRowGates(prev, [{ id: 'a', extraActions: [{ name: 'send', label: 'Send' }] }])
+      assert.equal(out, prev)
+    })
+  })
+
+  it('combines flag + itemLabel + extraActions transitions in a single sync', () => {
+    const prev: TestRow[] = [
+      row('a', { hidden: true, itemLabel: 'Old', extraActions: [{ name: 'a' }] }),
+    ]
+    const out = syncRowGates(prev, [{ id: 'a', itemLabel: 'New', extraActions: [{ name: 'b' }] }])
+    assert.notEqual(out, prev)
+    assert.equal(out[0]?.hidden,       undefined)
+    assert.equal(out[0]?.itemLabel,    'New')
+    assert.deepEqual(out[0]?.extraActions, [{ name: 'b' }])
   })
 })
