@@ -36,6 +36,9 @@ interface BuilderRowShape {
   hidden?:       boolean
   unknownType?:  boolean
   extraActions?: ElementMeta[]
+  canDelete?:    false
+  canClone?:     false
+  canReorder?:   false
 }
 
 interface BuilderMetaShape {
@@ -71,6 +74,12 @@ interface RowState {
   hidden?:       boolean
   unknownType?:  boolean
   extraActions?: ElementMeta[]
+  // Per-row capability flags from `itemCan*(rule)`. Stamped only when the
+  // rule resolved falsy server-side. See `RepeaterField`'s RowState for
+  // the full contract — semantics are identical.
+  canDelete?:    false
+  canClone?:     false
+  canReorder?:   false
 }
 
 /**
@@ -149,6 +158,9 @@ export function BuilderInput({
       ...(r.hidden                     ? { hidden: true }            : {}),
       ...(r.unknownType                ? { unknownType: true }       : {}),
       ...(r.extraActions && r.extraActions.length > 0 ? { extraActions: r.extraActions } : {}),
+      ...(r.canDelete  === false ? { canDelete:  false as const } : {}),
+      ...(r.canClone   === false ? { canClone:   false as const } : {}),
+      ...(r.canReorder === false ? { canReorder: false as const } : {}),
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -763,7 +775,14 @@ function BuilderRow({
     )
   }
 
-  const dragProps = reorderable && !buttonsOnly && !disabled
+  // Per-row capability gates — `itemCan*(rule)` server-resolved.
+  // Composes with the global `deletable / cloneable / reorderable` flags:
+  // a per-row gate can only narrow what the global flag allows.
+  const canDelete  = row.canDelete  !== false
+  const canClone   = row.canClone   !== false
+  const canReorder = row.canReorder !== false
+
+  const dragProps = reorderable && !buttonsOnly && !disabled && canReorder
     ? {
         draggable:     true as const,
         onDragStart,
@@ -782,7 +801,7 @@ function BuilderRow({
       {...dragProps}
     >
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        {reorderable && !buttonsOnly && (
+        {reorderable && !buttonsOnly && canReorder && (
           <ReorderGrip disabled={disabled} buttons={buttons} />
         )}
         {collapsible && (
@@ -797,7 +816,7 @@ function BuilderRow({
         <span className="flex-1 truncate text-sm font-medium">{headerLabel}</span>
         <input type="hidden" name={`${name}.${index}.__id`} value={row.id} readOnly />
         <input type="hidden" name={`${name}.${index}.type`} value={row.type} readOnly />
-        {reorderable && (
+        {reorderable && canReorder && (
           <>
             <RowChromeIconButton
               defaults={DEFAULT_MOVE_UP}
@@ -820,7 +839,7 @@ function BuilderRow({
             disabled={disabled}
           />
         )}
-        {cloneable && (
+        {cloneable && canClone && (
           <RowChromeIconButton
             defaults={DEFAULT_CLONE}
             override={buttons?.clone}
@@ -828,7 +847,7 @@ function BuilderRow({
             onClick={onClone}
           />
         )}
-        {deletable && (
+        {deletable && canDelete && (
           <RowChromeIconButton
             defaults={DEFAULT_DELETE}
             override={buttons?.delete}

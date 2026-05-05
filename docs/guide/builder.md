@@ -122,6 +122,7 @@ the only place a `Block` is mounted.
 | `.blockIcons(false)` | Hide block icon in row headers (default on) |
 | `.itemLabel((data, blockName) => string)` | Dynamic header label per row |
 | `.itemHidden(rule)` | Per-row visibility — UX-only, values still round-trip |
+| `.itemCanDelete(rule)` / `.itemCanClone(rule)` / `.itemCanReorder(rule)` | Per-row gates for the trash / clone / reorder buttons. Predicate sees `ctx.row.blockType` so a single rule can branch by block. See [per-row gates on Repeater](./repeater.md#per-row-capability-gates) for the full contract — semantics are identical |
 | `.defaultBlock('name')` | Block name used for "quick add" UX (advisory) |
 
 Live updates, validation, dehydration, and visibility all work the same
@@ -344,8 +345,12 @@ silently loses data.
   a block's schema works at SSR but the client-side reactive
   re-resolve doesn't address paths past `data.<leaf>`. Surface the
   inner content via `.live()` on a leaf field.
-- **Per-row authorization.** `canAdd / canDelete` per row aren't
-  exposed yet. Use `Resource.canEdit` for the page-level gate.
+- **Per-row gates are presentation, not authorization.** `itemCanDelete`
+  / `itemCanClone` / `itemCanReorder` hide the matching row button on
+  rows that match the predicate, but tampered POST bodies that delete or
+  reorder gated rows still go through. Gate the parent form's lifecycle
+  hooks for real authorization. Add-side gating is field-wide via
+  `addable(false)` — per-block-type "max one" caps live on `Block.maxItems`.
 - **Block previews.** Filament's read-only `Block::preview('view.path')`
   isn't implemented. Track via a separate plan if a consumer needs it.
 

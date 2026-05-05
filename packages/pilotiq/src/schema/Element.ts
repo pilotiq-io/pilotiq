@@ -24,6 +24,14 @@ export interface LayoutContext {
     index: number
     $get:  (name: string) => unknown
     $set:  (name: string, value: unknown) => void
+    /**
+     * Present only when the row lives inside a `BuilderField` — the row's
+     * block name (the `type` discriminator). Lets a single `itemHidden` /
+     * `itemCanDelete` / `itemCanClone` / `itemCanReorder` rule branch by
+     * block without checking `values` shape. Always `undefined` for
+     * `RepeaterField` rows (which are homogeneous).
+     */
+    blockType?: string
   }
 }
 

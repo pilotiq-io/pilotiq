@@ -108,6 +108,20 @@ export type RepeaterItemHiddenRule =
   | ((ctx: LayoutContext) => boolean | Promise<boolean>)
 
 /**
+ * Per-row capability gate. Evaluated against a row-scoped `LayoutContext`
+ * (same shape as `itemHidden`'s rule). Resolving truthy keeps the
+ * capability enabled (the matching row button stays mounted); resolving
+ * falsy removes it. Throwing predicates fail-open — the capability stays
+ * enabled and we log a warning, mirroring `itemHidden`'s posture so a
+ * misbehaving rule doesn't silently lock the user out of editing data.
+ *
+ * Used by `itemCanDelete / itemCanClone / itemCanReorder`.
+ */
+export type RepeaterItemCanRule =
+  | boolean
+  | ((ctx: LayoutContext) => boolean | Promise<boolean>)
+
+/**
  * Resolved metadata for a single Repeater row. `id` is a stable identifier
  * scoped to the form render — survives reorder + clone client-side and is
  * round-tripped through a hidden `__id` value on submit so the renderer
@@ -134,6 +148,22 @@ export interface RepeaterRowMeta {
    * reconstruct the row-scoped handler context.
    */
   extraActions?: ActionMeta[]
+  /**
+   * Per-row capability flags. Stamped only when the corresponding
+   * `itemCan*(rule)` resolved falsy for this row — non-customized rows
+   * pay zero serialization cost. The renderer reads these and skips the
+   * matching button: `canDelete: false` removes the trash, `canClone: false`
+   * removes the clone (no-op when `cloneable()` is off field-wide),
+   * `canReorder: false` removes the drag grip and Up/Down arrows on this
+   * row only (no-op when `reorderable()` is off).
+   *
+   * Capability gates are presentation, not authorization — they hide the
+   * button but don't reject tampered POST bodies. For real authorization,
+   * gate the parent form's lifecycle hooks.
+   */
+  canDelete?:  false
+  canClone?:   false
+  canReorder?: false
 }
 
 export interface RepeaterFieldMeta extends FieldMeta {
@@ -246,6 +276,9 @@ export class RepeaterField extends Field {
   private _addActionLabel?:  string
   private _itemLabel?:       RepeaterItemLabel
   private _itemHidden?:      RepeaterItemHiddenRule
+  private _itemCanDelete?:   RepeaterItemCanRule
+  private _itemCanClone?:    RepeaterItemCanRule
+  private _itemCanReorder?:  RepeaterItemCanRule
   private _extraItemActions: Action[] = []
   private _simple           = false
   private _grid?:            RepeaterGridConfig
@@ -353,6 +386,45 @@ export class RepeaterField extends Field {
    * a misbehaving rule shouldn't silently hide data the user is editing).
    */
   itemHidden(rule: RepeaterItemHiddenRule): this { this._itemHidden = rule; return this }
+
+  /**
+   * Per-row gate for the trash button. Resolving truthy keeps the trash
+   * button visible (default); resolving falsy hides it on that row only.
+   * Useful for "this row is finalized — only the others can be removed".
+   *
+   * Predicate sees the same row-scoped `LayoutContext` as `itemHidden`
+   * (`values / $get / $set / row` are row-local, `record / user` mirror
+   * the parent form). Throwing predicates fail-open — the button stays
+   * visible and we log a warning, mirroring `itemHidden`'s posture.
+   *
+   * Presentation only. Tampered POST bodies that delete a gated row will
+   * still go through; gate the parent form's lifecycle hooks for real
+   * authorization.
+   */
+  itemCanDelete(rule: RepeaterItemCanRule): this { this._itemCanDelete = rule; return this }
+
+  /**
+   * Per-row gate for the clone (`Duplicate row`) button. Resolving truthy
+   * keeps it visible (default); resolving falsy hides it on that row only.
+   * No-op when `cloneable()` is off field-wide.
+   *
+   * Same predicate shape, same fail-open posture as `itemCanDelete`.
+   */
+  itemCanClone(rule: RepeaterItemCanRule): this { this._itemCanClone = rule; return this }
+
+  /**
+   * Per-row gate for the reorder controls (drag grip + Up / Down arrows).
+   * Resolving truthy keeps them visible (default); resolving falsy hides
+   * them on that row only — pinning the row to its current position while
+   * its neighbours stay reorderable. No-op when `reorderable()` is off
+   * field-wide.
+   *
+   * Same predicate shape, same fail-open posture as `itemCanDelete`. Drag
+   * targeting is unaffected — a non-pinned row can still drop at the
+   * pinned row's slot, which is the right semantics (the OTHER row is the
+   * one being moved). Pin both sides if you need a pair to stay adjacent.
+   */
+  itemCanReorder(rule: RepeaterItemCanRule): this { this._itemCanReorder = rule; return this }
 
   /** Custom label for the "Add row" button. Default `'Add'`. */
   addActionLabel(label: string): this { this._addActionLabel = label; return this }
@@ -533,6 +605,9 @@ export class RepeaterField extends Field {
   isCloneable(): boolean                  { return this._cloneable }
   getItemLabel(): RepeaterItemLabel | undefined { return this._itemLabel }
   getItemHidden(): RepeaterItemHiddenRule | undefined { return this._itemHidden }
+  getItemCanDelete():  RepeaterItemCanRule | undefined { return this._itemCanDelete  }
+  getItemCanClone():   RepeaterItemCanRule | undefined { return this._itemCanClone   }
+  getItemCanReorder(): RepeaterItemCanRule | undefined { return this._itemCanReorder }
   getAddActionLabel(): string | undefined { return this._addActionLabel }
   getExtraItemActions(): Action[] { return this._extraItemActions }
   isSimple(): boolean { return this._simple }

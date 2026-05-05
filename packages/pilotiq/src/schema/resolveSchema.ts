@@ -3,6 +3,7 @@ import { Field } from '../fields/Field.js'
 import {
   RepeaterField,
   type RepeaterItemHiddenRule,
+  type RepeaterItemCanRule,
   type RepeaterRowMeta,
 } from '../fields/RepeaterField.js'
 import {
@@ -100,6 +101,11 @@ export interface RenderContext extends SchemaContext {
      * already-picked options as disabled.
      */
     siblings?: ReadonlyArray<Record<string, unknown>>
+    /**
+     * Present only when the row lives inside a `BuilderField` — the row's
+     * block name. See `LayoutContext.row.blockType` for the rationale.
+     */
+    blockType?: string
   }
 }
 
@@ -317,8 +323,11 @@ async function resolveRepeaterRows(
     ? submitted.map(raw => simpleInner ? coerceSimpleRowValues(raw, simpleInner.name) : coerceRowValues(raw))
     : Array.from({ length: field.getDefaultItems() }, () => ({}))
 
-  const labelFn  = field.getItemLabel()
-  const hiddenFn = field.getItemHidden()
+  const labelFn     = field.getItemLabel()
+  const hiddenFn    = field.getItemHidden()
+  const canDeleteFn = field.getItemCanDelete()
+  const canCloneFn  = field.getItemCanClone()
+  const canReorderFn = field.getItemCanReorder()
 
   const rows = await Promise.all(rowsInput.map(async (rowValues, index) => {
     const siblings = rowsInput.filter((_, i) => i !== index)
@@ -346,10 +355,29 @@ async function resolveRepeaterRows(
         console.warn(`[pilotiq] itemLabel() on Repeater "${field.name}" threw:`, err)
       }
     }
-    if (hiddenFn !== undefined) {
-      const layoutCtx = buildLayoutContext(rowCtx)
-      const hidden    = await evalItemHidden(hiddenFn, layoutCtx, field.name)
+    // Build the layout context lazily — most repeaters configure none of
+    // {hidden, canDelete, canClone, canReorder}, so the common path skips
+    // it entirely.
+    const needsLayoutCtx = hiddenFn !== undefined
+      || canDeleteFn !== undefined
+      || canCloneFn !== undefined
+      || canReorderFn !== undefined
+    const layoutCtx = needsLayoutCtx ? buildLayoutContext(rowCtx) : undefined
+    if (hiddenFn !== undefined && layoutCtx !== undefined) {
+      const hidden = await evalItemHidden(hiddenFn, layoutCtx, field.name)
       if (hidden) row.hidden = true
+    }
+    if (canDeleteFn !== undefined && layoutCtx !== undefined) {
+      const allowed = await evalItemCan(canDeleteFn, layoutCtx, 'itemCanDelete', `Repeater "${field.name}"`)
+      if (!allowed) row.canDelete = false
+    }
+    if (canCloneFn !== undefined && layoutCtx !== undefined) {
+      const allowed = await evalItemCan(canCloneFn, layoutCtx, 'itemCanClone', `Repeater "${field.name}"`)
+      if (!allowed) row.canClone = false
+    }
+    if (canReorderFn !== undefined && layoutCtx !== undefined) {
+      const allowed = await evalItemCan(canReorderFn, layoutCtx, 'itemCanReorder', `Repeater "${field.name}"`)
+      if (!allowed) row.canReorder = false
     }
     const extras = field.getExtraItemActions()
     if (extras.length > 0) {
@@ -495,8 +523,11 @@ async function resolveBuilderRows(
   const submitted = ctx.values?.[field.name]
   const rowsInput = Array.isArray(submitted) ? submitted.map(coerceBuilderRow) : []
 
-  const labelFn  = field.getItemLabel()
-  const hiddenFn = field.getItemHidden()
+  const labelFn      = field.getItemLabel()
+  const hiddenFn     = field.getItemHidden()
+  const canDeleteFn  = field.getItemCanDelete()
+  const canCloneFn   = field.getItemCanClone()
+  const canReorderFn = field.getItemCanReorder()
 
   const rows = await Promise.all(rowsInput.map(async (rowEntry, index) => {
     const blockName = rowEntry.type
@@ -536,6 +567,7 @@ async function resolveBuilderRows(
         $get: (name: string) => data[name],
         $set: (name: string, value: unknown) => { data[name] = value },
         siblings,
+        blockType: block.name,
       },
     }
     delete rowCtx.changed
@@ -551,10 +583,26 @@ async function resolveBuilderRows(
         console.warn(`[pilotiq] itemLabel() on Builder "${field.name}" threw:`, err)
       }
     }
-    if (hiddenFn !== undefined) {
-      const layoutCtx = buildLayoutContext(rowCtx)
-      const hidden    = await evalBuilderItemHidden(hiddenFn, layoutCtx, field.name)
+    const needsLayoutCtx = hiddenFn !== undefined
+      || canDeleteFn !== undefined
+      || canCloneFn !== undefined
+      || canReorderFn !== undefined
+    const layoutCtx = needsLayoutCtx ? buildLayoutContext(rowCtx) : undefined
+    if (hiddenFn !== undefined && layoutCtx !== undefined) {
+      const hidden = await evalBuilderItemHidden(hiddenFn, layoutCtx, field.name)
       if (hidden) row.hidden = true
+    }
+    if (canDeleteFn !== undefined && layoutCtx !== undefined) {
+      const allowed = await evalItemCan(canDeleteFn, layoutCtx, 'itemCanDelete', `Builder "${field.name}"`)
+      if (!allowed) row.canDelete = false
+    }
+    if (canCloneFn !== undefined && layoutCtx !== undefined) {
+      const allowed = await evalItemCan(canCloneFn, layoutCtx, 'itemCanClone', `Builder "${field.name}"`)
+      if (!allowed) row.canClone = false
+    }
+    if (canReorderFn !== undefined && layoutCtx !== undefined) {
+      const allowed = await evalItemCan(canReorderFn, layoutCtx, 'itemCanReorder', `Builder "${field.name}"`)
+      if (!allowed) row.canReorder = false
     }
     const extras = field.getExtraItemActions()
     if (extras.length > 0) {
@@ -640,6 +688,34 @@ async function evalBuilderItemHidden(
   } catch (err) {
     console.warn(`[pilotiq] itemHidden() on Builder "${fieldName}" threw:`, err)
     return false
+  }
+}
+
+/**
+ * Evaluate a per-row capability rule (`itemCanDelete / itemCanClone /
+ * itemCanReorder`) against a row's `LayoutContext`. Returns the boolean
+ * "is allowed" — `true` keeps the matching button mounted, `false`
+ * removes it on this row.
+ *
+ * Fail-open: when the predicate throws, the capability stays enabled and
+ * we log a warning. This mirrors `itemHidden`'s posture — a misbehaving
+ * gate shouldn't silently lock the user out of editing data. For real
+ * authorization (vs. UX), gate the parent form's lifecycle hooks.
+ *
+ * Shared between Repeater + Builder so the failure mode is identical.
+ */
+async function evalItemCan(
+  rule:    RepeaterItemCanRule,
+  ctx:     LayoutContext,
+  setter:  string,
+  ownerId: string,
+): Promise<boolean> {
+  if (typeof rule === 'boolean') return rule
+  try {
+    return Boolean(await rule(ctx))
+  } catch (err) {
+    console.warn(`[pilotiq] ${setter}() on ${ownerId} threw:`, err)
+    return true
   }
 }
 

@@ -432,6 +432,132 @@ describe('BuilderField', () => {
     })
   })
 
+  describe('itemCanDelete / itemCanClone / itemCanReorder (per-row capability gates)', () => {
+    function builder() {
+      return BuilderField.make('content').blocks([
+        Block.make('heading').schema([TextField.make('text')]),
+        Block.make('paragraph').schema([TextField.make('body')]),
+      ])
+    }
+
+    function metaOf(m: unknown): BuilderFieldMeta {
+      return m as BuilderFieldMeta
+    }
+
+    it('builders store + return their rules', () => {
+      const del     = (_ctx: unknown) => true
+      const clone   = (_ctx: unknown) => true
+      const reorder = (_ctx: unknown) => true
+      const f = BuilderField.make('content')
+        .itemCanDelete(del as never)
+        .itemCanClone(clone as never)
+        .itemCanReorder(reorder as never)
+      assert.equal(f.getItemCanDelete(),  del)
+      assert.equal(f.getItemCanClone(),   clone)
+      assert.equal(f.getItemCanReorder(), reorder)
+    })
+
+    it('rules unset → no row carries cap flags', async () => {
+      const [raw] = await resolveSchema([builder()], {
+        values: { content: [{ type: 'heading', data: { text: 'A' } }] },
+      })
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canDelete,  undefined)
+      assert.equal(m.rows[0]?.canClone,   undefined)
+      assert.equal(m.rows[0]?.canReorder, undefined)
+    })
+
+    it('static `itemCanDelete(false)` → every row stamps canDelete: false', async () => {
+      const f = builder().itemCanDelete(false)
+      const [raw] = await resolveSchema([f], {
+        values: { content: [
+          { type: 'heading',   data: { text: 'A' } },
+          { type: 'paragraph', data: { body: 'B' } },
+        ] },
+      })
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canDelete, false)
+      assert.equal(m.rows[1]?.canDelete, false)
+    })
+
+    it('predicate sees row.blockType so a single rule can branch by block', async () => {
+      const f = builder().itemCanDelete(({ row }) => row?.blockType !== 'heading')
+      const [raw] = await resolveSchema([f], {
+        values: { content: [
+          { type: 'heading',   data: { text: 'A' } },
+          { type: 'paragraph', data: { body: 'B' } },
+        ] },
+      })
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canDelete, false)
+      assert.equal(m.rows[1]?.canDelete, undefined)
+    })
+
+    it('itemCanClone gates clone per-row', async () => {
+      const f = builder()
+        .cloneable()
+        .itemCanClone(({ row }) => row?.index !== 0)
+      const [raw] = await resolveSchema([f], {
+        values: { content: [
+          { type: 'heading',   data: { text: 'A' } },
+          { type: 'paragraph', data: { body: 'B' } },
+        ] },
+      })
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canClone, false)
+      assert.equal(m.rows[1]?.canClone, undefined)
+    })
+
+    it('itemCanReorder gates reorder controls per-row', async () => {
+      const f = builder()
+        .reorderable()
+        .itemCanReorder(({ values }) => (values as Record<string, unknown>)['text'] !== 'pinned')
+      const [raw] = await resolveSchema([f], {
+        values: { content: [
+          { type: 'heading', data: { text: 'free' } },
+          { type: 'heading', data: { text: 'pinned' } },
+        ] },
+      })
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canReorder, undefined)
+      assert.equal(m.rows[1]?.canReorder, false)
+    })
+
+    it('async predicate is awaited', async () => {
+      const f = builder().itemCanDelete(async ({ row }) => {
+        await Promise.resolve()
+        return row?.index !== 0
+      })
+      const [raw] = await resolveSchema([f], {
+        values: { content: [
+          { type: 'heading',   data: { text: 'A' } },
+          { type: 'paragraph', data: { body: 'B' } },
+        ] },
+      })
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canDelete, false)
+      assert.equal(m.rows[1]?.canDelete, undefined)
+    })
+
+    it('throwing predicate → capability stays enabled (fail-open) + warns', async () => {
+      const original = console.warn
+      const warnings: unknown[][] = []
+      console.warn = (...args: unknown[]) => { warnings.push(args) }
+      try {
+        const f = builder().itemCanReorder(() => { throw new Error('boom') })
+        const [raw] = await resolveSchema([f], {
+          values: { content: [{ type: 'heading', data: { text: 'A' } }] },
+        })
+        const m = metaOf(raw)
+        assert.equal(m.rows[0]?.canReorder, undefined)
+        assert.ok(warnings.length >= 1, 'expected at least one warning')
+        assert.match(String(warnings[0]?.[0]), /itemCanReorder\(\) on Builder "content" threw/)
+      } finally {
+        console.warn = original
+      }
+    })
+  })
+
   // ─── Coercion ─────────────────────────────────────────────
 
   describe('coerceFormValues', () => {

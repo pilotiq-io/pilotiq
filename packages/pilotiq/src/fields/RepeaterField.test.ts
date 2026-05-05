@@ -667,6 +667,174 @@ describe('RepeaterField', () => {
     })
   })
 
+  describe('itemCanDelete / itemCanClone / itemCanReorder (per-row capability gates)', () => {
+    function repeater() {
+      return RepeaterField.make('items').schema([
+        TextField.make('product'),
+        ToggleField.make('archived'),
+      ])
+    }
+
+    function metaOf(m: unknown): RepeaterFieldMeta {
+      return m as RepeaterFieldMeta
+    }
+
+    it('builders store + return their rules', () => {
+      const del     = (_ctx: unknown) => true
+      const clone   = (_ctx: unknown) => true
+      const reorder = (_ctx: unknown) => true
+      const f = RepeaterField.make('items')
+        .itemCanDelete(del as never)
+        .itemCanClone(clone as never)
+        .itemCanReorder(reorder as never)
+      assert.equal(f.getItemCanDelete(),  del)
+      assert.equal(f.getItemCanClone(),   clone)
+      assert.equal(f.getItemCanReorder(), reorder)
+    })
+
+    it('rules unset → no row carries cap flags (zero serialization cost)', async () => {
+      const [raw] = await resolveSchema(
+        [repeater()],
+        { values: { items: [{ product: 'A' }, { product: 'B' }] } },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canDelete,  undefined)
+      assert.equal(m.rows[0]?.canClone,   undefined)
+      assert.equal(m.rows[0]?.canReorder, undefined)
+    })
+
+    it('static `itemCanDelete(true)` → no row stamps canDelete', async () => {
+      const [raw] = await resolveSchema(
+        [repeater().itemCanDelete(true)],
+        { values: { items: [{ product: 'A' }] } },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canDelete, undefined)
+    })
+
+    it('static `itemCanDelete(false)` → every row stamps canDelete: false', async () => {
+      const [raw] = await resolveSchema(
+        [repeater().itemCanDelete(false)],
+        { values: { items: [{ product: 'A' }, { product: 'B' }] } },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canDelete, false)
+      assert.equal(m.rows[1]?.canDelete, false)
+    })
+
+    it('predicate gates per-row independently', async () => {
+      const f = repeater().itemCanDelete(({ values }) => !values?.['archived'])
+      const [raw] = await resolveSchema(
+        [f],
+        {
+          values: {
+            items: [
+              { product: 'A', archived: false },
+              { product: 'B', archived: true },
+              { product: 'C', archived: false },
+            ],
+          },
+        },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canDelete, undefined)
+      assert.equal(m.rows[1]?.canDelete, false)
+      assert.equal(m.rows[2]?.canDelete, undefined)
+    })
+
+    it('itemCanClone gates the clone button per-row', async () => {
+      const f = repeater()
+        .cloneable()
+        .itemCanClone(({ row }) => row?.index !== 1)
+      const [raw] = await resolveSchema(
+        [f],
+        { values: { items: [{ product: 'A' }, { product: 'B' }, { product: 'C' }] } },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canClone, undefined)
+      assert.equal(m.rows[1]?.canClone, false)
+      assert.equal(m.rows[2]?.canClone, undefined)
+    })
+
+    it('itemCanReorder gates reorder controls per-row', async () => {
+      const f = repeater()
+        .reorderable()
+        .itemCanReorder(({ values }) => values?.['product'] !== 'pinned')
+      const [raw] = await resolveSchema(
+        [f],
+        {
+          values: {
+            items: [
+              { product: 'A' },
+              { product: 'pinned' },
+              { product: 'B' },
+            ],
+          },
+        },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canReorder, undefined)
+      assert.equal(m.rows[1]?.canReorder, false)
+      assert.equal(m.rows[2]?.canReorder, undefined)
+    })
+
+    it('async predicate is awaited', async () => {
+      const f = repeater().itemCanDelete(async ({ values }) => {
+        await Promise.resolve()
+        return values?.['product'] !== 'locked'
+      })
+      const [raw] = await resolveSchema(
+        [f],
+        { values: { items: [{ product: 'A' }, { product: 'locked' }] } },
+      )
+      const m = metaOf(raw)
+      assert.equal(m.rows[0]?.canDelete, undefined)
+      assert.equal(m.rows[1]?.canDelete, false)
+    })
+
+    it('throwing predicate → capability stays enabled (fail-open) + warns', async () => {
+      const original = console.warn
+      const warnings: unknown[][] = []
+      console.warn = (...args: unknown[]) => { warnings.push(args) }
+      try {
+        const f = repeater().itemCanDelete(() => { throw new Error('boom') })
+        const [raw] = await resolveSchema(
+          [f],
+          { values: { items: [{ product: 'A' }] } },
+        )
+        const m = metaOf(raw)
+        // Fail-open: a misbehaving rule shouldn't lock the user out.
+        assert.equal(m.rows[0]?.canDelete, undefined)
+        assert.ok(warnings.length >= 1, 'expected at least one warning')
+        assert.match(String(warnings[0]?.[0]), /itemCanDelete\(\) on Repeater "items" threw/)
+      } finally {
+        console.warn = original
+      }
+    })
+
+    it('all three gates compose on the same row', async () => {
+      const f = repeater()
+        .reorderable()
+        .cloneable()
+        .itemCanDelete(({ row }) => row?.index === 0)
+        .itemCanClone(({ row }) => row?.index === 0)
+        .itemCanReorder(({ row }) => row?.index === 0)
+      const [raw] = await resolveSchema(
+        [f],
+        { values: { items: [{ product: 'A' }, { product: 'B' }] } },
+      )
+      const m = metaOf(raw)
+      // Row 0 has all caps allowed (no flags stamped).
+      assert.equal(m.rows[0]?.canDelete,  undefined)
+      assert.equal(m.rows[0]?.canClone,   undefined)
+      assert.equal(m.rows[0]?.canReorder, undefined)
+      // Row 1 is pinned across all three caps.
+      assert.equal(m.rows[1]?.canDelete,  false)
+      assert.equal(m.rows[1]?.canClone,   false)
+      assert.equal(m.rows[1]?.canReorder, false)
+    })
+  })
+
   describe('coerceFormValues (Step 3)', () => {
     function repeater() {
       return RepeaterField.make('items').schema([

@@ -109,6 +109,12 @@ interface RowState {
   itemLabel?:    string
   hidden?:       boolean
   extraActions?: ElementMeta[]
+  // Per-row capability flags from `itemCan*(rule)`. Stamped only when the
+  // rule resolved falsy server-side; default ("allowed") leaves them unset.
+  // Cloned rows inherit nothing (a fresh row had no rule evaluation pass).
+  canDelete?:    false
+  canClone?:     false
+  canReorder?:   false
 }
 
 /**
@@ -189,6 +195,9 @@ export function RepeaterInput({
       ...(r.itemLabel !== undefined ? { itemLabel: r.itemLabel } : {}),
       ...(r.hidden ? { hidden: true } : {}),
       ...(r.extraActions && r.extraActions.length > 0 ? { extraActions: r.extraActions } : {}),
+      ...(r.canDelete  === false ? { canDelete:  false as const } : {}),
+      ...(r.canClone   === false ? { canClone:   false as const } : {}),
+      ...(r.canReorder === false ? { canReorder: false as const } : {}),
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -620,11 +629,20 @@ function RepeaterRow({
     )
   }
 
+  // Per-row capability gates — `itemCan*(rule)` server-resolved.
+  // `canDelete / canClone / canReorder === false` removes the matching
+  // button on this row; absent flags fall through to the global defaults.
+  const canDelete  = row.canDelete  !== false
+  const canClone   = row.canClone   !== false
+  const canReorder = row.canReorder !== false
+
   // Native HTML5 DnD only fires `dragstart` from elements with `draggable=true`.
   // We attach it at the row container so the grip handle (and the empty
   // header gutter, for forgiving aim) both initiate a drag. The handle's
   // visual cursor + aria-label tell users where the affordance lives.
-  const dragProps = reorderable && !disabled
+  // Pinned rows (`canReorder === false`) lose drag-start; other rows can
+  // still drop next to them — see itemCanReorder docstring.
+  const dragProps = reorderable && !disabled && canReorder
     ? {
         draggable:     true as const,
         onDragStart,
@@ -650,11 +668,11 @@ function RepeaterRow({
         {...dragProps}
       >
         <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
-        {reorderable && <ReorderGrip disabled={disabled} buttons={buttons} />}
+        {reorderable && canReorder && <ReorderGrip disabled={disabled} buttons={buttons} />}
         <div className="flex-1 [&_label]:sr-only">
           <SchemaRenderer elements={namespaced} />
         </div>
-        {reorderable && (
+        {reorderable && canReorder && (
           <>
             <RowChromeIconButton
               defaults={DEFAULT_MOVE_UP}
@@ -670,12 +688,14 @@ function RepeaterRow({
             />
           </>
         )}
-        <RowChromeIconButton
-          defaults={DEFAULT_DELETE}
-          override={buttons?.delete}
-          disabled={disabled || atMin}
-          onClick={onRemove}
-        />
+        {canDelete && (
+          <RowChromeIconButton
+            defaults={DEFAULT_DELETE}
+            override={buttons?.delete}
+            disabled={disabled || atMin}
+            onClick={onRemove}
+          />
+        )}
       </div>
     )
   }
@@ -687,7 +707,7 @@ function RepeaterRow({
       {...dragProps}
     >
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        {reorderable && <ReorderGrip disabled={disabled} buttons={buttons} />}
+        {reorderable && canReorder && <ReorderGrip disabled={disabled} buttons={buttons} />}
         {collapsible && (
           <CollapseChevron
             isCollapsed={isCollapsed}
@@ -698,7 +718,7 @@ function RepeaterRow({
         )}
         <span className="flex-1 truncate text-sm font-medium">{headerLabel}</span>
         <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
-        {reorderable && (
+        {reorderable && canReorder && (
           <>
             <RowChromeIconButton
               defaults={DEFAULT_MOVE_UP}
@@ -721,7 +741,7 @@ function RepeaterRow({
             disabled={disabled}
           />
         )}
-        {cloneable && (
+        {cloneable && canClone && (
           <RowChromeIconButton
             defaults={DEFAULT_CLONE}
             override={buttons?.clone}
@@ -729,12 +749,14 @@ function RepeaterRow({
             onClick={onClone}
           />
         )}
-        <RowChromeIconButton
-          defaults={DEFAULT_DELETE}
-          override={buttons?.delete}
-          disabled={disabled || atMin}
-          onClick={onRemove}
-        />
+        {canDelete && (
+          <RowChromeIconButton
+            defaults={DEFAULT_DELETE}
+            override={buttons?.delete}
+            disabled={disabled || atMin}
+            onClick={onRemove}
+          />
+        )}
       </div>
 
       {/* Body — kept mounted (display:none on collapse) so uncontrolled
@@ -1039,7 +1061,12 @@ function RepeaterTableRow({
     i === columns.length - 1 ? namespaced.slice(i) : namespaced.slice(i, i + 1),
   )
 
-  const dragProps = reorderable && !disabled
+  // Per-row capability gates — see RepeaterRow for the contract.
+  const canDelete  = row.canDelete  !== false
+  const canClone   = row.canClone   !== false
+  const canReorder = row.canReorder !== false
+
+  const dragProps = reorderable && !disabled && canReorder
     ? {
         draggable: true as const,
         onDragStart,
@@ -1063,7 +1090,7 @@ function RepeaterTableRow({
       ))}
       <td className="whitespace-nowrap px-3 py-2 text-right">
         <div className="inline-flex items-center gap-1">
-          {reorderable && (
+          {reorderable && canReorder && (
             <>
               <ReorderGrip disabled={disabled} buttons={buttons} />
               <RowChromeIconButton
@@ -1087,7 +1114,7 @@ function RepeaterTableRow({
               disabled={disabled}
             />
           )}
-          {cloneable && (
+          {cloneable && canClone && (
             <RowChromeIconButton
               defaults={DEFAULT_CLONE}
               override={buttons?.clone}
@@ -1095,12 +1122,14 @@ function RepeaterTableRow({
               onClick={onClone}
             />
           )}
-          <RowChromeIconButton
-            defaults={DEFAULT_DELETE}
-            override={buttons?.delete}
-            disabled={disabled || atMin}
-            onClick={onRemove}
-          />
+          {canDelete && (
+            <RowChromeIconButton
+              defaults={DEFAULT_DELETE}
+              override={buttons?.delete}
+              disabled={disabled || atMin}
+              onClick={onRemove}
+            />
+          )}
         </div>
       </td>
     </tr>
@@ -1108,7 +1137,16 @@ function RepeaterTableRow({
 }
 
 interface RepeaterMetaShape {
-  rows?:             Array<{ id: string; children: ElementMeta[]; itemLabel?: string; hidden?: boolean; extraActions?: ElementMeta[] }>
+  rows?:             Array<{
+    id:            string
+    children:      ElementMeta[]
+    itemLabel?:    string
+    hidden?:       boolean
+    extraActions?: ElementMeta[]
+    canDelete?:    false
+    canClone?:     false
+    canReorder?:   false
+  }>
   template?:         ElementMeta[]
   columns?:          number
   minItems?:         number

@@ -67,6 +67,9 @@ The submitted body has shape:
 | `.table([{ label, alignment?, width?, required? }, …])` | Render rows as a compact HTML table — one `<tr>` per row, one `<td>` per inner field. Columns map 1:1 to `schema()` fields in declaration order. Inner-field labels render `sr-only`; clone / delete / `extraItemActions` land in a final actions cell. Pass `[]` to turn off. Mutually exclusive with `.simple()` and `.grid()`. |
 | `.itemLabel(row => string)` | Header text for the collapsed row; falls back to `Item N` |
 | `.itemHidden(rule)` | Per-row visibility — boolean or `(ctx) => bool \| Promise<bool>`. Hidden rows render with `display:none` so values still round-trip on submit |
+| `.itemCanDelete(rule)` | Per-row gate for the trash button — boolean or `(ctx) => bool \| Promise<bool>`. Resolving falsy hides the trash on that row only |
+| `.itemCanClone(rule)` | Per-row gate for the clone button. No-op when `cloneable()` is off |
+| `.itemCanReorder(rule)` | Per-row gate for the drag grip + Up/Down arrows. No-op when `reorderable()` is off |
 | `.addActionLabel(text)` | Label for the Add button (default `'Add'`) — shorthand for `.addAction(RowButton.make().label(text))` |
 | `.addAction(b)` / `.cloneAction(b)` / `.deleteAction(b)` / `.moveUpAction(b)` / `.moveDownAction(b)` / `.reorderAction(b)` / `.collapseAction(b)` | Customize the chrome of the seven built-in row buttons (label / icon / color / tooltip). See [Row-button customizers](#row-button-customizers) below. |
 
@@ -167,6 +170,49 @@ should never silently hide data the user is editing.
 Reorder skips hidden rows: pressing ↑ on the row below a hidden row
 hops the visible row over the hidden one. Drag-and-drop drops only
 between visible rows (hidden rows have no DOM box to target).
+
+## Per-row capability gates
+
+Three setters narrow the built-in row-button strip on a per-row basis:
+
+```ts
+Repeater.make('contacts')
+  .reorderable()
+  .cloneable()
+  .itemCanDelete(({ values }) => values?.['archived'] !== true)   // can't delete archived
+  .itemCanClone(({ row })   => row?.index !== 0)                  // first row can't be cloned
+  .itemCanReorder(({ values }) => values?.['pinned'] !== true)    // pinned rows stay put
+  .schema([
+    TextField.make('name'),
+    ToggleField.make('archived'),
+    ToggleField.make('pinned'),
+  ])
+```
+
+Each rule is `boolean | (ctx: LayoutContext) => boolean | Promise<boolean>`,
+same shape as `itemHidden`. Returning truthy keeps the matching button
+mounted (the default); returning falsy hides it on that row only:
+
+- `itemCanDelete(false-ish)` — trash button hidden
+- `itemCanClone(false-ish)` — clone button hidden (no-op when `cloneable()` is off)
+- `itemCanReorder(false-ish)` — drag grip + Up/Down arrows hidden (no-op when `reorderable()` is off)
+
+The predicate context is the same as `itemHidden`: `values` (row-scoped),
+`$get / $set` (row-local; dotted paths reach across rows), `row.index`,
+`record / user` from the parent form.
+
+Pinning a single row with `itemCanReorder(false)` doesn't lock its
+neighbours — other rows can still drop above or below it. Pin both
+sides if you need a pair to stay adjacent.
+
+These gates are presentation, not authorization. A tampered POST body
+that deletes a gated row will still go through. Gate the parent form's
+lifecycle hooks (`mutateDataBeforeUpdate`, `beforeSave`, etc.) for real
+authorization.
+
+A throwing predicate fails-open (capability stays enabled + warn) —
+mirroring `itemHidden`'s posture, since a misbehaving rule shouldn't
+silently lock the user out of editing data.
 
 ## Nested Repeaters
 
@@ -709,13 +755,12 @@ row transparently.
 
 ## Limitations
 
-- **`itemHidden` doesn't re-evaluate on live updates.** Currently
-  evaluated only at full form-render. Reactive hide/show is a future
-  revision.
-- **No per-row authorization API yet** (`itemCanDelete` etc.). Use
-  `extraItemActions` with `.visible()` for row-level branching;
-  built-in clone/delete still go through the field-level `cloneable()
-  / deletable()` flags.
+- **`itemHidden` and `itemCan*` don't re-evaluate on live updates.**
+  Currently evaluated only at full form-render. Reactive hide/show /
+  hide/enable is a future revision.
+- **Per-row gates are presentation, not authorization.** `itemCanDelete`
+  (and its siblings) hide buttons but don't reject tampered POST bodies.
+  Gate the parent form's lifecycle hooks for real authorization.
 - **Forms inside a Repeater row** aren't dispatched in v1 (no row
   context on the handler). Keep forms at the page level.
 

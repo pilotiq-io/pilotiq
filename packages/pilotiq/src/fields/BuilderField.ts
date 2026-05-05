@@ -13,6 +13,7 @@ import {
   serializeRowButtons,
   normalizeGridConfig,
   type RepeaterGridConfig,
+  type RepeaterItemCanRule,
 } from './RepeaterField.js'
 
 /**
@@ -89,6 +90,14 @@ export type BuilderItemHiddenRule =
   | boolean
   | ((ctx: LayoutContext) => boolean | Promise<boolean>)
 
+/**
+ * Per-row capability gate. Identical shape to `RepeaterItemCanRule` —
+ * re-exported here so users importing from `@pilotiq/pilotiq` only see
+ * the Builder-flavoured name. Used by `itemCanDelete / itemCanClone /
+ * itemCanReorder`. See `RepeaterItemCanRule` for the contract.
+ */
+export type BuilderItemCanRule = RepeaterItemCanRule
+
 /** Position of the `Add block` button under the field's row stack. */
 export type BuilderAddActionAlignment = 'start' | 'center' | 'end'
 
@@ -115,6 +124,16 @@ export interface BuilderRowMeta {
    * deferred to a future polish (`Block.extraItemActions(...)`).
    */
   extraActions?: ActionMeta[]
+  /**
+   * Per-row capability flags. Stamped only when the corresponding
+   * `itemCan*(rule)` resolved falsy for this row. The renderer reads
+   * these and skips the matching button. See `RepeaterRowMeta.canDelete`
+   * for the full contract — semantics are identical (`row.blockType` is
+   * available to the predicate as `ctx.row.blockType`).
+   */
+  canDelete?:   false
+  canClone?:    false
+  canReorder?:  false
 }
 
 export interface BuilderFieldMeta extends FieldMeta {
@@ -211,6 +230,9 @@ export class BuilderField extends Field {
   private _addActionAlignment:    BuilderAddActionAlignment = 'start'
   private _itemLabel?:            BuilderItemLabel
   private _itemHidden?:           BuilderItemHiddenRule
+  private _itemCanDelete?:        BuilderItemCanRule
+  private _itemCanClone?:         BuilderItemCanRule
+  private _itemCanReorder?:       BuilderItemCanRule
   private _extraItemActions:      Action[] = []
   private _grid?:                 RepeaterGridConfig
   private _buttons:               { [K in RowButtonKind]?: RowButton } = {}
@@ -318,6 +340,30 @@ export class BuilderField extends Field {
   itemLabel(fn: BuilderItemLabel): this { this._itemLabel = fn; return this }
 
   itemHidden(rule: BuilderItemHiddenRule): this { this._itemHidden = rule; return this }
+
+  /**
+   * Per-row gate for the trash button. Mirrors `Repeater.itemCanDelete`.
+   * Predicate sees a row-scoped `LayoutContext` with `ctx.row.blockType`
+   * exposing the row's block name so a single rule can branch by block.
+   * Throwing → button stays visible + warn (fail-open, same posture as
+   * `itemHidden`). Presentation only — gate the parent form's lifecycle
+   * hooks for real authorization.
+   */
+  itemCanDelete(rule: BuilderItemCanRule): this { this._itemCanDelete = rule; return this }
+
+  /**
+   * Per-row gate for the clone (`Duplicate row`) button. Mirrors
+   * `Repeater.itemCanClone`. No-op when `cloneable()` is off field-wide.
+   */
+  itemCanClone(rule: BuilderItemCanRule): this { this._itemCanClone = rule; return this }
+
+  /**
+   * Per-row gate for the reorder controls (drag grip + Up / Down arrows).
+   * Mirrors `Repeater.itemCanReorder`. No-op when `reorderable()` is off
+   * field-wide. Drag targeting is unaffected — non-pinned rows can still
+   * drop at the pinned row's slot; pin both sides to keep a pair adjacent.
+   */
+  itemCanReorder(rule: BuilderItemCanRule): this { this._itemCanReorder = rule; return this }
 
   /**
    * Per-row action buttons rendered alongside clone/delete in each row's
@@ -456,6 +502,9 @@ export class BuilderField extends Field {
   getAddActionAlignment():        BuilderAddActionAlignment { return this._addActionAlignment }
   getItemLabel():                 BuilderItemLabel | undefined      { return this._itemLabel  }
   getItemHidden():                BuilderItemHiddenRule | undefined { return this._itemHidden }
+  getItemCanDelete():             BuilderItemCanRule    | undefined { return this._itemCanDelete  }
+  getItemCanClone():              BuilderItemCanRule    | undefined { return this._itemCanClone   }
+  getItemCanReorder():            BuilderItemCanRule    | undefined { return this._itemCanReorder }
   getExtraItemActions():          Action[]                          { return this._extraItemActions }
   getGrid():                      RepeaterGridConfig | undefined    { return this._grid }
   /** Resolved relationship config (`undefined` when not configured). */
