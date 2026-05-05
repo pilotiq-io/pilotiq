@@ -1,6 +1,7 @@
 import type { Element } from './schema/Element.js'
 import type { SchemaContext, SchemaDefinition } from './schema/resolveSchema.js'
 import type { ResourceClass, NavigationBadgeColor, NavigationBadgeHandler } from './Resource.js'
+import type { ClusterClass } from './Cluster.js'
 import { type IconValue, serializeIcon } from './icons/types.js'
 
 /**
@@ -41,6 +42,14 @@ export class Page {
   static navigationBadge:       NavigationBadgeHandler | undefined = undefined
   static navigationBadgeColor:  NavigationBadgeColor = 'default'
   static navigationParentItem:  string | undefined = undefined
+
+  /**
+   * Cluster this page belongs to. When set, the page's URL gains the
+   * cluster's slug as a prefix segment and the page nests under the
+   * cluster's nav entry. The referenced class must be registered via
+   * `Pilotiq.clusters([…])`.
+   */
+  static cluster?: ClusterClass
 
   /** Stored schema definition. */
   protected static _schemaDef?: SchemaDefinition

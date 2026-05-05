@@ -7,6 +7,7 @@ import type { IconValue } from './icons/types.js'
 import { defaultPages } from './defaultPages.js'
 import type { RelationManager } from './RelationManager.js'
 import type { SchemaContext } from './schema/resolveSchema.js'
+import type { ClusterClass } from './Cluster.js'
 
 /** Map of resource page roles to Page subclasses. */
 export interface ResourcePages {
@@ -86,6 +87,17 @@ export abstract class Resource {
    * parent nav item. Renders nested under the parent when set; renders
    * at top level when the name doesn't resolve. */
   static navigationParentItem: string | undefined = undefined
+
+  /**
+   * Cluster this resource belongs to. When set, the resource's URLs gain
+   * the cluster's slug as a prefix segment (e.g. `/admin/content/articles`
+   * instead of `/admin/articles`) and the resource nests under the
+   * cluster's nav entry instead of appearing at the panel top level.
+   *
+   * The referenced class must be registered via `Pilotiq.clusters([…])`;
+   * boot fails otherwise.
+   */
+  static cluster?: ClusterClass
 
   /** Column that names a record when referring to it in search results,
    * breadcrumbs, or relation pickers. Resolution order at the call site
@@ -265,10 +277,11 @@ export abstract class Resource {
   static getGlobalSearchResultUrl(record: unknown, base: string): string {
     const r = record as Record<string, unknown> | null | undefined
     const slug = this.getSlug()
-    if (!r) return `${base}/${slug}`
+    const prefix = this.cluster ? `${base}/${this.cluster.getSlug()}/${slug}` : `${base}/${slug}`
+    if (!r) return prefix
     const id = r['id']
-    if (id === undefined || id === null) return `${base}/${slug}`
-    return `${base}/${slug}/${String(id)}`
+    if (id === undefined || id === null) return prefix
+    return `${prefix}/${String(id)}`
   }
 
   /**

@@ -1,6 +1,7 @@
 import { Resource, Form, TextField, Table, Column } from '@pilotiq/pilotiq'
 import { Tag as TagIcon } from 'lucide-react'
 import { Tag } from '../../Models/Tag.js'
+import { ContentCluster } from '../Content/ContentCluster.js'
 
 /**
  * Tag Resource — backs the M2M demo on the Article side. Registered
@@ -15,7 +16,7 @@ export class TagResource extends Resource {
   static override icon          = TagIcon
   static override model         = Tag
 
-  static override navigationGroup     = 'Content'
+  static override cluster             = ContentCluster
   static override navigationSort      = 30
   static override recordTitleAttribute = 'name'
 

@@ -11,6 +11,7 @@ import {
 import { Post } from '../../Models/Post.js'
 import { PostsCommentsManager } from './relations/CommentsManager.js'
 import { PostsTagsManager }     from './relations/TagsManager.js'
+import { ContentCluster }       from '../Content/ContentCluster.js'
 
 const ADMIN = '/new-admin'
 
@@ -33,8 +34,9 @@ export class PostResource extends Resource {
   static override model                = Post
   static override recordTitleAttribute = 'title'
   static override softDeletes          = true
+  // Cluster demo — Posts lives under `/new-admin/content/posts`.
+  static override cluster              = ContentCluster
 
-  static override navigationGroup = 'Content'
   static override navigationSort  = 20
 
   static override form(form: Form): Form {

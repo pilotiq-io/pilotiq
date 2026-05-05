@@ -43,6 +43,7 @@ import { baseColors } from './theme/base-colors.js'
 import { HUE_NAMES } from './theme/colors.js'
 import { migrateThemeOverrides } from './theme/migrate.js'
 import { radiusMap } from './theme/radius.js'
+import { resourceBasePath, globalBasePath, pageBasePath } from './clusterPaths.js'
 
 /** True when the client wants a JSON response (modal-form action submitting
  * via fetch), false for a browser-style form post that wants a 303 redirect.
@@ -151,6 +152,37 @@ function forbidden(res: AppResponse, json: boolean): unknown {
  * than 500 the page. */
 async function checkPolicy(fn: () => boolean | Promise<boolean>): Promise<boolean> {
   try { return Boolean(await fn()) } catch { return false }
+}
+
+/**
+ * Cluster-level auth gate. When a resource / global / page lives inside
+ * a cluster, the cluster's `canAccess(user)` runs alongside the child's
+ * own predicates — both must pass. Throwing → fail closed. Items
+ * without a cluster always pass.
+ */
+async function checkClusterAccess(
+  owner: { cluster?: { canAccess: (user: unknown) => boolean | Promise<boolean> } },
+  user:  unknown,
+): Promise<boolean> {
+  if (!owner.cluster) return true
+  return checkPolicy(() => owner.cluster!.canAccess(user))
+}
+
+/**
+ * Owner-level access gate that AND's the cluster's `canAccess` (when the
+ * owner is inside a cluster) with the owner's own `canAccess`. Use this
+ * as the first gate on every Resource / Global / Page route — clusters
+ * compose: a child's predicate never runs when the cluster denies.
+ */
+async function policyAccess(
+  owner: {
+    canAccess: (user: unknown) => boolean | Promise<boolean>
+    cluster?: { canAccess: (user: unknown) => boolean | Promise<boolean> }
+  },
+  user: unknown,
+): Promise<boolean> {
+  if (!await checkClusterAccess(owner, user)) return false
+  return checkPolicy(() => owner.canAccess(user))
 }
 
 /**
@@ -482,6 +514,101 @@ export function registerPilotiqRoutes(
   const cfg = pilotiq.getConfig()
   const base = cfg.path
 
+  // Clusters — fail fast at boot. A silent 404 or shadow-routing at
+  // request time is much harder to debug than a clear boot error.
+  // Dangling-reference checks run even when `cfg.clusters` is empty —
+  // a child that names an unregistered cluster is broken regardless.
+  for (const R of cfg.resources) {
+    if (R.cluster === undefined) continue
+    if (!cfg.clusters.includes(R.cluster)) {
+      throw new Error(
+        `[Pilotiq] Resource ${R.name} references cluster ${R.cluster.name} which is not registered. ` +
+        `Add it to Pilotiq.clusters([…]).`,
+      )
+    }
+  }
+  for (const G of cfg.globals) {
+    if (G.cluster === undefined) continue
+    if (!cfg.clusters.includes(G.cluster)) {
+      throw new Error(
+        `[Pilotiq] Global ${G.name} references cluster ${G.cluster.name} which is not registered. ` +
+        `Add it to Pilotiq.clusters([…]).`,
+      )
+    }
+  }
+  for (const P of cfg.pages) {
+    if (P.cluster === undefined) continue
+    if (!cfg.clusters.includes(P.cluster)) {
+      throw new Error(
+        `[Pilotiq] Page ${P.name} references cluster ${P.cluster.name} which is not registered. ` +
+        `Add it to Pilotiq.clusters([…]).`,
+      )
+    }
+  }
+
+  if (cfg.clusters.length > 0) {
+    const seenClusterSlug = new Set<string>()
+    for (const C of cfg.clusters) {
+      const s = C.getSlug()
+      if (s === '' || /^_/.test(s) || s === 'theme' || s === 'api') {
+        throw new Error(
+          `[Pilotiq] Cluster ${C.name} uses reserved slug "${s}". ` +
+          `Cluster slugs cannot be empty, start with "_", or equal "theme" / "api".`,
+        )
+      }
+      if (seenClusterSlug.has(s)) {
+        throw new Error(
+          `[Pilotiq] Two clusters share slug "${s}". Cluster slugs must be unique.`,
+        )
+      }
+      seenClusterSlug.add(s)
+    }
+    // Top-level (no cluster) child slugs must not collide with cluster
+    // slugs — the URL `<panel-base>/<slug>` would resolve to the
+    // cluster first under the cluster-aware findByPath.
+    for (const R of cfg.resources) {
+      if (R.cluster) continue
+      if (seenClusterSlug.has(R.getSlug())) {
+        throw new Error(
+          `[Pilotiq] Resource ${R.name} slug "${R.getSlug()}" collides with a registered cluster slug. ` +
+          `Either rename the resource or move it inside the cluster.`,
+        )
+      }
+    }
+    for (const G of cfg.globals) {
+      if (G.cluster) continue
+      if (seenClusterSlug.has(G.getSlug())) {
+        throw new Error(
+          `[Pilotiq] Global ${G.name} slug "${G.getSlug()}" collides with a registered cluster slug.`,
+        )
+      }
+    }
+    for (const P of cfg.pages) {
+      if (P.cluster || P === cfg.dashboardPage) continue
+      if (seenClusterSlug.has(P.getSlug())) {
+        throw new Error(
+          `[Pilotiq] Page ${P.name} slug "${P.getSlug()}" collides with a registered cluster slug.`,
+        )
+      }
+    }
+    // landingPage sanity — a cluster's landing page must be inside the
+    // cluster (or the redirect would jump out of the cluster URL space).
+    for (const C of cfg.clusters) {
+      const lp = C.landingPage
+      if (lp === undefined) continue
+      if (!cfg.pages.includes(lp)) {
+        throw new Error(
+          `[Pilotiq] Cluster ${C.name}.landingPage references ${lp.name} which is not registered in Pilotiq.pages([…]).`,
+        )
+      }
+      if (lp.cluster !== C) {
+        throw new Error(
+          `[Pilotiq] Cluster ${C.name}.landingPage = ${lp.name}, but ${lp.name}.cluster does not point back at ${C.name}.`,
+        )
+      }
+    }
+  }
+
   // Plan #11 — fail fast at boot when any relation manager's
   // `relationship` collides with a reserved URL token. A silent 404 at
   // request time is much harder to debug.
@@ -550,7 +677,7 @@ export function registerPilotiqRoutes(
     // custom pages — fail-closed on throw.
     if (cfg.dashboardPage) {
       const user = await pilotiq.resolveUser(req)
-      if (!await checkPolicy(() => cfg.dashboardPage!.canAccess(user))) {
+      if (!await policyAccess(cfg.dashboardPage!, user)) {
         return forbidden(res, wantsJson(req))
       }
     }
@@ -570,7 +697,7 @@ export function registerPilotiqRoutes(
   router.post(`${base}/_widget/:id`, async (req, res) => {
     if (cfg.dashboardPage) {
       const user = await pilotiq.resolveUser(req)
-      if (!await checkPolicy(() => cfg.dashboardPage!.canAccess(user))) return forbidden(res, true)
+      if (!await policyAccess(cfg.dashboardPage!, user)) return forbidden(res, true)
     }
     return handleWidgetData(req, res, pilotiq, { kind: 'panel' }, req.params['id']!)
   })
@@ -590,15 +717,16 @@ export function registerPilotiqRoutes(
   // ── Resource routes ───────────────────────────────────
   for (const R of cfg.resources) {
     const slug  = R.getSlug()
+    const resourceBase = resourceBasePath(base, R)
     const pages = R.resolvePages()
 
-    // Index — GET ${base}/${slug}
+    // Index — GET ${resourceBase}
     if (pages.index) {
       const PageClass = pages.index
-      const indexUrl  = `${base}/${slug}`
+      const indexUrl  = resourceBase
       router.get(indexUrl, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user)))  return forbidden(res, wantsJson(req))
+        if (!await policyAccess(R, user))  return forbidden(res, wantsJson(req))
         if (!await checkPolicy(() => R.canViewAny(user))) return forbidden(res, wantsJson(req))
 
         // Tier-3 filter persistence — when the resource opts in,
@@ -608,7 +736,8 @@ export function registerPilotiqRoutes(
         // `@rudderjs/session` isn't installed on the host.
         if (R.persistFiltersInSession) {
           const query = (req.query as Record<string, unknown> | undefined) ?? {}
-          const key   = listFiltersKey(base, slug)
+          const sessionSlug = R.cluster ? `${R.cluster.getSlug()}/${slug}` : slug
+          const key   = listFiltersKey(base, sessionSlug)
           if (Object.keys(query).length === 0) {
             const stored = readPersistedListQuery(req, key)
             if (stored) {
@@ -631,7 +760,7 @@ export function registerPilotiqRoutes(
       // returns the resolved payload. Body: `{ filter? }`.
       router.post(`${indexUrl}/_widget/:id`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user)))  return forbidden(res, true)
+        if (!await policyAccess(R, user))  return forbidden(res, true)
         if (!await checkPolicy(() => R.canViewAny(user))) return forbidden(res, true)
         return handleWidgetData(req, res, pilotiq, { kind: 'resource', slug }, req.params['id']!)
       })
@@ -647,7 +776,7 @@ export function registerPilotiqRoutes(
       if (R.deferLoading) {
         router.get(`${indexUrl}/_table`, async (req, res) => {
           const user = await pilotiq.resolveUser(req)
-          if (!await checkPolicy(() => R.canAccess(user)))  return forbidden(res, true)
+          if (!await policyAccess(R, user))  return forbidden(res, true)
           if (!await checkPolicy(() => R.canViewAny(user))) return forbidden(res, true)
           const data = await resourceTableData(pilotiq, slug, req.query as Record<string, string>, req)
           if (!data) { res.status(404); return res.json({ ok: false, error: 'Resource not found' }) }
@@ -655,10 +784,10 @@ export function registerPilotiqRoutes(
         })
       }
 
-      // Action dispatch — POST ${base}/${slug}/_action/:actionName
+      // Action dispatch — POST ${resourceBase}/_action/:actionName
       router.post(`${indexUrl}/_action/:actionName`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
 
         const actionName = req.params['actionName']!
         const json = wantsJson(req)
@@ -710,13 +839,13 @@ export function registerPilotiqRoutes(
         return res.redirect(redirect, 303)
       })
 
-      // Reorderable rows — POST ${base}/${slug}/_reorder { ids: [] }
+      // Reorderable rows — POST ${resourceBase}/_reorder { ids: [] }
       // Only mounted when `Resource.table()` opts in (boot-time probe
       // populates `reorderEnabled`).
       if (reorderEnabled.has(slug)) {
         router.post(`${indexUrl}/_reorder`, async (req, res) => {
           const user = await pilotiq.resolveUser(req)
-          if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+          if (!await policyAccess(R, user)) return forbidden(res, true)
           // List-level edit gate. The drop affects many rows at once;
           // there's no single record to authorize against, so we pass
           // `undefined` and let user-supplied `canEdit` overrides branch
@@ -752,14 +881,14 @@ export function registerPilotiqRoutes(
         })
       }
 
-      // Editable cell columns — POST ${base}/${slug}/:id/_cell/:column
+      // Editable cell columns — POST ${resourceBase}/:id/_cell/:column
       // { value: <coerced> }. Only mounted when the resource declares at
       // least one editable column (boot-time probe populates
       // `editableEnabled`).
       if (editableEnabled.has(slug)) {
         router.post(`${indexUrl}/:id/_cell/:column`, async (req, res) => {
           const user = await pilotiq.resolveUser(req)
-          if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+          if (!await policyAccess(R, user)) return forbidden(res, true)
 
           const id      = req.params['id']!
           const colName = req.params['column']!
@@ -822,29 +951,29 @@ export function registerPilotiqRoutes(
     }
 
     // Plan #5 — partial-resolve endpoint for create-mode forms.
-    // POST ${base}/${slug}/_form/:formId/state
+    // POST ${resourceBase}/_form/:formId/state
     if (pages.create) {
-      router.post(`${base}/${slug}/_form/:formId/state`, async (req, res) => {
+      router.post(`${resourceBase}/_form/:formId/state`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+        if (!await policyAccess(R, user)) return forbidden(res, true)
         if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, true)
         const formId = req.params['formId']!
         return handleFormState(req, res, pilotiq, { kind: 'resource-create', slug }, formId)
       })
 
       // Plan #8 — wizard step-validate endpoint for create-mode forms.
-      router.post(`${base}/${slug}/_form/:formId/wizard`, async (req, res) => {
+      router.post(`${resourceBase}/_form/:formId/wizard`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+        if (!await policyAccess(R, user)) return forbidden(res, true)
         if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, true)
         const formId = req.params['formId']!
         return handleFormWizard(req, res, pilotiq, { kind: 'resource-create', slug }, formId)
       })
 
       // Async-mention endpoint for create-mode forms.
-      router.post(`${base}/${slug}/_form/:formId/mentions`, async (req, res) => {
+      router.post(`${resourceBase}/_form/:formId/mentions`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+        if (!await policyAccess(R, user)) return forbidden(res, true)
         if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, true)
         const formId = req.params['formId']!
         return handleFormMentions(req, res, pilotiq, { kind: 'resource-create', slug }, formId)
@@ -852,58 +981,58 @@ export function registerPilotiqRoutes(
     }
 
     // Plan #5 — partial-resolve endpoint for edit-mode forms.
-    // POST ${base}/${slug}/:id/_form/:formId/state
+    // POST ${resourceBase}/:id/_form/:formId/state
     if (pages.edit) {
-      router.post(`${base}/${slug}/:id/_form/:formId/state`, async (req, res) => {
+      router.post(`${resourceBase}/:id/_form/:formId/state`, async (req, res) => {
         const recordId = req.params['id']!
         const formId   = req.params['formId']!
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+        if (!await policyAccess(R, user)) return forbidden(res, true)
         const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormState(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
       })
 
       // Plan #8 — wizard step-validate endpoint for edit-mode forms.
-      router.post(`${base}/${slug}/:id/_form/:formId/wizard`, async (req, res) => {
+      router.post(`${resourceBase}/:id/_form/:formId/wizard`, async (req, res) => {
         const recordId = req.params['id']!
         const formId   = req.params['formId']!
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+        if (!await policyAccess(R, user)) return forbidden(res, true)
         const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormWizard(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
       })
 
       // Async-mention endpoint for edit-mode forms.
-      router.post(`${base}/${slug}/:id/_form/:formId/mentions`, async (req, res) => {
+      router.post(`${resourceBase}/:id/_form/:formId/mentions`, async (req, res) => {
         const recordId = req.params['id']!
         const formId   = req.params['formId']!
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, true)
+        if (!await policyAccess(R, user)) return forbidden(res, true)
         const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormMentions(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
       })
     }
 
-    // Create — GET ${base}/${slug}/create
+    // Create — GET ${resourceBase}/create
     if (pages.create) {
       const PageClass = pages.create
-      const createUrl = `${base}/${slug}/create`
+      const createUrl = `${resourceBase}/create`
 
       router.get(createUrl, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
         if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, wantsJson(req))
         const data = await resourceCreateData(pilotiq, slug, undefined, req)
         return view('pilotiq.resource-create', data ?? {})
       })
 
-      // Create — POST ${base}/${slug}/create
+      // Create — POST ${resourceBase}/create
       router.post(createUrl, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
         if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, wantsJson(req))
 
         const body = await readFormBody(req)
@@ -949,7 +1078,7 @@ export function registerPilotiqRoutes(
         // would preserve the just-submitted values on screen).
         const fallback = continueCreate
           ? createUrl
-          : recordId !== undefined ? `${base}/${slug}/${String(recordId)}/edit` : `${base}/${slug}`
+          : recordId !== undefined ? `${resourceBase}/${String(recordId)}/edit` : `${resourceBase}`
         const redirect = continueCreate
           ? createUrl
           : normalizeRedirect(result.redirect, base) ?? fallback
@@ -972,7 +1101,7 @@ export function registerPilotiqRoutes(
       // coerced values.
       router.post(`${createUrl}/_action/:actionName`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
         if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, wantsJson(req))
 
         const actionName = req.params['actionName']!
@@ -1018,17 +1147,17 @@ export function registerPilotiqRoutes(
       })
     }
 
-    // View — GET ${base}/${slug}/:id (literal `create` matches first via
+    // View — GET ${resourceBase}/:id (literal `create` matches first via
     // Hono's literal-over-param routing, so `:id` only catches everything else.)
     if (pages.view) {
-      router.get(`${base}/${slug}/:id`, async (req, res) => {
+      router.get(`${resourceBase}/:id`, async (req, res) => {
         const recordId = req.params['id']!
         // Hono routes both `/create` and `/:id` against this slot; only the
         // literal `create` segment hits the create route. Defensive guard:
         if (recordId === 'create') return // handled by create route
 
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
         // Load the record once so canView can inspect it. Stub `{ id }`
         // when the resource has no model wired — the user-authored
         // predicate gets to decide what to do with it.
@@ -1039,14 +1168,14 @@ export function registerPilotiqRoutes(
         return view('pilotiq.resource-view', data ?? {})
       })
 
-      // Delete — POST ${base}/${slug}/:id/delete
-      router.post(`${base}/${slug}/:id/delete`, async (req, res) => {
+      // Delete — POST ${resourceBase}/:id/delete
+      router.post(`${resourceBase}/:id/delete`, async (req, res) => {
         const recordId = req.params['id']!
         const json = wantsJson(req)
-        const indexUrl = `${base}/${slug}`
+        const indexUrl = `${resourceBase}`
 
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, json)
+        if (!await policyAccess(R, user)) return forbidden(res, json)
         const record = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canDelete(user, record))) return forbidden(res, json)
 
@@ -1119,14 +1248,14 @@ export function registerPilotiqRoutes(
         return Array.isArray(result.data) ? result.data[0] : undefined
       }
 
-      // Restore — POST ${base}/${slug}/:id/restore
-      router.post(`${base}/${slug}/:id/restore`, async (req, res) => {
+      // Restore — POST ${resourceBase}/:id/restore
+      router.post(`${resourceBase}/:id/restore`, async (req, res) => {
         const recordId = req.params['id']!
         const json = wantsJson(req)
-        const indexUrl = `${base}/${slug}`
+        const indexUrl = `${resourceBase}`
 
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, json)
+        if (!await policyAccess(R, user)) return forbidden(res, json)
         const record = await loadTrashable(recordId)
         if (!record) {
           res.status(404)
@@ -1151,14 +1280,14 @@ export function registerPilotiqRoutes(
         return res.redirect(indexUrl, 303)
       })
 
-      // Force-delete — POST ${base}/${slug}/:id/force-delete
-      router.post(`${base}/${slug}/:id/force-delete`, async (req, res) => {
+      // Force-delete — POST ${resourceBase}/:id/force-delete
+      router.post(`${resourceBase}/:id/force-delete`, async (req, res) => {
         const recordId = req.params['id']!
         const json = wantsJson(req)
-        const indexUrl = `${base}/${slug}`
+        const indexUrl = `${resourceBase}`
 
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, json)
+        if (!await policyAccess(R, user)) return forbidden(res, json)
         const record = await loadTrashable(recordId)
         if (!record) {
           res.status(404)
@@ -1184,14 +1313,14 @@ export function registerPilotiqRoutes(
       })
     }
 
-    // Edit — GET ${base}/${slug}/:id/edit
+    // Edit — GET ${resourceBase}/:id/edit
     if (pages.edit) {
       const PageClass = pages.edit
 
-      router.get(`${base}/${slug}/:id/edit`, async (req, res) => {
+      router.get(`${resourceBase}/:id/edit`, async (req, res) => {
         const recordId = req.params['id']!
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
         const record = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, record))) return forbidden(res, wantsJson(req))
 
@@ -1199,16 +1328,16 @@ export function registerPilotiqRoutes(
         return view('pilotiq.resource-edit', data ?? {})
       })
 
-      // Edit — POST ${base}/${slug}/:id/edit
-      router.post(`${base}/${slug}/:id/edit`, async (req, res) => {
+      // Edit — POST ${resourceBase}/:id/edit
+      router.post(`${resourceBase}/:id/edit`, async (req, res) => {
         const recordId = req.params['id']!
-        const editUrl  = `${base}/${slug}/${recordId}/edit`
+        const editUrl  = `${resourceBase}/${recordId}/edit`
         const body = await readFormBody(req)
         const { values, formId } = splitMeta(body)
         const json = wantsJson(req)
 
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, json)
+        if (!await policyAccess(R, user)) return forbidden(res, json)
         const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, json)
 
@@ -1265,7 +1394,7 @@ export function registerPilotiqRoutes(
       // Same shape as the create-page _action route. The `:id` segment
       // gates record-aware policy (canEdit per record); row-scoped
       // dispatch reuses the form schema we resolve here for `coerceFormValues`.
-      router.post(`${base}/${slug}/:id/_action/:actionName`, async (req, res) => {
+      router.post(`${resourceBase}/:id/_action/:actionName`, async (req, res) => {
         const recordId = req.params['id']!
         // Hono routes `/edit` and `/delete` against this slot too — bail
         // out so the dedicated handlers downstream pick them up. The
@@ -1274,7 +1403,7 @@ export function registerPilotiqRoutes(
         const actionName = req.params['actionName']!
 
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
         const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, wantsJson(req))
 
@@ -1282,7 +1411,7 @@ export function registerPilotiqRoutes(
         const body  = await readFormBody(req)
         const input = parseActionBody(body)
 
-        const editUrl = `${base}/${slug}/${recordId}/edit`
+        const editUrl = `${resourceBase}/${recordId}/edit`
         const ctx: SchemaContext = { mode: 'edit', recordId, basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
         const elements = await callPageSchema(PageClass, ctx)
         tagActionDispatch(elements, editUrl)
@@ -1327,13 +1456,13 @@ export function registerPilotiqRoutes(
 
     // ── Plan #11 relation manager routes ───────────────
     // Per-manager: list, create (GET/POST), edit (GET/POST), delete (POST).
-    // Mounted under ${base}/${slug}/:id/${rel} — the `:id` segment is the
+    // Mounted under ${resourceBase}/:id/${rel} — the `:id` segment is the
     // PARENT record id; the `:childId` segment (where present) is the
     // related record's id. Authorization runs in two layers: parent
     // canAccess + canEdit(parent), then manager-scoped can*.
     for (const M of R.relations()) {
       const rel = M.getRelationship()
-      const parentBase = `${base}/${slug}/:id/${rel}`
+      const parentBase = `${resourceBase}/:id/${rel}`
 
       // Read the relation type once at registration so the (R, M)-
       // scoped closures all see the same mode without re-reading the
@@ -1352,7 +1481,7 @@ export function registerPilotiqRoutes(
       const requireParent = async (req: AppRequest, res: AppResponse, json: boolean): Promise<{ user: unknown; parent: unknown; recordId: string } | undefined> => {
         const recordId = req.params['id']!
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => R.canAccess(user))) { forbidden(res, json); return undefined }
+        if (!await policyAccess(R, user)) { forbidden(res, json); return undefined }
         if (!R.model) {
           res.status(500)
           if (json) res.json({ ok: false, error: `Resource "${R.name}" has relations but no static model` })
@@ -1365,7 +1494,7 @@ export function registerPilotiqRoutes(
         return { user, parent, recordId }
       }
 
-      // List — GET ${base}/${slug}/:id/${rel}
+      // List — GET ${resourceBase}/:id/${rel}
       // Manager-level canViewAny is enforced inside relationManagerData via
       // safeManagerPolicy (with related-resource fall-through). We just
       // surface the {ok:false,status:403} from the data builder as 403.
@@ -1381,7 +1510,7 @@ export function registerPilotiqRoutes(
         return view('pilotiq.relation-list', data)
       })
 
-      // Create — GET ${base}/${slug}/:id/${rel}/create
+      // Create — GET ${resourceBase}/:id/${rel}/create
       router.get(`${parentBase}/create`, async (req, res) => {
         const json = wantsJson(req)
         const ctx = await requireParent(req, res, json)
@@ -1394,7 +1523,7 @@ export function registerPilotiqRoutes(
         return view('pilotiq.relation-create', data)
       })
 
-      // Create submit — POST ${base}/${slug}/:id/${rel}/create
+      // Create submit — POST ${resourceBase}/:id/${rel}/create
       router.post(`${parentBase}/create`, async (req, res) => {
         const json = wantsJson(req)
         const pre = await requireParent(req, res, json)
@@ -1483,7 +1612,7 @@ export function registerPilotiqRoutes(
         return res.redirect(redirect, 303)
       })
 
-      // Edit — GET ${base}/${slug}/:id/${rel}/:childId/edit
+      // Edit — GET ${resourceBase}/:id/${rel}/:childId/edit
       router.get(`${parentBase}/:childId/edit`, async (req, res) => {
         const json = wantsJson(req)
         const pre = await requireParent(req, res, json)
@@ -1497,7 +1626,7 @@ export function registerPilotiqRoutes(
         return view('pilotiq.relation-edit', data)
       })
 
-      // Edit submit — POST ${base}/${slug}/:id/${rel}/:childId/edit
+      // Edit submit — POST ${resourceBase}/:id/${rel}/:childId/edit
       router.post(`${parentBase}/:childId/edit`, async (req, res) => {
         const json = wantsJson(req)
         const pre = await requireParent(req, res, json)
@@ -1589,7 +1718,7 @@ export function registerPilotiqRoutes(
         return res.redirect(redirect, 303)
       })
 
-      // Delete — POST ${base}/${slug}/:id/${rel}/:childId/delete
+      // Delete — POST ${resourceBase}/:id/${rel}/:childId/delete
       router.post(`${parentBase}/:childId/delete`, async (req, res) => {
         const json = wantsJson(req)
         const pre = await requireParent(req, res, json)
@@ -1676,7 +1805,7 @@ export function registerPilotiqRoutes(
           }
         }
 
-        // Restore — POST ${base}/${slug}/:id/${rel}/:childId/restore
+        // Restore — POST ${resourceBase}/:id/${rel}/:childId/restore
         router.post(`${parentBase}/:childId/restore`, async (req, res) => {
           const json = wantsJson(req)
           const pre = await requireParent(req, res, json)
@@ -1706,7 +1835,7 @@ export function registerPilotiqRoutes(
           return res.redirect(listUrl, 303)
         })
 
-        // Force-delete — POST ${base}/${slug}/:id/${rel}/:childId/force-delete
+        // Force-delete — POST ${resourceBase}/:id/${rel}/:childId/force-delete
         router.post(`${parentBase}/:childId/force-delete`, async (req, res) => {
           const json = wantsJson(req)
           const pre = await requireParent(req, res, json)
@@ -1924,35 +2053,35 @@ export function registerPilotiqRoutes(
   // ── Globals (singletons — 2-segment, no /:id) ────────
   for (const G of cfg.globals) {
     const slug    = G.getSlug()
-    const editUrl = `${base}/${slug}`
+    const editUrl = globalBasePath(base, G)
     const pages   = G.resolvePages()
 
     if (pages.edit) {
       const PageClass = pages.edit
 
       // Plan #5 partial-resolve endpoint for the global's edit form.
-      // POST ${base}/${slug}/_form/:formId/state
-      router.post(`${base}/${slug}/_form/:formId/state`, async (req, res) => {
+      // POST ${editUrl}/_form/:formId/state
+      router.post(`${editUrl}/_form/:formId/state`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, true)
+        if (!await policyAccess(G, user)) return forbidden(res, true)
         if (!await checkPolicy(() => G.canEdit(user, undefined))) return forbidden(res, true)
         const formId = req.params['formId']!
         return handleFormState(req, res, pilotiq, { kind: 'global-edit', slug }, formId)
       })
 
       // Plan #8 wizard step-validate endpoint for the global's edit form.
-      router.post(`${base}/${slug}/_form/:formId/wizard`, async (req, res) => {
+      router.post(`${editUrl}/_form/:formId/wizard`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, true)
+        if (!await policyAccess(G, user)) return forbidden(res, true)
         if (!await checkPolicy(() => G.canEdit(user, undefined))) return forbidden(res, true)
         const formId = req.params['formId']!
         return handleFormWizard(req, res, pilotiq, { kind: 'global-edit', slug }, formId)
       })
 
       // Async-mention endpoint for the global's edit form.
-      router.post(`${base}/${slug}/_form/:formId/mentions`, async (req, res) => {
+      router.post(`${editUrl}/_form/:formId/mentions`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, true)
+        if (!await policyAccess(G, user)) return forbidden(res, true)
         if (!await checkPolicy(() => G.canEdit(user, undefined))) return forbidden(res, true)
         const formId = req.params['formId']!
         return handleFormMentions(req, res, pilotiq, { kind: 'global-edit', slug }, formId)
@@ -1960,7 +2089,7 @@ export function registerPilotiqRoutes(
 
       router.get(editUrl, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await policyAccess(G, user)) return forbidden(res, wantsJson(req))
         // Globals carry their record on the singleton form's `loadRecord`;
         // we don't pre-load here — pass a stub so canEdit's signature is
         // honored, and let user code decide whether to consult it.
@@ -1975,7 +2104,7 @@ export function registerPilotiqRoutes(
         const json = wantsJson(req)
 
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, json)
+        if (!await policyAccess(G, user)) return forbidden(res, json)
         if (!await checkPolicy(() => G.canEdit(user, undefined))) return forbidden(res, json)
 
         const ctx: SchemaContext = { mode: 'edit', basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
@@ -2026,9 +2155,9 @@ export function registerPilotiqRoutes(
 
     // Optional view page when the user opts in via pages().view
     if (pages.view) {
-      router.get(`${base}/${slug}/view`, async (req, res) => {
+      router.get(`${editUrl}/view`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await checkPolicy(() => G.canAccess(user))) return forbidden(res, wantsJson(req))
+        if (!await policyAccess(G, user)) return forbidden(res, wantsJson(req))
         if (!await checkPolicy(() => G.canView(user, undefined))) return forbidden(res, wantsJson(req))
         const data = await globalViewData(pilotiq, slug, req)
         return view('pilotiq.resource-view', data ?? {})
@@ -2040,19 +2169,19 @@ export function registerPilotiqRoutes(
   for (const PageClass of cfg.pages) {
     // Plan #15 — the dashboard page lives at `${base}` (handled by the
     // dashboard route above), so skip it here to avoid registering a
-    // duplicate `${base}/${slug}` route or a broken `${base}/` (when
+    // duplicate `${pageUrl}` route or a broken `${base}/` (when
     // `slug = ''`).
     if (cfg.dashboardPage === PageClass) continue
 
     const pageSlug = PageClass.getSlug()
-    const pageUrl  = `${base}/${pageSlug}`
+    const pageUrl  = pageBasePath(base, PageClass)
 
     // Plan #15 — per-page widget polling endpoint. Mirrors the
     // panel-scope `${base}/_widget/:id` but resolves the custom page's
     // schema instead of the dashboard's.
     router.post(`${pageUrl}/_widget/:id`, async (req, res) => {
       const user = await pilotiq.resolveUser(req)
-      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, true)
+      if (!await policyAccess(PageClass, user)) return forbidden(res, true)
       return handleWidgetData(req, res, pilotiq, { kind: 'page', pageSlug }, req.params['id']!)
     })
 
@@ -2060,7 +2189,7 @@ export function registerPilotiqRoutes(
     // POST ${base}/${pageSlug}/_form/:formId/state
     router.post(`${pageUrl}/_form/:formId/state`, async (req, res) => {
       const user = await pilotiq.resolveUser(req)
-      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, true)
+      if (!await policyAccess(PageClass, user)) return forbidden(res, true)
       const formId = req.params['formId']!
       return handleFormState(req, res, pilotiq, { kind: 'page', pageSlug }, formId)
     })
@@ -2068,7 +2197,7 @@ export function registerPilotiqRoutes(
     // Plan #8 wizard step-validate endpoint for custom pages.
     router.post(`${pageUrl}/_form/:formId/wizard`, async (req, res) => {
       const user = await pilotiq.resolveUser(req)
-      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, true)
+      if (!await policyAccess(PageClass, user)) return forbidden(res, true)
       const formId = req.params['formId']!
       return handleFormWizard(req, res, pilotiq, { kind: 'page', pageSlug }, formId)
     })
@@ -2076,14 +2205,14 @@ export function registerPilotiqRoutes(
     // Async-mention endpoint for custom pages.
     router.post(`${pageUrl}/_form/:formId/mentions`, async (req, res) => {
       const user = await pilotiq.resolveUser(req)
-      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, true)
+      if (!await policyAccess(PageClass, user)) return forbidden(res, true)
       const formId = req.params['formId']!
       return handleFormMentions(req, res, pilotiq, { kind: 'page', pageSlug }, formId)
     })
 
     router.get(pageUrl, async (req, res) => {
       const user = await pilotiq.resolveUser(req)
-      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, wantsJson(req))
+      if (!await policyAccess(PageClass, user)) return forbidden(res, wantsJson(req))
       const data = await customPageData(pilotiq, pageSlug, req)
       return view('pilotiq.slug', data ?? {})
     })
@@ -2091,7 +2220,7 @@ export function registerPilotiqRoutes(
     // Action dispatch — POST ${base}/${pageSlug}/_action/:actionName
     router.post(`${pageUrl}/_action/:actionName`, async (req, res) => {
       const user = await pilotiq.resolveUser(req)
-      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, wantsJson(req))
+      if (!await policyAccess(PageClass, user)) return forbidden(res, wantsJson(req))
 
       const actionName = req.params['actionName']!
       const json = wantsJson(req)
@@ -2142,7 +2271,7 @@ export function registerPilotiqRoutes(
       const json = wantsJson(req)
 
       const user = await pilotiq.resolveUser(req)
-      if (!await checkPolicy(() => PageClass.canAccess(user))) return forbidden(res, json)
+      if (!await policyAccess(PageClass, user)) return forbidden(res, json)
 
       const ctx: SchemaContext = user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}
       const elements = await callPageSchema(PageClass, ctx)

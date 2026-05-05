@@ -3,6 +3,7 @@ import type { Form } from './elements/Form.js'
 import type { Page } from './Page.js'
 import type { IconValue } from './icons/types.js'
 import type { NavigationBadgeColor, NavigationBadgeHandler } from './Resource.js'
+import type { ClusterClass } from './Cluster.js'
 import { defaultGlobalPages } from './defaultGlobalPages.js'
 
 /**
@@ -73,6 +74,15 @@ export abstract class Global {
 
   /** Class name of a parent nav item. */
   static navigationParentItem: string | undefined = undefined
+
+  /**
+   * Cluster this global belongs to. When set, the global's URL gains the
+   * cluster's slug as a prefix segment (e.g. `/admin/settings/branding`
+   * instead of `/admin/branding`) and the global nests under the
+   * cluster's nav entry. The referenced class must be registered via
+   * `Pilotiq.clusters([…])`.
+   */
+  static cluster?: ClusterClass
 
   /** Optional model identifier. Phase 3 ORM adapters use this. */
   static model?: string

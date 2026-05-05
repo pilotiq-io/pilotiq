@@ -242,6 +242,10 @@ interface ResourceLike {
    *  copy so "1 Post" / "5 Posts" render correctly. */
   label?: string
   getSlug(): string
+  /** Cluster the resource belongs to, when registered via `Pilotiq.clusters`.
+   *  Action factories thread the cluster slug into URL builders so
+   *  `${basePath}/<cluster>/<slug>/...` round-trips correctly. */
+  cluster?: { getSlug(): string }
   /** Plan #13 — soft-delete opt-in flag. When true, `Action.delete`
    *  auto-hides on already-trashed rows; `Action.restore` /
    *  `Action.forceDelete` auto-show on trashed rows. */
@@ -266,6 +270,14 @@ interface ResourceLike {
    *  for the "filtered" / "all" scope. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   table?(t: any): any
+}
+
+/** Cluster-aware resource base path. Mirrors `clusterPaths.resourceBasePath`
+ *  but uses the structural `ResourceLike` shape so `Action.ts` stays
+ *  cycle-free against `Resource.ts`. */
+function resourceBase(basePath: string, R: ResourceLike): string {
+  if (R.cluster) return `${basePath}/${R.cluster.getSlug()}/${R.getSlug()}`
+  return `${basePath}/${R.getSlug()}`
 }
 
 /** Pick the right label form for a count — `labelSingular` for 1,
@@ -599,7 +611,7 @@ export class Action extends Element {
   static create(R: ResourceLike, basePath: string): Action {
     return Action.make('create')
       .label(`New ${R.labelSingular}`)
-      .href(`${basePath}/${R.getSlug()}/create`)
+      .href(`${resourceBase(basePath, R)}/create`)
       .visible(({ user }) => callPredicate(R.canCreate, user))
   }
 
@@ -620,7 +632,7 @@ export class Action extends Element {
     const id = recordId ?? ':id'
     return Action.make('edit')
       .label('Edit')
-      .href(`${basePath}/${R.getSlug()}/${id}/edit`)
+      .href(`${resourceBase(basePath, R)}/${id}/edit`)
       .visible(({ user, record }) => callPredicate(R.canEdit, user, record))
   }
 
@@ -630,7 +642,7 @@ export class Action extends Element {
     const id = recordId ?? ':id'
     return Action.make('view')
       .label('View')
-      .href(`${basePath}/${R.getSlug()}/${id}`)
+      .href(`${resourceBase(basePath, R)}/${id}`)
       .visible(({ user, record }) => callPredicate(R.canView, user, record))
   }
 
@@ -651,7 +663,7 @@ export class Action extends Element {
       .label('Delete')
       .destructive()
       .method('post')
-      .action(`${basePath}/${R.getSlug()}/${id}/delete`)
+      .action(`${resourceBase(basePath, R)}/${id}/delete`)
       .confirm(`Delete this ${R.labelSingular.toLowerCase()}?`)
       .visible(async ({ user, record }) => {
         if (R.softDeletes && isTrashed(record, R)) return false
@@ -719,8 +731,8 @@ export class Action extends Element {
 
         const newId = (created as Record<string, unknown> | null | undefined)?.[pkCol]
         const defaultRedirect = newId !== undefined && newId !== null
-          ? `${basePath}/${R.getSlug()}/${String(newId)}/edit`
-          : `${basePath}/${R.getSlug()}`
+          ? `${resourceBase(basePath, R)}/${String(newId)}/edit`
+          : `${resourceBase(basePath, R)}`
         // `!== undefined` rather than `??` so an override returning
         // `null`/empty-string isn't silently swallowed (see
         // feedback_nullish_swallows_explicit_null).
@@ -752,7 +764,7 @@ export class Action extends Element {
       .label('Restore')
       .color('success')
       .method('post')
-      .action(`${basePath}/${R.getSlug()}/${id}/restore`)
+      .action(`${resourceBase(basePath, R)}/${id}/restore`)
       .visible(async ({ user, record }) => {
         if (!isTrashed(record, R)) return false
         return callPredicate(R.canRestore, user, record)
@@ -771,7 +783,7 @@ export class Action extends Element {
       .label('Delete forever')
       .destructive()
       .method('post')
-      .action(`${basePath}/${R.getSlug()}/${id}/force-delete`)
+      .action(`${resourceBase(basePath, R)}/${id}/force-delete`)
       .confirm(`Permanently delete this ${R.labelSingular.toLowerCase()}? This cannot be undone.`)
       .visible(async ({ user, record }) => {
         if (!isTrashed(record, R)) return false

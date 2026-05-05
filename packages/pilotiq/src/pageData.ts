@@ -14,6 +14,7 @@ import { PilotiqRegistry } from './PilotiqRegistry.js'
 import type { Page } from './Page.js'
 import type { ResourceClass, NavigationBadgeColor } from './Resource.js'
 import type { GlobalClass } from './Global.js'
+import { resourceBasePath, globalBasePath, pageBasePath, clusterBasePath } from './clusterPaths.js'
 import { Element } from './schema/Element.js'
 import { Field } from './fields/Field.js'
 import { resolveSchema, type RenderContext, type SchemaContext } from './schema/resolveSchema.js'
@@ -166,26 +167,49 @@ async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<NavItem
   // Plan #10 — pre-evaluate canAccess for every owner in parallel so we
   // can drop forbidden items before flattening. Failed predicates fail
   // closed (treated as `false`) so a thrown auth check doesn't accidentally
-  // expose nav items.
-  const [resourceAccess, globalAccess, pageAccess] = await Promise.all([
+  // expose nav items. Clusters compose: a child gated through its
+  // cluster's `canAccess` returning false drops the child even when the
+  // child's own predicate would have passed.
+  const [resourceAccess, globalAccess, pageAccess, clusterAccess] = await Promise.all([
     Promise.all(cfg.resources.map(R => safeAccess(() => R.canAccess(user)))),
     Promise.all(cfg.globals.map(G => safeAccess(() => G.canAccess(user)))),
     Promise.all(cfg.pages.map(P => safeAccess(() => P.canAccess(user)))),
+    Promise.all(cfg.clusters.map(C => safeAccess(() => C.canAccess(user)))),
   ])
 
+  // Index clusters by their JS class name (used as the parent key when
+  // a child references one) and by their access bit (gated children
+  // drop without checking their own predicate).
+  const clusterAccessByName = new Map<string, boolean>()
+  cfg.clusters.forEach((C, i) => clusterAccessByName.set(C.name, !!clusterAccess[i]))
+
+  // First pass — walk children, compute access including the cluster's
+  // gate. Track which children effectively land per cluster so the
+  // cluster's own URL can deep-link to the first accessible one.
+  const firstChildUrlByCluster = new Map<string, string>()
+  const recordChildUrl = (clusterName: string, url: string) => {
+    if (!firstChildUrlByCluster.has(clusterName)) firstChildUrlByCluster.set(clusterName, url)
+  }
+
   for (let i = 0; i < cfg.resources.length; i++) {
-    if (!resourceAccess[i]) continue
     const R = cfg.resources[i]!
+    if (!resourceAccess[i]) continue
+    if (R.cluster && !clusterAccessByName.get(R.cluster.name)) continue
+    const url = resourceBasePath(base, R)
+    if (R.cluster) recordChildUrl(R.cluster.name, url)
     const item: RawNavItem = {
       name:  R.name,
       label: R.getNavigationLabel(),
-      url:   `${base}/${R.getSlug()}`,
+      url,
       icon:  serializeIcon(R.getNavigationIcon(), R.name),
       _idx:  idx++,
     }
     if (R.navigationGroup        !== undefined) item.group        = R.navigationGroup
     if (R.navigationSort         !== undefined) item.sort         = R.navigationSort
-    if (R.navigationParentItem   !== undefined) item.parent       = R.navigationParentItem
+    // Cluster nesting wins over `navigationParentItem`. Both being set
+    // is a misconfiguration; cluster placement is the structural one.
+    if (R.cluster)                              item.parent       = R.cluster.name
+    else if (R.navigationParentItem !== undefined) item.parent    = R.navigationParentItem
     if (R.navigationBadgeColor   !== 'default') item.badgeColor   = R.navigationBadgeColor
     if (R.navigationBadge)                       pushBadge.push({ item, handler: R.navigationBadge })
     raw.push(item)
@@ -194,19 +218,23 @@ async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<NavItem
   for (let i = 0; i < cfg.globals.length; i++) {
     if (!globalAccess[i]) continue
     const G = cfg.globals[i]!
+    if (G.cluster && !clusterAccessByName.get(G.cluster.name)) continue
     // Globals default `navigationGroup` to `'Settings'`. Allow `null` as
     // an explicit opt-out → render at top level.
     const group = G.navigationGroup === null ? undefined : G.navigationGroup
+    const url = globalBasePath(base, G)
+    if (G.cluster) recordChildUrl(G.cluster.name, url)
     const item: RawNavItem = {
       name:  G.name,
       label: G.getNavigationLabel(),
-      url:   `${base}/${G.getSlug()}`,
+      url,
       icon:  serializeIcon(G.getNavigationIcon(), G.name),
       _idx:  idx++,
     }
     if (group                    !== undefined) item.group        = group
     if (G.navigationSort         !== undefined) item.sort         = G.navigationSort
-    if (G.navigationParentItem   !== undefined) item.parent       = G.navigationParentItem
+    if (G.cluster)                              item.parent       = G.cluster.name
+    else if (G.navigationParentItem !== undefined) item.parent    = G.navigationParentItem
     if (G.navigationBadgeColor   !== 'default') item.badgeColor   = G.navigationBadgeColor
     if (G.navigationBadge)                       pushBadge.push({ item, handler: G.navigationBadge })
     raw.push(item)
@@ -215,23 +243,58 @@ async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<NavItem
   for (let i = 0; i < cfg.pages.length; i++) {
     if (!pageAccess[i]) continue
     const P = cfg.pages[i]!
+    if (P.cluster && !clusterAccessByName.get(P.cluster.name)) continue
     // Plan #15 — the dashboard page collapses its nav URL to `${base}`
     // so the sidebar entry deep-links to the panel root rather than
     // `${base}/${P.getSlug()}` (which would 404 — the slug route skips
     // the dashboard page at boot).
     const isDashboard = cfg.dashboardPage === P
+    const url = isDashboard ? base : pageBasePath(base, P)
+    if (P.cluster && !isDashboard) recordChildUrl(P.cluster.name, url)
     const item: RawNavItem = {
       name:  P.name,
       label: P.getNavigationLabel(),
-      url:   isDashboard ? base : `${base}/${P.getSlug()}`,
+      url,
       icon:  serializeIcon(P.getNavigationIcon(), P.name),
       _idx:  idx++,
     }
     if (P.navigationGroup        !== undefined) item.group        = P.navigationGroup
     if (P.navigationSort         !== undefined) item.sort         = P.navigationSort
-    if (P.navigationParentItem   !== undefined) item.parent       = P.navigationParentItem
+    if (P.cluster && !isDashboard)              item.parent       = P.cluster.name
+    else if (P.navigationParentItem !== undefined) item.parent    = P.navigationParentItem
     if (P.navigationBadgeColor   !== 'default') item.badgeColor   = P.navigationBadgeColor
     if (P.navigationBadge)                       pushBadge.push({ item, handler: P.navigationBadge })
+    raw.push(item)
+  }
+
+  // Clusters render as first-class nav items. Each gets a URL pointing
+  // at its `landingPage` (when set + accessible) or its first accessible
+  // child. Clusters whose every child was gated out are dropped silently
+  // — same posture as `navigationParentItem` with no resolvable parent.
+  for (let i = 0; i < cfg.clusters.length; i++) {
+    if (!clusterAccess[i]) continue
+    const C = cfg.clusters[i]!
+    let url: string | undefined
+    if (C.landingPage) {
+      const lpIdx = cfg.pages.indexOf(C.landingPage)
+      if (lpIdx !== -1 && pageAccess[lpIdx]) {
+        url = cfg.dashboardPage === C.landingPage ? base : pageBasePath(base, C.landingPage)
+      }
+    }
+    if (url === undefined) url = firstChildUrlByCluster.get(C.name)
+    if (url === undefined) continue   // empty cluster — drop entirely
+    const item: RawNavItem = {
+      name:  C.name,
+      label: C.getNavigationLabel(),
+      url,
+      icon:  serializeIcon(C.getNavigationIcon(), C.name),
+      _idx:  idx++,
+    }
+    if (C.navigationGroup        !== undefined) item.group        = C.navigationGroup
+    if (C.navigationSort         !== undefined) item.sort         = C.navigationSort
+    if (C.navigationParentItem   !== undefined) item.parent       = C.navigationParentItem
+    if (C.navigationBadgeColor   !== 'default') item.badgeColor   = C.navigationBadgeColor
+    if (C.navigationBadge)                       pushBadge.push({ item, handler: C.navigationBadge })
     raw.push(item)
   }
 
@@ -970,7 +1033,7 @@ export async function resourceIndexData(
   if (!pages.index) return null
   const PageClass = pages.index
 
-  const indexUrl = `${cfg.path}/${slug}`
+  const indexUrl = resourceBasePath(cfg.path, R)
   const user = await pilotiq.resolveUser(req)
   const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'table', basePath: cfg.path }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
@@ -1036,7 +1099,7 @@ export async function resourceTableData(
   if (!pages.index) return null
   const PageClass = pages.index
 
-  const indexUrl = `${cfg.path}/${slug}`
+  const indexUrl = resourceBasePath(cfg.path, R)
   const user = await pilotiq.resolveUser(req)
   const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'table', basePath: cfg.path }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
@@ -1179,15 +1242,16 @@ export async function resourceCreateData(
   if (!pages.create) return null
   const PageClass = pages.create
 
-  const createUrl = `${cfg.path}/${slug}/create`
+  const resourceBase = resourceBasePath(cfg.path, R)
+  const createUrl = `${resourceBase}/create`
   const user = await pilotiq.resolveUser(req)
   const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'create', basePath: cfg.path }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, createUrl)
   tagActionDispatch(elements, createUrl)
-  tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/state`)
-  tagFormWizardUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/wizard`)
-  tagRichTextMentionUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/mentions`)
+  tagFormStateUrls(elements, formId => `${resourceBase}/_form/${formId}/state`)
+  tagFormWizardUrls(elements, formId => `${resourceBase}/_form/${formId}/wizard`)
+  tagRichTextMentionUrls(elements, formId => `${resourceBase}/_form/${formId}/mentions`)
   if (prefill) {
     const form = findForms(elements)[0]
     if (form) {
@@ -1224,15 +1288,16 @@ export async function resourceEditData(
   if (!pages.edit) return null
   const PageClass = pages.edit
 
-  const editUrl = `${cfg.path}/${slug}/${recordId}/edit`
+  const resourceBase = resourceBasePath(cfg.path, R)
+  const editUrl = `${resourceBase}/${recordId}/edit`
   const user = await pilotiq.resolveUser(req)
   const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'edit', recordId, basePath: cfg.path }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
   tagActionDispatch(elements, editUrl)
-  tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/${recordId}/_form/${formId}/state`)
-  tagFormWizardUrls(elements, formId => `${cfg.path}/${slug}/${recordId}/_form/${formId}/wizard`)
-  tagRichTextMentionUrls(elements, formId => `${cfg.path}/${slug}/${recordId}/_form/${formId}/mentions`)
+  tagFormStateUrls(elements, formId => `${resourceBase}/${recordId}/_form/${formId}/state`)
+  tagFormWizardUrls(elements, formId => `${resourceBase}/${recordId}/_form/${formId}/wizard`)
+  tagRichTextMentionUrls(elements, formId => `${resourceBase}/${recordId}/_form/${formId}/mentions`)
 
   // Locate the primary form, load the record, fill values.
   const form = findForms(elements)[0]
@@ -1480,7 +1545,9 @@ export async function relationManagerData(
   // Layer 1: parent access. canAccess gates the resource entirely;
   // canEdit gates managing its relations (managers are read-write
   // surfaces — read-only inline views opt in by overriding the
-  // manager's can*).
+  // manager's can*). Cluster gate composes with R.canAccess — both
+  // must pass when the parent resource is inside a cluster.
+  if (R.cluster && !await safePolicy(() => R.cluster!.canAccess(user))) return { ok: false, status: 403 }
   if (!await safePolicy(() => R.canAccess(user))) return { ok: false, status: 403 }
 
   if (!R.model) {
@@ -1548,7 +1615,8 @@ async function buildRelationListData(
 
   const cfg = pilotiq.getConfig()
   const base = cfg.path
-  const listUrl = `${base}/${scope.slug}/${scope.recordId}/${scope.relationship}`
+  const resourceBase = resourceBasePath(base, R)
+  const listUrl = `${resourceBase}/${scope.recordId}/${scope.relationship}`
 
   // Build a single Table by piping a fresh Table through M.table(table, ctx).
   // Context lets the user wire `Action.relationCreate / relationEdit /
@@ -1620,7 +1688,8 @@ async function buildRelationCreateData(
 
   const cfg = pilotiq.getConfig()
   const base = cfg.path
-  const createUrl = `${base}/${scope.slug}/${scope.recordId}/${scope.relationship}/create`
+  const resourceBase = resourceBasePath(base, R)
+  const createUrl = `${resourceBase}/${scope.recordId}/${scope.relationship}/create`
 
   const managerCtx: RelationManagerContext = {
     basePath:     base,
@@ -1711,7 +1780,8 @@ async function buildRelationEditData(
 
   const cfg = pilotiq.getConfig()
   const base = cfg.path
-  const editUrl = `${base}/${scope.slug}/${scope.recordId}/${scope.relationship}/${scope.childId}/edit`
+  const resourceBase = resourceBasePath(base, R)
+  const editUrl = `${resourceBase}/${scope.recordId}/${scope.relationship}/${scope.childId}/edit`
 
   const managerCtx: RelationManagerContext = {
     basePath:     base,
@@ -1805,7 +1875,7 @@ function buildRelationTabs(
   const managers = R.relations()
   if (managers.length === 0) return undefined
 
-  const slug  = R.getSlug()
+  const resourceBase = resourceBasePath(basePath, R)
   const pages = R.resolvePages()
   const tabs: RelationTabMeta[] = []
 
@@ -1816,7 +1886,7 @@ function buildRelationTabs(
     tabs.push(relationTab({
       key:       '__view',
       label:     'View',
-      url:       `${basePath}/${slug}/${recordId}`,
+      url:       `${resourceBase}/${recordId}`,
       active:    activeKey === '__view',
       icon:      R.icon as IconValue | undefined,
       iconOwner: R.name,
@@ -1828,7 +1898,7 @@ function buildRelationTabs(
     tabs.push(relationTab({
       key:       '__edit',
       label:     'Edit',
-      url:       `${basePath}/${slug}/${recordId}/edit`,
+      url:       `${resourceBase}/${recordId}/edit`,
       active:    activeKey === '__edit',
       // Re-use the resource icon so when ViewPage is pruned, Edit
       // still carries the visual identity. When both are present, the
@@ -1845,7 +1915,7 @@ function buildRelationTabs(
     tabs.push(relationTab({
       key:    rel,
       label:  M.getLabel(),
-      url:    `${basePath}/${slug}/${recordId}/${rel}`,
+      url:    `${resourceBase}/${recordId}/${rel}`,
       active: activeKey === rel,
       ...(icon !== undefined ? { icon, iconOwner: M.name } : {}),
     }))
@@ -2379,14 +2449,14 @@ export async function globalEditData(
   if (!pages.edit) return null
   const PageClass = pages.edit
 
-  const editUrl = `${cfg.path}/${slug}`
+  const editUrl = globalBasePath(cfg.path, G)
   const user = await pilotiq.resolveUser(req)
   const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'edit', basePath: cfg.path }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
-  tagFormStateUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/state`)
-  tagFormWizardUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/wizard`)
-  tagRichTextMentionUrls(elements, formId => `${cfg.path}/${slug}/_form/${formId}/mentions`)
+  tagFormStateUrls(elements, formId => `${editUrl}/_form/${formId}/state`)
+  tagFormWizardUrls(elements, formId => `${editUrl}/_form/${formId}/wizard`)
+  tagRichTextMentionUrls(elements, formId => `${editUrl}/_form/${formId}/mentions`)
 
   const form = findForms(elements)[0]
   let record: unknown = undefined
@@ -2456,14 +2526,14 @@ export async function customPageData(
   const PageClass = cfg.pages.find(P => P.getSlug() === pageSlug)
   if (!PageClass) return null
 
-  const pageUrl = `${cfg.path}/${pageSlug}`
+  const pageUrl = pageBasePath(cfg.path, PageClass)
   const user = await pilotiq.resolveUser(req)
   const ctx: SchemaContext = uploadCtx(userCtx({}, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, pageUrl)
-  tagFormStateUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/state`)
-  tagFormWizardUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/wizard`)
-  tagRichTextMentionUrls(elements, formId => `${cfg.path}/${pageSlug}/_form/${formId}/mentions`)
+  tagFormStateUrls(elements, formId => `${pageUrl}/_form/${formId}/state`)
+  tagFormWizardUrls(elements, formId => `${pageUrl}/_form/${formId}/wizard`)
+  tagRichTextMentionUrls(elements, formId => `${pageUrl}/_form/${formId}/mentions`)
   tagActionDispatch(elements, pageUrl)
   // Page-scope polling URL (mirrors `${base}/${pageSlug}/_widget/:id`
   // route registered in routes.ts).

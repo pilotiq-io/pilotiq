@@ -1,5 +1,6 @@
 import type { ResourceClass } from './Resource.js'
 import type { GlobalClass } from './Global.js'
+import type { ClusterClass } from './Cluster.js'
 import type { Page } from './Page.js'
 import type { SchemaDefinition } from './schema/resolveSchema.js'
 import type { ThemeConfig } from './theme/types.js'
@@ -44,6 +45,7 @@ export interface PilotiqConfig {
   resources:     ResourceClass[]
   globals:       GlobalClass[]
   pages:         (typeof Page)[]
+  clusters:      ClusterClass[]
   branding:      { title?: string; logo?: string }
   schema?:       SchemaDefinition
   /**
@@ -76,6 +78,7 @@ export class Pilotiq {
       resources: [],
       globals: [],
       pages: [],
+      clusters: [],
       branding: {},
     }
   }
@@ -106,6 +109,17 @@ export class Pilotiq {
 
   pages(p: (typeof Page)[]): this {
     this.config.pages = p
+    return this
+  }
+
+  /**
+   * Register clusters — Filament-style URL-prefix containers that group
+   * Resources / Globals / Pages under a shared slug + a single sidebar
+   * entry. Children opt in by setting `static cluster = MyCluster` on
+   * their class.
+   */
+  clusters(c: ClusterClass[]): this {
+    this.config.clusters = c
     return this
   }
 
