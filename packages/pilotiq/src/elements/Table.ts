@@ -178,6 +178,18 @@ export interface TableMeta extends ElementMeta {
    * `reorderable()` is set without a corresponding `model.reorder`). */
   reorderUrl?: string
 
+  /** Tier-3 — set when `Resource.deferLoading = true`. The SSR pass
+   * skips `Table.records()` so the client paints a skeleton on first
+   * frame and fetches rows from `tableUrl` after mount. URL chrome
+   * (current sort / search / page / group) still mirrors so the
+   * skeleton frame doesn't reset user-visible state. */
+  deferred?: true
+
+  /** Stamped server-side at render time alongside `deferred`. The
+   * renderer GETs this URL with the page's current query string to
+   * fetch rows after mount. Empty when `deferLoading` is off. */
+  tableUrl?: string
+
   // Render-time state — populated by the framework after `records()` runs.
   rows?:        unknown[]
   total?:       number
@@ -229,6 +241,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _groupSummaries?: Record<string, Record<string, SummaryResult[]>>
   private _reorderableColumn?: string
   private _reorderUrl?:   string
+  private _deferred = false
+  private _tableUrl?:     string
 
   private constructor() { super() }
 
@@ -470,6 +484,22 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
+  /** Mark this table as deferred — the SSR pass skips `records()` and
+   * the client fetches rows from `tableUrl` after mount. Set by
+   * `resourceIndexData` when `Resource.deferLoading = true`; user code
+   * doesn't typically call this directly. */
+  withDeferred(v: boolean = true): this {
+    this._deferred = v
+    return this
+  }
+
+  /** Stamp the deferred-load fetch URL. Set alongside `withDeferred`
+   * by `tagTableUrls` during `resourceIndexData`. */
+  withTableUrl(url: string): this {
+    this._tableUrl = url
+    return this
+  }
+
   /** Render-time setter — the column rows are actually banded by for
    * this request, after `?group=` and `defaultGroup(...)` are reconciled.
    * Set by `loadTableRecords`. Empty string explicitly clears (URL
@@ -515,6 +545,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
   getReorderableColumn(): string | undefined { return this._reorderableColumn }
   isReorderable(): boolean { return this._reorderableColumn !== undefined }
   getReorderUrl(): string | undefined { return this._reorderUrl }
+  isDeferred(): boolean { return this._deferred }
+  getTableUrl(): string | undefined { return this._tableUrl }
 
   /** Convenience: the `Column` children only. */
   getColumns(): Column[] {
@@ -565,6 +597,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
       ...(this._groupSummaries !== undefined ? { groupSummaries: this._groupSummaries } : {}),
       ...(this._reorderableColumn !== undefined ? { reorderable: true as const, reorderableColumn: this._reorderableColumn } : {}),
       ...(this._reorderUrl   !== undefined ? { reorderUrl:  this._reorderUrl  } : {}),
+      ...(this._deferred                   ? { deferred:    true as const   } : {}),
+      ...(this._tableUrl     !== undefined ? { tableUrl:    this._tableUrl   } : {}),
       ...(this._rows         !== undefined ? { rows:        this._rows }        : {}),
       ...(this._total        !== undefined ? { total:       this._total }       : {}),
       ...(this._currentSort  !== undefined ? { currentSort: this._currentSort } : {}),

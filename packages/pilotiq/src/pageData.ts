@@ -366,6 +366,25 @@ export function tagTableReorderUrls(
 }
 
 /**
+ * Tier-3 — mark every table on the page as deferred and stamp the
+ * `_table` JSON endpoint URL the renderer will fetch from after mount.
+ * Called by `resourceIndexData` when `Resource.deferLoading = true`,
+ * BEFORE `loadTableRecords` runs so the records handler short-circuits.
+ * The `_table` endpoint then re-runs the same data builder with the
+ * flag clear, so the JSON response carries everything a non-deferred
+ * render would have.
+ */
+export function tagTableDeferred(
+  elements: ReadonlyArray<Element>,
+  url:      string,
+): void {
+  for (const table of findTables(elements)) {
+    table.withDeferred(true)
+    table.withTableUrl(url)
+  }
+}
+
+/**
  * Editable cell columns — walk every table on the page and stamp
  * `_cellEditUrls[colName]` per row, but only on rows that already
  * carry a `_cellEditable[colName]` marker (set by `loadTableRecords`
@@ -964,6 +983,10 @@ export async function resourceIndexData(
   // for the active tab and splices its `modifyQuery` predicate into the
   // ORM chain alongside filters.
   await resolveActiveTab(elements, query, indexUrl)
+  // Tier-3 — `Resource.deferLoading` flips every Table on the page into
+  // skeleton-on-first-paint mode. Marker + URL stamping happens BEFORE
+  // `loadTableRecords` so the records handler short-circuits.
+  if (R.deferLoading) tagTableDeferred(elements, `${indexUrl}/_table`)
   await loadTableRecords(elements, query, indexUrl, user, {
     canEdit: (u, record) => R.canEdit(u, record),
   })
@@ -983,6 +1006,76 @@ export async function resourceIndexData(
     _widgetData: widgetData,
     notifications: consumeFlashedNotifications(req),
   }
+}
+
+/**
+ * Tier-3 deferred-load JSON endpoint payload — `GET {base}/{slug}/_table`
+ * re-runs the resource list page's data builder with the deferred flag
+ * cleared, walks the resolved schema for every `TableMeta`, and returns
+ * them as a flat array. Order matches schema order so the renderer can
+ * pair them up by index when a page somehow declares multiple tables
+ * (singletons are the common case). Server-data widget resolution and
+ * page-level chrome (panel nav, resource header, page meta) are skipped
+ * — those are already painted from the SSR pass and have their own
+ * polling endpoint.
+ *
+ * Returns `null` when the resource isn't registered or has no index
+ * page (route handler 404s in that case).
+ */
+export async function resourceTableData(
+  pilotiq: Pilotiq,
+  slug:    string,
+  query:   Record<string, string> = {},
+  req?:    unknown,
+): Promise<{ tables: Record<string, unknown>[] } | null> {
+  const cfg = pilotiq.getConfig()
+  const R = cfg.resources.find(r => r.getSlug() === slug)
+  if (!R) return null
+
+  const pages = R.resolvePages()
+  if (!pages.index) return null
+  const PageClass = pages.index
+
+  const indexUrl = `${cfg.path}/${slug}`
+  const user = await pilotiq.resolveUser(req)
+  const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'table', basePath: cfg.path }, user), cfg)
+  const elements = await callPageSchema(PageClass, ctx)
+  tagActionDispatch(elements, indexUrl)
+  await resolveActiveTab(elements, query, indexUrl)
+  // No `tagTableDeferred` call — this endpoint is the deferred fetch
+  // target, so records MUST load. `loadTableRecords` runs the full
+  // pipeline; per-row formatters / record-url stamping / summaries
+  // all match what the SSR pass would have produced.
+  await loadTableRecords(elements, query, indexUrl, user, {
+    canEdit: (u, record) => R.canEdit(u, record),
+  })
+  tagTableReorderUrls(elements, `${indexUrl}/_reorder`)
+  tagCellEditUrls(elements, indexUrl)
+  const schemaData = await resolveSchema(elements, ctx)
+
+  const tables = collectTableMetas(schemaData)
+  return { tables }
+}
+
+/**
+ * Recursively walk a resolved schemaData tree and collect every
+ * `TableMeta` (anything where `meta.type === 'table'`). Used by
+ * `resourceTableData` to project just the table portion of a list
+ * page's resolved schema for the deferred-load JSON endpoint.
+ */
+function collectTableMetas(
+  metas: ReadonlyArray<Record<string, unknown>>,
+): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = []
+  const walk = (nodes: ReadonlyArray<Record<string, unknown>>): void => {
+    for (const node of nodes) {
+      if (node['type'] === 'table') out.push(node)
+      const children = node['children']
+      if (Array.isArray(children)) walk(children as Record<string, unknown>[])
+    }
+  }
+  walk(metas)
+  return out
 }
 
 /**

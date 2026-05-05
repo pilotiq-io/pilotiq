@@ -1702,3 +1702,144 @@ describe('persistFiltersInSession — list-page filter restore', () => {
     // here, just that no exception escaped.
   })
 })
+
+describe('deferLoading — list-page skeleton + _table fetch', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  function makeDeferred(opts: {
+    onRecords?: (ctx: Record<string, unknown>) => void
+  } = {}) {
+    class Items extends Resource {
+      static override label         = 'Items'
+      static override labelSingular = 'Item'
+      static override slug          = 'items'
+      static override deferLoading  = true
+      static override table(table: Table): Table {
+        return table
+          .columns([Column.make('title').sortable().searchable()])
+          .records(async (ctx) => {
+            opts.onRecords?.({ ...ctx })
+            return { rows: [{ title: 'a' }, { title: 'b' }], total: 42 }
+          })
+          .paginate(10)
+      }
+    }
+    registerPilotiqRoutes(router, Pilotiq.make('T').path('/admin').resources([Items]))
+    return Items
+  }
+
+  it('SSR list route stamps deferred + tableUrl and skips Table.records', async () => {
+    let recordsCalled = 0
+    makeDeferred({ onRecords: () => { recordsCalled += 1 } })
+    const route = router.list().find(r => r.method === 'GET' && r.path === '/admin/items')!
+
+    const result = await callHandler(route.handler, fakeReq({
+      query: { sort: 'title:desc', page: '2' },
+    })) as { props: Record<string, unknown> }
+
+    const schemaData = result.props['schemaData'] as Array<Record<string, unknown>>
+    const tableMeta = schemaData.find(m => m['type'] === 'table')!
+    assert.equal(tableMeta['deferred'], true)
+    assert.equal(tableMeta['tableUrl'], '/admin/items/_table')
+    // Records handler short-circuited — rows undefined, total undefined.
+    assert.equal(tableMeta['rows'], undefined)
+    assert.equal(tableMeta['total'], undefined)
+    assert.equal(recordsCalled, 0)
+    // URL state still mirrors so chrome (sort indicator, current page)
+    // is correct on the skeleton frame.
+    assert.deepEqual(tableMeta['currentSort'], { column: 'title', direction: 'desc' })
+    assert.equal(tableMeta['currentPage'], 2)
+    assert.equal(tableMeta['currentPath'], '/admin/items')
+  })
+
+  it('GET _table endpoint runs records and returns the table meta', async () => {
+    let seen: Record<string, unknown> | null = null
+    makeDeferred({ onRecords: (ctx) => { seen = ctx } })
+    const tableRoute = router.list().find(r => r.method === 'GET' && r.path === '/admin/items/_table')!
+    const { res } = await callHandlerCapturing(tableRoute.handler, fakeReq({
+      query: { sort: 'title:desc', search: 'foo', page: '3' },
+    }))
+    const sent = res.sentBody as { ok: boolean; tables: Array<Record<string, unknown>> }
+    assert.equal(sent.ok, true)
+    assert.equal(sent.tables.length, 1)
+    const table = sent.tables[0]!
+    assert.equal(table['type'], 'table')
+    assert.equal((table['rows'] as unknown[]).length, 2)
+    assert.equal(table['total'], 42)
+    // The deferred flag is NOT stamped on the response — the JSON pipeline
+    // skips `tagTableDeferred`, so the renderer can swap it in for the
+    // skeleton meta without re-triggering the deferred branch.
+    assert.equal(table['deferred'], undefined)
+    assert.deepEqual(seen, {
+      sort:    { column: 'title', direction: 'desc' },
+      search:  'foo',
+      page:    3,
+      perPage: 10,
+    } satisfies Record<string, unknown>)
+  })
+
+  it('does NOT register the _table route when deferLoading is off', () => {
+    class Plain extends Resource {
+      static override label         = 'Items'
+      static override labelSingular = 'Item'
+      static override slug          = 'items'
+      static override table(table: Table): Table {
+        return table.columns([Column.make('title')])
+      }
+    }
+    registerPilotiqRoutes(router, Pilotiq.make('T').path('/admin').resources([Plain]))
+    const tableRoute = router.list().find(r => r.method === 'GET' && r.path === '/admin/items/_table')
+    assert.equal(tableRoute, undefined)
+  })
+
+  it('_table route 403s when canViewAny denies', async () => {
+    class Locked extends Resource {
+      static override label         = 'Items'
+      static override labelSingular = 'Item'
+      static override slug          = 'items'
+      static override deferLoading  = true
+      static override async canViewAny(): Promise<boolean> { return false }
+      static override table(table: Table): Table {
+        return table.columns([Column.make('title')])
+          .records(async () => ({ rows: [], total: 0 }))
+      }
+    }
+    registerPilotiqRoutes(router, Pilotiq.make('T').path('/admin').resources([Locked]))
+    const tableRoute = router.list().find(r => r.method === 'GET' && r.path === '/admin/items/_table')!
+    const { res } = await callHandlerCapturing(tableRoute.handler, fakeReq())
+    assert.equal(res.statusCode, 403)
+  })
+
+  it('composes with persistFiltersInSession — bare visit redirects, then _table fetches with restored filters', async () => {
+    class Persisted extends Resource {
+      static override label                   = 'Items'
+      static override labelSingular           = 'Item'
+      static override slug                    = 'items'
+      static override deferLoading            = true
+      static override persistFiltersInSession = true
+      static override table(table: Table): Table {
+        return table.columns([Column.make('title').sortable().searchable()])
+          .records(async () => ({ rows: [], total: 0 }))
+      }
+    }
+    registerPilotiqRoutes(router, Pilotiq.make('T').path('/admin').resources([Persisted]))
+    const listRoute = router.list().find(r => r.method === 'GET' && r.path === '/admin/items')!
+
+    const data: Record<string, unknown> = { 'pilotiq:filters:/admin:items': { search: 'hello' } }
+    const session = {
+      get<T>(k: string, fallback?: T): T | undefined {
+        return (k in data ? data[k] : fallback) as T | undefined
+      },
+      put(k: string, v: unknown): void { data[k] = v },
+    }
+    const req = fakeReq({ query: {} }) as any
+    req.session = session
+    const { res } = await callHandlerCapturing(listRoute.handler, req)
+    // persistFiltersInSession 302's first; deferred fetch happens after the
+    // browser follows the redirect.
+    assert.equal(res.redirectedTo?.code, 302)
+    const url = new URL(res.redirectedTo!.url, 'http://test')
+    assert.equal(url.searchParams.get('search'), 'hello')
+  })
+})

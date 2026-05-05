@@ -15,7 +15,8 @@ import {
 } from './sessionFilters.js'
 import {
   panelInfo, callPageSchema, tagFormActions, tagActionDispatch,
-  dashboardData, resourceIndexData, resourceCreateData, resourceEditData,
+  dashboardData, resourceIndexData, resourceTableData,
+  resourceCreateData, resourceEditData,
   resourceViewData, globalEditData, globalViewData, customPageData,
   formStateData, type FormStateScope,
   formWizardData,
@@ -634,6 +635,25 @@ export function registerPilotiqRoutes(
         if (!await checkPolicy(() => R.canViewAny(user))) return forbidden(res, true)
         return handleWidgetData(req, res, pilotiq, { kind: 'resource', slug }, req.params['id']!)
       })
+
+      // Tier-3 — `Resource.deferLoading` JSON endpoint. Re-runs the
+      // list-page data builder with the deferred flag clear so the
+      // records handler actually loads, then returns every resolved
+      // `TableMeta` flat. The renderer fetches this on mount when
+      // `meta.deferred + meta.tableUrl` are stamped on the SSR Table.
+      // Same auth gates as the GET list page; query string mirrors the
+      // page's URL so filter / sort / page / search / group state all
+      // round-trip into the response.
+      if (R.deferLoading) {
+        router.get(`${indexUrl}/_table`, async (req, res) => {
+          const user = await pilotiq.resolveUser(req)
+          if (!await checkPolicy(() => R.canAccess(user)))  return forbidden(res, true)
+          if (!await checkPolicy(() => R.canViewAny(user))) return forbidden(res, true)
+          const data = await resourceTableData(pilotiq, slug, req.query as Record<string, string>, req)
+          if (!data) { res.status(404); return res.json({ ok: false, error: 'Resource not found' }) }
+          return res.json({ ok: true, ...data })
+        })
+      }
 
       // Action dispatch — POST ${base}/${slug}/_action/:actionName
       router.post(`${indexUrl}/_action/:actionName`, async (req, res) => {

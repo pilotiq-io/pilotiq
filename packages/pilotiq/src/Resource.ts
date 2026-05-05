@@ -179,6 +179,23 @@ export abstract class Resource {
    *  `@rudderjs/session` isn't installed on the host app. */
   static persistFiltersInSession: boolean = false
 
+  // ─── Defer loading (Tier-3) ────────────────────────────────
+  // Opt-in: when true, list-page renders skip `Table.records()` on the
+  // SSR pass and stamp `meta.deferred = true` + `meta.tableUrl` on each
+  // Table in the page. The renderer paints a skeleton on first frame
+  // and fetches the actual rows from `GET {base}/{slug}/_table` after
+  // mount, scoped to the current URL query (filters / search / sort /
+  // page / group). Useful when `Table.records()` is slow enough that
+  // an initial blocking paint feels broken.
+
+  /** Skip server-side row loading on list pages; the client paints a
+   *  skeleton on first frame and fetches rows asynchronously from
+   *  `GET {base}/{slug}/_table`. Default `false`. URL chrome (filter
+   *  pills, current search, pagination shell, active group) still
+   *  mirrors on the SSR pass so the skeleton frame doesn't reset
+   *  user-visible state. */
+  static deferLoading: boolean = false
+
   // ─── Plan #12: global search ───────────────────────────────
   // Opt-in: resources with `globalSearch = false` are skipped by the
   // panel-level Cmd+K palette. Defaults below derive everything from

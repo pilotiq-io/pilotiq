@@ -222,8 +222,16 @@ export async function loadTableRecords(
     const ctxFn = activeTab?.getContextFn()
     const finalCtx = ctxFn ? ctxFn(ctx) : ctx
 
+    // Tier-3 — when `Resource.deferLoading = true` the SSR pass marks
+    // the table deferred and the client fetches rows from `tableUrl`
+    // after mount. Skip the records handler + per-row work here; URL
+    // state still mirrors at the bottom of the iteration so the
+    // skeleton frame's chrome (current sort / search / page) is
+    // accurate. The `_table` JSON endpoint reuses this same function
+    // with the deferred flag clear, so the response carries everything
+    // a non-deferred render would have.
     const handler = table.getRecords()
-    if (handler) {
+    if (handler && !table.isDeferred()) {
       const result = await handler(finalCtx)
       const rawRows = Array.isArray(result) ? result : result.rows
       const total   = Array.isArray(result) ? rawRows.length : (result.total ?? rawRows.length)
