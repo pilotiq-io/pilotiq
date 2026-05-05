@@ -160,7 +160,7 @@ describe('relation routes — registration', () => {
   let router: Router
   beforeEach(() => { router = new Router() })
 
-  it('registers list/create/edit/delete per manager', () => {
+  it('registers list/create/view/edit/delete per manager', () => {
     const { panel } = buildWorld()
     registerPilotiqRoutes(router, panel)
     const paths = router.list().map(r => `${r.method} ${r.path}`)
@@ -168,6 +168,7 @@ describe('relation routes — registration', () => {
     assert.ok(paths.includes('GET /admin/users/:id/posts'),                    'list')
     assert.ok(paths.includes('GET /admin/users/:id/posts/create'),             'create-get')
     assert.ok(paths.includes('POST /admin/users/:id/posts/create'),            'create-post')
+    assert.ok(paths.includes('GET /admin/users/:id/posts/:childId'),           'view-get')
     assert.ok(paths.includes('GET /admin/users/:id/posts/:childId/edit'),      'edit-get')
     assert.ok(paths.includes('POST /admin/users/:id/posts/:childId/edit'),     'edit-post')
     assert.ok(paths.includes('POST /admin/users/:id/posts/:childId/delete'),   'delete')
@@ -226,6 +227,63 @@ describe('relation routes — list handler', () => {
     registerPilotiqRoutes(router, panel)
     const route = router.list().find(r => r.path === '/admin/users/:id/posts' && r.method === 'GET')!
     const { res } = await callHandler(route.handler, fakeReq({ params: { id: 'u1' } }))
+    assert.equal(res.statusCode, 403)
+  })
+})
+
+describe('relation routes — view GET (Phase A)', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  it('returns relation-view for a child that belongs to the parent', async () => {
+    const { panel } = buildWorld()
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/users/:id/posts/:childId' && r.method === 'GET')!
+    const { result, res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'u1', childId: 'p1' } }),
+    )
+    assert.equal(res.statusCode, 200)
+    const view = result as { id: string; props: Record<string, unknown> }
+    assert.equal(view.id, 'pilotiq.relation-view')
+    assert.equal(view.props['mode'], 'view')
+    assert.equal(view.props['childId'], 'p1')
+  })
+
+  it('404s under IDOR (child belongs to a different parent)', async () => {
+    const { panel } = buildWorld()
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/users/:id/posts/:childId' && r.method === 'GET')!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'u1', childId: 'p3' } }),    // p3 is u2's
+    )
+    assert.equal(res.statusCode, 404)
+  })
+
+  it('404s when childId is the literal "create" reserved token', async () => {
+    const { panel } = buildWorld()
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/users/:id/posts/:childId' && r.method === 'GET')!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'u1', childId: 'create' } }),
+    )
+    assert.equal(res.statusCode, 404)
+  })
+
+  it('403s when manager.canView denies', async () => {
+    const { panel } = buildWorld()
+    const R = panel.getConfig().resources[0]!
+    const M = R.relations()[0]!
+    ;(M as unknown as { canView: (...a: unknown[]) => Promise<boolean> }).canView = async () => false
+
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/users/:id/posts/:childId' && r.method === 'GET')!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'u1', childId: 'p1' } }),
+    )
     assert.equal(res.statusCode, 403)
   })
 })

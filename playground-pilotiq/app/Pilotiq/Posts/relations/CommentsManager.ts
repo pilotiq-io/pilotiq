@@ -1,6 +1,7 @@
 import {
   RelationManager, Column, Action,
   TextField,
+  Heading, Text, Section,
   type Form, type Table,
   type RelationManagerContext,
 } from '@pilotiq/pilotiq'
@@ -37,15 +38,35 @@ export class PostsCommentsManager extends RelationManager {
     // commentableId + commentableType from the parent record.
   }
 
+  // Phase A — read-only detail page for one comment under its parent.
+  // Lands at `/new-admin/posts/:postId/comments/:commentId`. Default is
+  // an empty `[]`; overriding it surfaces any chrome the manager wants
+  // around the child record without leaving the parent's URL space.
+  static override detail(record: unknown, parentRecord: unknown) {
+    const c = (record ?? {}) as { body?: string; createdAt?: string }
+    const p = (parentRecord ?? {}) as { title?: string }
+    return [
+      Heading.make(`Comment on “${p.title ?? 'post'}”`),
+      Section.make().schema([
+        Text.make(c.body ?? '').size('base'),
+        Text.make(c.createdAt ? new Date(c.createdAt).toLocaleString() : '').size('xs').color('muted'),
+      ]),
+    ]
+  }
+
   static override table(table: Table, ctx: RelationManagerContext): Table {
     return table
       .columns([
         Column.make('body').limit(80).weight('semibold'),
         Column.make('createdAt').sortable().since(),
       ])
+      // Phase A — point clicks at the nested view route under this
+      // parent (`{base}/{parentSlug}/{parentId}/{rel}/{childId}`)
+      // instead of the standalone CommentResource view, so the user
+      // keeps the post's breadcrumb / RelationTabs context.
       .recordUrl((r) => {
         const id = (r as { id?: string })?.id
-        return id ? `/new-admin/comments/${id}` : undefined
+        return id ? `${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}` : undefined
       })
       .headerActions([
         Action.relationCreate(PostsCommentsManager, ctx),

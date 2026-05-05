@@ -1329,6 +1329,7 @@ export async function resourceEditData(
 export type RelationManagerScope =
   | { kind: 'relation-list';   slug: string; recordId: string; relationship: string; query?: Record<string, string> }
   | { kind: 'relation-create'; slug: string; recordId: string; relationship: string; prefill?: { values?: Record<string, unknown>; errors?: Record<string, string[]> } }
+  | { kind: 'relation-view';   slug: string; recordId: string; relationship: string; childId: string }
   | { kind: 'relation-edit';   slug: string; recordId: string; relationship: string; childId: string; prefill?: { values?: Record<string, unknown>; errors?: Record<string, string[]> } }
 
 /**
@@ -1563,6 +1564,8 @@ export async function relationManagerData(
       return buildRelationListData(pilotiq, R, M, Related, parentRecord, scope, req, user, mode)
     case 'relation-create':
       return buildRelationCreateData(pilotiq, R, M, Related!, parentRecord, scope, req, user, mode)
+    case 'relation-view':
+      return buildRelationViewData(pilotiq, R, M, Related!, parentRecord, scope, req, user, mode)
     case 'relation-edit':
       return buildRelationEditData(pilotiq, R, M, Related!, parentRecord, scope, req, user, mode)
   }
@@ -1712,6 +1715,84 @@ async function buildRelationCreateData(
     schemaData,
     notifications: consumeFlashedNotifications(req),
     ...(scope.prefill?.errors ? { hasErrors: true } : {}),
+  }
+}
+
+/**
+ * Phase A — read-only view page for a related record at depth-2:
+ * `${base}/${slug}/:id/${rel}/:childId`. Mirrors `buildRelationEditData`'s
+ * IDOR + auth posture but resolves the manager's `static detail(child,
+ * parent)` instead of its form. The default `detail()` returns `[]` —
+ * managers opt in by overriding it; the chrome (RelationTabs strip)
+ * still renders so users can sideways-nav between sibling managers.
+ */
+async function buildRelationViewData(
+  pilotiq: Pilotiq,
+  R: ResourceClass,
+  M: typeof RelationManager,
+  Related: ResourceClass,
+  parentRecord: unknown,
+  scope: Extract<RelationManagerScope, { kind: 'relation-view' }>,
+  req: unknown,
+  user: unknown,
+  _mode: RelationMode,
+): Promise<RelationManagerResult> {
+  if (!Related.model) {
+    throw new Error(
+      `[Pilotiq] Cannot load child record for ${M.name}: Related Resource ${Related.name} has no static model.`,
+    )
+  }
+  const childPk = getPrimaryKey(Related.model)
+
+  const belongs = await childBelongsToParent(
+    R.model as ModelLike, parentRecord, scope.relationship, childPk, scope.childId,
+  )
+  if (!belongs) return null
+
+  const child = await findRecord(Related, scope.childId, { user }).catch(() => undefined)
+  if (!child) return null
+
+  if (!await safeManagerPolicy(M, 'canView', Related, user, parentRecord, child)) return { ok: false, status: 403 }
+
+  const cfg = pilotiq.getConfig()
+  const base = cfg.path
+
+  const elements: Element[] = M.detail(child, parentRecord)
+
+  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship)
+  if (tabs) elements.unshift(tabs)
+
+  const ctx: SchemaContext = uploadCtx(userCtx({
+    mode:     'view',
+    basePath: base,
+    record:   child,
+    recordId: scope.childId,
+  }, user), cfg)
+
+  const schemaData = await resolveSchema(elements, ctx)
+
+  return {
+    pageType: 'relation-view',
+    panel:    await panelInfo(pilotiq, req),
+    resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
+    relation: {
+      name:          M.name,
+      label:         M.getLabel(),
+      labelSingular: M.getLabelSingular(),
+      relationship:  scope.relationship,
+      icon:          M.getIcon() ? serializeIcon(M.getIcon()!, M.name) : undefined,
+      relatedSlug:   Related.getSlug(),
+    },
+    parent: {
+      id:    scope.recordId,
+      title: deriveParentTitle(R, parentRecord),
+    },
+    mode:     'view' as const,
+    childId:  scope.childId,
+    basePath: base,
+    layout:   cfg.layout,
+    schemaData,
+    notifications: consumeFlashedNotifications(req),
   }
 }
 
@@ -2760,6 +2841,18 @@ export async function dispatchPageData(pageContext: PageContextLike): Promise<un
       if (!slug || !id || !relationship) return null
       const out = await relationManagerData(panel, {
         kind: 'relation-create', slug, recordId: id, relationship,
+      })
+      return out === null ? null : (out as Record<string, unknown>)
+    }
+
+    case '/pages/(pilotiq)/relation-view': {
+      const slug         = routeParams['slug']
+      const id           = routeParams['id']
+      const relationship = routeParams['relationship']
+      const childId      = routeParams['childId']
+      if (!slug || !id || !relationship || !childId) return null
+      const out = await relationManagerData(panel, {
+        kind: 'relation-view', slug, recordId: id, relationship, childId,
       })
       return out === null ? null : (out as Record<string, unknown>)
     }
