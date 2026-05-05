@@ -225,6 +225,23 @@ export function buildSlashItems(
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).clearNodes().unsetAllMarks().run(),
     },
+    // Inline-mark size variants. Slash-menu form leaves the slash range in
+    // place rather than swallowing it, so the user runs the command on the
+    // word they were just typing — the alternative ("/lead" deletes the
+    // range, then user types more) requires re-positioning the cursor and
+    // breaks the "type-toggle-keep-typing" rhythm authors use most.
+    {
+      key: 'lead', label: 'Lead', icon: 'P+', group: 'Style',
+      searchKey: 'lead lede intro paragraph emphasis',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).toggleMark('lead').run(),
+    },
+    {
+      key: 'small', label: 'Small', icon: 'P-', group: 'Style',
+      searchKey: 'small fine print footnote caption',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).toggleMark('small').run(),
+    },
   ]
 
   const customs: SlashItem[] = blocks.map((b) => ({

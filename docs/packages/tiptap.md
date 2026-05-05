@@ -79,6 +79,7 @@ Recognized button ids (use them in `toolbarButtons` / `enableToolbarButtons` / `
 
 ```
 Inline marks   bold italic underline strike subscript superscript code
+Size variants  lead small
 Headings       paragraph h1 h2 h3 h4 h5 h6
 Alignment      alignStart alignCenter alignEnd alignJustify
 Block prims    blockquote codeBlock bulletList orderedList horizontalRule
@@ -92,6 +93,8 @@ Tables         table
                tableDelete
 Editing        link undo redo
 ```
+
+`lead` and `small` are inline marks: `lead` wraps the selection in `<span class="lead">…</span>` (style with your own `.lead` rule — typically the lede paragraph treatment), `small` wraps in the semantic `<small>…</small>` element. They compose freely with bold/italic/color and are surfaced under the **Style** group of the slash menu (`/lead`, `/small`).
 
 Default layout (matches the reference admin):
 
@@ -131,6 +134,7 @@ Opens on `/`. Built-in items:
 - **Lists** — Bullet list, Numbered list
 - **Align** — Align left, Align center, Align right
 - **Insert** — Table (3×3 with header row), Image *(only when an `UploadAdapter` is registered via `Pilotiq.uploads({ adapter })`)*
+- **Style** — Lead, Small
 - **Blocks** — every entry in `.blocks([...])`
 - **Merge tags** — every entry in `.mergeTags([...])`
 
@@ -272,7 +276,7 @@ The wire path is `POST {scope}/_form/{formId}/mentions` with body `{ field, trig
 
 The endpoint reuses each scope's existing auth gate: resource-create routes through `R.canAccess + R.canCreate`, resource-edit through `R.canAccess + R.canEdit`, global-edit through `G.canAccess + G.canEdit`, custom pages through `Page.canAccess`. A throwing resolver returns `422` with the error message; the popover degrades to "no matches" rather than crashing.
 
-> Async-mention providers inside a Repeater / Builder row are **not** supported in v1 — the row-relative field path doesn't round-trip through the URL. Mount the field at the top level of the form (or a layout container), not inside an array-row.
+> Async-mention providers inside a Repeater or Builder row are supported. The client posts the row-relative dotted path (`items.0.body` for a Repeater leaf, `blocks.0.data.body` for a Builder leaf); the route handler parses the prefix and looks up the field against the Repeater's template / each Builder block's schema. Field config (providers + resolver) is shared across rows, so the `<index>` segment is informational — any row resolves to the same template field. **Builder caveat:** when two blocks define a RichTextField with the same leaf name and different async providers, only the first block in declaration order is reachable from the dispatcher. Give them distinct names if you need per-block resolution.
 
 ## Custom blocks
 

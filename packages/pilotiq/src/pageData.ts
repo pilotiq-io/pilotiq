@@ -464,6 +464,14 @@ export function tagRichTextMentionUrls(
           el.withMentionsUrl(url)
           stampedAny = true
         }
+        // Builder.getChildren() returns undefined to keep the field-level
+        // walkers from treating heterogeneous rows as flat children. Manual
+        // descent into each block's schema covers the URL-stamping path
+        // without changing the no-cross posture for save/coerce.
+        if (isBuilderField(el)) {
+          for (const block of (el as BuilderField).getBlocks()) visit(block.getSchema())
+          continue
+        }
         const children = el.getChildren()
         if (children) visit(children)
       }
@@ -2037,10 +2045,23 @@ function isMentionResolverField(el: Element): el is Element & AsyncMentionResolv
 }
 
 /**
- * Walk a form's tree looking for the named field. Stops at the Repeater
- * boundary — RichTextField inside a Repeater row is not supported in v1
- * (the field's name there is row-relative). Mirrors the no-cross posture
- * of `findFieldByName` inside `dispatchForm.ts`.
+ * Walk a form's tree looking for the named field. Descends into Repeater /
+ * Builder rows when the requested name carries the row-prefix shape:
+ *
+ *   - Repeater rows: `<repeaterName>.<index>.<innerPath>` — looks up
+ *     `<innerPath>` against the Repeater's template schema. Field config
+ *     (providers, async resolver) is shared across rows, so any row index
+ *     resolves to the same template field.
+ *   - Builder rows: `<builderName>.<index>.data.<innerPath>` — looks up
+ *     `<innerPath>` against every block's schema; first match wins. Block
+ *     schemas often share leaf names — if two blocks define a RichTextField
+ *     with the same name and different async-mention providers, only the
+ *     first block in declaration order is reachable here. Authors needing
+ *     per-block resolution should give the leaves distinct names.
+ *
+ * Mirrors the boundary-stopping posture of `findFieldByName` inside
+ * `dispatchForm.ts` for top-level matches — only the dotted-prefix branch
+ * crosses into row schemas.
  */
 function findRichTextFieldByName(
   elements: ReadonlyArray<Element>,
@@ -2050,8 +2071,24 @@ function findRichTextFieldByName(
     if (isMentionResolverField(el) && (el as unknown as { name: string }).name === name) {
       return el
     }
-    if (isRepeaterField(el)) continue
-    if (el.getType() === 'builder') continue
+    if (isRepeaterField(el)) {
+      const inner = stripRepeaterRowPrefix(name, (el as RepeaterField).name)
+      if (inner !== undefined) {
+        const hit = findRichTextFieldByName((el as RepeaterField).getInnerSchema(), inner)
+        if (hit) return hit
+      }
+      continue
+    }
+    if (isBuilderField(el)) {
+      const inner = stripBuilderRowPrefix(name, (el as BuilderField).name)
+      if (inner !== undefined) {
+        for (const block of (el as BuilderField).getBlocks()) {
+          const hit = findRichTextFieldByName(block.getSchema(), inner)
+          if (hit) return hit
+        }
+      }
+      continue
+    }
     const children = el.getChildren()
     if (children && children.length > 0) {
       const hit = findRichTextFieldByName(children, name)
@@ -2059,6 +2096,33 @@ function findRichTextFieldByName(
     }
   }
   return undefined
+}
+
+/**
+ * `items.0.body` → `body`. Returns `undefined` when the path doesn't match
+ * the `<repeaterName>.<digits>.<rest>` shape so the walker keeps searching
+ * other branches instead of misinterpreting an unrelated dotted name.
+ */
+function stripRepeaterRowPrefix(path: string, repeaterName: string): string | undefined {
+  const parts = path.split('.')
+  if (parts.length < 3) return undefined
+  if (parts[0] !== repeaterName) return undefined
+  if (!/^\d+$/.test(parts[1] ?? '')) return undefined
+  return parts.slice(2).join('.')
+}
+
+/**
+ * `blocks.0.data.heading` → `heading`. The literal `data` segment matches
+ * Builder's wire shape (`{ __id, type, data: {…} }`) and distinguishes a
+ * Builder leaf from a Repeater leaf at the same depth.
+ */
+function stripBuilderRowPrefix(path: string, builderName: string): string | undefined {
+  const parts = path.split('.')
+  if (parts.length < 4) return undefined
+  if (parts[0] !== builderName) return undefined
+  if (!/^\d+$/.test(parts[1] ?? '')) return undefined
+  if (parts[2] !== 'data') return undefined
+  return parts.slice(3).join('.')
 }
 
 /**

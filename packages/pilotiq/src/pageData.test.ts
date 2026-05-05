@@ -26,6 +26,9 @@ import { Page } from './Page.js'
 import { TextField } from './fields/TextField.js'
 import { ToggleField } from './fields/ToggleField.js'
 import { Section } from './schema/Section.js'
+import { Repeater } from './fields/RepeaterField.js'
+import { Builder } from './fields/BuilderField.js'
+import { Block } from './schema/Block.js'
 
 describe('applyFillPipeline', () => {
   it('defaults to a shallow record copy when nothing is configured', async () => {
@@ -801,5 +804,112 @@ describe('mentionResolveData (async mention items)', () => {
     assert.equal(result.items.length, 1)
     assert.equal(result.items[0]!.id,    'sleman')
     assert.equal(result.items[0]!.label, 'User:sleman')
+  })
+
+  it('resolves a RichTextField nested inside a Repeater row via dotted path', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([
+          Repeater.make('items').schema([new FakeRichTextField('body', true)]),
+        ])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+    const result = await mentionResolveData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', field: 'items.0.body', trigger: '@', query: 'sleman' },
+    )
+    assert.notEqual(result, null)
+    if (result === null || !result.ok) throw new Error('expected ok result')
+    assert.equal(result.items[0]!.id, 'sleman')
+  })
+
+  it('resolves a RichTextField nested inside a Builder block via dotted path', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([
+          Builder.make('blocks').blocks([
+            Block.make('callout').schema([new FakeRichTextField('body', true)]),
+          ]),
+        ])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+    const result = await mentionResolveData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', field: 'blocks.0.data.body', trigger: '@', query: 'sleman' },
+    )
+    assert.notEqual(result, null)
+    if (result === null || !result.ok) throw new Error('expected ok result')
+    assert.equal(result.items[0]!.id, 'sleman')
+  })
+
+  it('returns 404 when a Repeater dotted path does not match any inner field', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([
+          Repeater.make('items').schema([new FakeRichTextField('body', true)]),
+        ])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+    const result = await mentionResolveData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', field: 'items.0.missing', trigger: '@', query: 'a' },
+    )
+    assert.notEqual(result, null)
+    assert.equal((result as { ok: false; status: number }).ok, false)
+    assert.equal((result as { ok: false; status: number }).status, 404)
+  })
+
+  it('returns 404 for a Builder path missing the literal `data` segment', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([
+          Builder.make('blocks').blocks([
+            Block.make('callout').schema([new FakeRichTextField('body', true)]),
+          ]),
+        ])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+    // Repeater-shaped path doesn't reach a Builder leaf.
+    const result = await mentionResolveData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', field: 'blocks.0.body', trigger: '@', query: 'a' },
+    )
+    assert.notEqual(result, null)
+    assert.equal((result as { ok: false; status: number }).ok, false)
+    assert.equal((result as { ok: false; status: number }).status, 404)
+  })
+})
+
+describe('tagRichTextMentionUrls — nested Repeater + Builder rows', () => {
+  it('stamps a Repeater template field via the form-level URL', () => {
+    const inner = new FakeRichTextField('body', true)
+    const form = Form.make().formId('art').schema([
+      Repeater.make('items').schema([inner]),
+    ])
+    tagRichTextMentionUrls([form], (id) => `/admin/_form/${id}/mentions`)
+    assert.equal(inner.stamped, '/admin/_form/art/mentions')
+  })
+
+  it('stamps a Builder block leaf even though Builder.getChildren() is undefined', () => {
+    const inner = new FakeRichTextField('body', true)
+    const form = Form.make().formId('art').schema([
+      Builder.make('blocks').blocks([
+        Block.make('callout').schema([inner]),
+      ]),
+    ])
+    tagRichTextMentionUrls([form], (id) => `/admin/_form/${id}/mentions`)
+    assert.equal(inner.stamped, '/admin/_form/art/mentions')
   })
 })

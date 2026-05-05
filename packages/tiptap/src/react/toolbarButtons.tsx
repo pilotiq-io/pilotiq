@@ -102,6 +102,10 @@ const Icons = {
   h4: <span className="text-xs font-semibold leading-none">H4</span>,
   h5: <span className="text-xs font-semibold leading-none">H5</span>,
   h6: <span className="text-xs font-semibold leading-none">H6</span>,
+  // Sized text-string glyphs match the visual contrast of the marks they
+  // toggle — lead is the larger of the pair, small is the slightly smaller.
+  lead:  <span className="text-sm font-semibold leading-none tracking-tight">P+</span>,
+  small: <span className="text-[10px] font-semibold leading-none tracking-tight">P-</span>,
   alignStart: (
     <svg {...ICON_PROPS}>
       <line x1="3" y1="6" x2="21" y2="6" />
@@ -348,6 +352,19 @@ export const TOOLBAR_BUTTONS: Record<ToolbarButtonId, ToolbarButtonDef> = {
     id: 'code', label: 'Inline code', shortcut: 'E', available: true, icon: Icons.code,
     isActive: (ed) => ed.isActive('code'),
     command: (ed) => { ed.chain().focus().toggleCode().run() },
+  },
+  lead: {
+    id: 'lead', label: 'Lead', available: true, icon: Icons.lead,
+    isActive: (ed) => ed.isActive('lead'),
+    // `toggleMark` is the safest call — `chain().toggleLead()` would require
+    // the command type to be visible to the chain at compile time, and the
+    // marks ship from a sibling extension file the toolbar can't see typewise.
+    command: (ed) => { ed.chain().focus().toggleMark('lead').run() },
+  },
+  small: {
+    id: 'small', label: 'Small', available: true, icon: Icons.small,
+    isActive: (ed) => ed.isActive('small'),
+    command: (ed) => { ed.chain().focus().toggleMark('small').run() },
   },
   paragraph: {
     id: 'paragraph', label: 'Paragraph', available: true, icon: Icons.paragraph,

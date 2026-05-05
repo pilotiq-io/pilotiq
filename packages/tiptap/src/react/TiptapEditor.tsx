@@ -22,6 +22,7 @@ import {
 } from '../extensions/SlashCommandExtension.js'
 import { DragHandleExtension } from '../extensions/DragHandleExtension.js'
 import { MergeTagExtension } from '../extensions/MergeTagExtension.js'
+import { LeadMarkExtension, SmallMarkExtension } from '../extensions/TextSizeMarks.js'
 import {
   MentionExtension,
   type MentionState,
@@ -173,6 +174,8 @@ function ClientEditor(props: FieldRendererProps) {
       Underline,
       Subscript,
       Superscript,
+      LeadMarkExtension,
+      SmallMarkExtension,
       // textAlign needs to be told which node types it can target. Headings
       // + paragraphs are the standard set. Blockquote alignment is handled
       // by aligning the inner paragraph.

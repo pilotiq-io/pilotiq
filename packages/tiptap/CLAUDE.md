@@ -20,7 +20,8 @@ src/
 │   ├── DragHandleExtension.ts     # Hover gutter drag handle
 │   ├── MentionExtension.ts        # @-mentions via Suggestion
 │   ├── MergeTagExtension.ts       # {{merge_tag}} pills
-│   └── SlashCommandExtension.ts   # / slash menu via Suggestion
+│   ├── SlashCommandExtension.ts   # / slash menu via Suggestion
+│   └── TextSizeMarks.ts           # `lead` + `small` inline marks
 └── react/
     ├── BlockNodeView.tsx          # Inline summary card per inserted block
     ├── BlockSidePanel.tsx         # Right-docked panel for editing block.schema
@@ -75,6 +76,8 @@ When a user clicks **Edit** on an inserted custom block, a floating right-docked
 - **Slash menu** (`SlashMenu.tsx` + `SlashCommandExtension.ts`): document-level capture-phase keys; cursor-anchored Base UI Popover via virtual element. Items derived from `extension.options.blocks` plus built-ins.
 - **Drag handle**: `DragHandleExtension.ts` ships per-block external handles. Drop must `setNodeSelection` AND set `view.dragging` AND `serializeForClipboard` — missing any of those is the snap-back-to-origin bug (see `feedback_tiptap_drag_handle_pm_dragging.md`).
 - **Tiptap node naming**: never use `name: 'block'` for a node — it collides with PM's schema GROUP and breaks contentMatchAt. The custom block uses `pilotiqBlock`.
+- **`lead` / `small` size marks** (2026-05-05 cont'd⁴): two inline marks for paragraph-style size variants. `lead` renders as `<span class="lead">…</span>` (consumer owns the CSS — every site has a `.lead` rule); `small` renders as the semantic `<small>…</small>`. Surfaced as toolbar button ids `'lead'` / `'small'` and slash-menu entries under the **Style** group. Render-side serialization in `render.ts` mirrors the editor output.
+- **Async mentions inside Repeater / Builder rows** (2026-05-05 cont'd⁴): the dispatcher (`pageData.findRichTextFieldByName`) parses the row-relative dotted path the editor posts (`items.0.body` for Repeater, `blocks.0.data.body` for Builder) and looks the leaf up against the Repeater's template / each Builder block's schema. The stamper (`tagRichTextMentionUrls`) walks Builder block schemas explicitly because `BuilderField.getChildren()` returns `undefined` to keep field walkers from treating heterogeneous rows as flat children.
 
 ---
 

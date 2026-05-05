@@ -66,4 +66,17 @@ describe('SlashCommandExtension built-ins', () => {
     assert.equal(items.some((i) => i.key === 'paragraph'), false,
       'expected unrelated entries to drop out of the filtered list')
   })
+
+  it('exposes lead + small entries under the Style group', () => {
+    const items = buildSlashItems([], [], '', {
+      hasUpload: false,
+      onInsertImage: () => {},
+    })
+    const lead  = items.find((i) => i.key === 'lead')
+    const small = items.find((i) => i.key === 'small')
+    assert.ok(lead,  'expected a "lead" slash entry')
+    assert.ok(small, 'expected a "small" slash entry')
+    assert.equal(lead!.group,  'Style')
+    assert.equal(small!.group, 'Style')
+  })
 })

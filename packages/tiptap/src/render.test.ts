@@ -289,6 +289,18 @@ describe('renderRichTextToHtml — marks', () => {
     assert.equal(renderRichTextToHtml(mk('code')),        '<p><code>t</code></p>')
   })
 
+  it('lead / small size-variant marks', () => {
+    const mk = (mark: string): TiptapNode => ({
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{ type: 'text', text: 't', marks: [{ type: mark }] }],
+      }],
+    })
+    assert.equal(renderRichTextToHtml(mk('lead')),  '<p><span class="lead">t</span></p>')
+    assert.equal(renderRichTextToHtml(mk('small')), '<p><small>t</small></p>')
+  })
+
   it('link marks emit href + opens-in-new-tab gets rel=noopener', () => {
     const doc: TiptapNode = {
       type: 'doc',

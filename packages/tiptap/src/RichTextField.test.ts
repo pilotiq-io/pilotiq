@@ -140,6 +140,19 @@ describe('RichTextField toolbar API', () => {
       .toMeta()
     assert.deepEqual(meta.toolbarGroups, [['bold', 'italic']])
   })
+
+  it('accepts lead + small in custom toolbar groups', () => {
+    const meta = RichTextField.make('body')
+      .toolbarButtons([
+        ['bold', 'italic'],
+        ['lead', 'small'],
+      ])
+      .toMeta()
+    assert.deepEqual(meta.toolbarGroups, [
+      ['bold', 'italic'],
+      ['lead', 'small'],
+    ])
+  })
 })
 
 describe('RichTextField color palettes', () => {

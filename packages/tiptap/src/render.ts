@@ -18,6 +18,7 @@
  *           / mergeTag / mention
  *   marks — bold / italic / strike / underline / subscript / superscript
  *           / code / link / textStyle (color) / highlight (color)
+ *           / lead (paragraph emphasis) / small (semantic <small>)
  *   attrs — heading.level / orderedList.start / codeBlock.language
  *           / paragraph.textAlign + heading.textAlign
  *           / image.src + alt + title + width + height
@@ -223,6 +224,8 @@ function wrapMark(inner: string, mark: TiptapMark | undefined): string {
     case 'subscript':   return `<sub>${inner}</sub>`
     case 'superscript': return `<sup>${inner}</sup>`
     case 'code':        return `<code>${inner}</code>`
+    case 'lead':        return `<span class="lead">${inner}</span>`
+    case 'small':       return `<small>${inner}</small>`
     case 'link': {
       const href   = sanitizeUrl(attrs['href'])
       const target = typeof attrs['target'] === 'string'

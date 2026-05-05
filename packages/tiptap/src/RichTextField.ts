@@ -20,6 +20,8 @@ import {
 export type ToolbarButtonId =
   // Inline marks
   | 'bold' | 'italic' | 'underline' | 'strike' | 'subscript' | 'superscript' | 'code'
+  // Inline size variants — `lead` paragraph styling + semantic `<small>`.
+  | 'lead' | 'small'
   // Block / heading switches
   | 'paragraph' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
   // Alignment

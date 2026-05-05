@@ -44,8 +44,11 @@ export interface MentionOptions {
   mentionsUrl?: string
   /**
    * Field path the route handler uses to find the RichTextField on the
-   * page. Equals `Field.name` for non-nested fields. Async-mention
-   * providers inside Repeater rows are not supported in v1.
+   * page. Equals `Field.name` for non-nested fields. Inside a Repeater
+   * row this is the dotted form `<repeaterName>.<index>.<innerName>`;
+   * inside a Builder row it's `<builderName>.<index>.data.<innerName>`.
+   * The route handler parses the prefix and looks up the field against
+   * the Repeater's template / each Builder block's schema.
    */
   fieldName?: string
 }
