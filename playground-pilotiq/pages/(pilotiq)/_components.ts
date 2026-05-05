@@ -6,13 +6,19 @@
 import { pilotiqAdmin, pilotiqSimple } from '../../app/Pilotiq/AdminPanel'
 
 const _all: Record<string, unknown> = {}
+const _clusters: Record<string, string[]> = {}
 function _add(c: any) { if (typeof c === 'function' && c.name) _all[c.name] = c }
 function _walk(p: any) {
   const cfg = p?.getConfig?.()
   cfg?.resources?.forEach(_add)
   cfg?.globals?.forEach(_add)
   cfg?.pages?.forEach(_add)
+  if (cfg?.path && Array.isArray(cfg?.clusters)) {
+    const slugs = cfg.clusters.map((C: any) => (typeof C?.getSlug === 'function' ? C.getSlug() : '')).filter(Boolean)
+    if (slugs.length > 0) _clusters[cfg.path] = slugs
+  }
 }
 for (const _p of [pilotiqAdmin, pilotiqSimple]) _walk(_p)
 
 export const componentRegistry: Record<string, unknown> = _all
+export const clusterSlugsByBasePath: Record<string, string[]> = _clusters
