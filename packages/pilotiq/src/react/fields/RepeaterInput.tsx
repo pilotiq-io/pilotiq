@@ -40,8 +40,12 @@ export function reorderRows<T>(rows: T[], fromIdx: number, insertBeforeIdx: numb
   return next
 }
 
-/** Tailwind v4 default breakpoints. Hardcoded so the renderer doesn't need
- * to read the consumer's tailwind config. */
+/**
+ * Tailwind v4 default breakpoint widths. Reused as container-query
+ * thresholds so authors can think in the same `sm/md/lg/xl/2xl` ladder
+ * regardless of viewport vs. container framing — at viewport width these
+ * fire identically to the corresponding `@media` queries.
+ */
 const RESPONSIVE_GRID_BREAKPOINTS: Array<{ key: 'sm' | 'md' | 'lg' | 'xl' | '2xl'; min: string }> = [
   { key: 'sm',  min: '40rem' },
   { key: 'md',  min: '48rem' },
@@ -60,8 +64,15 @@ const RESPONSIVE_GRID_BREAKPOINTS: Array<{ key: 'sm' | 'md' | 'lg' | 'xl' | '2xl
  * - Number form (`grid(2)`) → inline `gridTemplateColumns: repeat(N, …)`.
  * - Object form (`grid({ default: 1, md: 2 })`) → a fresh `<style>` block
  *   keyed off `scopeId` + a matching className on the container; default
- *   columns drive the base rule, each declared breakpoint adds a media
- *   query override.
+ *   columns drive the base rule, each declared breakpoint adds a
+ *   `@container` query override.
+ *
+ * Responsive mode requires a CQ context — the caller paints
+ * `wrapperStyle` (`container-type: inline-size`) on the outer wrapper so
+ * the grid's `@container` rules resolve against the Repeater's
+ * parent-allocated width, not the viewport. A 2-column Repeater dropped
+ * into a `Split` aside therefore folds back to 1 column once the aside
+ * is narrower than `md`, even on a wide screen.
  *
  * `scopeId` should be a stable per-field identifier (we use `useId()` from
  * React — already isolated to this render's component instance).
@@ -70,13 +81,14 @@ export function buildGridContainer(
   grid: number | Record<string, number | undefined> | undefined,
   scopeId: string,
 ): {
-  hasGrid:    boolean
-  className:  string
-  style:      React.CSSProperties | undefined
-  styleBlock: React.ReactElement | null
+  hasGrid:      boolean
+  className:    string
+  style:        React.CSSProperties | undefined
+  styleBlock:   React.ReactElement | null
+  wrapperStyle: React.CSSProperties | undefined
 } {
   if (grid === undefined) {
-    return { hasGrid: false, className: 'flex flex-col gap-3', style: undefined, styleBlock: null }
+    return { hasGrid: false, className: 'flex flex-col gap-3', style: undefined, styleBlock: null, wrapperStyle: undefined }
   }
   if (typeof grid === 'number') {
     return {
@@ -84,6 +96,7 @@ export function buildGridContainer(
       className: 'grid gap-3',
       style: { gridTemplateColumns: `repeat(${grid}, minmax(0, 1fr))` },
       styleBlock: null,
+      wrapperStyle: undefined,
     }
   }
   const cls = `pq-grid-${scopeId.replace(/:/g, '')}`
@@ -94,13 +107,14 @@ export function buildGridContainer(
   for (const bp of RESPONSIVE_GRID_BREAKPOINTS) {
     const cols = grid[bp.key]
     if (typeof cols !== 'number') continue
-    rules.push(`@media (min-width: ${bp.min}) { .${cls} { grid-template-columns: repeat(${cols}, minmax(0, 1fr)); } }`)
+    rules.push(`@container (min-width: ${bp.min}) { .${cls} { grid-template-columns: repeat(${cols}, minmax(0, 1fr)); } }`)
   }
   return {
     hasGrid: true,
     className: cls,
     style: undefined,
     styleBlock: <style>{rules.join('\n')}</style>,
+    wrapperStyle: { containerType: 'inline-size' },
   }
 }
 
@@ -476,6 +490,7 @@ export function RepeaterInput({
   return (
     <div
       className="flex flex-col gap-3"
+      style={gridContainer.wrapperStyle}
       onChange={onContainerChange}
       onBlur={onContainerBlur}
     >

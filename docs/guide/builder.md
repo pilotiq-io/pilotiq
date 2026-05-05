@@ -110,7 +110,7 @@ the only place a `Block` is mounted.
 | `.collapsible()` | Per-row collapse chevron |
 | `.collapsed()` | Render rows collapsed by default |
 | `.accordion()` | One-row-open-at-a-time mode. Picking a row collapses every other row. Auto-arms `collapsible()`. Pair with `.collapsed()` to start with everything closed (default opens the first visible row). Open-row id persists per-form to `localStorage`. |
-| `.grid(n \| { default?, sm?, md?, lg?, xl?, '2xl'? })` | Lay the *rows themselves* in an n-column grid. Different from `Block.columns(n)`, which grids fields *inside* one block's body. Accepts the **scalar form** `(grid(2))` or the **responsive form** `(grid({ default: 1, md: 2 }))` — same Tailwind breakpoint keys as the corresponding Repeater setter. n < 2 (or all-empty object) is the off sentinel. Drag-drop indicator is suppressed in grid mode; ↑ / ↓ buttons still work. |
+| `.grid(n \| { default?, sm?, md?, lg?, xl?, '2xl'? })` | Lay the *rows themselves* in an n-column grid. Different from `Block.columns(n)`, which grids fields *inside* one block's body. Accepts the **scalar form** `(grid(2))` or the **responsive form** `(grid({ default: 1, md: 2 }))` — same Tailwind breakpoint keys as the corresponding Repeater setter. The responsive form resolves with **CSS container queries against the Builder's parent**, not the viewport, so a Builder nested in a narrow column folds to fewer columns automatically even on a wide screen. n < 2 (or all-empty object) is the off sentinel. Drag-drop indicator is suppressed in grid mode; ↑ / ↓ buttons still work. |
 | `.cloneable()` | Per-row duplicate button |
 | `.addable(false)` | Hide the **Add block** button (UX gate) |
 | `.deletable(false)` | Hide per-row delete buttons (UX gate) |

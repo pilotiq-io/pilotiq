@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { reorderRows } from './RepeaterInput.js'
+import { reorderRows, buildGridContainer } from './RepeaterInput.js'
 
 describe('reorderRows', () => {
   it('moves a row from a higher index to a lower one', () => {
@@ -66,5 +66,51 @@ describe('reorderRows', () => {
     assert.equal(out[0], b)
     assert.equal(out[1], c)
     assert.equal(out[2], a)
+  })
+})
+
+describe('buildGridContainer', () => {
+  it('returns the no-grid fallback when grid is undefined', () => {
+    const out = buildGridContainer(undefined, 'r1')
+    assert.equal(out.hasGrid, false)
+    assert.equal(out.className, 'flex flex-col gap-3')
+    assert.equal(out.style, undefined)
+    assert.equal(out.styleBlock, null)
+    assert.equal(out.wrapperStyle, undefined)
+  })
+
+  it('renders the scalar form as inline gridTemplateColumns with no wrapper styling', () => {
+    const out = buildGridContainer(2, 'r1')
+    assert.equal(out.hasGrid, true)
+    assert.equal(out.className, 'grid gap-3')
+    assert.deepEqual(out.style, { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' })
+    assert.equal(out.styleBlock, null)
+    // Fixed-N grids never need a CQ context — they're column-count agnostic.
+    assert.equal(out.wrapperStyle, undefined)
+  })
+
+  it('renders the responsive form as @container queries against the parent wrapper', () => {
+    const out = buildGridContainer({ default: 1, md: 2, xl: 3 }, 'r1')
+    assert.equal(out.hasGrid, true)
+    assert.equal(out.className, 'pq-grid-r1')
+    assert.equal(out.style, undefined)
+    assert.deepEqual(out.wrapperStyle, { containerType: 'inline-size' })
+    assert.notEqual(out.styleBlock, null)
+    const css = (out.styleBlock as { props: { children: string } }).props.children
+    // Base rule is unconditional; breakpoint overrides switch to @container
+    // (NOT @media) so a Repeater nested inside a narrow Split/aside grids
+    // by its own allocated width, not by the viewport width.
+    assert.match(css, /\.pq-grid-r1 \{ display: grid; gap: 0\.75rem; grid-template-columns: repeat\(1, minmax\(0, 1fr\)\); \}/)
+    assert.match(css, /@container \(min-width: 48rem\) \{ \.pq-grid-r1 \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \} \}/)
+    assert.match(css, /@container \(min-width: 80rem\) \{ \.pq-grid-r1 \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \} \}/)
+    // Sanity — no leftover viewport @media rules.
+    assert.equal(/@media/.test(css), false)
+  })
+
+  it('strips colons from useId scopeIds when forming the className', () => {
+    // React 18's useId() returns ':r0:' / ':R3a:' shapes; the helper has
+    // to scrub the colons so the className remains a valid CSS selector.
+    const out = buildGridContainer({ default: 1, md: 2 }, ':r5:')
+    assert.equal(out.className, 'pq-grid-r5')
   })
 })

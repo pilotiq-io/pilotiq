@@ -384,6 +384,7 @@ export function BuilderInput({
   return (
     <div
       className="flex flex-col gap-3"
+      style={gridContainer.wrapperStyle}
       onChange={onContainerChange}
       onBlur={onContainerBlur}
     >

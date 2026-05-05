@@ -1,5 +1,5 @@
 import {
-  Page, Heading, Section,
+  Page, Heading, Section, Split,
   Form, TextField, NumberField, ToggleField, SelectField, SliderField, Repeater,
   RowButton,
   Action, Notification,
@@ -312,6 +312,37 @@ export class RepeaterDemo extends Page {
                 .schema([
                   TextField.make('name').label('Name').required(),
                   TextField.make('title').label('Title'),
+                ]),
+            ]),
+
+          Section.make('Responsive grid — container-query breakpoints')
+            .description('`Repeater.grid({ default: 1, md: 2, xl: 3 })` keys column counts off the standard Tailwind breakpoint widths, but resolves them with **CSS container queries against the Repeater\'s parent**, not the viewport. Drop the same Repeater into a narrow Split aside and it folds back to fewer columns automatically — even on a wide screen.')
+            .schema([
+              Split.make()
+                .from('right')
+                .gap(6)
+                .schema([
+                  Repeater.make('teamGridFull')
+                    .label('Team (full width)')
+                    .grid({ default: 1, md: 2, xl: 3 })
+                    .defaultItems(4)
+                    .schema([
+                      TextField.make('name').label('Name').required(),
+                      TextField.make('title').label('Title'),
+                    ]),
+                  Section.make('Same Repeater, narrow column')
+                    .aside()
+                    .description('Identical .grid({ default: 1, md: 2, xl: 3 }) — the aside is too narrow to hit md, so this one stays single-column.')
+                    .schema([
+                      Repeater.make('teamGridAside')
+                        .label('Team (aside)')
+                        .grid({ default: 1, md: 2, xl: 3 })
+                        .defaultItems(3)
+                        .schema([
+                          TextField.make('name').label('Name').required(),
+                          TextField.make('title').label('Title'),
+                        ]),
+                    ]),
                 ]),
             ]),
 
