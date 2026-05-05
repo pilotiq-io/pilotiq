@@ -584,6 +584,11 @@ export function registerPilotiqRoutes(
   // Plan #11 — fail fast at boot when any relation manager's
   // `relationship` collides with a reserved URL token. A silent 404 at
   // request time is much harder to debug.
+  //
+  // Phase B nested resources — same validation walks managers declared
+  // via `M.relations()` (one level deep). Depth-3+ is rejected here too:
+  // declaring `relations()` on a nested manager isn't supported in
+  // Phase B (Filament also caps at depth 2).
   for (const R of cfg.resources) {
     for (const M of R.relations()) {
       const rel = M.getRelationship()
@@ -592,6 +597,21 @@ export function registerPilotiqRoutes(
           `[Pilotiq] RelationManager ${M.name} on ${R.name} uses reserved relationship "${rel}". ` +
           `Reserved tokens: ${[...RESERVED_RELATIONSHIP_TOKENS].join(', ')}. Rename it.`,
         )
+      }
+      for (const N of M.relations()) {
+        const nestedRel = N.getRelationship()
+        if (RESERVED_RELATIONSHIP_TOKENS.has(nestedRel)) {
+          throw new Error(
+            `[Pilotiq] Nested RelationManager ${N.name} under ${M.name} on ${R.name} uses reserved relationship "${nestedRel}". ` +
+            `Reserved tokens: ${[...RESERVED_RELATIONSHIP_TOKENS].join(', ')}. Rename it.`,
+          )
+        }
+        if (N.relations().length > 0) {
+          throw new Error(
+            `[Pilotiq] Nested RelationManager ${N.name} under ${M.name} on ${R.name} declares its own relations(). ` +
+            `Phase B caps nesting at depth 2 (Filament does too). Drop the nested relations() override.`,
+          )
+        }
       }
     }
   }
@@ -2022,6 +2042,361 @@ export function registerPilotiqRoutes(
         }
         return res.redirect(listUrl, 303)
       })
+
+      // ── Phase B nested relation routes ──────────────────
+      // For each manager N declared under M.relations(), mount the
+      // depth-2 list/create/view/edit/delete handlers. Auth + chain
+      // IDOR are centralized in `nestedRelationManagerData` — route
+      // bodies dispatch the data builder and unwrap the tagged
+      // {ok:false,status:403} / null shapes. Surface area mirrors
+      // Phase A: no M2M attach/detach, no soft-delete restore on
+      // nested managers in v1 (open follow-ups if a consumer asks).
+      for (const N of M.relations()) {
+        const nestedRel  = N.getRelationship()
+        const nestedBase = `${parentBase}/:childId/${nestedRel}`
+
+        // Build a `chain` tuple from the URL params for relayed calls
+        // into `relationManagerData`. The childId of the *outer* manager
+        // is the recordId of the leaf step.
+        const buildChain = (id: string, childId1: string): [{ recordId: string; relationship: string }, { recordId: string; relationship: string }] => [
+          { recordId: id,       relationship: rel },
+          { recordId: childId1, relationship: nestedRel },
+        ]
+
+        // ── List ──
+        router.get(nestedBase, async (req, res) => {
+          const json = wantsJson(req)
+          const id       = req.params['id']!
+          const childId1 = req.params['childId']!
+          const data = await relationManagerData(pilotiq, {
+            kind: 'nested-relation-list', slug,
+            chain: buildChain(id, childId1),
+            query: req.query as Record<string, string>,
+          }, req)
+          if (data === null)                            { res.status(404); return res.send('Not found') }
+          if ('ok' in data && data.ok === false)        return forbidden(res, json)
+          return view('pilotiq.nested-relation-list', data)
+        })
+
+        // ── Create (GET) ──
+        router.get(`${nestedBase}/create`, async (req, res) => {
+          const json = wantsJson(req)
+          const id       = req.params['id']!
+          const childId1 = req.params['childId']!
+          const data = await relationManagerData(pilotiq, {
+            kind: 'nested-relation-create', slug,
+            chain: buildChain(id, childId1),
+          }, req)
+          if (data === null)                            { res.status(404); return res.send('Not found') }
+          if ('ok' in data && data.ok === false)        return forbidden(res, json)
+          return view('pilotiq.nested-relation-create', data)
+        })
+
+        // ── Create (POST) ──
+        router.post(`${nestedBase}/create`, async (req, res) => {
+          const json = wantsJson(req)
+          const id       = req.params['id']!
+          const childId1 = req.params['childId']!
+          // Run the chain walk once to verify auth + IDOR + load child1.
+          // Any failure returns the same tagged shape we serve on GET.
+          const pre = await relationManagerData(pilotiq, {
+            kind: 'nested-relation-create', slug,
+            chain: buildChain(id, childId1),
+          }, req)
+          if (pre === null)                             { res.status(404); return res.send('Not found') }
+          if ('ok' in pre && pre.ok === false)          return forbidden(res, json)
+
+          // Re-resolve the leaf manager's bits for form submit. We need
+          // the leaf parent record (`child1`) and the related class for
+          // save/loadRecord wiring. Reuse `findRelatedResource` against
+          // the chain walk's intermediate Resource (Related1).
+          const Related1 = findRelatedResource(M, R, cfg)
+          if (!Related1) {
+            res.status(500)
+            const msg = `Nested manager ${N.name}: cannot resolve middle Resource for create`
+            return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+          }
+          const Related2 = findRelatedResource(N, Related1, cfg)
+          if (!Related2?.model) {
+            res.status(500)
+            const msg = `Nested manager ${N.name}: cannot resolve related Resource for create`
+            return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+          }
+          const user   = await pilotiq.resolveUser(req)
+          const child1 = await findRecord(Related1, childId1, { user }).catch(() => undefined)
+          if (!child1) { res.status(404); return res.send('Not found') }
+
+          const body = await readFormBody(req)
+          const { values } = splitMeta(body)
+
+          const createUrl = `${nestedBase}/create`.replace(':id', id).replace(':childId', childId1)
+          const listUrl   = nestedBase.replace(':id', id).replace(':childId', childId1)
+
+          const nestedMode: RelationMode = Related1.model
+            ? normalizeRelationMode(getRelationType(Related1.model, nestedRel))
+            : 'hasMany'
+
+          const form = N.form(Form.make(), {
+            basePath:     base,
+            parentSlug:   slug,
+            parentId:     childId1,
+            relationship: nestedRel,
+            parentRecord: child1,
+            related:      Related2,
+            mode:         nestedMode,
+            chain:        [{ slug, recordId: id, relationship: rel }],
+          })
+          if (Related2.model) {
+            if (!form.getSave())       form.save(modelSave(Related2.model))
+            if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related2))
+          }
+
+          // Polymorphic morph-column auto-injection mirrors the depth-1
+          // create handler — uses Related1 (the leaf parent's owner) as
+          // the morph source on the leaf relation.
+          if (nestedMode === 'morphMany' && Related1.model) {
+            const morphDesc = getMorphRelationDescriptor(Related1.model, nestedRel)
+            if (!morphDesc) {
+              res.status(500)
+              const msg = `Nested manager ${N.name}: relations[${JSON.stringify(nestedRel)}] reports a polymorphic type but is missing morphName.`
+              return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+            }
+            const morphPayload = computeMorphPayload(child1, morphDesc)
+            const existing = form.getMutateDataBeforeCreate()
+            form.mutateDataBeforeCreate(async (data, ctx) => {
+              const next = existing ? await existing(data, ctx) : data
+              return { ...next, ...morphPayload }
+            })
+          }
+
+          const formCtx = {
+            values,
+            basePath: base,
+            parent: child1,
+            parentId: childId1,
+            relationship: nestedRel,
+          }
+
+          const result = await dispatchFormSubmit(form, values, formCtx)
+          if (!result.ok) {
+            if (json) { res.status(422); return res.json({ ok: false, errors: result.errors }) }
+            const data = await relationManagerData(pilotiq, {
+              kind: 'nested-relation-create', slug,
+              chain: buildChain(id, childId1),
+              prefill: { values, errors: result.errors ?? {} },
+            }, req)
+            res.status(422)
+            return view('pilotiq.nested-relation-create', data ?? {})
+          }
+
+          const redirect = normalizeRedirect(result.redirect, base) ?? listUrl
+          if (json) {
+            return res.json({
+              ok: true, redirect,
+              ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
+            })
+          }
+          flashNotifications(req, result.notifications)
+          return res.redirect(redirect, 303)
+          // `createUrl` referenced above is intentionally unused on
+          // success — kept for parity with the depth-1 path's prefill
+          // re-render shape if a future caller wants to redirect to it.
+          void createUrl
+        })
+
+        // ── View ──
+        router.get(`${nestedBase}/:childId2`, async (req, res) => {
+          const json = wantsJson(req)
+          const id       = req.params['id']!
+          const childId1 = req.params['childId']!
+          const childId2 = req.params['childId2']!
+          if (childId2 === 'create')                    { res.status(404); return res.send('Not found') }
+          const data = await relationManagerData(pilotiq, {
+            kind: 'nested-relation-view', slug,
+            chain: buildChain(id, childId1),
+            childId: childId2,
+          }, req)
+          if (data === null)                            { res.status(404); return res.send('Not found') }
+          if ('ok' in data && data.ok === false)        return forbidden(res, json)
+          return view('pilotiq.nested-relation-view', data)
+        })
+
+        // ── Edit (GET) ──
+        router.get(`${nestedBase}/:childId2/edit`, async (req, res) => {
+          const json = wantsJson(req)
+          const id       = req.params['id']!
+          const childId1 = req.params['childId']!
+          const childId2 = req.params['childId2']!
+          const data = await relationManagerData(pilotiq, {
+            kind: 'nested-relation-edit', slug,
+            chain: buildChain(id, childId1),
+            childId: childId2,
+          }, req)
+          if (data === null)                            { res.status(404); return res.send('Not found') }
+          if ('ok' in data && data.ok === false)        return forbidden(res, json)
+          return view('pilotiq.nested-relation-edit', data)
+        })
+
+        // ── Edit (POST) ──
+        router.post(`${nestedBase}/:childId2/edit`, async (req, res) => {
+          const json = wantsJson(req)
+          const id       = req.params['id']!
+          const childId1 = req.params['childId']!
+          const childId2 = req.params['childId2']!
+
+          // Replay the chain to verify auth, IDOR, load child1+child2.
+          const pre = await relationManagerData(pilotiq, {
+            kind: 'nested-relation-edit', slug,
+            chain: buildChain(id, childId1),
+            childId: childId2,
+          }, req)
+          if (pre === null)                             { res.status(404); return res.send('Not found') }
+          if ('ok' in pre && pre.ok === false)          return forbidden(res, json)
+
+          const Related1 = findRelatedResource(M, R, cfg)
+          if (!Related1) {
+            res.status(500)
+            const msg = `Nested manager ${N.name}: cannot resolve middle Resource for edit`
+            return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+          }
+          const Related2 = findRelatedResource(N, Related1, cfg)
+          if (!Related2?.model) {
+            res.status(500)
+            const msg = `Nested manager ${N.name}: cannot resolve related Resource for edit`
+            return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+          }
+
+          const user   = await pilotiq.resolveUser(req)
+          const child1 = await findRecord(Related1, childId1, { user }).catch(() => undefined)
+          if (!child1) { res.status(404); return res.send('Not found') }
+          const child2 = await findRecord(Related2, childId2, { user }).catch(() => undefined)
+          if (!child2) { res.status(404); return res.send('Not found') }
+
+          const body = await readFormBody(req)
+          const { values } = splitMeta(body)
+
+          const editUrl = `${nestedBase}/${childId2}/edit`.replace(':id', id).replace(':childId', childId1)
+
+          const nestedMode: RelationMode = Related1.model
+            ? normalizeRelationMode(getRelationType(Related1.model, nestedRel))
+            : 'hasMany'
+
+          const form = N.form(Form.make(), {
+            basePath:     base,
+            parentSlug:   slug,
+            parentId:     childId1,
+            relationship: nestedRel,
+            parentRecord: child1,
+            related:      Related2,
+            mode:         nestedMode,
+            chain:        [{ slug, recordId: id, relationship: rel }],
+          })
+          if (!form.getSave())       form.save(modelSave(Related2.model))
+          if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related2))
+
+          if (nestedMode === 'morphMany' && Related1.model) {
+            const morphDesc = getMorphRelationDescriptor(Related1.model, nestedRel)
+            if (morphDesc) {
+              const morphPayload = computeMorphPayload(child1, morphDesc)
+              const existing = form.getMutateDataBeforeUpdate()
+              form.mutateDataBeforeUpdate(async (data, ctx) => {
+                const next = existing ? await existing(data, ctx) : data
+                return { ...next, ...morphPayload }
+              })
+            }
+          }
+
+          const formCtx = {
+            values,
+            basePath: base,
+            record: child2,
+            parent: child1,
+            parentId: childId1,
+            relationship: nestedRel,
+          }
+
+          const result = await dispatchFormSubmit(form, values, formCtx)
+          if (!result.ok) {
+            if (json) { res.status(422); return res.json({ ok: false, errors: result.errors }) }
+            const data = await relationManagerData(pilotiq, {
+              kind: 'nested-relation-edit', slug,
+              chain: buildChain(id, childId1),
+              childId: childId2,
+              prefill: { values, errors: result.errors ?? {} },
+            }, req)
+            res.status(422)
+            return view('pilotiq.nested-relation-edit', data ?? {})
+          }
+
+          const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
+          if (json) {
+            return res.json({
+              ok: true, redirect,
+              ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
+            })
+          }
+          flashNotifications(req, result.notifications)
+          return res.redirect(redirect, 303)
+        })
+
+        // ── Delete ──
+        router.post(`${nestedBase}/:childId2/delete`, async (req, res) => {
+          const json = wantsJson(req)
+          const id       = req.params['id']!
+          const childId1 = req.params['childId']!
+          const childId2 = req.params['childId2']!
+
+          // Replay the chain to verify auth + IDOR + load child2.
+          // We piggy-back on the edit scope's checks (canEdit on the
+          // leaf manager — same gate the depth-1 delete uses today via
+          // the relation-edit scope).
+          const pre = await relationManagerData(pilotiq, {
+            kind: 'nested-relation-edit', slug,
+            chain: buildChain(id, childId1),
+            childId: childId2,
+          }, req)
+          if (pre === null)                             { res.status(404); return res.send('Not found') }
+          if ('ok' in pre && pre.ok === false)          return forbidden(res, json)
+
+          const Related1 = findRelatedResource(M, R, cfg)
+          if (!Related1) {
+            res.status(500)
+            const msg = `Nested manager ${N.name}: cannot resolve middle Resource for delete`
+            return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+          }
+          const Related2 = findRelatedResource(N, Related1, cfg)
+          if (!Related2?.model) {
+            res.status(500)
+            const msg = `Nested manager ${N.name}: cannot resolve related Resource for delete`
+            return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+          }
+
+          const user   = await pilotiq.resolveUser(req)
+          const child1 = await findRecord(Related1, childId1, { user }).catch(() => undefined)
+          if (!child1) { res.status(404); return res.send('Not found') }
+          const child2 = await findRecord(Related2, childId2, { user }).catch(() => undefined)
+          if (!child2) { res.status(404); return res.send('Not found') }
+
+          if (!await safeManagerPolicy(N, 'canDelete', Related2, user, child1, child2)) return forbidden(res, json)
+
+          const listUrl = nestedBase.replace(':id', id).replace(':childId', childId1)
+          try {
+            await Related2.model.delete(childId2)
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Delete failed'
+            res.status(500)
+            return json ? res.json({ ok: false, error: message }) : res.send(message)
+          }
+
+          if (json) {
+            const notifications = [
+              { id: `n-nrdelete-${childId2}-${Date.now()}`, type: 'success', title: `${N.getLabelSingular()} deleted` },
+            ]
+            return res.json({ ok: true, redirect: listUrl, notifications })
+          }
+          return res.redirect(listUrl, 303)
+        })
+      }
     }
   }
 

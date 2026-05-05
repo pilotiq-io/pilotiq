@@ -6,6 +6,7 @@ import {
   type RelationManagerContext,
 } from '@pilotiq/pilotiq'
 import { CommentResource } from '../../Comments/CommentResource.js'
+import { CommentRepliesManager } from '../../Comments/relations/RepliesManager.js'
 
 /**
  * Polymorphic follow-up demo — `Post → Comments` (morphMany) manager.
@@ -37,6 +38,14 @@ export class PostsCommentsManager extends RelationManager {
     // No `mutateDataBeforeCreate` — the morphMany route auto-injects
     // commentableId + commentableType from the parent record.
   }
+
+  /**
+   * Phase B nested-resources — declare a child manager. The depth-2 URL
+   * `posts/:postId/comments/:commentId/replies` mounts automatically;
+   * the depth-2 view page (`/posts/:postId/comments/:commentId`) gets a
+   * sibling tab strip linking into each declared nested manager.
+   */
+  static override relations() { return [CommentRepliesManager] }
 
   // Phase A — read-only detail page for one comment under its parent.
   // Lands at `/new-admin/posts/:postId/comments/:commentId`. Default is

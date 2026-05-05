@@ -303,6 +303,29 @@ function isM2MMode(mode: RelationManagerContext['mode']): boolean {
 }
 
 /**
+ * Phase B — build the URL prefix for a relation factory action. Without
+ * a `chain` (depth-1 manager), this is the familiar
+ * `${base}/${parentSlug}/${parentId}/${relationship}`. With a chain
+ * (depth-2 nested manager), it threads the outer record + relationship
+ * between the parent slug and the leaf parent id:
+ *
+ *   `${base}/${parentSlug}/${chain[0].recordId}/${chain[0].relationship}/${parentId}/${relationship}`
+ *
+ * Pure; takes a `RelationManagerContext` and emits a string. The leaf
+ * record id (and trailing `/edit`, `/delete`, etc.) gets appended by
+ * the caller.
+ */
+function relationUrlPrefix(ctx: RelationManagerContext): string {
+  const head = `${ctx.basePath}/${ctx.parentSlug}`
+  const chain = ctx.chain ?? []
+  let mid = ''
+  for (const step of chain) {
+    mid += `/${step.recordId}/${step.relationship}`
+  }
+  return `${head}${mid}/${ctx.parentId}/${ctx.relationship}`
+}
+
+/**
  * Compute the parent-attachment payload to force-pin onto a relation
  * replica. For `hasMany`, returns `{ [foreignKey]: parentId }` from the
  * parent's `static relations[name]` descriptor. For `morphMany` /
@@ -1130,7 +1153,7 @@ export class Action extends Element {
     const labelSingular = M.getLabelSingular()
     return Action.make('create')
       .label(`New ${labelSingular}`)
-      .href(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/create`)
+      .href(`${relationUrlPrefix(ctx)}/create`)
       .visible(({ user }) => {
         // M2M managers don't have a per-pivot-row create surface — the
         // related record is created via its own Resource, then attached
@@ -1159,7 +1182,7 @@ export class Action extends Element {
     const id = recordId ?? ':id'
     return Action.make('edit')
       .label('Edit')
-      .href(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}/edit`)
+      .href(`${relationUrlPrefix(ctx)}/${id}/edit`)
       .visible(({ user, record }) => {
         // M2M: per-pivot-row "edit" doesn't exist; users edit the
         // related record via its own Resource. Auto-hide for every M2M
@@ -1186,7 +1209,7 @@ export class Action extends Element {
       .label('Delete')
       .destructive()
       .method('post')
-      .action(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}/delete`)
+      .action(`${relationUrlPrefix(ctx)}/${id}/delete`)
       .confirm(`Delete this ${singular}?`)
       .visible(async ({ user, record }) => {
         // M2M: "delete" of the related record is destructive in a way
@@ -1217,7 +1240,7 @@ export class Action extends Element {
       .label('Restore')
       .color('success')
       .method('post')
-      .action(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}/restore`)
+      .action(`${relationUrlPrefix(ctx)}/${id}/restore`)
       .visible(async ({ user, record }) => {
         if (!ctx.related?.softDeletes) return false
         if (!isTrashed(record, ctx.related as ResourceLike)) return false
@@ -1242,7 +1265,7 @@ export class Action extends Element {
       .label('Delete forever')
       .destructive()
       .method('post')
-      .action(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}/force-delete`)
+      .action(`${relationUrlPrefix(ctx)}/${id}/force-delete`)
       .confirm(`Permanently delete this ${singular}? This cannot be undone.`)
       .visible(async ({ user, record }) => {
         if (!ctx.related?.softDeletes) return false
@@ -1471,7 +1494,7 @@ export class Action extends Element {
       .label('Detach')
       .destructive()
       .method('post')
-      .action(`${ctx.basePath}/${ctx.parentSlug}/${ctx.parentId}/${ctx.relationship}/${id}/_detach`)
+      .action(`${relationUrlPrefix(ctx)}/${id}/_detach`)
       .confirm(`Detach this ${singular}? The ${singular} record stays in place; only the link is removed.`)
       .visible(async ({ user, record }) => {
         if (!isM2MMode(ctx.mode)) return false

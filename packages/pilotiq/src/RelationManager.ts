@@ -19,20 +19,36 @@ export interface RelationManagerContext {
   /** Panel base path, e.g. `'/admin'`. */
   basePath:     string
   /** Slug of the parent Resource (the one that registered this
-   *  manager). */
+   *  manager). For Phase B nested managers, this is still the
+   *  top-level Resource — the URL prefix shifts via `chain` instead. */
   parentSlug:   string
-  /** Stringified primary key of the parent record being viewed. */
+  /** Stringified primary key of the immediate parent record being
+   *  viewed. For depth-1 managers, this is the top-level record's id;
+   *  for nested managers, it's the chain's leaf parent (the record the
+   *  leaf manager hangs off — e.g. comment 456 for `posts/123/comments/456/replies`). */
   parentId:     string
-  /** Relationship key (matches `M.relationship` and the URL segment). */
+  /** Relationship key (matches `M.relationship` and the URL segment).
+   *  For nested managers, this is the leaf manager's relationship; the
+   *  earlier hops live on `chain`. */
   relationship: string
   /** The hydrated parent record. Useful for visibility predicates that
-   *  scope by parent state. */
+   *  scope by parent state. For nested managers, this is the leaf
+   *  parent (the record the leaf manager hangs off — same as `parentId`
+   *  resolves). */
   parentRecord: unknown
   /** Related Resource, when discovered. Undefined when the manager
    *  isn't backed by a registered Resource (rare — usually you'd
    *  register one). Action visibility predicates fall through to the
    *  related Resource's policy when the manager hasn't overridden. */
   related?:     ResourceClass | undefined
+  /**
+   * Phase B nested resources — the parent chain *above* this manager,
+   * outermost-first. Empty (or absent) on a depth-1 manager. For a
+   * nested manager (e.g. `Replies` under `PostsCommentsManager`), one
+   * entry: `[{ slug: 'posts', recordId: '123', relationship: 'comments' }]`
+   * — read by `Action.relation*` factories so generated URLs include
+   * the nested prefix. */
+  chain?:       readonly RelationChainContextEntry[]
   /**
    * Auto-detected from the parent model's `static relations[name].type`
    * via `normalizeRelationMode`. Drives default action injection:
@@ -62,6 +78,16 @@ export interface RelationManagerContext {
    * type field.
    */
   mode:         RelationMode
+}
+
+/** Phase B — one parent layer in a nested-resources URL chain. The
+ *  `slug` distinguishes from the route-side `RelationChainStep`
+ *  (slug-less) — context-side consumers (Action factories) need the
+ *  slug because they're building URLs back to the top-level Resource. */
+export interface RelationChainContextEntry {
+  slug:         string
+  recordId:     string
+  relationship: string
 }
 
 /** Six relation shapes the page-data builder distinguishes. `hasOne`
@@ -240,6 +266,38 @@ export abstract class RelationManager {
    * manager table to change navigation.
    */
   static detail(_record: unknown, _parentRecord: unknown): Element[] { return [] }
+
+  /**
+   * Phase B nested resources — declare RelationManagers that ride the
+   * URL space *under* this manager's per-child view page:
+   *
+   * ```
+   * /posts/123/comments/456/replies          ← list
+   * /posts/123/comments/456/replies/create   ← create
+   * /posts/123/comments/456/replies/789      ← view
+   * /posts/123/comments/456/replies/789/edit ← edit
+   * ```
+   *
+   * Defaults to `[]`. Subclasses opt in by overriding:
+   *
+   * ```ts
+   * class PostsCommentsManager extends RelationManager {
+   *   static relationship = 'comments'
+   *   static override relations() { return [CommentRepliesManager] }
+   * }
+   * ```
+   *
+   * Auth runs in three layers per nested route: the parent Resource's
+   * `canAccess + canEdit`, this manager's `canView(child, parent)` (the
+   * gate to drill *into* a child), and the leaf manager's `canX(...)`
+   * for the specific scope. Full-chain IDOR is enforced layer-by-layer
+   * in `pageData.relationManagerData`.
+   *
+   * Phase B caps depth at 2; declaring `relations()` on a manager whose
+   * own chain is already 2 deep is rejected at panel boot. Depth-3+ is
+   * Phase D and likely a no-op (Filament stops at 2).
+   */
+  static relations(): typeof RelationManager[] { return [] }
 
   // ─── Authorization predicates ─────────────────────────────────
   // All async, all default `true`. The page-data builder calls the

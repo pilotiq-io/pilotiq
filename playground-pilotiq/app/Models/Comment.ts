@@ -1,6 +1,7 @@
 import { Model } from '@rudderjs/orm'
 import { Post } from './Post.js'
 import { Video } from './Video.js'
+import { Reply } from './Reply.js'
 
 /**
  * Polymorphic follow-up demo — `Comment.commentable` is a `morphTo`
@@ -10,6 +11,11 @@ import { Video } from './Video.js'
  *
  * camelCase columns (`commentableId` / `commentableType`) are the rudder
  * ORM convention — a deliberate divergence from Laravel's snake_case.
+ *
+ * Phase B nested-resources demo — `replies` is a hasMany pointing at
+ * the new `Reply` model. The pilotiq side wires this up via
+ * `PostsCommentsManager.relations() = [CommentRepliesManager]` so the
+ * URL `posts/:postId/comments/:commentId/replies` mounts.
  */
 export class Comment extends Model {
   static override table = 'comment'
@@ -20,6 +26,7 @@ export class Comment extends Model {
       morphName: 'commentable',
       types:     () => [Post, Video],
     },
+    replies: { type: 'hasMany' as const, model: () => Reply, foreignKey: 'commentId' },
   }
 
   id!:              string

@@ -91,6 +91,19 @@ model Comment {
   @@index([commentableId, commentableType])
 }
 
+// Phase B nested-resources demo — `Comment` owns `Reply` rows (hasMany).
+// Mounts under the depth-2 URL `posts/:postId/comments/:commentId/replies`
+// once `PostsCommentsManager.relations()` returns `[CommentRepliesManager]`.
+model Reply {
+  id        String   @id @default(cuid())
+  commentId String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([commentId])
+}
+
 model Video {
   id        String   @id @default(cuid())
   title     String
