@@ -168,7 +168,33 @@ export type VisibilityRule =
 /** Modal width preset — maps to a max-width class on the Dialog popup. */
 export type ActionModalWidth = 'sm' | 'md' | 'lg' | 'xl'
 
-/** Options bag for `Action.replicate`. Both fields optional. */
+/** Context shape passed to `ReplicateOptions.getCreatedNotificationTitle`.
+ *  Single-row factories (`replicate`, `relationReplicate`) populate
+ *  `replica` (the just-created record returned by `M.create`) and
+ *  `source` (the original row). Bulk factories (`bulkReplicate`,
+ *  `relationBulkReplicate`) populate `count` (number of successful
+ *  creates) and `records` (the original selected rows). The opposite
+ *  fields are always undefined for the other call site so consumers
+ *  can branch on whichever is set. */
+export interface ReplicateNotificationContext {
+  replica?: unknown
+  source?:  unknown
+  count?:   number
+  records?: unknown[]
+}
+
+/** Context shape passed to `ReplicateOptions.getRedirectUrl`. Single-row
+ *  factories only — bulk variants stay on the list / manager URL
+ *  regardless. `replica` is the freshly-created record; `source` is
+ *  the original. */
+export interface ReplicateRedirectContext {
+  replica: unknown
+  source:  unknown
+}
+
+/** Options bag for `Action.replicate` and its three siblings
+ *  (`bulkReplicate`, `relationReplicate`, `relationBulkReplicate`).
+ *  Every field optional. */
 export interface ReplicateOptions {
   /** Attribute names to drop from the replicated payload IN ADDITION TO
    *  the always-stripped primary key + soft-delete column. Useful for
@@ -183,6 +209,24 @@ export interface ReplicateOptions {
     replica: Record<string, unknown>,
     source:  unknown,
   ) => Record<string, unknown> | Promise<Record<string, unknown>>
+  /** Override the success notification title. Single-row factories
+   *  receive `{ replica, source }`; bulk factories receive
+   *  `{ count, records }` (`replica`/`source` undefined). Return a
+   *  string to use it; return `undefined` to fall back to the default
+   *  (`"${labelSingular} replicated"` for single-row,
+   *  `"${count} ${label(s)} replicated"` for bulk). Sync or async. */
+  getCreatedNotificationTitle?: (
+    ctx: ReplicateNotificationContext,
+  ) => string | undefined | Promise<string | undefined>
+  /** Override the redirect URL. Single-row factories only — bulk
+   *  variants don't redirect. Receives `{ replica, source }`. Return a
+   *  string to use it; return `undefined` to fall back to the default
+   *  (the new record's edit page for `replicate`; the manager list
+   *  URL for `relationReplicate`, owned by the route layer). Sync or
+   *  async. */
+  getRedirectUrl?: (
+    ctx: ReplicateRedirectContext,
+  ) => string | undefined | Promise<string | undefined>
 }
 
 /** Structural shape of a Resource class for the factory functions —
@@ -373,13 +417,26 @@ async function runRelationReplicateRow(
   if (!Related?.model || typeof Related.model.create !== 'function') {
     return { notify: { title: 'Replicate not configured (related Resource has no model.create)', type: 'error' } as never }
   }
+  let created: unknown
   try {
-    await persistRelationReplica(M, ctx, source, opts)
+    created = await persistRelationReplica(M, ctx, source, opts)
   } catch (err) {
     return { notify: { title: `Replicate failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
   }
+  const overrideTitle = opts.getCreatedNotificationTitle
+    ? await opts.getCreatedNotificationTitle({ replica: created, source })
+    : undefined
+  const title = overrideTitle !== undefined ? overrideTitle : `${M.getLabelSingular()} replicated`
+  // The manager-scoped `_action/:actionName` route falls back to the
+  // manager list URL when `result.redirect` is undefined, so we only
+  // emit `redirect` when the user override returned a string. That
+  // way default behavior (route owns the fallback) is unchanged.
+  const overrideRedirect = opts.getRedirectUrl
+    ? await opts.getRedirectUrl({ replica: created, source })
+    : undefined
   return {
-    notify: { title: `${M.getLabelSingular()} replicated`, type: 'success' } as never,
+    ...(overrideRedirect !== undefined ? { redirect: overrideRedirect } : {}),
+    notify: { title, type: 'success' } as never,
   }
 }
 
@@ -696,12 +753,23 @@ export class Action extends Element {
         }
 
         const newId = (created as Record<string, unknown> | null | undefined)?.[pkCol]
-        const redirect = newId !== undefined && newId !== null
+        const defaultRedirect = newId !== undefined && newId !== null
           ? `${basePath}/${R.getSlug()}/${String(newId)}/edit`
           : `${basePath}/${R.getSlug()}`
+        // `!== undefined` rather than `??` so an override returning
+        // `null`/empty-string isn't silently swallowed (see
+        // feedback_nullish_swallows_explicit_null).
+        const overrideRedirect = opts.getRedirectUrl
+          ? await opts.getRedirectUrl({ replica: created, source })
+          : undefined
+        const redirect = overrideRedirect !== undefined ? overrideRedirect : defaultRedirect
+        const overrideTitle = opts.getCreatedNotificationTitle
+          ? await opts.getCreatedNotificationTitle({ replica: created, source })
+          : undefined
+        const title = overrideTitle !== undefined ? overrideTitle : `${R.labelSingular} replicated`
         return {
           redirect,
-          notify: { title: `${R.labelSingular} replicated`, type: 'success' } as never,
+          notify: { title, type: 'success' } as never,
         }
       })
       .visible(({ user }) => callPredicate(R.canCreate, user))
@@ -887,7 +955,12 @@ export class Action extends Element {
           }
           try { await M.create(replica); n++ } catch { /* skip — agg notify shows total */ }
         }
-        return { notify: { title: `${n} ${labelForCount(R, n)} replicated`, type: 'success' } as never }
+        const defaultTitle = `${n} ${labelForCount(R, n)} replicated`
+        const overrideTitle = opts.getCreatedNotificationTitle
+          ? await opts.getCreatedNotificationTitle({ count: n, records })
+          : undefined
+        const title = overrideTitle !== undefined ? overrideTitle : defaultTitle
+        return { notify: { title, type: 'success' } as never }
       })
       .visible(({ user }) => callPredicate(R.canCreate, user))
   }
@@ -1307,11 +1380,13 @@ export class Action extends Element {
         }
         const labelPlural = M.getLabel().toLowerCase()
         const labelSingular = M.getLabelSingular().toLowerCase()
+        const defaultTitle = `${n} ${n === 1 ? labelSingular : labelPlural} replicated`
+        const overrideTitle = opts.getCreatedNotificationTitle
+          ? await opts.getCreatedNotificationTitle({ count: n, records })
+          : undefined
+        const title = overrideTitle !== undefined ? overrideTitle : defaultTitle
         return {
-          notify: {
-            title: `${n} ${n === 1 ? labelSingular : labelPlural} replicated`,
-            type:  'success',
-          } as never,
+          notify: { title, type: 'success' } as never,
         }
       })
       .visible(({ user }) => {

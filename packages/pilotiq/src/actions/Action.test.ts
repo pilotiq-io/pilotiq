@@ -1157,6 +1157,73 @@ describe('Action.replicate factory', () => {
     const result = await handler({ record: { id: '1', title: 'Hello' }, user: null })
     assert.equal((result as { redirect: string }).redirect, '/admin/posts')
   })
+
+  it('opts.getCreatedNotificationTitle overrides the default success title', async () => {
+    const R = makeR({ create: async (d) => ({ id: '99', ...d }) })
+    let seenReplica: unknown
+    let seenSource:  unknown
+    const handler = Action.replicate(R, '/admin', undefined, {
+      getCreatedNotificationTitle: ({ replica, source }) => {
+        seenReplica = replica
+        seenSource  = source
+        return `Cloned "${(source as { title?: string })?.title}"`
+      },
+    }).getHandler()!
+    const result = await handler({ record: { id: '7', title: 'Hello' }, user: null })
+    assert.equal((result as { notify: { title: string } }).notify.title, 'Cloned "Hello"')
+    assert.deepEqual(seenSource,  { id: '7', title: 'Hello' })
+    assert.deepEqual(seenReplica, { id: '99', title: 'Hello' })
+  })
+
+  it('opts.getCreatedNotificationTitle returning undefined falls back to default', async () => {
+    const R = makeR()
+    const handler = Action.replicate(R, '/admin', undefined, {
+      getCreatedNotificationTitle: () => undefined,
+    }).getHandler()!
+    const result = await handler({ record: { id: '1', title: 'X' }, user: null })
+    assert.match((result as { notify: { title: string } }).notify.title, /^Post replicated$/)
+  })
+
+  it('opts.getRedirectUrl overrides the default new-record edit URL', async () => {
+    const R = makeR()
+    const handler = Action.replicate(R, '/admin', undefined, {
+      getRedirectUrl: ({ replica }) => `/admin/posts/${(replica as { id: string }).id}/preview`,
+    }).getHandler()!
+    const result = await handler({ record: { id: '1', title: 'Hello' }, user: null })
+    assert.equal((result as { redirect: string }).redirect, '/admin/posts/99/preview')
+  })
+
+  it('opts.getRedirectUrl returning undefined falls back to default', async () => {
+    const R = makeR()
+    const handler = Action.replicate(R, '/admin', undefined, {
+      getRedirectUrl: () => undefined,
+    }).getHandler()!
+    const result = await handler({ record: { id: '1', title: 'Hello' }, user: null })
+    assert.equal((result as { redirect: string }).redirect, '/admin/posts/99/edit')
+  })
+
+  it('opts.getRedirectUrl honors an explicit empty string (not swallowed by ??)', async () => {
+    const R = makeR()
+    const handler = Action.replicate(R, '/admin', undefined, {
+      getRedirectUrl: () => '',
+    }).getHandler()!
+    const result = await handler({ record: { id: '1', title: 'Hello' }, user: null })
+    assert.equal((result as { redirect: string }).redirect, '')
+  })
+
+  it('overrides may be async', async () => {
+    const R = makeR()
+    const handler = Action.replicate(R, '/admin', undefined, {
+      getCreatedNotificationTitle: async () => 'async title',
+      getRedirectUrl:              async () => '/admin/elsewhere',
+    }).getHandler()!
+    const result = await handler({ record: { id: '1', title: 'Hello' }, user: null }) as {
+      redirect: string
+      notify:   { title: string }
+    }
+    assert.equal(result.notify.title, 'async title')
+    assert.equal(result.redirect,     '/admin/elsewhere')
+  })
 })
 
 describe('Action.bulkReplicate factory', () => {
@@ -1291,6 +1358,35 @@ describe('Action.bulkReplicate factory', () => {
     const R2 = makeR({ canCreate: () => false })
     assert.equal((await Action.bulkReplicate(R1, '/admin').evaluate({})).visible, true)
     assert.equal((await Action.bulkReplicate(R2, '/admin').evaluate({})).visible, false)
+  })
+
+  it('opts.getCreatedNotificationTitle receives count + sources and overrides default', async () => {
+    const R = makeR()
+    let seenCount: unknown
+    let seenRecords: unknown
+    const handler = Action.bulkReplicate(R, '/admin', {
+      getCreatedNotificationTitle: ({ count, records }) => {
+        seenCount   = count
+        seenRecords = records
+        return `Duplicated ${count} of ${(records as unknown[]).length}`
+      },
+    }).getHandler()!
+    const result = await handler({
+      records: [{ id: '1' }, { id: '2' }, { id: '3' }],
+      user:    null,
+    })
+    assert.equal((result as { notify: { title: string } }).notify.title, 'Duplicated 3 of 3')
+    assert.equal(seenCount, 3)
+    assert.deepEqual(seenRecords, [{ id: '1' }, { id: '2' }, { id: '3' }])
+  })
+
+  it('opts.getCreatedNotificationTitle returning undefined falls back to default', async () => {
+    const R = makeR()
+    const handler = Action.bulkReplicate(R, '/admin', {
+      getCreatedNotificationTitle: () => undefined,
+    }).getHandler()!
+    const result = await handler({ records: [{ id: '1' }], user: null })
+    assert.match((result as { notify: { title: string } }).notify.title, /^1 post replicated$/)
   })
 })
 
@@ -2111,6 +2207,85 @@ describe('Action.relationReplicate / relationBulkReplicate', () => {
       assert.equal(m2m.visible, false)
       const mt  = await Action.relationBulkReplicate(Posts, { ...freshHasManyCtx(), mode: 'morphTo' }).evaluate({})
       assert.equal(mt.visible, false)
+    })
+  })
+
+  describe('opts.getCreatedNotificationTitle / getRedirectUrl overrides', () => {
+    it('relationReplicate honors getCreatedNotificationTitle with replica + source', async () => {
+      const ctx = freshHasManyCtx()
+      let seenReplica: unknown
+      let seenSource:  unknown
+      const handler = Action.relationReplicate(Posts, ctx, undefined, {
+        getCreatedNotificationTitle: ({ replica, source }) => {
+          seenReplica = replica
+          seenSource  = source
+          return `Cloned post for user ${(replica as { userId: string }).userId}`
+        },
+      }).getHandler()!
+      const result = await handler({ record: { id: '7', title: 'A' }, user: null })
+      assert.equal((result as { notify: { title: string } }).notify.title, 'Cloned post for user 42')
+      assert.deepEqual(seenSource, { id: '7', title: 'A' })
+      // Replica is the model.create result (id stamped by the stub).
+      assert.equal((seenReplica as { userId: string })?.userId, '42')
+    })
+
+    it('relationReplicate honors getRedirectUrl — emits result.redirect', async () => {
+      const ctx = freshHasManyCtx()
+      const handler = Action.relationReplicate(Posts, ctx, undefined, {
+        getRedirectUrl: ({ replica }) => `/admin/users/42/posts/${(replica as { id: string }).id}/preview`,
+      }).getHandler()!
+      const result = await handler({ record: { id: '7', title: 'A' }, user: null })
+      assert.equal((result as { redirect: string }).redirect, '/admin/users/42/posts/1/preview')
+    })
+
+    it('relationReplicate without getRedirectUrl emits no redirect (route fallback)', async () => {
+      const ctx = freshHasManyCtx()
+      const handler = Action.relationReplicate(Posts, ctx).getHandler()!
+      const result = await handler({ record: { id: '7', title: 'A' }, user: null })
+      // Default behavior: handler doesn't set redirect; the route layer
+      // owns the fallback to the manager list URL. Asserting redirect
+      // is absent (not empty string).
+      assert.equal((result as { redirect?: string }).redirect, undefined)
+    })
+
+    it('relationReplicate getCreatedNotificationTitle returning undefined falls back', async () => {
+      const ctx = freshHasManyCtx()
+      const handler = Action.relationReplicate(Posts, ctx, undefined, {
+        getCreatedNotificationTitle: () => undefined,
+      }).getHandler()!
+      const result = await handler({ record: { id: '7', title: 'A' }, user: null })
+      assert.match((result as { notify: { title: string } }).notify.title, /^Post replicated$/)
+    })
+
+    it('relationBulkReplicate honors getCreatedNotificationTitle with count + records', async () => {
+      const ctx = freshHasManyCtx()
+      let seenCount: unknown
+      const handler = Action.relationBulkReplicate(Posts, ctx, {
+        getCreatedNotificationTitle: ({ count, records }) => {
+          seenCount = count
+          return `Duplicated ${count} of ${(records as unknown[]).length} into user 42`
+        },
+      }).getHandler()!
+      const result = await handler({
+        records: [{ id: '1' }, { id: '2' }],
+        user:    null,
+      })
+      assert.equal((result as { notify: { title: string } }).notify.title, 'Duplicated 2 of 2 into user 42')
+      assert.equal(seenCount, 2)
+    })
+
+    it('overrides may be async', async () => {
+      const ctx = freshHasManyCtx()
+      const handler = Action.relationReplicate(Posts, ctx, undefined, {
+        getCreatedNotificationTitle: async () => 'async title',
+        getRedirectUrl:              async () => '/admin/elsewhere',
+      }).getHandler()!
+      const result = await handler({ record: { id: '1', title: 'X' }, user: null }) as {
+        redirect: string
+        notify:   { title: string }
+      }
+      assert.equal(result.notify.title, 'async title')
+      assert.equal(result.redirect,     '/admin/elsewhere')
     })
   })
 })
