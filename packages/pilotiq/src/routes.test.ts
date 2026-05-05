@@ -1604,3 +1604,101 @@ describe('Editable cell columns — _cell route', () => {
     assert.match(body.error, /database is on fire/)
   })
 })
+
+describe('persistFiltersInSession — list-page filter restore', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  function makeStore() {
+    const data: Record<string, unknown> = {}
+    return {
+      data,
+      session: {
+        get<T>(k: string, fallback?: T): T | undefined {
+          return (k in data ? data[k] : fallback) as T | undefined
+        },
+        put(k: string, v: unknown): void { data[k] = v },
+      },
+    }
+  }
+
+  class PersistedPosts extends Resource {
+    static override label         = 'Posts'
+    static override labelSingular = 'Post'
+    static override slug          = 'posts'
+    static override persistFiltersInSession = true
+  }
+  class PlainPosts extends Resource {
+    static override label         = 'Posts'
+    static override labelSingular = 'Post'
+    static override slug          = 'posts'
+  }
+  function panel(R: any) {
+    return Pilotiq.make('T').path('/admin').resources([R])
+  }
+  function getList(R: any): any {
+    registerPilotiqRoutes(router, panel(R))
+    return router.list().find(r => r.method === 'GET' && r.path === '/admin/posts')!
+  }
+
+  it('writes the active query slice to session on a non-bare visit', async () => {
+    const route = getList(PersistedPosts)
+    const { session, data } = makeStore()
+    const req = fakeReq({ query: { status: 'draft', sort: 'id:desc', page: '2' } })
+    req.session = session
+    await callHandlerCapturing(route.handler, req)
+    assert.deepEqual(data['pilotiq:filters:/admin:posts'], { status: 'draft', sort: 'id:desc' })
+  })
+
+  it('redirects bare visits to the persisted slice', async () => {
+    const route = getList(PersistedPosts)
+    const { session, data } = makeStore()
+    data['pilotiq:filters:/admin:posts'] = { status: 'draft', sort: 'id:desc' }
+    const req = fakeReq({ query: {} })
+    req.session = session
+    const { res } = await callHandlerCapturing(route.handler, req)
+    assert.equal(res.redirectedTo?.code, 302)
+    const url = new URL(res.redirectedTo!.url, 'http://test')
+    assert.equal(url.pathname, '/admin/posts')
+    assert.equal(url.searchParams.get('status'), 'draft')
+    assert.equal(url.searchParams.get('sort'),   'id:desc')
+  })
+
+  it('does NOT redirect when the persisted slice is empty', async () => {
+    const route = getList(PersistedPosts)
+    const { session, data } = makeStore()
+    data['pilotiq:filters:/admin:posts'] = {}
+    const req = fakeReq({ query: {} })
+    req.session = session
+    const { res } = await callHandlerCapturing(route.handler, req)
+    assert.equal(res.redirectedTo, undefined)
+  })
+
+  it('does NOT redirect when the persisted slice is only empty-string clears', async () => {
+    const route = getList(PersistedPosts)
+    const { session, data } = makeStore()
+    data['pilotiq:filters:/admin:posts'] = { status: '' }
+    const req = fakeReq({ query: {} })
+    req.session = session
+    const { res } = await callHandlerCapturing(route.handler, req)
+    assert.equal(res.redirectedTo, undefined)
+  })
+
+  it('skips persistence entirely when the resource opts out', async () => {
+    const route = getList(PlainPosts)
+    const { session, data } = makeStore()
+    const req = fakeReq({ query: { status: 'draft' } })
+    req.session = session
+    await callHandlerCapturing(route.handler, req)
+    assert.deepEqual(data, {})
+  })
+
+  it('no-ops silently when no session is mounted', async () => {
+    const route = getList(PersistedPosts)
+    const req = fakeReq({ query: { status: 'draft' } })
+    const { res } = await callHandlerCapturing(route.handler, req)
+    assert.equal(res.redirectedTo, undefined)
+    // Pass-through to resourceIndexData; we don't care about the body shape
+    // here, just that no exception escaped.
+  })
+})

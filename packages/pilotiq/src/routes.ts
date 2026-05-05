@@ -8,6 +8,12 @@ import { dispatchFormSubmit, findForms, selectForm } from './elements/dispatchFo
 import { dispatchAction, findActions, findRowExtraActions, parseActionBody, type ResolveRecord } from './elements/dispatchAction.js'
 import { flashNotifications } from './notifications/flash.js'
 import {
+  listFiltersKey,
+  readPersistedListQuery,
+  writePersistedListQuery,
+  encodePersistedQuery,
+} from './sessionFilters.js'
+import {
   panelInfo, callPageSchema, tagFormActions, tagActionDispatch,
   dashboardData, resourceIndexData, resourceCreateData, resourceEditData,
   resourceViewData, globalEditData, globalViewData, customPageData,
@@ -593,6 +599,26 @@ export function registerPilotiqRoutes(
         const user = await pilotiq.resolveUser(req)
         if (!await checkPolicy(() => R.canAccess(user)))  return forbidden(res, wantsJson(req))
         if (!await checkPolicy(() => R.canViewAny(user))) return forbidden(res, wantsJson(req))
+
+        // Tier-3 filter persistence — when the resource opts in,
+        // bare visits (no query params at all) restore the last-known
+        // filter slice; non-bare visits write the current slice back
+        // to the session for the next time. No-ops silently when
+        // `@rudderjs/session` isn't installed on the host.
+        if (R.persistFiltersInSession) {
+          const query = (req.query as Record<string, unknown> | undefined) ?? {}
+          const key   = listFiltersKey(base, slug)
+          if (Object.keys(query).length === 0) {
+            const stored = readPersistedListQuery(req, key)
+            if (stored) {
+              const qs = encodePersistedQuery(stored)
+              if (qs !== '') return res.redirect(`${indexUrl}?${qs}`, 302)
+            }
+          } else {
+            writePersistedListQuery(req, key, query)
+          }
+        }
+
         const data = await resourceIndexData(pilotiq, slug, req.query, req)
         return view('pilotiq.slug', data ?? {})
       })

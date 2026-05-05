@@ -163,6 +163,22 @@ export abstract class Resource {
    * matches rudder's `'deletedAt'`. */
   static deletedAtColumn: string = 'deletedAt'
 
+  // ─── Filter persistence (Tier-3) ───────────────────────────
+  // Opt-in: when true, the GET list handler stashes the URL filter
+  // slice on `req.session` after every visit and redirects bare
+  // visits (no query params at all) back to the last-applied state.
+  // Storage is per `(basePath, slug)` — `tab` is not part of the
+  // key in v1, so different tabs of the same resource share one
+  // filter slot. `page` is also excluded from persistence so users
+  // always land on page 1 after a restore. Helpers live in
+  // `src/sessionFilters.ts`; routing wires them up in `routes.ts`.
+
+  /** Persist the active list filters / search / sort on the user's
+   *  session so revisiting the resource from the sidebar lands back
+   *  on the same view. Default `false`. No-ops silently when
+   *  `@rudderjs/session` isn't installed on the host app. */
+  static persistFiltersInSession: boolean = false
+
   // ─── Plan #12: global search ───────────────────────────────
   // Opt-in: resources with `globalSearch = false` are skipped by the
   // panel-level Cmd+K palette. Defaults below derive everything from
