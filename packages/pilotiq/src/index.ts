@@ -213,6 +213,9 @@ export {
   type TableRecordsHandler,
   type TableRecordsResult,
   type SortDirection,
+  type ContentLayout,
+  type CardSchemaHandler,
+  type CardsPerRow,
 } from './elements/Table.js'
 export {
   TableGroup,

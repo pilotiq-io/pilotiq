@@ -1,4 +1,4 @@
-import { Element } from '../schema/Element.js'
+import { Element, type ElementMeta } from '../schema/Element.js'
 import { Table, type TableContext, type SortDirection } from './Table.js'
 import { TableGroup, bucketDateValue, formatDateBucketTitle } from './TableGroup.js'
 import type { Filter } from '../filters/Filter.js'
@@ -8,6 +8,7 @@ import { ListTab } from '../Tab.js'
 import { isRepeaterField } from '../fields/RepeaterField.js'
 import { isBuilderField } from '../fields/BuilderField.js'
 import { tryRenderRichText, getRichTextRenderer } from '../richtext/registry.js'
+import { resolveSchema, type RenderContext } from '../schema/resolveSchema.js'
 import type { SummaryResult } from '../summarizers/Summarizer.js'
 
 export interface QueryParams {
@@ -295,6 +296,7 @@ export async function loadTableRecords(
 
       const recordUrlFn     = table.getRecordUrl()
       const recordClassesFn = table.getRecordClasses()
+      const cardSchemaFn    = table.isCardsLayout() ? table.getCardSchema() : undefined
       // Reconcile `?group=` against the configured groups + defaultGroup.
       // Stamp the resolved column back onto the table so `toMeta()`
       // emits it as the meta's `defaultGroup` (the renderer reads from
@@ -320,7 +322,8 @@ export async function loadTableRecords(
         recordClassesFn !== undefined ||
         groupColumn !== undefined ||
         canEditEditableColumns ||
-        richTextColumns.length > 0
+        richTextColumns.length > 0 ||
+        cardSchemaFn !== undefined
 
       const rows = !needsRowMutation
         ? rawRows
@@ -444,6 +447,24 @@ export async function loadTableRecords(
                 }
               }
               out['_columnRecordUrls'] = colUrls
+            }
+
+            if (cardSchemaFn !== undefined) {
+              try {
+                const elements = await cardSchemaFn(row, finalCtx)
+                const cardCtx: RenderContext = {
+                  mode:   'table',
+                  record: row,
+                  ...(user !== undefined && user !== null
+                    ? { user: user as NonNullable<RenderContext['user']> }
+                    : {}),
+                }
+                const children = await resolveSchema(elements, cardCtx)
+                out['_cardChildren'] = children as ElementMeta[]
+              } catch (err) {
+                console.warn(`[pilotiq] cardSchema() threw for row in Table:`, err)
+                out['_cardChildren'] = [] as ElementMeta[]
+              }
             }
 
             if (canEditEditableColumns) {

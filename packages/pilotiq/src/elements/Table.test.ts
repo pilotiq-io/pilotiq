@@ -314,4 +314,78 @@ describe('Table Element', () => {
       )
     })
   })
+
+  describe('contentLayout — cards', () => {
+    it('default contentLayout is "table" — meta omits the field', () => {
+      const t = Table.make()
+      assert.equal(t.getContentLayout(), 'table')
+      assert.equal(t.isCardsLayout(), false)
+      const meta = t.toMeta()
+      assert.equal(meta.contentLayout, undefined)
+    })
+
+    it('cards() sugar flips the layout and exposes it on meta', () => {
+      const t = Table.make().cards().cardSchema(() => [])
+      assert.equal(t.getContentLayout(), 'cards')
+      assert.equal(t.isCardsLayout(), true)
+      assert.equal(t.toMeta().contentLayout, 'cards')
+    })
+
+    it('toMeta() throws when cards layout is set without a cardSchema', () => {
+      const t = Table.make().cards()
+      assert.throws(() => t.toMeta(), /cardSchema/)
+    })
+
+    it('cardsPerRow stamps onto meta and clamps to [1, 12]', () => {
+      const t = Table.make()
+        .cards()
+        .cardSchema(() => [])
+        .cardsPerRow({ default: 1, sm: 2, md: 3, lg: 4 })
+      const meta = t.toMeta()
+      assert.deepEqual(meta.cardsPerRow, { default: 1, sm: 2, md: 3, lg: 4 })
+
+      const clampedHigh = Table.make()
+        .cards()
+        .cardSchema(() => [])
+        .cardsPerRow({ default: 99, sm: -3 })
+        .toMeta()
+      assert.deepEqual(clampedHigh.cardsPerRow, { default: 12, sm: 1 })
+    })
+
+    it('contentLayout("table") stays the default and clears cardSchema requirement', () => {
+      const t = Table.make().cards().contentLayout('table')
+      // Even though cardSchema is unset, table mode shouldn't throw.
+      assert.doesNotThrow(() => t.toMeta())
+      assert.equal(t.toMeta().contentLayout, undefined)
+    })
+
+    it('cardSchema receiver gets the record and ctx', async () => {
+      type Row = { id: number; title: string }
+      const seen: Array<{ row: Row; hasCtx: boolean }> = []
+      const t = Table.make<Row>()
+        .cards()
+        .columns([Column.make('title')])
+        .records(() => [{ id: 1, title: 'A' }, { id: 2, title: 'B' }])
+        .cardSchema((row, ctx) => {
+          seen.push({ row, hasCtx: typeof ctx === 'object' })
+          return []
+        })
+      // resolveSchema doesn't run records or per-row stamping — that's
+      // the dispatcher's job. Just confirm the handler is wired.
+      assert.equal(t.getCardSchema()?.({ id: 1, title: 'A' }, {}) instanceof Promise === false, true)
+      assert.equal(seen.length, 1)
+      assert.equal(seen[0]!.row.id, 1)
+    })
+
+    it('survives resolveSchema as a regular Element', async () => {
+      const t = Table.make()
+        .cards()
+        .columns([Column.make('title')])
+        .cardSchema(() => [])
+      const resolved = await resolveSchema([t])
+      assert.equal(resolved.length, 1)
+      assert.equal(resolved[0]!['type'], 'table')
+      assert.equal(resolved[0]!['contentLayout'], 'cards')
+    })
+  })
 })

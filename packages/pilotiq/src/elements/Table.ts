@@ -90,6 +90,47 @@ export type RecordUrlHandler<R = unknown> = (record: R) => string | undefined
  */
 export type RecordClassesHandler<R = unknown> = (record: R) => string | undefined
 
+/**
+ * Per-row card content function. Receives the record + the current
+ * `TableContext` and returns an `Element[]` rendered inside a card in
+ * `contentLayout('cards')` mode. Resolved via `resolveSchema` per-row in
+ * `loadTableRecords`; the result is stamped onto `row._cardChildren`.
+ *
+ * Typical content: `Image`, `Heading`, `Text`, `Icon`, `Badge`-style
+ * `Entry` primitives, plus layout primitives like `Group / Split / Grid`.
+ * Display-only — `Form` / `Field` / `Filter` / `Action` inside the card
+ * schema is unsupported in v1.
+ */
+export type CardSchemaHandler<R = unknown> = (
+  record: R,
+  ctx:    TableContext<R>,
+) => Element[] | Promise<Element[]>
+
+/**
+ * Responsive grid column counts for `contentLayout('cards')`. Each
+ * breakpoint maps to its Tailwind container query (`@sm` = ≥40rem etc.);
+ * `default` is the base (no media query). Unspecified breakpoints inherit
+ * the next-smaller. v1 caps each value at 12 to match the grid's column
+ * limits — values outside `[1, 12]` clamp.
+ */
+export interface CardsPerRow {
+  default?: number
+  sm?:      number
+  md?:      number
+  lg?:      number
+  xl?:      number
+  '2xl'?:   number
+}
+
+/**
+ * Table content-layout mode. `'table'` (default) renders the classic
+ * `<thead>` + `<tbody>` HTML table. `'cards'` hides the header row and
+ * renders each row as a card in a CSS grid. Columns still drive search /
+ * sort / filter / group / summarize semantics in cards mode; only the
+ * row-level rendering differs.
+ */
+export type ContentLayout = 'table' | 'cards'
+
 export interface TableMeta extends ElementMeta {
   type:        'table'
   defaultSort?: { column: string; direction: SortDirection }
@@ -198,6 +239,17 @@ export interface TableMeta extends ElementMeta {
    * resource list pages have one table by default and don't need it. */
   queryStringIdentifier?: string
 
+  /** Content-layout mode. Absent = `'table'` (classic HTML table); when
+   * `'cards'` the renderer hides the column header row and arranges rows
+   * as cards in a CSS grid. Per-row card content is stamped on each row
+   * under `_cardChildren: ElementMeta[]` by `loadTableRecords`. Columns
+   * still drive search / sort / filter / group / summarize semantics. */
+  contentLayout?: 'cards'
+
+  /** Responsive card column counts for `contentLayout: 'cards'`. Renderer
+   * maps each breakpoint to a `@container`-scoped Tailwind grid class. */
+  cardsPerRow?: CardsPerRow
+
   // Render-time state — populated by the framework after `records()` runs.
   rows?:        unknown[]
   total?:       number
@@ -252,6 +304,9 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _deferred = false
   private _tableUrl?:     string
   private _queryStringIdentifier?: string
+  private _contentLayout: ContentLayout = 'table'
+  private _cardSchema?:   CardSchemaHandler<R>
+  private _cardsPerRow?:  CardsPerRow
 
   private constructor() { super() }
 
@@ -531,6 +586,53 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
+  /**
+   * Pick the content layout for this table. `'table'` (default) renders
+   * the classic `<thead>` + `<tbody>` HTML table. `'cards'` hides the
+   * column header row and renders each row as a card in a CSS grid; the
+   * per-row content comes from `cardSchema(...)`.
+   *
+   * Columns still drive search / sort / filter / group / summarize
+   * semantics in cards mode — they're just not painted as table headers.
+   * The top-bar gains a "Sort by" dropdown built from `Column.sortable()`
+   * columns since column headers (the usual sort affordance) are hidden.
+   */
+  contentLayout(layout: ContentLayout): this {
+    this._contentLayout = layout
+    return this
+  }
+
+  /** Sugar for `contentLayout('cards')`. */
+  cards(): this { return this.contentLayout('cards') }
+
+  /**
+   * Per-row card content. Returns an `Element[]` rendered inside a card
+   * for the given record + ctx. Resolved server-side per row in
+   * `loadTableRecords` and stamped on `row._cardChildren`. Required when
+   * `contentLayout === 'cards'`; `toMeta()` throws otherwise.
+   *
+   * Display-only — `Form / Field / Filter / Action` inside the card
+   * schema is unsupported in v1. Reuse `Heading`, `Text`, `Image`, `Icon`,
+   * `Group / Split / Grid`, and the read-only `Entry` family
+   * (`TextEntry / BadgeEntry / IconEntry / ImageEntry / KeyValueEntry /
+   * ColorEntry / ComponentEntry`) for content.
+   */
+  cardSchema(fn: CardSchemaHandler<R>): this {
+    this._cardSchema = fn
+    return this
+  }
+
+  /**
+   * Responsive grid column counts in cards mode. Each entry maps to a
+   * Tailwind container query (`@sm` = ≥40rem, etc.). Unspecified
+   * breakpoints inherit the next-smaller; `default` is the base.
+   * Values clamp to `[1, 12]`. Default `{ default: 1, sm: 2, lg: 3 }`.
+   */
+  cardsPerRow(opts: CardsPerRow): this {
+    this._cardsPerRow = opts
+    return this
+  }
+
   /** Render-time setter — the column rows are actually banded by for
    * this request, after `?group=` and `defaultGroup(...)` are reconciled.
    * Set by `loadTableRecords`. Empty string explicitly clears (URL
@@ -579,6 +681,10 @@ export class Table<R = unknown, Q = unknown> extends Element {
   isDeferred(): boolean { return this._deferred }
   getTableUrl(): string | undefined { return this._tableUrl }
   getQueryStringIdentifier(): string | undefined { return this._queryStringIdentifier }
+  getContentLayout(): ContentLayout { return this._contentLayout }
+  isCardsLayout(): boolean { return this._contentLayout === 'cards' }
+  getCardSchema(): CardSchemaHandler<R> | undefined { return this._cardSchema }
+  getCardsPerRow(): CardsPerRow | undefined { return this._cardsPerRow }
 
   /** Convenience: the `Column` children only. */
   getColumns(): Column[] {
@@ -596,6 +702,15 @@ export class Table<R = unknown, Q = unknown> extends Element {
 
   override toMeta(): TableMeta {
     const searchable = this.getColumns().some(c => c.isSearchable())
+    if (this._contentLayout === 'cards' && this._cardSchema === undefined) {
+      throw new Error(
+        'Table.contentLayout("cards") requires .cardSchema((record, ctx) => Element[]). ' +
+        'Cards mode renders each row from a per-row schema; configure one before rendering.',
+      )
+    }
+    const cardsPerRow = this._cardsPerRow !== undefined
+      ? clampCardsPerRow(this._cardsPerRow)
+      : undefined
     return {
       type:       'table',
       searchable,
@@ -633,6 +748,8 @@ export class Table<R = unknown, Q = unknown> extends Element {
       ...(this._tableUrl     !== undefined ? { tableUrl:    this._tableUrl   } : {}),
       ...(this._queryStringIdentifier !== undefined
         ? { queryStringIdentifier: this._queryStringIdentifier } : {}),
+      ...(this._contentLayout === 'cards' ? { contentLayout: 'cards' as const } : {}),
+      ...(cardsPerRow !== undefined ? { cardsPerRow } : {}),
       ...(this._rows         !== undefined ? { rows:        this._rows }        : {}),
       ...(this._total        !== undefined ? { total:       this._total }       : {}),
       ...(this._currentSort  !== undefined ? { currentSort: this._currentSort } : {}),
@@ -641,4 +758,18 @@ export class Table<R = unknown, Q = unknown> extends Element {
       ...(this._currentPath  !== undefined ? { currentPath: this._currentPath } : {}),
     }
   }
+}
+
+const CARDS_PER_ROW_KEYS = ['default', 'sm', 'md', 'lg', 'xl', '2xl'] as const
+
+function clampCardsPerRow(opts: CardsPerRow): CardsPerRow {
+  const out: CardsPerRow = {}
+  for (const key of CARDS_PER_ROW_KEYS) {
+    const v = opts[key]
+    if (v === undefined) continue
+    const n = Math.floor(Number(v))
+    if (!Number.isFinite(n)) continue
+    out[key] = Math.min(12, Math.max(1, n))
+  }
+  return out
 }

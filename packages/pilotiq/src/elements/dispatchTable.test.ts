@@ -5,6 +5,8 @@ import { Table } from './Table.js'
 import { TableGroup, orderByKeys } from './TableGroup.js'
 import { Column } from '../Column.js'
 import { Section } from '../schema/Section.js'
+import { Heading } from '../schema/Heading.js'
+import { Text } from '../schema/Text.js'
 import { resolveSchema } from '../schema/resolveSchema.js'
 import { Sum, Average, Count, Range } from '../summarizers/Summarizer.js'
 import { TextInputColumn, ToggleColumn, SelectColumn } from '../columns/index.js'
@@ -1156,5 +1158,90 @@ describe('Table.queryStringIdentifier', () => {
     assert.equal((seen as ElementMetaLike | null)?.['search'], 'q')
     assert.deepEqual((seen as ElementMetaLike | null)?.['sort'], { column: 'name', direction: 'asc' })
     assert.equal((seen as ElementMetaLike | null)?.['page'], 2)
+  })
+})
+
+describe('loadTableRecords — cards layout per-row schema', () => {
+  it('stamps `_cardChildren` per row resolved from cardSchema(record, ctx)', async () => {
+    type Row = { id: number; title: string; subtitle: string }
+    let receivedSearch: string | undefined
+    const t = Table.make<Row>()
+      .cards()
+      .columns([Column.make('title')])
+      .records(() => [
+        { id: 1, title: 'First',  subtitle: 'A subtitle' },
+        { id: 2, title: 'Second', subtitle: 'Another'    },
+      ])
+      .cardSchema((row, ctx) => {
+        receivedSearch = ctx.search
+        return [
+          Heading.make(row.title).level(3),
+          Text.make(row.subtitle),
+        ]
+      })
+
+    await loadTableRecords([t], { search: 'foo' })
+
+    assert.equal(receivedSearch, 'foo')
+    const rows = t.getRows() as Array<Record<string, unknown>>
+    assert.equal(rows.length, 2)
+    const firstChildren = rows[0]!['_cardChildren'] as Array<Record<string, unknown>>
+    assert.equal(firstChildren.length, 2)
+    assert.equal(firstChildren[0]!['type'], 'heading')
+    assert.equal(firstChildren[0]!['content'], 'First')
+    assert.equal(firstChildren[1]!['type'], 'text')
+
+    const secondChildren = rows[1]!['_cardChildren'] as Array<Record<string, unknown>>
+    assert.equal(secondChildren[0]!['content'], 'Second')
+  })
+
+  it('does NOT stamp `_cardChildren` when contentLayout is the default "table"', async () => {
+    type Row = { id: number; title: string }
+    const t = Table.make<Row>()
+      .columns([Column.make('title')])
+      .records(() => [{ id: 1, title: 'First' }])
+      // cardSchema is set but layout is still 'table' — should be ignored.
+      .cardSchema((row) => [Heading.make(row.title)])
+
+    await loadTableRecords([t], {})
+    const rows = t.getRows() as Array<Record<string, unknown>>
+    assert.equal(rows[0]!['_cardChildren'], undefined)
+  })
+
+  it('a throwing cardSchema does not abort the row — empty children stamped + warning', async () => {
+    const warnings: unknown[] = []
+    const origWarn = console.warn
+    console.warn = (...args: unknown[]) => { warnings.push(args) }
+    try {
+      type Row = { id: number; title: string }
+      const t = Table.make<Row>()
+        .cards()
+        .columns([Column.make('title')])
+        .records(() => [{ id: 1, title: 'A' }])
+        .cardSchema(() => { throw new Error('boom') })
+
+      await loadTableRecords([t], {})
+      const rows = t.getRows() as Array<Record<string, unknown>>
+      assert.equal(rows.length, 1)
+      assert.deepEqual(rows[0]!['_cardChildren'], [])
+      assert.equal(warnings.length, 1)
+    } finally {
+      console.warn = origWarn
+    }
+  })
+
+  it('cardSchema receives the row record verbatim (not a clone)', async () => {
+    type Row = { id: number; tags: string[] }
+    const original: Row = { id: 1, tags: ['a', 'b'] }
+    let receivedRow: Row | null = null
+    const t = Table.make<Row>()
+      .cards()
+      .columns([Column.make('id')])
+      .records(() => [original])
+      .cardSchema((row) => { receivedRow = row; return [] })
+
+    await loadTableRecords([t], {})
+    // Row identity preserved so cardSchema can branch on instanceof / refs.
+    assert.equal(receivedRow, original)
   })
 })
