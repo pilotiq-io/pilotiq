@@ -397,6 +397,57 @@ describe('nestedRelationManagerData (Phase B) — view scope', () => {
   })
 })
 
+describe('Phase A relation-view — surfaces nested-manager tabs (Phase B polish)', () => {
+  it('emits a second RelationTabs strip listing siblings under M.relations(), with __view active', async () => {
+    const { panel } = buildNestedWorld()
+    const out = await relationManagerData(panel, {
+      kind: 'relation-view', slug: 'posts',
+      recordId:    'po1',
+      relationship:'comments',
+      childId:     'c1',
+    })
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    // Exactly two `relation-tabs` strips at the top — the existing
+    // post-scoped one (Phase A) plus the new comment-scoped one
+    // (Phase B polish).
+    const strips = schema.filter(s => s['type'] === 'relation-tabs') as Array<Record<string, unknown>>
+    assert.equal(strips.length, 2, 'expected post-scope + comment-scope strips')
+
+    // Post-scoped strip is unshifted last → index 0.
+    const postScope = strips[0]!
+    const postTabs = (postScope['tabs'] as Array<Record<string, unknown>>) ?? []
+    assert.ok(postTabs.some(t => t['key'] === 'comments' && t['active'] === true),
+      'post-scope strip should mark "comments" as active')
+
+    // Comment-scoped strip is at index 1.
+    const commentScope = strips[1]!
+    const commentTabs = (commentScope['tabs'] as Array<Record<string, unknown>>) ?? []
+    // Should carry the __view tab (active) + one tab per nested manager.
+    const view = commentTabs.find(t => t['key'] === '__view')
+    assert.ok(view, '__view tab missing on comment-scope strip')
+    assert.equal(view!['active'], true)
+    const replies = commentTabs.find(t => t['key'] === 'replies')
+    assert.ok(replies, 'replies tab missing on comment-scope strip')
+    assert.equal(replies!['active'], false)
+    assert.equal(replies!['url'], '/admin/posts/po1/comments/c1/replies')
+  })
+
+  it('does not emit the comment-scope strip when M declares no nested relations', async () => {
+    // Build a world without nested managers: drop CommentRepliesManager
+    // by overriding PostsCommentsManager.relations() back to [].
+    const { panel } = buildNestedWorld({ managerOverrides: { relations: () => [] } as Partial<typeof RelationManager> })
+    const out = await relationManagerData(panel, {
+      kind: 'relation-view', slug: 'posts',
+      recordId:    'po1',
+      relationship:'comments',
+      childId:     'c1',
+    })
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    const strips = schema.filter(s => s['type'] === 'relation-tabs')
+    assert.equal(strips.length, 1, 'expected only the post-scope strip; the comment-scope strip should be absent')
+  })
+})
+
 describe('nestedRelationManagerData (Phase B) — RelationTabs strip', () => {
   it('list emits a RelationTabs strip with the leaf manager active', async () => {
     const { panel } = buildNestedWorld()

@@ -1786,6 +1786,20 @@ async function buildRelationViewData(
 
   const elements: Element[] = M.detail(child, parentRecord)
 
+  // Phase B polish — when M declares nested managers, surface them on
+  // this page too. The strip lists the leaf parent's view tab plus one
+  // tab per sibling nested manager so users can jump from the Phase A
+  // view straight into a grandchild list / create / view / edit page.
+  // Active key `'__view'` because the user is currently viewing the
+  // leaf parent record itself, not any nested manager.
+  const nestedTabs = buildNestedRelationTabs(
+    R, M, base,
+    { recordId: scope.recordId, relationship: scope.relationship },
+    scope.childId,
+    '__view',
+  )
+  if (nestedTabs) elements.unshift(nestedTabs)
+
   const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship)
   if (tabs) elements.unshift(tabs)
 
