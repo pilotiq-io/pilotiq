@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import Underline from '@tiptap/extension-underline'
 import Subscript from '@tiptap/extension-subscript'
 import Superscript from '@tiptap/extension-superscript'
 import TextAlign from '@tiptap/extension-text-align'
@@ -167,13 +166,11 @@ function ClientEditor(props: FieldRendererProps) {
   const editor = useEditor({
     editable: !disabled,
     extensions: [
-      // StarterKit 3 ships Link by default; configure it through the kit
-      // rather than adding a duplicate Link extension (caused a "Duplicate
-      // extension names" warning).
+      // StarterKit 3.22+ ships Link AND Underline; configure through the
+      // kit rather than re-adding (else "Duplicate extension names" warns).
       StarterKit.configure({
         link: { openOnClick: false, autolink: true },
       }),
-      Underline,
       Subscript,
       Superscript,
       LeadMarkExtension,

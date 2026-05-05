@@ -1,5 +1,6 @@
 import { Node, mergeAttributes, type Editor, type Range } from '@tiptap/core'
 import Suggestion, { type SuggestionOptions } from '@tiptap/suggestion'
+import { PluginKey } from '@tiptap/pm/state'
 import type { MentionItem, MentionProviderMeta } from '../MentionProvider.js'
 
 declare module '@tiptap/core' {
@@ -141,8 +142,9 @@ export const MentionExtension = Node.create<MentionOptions>({
     const url       = this.options.mentionsUrl
     const fieldName = this.options.fieldName
 
-    return providers.map((provider) =>
+    return providers.map((provider, i) =>
       Suggestion({
+        pluginKey: new PluginKey(`pilotiqMentionSuggestion-${i}`),
         editor,
         char: provider.trigger,
         startOfLine: false,

@@ -1,5 +1,8 @@
 import { Extension, type Editor, type Range } from '@tiptap/core'
 import Suggestion, { type SuggestionOptions } from '@tiptap/suggestion'
+import { PluginKey } from '@tiptap/pm/state'
+
+const SLASH_PLUGIN_KEY = new PluginKey('pilotiqSlashSuggestion')
 import type { BlockMeta } from '../Block.js'
 
 export interface SlashItem {
@@ -86,6 +89,7 @@ export const SlashCommandExtension = Extension.create<SlashCommandOptions>({
 
     return [
       Suggestion({
+        pluginKey: SLASH_PLUGIN_KEY,
         editor: this.editor,
         char: '/',
         startOfLine: false,
