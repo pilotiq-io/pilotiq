@@ -1795,3 +1795,322 @@ describe('Action.import factory', () => {
     assert.equal(ev.visible, false)
   })
 })
+
+describe('Action.relationReplicate / relationBulkReplicate', () => {
+  // Parent model — exposes `static relations` so the FK descriptor
+  // resolves through `getParentRelationDescriptor`.
+  class UserModel {
+    id?:    string
+    static primaryKey = 'id'
+    static relations = {
+      posts:    { type: 'hasMany',   foreignKey: 'userId',     model: () => PostModel },
+      comments: { type: 'morphMany', morphName:  'commentable', model: () => CommentModel },
+    }
+    constructor(over: Partial<UserModel> = {}) { Object.assign(this, over) }
+  }
+
+  // Child models. Test stubs that record every `create()` call's input
+  // payload (NOT the returned row) so assertions on stripping land on
+  // what the factory actually passed in.
+  class PostModel {
+    static primaryKey = 'id'
+    static created: Array<Record<string, unknown>> = []
+    static throwOnNextCreate = false
+    static async create(data: Record<string, unknown>) {
+      if (PostModel.throwOnNextCreate) {
+        PostModel.throwOnNextCreate = false
+        throw new Error('boom')
+      }
+      PostModel.created.push({ ...data })
+      return { id: String(PostModel.created.length), ...data }
+    }
+  }
+
+  class CommentModel {
+    static primaryKey = 'id'
+    static created: Array<Record<string, unknown>> = []
+    static async create(data: Record<string, unknown>) {
+      CommentModel.created.push({ ...data })
+      return { id: String(CommentModel.created.length), ...data }
+    }
+  }
+
+  class Posts extends RelationManager {
+    static override relationship  = 'posts'
+    static override label         = 'Posts'
+    static override labelSingular = 'Post'
+  }
+
+  class Comments extends RelationManager {
+    static override relationship  = 'comments'
+    static override label         = 'Comments'
+    static override labelSingular = 'Comment'
+  }
+
+  function freshHasManyCtx(): RelationManagerContext {
+    PostModel.created = []
+    PostModel.throwOnNextCreate = false
+    const Related = {
+      labelSingular:    'Post',
+      label:            'Posts',
+      getSlug:          () => 'posts',
+      model:            PostModel,
+      deletedAtColumn:  'deletedAt',
+    } as unknown as RelationManagerContext['related']
+    return {
+      basePath:     '/admin',
+      parentSlug:   'users',
+      parentId:     '42',
+      relationship: 'posts',
+      parentRecord: new UserModel({ id: '42' }),
+      related:      Related,
+      mode:         'hasMany',
+    }
+  }
+
+  function freshMorphManyCtx(): RelationManagerContext {
+    CommentModel.created = []
+    const Related = {
+      labelSingular:    'Comment',
+      label:            'Comments',
+      getSlug:          () => 'comments',
+      model:            CommentModel,
+      deletedAtColumn:  'deletedAt',
+    } as unknown as RelationManagerContext['related']
+    return {
+      basePath:     '/admin',
+      parentSlug:   'users',
+      parentId:     '42',
+      relationship: 'comments',
+      parentRecord: new UserModel({ id: '42' }),
+      related:      Related,
+      mode:         'morphMany',
+    }
+  }
+
+  describe('toMeta + placement', () => {
+    it('relationReplicate is a row-placement handler action', () => {
+      const meta = Action.relationReplicate(Posts, freshHasManyCtx()).toMeta()
+      assert.equal(meta.placement, 'row')
+      assert.equal(meta.label, 'Replicate')
+      assert.equal(meta.method, undefined)  // handler-style, no form-post
+      assert.equal(meta.href,   undefined)
+    })
+
+    it('relationBulkReplicate is a bulk-placement handler action with confirm', () => {
+      const meta = Action.relationBulkReplicate(Posts, freshHasManyCtx()).toMeta()
+      assert.equal(meta.placement, 'bulk')
+      assert.match(meta.confirm?.message ?? '', /Replicate the selected/)
+    })
+  })
+
+  describe('hasMany — clone preserves FK by force-pin', () => {
+    it('strips PK + soft-delete + excludeAttributes and re-pins userId from the parent', async () => {
+      const ctx = freshHasManyCtx()
+      const handler = Action.relationReplicate(Posts, ctx, undefined, {
+        excludeAttributes: ['slug'],
+      }).getHandler()!
+      await handler({
+        record: { id: '7', title: 'Hello', body: 'World', slug: 'hello', userId: '99', deletedAt: null },
+        user:   null,
+      })
+      assert.equal(PostModel.created.length, 1)
+      const replica = PostModel.created[0]!
+      assert.equal(replica['id'],        undefined, 'PK stripped')
+      assert.equal(replica['deletedAt'], undefined, 'soft-delete column stripped')
+      assert.equal(replica['slug'],      undefined, 'excludeAttributes honored')
+      assert.equal(replica['title'],     'Hello')
+      assert.equal(replica['body'],      'World')
+      // The source row carried `userId: '99'` (a tampered value or
+      // a row from a different parent's children). The factory MUST
+      // overwrite it with the manager's parentId so the replica
+      // stays attached to the right parent.
+      assert.equal(replica['userId'], '42', 'FK re-pinned to ctx.parentId')
+    })
+
+    it('beforeReplicaSaved runs after the FK pin and can mutate non-FK fields', async () => {
+      const ctx = freshHasManyCtx()
+      const handler = Action.relationReplicate(Posts, ctx, undefined, {
+        beforeReplicaSaved: (replica) => ({ ...replica, title: `Copy of ${replica['title']}` }),
+      }).getHandler()!
+      await handler({ record: { id: '1', title: 'Hello', userId: '42' }, user: null })
+      assert.equal(PostModel.created[0]!['title'],  'Copy of Hello')
+      assert.equal(PostModel.created[0]!['userId'], '42')
+    })
+
+    it('returns a success notify with the manager singular label', async () => {
+      const ctx = freshHasManyCtx()
+      const handler = Action.relationReplicate(Posts, ctx).getHandler()!
+      const result = await handler({ record: { id: '1', title: 'Hello' }, user: null })
+      const r = result as { notify: { title: string; type: string } }
+      assert.match(r.notify.title, /^Post replicated$/)
+      assert.equal(r.notify.type, 'success')
+    })
+
+    it('catches Related.model.create errors and surfaces an error notify', async () => {
+      const ctx = freshHasManyCtx()
+      PostModel.throwOnNextCreate = true
+      const handler = Action.relationReplicate(Posts, ctx).getHandler()!
+      const result = await handler({ record: { id: '1', title: 'X' }, user: null })
+      const notify = (result as { notify: { title: string; type: string } }).notify
+      assert.match(notify.title, /^Replicate failed: boom$/)
+      assert.equal(notify.type, 'error')
+    })
+  })
+
+  describe('morphMany — clone re-stamps the morph payload', () => {
+    it('overwrites <morphName>Id + <morphName>Type from the parent record', async () => {
+      const ctx = freshMorphManyCtx()
+      const handler = Action.relationReplicate(Comments, ctx).getHandler()!
+      await handler({
+        record: { id: '7', body: 'Nice!', commentableId: 'WRONG', commentableType: 'WRONG' },
+        user:   null,
+      })
+      const replica = CommentModel.created[0]!
+      assert.equal(replica['id'],              undefined, 'PK stripped')
+      assert.equal(replica['body'],            'Nice!')
+      assert.equal(replica['commentableId'],   '42',      'morph id re-stamped from parent')
+      assert.equal(replica['commentableType'], 'UserModel', 'morph type re-stamped from parent constructor')
+    })
+  })
+
+  describe('visibility', () => {
+    it('hidden under belongsToMany mode', async () => {
+      const ctx = { ...freshHasManyCtx(), mode: 'belongsToMany' as const }
+      const ev = await Action.relationReplicate(Posts, ctx).evaluate({})
+      assert.equal(ev.visible, false)
+    })
+
+    it('hidden under morphTo mode (no single owner to pin to)', async () => {
+      const ctx = { ...freshHasManyCtx(), mode: 'morphTo' as const }
+      const ev = await Action.relationReplicate(Posts, ctx).evaluate({})
+      assert.equal(ev.visible, false)
+    })
+
+    it('delegates to manager.canCreate when overridden', async () => {
+      class Forbidden extends RelationManager {
+        static override relationship = 'posts'
+        static override async canCreate(): Promise<boolean> { return false }
+      }
+      const ev = await Action.relationReplicate(Forbidden, freshHasManyCtx()).evaluate({})
+      assert.equal(ev.visible, false)
+    })
+
+    it('falls through to related Resource canCreate when manager unset', async () => {
+      const ctx = freshHasManyCtx()
+      ;(ctx.related as unknown as { canCreate: () => Promise<boolean> }).canCreate = async () => false
+      const ev = await Action.relationReplicate(Posts, ctx).evaluate({})
+      assert.equal(ev.visible, false)
+    })
+
+    it('allows when neither manager nor related Resource opts in', async () => {
+      const ev = await Action.relationReplicate(Posts, freshHasManyCtx()).evaluate({})
+      assert.equal(ev.visible, true)
+    })
+  })
+
+  describe('error paths', () => {
+    it('returns an error notify when ctx.record is missing', async () => {
+      const handler = Action.relationReplicate(Posts, freshHasManyCtx()).getHandler()!
+      const result = await handler({ user: null })
+      const notify = (result as { notify: { title: string; type: string } }).notify
+      assert.match(notify.title, /source record missing/i)
+    })
+
+    it('returns an error notify when Related.model is missing', async () => {
+      const ctx: RelationManagerContext = { ...freshHasManyCtx(), related: { } as unknown as RelationManagerContext['related'] }
+      const handler = Action.relationReplicate(Posts, ctx).getHandler()!
+      const result = await handler({ record: { id: '1' }, user: null })
+      const notify = (result as { notify: { title: string; type: string } }).notify
+      assert.match(notify.title, /not configured/i)
+    })
+  })
+
+  describe('bulk', () => {
+    it('iterates ctx.records — one create per source, FK re-pinned each time', async () => {
+      const ctx = freshHasManyCtx()
+      const handler = Action.relationBulkReplicate(Posts, ctx).getHandler()!
+      const result = await handler({
+        records: [
+          { id: '1', title: 'A', userId: 'wrong' },
+          { id: '2', title: 'B', userId: 'wrong' },
+          { id: '3', title: 'C' },
+        ],
+        user: null,
+      })
+      assert.equal(PostModel.created.length, 3)
+      assert.deepEqual(PostModel.created.map(r => r['title']),  ['A', 'B', 'C'])
+      assert.deepEqual(PostModel.created.map(r => r['userId']), ['42', '42', '42'])
+      assert.match((result as { notify: { title: string } }).notify.title, /^3 posts replicated$/)
+    })
+
+    it('skips rows where create throws and reports only successful count', async () => {
+      const ctx = freshHasManyCtx()
+      // Fail the second create.
+      let calls = 0
+      const orig = PostModel.create.bind(PostModel)
+      PostModel.create = async (d) => {
+        calls++
+        if (calls === 2) throw new Error('boom')
+        return orig(d)
+      }
+      try {
+        const handler = Action.relationBulkReplicate(Posts, ctx).getHandler()!
+        const result = await handler({
+          records: [{ id: '1' }, { id: '2' }, { id: '3' }],
+          user:    null,
+        })
+        assert.match((result as { notify: { title: string } }).notify.title, /^2 posts replicated$/)
+      } finally {
+        PostModel.create = orig
+      }
+    })
+
+    it('skips rows where per-row policy denies', async () => {
+      const ctx = freshHasManyCtx()
+      let i = 0
+      class GatedPosts extends RelationManager {
+        static override relationship  = 'posts'
+        static override label         = 'Posts'
+        static override labelSingular = 'Post'
+        static override async canCreate(): Promise<boolean> {
+          i++
+          return i !== 2
+        }
+      }
+      const handler = Action.relationBulkReplicate(GatedPosts, ctx).getHandler()!
+      const result = await handler({
+        records: [{ id: '1' }, { id: '2' }, { id: '3' }],
+        user:    null,
+      })
+      assert.equal(PostModel.created.length, 2)
+      assert.match((result as { notify: { title: string } }).notify.title, /^2 posts replicated$/)
+    })
+
+    it('singularises the count copy when exactly one row succeeds', async () => {
+      const ctx = freshHasManyCtx()
+      const handler = Action.relationBulkReplicate(Posts, ctx).getHandler()!
+      const result = await handler({
+        records: [{ id: '1', title: 'Solo' }],
+        user:    null,
+      })
+      assert.match((result as { notify: { title: string } }).notify.title, /^1 post replicated$/)
+    })
+
+    it('returns an error notify when Related.model.create is missing', async () => {
+      const ctx: RelationManagerContext = { ...freshHasManyCtx(), related: { } as unknown as RelationManagerContext['related'] }
+      const handler = Action.relationBulkReplicate(Posts, ctx).getHandler()!
+      const result = await handler({ records: [{ id: '1' }], user: null })
+      const notify = (result as { notify: { title: string; type: string } }).notify
+      assert.match(notify.title, /not configured/i)
+      assert.equal(notify.type, 'error')
+    })
+
+    it('hidden under M2M / morphTo mode', async () => {
+      const m2m = await Action.relationBulkReplicate(Posts, { ...freshHasManyCtx(), mode: 'belongsToMany' }).evaluate({})
+      assert.equal(m2m.visible, false)
+      const mt  = await Action.relationBulkReplicate(Posts, { ...freshHasManyCtx(), mode: 'morphTo' }).evaluate({})
+      assert.equal(mt.visible, false)
+    })
+  })
+})

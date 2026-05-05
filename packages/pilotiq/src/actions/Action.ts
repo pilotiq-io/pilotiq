@@ -6,6 +6,12 @@ import {
   type RelationManager,
   type RelationManagerContext,
 } from '../RelationManager.js'
+import {
+  computeMorphPayload,
+  getMorphRelationDescriptor,
+  getParentRelationDescriptor,
+  type ModelLike,
+} from '../orm/modelDefaults.js'
 import { buildImportSchema as buildImportModalSchema } from './importFactory.js'
 import { buildAttachModalSchema } from './attachFactory.js'
 
@@ -273,6 +279,108 @@ function resolveM2MAccessor(parent: unknown, rel: string): M2MAccessor | undefin
     if (out && (typeof out.attach === 'function' || typeof out.detach === 'function')) return out
   }
   return undefined
+}
+
+/**
+ * Compute the parent-attachment payload to force-pin onto a relation
+ * replica. For `hasMany`, returns `{ [foreignKey]: parentId }` from the
+ * parent's `static relations[name]` descriptor. For `morphMany` /
+ * `morphOne`, returns `{ <morphName>Id, <morphName>Type }` via
+ * `computeMorphPayload(parentRecord)`. Returns `{}` when no descriptor
+ * matches — the route dispatcher already auto-hides under M2M / morphTo,
+ * so missing descriptors there are a no-op rather than an error. Pure;
+ * exported for tests and re-used by both factories.
+ */
+function computeRelationPin(
+  ctx: RelationManagerContext,
+): Record<string, unknown> {
+  const parentModel = (ctx.parentRecord as { constructor?: ModelLike } | null | undefined)?.constructor
+  if (!parentModel) return {}
+  const rel = ctx.relationship
+  // Polymorphic owner side first — `morphMany` carries no foreignKey
+  // and would fail the hasMany descriptor's gate.
+  if (ctx.mode === 'morphMany') {
+    const morph = getMorphRelationDescriptor(parentModel, rel)
+    if (!morph) return {}
+    try { return computeMorphPayload(ctx.parentRecord, morph) }
+    catch { return {} }
+  }
+  const desc = getParentRelationDescriptor(parentModel, rel)
+  if (!desc) return {}
+  return { [desc.foreignKey]: ctx.parentId }
+}
+
+/**
+ * Build + persist a single relation replica. Runs the strip set
+ * (PK + soft-delete column on the **related** Resource +
+ * `opts.excludeAttributes`), force-pins the parent attachment columns,
+ * runs the optional `beforeReplicaSaved` hook, and calls
+ * `Related.model.create(...)`. Returns the model's create result so
+ * callers can read its primary key for redirect targeting.
+ *
+ * Throws when the related Resource has no model — caller (single-row
+ * factory) catches and surfaces an error notification; bulk caller
+ * checks the model presence ahead of the loop.
+ */
+async function persistRelationReplica(
+  _M:     typeof RelationManager,
+  ctx:    RelationManagerContext,
+  source: unknown,
+  opts:   ReplicateOptions,
+): Promise<unknown> {
+  const Related = ctx.related
+  if (!Related?.model || typeof Related.model.create !== 'function') {
+    throw new Error('Related Resource has no model.create')
+  }
+  const M2 = Related.model as ModelLike
+  const pkCol      = (M2 as { primaryKey?: string }).primaryKey ?? 'id'
+  const trashedCol = Related.deletedAtColumn ?? 'deletedAt'
+  const skip       = new Set<string>([pkCol, trashedCol, ...(opts.excludeAttributes ?? [])])
+  let replica: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(source as Record<string, unknown>)) {
+    if (skip.has(k)) continue
+    replica[k] = v
+  }
+  // Force-pin the parent attachment AFTER the strip but BEFORE the
+  // user mutator, so `beforeReplicaSaved` can read / override the FK
+  // if it really wants to (rare). Tampered source rows can't slip a
+  // different parent in by riding their own FK column — the pin
+  // overwrites whatever value was there.
+  Object.assign(replica, computeRelationPin(ctx))
+  if (opts.beforeReplicaSaved) {
+    replica = await opts.beforeReplicaSaved(replica, source)
+  }
+  return M2.create(replica)
+}
+
+/**
+ * Single-row dispatch for `Action.relationReplicate`. Resolves
+ * `ctx.record` (loaded by the route's resolveRecord hook), validates,
+ * persists the replica, and shapes the success notification. Errors
+ * are caught and surfaced as error toasts.
+ */
+async function runRelationReplicateRow(
+  M:    typeof RelationManager,
+  ctx:  RelationManagerContext,
+  hctx: ActionContext,
+  opts: ReplicateOptions,
+): Promise<ActionResult> {
+  const source = hctx.record
+  if (!source || typeof source !== 'object') {
+    return { notify: { title: 'Replicate failed: source record missing', type: 'error' } as never }
+  }
+  const Related = ctx.related
+  if (!Related?.model || typeof Related.model.create !== 'function') {
+    return { notify: { title: 'Replicate not configured (related Resource has no model.create)', type: 'error' } as never }
+  }
+  try {
+    await persistRelationReplica(M, ctx, source, opts)
+  } catch (err) {
+    return { notify: { title: `Replicate failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
+  }
+  return {
+    notify: { title: `${M.getLabelSingular()} replicated`, type: 'success' } as never,
+  }
 }
 
 /** Read `record[R.deletedAtColumn ?? 'deletedAt']` and return true when
@@ -1090,6 +1198,125 @@ export class Action extends Element {
         if (!ctx.related?.softDeletes) return false
         if (!isTrashed(record, ctx.related as ResourceLike)) return false
         return safeManagerPolicy(M, 'canForceDelete', ctx.related, user, ctx.parentRecord, record)
+      })
+  }
+
+  // ─── Relation-manager replicate factories ─────────────────
+  //
+  // Sibling of `Action.replicate / bulkReplicate` scoped to a
+  // RelationManager. Operates on the **related** Resource's model and
+  // **forces** the parent attachment back onto the replica:
+  //
+  // - `hasMany` — re-stamps `<foreignKey> = ctx.parentId` from the
+  //   parent's `static relations[name]` descriptor. Defends against a
+  //   tampered POST body (or a source row loaded from a different
+  //   parent's children) silently re-attaching the new row to a
+  //   different parent.
+  // - `morphMany` — re-stamps `<morphName>Id` + `<morphName>Type` via
+  //   `computeMorphPayload(parentRecord, descriptor)`, same auto-fill
+  //   the relation-create POST handler uses on the create form.
+  // - M2M (`belongsToMany / morphToMany / morphedByMany`) — auto-hides.
+  //   Replicate doesn't fit pivot semantics; users create the related
+  //   record via its own Resource, then attach via `relationAttach`.
+  // - `morphTo` — auto-hides. Child-side polymorphic relations don't
+  //   have a single owner to pin to (the row's existing morph cols
+  //   already point somewhere; cloning is the user's job, not ours).
+  //
+  // Both factories dispatch through the manager-scoped
+  // `_action/:actionName` route already wired in `routes.ts`. The route
+  // resolves `ctx.record` (and `ctx.records` for bulk) via
+  // `Related.model.find(id)`, and stamps `ctx.relation = { parent,
+  // parentId, relationship }` so the handlers can read the live parent
+  // without re-loading.
+  //
+  // Visibility delegates to `safeManagerPolicy(M, 'canCreate', Related,
+  // user, parentRecord)` — the manager's `canCreate` (when overridden)
+  // wins, otherwise falls through to the related Resource's `canCreate`.
+
+  /**
+   * Relation row-replicate factory. Clones the row's child record
+   * inside the manager's parent scope.
+   *
+   * Strips the related model's primary key, soft-delete column, and
+   * `opts.excludeAttributes`. Re-applies the parent attachment columns
+   * after the strip + before the optional `beforeReplicaSaved` hook,
+   * so user code can still mutate non-FK fields without accidentally
+   * unlinking the replica.
+   *
+   * On success the manager-scoped route falls back to the manager
+   * list URL (`${base}/${parentSlug}/${parentId}/${relationship}`)
+   * because no explicit `redirect` is returned — same default as the
+   * other handler-style relation factories.
+   *
+   * `recordId` kept in the signature for parity with the rest of the
+   * relation factory family. The dispatcher resolves the source row
+   * from the request body, so it isn't referenced here.
+   */
+  static relationReplicate(
+    M:        typeof RelationManager,
+    ctx:      RelationManagerContext,
+    recordId?: string,
+    opts:     ReplicateOptions = {},
+  ): Action {
+    void recordId
+    return Action.make('relationReplicate')
+      .label('Replicate')
+      .row()
+      .handler(async (hctx) => {
+        const result = await runRelationReplicateRow(M, ctx, hctx, opts)
+        return result
+      })
+      .visible(({ user }) => {
+        if (isM2MMode(ctx.mode) || ctx.mode === 'morphTo') return false
+        return safeManagerPolicy(M, 'canCreate', ctx.related, user, ctx.parentRecord)
+      })
+  }
+
+  /**
+   * Bulk sibling — replicates every selected child row inside the
+   * manager's parent scope. Same strip + force-pin pipeline applied
+   * per row. Per-row `safeManagerPolicy(M, 'canCreate', …)` runs
+   * inside the loop so a partially-permitted selection still proceeds
+   * for the rows that pass. Rows that throw are skipped silently —
+   * the toast count reflects only successful creates.
+   */
+  static relationBulkReplicate(
+    M:    typeof RelationManager,
+    ctx:  RelationManagerContext,
+    opts: ReplicateOptions = {},
+  ): Action {
+    return Action.make('relationBulkReplicate')
+      .label('Replicate selected')
+      .bulk()
+      .confirm(`Replicate the selected ${M.getLabel().toLowerCase()}?`)
+      .handler(async (hctx) => {
+        const Related = ctx.related
+        if (!Related?.model || typeof Related.model.create !== 'function') {
+          return { notify: { title: 'Replicate not configured (related Resource has no model.create)', type: 'error' } as never }
+        }
+        const records = hctx.records ?? []
+        let n = 0
+        for (const source of records) {
+          if (!source || typeof source !== 'object') continue
+          const allowed = await safeManagerPolicy(M, 'canCreate', Related, hctx.user, ctx.parentRecord)
+          if (!allowed) continue
+          try {
+            await persistRelationReplica(M, ctx, source, opts)
+            n++
+          } catch { /* skip — agg notify shows total */ }
+        }
+        const labelPlural = M.getLabel().toLowerCase()
+        const labelSingular = M.getLabelSingular().toLowerCase()
+        return {
+          notify: {
+            title: `${n} ${n === 1 ? labelSingular : labelPlural} replicated`,
+            type:  'success',
+          } as never,
+        }
+      })
+      .visible(({ user }) => {
+        if (isM2MMode(ctx.mode) || ctx.mode === 'morphTo') return false
+        return safeManagerPolicy(M, 'canCreate', ctx.related, user, ctx.parentRecord)
       })
   }
 
