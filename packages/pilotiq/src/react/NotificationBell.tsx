@@ -102,6 +102,49 @@ export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta })
     return () => window.clearInterval(id)
   }, [meta.polling, refetch])
 
+  // ── Phase 2 broadcast subscription ───────────────────
+  // When `meta.broadcast` is present, connect to the panel's WebSocket
+  // and listen for `notification.created` on the user's private channel.
+  // Triggers the same `refetch()` already wired for polling — broadcast
+  // is "low-latency refetch hint", not a payload-pushing transport.
+  //
+  // RudderSocket loads via dynamic import so the bell doesn't bundle
+  // broadcast for apps that don't enable it. Failures (package missing,
+  // wsUrl unreachable, auth rejected) silently fall back to polling.
+  React.useEffect(() => {
+    if (!meta.broadcast) return
+    if (typeof window === 'undefined') return
+    let cancelled = false
+    let socket:   { disconnect(): void } | null = null
+
+    const wsUrl = meta.broadcast.wsUrl || sameOriginWsUrl()
+    const channelName = meta.broadcast.channel
+    const eventName   = meta.broadcast.event
+
+    void (async () => {
+      try {
+        const RudderSocket = await loadRudderSocket()
+        if (!RudderSocket || cancelled) return
+        const s = new RudderSocket(wsUrl)
+        socket = s
+        // Strip the `private-` prefix — `RudderSocket.private(name)`
+        // re-adds it. We pass an empty token because the auth callback
+        // we registered server-side reads the upgrade request's cookies,
+        // not a per-message bearer token.
+        const bareName = channelName.replace(/^private-/, '')
+        s.private(bareName, '').on(eventName, () => {
+          if (cancelled) return
+          void refetch()
+        })
+      } catch { /* package not vendored / connect failed — polling covers it */ }
+    })()
+
+    return () => {
+      cancelled = true
+      socket?.disconnect()
+    }
+  }, [meta.broadcast?.wsUrl, meta.broadcast?.channel, meta.broadcast?.event, refetch])
+
   // ── Mutations ────────────────────────────────────────
   const markRead = React.useCallback(async (id: string) => {
     // Optimistic flip — the bell stays responsive even on slow networks.
@@ -281,6 +324,57 @@ function BellIcon({ icon }: { icon: string | undefined }) {
       <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
     </svg>
   )
+}
+
+/** Soft-load `RudderSocket` from whichever path the consuming app
+ *  vendored it to. `@rudderjs/broadcast` ships the client as
+ *  `client/RudderSocket.ts`, intended for vendor:publish copy into the
+ *  app's `src/`. We try a stack of common locations in order, returning
+ *  the first that resolves; falls through to `null` when nothing's
+ *  reachable so the bell silently continues with polling.
+ *
+ *  Apps that vendor the file under a custom path can register their
+ *  own loader by setting `window.__pilotiqRudderSocket` to the class
+ *  constructor before the bell mounts. */
+type RudderSocketCtor = new (url: string) => {
+  private(name: string, token: string): {
+    on(event: string, handler: (data: unknown) => void): unknown
+  }
+  disconnect(): void
+}
+
+async function loadRudderSocket(): Promise<RudderSocketCtor | null> {
+  // Allow apps to register a custom-path RudderSocket without us
+  // having to guess at the import path.
+  const w = typeof window !== 'undefined'
+    ? (window as unknown as { __pilotiqRudderSocket?: RudderSocketCtor })
+    : null
+  if (w?.__pilotiqRudderSocket) return w.__pilotiqRudderSocket
+
+  // Apps that vendor:publish the broadcast client typically end up
+  // with `src/RudderSocket.ts` (or `.js`); try common shapes via the
+  // app's import-map / module resolution. The dynamic import is
+  // wrapped in a try/catch so missing modules don't surface.
+  const candidates = [
+    '@rudderjs/broadcast/client/RudderSocket.js',
+    '@rudderjs/broadcast/client/RudderSocket',
+  ]
+  for (const id of candidates) {
+    try {
+      const mod = await import(/* @vite-ignore */ id) as { RudderSocket?: RudderSocketCtor }
+      if (mod.RudderSocket) return mod.RudderSocket
+    } catch { /* try next */ }
+  }
+  return null
+}
+
+/** Same-origin `ws://…/ws` (or `wss://` on https). Used when
+ *  `meta.broadcast.wsUrl` is empty — the default for apps that boot
+ *  `BroadcastingProvider` with no custom path. */
+function sameOriginWsUrl(): string {
+  if (typeof window === 'undefined') return ''
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}/ws`
 }
 
 function formatRelative(ts: number): string {

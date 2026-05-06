@@ -140,3 +140,47 @@ describe('panelInfo() — databaseNotifications meta', () => {
     assert.deepEqual(dn.trigger, { icon: 'bell', label: 'Inbox' })
   })
 })
+
+describe('panelInfo() — broadcast (Phase 2)', () => {
+  it('absent when broadcast wasn\'t enabled', async () => {
+    const p = Pilotiq.make('admin')
+      .user(() => ({ id: 1 }))
+      .databaseNotifications()
+    const panel = await panelInfo(p)
+    const dn = (panel as any).databaseNotifications
+    assert.equal(dn.broadcast, undefined)
+  })
+
+  it('present when databaseNotificationsBroadcast() is called', async () => {
+    const p = Pilotiq.make('admin')
+      .user(() => ({ id: 42 }))
+      .databaseNotifications()
+      .databaseNotificationsBroadcast()
+    const panel = await panelInfo(p)
+    const dn = (panel as any).databaseNotifications
+    assert.ok(dn.broadcast, 'broadcast meta is present')
+    assert.equal(dn.broadcast.channel, 'private-pilotiq-notifications.42')
+    assert.equal(dn.broadcast.event,   'notification.created')
+    assert.equal(dn.broadcast.wsUrl,   '')  // empty -> client falls back to same-origin
+  })
+
+  it('honors a custom wsUrl', async () => {
+    const p = Pilotiq.make('admin')
+      .user(() => ({ id: 'u-1' }))
+      .databaseNotifications({ broadcast: { wsUrl: 'wss://x.test/ws' } })
+    const panel = await panelInfo(p)
+    const dn = (panel as any).databaseNotifications
+    assert.equal(dn.broadcast.wsUrl,   'wss://x.test/ws')
+    assert.equal(dn.broadcast.channel, 'private-pilotiq-notifications.u-1')
+  })
+
+  it('absent when user has no id (channel cannot be scoped)', async () => {
+    const p = Pilotiq.make('admin')
+      .user(() => ({ name: 'Anonymous' }) as unknown as { id: string })
+      .databaseNotifications()
+      .databaseNotificationsBroadcast()
+    const panel = await panelInfo(p)
+    const dn = (panel as any).databaseNotifications
+    assert.equal(dn?.broadcast, undefined)
+  })
+})

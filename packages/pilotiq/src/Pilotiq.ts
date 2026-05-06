@@ -94,6 +94,22 @@ export interface DatabaseNotificationsConfig {
   trigger?:  { icon?: string; label?: string }
   /** `notifiable_type` column value. Default `'users'`. */
   notifiableType?: string
+  /**
+   * Phase 2 — push new rows over WebSocket on
+   * `private-pilotiq-notifications.${user.id}` so the bell client can
+   * refetch immediately instead of waiting for the next poll. Requires
+   * `@rudderjs/broadcast` (the `BroadcastingProvider` must be in the
+   * app's providers list and the `RudderSocket` client must be vendored).
+   *
+   * Soft-fails when broadcast isn't installed — pilotiq still works,
+   * the bell just falls back to polling.
+   *
+   * Pass a string to override the WebSocket URL the client connects to
+   * (default: same-origin `ws://…/ws`). Most apps leave this on the
+   * default — `@rudderjs/broadcast`'s `BroadcastConfig.path` already
+   * mounts the upgrade handler at `/ws`.
+   */
+  broadcast?: boolean | { wsUrl?: string }
 }
 
 /**
@@ -417,6 +433,25 @@ export class Pilotiq {
     this.config.databaseNotifications = {
       ...this.config.databaseNotifications,
       position,
+    }
+    return this
+  }
+
+  /**
+   * Phase 2 — enable broadcast push for the bell. Requires
+   * `@rudderjs/broadcast` to be installed and `BroadcastingProvider`
+   * registered. Pass `{ wsUrl }` to override the WebSocket URL (default:
+   * same-origin `/ws`). Has no effect unless `.databaseNotifications()`
+   * was called.
+   *
+   *   .databaseNotifications().databaseNotificationsBroadcast()
+   *   .databaseNotifications().databaseNotificationsBroadcast({ wsUrl: 'wss://…/ws' })
+   */
+  databaseNotificationsBroadcast(opts: boolean | { wsUrl?: string } = true): this {
+    if (!this.config.databaseNotifications) return this
+    this.config.databaseNotifications = {
+      ...this.config.databaseNotifications,
+      broadcast: opts,
     }
     return this
   }

@@ -68,10 +68,14 @@ async function sendDemo(
       ? Notification.make('New comment').info().body('Someone commented on your post.').icon('message-circle').url('/new-admin/comments')
       : Notification.make('Storage almost full').warning().body('You are using 92% of your plan quota.').icon('triangle-alert').url('/new-admin/site-settings')
 
-  await builder.sendToDatabase(recipient)
+  // `{ broadcast: true }` pushes the same payload over WebSocket so the
+  // bell client refetches immediately when broadcast is enabled. Soft-fails
+  // when `@rudderjs/broadcast` isn't installed — the row still persists
+  // and the bell picks it up on the next poll either way.
+  await builder.sendToDatabase(recipient, { broadcast: true })
   return {
     notify: Notification.make('Notification sent')
-      .body('Open the bell next to the user menu — should appear on the next poll.')
+      .body('Open the bell next to the user menu — should appear immediately when broadcast is on, otherwise on the next poll.')
       .info()
       .toMeta(),
   }

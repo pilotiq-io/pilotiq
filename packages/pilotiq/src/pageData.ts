@@ -37,6 +37,10 @@ import { ListTab } from './Tab.js'
 import { resolveTheme } from './theme/resolve.js'
 import type { ThemeMeta } from './theme/types.js'
 import { consumeFlashedNotifications } from './notifications/flash.js'
+import {
+  notificationChannel,
+  NOTIFICATION_CREATED_EVENT,
+} from './notifications/broadcast.js'
 import { serializeIcon, type SerializedIcon, type IconValue } from './icons/types.js'
 import type { UserMenuItemMeta } from './UserMenuItem.js'
 import {
@@ -109,6 +113,20 @@ export interface DatabaseNotificationsMeta {
   readUrl:     string
   /** Template URL with literal `:id` placeholder. Client replaces. */
   unreadUrl:   string
+  /**
+   * Phase 2 — broadcast hint. Sparse — absent when
+   * `databaseNotifications({ broadcast: true })` wasn't set OR when no
+   * resolved user has an `id` to scope the channel to.
+   *
+   * Client connects to `wsUrl` via `@rudderjs/broadcast`'s
+   * `RudderSocket`, subscribes to the `channel` (already includes the
+   * `private-` prefix), and listens for `event` to trigger refetches.
+   */
+  broadcast?: {
+    wsUrl:   string
+    channel: string
+    event:   string
+  }
 }
 
 /**
@@ -220,6 +238,23 @@ function buildDatabaseNotificationsMeta(
     unreadUrl:  `${base}/_notifications/:id/unread`,
   }
   if (dn.trigger) meta.trigger = { ...dn.trigger }
+  // Phase 2 broadcast hint — only ship when broadcast is enabled AND the
+  // resolved user has an `id` to scope the channel to. The client uses
+  // `wsUrl` for the WebSocket connection and `channel` for the subscribe
+  // call (the private- prefix is already baked in).
+  if (dn.broadcast) {
+    const userId = (user as { id?: unknown } | null | undefined)?.id
+    if (userId !== undefined && userId !== null) {
+      const wsUrl = typeof dn.broadcast === 'object' && dn.broadcast.wsUrl
+        ? dn.broadcast.wsUrl
+        : ''  // empty = client falls back to same-origin /ws
+      meta.broadcast = {
+        wsUrl,
+        channel: notificationChannel(String(userId)),
+        event:   NOTIFICATION_CREATED_EVENT,
+      }
+    }
+  }
   return meta
 }
 

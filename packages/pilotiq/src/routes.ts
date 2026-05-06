@@ -34,6 +34,7 @@ import {
   markAsUnread   as markDatabaseNotificationAsUnread,
   markAllAsRead  as markAllDatabaseNotificationsAsRead,
 } from './notifications/database.js'
+import { registerBroadcastAuth } from './notifications/registerBroadcastAuth.js'
 import {
   RelationManager, RESERVED_RELATIONSHIP_TOKENS,
   normalizeRelationMode,
@@ -786,6 +787,12 @@ export function registerPilotiqRoutes(
       })
       return res.json({ ok: true, count })
     })
+
+    // Phase 2 — register the broadcast auth callback for private
+    // `pilotiq-notifications.<userId>` channels. Soft-fails when
+    // `@rudderjs/broadcast` isn't installed; apps that haven't enabled
+    // broadcast on the toggle stay quiet either way.
+    void registerBroadcastAuth(pilotiq)
   }
 
   // ── Resource routes ───────────────────────────────────

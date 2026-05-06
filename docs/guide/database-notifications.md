@@ -190,13 +190,71 @@ fetches once on mount and after every mark-read mutation.
 
 ---
 
+## Broadcast (Phase 2)
+
+Polling is the default refresh path. For low-latency push, opt into
+broadcast — pilotiq publishes every persisted row to the recipient's
+private WebSocket channel and the bell client subscribes on mount,
+triggering an immediate refetch when the event fires.
+
+```ts
+Pilotiq.make('admin')
+  .user(req => Auth.user())
+  .databaseNotifications()
+  .databaseNotificationsBroadcast()         // same-origin /ws
+  // .databaseNotificationsBroadcast({ wsUrl: 'wss://x.test/ws' })
+```
+
+### Requirements
+
+1. `@rudderjs/broadcast` installed and `BroadcastingProvider` registered
+   in your app's providers list. The provider wires the WebSocket
+   upgrade handler at `/ws` (configurable via `broadcast.path` config).
+2. Vendor the client with
+   `pnpm rudder vendor:publish --tag=broadcast-client` so
+   `@rudderjs/broadcast/client/RudderSocket.ts` resolves at runtime
+   from the bell. Apps that vendor it elsewhere can register the
+   constructor manually:
+
+   ```ts
+   import { RudderSocket } from './RudderSocket'
+   if (typeof window !== 'undefined') {
+     (window as any).__pilotiqRudderSocket = RudderSocket
+   }
+   ```
+
+### Channel + auth
+
+Pilotiq registers an auth callback for
+`private-pilotiq-notifications.*` at panel boot. A subscription is
+allowed only when `pilotiq.resolveUser(req).id === channel.userId` —
+the upgrade request's cookies feed the same user resolver every other
+request uses, so apps using `@rudderjs/auth` get the gate for free.
+
+### Pushing without persisting
+
+`Notification.make('Hi').broadcast(user)` pushes the toast payload
+without writing a row. Pair with `sendToDatabase(user, { broadcast:
+true })` to do both in one call.
+
+### Soft-fail behavior
+
+The whole broadcast surface soft-fails:
+
+- `@rudderjs/broadcast` not installed → bell silently falls back to polling.
+- WebSocket connect fails → polling covers the gap.
+- Auth callback rejects → subscription drops; polling unaffected.
+
+Apps that opt into broadcast can therefore ship the same bundle to
+environments without WebSocket support; functionality degrades, but
+nothing breaks.
+
+---
+
 ## v1 limits
 
 - **Single notifiable type per panel.** Every read/write uses the same
   `notifiableType` (default `'users'`).
-- **No live broadcast yet.** Polling is the only refresh path; new rows
-  surface on the next tick. Real-time push via `@rudderjs/broadcast` is
-  a planned Phase 2.
 - **No `Action.markAsRead()` factory inside notifications.** Filament's
   `Notification::actions([Action::make('view')->markAsRead()])` is not
   yet wired; click-through marks-read instead.

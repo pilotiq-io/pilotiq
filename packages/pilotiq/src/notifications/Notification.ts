@@ -11,6 +11,10 @@
  */
 import type { Notifiable } from './types.js'
 import { persist as persistDatabaseNotification } from './database.js'
+import {
+  push as pushBroadcast,
+  notificationChannel,
+} from './broadcast.js'
 
 export type NotificationType = 'info' | 'success' | 'warning' | 'error'
 
@@ -129,16 +133,53 @@ export class Notification {
    */
   async sendToDatabase(
     recipient: Notifiable,
-    opts: { notifiableType?: string } = {},
+    opts: { notifiableType?: string; broadcast?: boolean } = {},
   ): Promise<{ id: string }> {
     const data = this.toDatabase() as NotificationMeta & Record<string, unknown>
-    return persistDatabaseNotification({
+    const result = await persistDatabaseNotification({
       notifiableType: opts.notifiableType ?? 'users',
       notifiableId:   String(recipient.id),
       data,
     })
+    // Phase 2: push the same payload over WebSocket so the bell client
+    // can refetch immediately. Soft-fails when `@rudderjs/broadcast`
+    // isn't installed (or when the provider hasn't booted) — apps still
+    // get the persisted row via polling.
+    if (opts.broadcast) {
+      await pushBroadcast({
+        recipientId: recipient.id,
+        payload: { ...data, id: result.id, createdAt: Date.now() },
+      })
+    }
+    return result
+  }
+
+  /**
+   * Push this notification over WebSocket without persisting it. Pairs
+   * with `sendToDatabase()` (or runs standalone for ephemeral pushes
+   * like "user-X started typing"). Soft-fails when `@rudderjs/broadcast`
+   * isn't installed.
+   *
+   * Channel: `private-pilotiq-notifications.${recipient.id}`. The bell
+   * client subscribes to this channel automatically when broadcast is
+   * enabled in `Pilotiq.databaseNotifications({ broadcast: true })`.
+   *
+   *   await Notification.make('Live update')
+   *     .info()
+   *     .broadcast(currentUser)
+   */
+  async broadcast(recipient: Notifiable): Promise<{ ok: boolean }> {
+    return pushBroadcast({
+      recipientId: recipient.id,
+      payload: this.toDatabase(),
+    })
   }
 }
+
+/** Re-export so callers can build channel names without reaching into
+ *  the internal broadcast module. Useful for apps that want to push
+ *  custom events from their own code (e.g. presence pings). */
+export { notificationChannel }
 
 /** @internal — reset id sequence; tests use this for stability. */
 export function _resetNotificationIdSeq(): void {
