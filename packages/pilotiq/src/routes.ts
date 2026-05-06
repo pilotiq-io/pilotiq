@@ -25,6 +25,7 @@ import {
   mentionResolveData,
   searchData,
   relationManagerData, findRelatedResource, safeManagerPolicy,
+  resolveRelationChain, type ResolvedChain,
   widgetData, type WidgetScope,
 } from './pageData.js'
 import {
@@ -2396,6 +2397,297 @@ export function registerPilotiqRoutes(
           }
           return res.redirect(listUrl, 303)
         })
+
+        // ── Phase B follow-up — nested action / detach / soft-delete ──
+        // Mirror the depth-1 manager surface (`_action`, `_detach`,
+        // `restore`, `force-delete`) under the nested manager. Auth +
+        // chain IDOR centralized in `resolveRelationChain`; each route
+        // layers its own scope-specific gate (canDetach / canRestore /
+        // canForceDelete; the action route mirrors depth-1 by not adding
+        // an extra manager-level gate beyond the chain walk).
+        const nestedChainSlug = slug
+        const requireNestedChain = async (req: AppRequest, res: AppResponse, json: boolean): Promise<{
+          user:     unknown
+          resolved: ResolvedChain
+          parentId: string
+          child1Id: string
+        } | undefined> => {
+          const id       = req.params['id']!
+          const child1Id = req.params['childId']!
+          const user = await pilotiq.resolveUser(req)
+          const resolved = await resolveRelationChain(pilotiq, {
+            kind:  'nested-relation-list',
+            slug:  nestedChainSlug,
+            chain: [
+              { recordId: id,       relationship: rel },
+              { recordId: child1Id, relationship: nestedRel },
+            ],
+          }, user)
+          if (resolved === null) { res.status(404); res.send('Not found'); return undefined }
+          if ('ok' in resolved) { forbidden(res, json); return undefined }
+          return { user, resolved, parentId: id, child1Id }
+        }
+
+        // Listing URL (filled per request — `:id` / `:childId` get baked
+        // in once the params are known). All four routes redirect here
+        // on success so users land back on the nested-relation list.
+        const nestedListUrlFor = (id: string, child1Id: string): string =>
+          nestedBase.replace(':id', id).replace(':childId', child1Id)
+
+        // ── Action dispatch — POST ${nestedBase}/_action/:actionName ──
+        // Resolves N's table elements, finds the named action, dispatches
+        // it with `ctx.relation = { parent: child1, parentId, rel }` so
+        // M2M handlers on the nested manager can call accessor methods.
+        // Handler-style actions are useful on hasMany too — mounted
+        // unconditionally.
+        router.post(`${nestedBase}/_action/:actionName`, async (req, res) => {
+          const json = wantsJson(req)
+          const pre = await requireNestedChain(req, res, json)
+          if (!pre) return
+          const { resolved } = pre
+          const { Related1, child1, M2, Related2, child2Mode } = resolved
+
+          const actionName = req.params['actionName']!
+          const body  = await readFormBody(req)
+          const input = parseActionBody(body)
+
+          // Manager ctx for N — same shape `nestedManagerCtx` builds for
+          // the data-builder side, so factories that close over `ctx`
+          // (URL templates, mode-aware visibility) see the same view as
+          // at page render.
+          const nestedManagerCtxObj = {
+            basePath:     base,
+            parentSlug:   resolved.R.getSlug(),
+            parentId:     pre.child1Id,         // immediate parent of N = child1
+            relationship: nestedRel,
+            parentRecord: child1,
+            related:      Related2,
+            mode:         child2Mode,
+            chain: [{
+              slug:         resolved.R.getSlug(),
+              recordId:     pre.parentId,
+              relationship: rel,
+            }],
+          }
+          const table = M2.table(Table.make(), nestedManagerCtxObj)
+          const elements: import('./schema/Element.js').Element[] = [table]
+          const listUrl = nestedListUrlFor(pre.parentId, pre.child1Id)
+          tagActionDispatch(elements, listUrl)
+
+          const target = resolveDispatchTarget(elements, actionName)
+          if (!target) {
+            if (json) { res.status(404); return res.json({ ok: false, error: `Action "${actionName}" not found` }) }
+            res.status(404)
+            return res.send(`Action "${actionName}" not found on ${M2.name}`)
+          }
+
+          const resolveRecord: ResolveRecord | undefined = Related2?.model
+            ? (id: string) => Related2.model!.find(id)
+            : undefined
+
+          const result = await dispatchAction(target.action, {
+            ...input,
+            request: req,
+            user:    pre.user,
+            relation: { parent: child1, parentId: pre.child1Id, relationship: nestedRel },
+            ...(target.rowField   ? { rowField:   target.rowField   } : {}),
+            ...(target.formSchema ? { formSchema: target.formSchema } : {}),
+          }, resolveRecord)
+
+          if (!result.ok) {
+            if (json) {
+              res.status(result.errors ? 422 : 500)
+              return res.json({ ok: false, error: result.error, ...(result.errors ? { errors: result.errors } : {}) })
+            }
+            res.status(500)
+            return res.send(result.error)
+          }
+          const redirect = normalizeRedirect(result.redirect, base) ?? listUrl
+          if (json) {
+            return res.json({
+              ok: true,
+              redirect,
+              ...(result.notifications ? { notifications: result.notifications } : {}),
+            })
+          }
+          flashNotifications(req, result.notifications)
+          return res.redirect(redirect, 303)
+        })
+
+        // ── Detach — POST ${nestedBase}/:childId2/_detach ──
+        // M2M-only direct row-detach. IDOR-checks the grandchild against
+        // child1.related(nestedRel), then calls accessor.detach. Mirrors
+        // the depth-1 detach route at line 1955.
+        router.post(`${nestedBase}/:childId2/_detach`, async (req, res) => {
+          const json = wantsJson(req)
+          const pre = await requireNestedChain(req, res, json)
+          if (!pre) return
+          const childId2 = req.params['childId2']!
+          const { resolved } = pre
+          const { Related1, child1, M2, Related2, child2Mode } = resolved
+
+          if (child2Mode !== 'belongsToMany' && child2Mode !== 'morphToMany' && child2Mode !== 'morphedByMany') {
+            res.status(404)
+            const msg = 'Detach is only supported on M2M relations (belongsToMany, morphToMany, morphedByMany)'
+            return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+          }
+
+          // IDOR: confirm child2 is currently attached to child1 under
+          // nestedRel. Read-side accessor (`child1.related(nestedRel)`)
+          // returns a deferred QueryBuilder; we never bypass it.
+          const readSide = (child1 as { related?: (n: string) => { where?: (...a: unknown[]) => unknown; paginate?: (p: number, pp: number) => Promise<{ data: unknown[] }> } })
+            ?.related?.(nestedRel)
+          if (!readSide) {
+            res.status(500)
+            const msg = `child1.related("${nestedRel}") missing — wrong relation type or ORM version?`
+            return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+          }
+          let child2: unknown = undefined
+          try {
+            if (typeof readSide.paginate === 'function') {
+              const pk = Related2?.model ? getPrimaryKey(Related2.model) : 'id'
+              const out = await (readSide as unknown as { where: (col: string, op: string, val: unknown) => { paginate: (p: number, pp: number) => Promise<{ data: unknown[] }> } }).where(pk, '=', childId2).paginate(1, 1)
+              child2 = Array.isArray(out.data) ? out.data[0] : undefined
+            }
+          } catch { /* fall through */ }
+          if (child2 === undefined) { res.status(404); return res.send('Not found') }
+
+          if (!await safeManagerPolicy(M2, 'canDetach', Related2, pre.user, child1, child2)) return forbidden(res, json)
+
+          // Real ORM: child1[nestedRel]() returns the pivot accessor
+          // with attach/detach/sync. Test stubs may collapse onto
+          // `child1.related(nestedRel)` — try both.
+          let writeAccessor: { detach?: (ids: unknown) => Promise<unknown> } | undefined
+          const inst = (child1 as Record<string, unknown>)[nestedRel]
+          if (typeof inst === 'function') {
+            try {
+              const out = (inst as () => unknown).call(child1) as { detach?: (ids: unknown) => Promise<unknown> } | undefined
+              if (out && typeof out.detach === 'function') writeAccessor = out
+            } catch { /* fall through */ }
+          }
+          if (!writeAccessor && typeof (readSide as { detach?: unknown }).detach === 'function') {
+            writeAccessor = readSide as { detach: (ids: unknown) => Promise<unknown> }
+          }
+          if (!writeAccessor) {
+            res.status(500)
+            const msg = `Pivot accessor missing on ${nestedRel} — wrong relation type or ORM version?`
+            return json ? res.json({ ok: false, error: msg }) : res.send(msg)
+          }
+
+          try {
+            await writeAccessor.detach!([childId2])
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Detach failed'
+            res.status(500)
+            return json ? res.json({ ok: false, error: message }) : res.send(message)
+          }
+
+          const listUrl = nestedListUrlFor(pre.parentId, pre.child1Id)
+          if (json) {
+            const notifications = [
+              { id: `n-nrdetach-${childId2}-${Date.now()}`, type: 'success', title: `${M2.getLabelSingular()} detached` },
+            ]
+            return res.json({ ok: true, redirect: listUrl, notifications })
+          }
+          return res.redirect(listUrl, 303)
+        })
+
+        // ── Soft-delete: restore + force-delete ───────────────────────
+        // Opt in only when Related2 has `softDeletes = true` AND its
+        // model carries `restore` / `forceDelete`. Mirrors the depth-1
+        // routes at line 1804+. IDOR runs against child1.related(nestedRel)
+        // broadened with `withTrashed()` so trashed grandchildren resolve.
+        const Related1ForSoft = findRelatedResource(M, R, cfg)
+        const Related2ForSoft = Related1ForSoft ? findRelatedResource(N, Related1ForSoft, cfg) : undefined
+        if (Related2ForSoft?.softDeletes) {
+          const RM2 = Related2ForSoft.model
+          if (!RM2) {
+            throw new Error(
+              `[Pilotiq] Nested RelationManager ${N.name} on ${M.name} (${R.name}): related Resource ${Related2ForSoft.name} has softDeletes = true but no model. ` +
+              `Wire one up or unset softDeletes.`,
+            )
+          }
+          if (typeof RM2.restore !== 'function' || typeof RM2.forceDelete !== 'function') {
+            throw new Error(
+              `[Pilotiq] Nested RelationManager ${N.name} on ${M.name} (${R.name}): related Resource ${Related2ForSoft.name} has softDeletes = true but model.restore / model.forceDelete are missing. ` +
+              `Set Model.softDeletes = true on the rudder side, or upgrade @rudderjs/orm.`,
+            )
+          }
+
+          // Like the depth-1 helper: load the grandchild via the parent's
+          // relation query, broadened with `withTrashed()`. Returns
+          // undefined when the lookup misses or the grandchild doesn't
+          // belong to child1 under nestedRel.
+          const loadTrashableGrandchild = async (parentChild: unknown, child2Id: string): Promise<unknown> => {
+            const pk = (RM2.primaryKey ?? 'id') as string
+            try {
+              const q: import('./orm/modelDefaults.js').ModelQuery = (parentChild as { related: (n: string) => import('./orm/modelDefaults.js').ModelQuery }).related(nestedRel)
+              const broadened = typeof q.withTrashed === 'function' ? q.withTrashed() : q
+              const result = await broadened.where(pk, '=', child2Id).paginate(1, 1)
+              return Array.isArray(result.data) ? result.data[0] : undefined
+            } catch {
+              return undefined
+            }
+          }
+
+          // Restore — POST ${nestedBase}/:childId2/restore
+          router.post(`${nestedBase}/:childId2/restore`, async (req, res) => {
+            const json = wantsJson(req)
+            const pre = await requireNestedChain(req, res, json)
+            if (!pre) return
+            const childId2 = req.params['childId2']!
+            const child2 = await loadTrashableGrandchild(pre.resolved.child1, childId2)
+            if (!child2) { res.status(404); return res.send('Not found') }
+
+            if (!await safeManagerPolicy(N, 'canRestore', Related2ForSoft, pre.user, pre.resolved.child1, child2)) return forbidden(res, json)
+
+            const listUrl = nestedListUrlFor(pre.parentId, pre.child1Id)
+            try {
+              await RM2.restore!(childId2)
+            } catch (err) {
+              const message = err instanceof Error ? err.message : 'Restore failed'
+              res.status(500)
+              return json ? res.json({ ok: false, error: message }) : res.send(message)
+            }
+
+            if (json) {
+              const notifications = [
+                { id: `n-nrrestore-${childId2}-${Date.now()}`, type: 'success', title: `${N.getLabelSingular()} restored` },
+              ]
+              return res.json({ ok: true, redirect: listUrl, notifications })
+            }
+            return res.redirect(listUrl, 303)
+          })
+
+          // Force-delete — POST ${nestedBase}/:childId2/force-delete
+          router.post(`${nestedBase}/:childId2/force-delete`, async (req, res) => {
+            const json = wantsJson(req)
+            const pre = await requireNestedChain(req, res, json)
+            if (!pre) return
+            const childId2 = req.params['childId2']!
+            const child2 = await loadTrashableGrandchild(pre.resolved.child1, childId2)
+            if (!child2) { res.status(404); return res.send('Not found') }
+
+            if (!await safeManagerPolicy(N, 'canForceDelete', Related2ForSoft, pre.user, pre.resolved.child1, child2)) return forbidden(res, json)
+
+            const listUrl = nestedListUrlFor(pre.parentId, pre.child1Id)
+            try {
+              await RM2.forceDelete!(childId2)
+            } catch (err) {
+              const message = err instanceof Error ? err.message : 'Force-delete failed'
+              res.status(500)
+              return json ? res.json({ ok: false, error: message }) : res.send(message)
+            }
+
+            if (json) {
+              const notifications = [
+                { id: `n-nrforce-${childId2}-${Date.now()}`, type: 'success', title: `${N.getLabelSingular()} permanently deleted` },
+              ]
+              return res.json({ ok: true, redirect: listUrl, notifications })
+            }
+            return res.redirect(listUrl, 303)
+          })
+        }
       }
     }
   }

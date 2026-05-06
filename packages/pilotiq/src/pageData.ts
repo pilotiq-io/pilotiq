@@ -1990,7 +1990,7 @@ type NestedRelationScope = Extract<RelationManagerScope, { kind: `nested-relatio
  * up as the same `{ ok: false, status: 403 }` / `null` shape the
  * depth-1 path uses.
  */
-interface ResolvedChain {
+export interface ResolvedChain {
   R:                ResourceClass
   parentRecord:     unknown
   M1:               typeof RelationManager
@@ -2016,7 +2016,7 @@ interface ResolvedChain {
  * canView / canEdit) runs inside the per-scope builders below, since
  * each predicate has different arguments.
  */
-async function resolveRelationChain(
+export async function resolveRelationChain(
   pilotiq: Pilotiq,
   scope:   NestedRelationScope,
   user:    unknown,

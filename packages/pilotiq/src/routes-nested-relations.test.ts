@@ -402,3 +402,275 @@ describe('nested relation routes — mutations (Phase B)', () => {
     assert.ok(!replyRows.some(r => r['id'] === 'r1'))
   })
 })
+
+// ── Phase B follow-up: nested action / detach / soft-delete ─────────
+
+import { Action } from './actions/Action.js'
+
+describe('nested relation routes — _action + _detach registration', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  it('mounts action + detach routes per (R, M, N) tuple unconditionally', () => {
+    const { panel } = buildNestedWorld()
+    registerPilotiqRoutes(router, panel)
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.ok(
+      paths.includes('POST /admin/posts/:id/comments/:childId/replies/_action/:actionName'),
+      'nested _action route should mount even on hasMany managers',
+    )
+    assert.ok(
+      paths.includes('POST /admin/posts/:id/comments/:childId/replies/:childId2/_detach'),
+      'nested _detach route should mount unconditionally',
+    )
+  })
+
+  it('does NOT mount restore / force-delete on a non-soft-delete world', () => {
+    const { panel } = buildNestedWorld()
+    registerPilotiqRoutes(router, panel)
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.ok(!paths.includes('POST /admin/posts/:id/comments/:childId/replies/:childId2/restore'))
+    assert.ok(!paths.includes('POST /admin/posts/:id/comments/:childId/replies/:childId2/force-delete'))
+  })
+})
+
+describe('nested relation routes — _action behavior', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  it('dispatches a nested handler-style action with ctx.relation stamped', async () => {
+    const { panel } = buildNestedWorld()
+    // Splice a handler action into N's table so we have something to fire.
+    const M = panel.getConfig().resources[0]!.relations()[0]!
+    const N = M.relations()[0]!
+    let dispatched: Partial<{ parentId: string; relationship: string }> = {}
+    const originalTable = N.table.bind(N)
+    ;(N as unknown as { table: typeof N.table }).table = (t, ctx) => {
+      const out = originalTable(t, ctx) as Table
+      out.actions([
+        Action.make('ping')
+          .label('Ping')
+          .handler(async (input) => {
+            const rel = (input as { relation?: { parentId: string; relationship: string } }).relation
+            if (rel) dispatched = { parentId: rel.parentId, relationship: rel.relationship }
+          }),
+      ])
+      return out
+    }
+
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r =>
+      r.path === '/admin/posts/:id/comments/:childId/replies/_action/:actionName'
+      && r.method === 'POST'
+    )!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'po1', childId: 'c1', actionName: 'ping' } }),
+    )
+    assert.equal(res.redirectedTo?.code, 303)
+    assert.equal(dispatched.parentId,     'c1')        // immediate parent of N
+    assert.equal(dispatched.relationship, 'replies')   // nested rel key
+  })
+
+  it('404s when the action name is unknown', async () => {
+    const { panel } = buildNestedWorld()
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r =>
+      r.path === '/admin/posts/:id/comments/:childId/replies/_action/:actionName'
+      && r.method === 'POST'
+    )!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'po1', childId: 'c1', actionName: 'nope' } }),
+    )
+    assert.equal(res.statusCode, 404)
+  })
+})
+
+describe('nested relation routes — _detach behavior', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  it('404s on non-M2M nested managers (hasMany)', async () => {
+    const { panel } = buildNestedWorld()
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r =>
+      r.path === '/admin/posts/:id/comments/:childId/replies/:childId2/_detach'
+      && r.method === 'POST'
+    )!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'po1', childId: 'c1', childId2: 'r1' } }),
+    )
+    assert.equal(res.statusCode, 404)
+    assert.match(String(res.sentBody), /belongsToMany/)
+  })
+})
+
+// ── Soft-delete world: Comment → Replies, Reply has softDeletes ─────
+
+function buildNestedSoftDeleteWorld() {
+  const replyRows: Array<Row & { deletedAt?: string | null }> = [
+    { id: 'r1', commentId: 'c1', body: 'reply A', deletedAt: null },
+    { id: 'r2', commentId: 'c1', body: 'reply B (trashed)', deletedAt: '2026-01-01' },
+  ]
+  let restored: string | null = null
+  let forced:   string | null = null
+  const ReplyModel: ModelLike & { softDeletes?: boolean } = {
+    softDeletes: true,
+    async find(id) { return replyRows.find(r => String(r['id']) === String(id)) ?? null },
+    async create() { throw new Error('not used') },
+    async update() { throw new Error('not used') },
+    async delete() { /* no-op */ },
+    async restore(id: string) { restored = id; const r = replyRows.find(r => String(r['id']) === id); if (r) r.deletedAt = null },
+    async forceDelete(id: string) { forced = id; const i = replyRows.findIndex(r => String(r['id']) === id); if (i >= 0) replyRows.splice(i, 1) },
+    query() { return new StubQuery(replyRows) },
+  }
+
+  const commentRows: Row[] = [{ id: 'c1', postId: 'po1', body: 'comment one' }]
+  function commentRecord(id: string) {
+    const row = commentRows.find(r => String(r['id']) === id)
+    if (!row) return undefined
+    return {
+      ...row,
+      related(name: string): ModelQuery & { withTrashed?: () => ModelQuery } {
+        if (name !== 'replies') return new StubQuery([]) as ModelQuery
+        // Default scope hides trashed; withTrashed includes them.
+        const visible = replyRows.filter(r => r.deletedAt == null)
+        const all     = replyRows.slice()
+        const q = new StubQuery(visible) as ModelQuery & { withTrashed?: () => ModelQuery }
+        q.withTrashed = () => new StubQuery(all) as ModelQuery
+        return q
+      },
+    }
+  }
+  const CommentModel: ModelLike = {
+    async find(id) { return commentRecord(String(id)) ?? null },
+    async create() { throw new Error('not used') },
+    async update() { throw new Error('not used') },
+    async delete() { /* no-op */ },
+    query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
+  }
+  Object.assign(CommentModel as object, {
+    relations: { replies: { model: () => ReplyModel, foreignKey: 'commentId' } },
+  })
+
+  const postRows: Row[] = [{ id: 'po1', title: 'Post one' }]
+  function postRecord(id: string) {
+    const row = postRows.find(r => String(r['id']) === id)
+    if (!row) return undefined
+    return {
+      ...row,
+      related(name: string): ModelQuery {
+        if (name !== 'comments') return new StubQuery([])
+        return new StubQuery(commentRows.filter(r => r['postId'] === id).map(r => commentRecord(String(r['id'])) as Row))
+      },
+    }
+  }
+  const PostModel: ModelLike = {
+    async find(id) { return postRecord(String(id)) ?? null },
+    async create() { throw new Error('not used') },
+    async update() { throw new Error('not used') },
+    async delete() { /* no-op */ },
+    query(): ModelQuery { return findAdapter((this as ModelLike).find as (id: string) => Promise<unknown>) },
+  }
+  Object.assign(PostModel as object, {
+    relations: { comments: { model: () => CommentModel, foreignKey: 'postId' } },
+  })
+
+  class ReplyResource extends Resource {
+    static override label = 'Replies'
+    static override labelSingular = 'Reply'
+    static override slug  = 'replies'
+    static override softDeletes = true
+    static override get model() { return ReplyModel }
+    static override form(form: Form): Form { return form.schema([TextField.make('body').required()]) }
+  }
+  class CommentResource extends Resource {
+    static override slug = 'comments'
+    static override get model() { return CommentModel }
+  }
+  class CommentRepliesManager extends RelationManager {
+    static override relationship = 'replies'
+    static override label        = 'Replies'
+    static override table(t: Table): Table { return t.columns([Column.make('body')]) }
+    static override form(f: Form): Form  { return f.schema([TextField.make('body').required()]) }
+  }
+  class PostsCommentsManager extends RelationManager {
+    static override relationship = 'comments'
+    static override label        = 'Comments'
+    static override table(t: Table): Table { return t.columns([Column.make('body')]) }
+    static override form(f: Form): Form  { return f.schema([TextField.make('body').required()]) }
+    static override relations()            { return [CommentRepliesManager] }
+  }
+  class PostResource extends Resource {
+    static override label = 'Posts'
+    static override slug  = 'posts'
+    static override get model() { return PostModel }
+    static override relations()            { return [PostsCommentsManager] }
+  }
+
+  const panel = Pilotiq.make('NRSD-' + Math.random().toString(36).slice(2)).path('/admin')
+    .resources([PostResource, CommentResource, ReplyResource])
+
+  return { panel, restore: () => restored, force: () => forced, replyRows }
+}
+
+describe('nested relation routes — soft-delete (restore + force-delete)', () => {
+  let router: Router
+  beforeEach(() => { router = new Router() })
+
+  it('mounts restore + force-delete routes when Related2 has softDeletes', () => {
+    const { panel } = buildNestedSoftDeleteWorld()
+    registerPilotiqRoutes(router, panel)
+    const paths = router.list().map(r => `${r.method} ${r.path}`)
+    assert.ok(paths.includes('POST /admin/posts/:id/comments/:childId/replies/:childId2/restore'))
+    assert.ok(paths.includes('POST /admin/posts/:id/comments/:childId/replies/:childId2/force-delete'))
+  })
+
+  it('restore POST calls model.restore on a trashed grandchild', async () => {
+    const world = buildNestedSoftDeleteWorld()
+    registerPilotiqRoutes(router, world.panel)
+    const route = router.list().find(r =>
+      r.path === '/admin/posts/:id/comments/:childId/replies/:childId2/restore'
+      && r.method === 'POST'
+    )!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'po1', childId: 'c1', childId2: 'r2' } }),
+    )
+    assert.equal(res.redirectedTo?.code, 303)
+    assert.equal(world.restore(), 'r2')
+  })
+
+  it('force-delete POST removes the grandchild permanently', async () => {
+    const world = buildNestedSoftDeleteWorld()
+    registerPilotiqRoutes(router, world.panel)
+    const route = router.list().find(r =>
+      r.path === '/admin/posts/:id/comments/:childId/replies/:childId2/force-delete'
+      && r.method === 'POST'
+    )!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'po1', childId: 'c1', childId2: 'r2' } }),
+    )
+    assert.equal(res.redirectedTo?.code, 303)
+    assert.equal(world.force(), 'r2')
+    assert.ok(!world.replyRows.some(r => r['id'] === 'r2'))
+  })
+
+  it('restore 404s when the grandchild does not belong to the chain[1] parent', async () => {
+    const world = buildNestedSoftDeleteWorld()
+    registerPilotiqRoutes(router, world.panel)
+    const route = router.list().find(r =>
+      r.path === '/admin/posts/:id/comments/:childId/replies/:childId2/restore'
+      && r.method === 'POST'
+    )!
+    const { res } = await callHandler(
+      route.handler,
+      fakeReq({ params: { id: 'po1', childId: 'c1', childId2: 'nope' } }),
+    )
+    assert.equal(res.statusCode, 404)
+    assert.equal(world.restore(), null)
+  })
+})

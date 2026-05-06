@@ -478,8 +478,11 @@ export async function safeManagerPolicy(
 
   try {
     if (isManagerCanOverridden(M, method) || managerOnly) {
+      // Call via M[method] (not an extracted reference) so predicates
+      // that read `this` — e.g. Resource.canForceDelete delegating to
+      // `this.canDelete` — see the right class.
       const fn = (M as unknown as Record<ManagerCanMethod, (...args: unknown[]) => unknown>)[method]
-      const result = isRecordScoped ? fn(user, child, parent) : fn(user, parent)
+      const result = isRecordScoped ? fn.call(M, user, child, parent) : fn.call(M, user, parent)
       return Boolean(await (result as boolean | Promise<boolean>))
     }
     // Plan #13 polish — `canForceDelete` defaults to delegating to
@@ -497,12 +500,13 @@ export async function safeManagerPolicy(
         // Same delegation on the Related side: missing canForceDelete
         // falls back to canDelete.
         if (method === 'canForceDelete' && Related.canDelete) {
-          const result = Related.canDelete(user, child)
+          const result = (Related.canDelete as (...a: unknown[]) => unknown).call(Related, user, child)
           return Boolean(await (result as boolean | Promise<boolean>))
         }
         return true
       }
-      const result = isRecordScoped ? fn(user, child) : fn(user)
+      // Same `this`-preservation rationale as the manager branch above.
+      const result = isRecordScoped ? fn.call(Related, user, child) : fn.call(Related, user)
       return Boolean(await (result as boolean | Promise<boolean>))
     }
     return true
