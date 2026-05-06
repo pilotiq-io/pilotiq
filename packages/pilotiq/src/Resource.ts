@@ -48,6 +48,12 @@ export abstract class Resource {
   /** Singular label, e.g. `'Article'`. */
   static labelSingular: string = 'Resource'
 
+  /** Breadcrumb label override. Falls through to `label`. Use this when
+   *  the breadcrumb chain reads better with a different word than the
+   *  sidebar / page-title plural — e.g. `label = 'Blog Posts'` paired
+   *  with `breadcrumb = 'Posts'` for a tighter chain. */
+  static breadcrumb: string | undefined = undefined
+
   /** URL slug. Derived from `label` when unset. */
   static slug: string = ''
 
@@ -416,6 +422,11 @@ export abstract class Resource {
   /** Sidebar label: `navigationLabel` override falls through to `label`. */
   static getNavigationLabel(): string {
     return this.navigationLabel ?? this.label
+  }
+
+  /** Breadcrumb label: `breadcrumb` override falls through to `label`. */
+  static getBreadcrumb(): string {
+    return this.breadcrumb ?? this.label
   }
 
   /** Sidebar icon: `navigationIcon` override falls through to `icon`. */

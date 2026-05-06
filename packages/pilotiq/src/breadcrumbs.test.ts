@@ -52,6 +52,25 @@ describe('Phase C breadcrumbs — resource pages', () => {
     ])
   })
 
+  it('Resource.breadcrumb overrides label in the resource crumb', async () => {
+    class BlogPosts extends Resource {
+      static override label         = 'Blog Posts'
+      static override labelSingular = 'Blog Post'
+      static override slug          = 'blog-posts'
+      // Tighter chain — the breadcrumb reads better as just "Posts".
+      static override breadcrumb    = 'Posts'
+      static override form(form: Form): Form { return form.schema([TextField.make('title')]) }
+    }
+    const panel = Pilotiq.make('My Panel').path('/admin').resources([BlogPosts])
+    const data = await resourceCreateData(panel, 'blog-posts')
+    const items = findBreadcrumbs(data!['schemaData'] as Array<Record<string, unknown>>)
+    assert.deepEqual(items, [
+      { label: 'My Panel', url: '/admin' },
+      { label: 'Posts', url: '/admin/blog-posts' },
+      { label: 'Create' },
+    ])
+  })
+
   it('create page appends a "Create" trailing item', async () => {
     const panel = Pilotiq.make('My Panel').path('/admin').resources([Articles])
     const data = await resourceCreateData(panel, 'articles')

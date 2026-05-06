@@ -2659,7 +2659,7 @@ function resourceListBreadcrumbs(cfg: PilotiqConfig, R: ResourceClass): Breadcru
   const items: BreadcrumbItem[] = [homeBreadcrumb(cfg)]
   const cluster = clusterBreadcrumb(cfg, R)
   if (cluster) items.push(cluster)
-  items.push({ label: R.label })
+  items.push({ label: R.getBreadcrumb() })
   return buildBreadcrumbs(items)
 }
 
@@ -2667,7 +2667,7 @@ function resourceCreateBreadcrumbs(cfg: PilotiqConfig, R: ResourceClass): Breadc
   const items: BreadcrumbItem[] = [homeBreadcrumb(cfg)]
   const cluster = clusterBreadcrumb(cfg, R)
   if (cluster) items.push(cluster)
-  items.push({ label: R.label, url: resourceBasePath(cfg.path, R) })
+  items.push({ label: R.getBreadcrumb(), url: resourceBasePath(cfg.path, R) })
   items.push({ label: 'Create' })
   return buildBreadcrumbs(items)
 }
@@ -2676,7 +2676,7 @@ function resourceViewBreadcrumbs(cfg: PilotiqConfig, R: ResourceClass, recordTit
   const items: BreadcrumbItem[] = [homeBreadcrumb(cfg)]
   const cluster = clusterBreadcrumb(cfg, R)
   if (cluster) items.push(cluster)
-  items.push({ label: R.label, url: resourceBasePath(cfg.path, R) })
+  items.push({ label: R.getBreadcrumb(), url: resourceBasePath(cfg.path, R) })
   items.push({ label: recordTitle })
   return buildBreadcrumbs(items)
 }
@@ -2691,7 +2691,7 @@ function resourceEditBreadcrumbs(
   const cluster = clusterBreadcrumb(cfg, R)
   if (cluster) items.push(cluster)
   const resourceBase = resourceBasePath(cfg.path, R)
-  items.push({ label: R.label, url: resourceBase })
+  items.push({ label: R.getBreadcrumb(), url: resourceBase })
   // Link the record title to the View page when registered — falls
   // back to plain text so users who pruned ViewPage don't hit a 404.
   const hasView = R.resolvePages().view !== undefined
@@ -2735,7 +2735,7 @@ function relationBreadcrumbPrefix(
   const cluster = clusterBreadcrumb(cfg, R)
   if (cluster) items.push(cluster)
   const resourceBase = resourceBasePath(cfg.path, R)
-  items.push({ label: R.label, url: resourceBase })
+  items.push({ label: R.getBreadcrumb(), url: resourceBase })
   const hasView = R.resolvePages().view !== undefined
   items.push(hasView
     ? { label: parentTitle, url: `${resourceBase}/${parentId}` }
