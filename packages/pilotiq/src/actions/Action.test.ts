@@ -2289,3 +2289,38 @@ describe('Action.relationReplicate / relationBulkReplicate', () => {
     })
   })
 })
+
+describe('Action.markAsRead factory', () => {
+  it('builds a method-POST action targeting the read endpoint', () => {
+    const meta = Action.markAsRead('/admin', 'n-7').toMeta()
+    assert.equal(meta.method, 'post')
+    assert.equal(meta.action, '/admin/_notifications/n-7/read')
+    assert.equal(meta.label,  'Mark as read')
+    assert.equal(meta.name,   'markAsRead')
+  })
+
+  it('defaults the id to :id template for row context', () => {
+    const meta = Action.markAsRead('/admin').toMeta()
+    assert.equal(meta.action, '/admin/_notifications/:id/read')
+  })
+
+  it('honors a non-default base path', () => {
+    const meta = Action.markAsRead('/dashboard', 'abc').toMeta()
+    assert.equal(meta.action, '/dashboard/_notifications/abc/read')
+  })
+
+  it('has no built-in visibility — always shows by default', async () => {
+    const a = Action.markAsRead('/admin', 'n-7')
+    const r = await a.evaluate({ record: { id: 'n-7' } })
+    assert.equal(r.visible, true)
+  })
+
+  it('composes with .visible(...) to hide already-read rows', async () => {
+    const a = Action.markAsRead('/admin', ':id')
+      .visible(({ record }) => !(record as { readAt?: string | null })?.readAt)
+    const unread = await a.evaluate({ record: { id: 'n-7', readAt: null } })
+    const read   = await a.evaluate({ record: { id: 'n-8', readAt: '2026-05-07T12:00:00Z' } })
+    assert.equal(unread.visible, true)
+    assert.equal(read.visible,   false)
+  })
+})

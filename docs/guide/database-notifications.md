@@ -177,6 +177,29 @@ and ignores the rest.
 Every route 401s when no user resolves. Mark-read routes scope by
 `notifiable_id` so a tampered POST can't mark another user's row.
 
+### `Action.markAsRead()` factory
+
+For custom inbox pages or any UI that surfaces persistent
+notifications outside the bell, `Action.markAsRead(basePath, id?)`
+produces a method-POST action that targets the read endpoint
+directly:
+
+```ts
+import { Action } from '@pilotiq/pilotiq'
+
+table.recordActions([
+  Action.markAsRead('/admin')                              // row context — :id template
+    .visible(({ record }) => !record.readAt),              // hide on already-read rows
+  Action.markAsRead('/admin', 'n-7'),                      // single-record context — id baked in
+])
+```
+
+No auto-visibility ships with the factory — wrap in `.visible(({
+record }) => …)` if the surrounding context should hide already-read
+rows. The Filament-style chain modifier (`Action::make('view')->markAsRead()`,
+which adds an implicit mark-read side-effect to a custom action) is
+deferred until a consumer asks.
+
 ---
 
 ## Polling

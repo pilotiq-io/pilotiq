@@ -814,6 +814,42 @@ export class Action extends Element {
       })
   }
 
+  // ─── Notification factories ───────────────────────────────────
+  //
+  // Pre-configured Action shapes that target the bell-table read /
+  // unread endpoints mounted by `Pilotiq.databaseNotifications()`. Use
+  // inside a custom notification inbox page's `recordActions(...)` (or
+  // alongside a `Notification.actions([…])` slot when one ships) to
+  // give end-users explicit "Mark as read" / "Mark as unread" buttons.
+  //
+  // Filament-style chain modifier `Action::make('view')->markAsRead()`
+  // is a separate concern — it'd add an implicit mark-read side-effect
+  // to a custom action. v1 ships only the explicit factory; the chain
+  // modifier is deferred until a consumer asks.
+
+  /**
+   * Mark-as-read factory — POSTs to the panel's notification read
+   * endpoint for the given notification id. The endpoint
+   * (`${base}/_notifications/:id/read`) is mounted by
+   * `Pilotiq.databaseNotifications()`, so calling this without
+   * opting into the bell surface produces an Action whose POST 404s.
+   *
+   * `notificationId` is baked at config time. For row context where
+   * the id varies per row, omit it and the URL keeps the `:id`
+   * template; the renderer substitutes per-row at render time
+   * (parallel to `Action.edit`'s row form).
+   *
+   * No auto-visibility. Wrap in `.visible(({ record }) => !record.readAt)`
+   * to hide on already-read rows.
+   */
+  static markAsRead(basePath: string, notificationId?: string): Action {
+    const id = notificationId ?? ':id'
+    return Action.make('markAsRead')
+      .label('Mark as read')
+      .method('post')
+      .action(`${basePath}/_notifications/${id}/read`)
+  }
+
   // ─── Bulk factories (Plan #13) ────────────────────────────────
   //
   // Handler-style bulk actions that iterate `ctx.records`, run policy
