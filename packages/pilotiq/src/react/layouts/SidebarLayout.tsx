@@ -23,6 +23,7 @@ import { Separator } from '../ui/separator.js'
 import { ThemeToggle } from '../ThemeToggle.js'
 import { SearchTrigger } from '../SearchTrigger.js'
 import { UserMenu } from '../UserMenu.js'
+import { RenderHookSlot } from '../RenderHookSlot.js'
 import type { AppShellProps } from '../AppShell.js'
 import { useIconFor } from '../icon-context.js'
 import type { SerializedIcon } from '../../icons/types.js'
@@ -140,11 +141,13 @@ function NavTree({
 export function SidebarLayout({ panel, basePath, currentPath, children }: AppShellProps) {
   const title = panel.branding?.title ?? panel.name
   const groups = groupItems(panel.navigation ?? [])
+  const hooks = panel.renderHooks
 
   return (
     <SidebarProvider>
       <Sidebar variant="inset" collapsible="icon">
         <SidebarHeader>
+          <RenderHookSlot name="panels::sidebar.start" hooks={hooks} />
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" render={<a href={basePath} />} tooltip={title}>
@@ -163,6 +166,7 @@ export function SidebarLayout({ panel, basePath, currentPath, children }: AppShe
         </SidebarHeader>
 
         <SidebarContent>
+          <RenderHookSlot name="panels::sidebar.nav.start" hooks={hooks} />
           {groups.map((g, idx) => (
             <SidebarGroup key={g.group ?? `__top__${idx}`}>
               {g.group !== undefined && <SidebarGroupLabel>{g.group}</SidebarGroupLabel>}
@@ -171,9 +175,11 @@ export function SidebarLayout({ panel, basePath, currentPath, children }: AppShe
               </SidebarGroupContent>
             </SidebarGroup>
           ))}
+          <RenderHookSlot name="panels::sidebar.nav.end" hooks={hooks} />
         </SidebarContent>
 
         <SidebarFooter>
+          <RenderHookSlot name="panels::sidebar.footer" hooks={hooks} />
           {panel.themeEditor && (
             <SidebarMenu>
               <SidebarMenuItem>
@@ -193,15 +199,22 @@ export function SidebarLayout({ panel, basePath, currentPath, children }: AppShe
           <div className="flex flex-1 items-center gap-2 px-3">
             <SidebarTrigger />
             <Separator orientation="vertical" className="me-2 data-[orientation=vertical]:h-4" />
+            <RenderHookSlot name="panels::topbar.start" hooks={hooks} />
             <SearchTrigger />
           </div>
           <div className="flex items-center gap-1 px-3">
             <ThemeToggle />
-            <UserMenu userMenu={panel.userMenu} />
+            <UserMenu
+              userMenu={panel.userMenu}
+              before={<RenderHookSlot name="panels::user-menu.before" hooks={hooks} />}
+              after={<RenderHookSlot name="panels::user-menu.after"  hooks={hooks} />}
+            />
+            <RenderHookSlot name="panels::topbar.end" hooks={hooks} />
           </div>
         </header>
         <div className="flex flex-1 flex-col px-4 pb-4">
           {children}
+          <RenderHookSlot name="panels::footer" hooks={hooks} />
         </div>
       </SidebarInset>
     </SidebarProvider>

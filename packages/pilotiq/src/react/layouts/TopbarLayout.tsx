@@ -3,6 +3,7 @@ import { Separator } from '../ui/separator.js'
 import { ThemeToggle } from '../ThemeToggle.js'
 import { SearchTrigger } from '../SearchTrigger.js'
 import { UserMenu } from '../UserMenu.js'
+import { RenderHookSlot } from '../RenderHookSlot.js'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -166,6 +167,7 @@ function groupItems(items: NavItem[]): Array<{ group: string | undefined; items:
 export function TopbarLayout({ panel, basePath, currentPath, children }: AppShellProps) {
   const title = panel.branding?.title ?? panel.name
   const groups = groupItems(panel.navigation ?? [])
+  const hooks = panel.renderHooks
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
@@ -180,6 +182,7 @@ export function TopbarLayout({ panel, basePath, currentPath, children }: AppShel
           }
         </div>
         <Separator orientation="vertical" className="h-4" />
+        <RenderHookSlot name="panels::topbar.start" hooks={hooks} />
         <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
           <a
             href={basePath}
@@ -216,11 +219,17 @@ export function TopbarLayout({ panel, basePath, currentPath, children }: AppShel
         </nav>
         <SearchTrigger />
         <ThemeToggle />
-        <UserMenu userMenu={panel.userMenu} />
+        <UserMenu
+          userMenu={panel.userMenu}
+          before={<RenderHookSlot name="panels::user-menu.before" hooks={hooks} />}
+          after={<RenderHookSlot name="panels::user-menu.after"  hooks={hooks} />}
+        />
+        <RenderHookSlot name="panels::topbar.end" hooks={hooks} />
       </header>
       <div className="flex flex-1 overflow-hidden">
         <main className="flex-1 overflow-y-auto p-6">
           {children}
+          <RenderHookSlot name="panels::footer" hooks={hooks} />
         </main>
       </div>
     </div>

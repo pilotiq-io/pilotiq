@@ -13,6 +13,17 @@ export {
   type UserMenuItemColor,
   type UserMenuItemValue,
 } from './UserMenuItem.js'
+export {
+  resolveRenderHooks,
+  CHROME_HOOK_NAMES,
+  PAGE_HOOK_NAMES,
+  type RenderHookName,
+  type RenderHookContext,
+  type RenderHookFn,
+  type RenderHookScope,
+  type RenderHookEntry,
+  type RenderHookMap,
+} from './RenderHook.js'
 export { PilotiqRegistry } from './PilotiqRegistry.js'
 export { pilotiq } from './PilotiqServiceProvider.js'
 export { registerPilotiqRoutes } from './routes.js'
@@ -23,10 +34,11 @@ export {
 } from './search.js'
 
 // Per-page-role data builders (consumed by Vike +data hooks for SPA nav).
-export type { NavItem, UserMenuMeta } from './pageData.js'
+export type { NavItem, UserMenuMeta, PanelInfoRoute } from './pageData.js'
 export {
   dispatchPageData,
   panelInfo,
+  resolvePageHooks,
   dashboardData,
   resourceIndexData,
   resourceCreateData,

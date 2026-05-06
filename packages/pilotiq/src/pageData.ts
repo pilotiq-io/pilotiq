@@ -48,6 +48,13 @@ import {
 import { RelationTabs, relationTab, type RelationTabMeta } from './schema/RelationTabs.js'
 import { Breadcrumbs, type BreadcrumbItem } from './schema/Breadcrumbs.js'
 import {
+  resolveRenderHooks,
+  CHROME_HOOK_NAMES,
+  type RenderHookContext,
+  type RenderHookMap,
+  type RenderHookName,
+} from './RenderHook.js'
+import {
   modelSave, modelLoadRecord, modelRelationTableRecords, findRecord, getPrimaryKey,
   getRelationType,
   getMorphRelationDescriptor,
@@ -111,14 +118,36 @@ export interface NavItem {
  * check. When `Pilotiq.user(fn)` isn't configured, user is `null` and the
  * default `canAccess` returns true → no items dropped.
  */
-export async function panelInfo(pilotiq: Pilotiq, req?: unknown) {
+/**
+ * Optional route-context for `panelInfo()`. When set, render-hook
+ * `scope: { resource | page | global }` filters fire correctly for the
+ * active route. Missing keys mean the slot has no scope-able identifier
+ * (chrome-only routes); scope-less hooks still fire either way.
+ *
+ * `url` defaults to `cfg.path` when unset. `recordId` rides through to
+ * `RenderHookContext.recordId` for hooks that need it.
+ */
+export interface PanelInfoRoute {
+  resource?: ResourceClass
+  page?:     typeof Page
+  global?:   GlobalClass
+  recordId?: string
+  url?:      string
+}
+
+export async function panelInfo(
+  pilotiq: Pilotiq,
+  req?:    unknown,
+  route:   PanelInfoRoute = {},
+) {
   const cfg = pilotiq.getConfig()
   const merged = pilotiq.getMergedTheme()
   const theme: ThemeMeta | undefined = merged ? resolveTheme(merged) : undefined
   const user = await pilotiq.resolveUser(req)
-  const [navigation, userMenu] = await Promise.all([
+  const [navigation, userMenu, renderHooks] = await Promise.all([
     buildNavigation(pilotiq, user),
     buildUserMenu(pilotiq, user),
+    resolveChromeHooks(pilotiq, user, route),
   ])
   return {
     name: cfg.name,
@@ -127,8 +156,66 @@ export async function panelInfo(pilotiq: Pilotiq, req?: unknown) {
     theme,
     themeEditor: cfg.themeEditor ?? false,
     ...(userMenu ? { userMenu } : {}),
+    ...(Object.keys(renderHooks).length > 0 ? { renderHooks } : {}),
   }
 }
+
+/**
+ * Resolve every chrome render hook (body / topbar / sidebar / user-menu
+ * / footer / head). Returns a sparse map — slots with no matching
+ * registered entries are omitted so the wire payload stays minimal on
+ * panels that don't use render hooks at all.
+ */
+async function resolveChromeHooks(
+  pilotiq: Pilotiq,
+  user:    unknown,
+  route:   PanelInfoRoute,
+): Promise<RenderHookMap> {
+  const cfg = pilotiq.getConfig()
+  const entries = cfg.renderHooks ?? []
+  if (entries.length === 0) return {}
+  const ctx: RenderHookContext = {
+    user,
+    basePath: cfg.path,
+    url:      route.url ?? cfg.path,
+  }
+  if (route.resource !== undefined) ctx.resource = route.resource
+  if (route.page     !== undefined) ctx.page     = route.page
+  if (route.global   !== undefined) ctx.global   = route.global
+  if (route.recordId !== undefined) ctx.recordId = route.recordId
+  return resolveRenderHooks(entries, CHROME_HOOK_NAMES, ctx)
+}
+
+/**
+ * Resolve a subset of page-role render hooks (e.g. `panels::page.start`
+ * + the list-records / create-record / view-record / edit-record /
+ * global-search slot families). Per-page-role data builders call this
+ * after schema resolution and stamp the result on `viewProps.renderHooks`.
+ *
+ * `names` lets each builder declare exactly which slots it serves so a
+ * list-page builder doesn't ship slots that only fire on the edit page.
+ */
+export async function resolvePageHooks(
+  pilotiq: Pilotiq,
+  user:    unknown,
+  names:   readonly RenderHookName[],
+  route:   PanelInfoRoute,
+): Promise<RenderHookMap> {
+  const cfg = pilotiq.getConfig()
+  const entries = cfg.renderHooks ?? []
+  if (entries.length === 0 || names.length === 0) return {}
+  const ctx: RenderHookContext = {
+    user,
+    basePath: cfg.path,
+    url:      route.url ?? cfg.path,
+  }
+  if (route.resource !== undefined) ctx.resource = route.resource
+  if (route.page     !== undefined) ctx.page     = route.page
+  if (route.global   !== undefined) ctx.global   = route.global
+  if (route.recordId !== undefined) ctx.recordId = route.recordId
+  return resolveRenderHooks(entries, names, ctx)
+}
+
 
 /**
  * Build the top-right user-menu meta. Returns `null` when:
@@ -1126,7 +1213,7 @@ export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Re
   const schemaData = await resolveSchema(elements, ctx)
 
   return {
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, cfg.dashboardPage ? { page: cfg.dashboardPage } : {}),
     page:     cfg.dashboardPage ? cfg.dashboardPage.toMeta() : undefined,
     basePath: cfg.path,
     layout:   cfg.layout,
@@ -1178,7 +1265,7 @@ export async function resourceIndexData(
 
   return {
     pageType: 'resource',
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { resource: R, page: PageClass }),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.label, labelSingular: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     basePath: cfg.path,
@@ -1364,7 +1451,7 @@ export async function resourceCreateData(
   const schemaData = await resolveSchema(elements, ctx)
 
   return {
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { resource: R, page: PageClass }),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'create' as const,
@@ -1440,7 +1527,7 @@ export async function resourceEditData(
   )
 
   return {
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { resource: R, page: PageClass, recordId }),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'edit' as const,
@@ -1795,7 +1882,7 @@ async function buildRelationListData(
 
   return {
     pageType: 'relation-list',
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { resource: R, recordId: scope.recordId }),
     resource: { name: R.name, label: R.label, labelSingular: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -1872,7 +1959,7 @@ async function buildRelationCreateData(
 
   return {
     pageType: 'relation-create',
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { resource: R, recordId: scope.recordId }),
     resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -1971,7 +2058,7 @@ async function buildRelationViewData(
 
   return {
     pageType: 'relation-view',
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { resource: R, recordId: scope.childId }),
     resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -2077,7 +2164,7 @@ async function buildRelationEditData(
 
   return {
     pageType: 'relation-edit',
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { resource: R, recordId: scope.childId }),
     resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -2385,7 +2472,7 @@ async function buildNestedRelationListData(
 
   return {
     ...nestedResponseEnvelope('nested-relation-list', pilotiq, base, scope, resolved, req),
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { resource: resolved.R, recordId: scope.chain[1].recordId }),
     schemaData,
   }
 }
@@ -2440,7 +2527,7 @@ async function buildNestedRelationCreateData(
 
   return {
     ...nestedResponseEnvelope('nested-relation-create', pilotiq, base, scope, resolved, req),
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { resource: resolved.R, recordId: scope.chain[1].recordId }),
     mode:     'create' as const,
     schemaData,
     ...(scope.prefill?.errors ? { hasErrors: true } : {}),
@@ -2502,7 +2589,7 @@ async function buildNestedRelationViewData(
 
   return {
     ...nestedResponseEnvelope('nested-relation-view', pilotiq, base, scope, resolved, req),
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { resource: resolved.R, recordId: scope.childId }),
     mode:     'view' as const,
     childId:  scope.childId,
     schemaData,
@@ -2580,7 +2667,7 @@ async function buildNestedRelationEditData(
 
   return {
     ...nestedResponseEnvelope('nested-relation-edit', pilotiq, base, scope, resolved, req),
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { resource: resolved.R, recordId: scope.childId }),
     mode:     'edit' as const,
     childId:  scope.childId,
     schemaData,
@@ -3507,7 +3594,7 @@ export async function resourceViewData(
   )
 
   return {
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { resource: R, page: PageClass, recordId }),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'view' as const,
@@ -3564,7 +3651,7 @@ export async function globalEditData(
 
   return {
     pageType: 'global',
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { global: G, page: PageClass }),
     page:     PageClass.toMeta(),
     global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
@@ -3597,7 +3684,7 @@ export async function globalViewData(
   const schemaData = await resolveSchema(elements, ctx)
 
   return {
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { global: G, page: PageClass }),
     page:     PageClass.toMeta(),
     global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
@@ -3637,7 +3724,7 @@ export async function customPageData(
 
   return {
     pageType: 'page',
-    panel:    await panelInfo(pilotiq, req),
+    panel:    await panelInfo(pilotiq, req, { page: PageClass }),
     page:     PageClass.toMeta(),
     schemaData,
     _widgetData: widgetData,

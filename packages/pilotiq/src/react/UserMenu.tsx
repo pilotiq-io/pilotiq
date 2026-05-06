@@ -21,7 +21,21 @@ import type { UserMenuMeta } from '../pageData.js'
  * verify the request. `method: 'GET'` falls back to a plain `<a>`-style
  * link when the app's logout endpoint is purely redirect-based.
  */
-export function UserMenu({ userMenu }: { userMenu: UserMenuMeta | null | undefined }) {
+export function UserMenu({
+  userMenu,
+  before,
+  after,
+}: {
+  userMenu: UserMenuMeta | null | undefined
+  /** Render-hook slot mounted at the top of the dropdown (above the
+   *  user-identity label). Pass `<RenderHookSlot
+   *  name="panels::user-menu.before" />`. */
+  before?:  React.ReactNode
+  /** Render-hook slot mounted at the bottom of the dropdown (above the
+   *  sign-out separator when present). Pass `<RenderHookSlot
+   *  name="panels::user-menu.after" />`. */
+  after?:   React.ReactNode
+}) {
   if (!userMenu) return null
   const { user, items, signOut } = userMenu
 
@@ -40,6 +54,7 @@ export function UserMenu({ userMenu }: { userMenu: UserMenuMeta | null | undefin
         <Avatar {...avatarProps} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-56">
+        {before}
         <DropdownMenuLabel className="flex flex-col gap-0.5">
           {user.name && <span className="font-medium">{user.name}</span>}
           {user.email && (
@@ -53,6 +68,7 @@ export function UserMenu({ userMenu }: { userMenu: UserMenuMeta | null | undefin
         {items.map(item => (
           <UserMenuItemRow key={item.name} item={item} />
         ))}
+        {after}
         {signOut && (
           <>
             <DropdownMenuSeparator />

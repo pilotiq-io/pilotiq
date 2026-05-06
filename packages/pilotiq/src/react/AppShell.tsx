@@ -7,6 +7,8 @@ import type { NotificationMeta } from '../notifications/Notification.js'
 import type { ComponentRegistry } from './icon-context.js'
 import { ComponentRegistryProvider } from './icon-context.js'
 import type { NavItem, UserMenuMeta } from '../pageData.js'
+import type { RenderHookMap } from '../RenderHook.js'
+import { RenderHookSlot } from './RenderHookSlot.js'
 
 export interface AppShellProps {
   panel: {
@@ -17,6 +19,11 @@ export interface AppShellProps {
     /** Top-right dropdown shape — `null`/absent suppresses the menu
      *  entirely (no resolver configured or no logged-in user). */
     userMenu?: UserMenuMeta | null
+    /** Pre-resolved render-hook slots for the panel chrome (body /
+     *  topbar / sidebar / user-menu / footer / head). Sparse map —
+     *  slots with no registered entries are absent. Built by
+     *  `panelInfo()` server-side. */
+    renderHooks?: RenderHookMap
     themeEditor?: boolean
   }
   basePath: string
@@ -56,11 +63,15 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
   }
   if (props.panel.navigation) paletteProps.navigation = props.panel.navigation
 
+  const hooks = props.panel.renderHooks
+
   return (
     <ComponentRegistryProvider value={componentRegistry}>
       <ToasterProvider {...toasterProps}>
         <CommandPaletteProvider setOpen={setPaletteOpen}>
+          <RenderHookSlot name="panels::body.start" hooks={hooks} />
           <Layout {...props} />
+          <RenderHookSlot name="panels::body.end" hooks={hooks} />
           <CommandPalette {...paletteProps} />
         </CommandPaletteProvider>
       </ToasterProvider>

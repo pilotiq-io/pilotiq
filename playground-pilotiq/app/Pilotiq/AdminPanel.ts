@@ -2,6 +2,7 @@ import {
   Pilotiq, Global, TextField,
   Form,
   UserMenuItem,
+  Alert, Heading,
 } from '@pilotiq/pilotiq'
 import { themeEditor } from '@pilotiq/pilotiq/plugins'
 import { registerIcons } from '@pilotiq/pilotiq/icons'
@@ -95,6 +96,15 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .dashboard(MyDashboard)
   // User-menu auto-injects "Edit profile" pointing at this page.
   .profile(ProfilePage)
+  // Render-hook smoke — banner across the top of every page chrome,
+  // and a helper note in the sidebar footer. Demonstrates the v1
+  // chrome slots; page-role hooks land in a follow-up.
+  .renderHook('panels::body.start', () => [
+    Alert.make('Render-hook demo: this banner is mounted via panel.renderHook(\'panels::body.start\').').info(),
+  ])
+  .renderHook('panels::sidebar.footer', () => [
+    Heading.make('Pilotiq playground').level(6),
+  ])
 
 export const pilotiqSimple = Pilotiq.make('Pilotiq simple')
   .path('/simple')

@@ -6,6 +6,12 @@ import type { SchemaDefinition } from './schema/resolveSchema.js'
 import type { ThemeConfig } from './theme/types.js'
 import type { UploadAdapter } from './uploads/UploadAdapter.js'
 import type { UserMenuItem } from './UserMenuItem.js'
+import type {
+  RenderHookEntry,
+  RenderHookFn,
+  RenderHookName,
+  RenderHookScope,
+} from './RenderHook.js'
 
 export type PilotiqLayout = 'sidebar' | 'topbar'
 
@@ -99,6 +105,12 @@ export interface PilotiqConfig {
    *  separator + Sign-out entry. Without this, the menu shows custom
    *  items (if any) and the user identity, but no sign-out affordance. */
   signOut?:      SignOutConfig
+  /**
+   * Render-hook entries registered via `Pilotiq.renderHook(name, fn,
+   * scope?)`. Resolved per-request by `panelInfo()` (chrome slots) and
+   * the per-page-role data builders (page-role slots).
+   */
+  renderHooks?:  RenderHookEntry[]
   /** @internal Runtime theme overrides from DB. */
   _themeOverrides?: Partial<ThemeConfig>
 }
@@ -298,6 +310,42 @@ export class Pilotiq {
    */
   signOut(config: string | SignOutConfig): this {
     this.config.signOut = typeof config === 'string' ? { url: config } : config
+    return this
+  }
+
+  /**
+   * Register a render hook — a callback that returns `Element[]` to
+   * mount at a named slot in the panel chrome or page renderers. Multiple
+   * hooks against the same name run in registration order; their outputs
+   * concatenate.
+   *
+   *   import { Alert } from '@pilotiq/pilotiq'
+   *
+   *   Pilotiq.make('admin')
+   *     .renderHook('panels::topbar.start', ({ user }) => [
+   *       Alert.make(`Hi, ${(user as any)?.name ?? 'there'}`).info(),
+   *     ])
+   *     .renderHook(
+   *       'panels::resource.pages.list-records.table.before',
+   *       () => [Heading.make('Bulk import')],
+   *       { resource: ArticleResource },
+   *     )
+   *
+   * Scope (optional) restricts the hook to a single resource / page /
+   * global. Scope keys are OR'd within the object — passing
+   * `{ resource: A, page: P }` fires when EITHER `A` OR `P` is the
+   * active route's identifier.
+   *
+   * Throwing hooks fail closed: their slot's contribution drops; other
+   * hooks at the same slot still ship.
+   *
+   * Plan + guide: docs/plans/render-hooks.md, docs/guide/render-hooks.md.
+   */
+  renderHook(name: RenderHookName, fn: RenderHookFn, scope?: RenderHookScope): this {
+    if (!this.config.renderHooks) this.config.renderHooks = []
+    const entry: RenderHookEntry = { name, fn }
+    if (scope !== undefined) entry.scope = scope
+    this.config.renderHooks.push(entry)
     return this
   }
 
