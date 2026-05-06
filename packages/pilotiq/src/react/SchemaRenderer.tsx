@@ -2244,6 +2244,92 @@ function renderEntry(el: ElementMeta, index: number): React.ReactNode {
       break
     }
 
+    case 'repeatable': {
+      // Read-only sibling of `Repeater`. Reads `meta.rows` (resolved by
+      // `resolveRepeatableRows`) and dispatches on the chosen layout —
+      // `table > grid > stack`. Empty / non-array state falls through to
+      // the inherited `default()` placeholder, same as every other entry.
+      const rows = (el['rows'] as Array<{ id: string; children: ElementMeta[] }> | undefined) ?? []
+      if (rows.length === 0) {
+        body = <span className="text-sm text-muted-foreground">{fallback}</span>
+        break
+      }
+
+      const tableCfg  = el['table']     as { columns: Array<{ label: string; alignment?: 'left' | 'center' | 'right'; width?: string }> } | undefined
+      const gridN     = el['grid']      as number | undefined
+      const innerCols = el['columns']   as number | undefined
+      const contained = el['contained'] !== false
+
+      if (tableCfg && tableCfg.columns.length > 0) {
+        const cols = tableCfg.columns
+        body = (
+          <table className="w-full border border-border text-sm">
+            {cols.some(c => c.width) && (
+              <colgroup>
+                {cols.map((c, i) => (
+                  <col key={i} style={c.width ? { width: c.width } : undefined} />
+                ))}
+              </colgroup>
+            )}
+            <thead>
+              <tr className="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {cols.map((c, i) => (
+                  <th
+                    key={i}
+                    className={`border-b border-border px-2 py-1 ${c.alignment === 'right' ? 'text-right' : c.alignment === 'center' ? 'text-center' : ''}`.trim()}
+                  >
+                    {c.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => (
+                <tr key={row.id} className="border-t border-border first:border-t-0 align-top">
+                  {row.children.map((child, i) => {
+                    const align = cols[i]?.alignment
+                    const alignCls = align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''
+                    return (
+                      <td key={i} className={`px-2 py-1 ${alignCls}`.trim()}>
+                        {renderElement(child, i)}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+        break
+      }
+
+      const cardCls = contained
+        ? 'rounded-md border border-border p-3 bg-background'
+        : ''
+      const innerColsCls = innerCols && innerCols >= 2
+        ? `grid gap-3 grid-cols-1 md:grid-cols-${Math.min(innerCols, 6)}`
+        : 'space-y-2'
+
+      const cards = rows.map(row => (
+        <div key={row.id} className={`${cardCls} ${innerColsCls}`.trim()}>
+          {row.children.map((child, i) => renderElement(child, i))}
+        </div>
+      ))
+
+      if (gridN && gridN >= 2) {
+        const cap = Math.min(gridN, 6)
+        body = (
+          <div className={`w-full grid gap-3 grid-cols-1 md:grid-cols-${cap}`}>
+            {cards}
+          </div>
+        )
+        break
+      }
+
+      body = <div className="w-full space-y-3">{cards}</div>
+      break
+    }
+
     default:
       body = <span className="text-sm text-muted-foreground">{fallback}</span>
   }

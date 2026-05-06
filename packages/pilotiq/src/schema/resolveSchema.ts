@@ -16,6 +16,11 @@ import { ActionGroup } from '../actions/ActionGroup.js'
 import { Filter } from '../filters/Filter.js'
 import { isServerDataElement, stampServerDataMeta } from './ServerDataElement.js'
 import { Entry } from '../entries/Entry.js'
+import {
+  RepeatableEntry,
+  readRepeatableRowId,
+  type RepeatableEntryRowMeta,
+} from '../entries/RepeatableEntry.js'
 
 export interface SchemaContext {
   user?: { name?: string; email?: string; [key: string]: unknown }
@@ -284,6 +289,17 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
   // stamped by `BuilderField.toMeta()`.
   if (el instanceof BuilderField) {
     await resolveBuilderRows(el, ctx, meta)
+    return meta
+  }
+
+  // Filament v5 — `RepeatableEntry` rows. Read-only sibling of Repeater:
+  // the array lives on `ctx.record[name]` (no `ctx.values` involvement —
+  // entries are display-only) and each row's inner schema resolves with
+  // its own `record` scoped to that row's data, so inner entries read
+  // their state via the same `record[childName]` lookup they use anywhere
+  // else.
+  if (el instanceof RepeatableEntry) {
+    await resolveRepeatableRows(el, ctx, meta)
     return meta
   }
 
@@ -634,6 +650,68 @@ async function resolveBuilderRows(
 
   meta['rows']   = rows
   meta['blocks'] = blocksMeta
+}
+
+/**
+ * Per-row resolution for `RepeatableEntry`. Reads the array off
+ * `ctx.record[name]`, resolves the inner schema once per row with `record`
+ * scoped to that row's data, and stamps `meta.rows` with the resolved
+ * children.
+ *
+ * Non-array / null / undefined / empty-array values stamp an empty
+ * `meta.rows` — the renderer falls through to the `default()` placeholder
+ * (inherited from `Entry.default()`).
+ */
+async function resolveRepeatableRows(
+  entry: RepeatableEntry,
+  ctx:   RenderContext,
+  meta:  ElementMeta,
+): Promise<void> {
+  const inner       = entry.getInnerSchema()
+  const fieldName   = entry.getName()
+  const sourceArray = readRecordArray(ctx.record, fieldName)
+  if (sourceArray === undefined || sourceArray.length === 0 || inner.length === 0) {
+    meta['rows'] = []
+    return
+  }
+
+  const rows = await Promise.all(sourceArray.map(async (raw, index) => {
+    const rowRecord = coerceRowRecord(raw)
+    const rowCtx: RenderContext = { ...ctx, record: rowRecord }
+    delete rowCtx.values
+    delete rowCtx.$get
+    delete rowCtx.$set
+    delete rowCtx.changed
+    delete rowCtx.row
+    const children = await resolveAll(inner, rowCtx)
+    const id = readRepeatableRowId(raw, fieldName, index)
+    const row: RepeatableEntryRowMeta = { id, children }
+    return row
+  }))
+
+  meta['rows'] = rows
+}
+
+/** Read a record's array-shaped property by name. Returns `undefined` when
+ *  absent / null / non-array — callers fall through to the empty-state
+ *  placeholder. */
+function readRecordArray(record: unknown, name: string): unknown[] | undefined {
+  if (record === null || record === undefined || typeof record !== 'object') return undefined
+  const value = (record as Record<string, unknown>)[name]
+  return Array.isArray(value) ? value : undefined
+}
+
+/** Coerce an arbitrary array element into a `Record<string, unknown>` for
+ *  the row's `RenderContext.record`. Object rows pass through (clone to
+ *  avoid downstream mutation); primitives stash under a reserved `_value`
+ *  key so an inner `TextEntry.make('_value')` can still target them
+ *  (mirrors the read-only equivalent of Repeater's flat-array fallback). */
+function coerceRowRecord(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return { ...(raw as Record<string, unknown>) }
+  }
+  if (raw === undefined || raw === null) return {}
+  return { _value: raw }
 }
 
 interface BuilderRowEntry {

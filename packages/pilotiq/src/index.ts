@@ -155,6 +155,12 @@ export { KeyValueEntry } from './entries/KeyValueEntry.js'
 export { ColorEntry, type ColorEntryShape } from './entries/ColorEntry.js'
 export { CodeEntry } from './entries/CodeEntry.js'
 export { ComponentEntry } from './entries/ComponentEntry.js'
+export {
+  RepeatableEntry,
+  type RepeatableEntryMeta,
+  type RepeatableEntryRowMeta,
+  type RepeatableEntryTableColumn,
+} from './entries/RepeatableEntry.js'
 
 // Plan #15 — server-data widget elements
 export {

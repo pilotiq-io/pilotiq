@@ -250,6 +250,51 @@ as `ImageEntry`.
 
 ---
 
+## `RepeatableEntry`
+
+Display-side sibling of `Repeater` — renders an array stored on the
+record as a stack of cards (default), an n-column grid, or a compact
+HTML table.
+
+```ts
+RepeatableEntry.make('lineItems').schema([
+  TextEntry.make('description'),
+  TextEntry.make('quantity').numeric(),
+  TextEntry.make('total').money('USD'),
+]).table([
+  { label: 'Item' },
+  { label: 'Qty', alignment: 'right' },
+  { label: 'Total', alignment: 'right', width: '8rem' },
+])
+```
+
+The inner schema resolves once per row with `record` scoped to that
+row's data, so inner entries (`TextEntry / BadgeEntry / IconEntry / …`)
+read state via the same `record[childName]` lookup they use anywhere
+else.
+
+| Setter | Effect |
+|---|---|
+| `.schema([Entry…])` | Inner entries rendered per row. |
+| `.columns(n)` | Grid the inner schema *inside* one card (mirrors `Repeater.columns`). |
+| `.grid(n)` | n cards across (`n >= 2`); lower clears the grid mode. |
+| `.table([{label, alignment?, width?}])` | Compact `<table>` layout — columns map 1:1 to inner schema by declaration order. |
+| `.contained(false)` | Strip the outer card chrome. |
+
+The renderer dispatches `table > grid > stack` — the most-specific
+layout wins.
+
+Empty / non-array / null falls through to the inherited `default()`
+placeholder. For arrays of primitives, target them via a reserved
+`_value` key:
+
+```ts
+RepeatableEntry.make('tags').schema([TextEntry.make('_value').label('Tag')])
+// record.tags = ['featured', 'sale', 'new']
+```
+
+---
+
 ## `CodeEntry`
 
 ```ts
