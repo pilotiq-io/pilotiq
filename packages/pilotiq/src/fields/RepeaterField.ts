@@ -33,6 +33,16 @@ export interface RepeaterRelationshipConfig {
   foreignKey?:  string
   /** Optional integer column on the child to receive the row index. */
   orderColumn?: string
+  /**
+   * M2M only — pivot-table extra columns to surface as editable per-row
+   * fields. Each name must match an inner-schema field's `name`; the
+   * row's values for these names round-trip through the pivot row
+   * (read via `accessor.withPivot(...)`, written via
+   * `accessor.attach({ id: { … } })` for new rows and
+   * `accessor.updatePivot(id, { … })` for existing rows). No-op (and
+   * a clear error at submit time) on `hasMany` / `morphMany` modes.
+   */
+  pivotColumns?: string[]
 }
 
 /** Public meta — `model` + `foreignKey` are server-only and stay private. */
@@ -526,6 +536,27 @@ export class RepeaterField extends Field {
       )
     }
     this._relationship.orderColumn = col
+    return this
+  }
+
+  /**
+   * M2M only — declare pivot-table extra columns to surface as editable
+   * per-row fields. Each entry must match an inner-schema field's `name`;
+   * row values for those names load via `accessor.withPivot(...)`,
+   * persist via `accessor.attach({ id: pivotData })` for new rows and
+   * `accessor.updatePivot(id, pivotData)` for existing rows.
+   *
+   * Sugar over `.relationship({ ..., pivotColumns: cols })`. Like
+   * `orderColumn()`, throws when `relationship()` hasn't been called
+   * first. Empty array clears the projection.
+   */
+  pivotColumns(cols: string[]): this {
+    if (!this._relationship) {
+      throw new Error(
+        `[Pilotiq] Repeater "${this.name}": pivotColumns() requires relationship() to be configured first.`,
+      )
+    }
+    this._relationship.pivotColumns = [...cols]
     return this
   }
 

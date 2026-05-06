@@ -68,6 +68,16 @@ export interface ModelQuery {
    * keeps it optional so test stubs don't need to implement it.
    */
   whereNull?(column: string): ModelQuery
+
+  /**
+   * M2M pivot-extra projection — declares which pivot-table columns to
+   * surface on each loaded related row under `row.pivot = { col: val }`.
+   * Used by `Repeater.relationship.pivotColumns([...])`. No-op (or
+   * irrelevant) on hasMany / morphMany queries; the rudder ORM
+   * implements this only on the M2M deferred-QB family. Optional on
+   * the structural shape so test stubs don't need to implement it.
+   */
+  withPivot?(...columns: string[]): ModelQuery
 }
 
 /**

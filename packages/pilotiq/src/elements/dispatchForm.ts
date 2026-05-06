@@ -1506,6 +1506,14 @@ async function persistRelationshipRows(
 
   const keptPks = new Set<string>()
 
+  // M2M-only: the user may have declared `pivotColumns([…])`. Those
+  // names live on the pivot table, NOT the child model — split them
+  // out before each create / update so the child writes never see
+  // them and the pivot writes only see them.
+  const pivotColumnSet = (isM2M && cfg.pivotColumns && cfg.pivotColumns.length > 0)
+    ? new Set(cfg.pivotColumns)
+    : undefined
+
   for (let idx = 0; idx < rows.length; idx++) {
     const submitted = rows[idx] ?? {}
     const submittedId = typeof submitted['__id'] === 'string' ? submitted['__id'] : undefined
@@ -1517,11 +1525,18 @@ async function persistRelationshipRows(
     // ignored (FK / morph cols can't be retargeted; order is
     // canonical from row index).
     const payload: Record<string, unknown> = {}
+    const pivotPayload: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(submitted)) {
       if (k === '__id') continue
-      payload[k] = v
+      if (pivotColumnSet?.has(k)) {
+        pivotPayload[k] = v
+      } else {
+        payload[k] = v
+      }
     }
     if (orderColumn !== undefined) payload[orderColumn] = idx
+    const hasPivotPayload = pivotColumnSet !== undefined
+      && Object.keys(pivotPayload).length > 0
 
     if (isUpdate) {
       // Don't overwrite the parent attachment on update — for hasMany
@@ -1535,7 +1550,23 @@ async function persistRelationshipRows(
       } else if (attachment.kind === 'morphMany') {
         for (const k of Object.keys(morphStamp!)) delete payload[k]
       }
-      await model.update(submittedId!, payload)
+      // For M2M without pivot extras the row still benefits from a
+      // child-row update (user may have edited the child's own
+      // columns through the Repeater). Skip the child write only
+      // when the payload would be empty (M2M + pivot-only edits).
+      if (Object.keys(payload).length > 0) {
+        await model.update(submittedId!, payload)
+      }
+      if (hasPivotPayload) {
+        if (typeof m2mAccessor!.updatePivot !== 'function') {
+          throw new Error(
+            `[Pilotiq] Repeater.relationship("${cfg.name}").pivotColumns(...) requires a rudder ORM with \`updatePivot\` ` +
+            `on the M2M accessor (shipped via \`feat(orm): pivot-extras read/update\`). ` +
+            `Upgrade @rudderjs/orm or drop the pivotColumns call.`,
+          )
+        }
+        await m2mAccessor!.updatePivot(submittedId!, pivotPayload)
+      }
       keptPks.add(submittedId!)
     } else {
       if (attachment.kind === 'hasMany') {
@@ -1548,7 +1579,8 @@ async function persistRelationshipRows(
         // M2M: create the related record first, then attach via the
         // pivot accessor. The accessor handles polymorphic stamping
         // (`<morphName>Type`) transparently for morphToMany /
-        // morphedByMany.
+        // morphedByMany. When `pivotColumns` is set the per-id
+        // attach map ferries pivot extras into the new pivot row.
         const created = await model.create(payload)
         const newPk   = (created as Record<string, unknown> | null | undefined)?.[pk]
         if (newPk === undefined || newPk === null) {
@@ -1558,7 +1590,11 @@ async function persistRelationshipRows(
             `returns a record with the primary key set.`,
           )
         }
-        await m2mAccessor!.attach!([newPk as string | number])
+        if (hasPivotPayload) {
+          await m2mAccessor!.attach!({ [String(newPk)]: pivotPayload })
+        } else {
+          await m2mAccessor!.attach!([newPk as string | number])
+        }
       }
     }
     void field
@@ -1585,11 +1621,15 @@ async function persistRelationshipRows(
  * add explicit pagination.
  */
 export async function loadRelationRows(
-  parentModel: ModelLike,
-  parent:      unknown,
-  name:        string,
+  parentModel:  ModelLike,
+  parent:       unknown,
+  name:         string,
+  pivotColumns?: readonly string[],
 ): Promise<unknown[]> {
-  const q = resolveRelatedQuery(parentModel, parent, name)
+  let q = resolveRelatedQuery(parentModel, parent, name)
+  if (pivotColumns && pivotColumns.length > 0 && typeof q.withPivot === 'function') {
+    q = q.withPivot(...pivotColumns)
+  }
   const result = await q.paginate(1, 10000)
   return result.data
 }

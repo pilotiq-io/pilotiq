@@ -1240,3 +1240,391 @@ describe('Repeater.relationship — morphedByMany', () => {
     assert.deepEqual(detachedIds, ['c2'])
   })
 })
+
+/**
+ * Test harness for M2M pivot-extras — `withPivot(...cols)` projection on
+ * the load query + `updatePivot(id, data)` + per-id-pivot `attach({ id:
+ * data })` on the accessor. Mirrors rudder ORM's
+ * `feat(orm): pivot-extras read/update + per-id sync` (PR #251).
+ *
+ * Each child row has an associated pivot row keyed by the child's PK.
+ * `withPivot` stamps the listed pivot columns onto each row under
+ * `row.pivot = { … }`. `updatePivot` patches the matching pivot row.
+ */
+function makeM2MParentSetupWithPivot(opts: {
+  childModel:    ModelLike
+  childRows:     FakeRecord[]
+  relationName:  string
+  /** Pivot rows keyed by child PK. Each entry holds the extra columns. */
+  pivot:         Map<string, Record<string, unknown>>
+  attachedIds?:  Set<string | number>
+}) {
+  const { childModel, childRows, relationName, pivot } = opts
+  const attachedIds = opts.attachedIds
+    ?? new Set<string | number>(childRows.map(r => r['id'] as string | number))
+  const pivotCalls: Array<
+    | { kind: 'attach';      ids: Array<string | number>; pivot?: Record<string, Record<string, unknown>> }
+    | { kind: 'detach';      ids: Array<string | number> | undefined }
+    | { kind: 'updatePivot'; id: string | number; data: Record<string, unknown> }
+  > = []
+
+  function projectPivot(rows: FakeRecord[], cols: string[]): FakeRecord[] {
+    return rows.map(r => {
+      const pk = String(r['id'])
+      const pe = pivot.get(pk) ?? {}
+      const proj: Record<string, unknown> = {}
+      for (const c of cols) proj[c] = pe[c] ?? null
+      return { ...r, pivot: proj }
+    })
+  }
+
+  /** Pivot-aware fake query — adds `withPivot` to the chain. */
+  function makePivotAwareQuery(rows: FakeRecord[]): ModelQuery {
+    let pivotCols: string[] | undefined
+    const q: ModelQuery = {
+      where:    () => q,
+      orWhere:  () => q,
+      orderBy:  () => q,
+      withPivot(...cols: string[]) {
+        pivotCols = cols
+        return q
+      },
+      paginate: async () => {
+        const projected = pivotCols ? projectPivot(rows, pivotCols) : rows.slice()
+        return { data: projected, total: projected.length }
+      },
+    }
+    return q
+  }
+
+  class Parent {
+    id?: string
+    constructor(init?: Partial<{ id: string }>) { Object.assign(this, init) }
+    [relationName]() {
+      return {
+        attach: async (input: ReadonlyArray<string | number> | Record<string, Record<string, unknown>>) => {
+          if (Array.isArray(input)) {
+            const ids = [...input]
+            for (const id of ids) attachedIds.add(id)
+            pivotCalls.push({ kind: 'attach', ids })
+          } else {
+            const map = input as Record<string, Record<string, unknown>>
+            const ids = Object.keys(map).map(k => /^\d+$/.test(k) ? Number(k) : k) as Array<string | number>
+            for (const id of ids) {
+              attachedIds.add(id)
+              pivot.set(String(id), { ...(pivot.get(String(id)) ?? {}), ...map[String(id)] })
+            }
+            pivotCalls.push({ kind: 'attach', ids, pivot: map })
+          }
+        },
+        detach: async (ids?: ReadonlyArray<string | number>) => {
+          if (ids === undefined) {
+            const removed = [...attachedIds]
+            attachedIds.clear()
+            for (const id of removed) pivot.delete(String(id))
+            pivotCalls.push({ kind: 'detach', ids: undefined })
+            return removed.length
+          }
+          for (const id of ids) {
+            attachedIds.delete(id)
+            pivot.delete(String(id))
+          }
+          pivotCalls.push({ kind: 'detach', ids: [...ids] })
+          return ids.length
+        },
+        updatePivot: async (id: string | number, data: Record<string, unknown>): Promise<number> => {
+          pivotCalls.push({ kind: 'updatePivot', id, data: { ...data } })
+          const key = String(id)
+          if (!pivot.has(key)) return 0
+          pivot.set(key, { ...pivot.get(key), ...data })
+          return 1
+        },
+      }
+    }
+  }
+
+  const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+    primaryKey: 'id',
+    find:   async () => null,
+    create: async () => ({}),
+    update: async () => ({}),
+    delete: async () => {},
+    query:  () => makeQuery([]),
+    relatedQuery: () => makePivotAwareQuery(
+      childRows.filter(r => attachedIds.has(r['id'] as string | number)),
+    ),
+    relations: {
+      [relationName]: { type: 'belongsToMany', model: () => childModel, pivotTable: 'pivot' },
+    },
+  }
+  return {
+    parentModel,
+    pivotCalls,
+    pivotState: pivot,
+    attachedIds,
+    makeRecord: (id: string) => new Parent({ id }),
+  }
+}
+
+describe('Repeater.relationship — pivotColumns', () => {
+  // Surface check: setter requires .relationship() first; round-trips into cfg.
+  it('Repeater.pivotColumns([…]) requires .relationship() first', () => {
+    assert.throws(
+      () => RepeaterField.make('tags').pivotColumns(['role']),
+      /requires relationship\(\) to be configured first/,
+    )
+  })
+
+  it('Repeater.pivotColumns([…]) writes to the relationship cfg', () => {
+    const r = RepeaterField.make('tags')
+      .relationship('tags')
+      .pivotColumns(['role', 'assignedAt'])
+    assert.deepEqual(r.getRelationship()?.pivotColumns, ['role', 'assignedAt'])
+  })
+
+  it('load — withPivot ferries the configured columns; row values flatten onto the form data', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', name: 'red' },
+      { id: 'c2', name: 'blue' },
+    ])
+    const setup = makeM2MParentSetupWithPivot({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'tags',
+      pivot:        new Map([
+        ['c1', { role: 'owner' }],
+        ['c2', { role: 'editor' }],
+      ]),
+      attachedIds:  new Set(['c1', 'c2']),
+    })
+
+    const form = Form.make().schema([
+      RepeaterField.make('tags')
+        .relationship('tags')
+        .pivotColumns(['role'])
+        .schema([TextField.make('name'), TextField.make('role')]),
+    ])
+
+    const filled = await applyRelationshipRepeaterFill(
+      form, {}, setup.makeRecord('a1'), setup.parentModel,
+    )
+
+    const rows = filled['tags'] as Array<Record<string, unknown>>
+    assert.equal(rows.length, 2)
+    assert.equal(rows[0]?.['name'], 'red')
+    assert.equal(rows[0]?.['role'], 'owner')
+    assert.equal(rows[0]?.['__id'], 'c1')
+    assert.equal(rows[1]?.['name'], 'blue')
+    assert.equal(rows[1]?.['role'], 'editor')
+    // pivot envelope is dropped — it's an internal carrier, not form data.
+    assert.equal('pivot' in (rows[0] ?? {}), false)
+  })
+
+  it('save (existing row) — pivot extras route through updatePivot, child fields through M.update', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', name: 'red' },
+    ])
+    const setup = makeM2MParentSetupWithPivot({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'tags',
+      pivot:        new Map([['c1', { role: 'editor' }]]),
+      attachedIds:  new Set(['c1']),
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags')
+          .relationship('tags')
+          .pivotColumns(['role'])
+          .schema([TextField.make('name'), TextField.make('role')]),
+      ])
+      .save(async () => setup.makeRecord('a1'))
+
+    const submittedRows = [{ __id: 'c1', name: 'crimson', role: 'owner' }]
+    const result = await dispatchFormSubmit(
+      form,
+      { tags: submittedRows },
+      { values: { tags: submittedRows }, record: setup.makeRecord('a1'), parentModel: setup.parentModel },
+    )
+    assert.equal(result.ok, true)
+
+    // Child row got the non-pivot field; pivot col was NOT smuggled through.
+    const updates = child.calls.filter(c => c.kind === 'update') as Array<{ kind: 'update'; id: string | number; data: Record<string, unknown> }>
+    assert.equal(updates.length, 1)
+    assert.equal(updates[0]?.data['name'], 'crimson')
+    assert.equal('role' in (updates[0]?.data ?? {}), false)
+
+    // Pivot row patched via updatePivot.
+    const pivotUpdates = setup.pivotCalls.filter(c => c.kind === 'updatePivot') as Array<{ kind: 'updatePivot'; id: string | number; data: Record<string, unknown> }>
+    assert.equal(pivotUpdates.length, 1)
+    assert.equal(pivotUpdates[0]?.id, 'c1')
+    assert.deepEqual(pivotUpdates[0]?.data, { role: 'owner' })
+  })
+
+  it('save (new row) — attach uses the per-id-pivot map shape', async () => {
+    const child = makeFakeChildModel([])
+    const setup = makeM2MParentSetupWithPivot({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'tags',
+      pivot:        new Map(),
+      attachedIds:  new Set(),
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags')
+          .relationship('tags')
+          .pivotColumns(['role'])
+          .schema([TextField.make('name'), TextField.make('role')]),
+      ])
+      .save(async () => setup.makeRecord('a1'))
+
+    const submittedRows = [{ name: 'red', role: 'owner' }]
+    const result = await dispatchFormSubmit(
+      form,
+      { tags: submittedRows },
+      { values: { tags: submittedRows }, parentModel: setup.parentModel },
+    )
+    assert.equal(result.ok, true)
+
+    // Child created without `role` (pivot column).
+    const creates = child.calls.filter(c => c.kind === 'create') as Array<{ kind: 'create'; data: Record<string, unknown> }>
+    assert.equal(creates.length, 1)
+    assert.equal(creates[0]?.data['name'], 'red')
+    assert.equal('role' in (creates[0]?.data ?? {}), false)
+
+    // attach received the per-id-pivot map.
+    const attachCalls = setup.pivotCalls.filter(c => c.kind === 'attach') as Array<{ kind: 'attach'; pivot?: Record<string, Record<string, unknown>> }>
+    assert.equal(attachCalls.length, 1)
+    assert.ok(attachCalls[0]?.pivot, 'attach should have received a per-id pivot map')
+    const map = attachCalls[0]!.pivot!
+    const onlyKey = Object.keys(map)[0]!
+    assert.deepEqual(map[onlyKey], { role: 'owner' })
+  })
+
+  it('save (existing row, no pivot edit) — skips updatePivot when payload has no pivot keys', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', name: 'red' },
+    ])
+    const setup = makeM2MParentSetupWithPivot({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'tags',
+      pivot:        new Map([['c1', { role: 'editor' }]]),
+      attachedIds:  new Set(['c1']),
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags')
+          .relationship('tags')
+          .pivotColumns(['role'])
+          .schema([TextField.make('name'), TextField.make('role')]),
+      ])
+      .save(async () => setup.makeRecord('a1'))
+
+    // Submit only changes the child column; role omitted entirely.
+    const submittedRows = [{ __id: 'c1', name: 'crimson' }]
+    const result = await dispatchFormSubmit(
+      form,
+      { tags: submittedRows },
+      { values: { tags: submittedRows }, record: setup.makeRecord('a1'), parentModel: setup.parentModel },
+    )
+    assert.equal(result.ok, true)
+    assert.equal(setup.pivotCalls.filter(c => c.kind === 'updatePivot').length, 0)
+  })
+
+  it('save — throws a clear error when accessor lacks updatePivot but pivot extras changed', async () => {
+    const child = makeFakeChildModel([{ id: 'c1', name: 'red' }])
+    // Build a parent whose accessor does NOT expose updatePivot.
+    const accessorWithoutUpdate = {
+      attach: async () => {},
+      detach: async () => 0,
+    }
+    class Parent {
+      id?: string
+      constructor(init?: Partial<{ id: string }>) { Object.assign(this, init) }
+      tags() { return accessorWithoutUpdate }
+    }
+    const parentModel: ModelLike & { relations: Record<string, unknown> } = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => makeQuery([]),
+      relatedQuery: () => makeQuery([{ id: 'c1', name: 'red' }]),
+      relations: {
+        tags: { type: 'belongsToMany', model: () => child.model, pivotTable: 'pivot' },
+      },
+    }
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags')
+          .relationship('tags')
+          .pivotColumns(['role'])
+          .schema([TextField.make('name'), TextField.make('role')]),
+      ])
+      .save(async () => new Parent({ id: 'a1' }))
+
+    const submittedRows = [{ __id: 'c1', name: 'red', role: 'owner' }]
+    await assert.rejects(
+      () => dispatchFormSubmit(
+        form,
+        { tags: submittedRows },
+        { values: { tags: submittedRows }, record: new Parent({ id: 'a1' }), parentModel },
+      ),
+      /requires a rudder ORM with `updatePivot`/,
+    )
+  })
+
+  it('loadRelationRows — passes pivotColumns into withPivot when supported', async () => {
+    let seenCols: string[] | undefined
+    const q: ModelQuery = {
+      where:    () => q,
+      orWhere:  () => q,
+      orderBy:  () => q,
+      withPivot(...cols: string[]) {
+        seenCols = cols
+        return q
+      },
+      paginate: async () => ({ data: [], total: 0 }),
+    }
+    const M: ModelLike = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => q,
+      relatedQuery: () => q,
+    }
+    await loadRelationRows(M, {}, 'tags', ['role', 'assignedAt'])
+    assert.deepEqual(seenCols, ['role', 'assignedAt'])
+  })
+
+  it('loadRelationRows — silently skips withPivot on a model that does not implement it', async () => {
+    // A model whose query has no `withPivot` method — pilotiq should
+    // call paginate without throwing.
+    const q: ModelQuery = {
+      where:    () => q,
+      orWhere:  () => q,
+      orderBy:  () => q,
+      paginate: async () => ({ data: [], total: 0 }),
+    }
+    const M: ModelLike = {
+      primaryKey: 'id',
+      find:   async () => null,
+      create: async () => ({}),
+      update: async () => ({}),
+      delete: async () => {},
+      query:  () => q,
+      relatedQuery: () => q,
+    }
+    const rows = await loadRelationRows(M, {}, 'tags', ['role'])
+    assert.deepEqual(rows, [])
+  })
+})

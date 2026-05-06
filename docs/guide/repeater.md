@@ -720,15 +720,59 @@ What changes from the `hasMany` case:
 accessor handles polymorphic stamping (`<morphName>Type`) on the pivot
 row transparently.
 
+#### Pivot-extras editing
+
+When the pivot table carries its own columns (e.g. `users_roles.role`
+where each link assigns a different role), declare them with
+`pivotColumns([…])` and inline-edit them like any other field:
+
+```ts
+Repeater.make('users')
+  .relationship('users')
+  .pivotColumns(['role'])
+  .schema([
+    TextField.make('name'),
+    SelectField.make('role').options({
+      owner:  'Owner',
+      editor: 'Editor',
+      viewer: 'Viewer',
+    }),
+  ])
+```
+
+Field names listed in `pivotColumns` must match a name in the inner
+`schema()`. The persist pipeline:
+
+- **Load** — calls the rudder ORM's `withPivot(...cols)` projection on
+  the deferred query so each loaded row carries `row.pivot = { role:
+  'owner', … }`. The values flatten onto the row's form data — the
+  inner `role` field pre-populates with `'owner'`.
+- **Save (existing row)** — splits the submitted payload by name. Pivot
+  columns route through `accessor.updatePivot(__id, { role: 'editor' })`;
+  child columns route through `model.update(__id, { name: 'New' })` as
+  before. Either side may be empty (pivot-only or child-only edits).
+- **Save (new row)** — child fields create the related record; pivot
+  fields ship through the per-id-pivot map shape on `attach({ [newId]:
+  { role: 'owner' } })`.
+- **Delete** — pivot row goes away with the `detach()` link removal;
+  the related child is left alone (same as the M2M default).
+
+Requires the rudder ORM `feat(orm): pivot-extras read/update + per-id
+sync` (PR #251) — the `withPivot` projection on the query and
+`updatePivot` on the M2M accessor. Pilotiq throws a clear error at save
+time when the accessor doesn't expose `updatePivot` and a pivot column
+changed.
+
+The `belongsToMany`, `morphToMany`, and `morphedByMany` siblings all
+share this surface — `morphToMany` / `morphedByMany` carry the
+discriminator column transparently on every pivot operation.
+
 #### M2M caveats
 
 - **`orderColumn()` is rejected** under M2M. Pivot-side ordering needs
   ORM `orderByPivot` which v1 doesn't expose; throwing here beats
   silently writing into a non-existent column on the related model.
   Re-order manually for now.
-- **Pivot-extras editing is deferred.** ORM v1 doesn't surface pivot
-  reads, so per-row pivot columns (e.g. `addedBy`, custom `sortOrder`)
-  can't round-trip through the form. Track this against ORM `withPivot`.
 - **Builder.relationship doesn't support M2M.** Builder rows are
   heterogeneous `{ type, data }` envelopes — the pivot semantics don't
   compose cleanly with that shape. Use `Repeater.relationship` if your

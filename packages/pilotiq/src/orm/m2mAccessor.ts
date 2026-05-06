@@ -12,6 +12,16 @@ export interface M2MAccessor {
   attach?(input:      unknown): Promise<void>
   detach?(input?:     unknown): Promise<unknown>
   sync?(desiredIds:   ReadonlyArray<string | number>): Promise<unknown>
+  /**
+   * Update extras on an existing pivot row without touching either side
+   * of the relation. Returns the number of rows updated (0 when no
+   * matching pivot exists). Optional on the structural shape; pilotiq's
+   * `Repeater.relationship.pivotColumns([…])` pipeline gates on its
+   * presence and throws a clear error when missing (rudder ORM ships
+   * it from `feat(orm): pivot-extras read/update + per-id sync` —
+   * see `~/Projects/rudder/docs/plans/2026-05-06-belongs-to-many-pivot-extras.md`).
+   */
+  updatePivot?(relatedId: string | number, data: Record<string, unknown>): Promise<number>
 }
 
 /**

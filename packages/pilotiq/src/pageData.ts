@@ -987,9 +987,10 @@ export async function applyRelationshipRepeaterFill(
   const out: Record<string, unknown> = { ...values }
   for (const repeater of repeaters) {
     const cfg = repeater.getRelationship()!
+    const pivotColumns = cfg.pivotColumns
     let rows: unknown[]
     try {
-      rows = await loadRelationRows(parentModel, record, cfg.name)
+      rows = await loadRelationRows(parentModel, record, cfg.name, pivotColumns)
     } catch {
       // Failed lookup (e.g. missing `relations` map on a test stub)
       // — fall back to whatever value applyFillPipeline produced
@@ -1017,7 +1018,22 @@ export async function applyRelationshipRepeaterFill(
       if (fkColumn)   delete r[fkColumn]
       if (morphIdCol) delete r[morphIdCol]
       if (morphTyCol) delete r[morphTyCol]
+      // M2M pivot extras — flatten `row.pivot[col]` onto the row's data
+      // so each pivot column round-trips through the inner schema as a
+      // regular form field. The pivot envelope itself is dropped from
+      // the values shape — the persist side splits pivot vs child
+      // columns by name lookup against `cfg.pivotColumns`.
+      const pivotEnvelope = r['pivot']
+      delete r['pivot']
       const stamped: Record<string, unknown> = { ...r }
+      if (pivotColumns && pivotColumns.length > 0
+        && pivotEnvelope && typeof pivotEnvelope === 'object'
+      ) {
+        const pe = pivotEnvelope as Record<string, unknown>
+        for (const col of pivotColumns) {
+          if (col in pe) stamped[col] = pe[col]
+        }
+      }
       if (pkValue !== undefined && pkValue !== null) {
         stamped['__id'] = String(pkValue)
       }
