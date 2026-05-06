@@ -488,6 +488,23 @@ describe('relationManagerData (Plan #11)', () => {
       const viewTab = tabList.find(t => t['key'] === '__view')
       assert.equal(viewTab?.['active'], false)
     })
+
+    it('breadcrumb leaf reads RelationManager.recordTitleAttribute over Resource fallback', async () => {
+      // Manager picks `parentId` for the leaf title; the related Resource
+      // doesn't set recordTitleAttribute, so without the manager override
+      // the fallback chain would land on `title` ("Post One").
+      const { panel } = buildWorld({
+        managerOverrides: { recordTitleAttribute: 'parentId' } as Partial<typeof RelationManager>,
+      })
+      const out = await relationManagerData(panel, {
+        kind: 'relation-view', slug: 'users', recordId: 'u1', relationship: 'posts', childId: 'p1',
+      })
+      const data = out as Record<string, unknown>
+      const schema = data['schemaData'] as Array<Record<string, unknown>>
+      const crumbs = schema.find(s => s['type'] === 'breadcrumbs') as Record<string, unknown>
+      const items = crumbs['items'] as Array<Record<string, unknown>>
+      assert.equal(items.at(-1)!['label'], 'u1')
+    })
   })
 
   describe('relation-edit scope', () => {

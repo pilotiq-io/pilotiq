@@ -1831,7 +1831,7 @@ async function buildRelationViewData(
   const breadcrumbs = relationViewBreadcrumbs(
     cfg, R, M, scope.recordId,
     deriveParentTitle(R, parentRecord),
-    deriveParentTitle(Related, child),
+    deriveParentTitle(Related, child, M),
   )
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
@@ -1937,7 +1937,7 @@ async function buildRelationEditData(
     cfg, R, M, scope.recordId,
     deriveParentTitle(R, parentRecord),
     scope.childId,
-    deriveParentTitle(Related, child),
+    deriveParentTitle(Related, child, M),
   )
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
@@ -2176,7 +2176,7 @@ function nestedResponseEnvelope(
 } {
   const { R, M1, Related1, child1, M2, Related2 } = resolved
   const [step0, step1] = scope.chain
-  const parentChildTitle = deriveParentTitle(Related1, child1)
+  const parentChildTitle = deriveParentTitle(Related1, child1, M1)
 
   return {
     pageType,
@@ -2252,7 +2252,7 @@ async function buildNestedRelationListData(
     cfg, resolved.R, resolved.M1, M2, scope.chain[0],
     deriveParentTitle(resolved.R, resolved.parentRecord),
     scope.chain[1].recordId,
-    deriveParentTitle(Related1, child1),
+    deriveParentTitle(Related1, child1, resolved.M1),
   )
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
@@ -2301,7 +2301,7 @@ async function buildNestedRelationCreateData(
     cfg, resolved.R, resolved.M1, M2, scope.chain[0],
     deriveParentTitle(resolved.R, resolved.parentRecord),
     scope.chain[1].recordId,
-    deriveParentTitle(resolved.Related1, child1),
+    deriveParentTitle(resolved.Related1, child1, resolved.M1),
   )
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
@@ -2361,8 +2361,8 @@ async function buildNestedRelationViewData(
     cfg, resolved.R, resolved.M1, M2, scope.chain[0],
     deriveParentTitle(resolved.R, resolved.parentRecord),
     scope.chain[1].recordId,
-    deriveParentTitle(Related1, child1),
-    deriveParentTitle(Related2, child2),
+    deriveParentTitle(Related1, child1, resolved.M1),
+    deriveParentTitle(Related2, child2, M2),
   )
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
@@ -2438,9 +2438,9 @@ async function buildNestedRelationEditData(
     cfg, resolved.R, resolved.M1, M2, scope.chain[0],
     deriveParentTitle(resolved.R, resolved.parentRecord),
     scope.chain[1].recordId,
-    deriveParentTitle(Related1, child1),
+    deriveParentTitle(Related1, child1, resolved.M1),
     scope.childId,
-    deriveParentTitle(Related2, child2),
+    deriveParentTitle(Related2, child2, M2),
   )
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
@@ -2598,8 +2598,18 @@ function buildRelationTabs(
 /** Pull a human-readable title off a parent record for breadcrumb /
  *  page-title use. Falls back through `recordTitleAttribute` →
  *  `name` → `title` → primary key value → 'Record'. */
-function deriveParentTitle(R: ResourceClass, record: unknown): string {
+function deriveParentTitle(
+  R:       ResourceClass,
+  record:  unknown,
+  manager?: typeof RelationManager,
+): string {
   const r = record as Record<string, unknown>
+  // Manager-scoped child rows prefer the manager's `recordTitleAttribute`
+  // when set — the manager owns its presentation surface, and the related
+  // Resource may not opt into the same column (e.g. nested-only Resources
+  // that exist purely to back a manager).
+  const managerAttr = manager?.recordTitleAttribute
+  if (managerAttr && r[managerAttr] != null) return String(r[managerAttr])
   const attr = R.recordTitleAttribute
   if (attr && r[attr] != null) return String(r[attr])
   if (r['name']  != null) return String(r['name'])
