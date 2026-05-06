@@ -408,6 +408,7 @@ Inline-displayable leaves that render text, images, icons, and chrome inside a s
 | `Icon`    | `Icon.make('check-circle')`           | `.size(px) / .color(IconColor) / .label(text)`. String-only — see "Icons" below.            |
 | `Markdown`| `Markdown.make('# Hello\n\n…')`       | Read-only Markdown source; server-renders via `marked`. `.gfm() / .breaks() / .prose() / .size('sm'\|'base'\|'lg')`. |
 | `Html`    | `Html.make('<p>Hello</p>')`           | Raw HTML passthrough. `.prose() / .size('sm'\|'base'\|'lg')`.                               |
+| `EmptyState` | `EmptyState.make('No reports yet')` | Schema-level empty state — distinct from `Table.emptyState`. `.description() / .icon(name) / .footer([Action…]) / .contained(false)`. |
 
 ### Text formatting
 

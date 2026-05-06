@@ -17,7 +17,7 @@ export type ColumnAlignment = 'start' | 'center' | 'end'
  * renderer mounts an interactive control that PATCHes a single column
  * via `POST {base}/{slug}/:id/_cell/:column`. */
 export type ColumnType =
-  | 'text' | 'badge' | 'icon' | 'boolean' | 'image'
+  | 'text' | 'badge' | 'icon' | 'boolean' | 'image' | 'color'
   | 'textInput' | 'toggle' | 'select'
 
 /** Per-row predicate for `Column.disabled(fn)` — evaluated server-side
@@ -110,6 +110,9 @@ export interface ColumnMeta extends ElementMeta {
   // ImageColumn — sizing.
   imageSize?:  number
   imageShape?: 'square' | 'circle'
+  // ColorColumn — swatch shape + value-text suppression.
+  colorShape?:     'rounded' | 'square' | 'circle'
+  colorHideValue?: true
   // TextInputColumn.
   inputType?:        'text' | 'number' | 'email' | 'url' | 'tel'
   inputPlaceholder?: string

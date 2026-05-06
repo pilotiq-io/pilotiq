@@ -128,6 +128,7 @@ export {
 export { Text, type TextColor, type TextSize, type TextWeight } from './schema/Text.js'
 export { Heading } from './schema/Heading.js'
 export { Alert, type AlertType } from './schema/Alert.js'
+export { EmptyState } from './schema/EmptyState.js'
 export { Divider } from './schema/Divider.js'
 export { UnorderedList } from './schema/UnorderedList.js'
 export { Image, type ImageShape } from './schema/Image.js'
@@ -152,6 +153,7 @@ export { IconEntry, type IconEntryOption } from './entries/IconEntry.js'
 export { ImageEntry, type ImageEntryShape } from './entries/ImageEntry.js'
 export { KeyValueEntry } from './entries/KeyValueEntry.js'
 export { ColorEntry, type ColorEntryShape } from './entries/ColorEntry.js'
+export { CodeEntry } from './entries/CodeEntry.js'
 export { ComponentEntry } from './entries/ComponentEntry.js'
 
 // Plan #15 — server-data widget elements

@@ -13,6 +13,7 @@ no validators, no submit. Built for `Resource.detail(record)`.
 | `ImageEntry`    | Inline `<img>` from a URL state value. Square / rounded / circle.      |
 | `KeyValueEntry` | Two-column key/value table. Reads objects or JSON-string blobs.        |
 | `ColorEntry`    | Swatch chip + raw value. For hex / rgb / oklch CSS color strings.      |
+| `CodeEntry`     | Monospace `<pre><code>` for JSON blobs / config snippets / commands.   |
 | `ComponentEntry`| Escape-hatch — hands rendering to a registered React component.        |
 
 Entries compose inside the same layout primitives forms use — `Section`,
@@ -246,6 +247,27 @@ State value is a CSS color string (`#aabbcc`, `rgb(...)`, `oklch(...)`,
 by default; toggle with `.hideValue()` for a chip-only layout. Same
 `.width / .height / .dimensions / .square / .rounded / .circle` setters
 as `ImageEntry`.
+
+---
+
+## `CodeEntry`
+
+```ts
+CodeEntry.make('payload').language('json').copyable()
+```
+
+Read-only sibling of `CodeEditorField` — renders the resolved value as
+`<pre><code>` with a monospace font. `language(id)` is a hint passed
+through to the meta; v1 ships **without bundled syntax highlighting**
+to keep the core small. For pretty-printing JSON / objects, pair with
+`formatStateUsing(JSON.stringify)`:
+
+```ts
+CodeEntry.make('config')
+  .language('json')
+  .formatStateUsing(v => JSON.stringify(v, null, 2))
+  .copyable()
+```
 
 ---
 

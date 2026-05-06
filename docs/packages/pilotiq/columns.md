@@ -1,7 +1,8 @@
 # Columns
 
 `Column.make(name)` is the base; specialized subclasses (`TextColumn`,
-`BadgeColumn`, `IconColumn`, `BooleanColumn`, `ImageColumn`) handle the
+`BadgeColumn`, `IconColumn`, `BooleanColumn`, `ImageColumn`,
+`ColorColumn`) handle the
 common cell shapes. Every column reads from the row's record property
 by default; `formatStateUsing(fn)` overrides per row server-side.
 
@@ -113,6 +114,17 @@ ImageColumn.make('avatar')
 ```
 
 Pair with `.placeholder('—')` for rows where the URL is null.
+
+## ColorColumn
+
+Renders a CSS color string (HEX / HSL / RGB / RGBA / named) as a swatch
+beside the value. Pairs with `ColorPickerField` for round-trip display.
+
+```ts
+ColorColumn.make('accent')
+  .square()        // 'rounded' (default) | 'square' | 'circle'
+  .hideValue()     // chip-only, no text beside
+```
 
 ## Table chrome
 

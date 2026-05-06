@@ -2192,6 +2192,25 @@ function renderEntry(el: ElementMeta, index: number): React.ReactNode {
       break
     }
 
+    case 'code': {
+      const isBlank = value === null || value === undefined || value === ''
+      if (isBlank) {
+        body = <span className="text-sm text-muted-foreground">{fallback}</span>
+        break
+      }
+      const text = typeof value === 'string' ? value : String(value)
+      const lang = el['language'] ? String(el['language']) : undefined
+      body = (
+        <pre
+          className="rounded-md border border-border bg-muted/40 p-3 text-xs overflow-x-auto"
+          data-language={lang}
+        >
+          <code className="font-mono">{text}</code>
+        </pre>
+      )
+      break
+    }
+
     case 'component': {
       const componentName = String(el['component'] ?? '')
       if (!componentName) {
@@ -2451,6 +2470,30 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
         <div key={index} className={`rounded-lg border p-4 ${styles}`}>
           {title && <p className="font-medium mb-1">{title}</p>}
           <p className="text-sm">{String(el['content'] ?? '')}</p>
+        </div>
+      )
+    }
+
+    case 'emptyState': {
+      const heading     = String(el['heading'] ?? '')
+      const description = el['description'] ? String(el['description']) : undefined
+      const iconName    = el['icon']        ? String(el['icon'])        : undefined
+      const contained   = el['contained'] !== false
+      const Icon        = iconName ? resolveIcon(iconName) : undefined
+      const footer      = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup')
+      const wrapper = contained
+        ? 'rounded-lg border border-border bg-card text-card-foreground py-12 px-6'
+        : 'py-8'
+      return (
+        <div key={index} className={`${wrapper} flex flex-col items-center text-center gap-3`}>
+          {Icon && <Icon className="size-10 text-muted-foreground" aria-hidden="true" />}
+          <h3 className="text-lg font-semibold">{heading}</h3>
+          {description && <p className="text-sm text-muted-foreground max-w-md">{description}</p>}
+          {footer.length > 0 && (
+            <div className="flex items-center gap-2 mt-2">
+              {footer.map((a, i) => renderActionLike(a, i))}
+            </div>
+          )}
         </div>
       )
     }
@@ -3106,6 +3149,24 @@ function formatCell(
           height={size}
           className={`${shape} object-cover`}
         />
+      )
+    }
+    case 'color': {
+      const css = String(value)
+      const shape = col['colorShape'] as 'rounded' | 'square' | 'circle' | undefined
+      const shapeClass =
+        shape === 'circle' ? 'rounded-full' :
+        shape === 'square' ? 'rounded-none' : 'rounded'
+      const hideValue = col['colorHideValue'] === true
+      return (
+        <span className="inline-flex items-center gap-2">
+          <span
+            className={`size-4 border border-border ${shapeClass}`}
+            style={{ backgroundColor: css }}
+            aria-hidden="true"
+          />
+          {!hideValue && <span className="text-sm">{css}</span>}
+        </span>
       )
     }
     default: {

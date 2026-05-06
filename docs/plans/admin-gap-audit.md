@@ -33,6 +33,31 @@ Land in this order. Each step is independently shippable; later steps build on e
 
 Penciled for later (Tier 3): Repeater/Builder fields ✅ shipped (Plans #14, #14-followup); widgets/dashboards ✅ shipped (Plan #15); import/export ✅ shipped (`import-export-actions.md`, 2026-05-03); sub-navigation ✅ shipped (2026-05-03 cont'd — `RelationTabs` now emits `[View, Edit, …managers]` Filament-style, each parent tab gated on the corresponding page role being registered); resource nesting still open.
 
+### Filament v5 fill-gap pass (2026-05-06 cont'd⁶)
+
+After the v4 gap audit closed, a follow-up pass against Filament v5
+(`docs/5.x/...`) surfaced these display-side primitives that didn't
+exist in v4:
+
+| Feature | Tier | Notes |
+|---|---|---|
+| ✅ `ColorColumn` DONE | 1 | `ColorColumn.make(name).square()\|.circle()\|.rounded().hideValue()` — pairs with `ColorPickerField`. Renders a CSS-color swatch beside the value. |
+| ✅ Schema `EmptyState` DONE | 1 | `EmptyState.make(heading).description().icon().footer([Action…]).contained(false)` — distinct from `Table.emptyState` (table chrome). Drops into any layout the same way as `Heading`/`Alert`/`Text`. |
+| ✅ `CodeEntry` DONE | 1 | `CodeEntry.make(name).language('json').copyable()` — read-only sibling of `CodeEditorField`; v1 ships `<pre><code>` with no bundled highlighter. Pair with `formatStateUsing(JSON.stringify)` for objects. |
+
+**v5 items still open (deferred):**
+
+| Feature | Tier | Notes |
+|---|---|---|
+| `RepeatableEntry` | 2 | Array-of-subschema for read-only infolists (display-side sibling of `Repeater`). Filament v5 has 3 layout modes (default cards / `grid(n)` / `table([cols])`); merits a focused session. |
+| Render hooks | 2-3 | Filament v5 `FilamentView::registerRenderHook(name, fn, scopes?)` content-injection points (`BODY_START`, `SIDEBAR_NAV_END`, `TOOLBAR_BEFORE`, etc.). Useful for plugin authors; needs an enum + walker stamps + scope filtering. Worth a plan doc before code. |
+| Filter layout positions | 2 | Filament v5 lets filters render `Modal` / `AboveContent` / `AboveContentCollapsible` / `BelowContent` / `BeforeContent` / `AfterContent` (sidebar) — not just the dropdown popover we ship today. Layout choice is per-table. |
+| User menu | 2 | Built-in profile dropdown in sidebar/topbar. Today layouts ship a theme toggle but no profile menu. |
+| Multi-tenancy | 3 | Large new system — tenants, ownership, switcher. Out of scope for now. |
+| Database notifications | 3 | Persistent inbox (sibling of toasts). Different model than the transient `Toaster`. |
+| Broadcast notifications | 3 | Websocket push. Out of scope. |
+| Filament's plugin API surface | 3 | Our `PilotiqPlugin` interface is basic (`name + register`). Filament's standalone-plugin contract is more developed. |
+
 **Cross-repo blockers tracked outside pilotiq:**
 - ✅ `belongsToMany` / pivot / M2M — `@rudderjs/orm` shipped pivot support (2026-05-03). Pilotiq's RelationManager M2M follow-up shipped same day — see `relations-m2m.md`.
 - ✅ Polymorphic (`morphMany / morphOne / morphTo`) — `@rudderjs/orm` shipped polymorphic support (2026-05-03). Pilotiq's RelationManager polymorphic follow-up shipped same day — see `relations-polymorphic.md` (`'morphMany' / 'morphTo'` modes + auto-injection of `commentableId / commentableType` on create + edit + anti-tamper guard). `morphToMany / morphedByMany` remain deferred on the rudder side.

@@ -8,6 +8,7 @@ export {
 export { Text, type TextColor, type TextSize, type TextWeight } from './Text.js'
 export { Heading } from './Heading.js'
 export { Alert, type AlertType } from './Alert.js'
+export { EmptyState } from './EmptyState.js'
 export { Divider } from './Divider.js'
 export { UnorderedList } from './UnorderedList.js'
 export { Breadcrumbs, type BreadcrumbItem } from './Breadcrumbs.js'
