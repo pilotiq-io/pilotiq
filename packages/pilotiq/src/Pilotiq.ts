@@ -13,6 +13,7 @@ import type {
   RenderHookName,
   RenderHookScope,
 } from './RenderHook.js'
+import type { NotificationActionHandler } from './notifications/types.js'
 
 export type PilotiqLayout = 'sidebar' | 'topbar'
 
@@ -178,6 +179,17 @@ export interface PilotiqConfig {
    *  `@rudderjs/orm`'s `ModelRegistry` adapter, scoped to
    *  `pilotiq.resolveUser(req).id`. */
   databaseNotifications?: DatabaseNotificationsConfig & { enabled: true }
+  /**
+   * Named notification-action handlers. Registered via
+   * `Pilotiq.notificationHandlers({ name: fn })`. Looked up by the
+   * `_notifications/:id/_action/:actionName` route at request time when
+   * a stored action carries `handler: 'name'`.
+   *
+   * The closure-handler path on Action (`.handler(async ctx => …)`)
+   * works for transient toasts but doesn't survive a `data` JSON
+   * round-trip — this registry is the persistence-safe escape hatch.
+   */
+  notificationHandlers?: Record<string, NotificationActionHandler>
   /**
    * Render-hook entries registered via `Pilotiq.renderHook(name, fn,
    * scope?)`. Resolved per-request by `panelInfo()` (chrome slots) and
@@ -454,6 +466,52 @@ export class Pilotiq {
       broadcast: opts,
     }
     return this
+  }
+
+  /**
+   * Register named handlers for `Notification.actions([…])` slots.
+   * Calling this twice merges — later registrations override earlier
+   * keys.
+   *
+   *   panel.notificationHandlers({
+   *     'archive-project': async (ctx) => {
+   *       const { projectId } = ctx.payload as { projectId: number }
+   *       await Project.update(projectId, { archivedAt: new Date() })
+   *       return { notify: { title: 'Archived', type: 'success' } }
+   *     },
+   *   })
+   *
+   * Names must match `^[A-Za-z0-9_-]+$` (URL-safe — they ride in the
+   * action endpoint path). Empty / whitespace / non-conforming keys
+   * throw at registration time so a typo fails fast instead of 404ing
+   * three days later when a user clicks the action on an old row.
+   *
+   * Closures registered here survive a `data` JSON round-trip (only
+   * the name does — the closure stays in memory). For transient toasts
+   * authored against the current page, `Action.handler(async ctx => …)`
+   * still works inline — the registry is only required for persisted
+   * actions.
+   */
+  notificationHandlers(map: Record<string, NotificationActionHandler>): this {
+    const namePattern = /^[A-Za-z0-9_-]+$/
+    for (const key of Object.keys(map)) {
+      if (!namePattern.test(key)) {
+        throw new Error(
+          `[Pilotiq] notificationHandlers: handler name "${key}" contains characters ` +
+          `outside [A-Za-z0-9_-]. Names ride in the action URL path; pick a URL-safe key.`,
+        )
+      }
+    }
+    this.config.notificationHandlers = {
+      ...(this.config.notificationHandlers ?? {}),
+      ...map,
+    }
+    return this
+  }
+
+  /** @internal — looked up by the notification-action route. */
+  getNotificationHandler(name: string): NotificationActionHandler | undefined {
+    return this.config.notificationHandlers?.[name]
   }
 
   /**

@@ -4,6 +4,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { NotificationMeta, NotificationType } from '../notifications/Notification.js'
+import { NotificationActionStrip } from './NotificationActionStrip.js'
 
 interface ToasterContextValue {
   /** Add a notification to the stack. The id is auto-generated when
@@ -51,13 +52,15 @@ function ToastItem({ item, onDismiss }: ToastItemProps) {
   const iconCls = TYPE_ICON_CLASSES[item.type]
 
   // Auto-dismiss timer. Skip when duration === 0 (persistent until
-  // manually dismissed).
+  // manually dismissed). Toasts with actions auto-extend to 0
+  // (persistent) — auto-dismissal would race the user's click.
   useEffect(() => {
-    const ms = item.duration ?? 5000
+    const hasActions = item.actions && item.actions.length > 0
+    const ms = item.duration ?? (hasActions ? 0 : 5000)
     if (ms <= 0) return
     const t = setTimeout(onDismiss, ms)
     return () => clearTimeout(t)
-  }, [item.duration, onDismiss])
+  }, [item.duration, item.actions, onDismiss])
 
   return (
     <div
@@ -70,6 +73,12 @@ function ToastItem({ item, onDismiss }: ToastItemProps) {
         <p className="text-sm font-semibold leading-snug">{item.title}</p>
         {item.body && (
           <p className="text-xs leading-snug mt-0.5 opacity-90">{item.body}</p>
+        )}
+        {item.actions && item.actions.length > 0 && (
+          <NotificationActionStrip
+            actions={item.actions}
+            onAfterClick={onDismiss}
+          />
         )}
       </div>
       <button

@@ -274,13 +274,130 @@ nothing breaks.
 
 ---
 
+## Actions
+
+Notifications can carry a strip of action buttons rendered below the
+body — same shape on transient toasts and persisted bell rows. Three
+serializable dispatch modes, plus a Filament-style chain modifier
+(`.markAsRead()`) that works with any of them.
+
+```ts
+import { Notification, Action } from '@pilotiq/pilotiq'
+
+await Notification.make('New project assigned')
+  .body('You have been added as a collaborator on Apollo.')
+  .info()
+  .actions([
+    // 1) navigate-on-click (href) — works on toasts and bell rows
+    Action.make('view').url('/projects/123').markAsRead(),
+
+    // 2) form-POST — works on toasts and bell rows
+    Action.make('archive')
+      .label('Archive')
+      .method('post')
+      .action('/projects/123/archive')
+      .color('destructive'),
+
+    // 3) registered handler — works on bell rows; see "Named handler
+    //    registry" below for the registration step
+    Action.make('mark-priority')
+      .label('Mark priority')
+      .handler('mark-priority')
+      .payload({ projectId: 123 })
+      .markAsRead(),
+  ])
+  .sendToDatabase(currentUser)
+```
+
+### Chain modifier — `Action.markAsRead()`
+
+When you tag an action with `.markAsRead()`, firing it also flips the
+notification's `read_at` column. URL and form-POST actions fire the
+read mutation as a client-side side-effect (the bell client POSTs to
+`readUrl` before navigating); registry-handler actions handle it
+server-side inside the action route, so the round-trip is one request.
+
+```ts
+Action.make('view').url('/projects/123').markAsRead()
+```
+
+Use `.markAsRead(false)` to clear the flag — handy when you've inherited
+an Action factory that armed it.
+
+### Named handler registry
+
+Closures don't survive the JSON round-trip into the `data.actions`
+column, so persisted bell rows can't carry `Action.handler(async ctx
+=> …)` directly. Register the handler under a name at boot, then
+reference it by string from inside `Notification.actions([…])`:
+
+```ts
+import { Pilotiq } from '@pilotiq/pilotiq'
+
+panel.notificationHandlers({
+  'mark-priority': async (ctx) => {
+    const { projectId } = ctx.payload as { projectId: number }
+    await Project.update(projectId, { priority: 'high' })
+    return { notify: { title: 'Marked priority', type: 'success' } }
+  },
+})
+```
+
+Handler names must match `^[A-Za-z0-9_-]+$` — they ride in the action
+endpoint URL (`{base}/_notifications/:id/_action/:actionName`), so a
+URL-unsafe character throws at registration rather than 404ing days
+later when an old row is clicked.
+
+The handler context carries `user` (resolved by `Pilotiq.user(...)`),
+`payload` (the `.payload({…})` you set at send time), and
+`notificationId` (the row the click came from). Returning `{ redirect,
+notify, … }` works the same way as a `Resource.recordActions(...)`
+handler.
+
+### Closure handlers on transient toasts
+
+For transient toasts emitted from a Resource action handler, you can
+keep using the closure form — no registration step required:
+
+```ts
+return {
+  notify: Notification.make('Saved')
+    .success()
+    .actions([
+      Action.make('undo').handler(async () => {
+        await Post.update(id, { status: 'draft' })
+        return { notify: { title: 'Reverted', type: 'info' } }
+      }),
+    ])
+    .toMeta(),
+}
+```
+
+The toaster wires closures back to the current page's
+`_action/:actionName` endpoint. (Bell rows can't reach back to the
+emitting page — that's why persisted notifications need the registry.)
+
+### Compatibility
+
+- **`Action.markAsRead(basePath, id?)` factory** (the one shipped
+  earlier) is a different surface — it produces a standalone
+  *standalone-button* Action that posts to the read endpoint. Useful
+  in a custom inbox `recordActions(...)` slot. Not the same as the
+  chain modifier above.
+- The action wire format ignores Action features that don't fit a
+  notification context — modal-form (`.schema()` / `.modal*()`),
+  submit (`.submit()`), bulk placement, and visibility callbacks all
+  throw at config time with a clear pointer.
+
+---
+
 ## v1 limits
 
 - **Single notifiable type per panel.** Every read/write uses the same
   `notifiableType` (default `'users'`).
-- **No `Action.markAsRead()` factory inside notifications.** Filament's
-  `Notification::actions([Action::make('view')->markAsRead()])` is not
-  yet wired; click-through marks-read instead.
 - **No bulk inbox modal page.** The dropdown is the primary surface;
   a full inbox page (Filament's `database-notifications` modal) is
   deferred until a consumer asks.
+- **Modal-form actions inside notifications are deferred.** Use the
+  registry-handler path for "click → run logic" flows; a small modal
+  with form fields would need a second dispatch leg.

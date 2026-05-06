@@ -9,7 +9,8 @@
  * panel's bell-icon dropdown reads from that table so the same call
  * site that emits a toast can also drop a row into the user's inbox.
  */
-import type { Notifiable } from './types.js'
+import type { Notifiable, NotificationActionMeta } from './types.js'
+import type { Action } from '../actions/Action.js'
 import { persist as persistDatabaseNotification } from './database.js'
 import {
   push as pushBroadcast,
@@ -29,6 +30,11 @@ export interface NotificationMeta {
   /** Auto-dismiss duration in ms. `0` keeps the toast until manually
    * dismissed. Default 5000. */
   duration?: number
+  /** Filament-style action strip rendered below the body. Same shape
+   *  on transient toasts and persisted bell rows. Closure-handler
+   *  actions are valid on toasts but rejected at `sendToDatabase` time
+   *  (closures don't survive serialization). */
+  actions?:  NotificationActionMeta[]
 }
 
 let _idSeq = 0
@@ -44,6 +50,7 @@ export class Notification {
   protected _body?: string
   protected _icon?: string
   protected _duration?: number
+  protected _actions: Action[] = []
 
   private constructor() {}
 
@@ -75,6 +82,44 @@ export class Notification {
   id(s: string): this { this._id = s; return this }
 
   /**
+   * Filament-style action strip — buttons rendered below the body on
+   * both transient toasts and persisted bell rows.
+   *
+   * Three serializable dispatch modes:
+   *   - `Action.make('view').url('/p/123')`             — href anchor
+   *   - `Action.make('post').method('post').action(u)`  — form-POST
+   *   - `Action.make('archive').handler('name').payload({…})`
+   *                                                      — registered
+   *                                                        handler
+   *
+   * Closure handlers (`.handler(async ctx => …)`) work on transient
+   * toasts (dispatched against the page's `_action/:name`) but are
+   * rejected at `sendToDatabase()` time — closures don't round-trip
+   * through the `data` JSON column. Use the named-registry path
+   * (`Pilotiq.notificationHandlers({…})`) for persistent rows.
+   *
+   * Pair with `.markAsRead()` on any action to flip the row's
+   * `read_at` when the action fires:
+   *
+   *   Notification.make('New project assigned')
+   *     .actions([
+   *       Action.make('view').url('/p/123').markAsRead(),
+   *       Action.make('archive').handler('archive-project')
+   *         .payload({ projectId: 123 }).markAsRead(),
+   *     ])
+   *     .sendToDatabase(currentUser)
+   */
+  actions(actions: Action[]): this {
+    this._actions = actions
+    return this
+  }
+
+  /** Internal — exposed so the toaster / dispatcher can read the
+   *  authored Action instances directly when needed (rare). Most
+   *  consumers should read from `toMeta().actions` instead. */
+  getActions(): readonly Action[] { return this._actions }
+
+  /**
    * Optional click-through URL. When set on a row that's been written
    * to the database via `sendToDatabase()`, the bell-icon dropdown
    * navigates here when the row is clicked (and marks it read in the
@@ -87,6 +132,9 @@ export class Notification {
   // ─── Serialization ────────────────────────────────────
 
   toMeta(): NotificationMeta {
+    const actions = this._actions.length > 0
+      ? this._actions.map(a => serializeForNotification(a, { transient: true }))
+      : undefined
     return {
       id:    this._id ?? nextId(),
       type:  this._type,
@@ -94,6 +142,7 @@ export class Notification {
       ...(this._body     !== undefined ? { body:     this._body     } : {}),
       ...(this._icon     !== undefined ? { icon:     this._icon     } : {}),
       ...(this._duration !== undefined ? { duration: this._duration } : {}),
+      ...(actions        !== undefined ? { actions                  } : {}),
     }
   }
 
@@ -101,6 +150,12 @@ export class Notification {
    * Build the JSON payload stored in the `notification.data` column.
    * Mirrors the toast meta but always includes `type` (so the bell
    * dropdown can apply the matching tint chip) and `url` when set.
+   *
+   * Action strip: closure-handler actions are rejected here — their
+   * dispatch target only exists on the page that authored the notify,
+   * and the row may outlive that page by days. The named-registry path
+   * (`Pilotiq.notificationHandlers({…})`) is the persistence-safe
+   * escape hatch.
    */
   toDatabase(): Record<string, unknown> {
     const data: Record<string, unknown> = {
@@ -110,6 +165,9 @@ export class Notification {
     if (this._body !== undefined) data['body'] = this._body
     if (this._icon !== undefined) data['icon'] = this._icon
     if (this._url  !== undefined) data['url']  = this._url
+    if (this._actions.length > 0) {
+      data['actions'] = this._actions.map(a => serializeForNotification(a, { transient: false }))
+    }
     return data
   }
 
@@ -184,4 +242,113 @@ export { notificationChannel }
 /** @internal — reset id sequence; tests use this for stability. */
 export function _resetNotificationIdSeq(): void {
   _idSeq = 0
+}
+
+/**
+ * Walk an `Action` instance and emit the slim `NotificationActionMeta`
+ * wire shape — the same format on transient toasts (`toMeta()`) and
+ * persisted bell rows (`toDatabase()`).
+ *
+ * Rejects Action features that don't fit a notification context:
+ *
+ *   - Modal / form-modal actions (`.schema()`, `.modal*()`,
+ *     `.slideOver()`) — notifications aren't Resource pages, the modal
+ *     dispatcher's row/page context isn't available.
+ *   - Submit-button actions (`.submit()` / `.formField()`) — there's no
+ *     surrounding `<form>` to submit.
+ *   - Bulk placement — notifications are per-row, no `records[]`.
+ *   - Visibility callbacks (`.visible(fn)` / `.disabled(fn)`) — need
+ *     a render context the notification doesn't carry. Use the
+ *     server-side filter (only emit the action when relevant) instead.
+ *
+ * `transient: true` (used by `toMeta()`) tolerates closure handlers —
+ * they dispatch through the current page's `_action/:name` endpoint.
+ * `transient: false` (used by `toDatabase()`) rejects closures with a
+ * clear message pointing at the named-registry pattern.
+ */
+export function serializeForNotification(
+  action: Action,
+  opts: { transient: boolean },
+): NotificationActionMeta {
+  // Reject incompatible Action features at config time (works on both
+  // transports; the row's wire shape can't carry these even if we
+  // wanted it to).
+  if (action.hasModal()) {
+    throw new Error(
+      `[Pilotiq] Notification.actions: action "${action.name}" carries a modal-form ` +
+      `(.schema() / .modalHeading() / .slideOver()). Modal-form actions aren't supported ` +
+      `inside notifications in v1 — drop the modal or move the workflow to a Resource action.`,
+    )
+  }
+  if (action.isSubmit()) {
+    throw new Error(
+      `[Pilotiq] Notification.actions: action "${action.name}" is a submit button (.submit()). ` +
+      `Notifications have no surrounding <form>; use .url() / .method() / .handler() instead.`,
+    )
+  }
+  if (action.getPlacement() === 'bulk') {
+    throw new Error(
+      `[Pilotiq] Notification.actions: action "${action.name}" is bulk-placed. ` +
+      `Notifications are per-row — bulk placement has no recipient context.`,
+    )
+  }
+
+  const handlerFn   = action.getHandler()
+  const handlerName = action.getHandlerName()
+  const href        = action.getHref()
+  const method      = action.getMethod()
+  const actionUrl   = action.getActionUrl()
+
+  // Closure handler on a persisted row — reject loudly. The caller
+  // explicitly asked to `sendToDatabase`; silently dropping the action
+  // would surprise.
+  if (!opts.transient && handlerFn && !handlerName) {
+    throw new Error(
+      `[Pilotiq] Notification.actions: action "${action.name}" has a closure handler ` +
+      `but is being persisted via .sendToDatabase(). Closures don't survive serialization. ` +
+      `Use Pilotiq.notificationHandlers({ '${action.name}': async ctx => … }) and call ` +
+      `Action.handler('${action.name}') instead.`,
+    )
+  }
+
+  const meta: NotificationActionMeta = {
+    name:  action.name,
+    label: action.getLabel(),
+  }
+  // Dispatch mode — exactly one of url / post / handler. Precedence
+  // matches the Action surface: explicit href wins over method-form.
+  if (href) {
+    meta.url = href
+  } else if (method && actionUrl) {
+    meta.post = actionUrl
+  } else if (handlerName) {
+    meta.handler = handlerName
+    const payload = action.getPayload()
+    if (Object.keys(payload).length > 0) meta.payload = payload
+  } else if (handlerFn && opts.transient) {
+    // Transient toast with a closure handler — defer dispatch to the
+    // current page's `_action/:name`. Wire shape doesn't carry the
+    // closure itself; the toaster reads `Notification.getActions()`
+    // for closures and falls back to the page-level dispatch URL.
+    meta.handler = action.name
+  } else {
+    throw new Error(
+      `[Pilotiq] Notification.actions: action "${action.name}" has no dispatch target. ` +
+      `Set one of .url() / .method().action() / .handler(closureOrName).`,
+    )
+  }
+
+  // Chrome — copy through the subset that makes sense in a strip.
+  const color    = action.getColor()
+  const icon     = action.getIcon()
+  const outlined = action.isOutlined()
+  const size     = action.getSize()
+  if (color    !== undefined) meta.color           = color
+  if (icon     !== undefined) meta.icon            = icon
+  if (outlined)               meta.outlined        = true
+  if (size     !== undefined) meta.size            = size
+  if (action.isOpenUrlInNewTab()) meta.openUrlInNewTab = true
+  if (action.isMarkAsReadOnFire()) meta.markAsRead = true
+
+  return meta
 }

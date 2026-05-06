@@ -12,6 +12,9 @@ import { cn } from './utils.js'
 import type { DatabaseNotificationsMeta } from '../pageData.js'
 import type { DatabaseNotificationMeta } from '../notifications/database.js'
 import type { NavigationBadgeColor } from '../Resource.js'
+import type { NotificationMeta as NotificationMetaImport } from '../notifications/Notification.js'
+import { NotificationActionStrip } from './NotificationActionStrip.js'
+import { useToast } from './Toaster.js'
 
 const BADGE_COLOR: Record<NavigationBadgeColor, string> = {
   default:     'bg-muted text-muted-foreground',
@@ -182,6 +185,7 @@ export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta })
 
   const unreadCount = data?.unreadCount ?? 0
   const items       = data?.notifications ?? []
+  const toast       = useToast()
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -224,8 +228,11 @@ export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta })
                 <NotificationRow
                   key={n.id}
                   notification={n}
+                  actionUrlTemplate={meta.actionUrl}
                   onMarkRead={markRead}
                   onNavigate={(href) => { setOpen(false); navigate(href) }}
+                  onNotify={(notifs) => notifs.forEach(t => toast.notify(t))}
+                  onAfterClick={() => setOpen(false)}
                 />
               ))
           }
@@ -237,12 +244,18 @@ export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta })
 
 function NotificationRow({
   notification: n,
+  actionUrlTemplate,
   onMarkRead,
   onNavigate,
+  onNotify,
+  onAfterClick,
 }: {
-  notification: DatabaseNotificationMeta
-  onMarkRead:   (id: string) => void
-  onNavigate:   (url: string) => void
+  notification:       DatabaseNotificationMeta
+  actionUrlTemplate?: string
+  onMarkRead:         (id: string) => void
+  onNavigate:         (url: string) => void
+  onNotify:           (notifs: NotificationMetaImport[]) => void
+  onAfterClick:       () => void
 }) {
   const RowIcon = useIconFor(n.icon)
   const unread  = !n.readAt
@@ -255,13 +268,14 @@ function NotificationRow({
     if (n.url) onNavigate(n.url)
   }
 
+  // Body wrapper is `<a>` when the row has a click-through url, plain
+  // `<button>` otherwise. Form-mode + handler-mode action buttons in
+  // the strip can't validly nest inside an `<a>`/`<button>`, so the
+  // strip lives as a sibling under a shared chrome `<div>`.
   const Tag: 'a' | 'button' = n.url ? 'a' : 'button'
   const tagProps: React.AnchorHTMLAttributes<HTMLAnchorElement> & React.ButtonHTMLAttributes<HTMLButtonElement> = {
     onClick,
-    className: cn(
-      'w-full text-start px-3 py-2 flex items-start gap-2 hover:bg-accent transition-colors border-b last:border-b-0',
-      unread && 'bg-primary/5',
-    ),
+    className: 'w-full text-start flex items-start gap-2 focus:outline-none',
   }
   if (Tag === 'a') {
     tagProps.href = n.url!
@@ -270,31 +284,50 @@ function NotificationRow({
   }
 
   return (
-    <Tag {...(tagProps as React.HTMLAttributes<HTMLElement>)}>
-      <span
-        className={cn(
-          'mt-1.5 inline-block size-2 rounded-full shrink-0',
-          n.type ? TYPE_DOT[n.type] : 'bg-muted-foreground/40',
-        )}
-        aria-hidden="true"
-      />
-      <span className="flex-1 min-w-0">
-        <span className="flex items-center gap-1.5">
-          {RowIcon && <RowIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />}
-          <span className={cn('text-sm leading-tight', unread ? 'font-medium' : '')}>
-            {n.title || 'Notification'}
+    <div
+      className={cn(
+        'px-3 py-2 hover:bg-accent transition-colors border-b last:border-b-0',
+        unread && 'bg-primary/5',
+      )}
+    >
+      <Tag {...(tagProps as React.HTMLAttributes<HTMLElement>)}>
+        <span
+          className={cn(
+            'mt-1.5 inline-block size-2 rounded-full shrink-0',
+            n.type ? TYPE_DOT[n.type] : 'bg-muted-foreground/40',
+          )}
+          aria-hidden="true"
+        />
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-1.5">
+            {RowIcon && <RowIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />}
+            <span className={cn('text-sm leading-tight', unread ? 'font-medium' : '')}>
+              {n.title || 'Notification'}
+            </span>
+          </span>
+          {n.body && (
+            <span className="block text-xs text-muted-foreground mt-0.5 line-clamp-2">
+              {n.body}
+            </span>
+          )}
+          <span className="block text-[11px] text-muted-foreground/70 mt-1">
+            {formatRelative(n.createdAt)}
           </span>
         </span>
-        {n.body && (
-          <span className="block text-xs text-muted-foreground mt-0.5 line-clamp-2">
-            {n.body}
-          </span>
-        )}
-        <span className="block text-[11px] text-muted-foreground/70 mt-1">
-          {formatRelative(n.createdAt)}
-        </span>
-      </span>
-    </Tag>
+      </Tag>
+      {n.actions && n.actions.length > 0 && (
+        <div className="ms-4">
+          <NotificationActionStrip
+            actions={n.actions}
+            {...(actionUrlTemplate !== undefined ? { actionUrlTemplate } : {})}
+            notificationId={n.id}
+            onMarkAsRead={onMarkRead}
+            onNotify={onNotify}
+            onAfterClick={onAfterClick}
+          />
+        </div>
+      )}
+    </div>
   )
 }
 

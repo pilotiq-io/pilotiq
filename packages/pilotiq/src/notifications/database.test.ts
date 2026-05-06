@@ -169,6 +169,74 @@ describe('notifications/database — _internal.rowToMeta', () => {
     })
     assert.equal(meta.type, undefined)
   })
+
+  it('parses a valid actions array', () => {
+    const meta = _internal.rowToMeta({
+      id: 'r1',
+      notifiable_id: '1',
+      notifiable_type: 'users',
+      type: 'X',
+      data: JSON.stringify({
+        title: 'Hi',
+        actions: [
+          { name: 'view',    label: 'View',    url: '/p/1', markAsRead: true },
+          { name: 'archive', label: 'Archive', handler: 'archive-project', payload: { projectId: 1 } },
+        ],
+      }),
+      read_at: null,
+      created_at: new Date(2026, 0, 1).toISOString(),
+      updated_at: new Date(2026, 0, 1).toISOString(),
+    })
+    assert.equal(meta.actions?.length, 2)
+    assert.equal(meta.actions?.[0]?.url, '/p/1')
+    assert.equal(meta.actions?.[0]?.markAsRead, true)
+    assert.equal(meta.actions?.[1]?.handler, 'archive-project')
+    assert.deepEqual(meta.actions?.[1]?.payload, { projectId: 1 })
+  })
+
+  it('drops actions that fail validation (non-string name, missing dispatch, etc)', async () => {
+    // Suppress console.warn during the test — we know we're feeding bad data.
+    const orig = console.warn
+    console.warn = () => {}
+    try {
+      const meta = _internal.rowToMeta({
+        id: 'r1',
+        notifiable_id: '1',
+        notifiable_type: 'users',
+        type: 'X',
+        data: JSON.stringify({
+          title: 'Hi',
+          actions: [
+            { name: 'good', label: 'Good', url: '/x' },
+            { name: 'bad-no-dispatch', label: 'Bad' },
+            { /* no name */ label: 'Also bad', url: '/y' },
+            { name: 'two-modes', label: 'Bad 2', url: '/y', post: '/z' },
+          ],
+        }),
+        read_at: null,
+        created_at: new Date(2026, 0, 1).toISOString(),
+        updated_at: new Date(2026, 0, 1).toISOString(),
+      })
+      assert.equal(meta.actions?.length, 1)
+      assert.equal(meta.actions?.[0]?.name, 'good')
+    } finally {
+      console.warn = orig
+    }
+  })
+
+  it('omits the actions key when none present', () => {
+    const meta = _internal.rowToMeta({
+      id: 'r1',
+      notifiable_id: '1',
+      notifiable_type: 'users',
+      type: 'X',
+      data: JSON.stringify({ title: 'Hi' }),
+      read_at: null,
+      created_at: new Date(2026, 0, 1).toISOString(),
+      updated_at: new Date(2026, 0, 1).toISOString(),
+    })
+    assert.equal(meta.actions, undefined)
+  })
 })
 
 describe('notifications/database — store unavailable', () => {

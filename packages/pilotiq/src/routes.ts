@@ -30,10 +30,12 @@ import {
 } from './pageData.js'
 import {
   listForUser    as listDatabaseNotifications,
+  findOneForUser as findDatabaseNotificationForUser,
   markAsRead     as markDatabaseNotificationAsRead,
   markAsUnread   as markDatabaseNotificationAsUnread,
   markAllAsRead  as markAllDatabaseNotificationsAsRead,
 } from './notifications/database.js'
+import { dispatchNotificationAction } from './notifications/dispatchNotificationAction.js'
 import { registerBroadcastAuth } from './notifications/registerBroadcastAuth.js'
 import {
   RelationManager, RESERVED_RELATIONSHIP_TOKENS,
@@ -786,6 +788,42 @@ export function registerPilotiqRoutes(
         notifiableId: userId,
       })
       return res.json({ ok: true, count })
+    })
+
+    // POST ${base}/_notifications/:id/_action/:actionName
+    //
+    // Notification action dispatch — looks up the stored action on the
+    // row, resolves the named handler against the panel's
+    // `notificationHandlers` registry, and runs it with the row's
+    // stored payload. Optionally flips `read_at` server-side when the
+    // action carried `markAsRead: true`.
+    //
+    // Defends in depth: 404s on missing row / wrong owner / action
+    // missing / non-string handler / unknown registry name. Body is
+    // ignored — payload reads exclusively from the stored row, so a
+    // tampered client can't inject extra payload keys.
+    router.post(`${base}/_notifications/:id/_action/:actionName`, async (req, res) => {
+      const user = await pilotiq.resolveUser(req)
+      const userId = user && typeof user === 'object'
+        ? ((user as { id?: unknown }).id !== undefined && (user as { id?: unknown }).id !== null
+            ? String((user as { id: unknown }).id) : null)
+        : null
+      if (userId === null) { res.status(401); return res.json({ ok: false, error: 'Not authenticated' }) }
+
+      const params = (req.params as Record<string, string | undefined>)
+      const result = await dispatchNotificationAction(pilotiq, {
+        notificationId: params['id']         ?? '',
+        actionName:     params['actionName'] ?? '',
+        notifiableType,
+        notifiableId:   userId,
+        user,
+        request:        req,
+      })
+      if (!result.ok) {
+        res.status(result.status)
+        return res.json({ ok: false, error: result.error })
+      }
+      return res.json(result)
     })
 
     // Phase 2 — register the broadcast auth callback for private

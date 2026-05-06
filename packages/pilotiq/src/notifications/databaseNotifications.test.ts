@@ -93,6 +93,7 @@ describe('panelInfo() — databaseNotifications meta', () => {
     assert.equal(dn.readAllUrl, '/admin/_notifications/read-all')
     assert.equal(dn.readUrl,    '/admin/_notifications/:id/read')
     assert.equal(dn.unreadUrl,  '/admin/_notifications/:id/unread')
+    assert.equal(dn.actionUrl,  '/admin/_notifications/:id/_action/:actionName')
   })
 
   it('honors custom path for URL building', async () => {

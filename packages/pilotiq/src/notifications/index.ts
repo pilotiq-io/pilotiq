@@ -20,6 +20,7 @@ export type { Notifiable } from './types.js'
 export {
   listForUser,
   unreadCount,
+  findOneForUser as findDatabaseNotificationForUser,
   markAsRead,
   markAsUnread,
   markAllAsRead,
@@ -28,6 +29,13 @@ export {
   type ListOptions    as DatabaseNotificationListOptions,
   type ListResult     as DatabaseNotificationListResult,
 } from './database.js'
+
+export type {
+  NotificationActionMeta,
+  NotificationActionHandler,
+  NotificationActionContext,
+  NotificationActionResult,
+} from './types.js'
 
 export {
   push as pushBroadcastNotification,

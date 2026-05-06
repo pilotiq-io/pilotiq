@@ -114,6 +114,14 @@ export interface DatabaseNotificationsMeta {
   /** Template URL with literal `:id` placeholder. Client replaces. */
   unreadUrl:   string
   /**
+   * Template URL for the notification-action dispatch endpoint with
+   * literal `:id` and `:actionName` placeholders. Bell client builds
+   * per-action URLs by substituting both at render time. Used only by
+   * `handler`-mode actions; `url` / `post` actions ride their own URL
+   * verbatim.
+   */
+  actionUrl:   string
+  /**
    * Phase 2 — broadcast hint. Sparse — absent when
    * `databaseNotifications({ broadcast: true })` wasn't set OR when no
    * resolved user has an `id` to scope the channel to.
@@ -236,6 +244,7 @@ function buildDatabaseNotificationsMeta(
     readAllUrl: `${base}/_notifications/read-all`,
     readUrl:    `${base}/_notifications/:id/read`,
     unreadUrl:  `${base}/_notifications/:id/unread`,
+    actionUrl:  `${base}/_notifications/:id/_action/:actionName`,
   }
   if (dn.trigger) meta.trigger = { ...dn.trigger }
   // Phase 2 broadcast hint — only ship when broadcast is enabled AND the

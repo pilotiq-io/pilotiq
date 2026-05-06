@@ -17,6 +17,7 @@
  */
 
 import type { NotificationMeta, NotificationType } from './Notification.js'
+import type { NotificationActionMeta } from './types.js'
 
 /** Wire shape returned by the list endpoint to the bell client. */
 export interface DatabaseNotificationMeta {
@@ -38,6 +39,12 @@ export interface DatabaseNotificationMeta {
   /** Optional click-through URL. When set, clicking the row navigates
    *  there + marks the notification as read. */
   url?:      string
+  /** Optional action strip rendered below the body. Round-trips
+   *  verbatim through the `data.actions` JSON column (`Notification`
+   *  emits the slim wire shape; `rowToMeta` validates each entry and
+   *  drops malformed ones with a `console.warn` rather than failing
+   *  the dropdown). */
+  actions?:  NotificationActionMeta[]
 }
 
 /** Raw row shape on the `notification` table — matches the schema
@@ -145,7 +152,61 @@ function rowToMeta(row: NotificationRow): DatabaseNotificationMeta {
   ) {
     meta.type = data['type']
   }
+  const actions = parseStoredActions(data['actions'])
+  if (actions.length > 0) meta.actions = actions
   return meta
+}
+
+/**
+ * Validate the stored action array shape — the `data.actions` column
+ * is end-user controllable through the `Notification` builder, so we
+ * defend in depth: malformed entries are dropped with a warning rather
+ * than crashing the bell dropdown render.
+ *
+ * Required: `name: string`, `label: string`, exactly one of `url` /
+ * `post` / `handler` set to a string.
+ */
+function parseStoredActions(raw: unknown): NotificationActionMeta[] {
+  if (!Array.isArray(raw)) return []
+  const out: NotificationActionMeta[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const e = entry as Record<string, unknown>
+    if (typeof e['name']  !== 'string' || !e['name'])  { warnDrop(e, 'missing name'); continue }
+    if (typeof e['label'] !== 'string' || !e['label']) { warnDrop(e, 'missing label'); continue }
+    const url     = typeof e['url']     === 'string' ? e['url']     as string : undefined
+    const post    = typeof e['post']    === 'string' ? e['post']    as string : undefined
+    const handler = typeof e['handler'] === 'string' ? e['handler'] as string : undefined
+    const dispatchModes = [url, post, handler].filter(v => v !== undefined).length
+    if (dispatchModes !== 1) { warnDrop(e, 'must set exactly one of url/post/handler'); continue }
+
+    const action: NotificationActionMeta = { name: e['name'] as string, label: e['label'] as string }
+    if (url     !== undefined) action.url     = url
+    if (post    !== undefined) action.post    = post
+    if (handler !== undefined) action.handler = handler
+    if (e['payload'] && typeof e['payload'] === 'object' && !Array.isArray(e['payload'])) {
+      action.payload = e['payload'] as Record<string, unknown>
+    }
+    if (typeof e['color']    === 'string') action.color    = e['color']    as never
+    if (typeof e['icon']     === 'string') action.icon     = e['icon']     as string
+    if (e['outlined']        === true)     action.outlined = true
+    if (typeof e['size']     === 'string') action.size     = e['size']     as never
+    if (e['openUrlInNewTab'] === true)     action.openUrlInNewTab = true
+    if (e['markAsRead']      === true)     action.markAsRead      = true
+    out.push(action)
+  }
+  return out
+}
+
+function warnDrop(entry: Record<string, unknown>, reason: string): void {
+  // Only warn in non-production — keep the bell quiet on prod where
+  // a dropped row is preferable to console spam.
+  if (typeof process !== 'undefined' && process.env?.['NODE_ENV'] === 'production') return
+
+  console.warn(
+    `[Pilotiq] notification action dropped: ${reason}. Entry:`,
+    entry,
+  )
 }
 
 export interface ListOptions {
@@ -186,6 +247,28 @@ export async function listForUser(opts: ListOptions): Promise<ListResult> {
   ])
   const rows = (page.data as NotificationRow[]).map(rowToMeta)
   return { notifications: rows, unreadCount: count }
+}
+
+/**
+ * Fetch a single row by id, scoped to the notifiable. Returns
+ * `undefined` when no row matches (already-deleted / wrong owner /
+ * store unavailable). Used by the notification action route to look
+ * up the stored `data.actions` array before dispatching.
+ */
+export async function findOneForUser(
+  id: string,
+  opts: { notifiableType: string; notifiableId: string },
+): Promise<DatabaseNotificationMeta | undefined> {
+  const adp = await adapter()
+  if (!adp) return undefined
+  const q = adp.query<NotificationRow>('notification')
+    .where('notifiable_type', opts.notifiableType)
+    .where('notifiable_id',   opts.notifiableId)
+    .where('id',              id)
+  const page = await q.paginate(1, 1)
+  const row = (page.data as NotificationRow[])[0]
+  if (!row) return undefined
+  return rowToMeta(row)
 }
 
 /** Count rows with `read_at IS NULL` for the notifiable. */

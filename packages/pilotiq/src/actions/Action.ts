@@ -569,6 +569,36 @@ export class Action extends Element {
   protected _destructive = false
   protected _confirm?: ActionConfirm
   protected _handler?: ActionHandler
+  /**
+   * Notification-registry handler key — set by `.handler(string)`. The
+   * notification-action route looks this up against
+   * `Pilotiq.notificationHandlers({…})` at request time. Mutually
+   * exclusive with the closure `_handler` — passing a string clears
+   * `_handler`, passing a function clears `_handlerName`. Closures can't
+   * round-trip through a `data` JSON column; the registry path is the
+   * persisted-notification escape hatch.
+   */
+  protected _handlerName?: string
+  /**
+   * Per-fire context for registry-handler dispatch. Round-trips through
+   * the notification's `data.actions` JSON column verbatim and arrives
+   * on the handler's `ctx.payload`.
+   */
+  protected _payload?: Record<string, unknown>
+  /**
+   * Filament-style chain modifier — when set on an action used inside a
+   * `Notification.actions([…])` slot, firing the action also flips the
+   * notification's `read_at`. No-op when the action isn't in a
+   * notification context.
+   */
+  protected _markAsReadOnFire = false
+  /**
+   * When set, click-through opens in a new tab. Honored by the
+   * notification action strip renderers (bell + toast); ignored by
+   * everything else (Resource action triggers don't expose this knob —
+   * use `target` on the underlying anchor if you need it elsewhere).
+   */
+  protected _openUrlInNewTab = false
   protected _href?: string
   protected _method?: ActionMethod
   protected _actionUrl?: string
@@ -1699,8 +1729,74 @@ export class Action extends Element {
     return this
   }
 
-  /** Server-side handler. Stored in Phase 1; dispatched in Phase 2. */
-  handler(fn: ActionHandler): this { this._handler = fn; return this }
+  /**
+   * Server-side handler. Two shapes:
+   *
+   * - **Closure** — `handler(async ctx => …)`. Dispatched against the
+   *   current page's `_action/:name` endpoint. Closures don't survive
+   *   serialization, so they can't ride a persisted notification —
+   *   `Notification.toDatabase()` rejects them with a clear error.
+   *
+   * - **Registry key** — `handler('archive-project')`. Looked up against
+   *   `Pilotiq.notificationHandlers({…})` at request time. Round-trips
+   *   through a `Notification`'s `data.actions` JSON column, so this is
+   *   the path to take when an action lives on a row that may be
+   *   clicked days later.
+   *
+   * Mutually exclusive — setting one clears the other.
+   */
+  handler(fnOrName: ActionHandler | string): this {
+    if (typeof fnOrName === 'string') {
+      this._handlerName = fnOrName
+      delete this._handler
+    } else {
+      this._handler = fnOrName
+      delete this._handlerName
+    }
+    return this
+  }
+
+  /**
+   * Per-fire context for registry-handler dispatch. JSON-serializable
+   * keys only — values flow through the notification's `data.actions`
+   * column and arrive on the handler's `ctx.payload`.
+   *
+   *   Action.make('archive')
+   *     .handler('archive-project')
+   *     .payload({ projectId: 123 })
+   */
+  payload(data: Record<string, unknown>): this {
+    this._payload = data
+    return this
+  }
+
+  /**
+   * Filament-style chain modifier — when this action lives inside a
+   * `Notification.actions([…])` slot, firing it also flips the
+   * notification's `read_at`. No-op for actions used outside the
+   * notification context (Resource actions, etc).
+   *
+   *   Action.make('view').url('/projects/123').markAsRead()
+   *
+   * On url/post actions the bell client fires the read POST as a
+   * client-side side-effect *before* navigating/submitting; on
+   * registry-handler actions the route flips `read_at` server-side
+   * after the handler runs (one round-trip, not two).
+   */
+  markAsRead(v = true): this {
+    this._markAsReadOnFire = v
+    return this
+  }
+
+  /**
+   * Open the action's url in a new tab. Honored by the notification
+   * action-strip renderers; equivalent to `target="_blank"` on the
+   * underlying anchor.
+   */
+  openUrlInNewTab(v = true): this {
+    this._openUrlInNewTab = v
+    return this
+  }
 
   // ─── Modal / form-modal action ────────────────────────
 
@@ -1737,6 +1833,12 @@ export class Action extends Element {
     delete this._actionUrl
     return this
   }
+
+  /**
+   * Sugar alias for `.href(url)` — matches Filament's `->url(...)` API
+   * and reads more naturally inside `Notification.actions([…])`.
+   */
+  url(href: string): this { return this.href(href) }
 
   /**
    * Render this action as a form-style submit button using `method`. Pair
@@ -1812,6 +1914,18 @@ export class Action extends Element {
   getPlacement(): ActionPlacement    { return this._placement }
   isDestructive(): boolean           { return this._destructive }
   getHandler():     ActionHandler | undefined { return this._handler }
+  /** Registry key set by `.handler(string)`; undefined when the handler
+   *  is a closure (or unset). Mutually exclusive with `getHandler()`. */
+  getHandlerName(): string | undefined        { return this._handlerName }
+  /** Per-fire context set by `.payload({…})`. Empty `{}` when unset
+   *  (callers can spread without a null check). */
+  getPayload():     Record<string, unknown>   { return this._payload ?? {} }
+  /** Filament chain modifier — true when `.markAsRead()` was called.
+   *  Read by `Notification.actions([…])` serializer; ignored elsewhere. */
+  isMarkAsReadOnFire(): boolean               { return this._markAsReadOnFire }
+  /** Honored by the notification action-strip renderers; equivalent to
+   *  `target="_blank"` on the underlying anchor. */
+  isOpenUrlInNewTab():  boolean               { return this._openUrlInNewTab }
   getHref():        string | undefined        { return this._href }
   getMethod():      ActionMethod | undefined  { return this._method }
   getActionUrl():   string | undefined        { return this._actionUrl }
@@ -1823,6 +1937,7 @@ export class Action extends Element {
   /** Schema fields stored as children; `getChildren()` returns the same. */
   getSchema():      Element[]                 { return this._children ?? [] }
   getColor():       ActionColor | undefined   { return this._color }
+  getIcon():        string | undefined        { return this._icon }
   getSize():        ActionSize | undefined    { return this._size }
   getTooltip():     string | undefined        { return this._tooltip }
   isOutlined():     boolean                   { return this._outlined }
