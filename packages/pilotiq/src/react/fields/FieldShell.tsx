@@ -27,9 +27,14 @@ export function FieldShell({ el, name, label, required, children }: FieldShellPr
   const suffix     = el['suffix']     as string | { icon: string } | undefined
   const helperText = el['helperText'] as string | undefined
   const inline     = el['inlineLabel'] === true
+  const hiddenLabel = el['hiddenLabel'] === true
+  const wrapperAttrs = pickWrapperAttrs(el)
 
+  const labelClass = hiddenLabel
+    ? 'sr-only'
+    : 'text-sm font-medium leading-none'
   const labelEl = label !== '' ? (
-    <label htmlFor={name} className="text-sm font-medium leading-none">
+    <label htmlFor={name} className={labelClass}>
       {label}{required && <span className="text-destructive ml-0.5">*</span>}
     </label>
   ) : null
@@ -46,7 +51,7 @@ export function FieldShell({ el, name, label, required, children }: FieldShellPr
 
   if (inline) {
     return (
-      <div className="flex items-baseline gap-3">
+      <div className="flex items-baseline gap-3" {...wrapperAttrs}>
         {labelEl && <div className="min-w-32 pt-2">{labelEl}</div>}
         <div className="min-w-0 flex-1">
           {input}
@@ -59,7 +64,7 @@ export function FieldShell({ el, name, label, required, children }: FieldShellPr
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5" {...wrapperAttrs}>
       {labelEl}
       {input}
       {helperText && (
@@ -67,6 +72,18 @@ export function FieldShell({ el, name, label, required, children }: FieldShellPr
       )}
     </div>
   )
+}
+
+/**
+ * Merge `extraAttributes` (Filament-parity short name) and
+ * `extraFieldWrapperAttributes` (verbose alias) into one record. Latter
+ * wins on key collisions so callers who set both can override.
+ */
+function pickWrapperAttrs(el: ElementMeta): Record<string, string | number | boolean> {
+  const a = el['extraAttributes']             as Record<string, string | number | boolean> | undefined
+  const b = el['extraFieldWrapperAttributes'] as Record<string, string | number | boolean> | undefined
+  if (!a && !b) return {}
+  return { ...(a ?? {}), ...(b ?? {}) }
 }
 
 function Decoration({ content, side }: {

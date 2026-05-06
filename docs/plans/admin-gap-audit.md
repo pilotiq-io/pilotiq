@@ -225,8 +225,11 @@ Skip `ColorColumn` for now. Editable columns (`SelectColumn` / `ToggleColumn` / 
 | `dehydrateStateUsing(fn)` (transform on submit) | 1 | We have `mutateData` form-level; field-level finer-grained. Deferred — no consumer ask. |
 | ✅ `formatStateUsing(fn)` (display transform) DONE | 1 | Shipped with **Plan #6** 2026-05-01 — evaluated server-side at meta-build, stamped onto `FieldMeta._formatted` like `Column.formatStateUsing`. |
 | `unique()` validator with DB check | ✅ | `unique({ model, column?, ignoreRecord=true, where?, caseInsensitive?, message? })` — async validator awaited by `validateSchema`. Uses `M.query().where(col, value).paginate(1, 2)` (no new ORM contract). Ignores own record on edit. (2026-05-04 cont'd) |
-| `validationAttribute()` (label override in errors) | 1 | Trivial. |
-| `autofocus()` | 1 | Trivial. |
+| ✅ `validationAttribute(label)` DONE | 1 | Shipped 2026-05-06 cont'd⁵ — substitutes the attribute into the implicit-required message ("The email address is required" instead of "This field is required") + mirrors into `FieldMeta.rules`. Explicit validators with custom messages stay untouched. |
+| ✅ `autofocus()` DONE | 1 | Shipped 2026-05-06 cont'd⁵ — emits `autoFocus: true` on the input via the `common` props bag in `SchemaRenderer`. `autofocus(false)` clears. |
+| ✅ `hiddenLabel()` DONE | 1 | Shipped 2026-05-06 cont'd⁵ — `FieldShell` swaps the label class to `sr-only` when set; visually hidden but kept in the DOM for screen readers. |
+| ✅ `extraAttributes / extraInputAttributes / extraFieldWrapperAttributes` DONE | 1 | Shipped 2026-05-06 cont'd⁵ — pass-through HTML attrs on the wrapper (`FieldShell`'s outer `<div>`) and on the underlying `<input>` (via `common`). `extraFieldWrapperAttributes` is the Filament-parity verbose alias for `extraAttributes`; both merge onto the wrapper with the alias winning on key collisions. |
+| ✅ `disabledOn / hiddenOn / visibleOn` DONE | 1 | Shipped 2026-05-06 cont'd⁵ — operation-aware shortcuts on `Field`. Each accepts `ReadonlyArray<'table'\|'create'\|'edit'\|'view'>`; resolved against `RenderContext.mode` inside `isHiddenIn / isDisabledIn`. No-op on schema-only routes (mode undefined) so custom Pages aren't accidentally pruned. `readonly()` still wins over `disabledOn`. |
 
 ---
 

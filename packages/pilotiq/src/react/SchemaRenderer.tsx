@@ -181,6 +181,8 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
     return <HiddenInput key={index} name={name} defaultValue={defaultValue} />
   }
 
+  const autofocus = el['autofocus'] === true
+  const extraInput = el['extraInputAttributes'] as Record<string, string | number | boolean> | undefined
   const common = {
     id: name,
     name,
@@ -188,6 +190,8 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
     placeholder,
     required,
     ...(defaultStr !== undefined ? { defaultValue: defaultStr } : {}),
+    ...(autofocus ? { autoFocus: true } : {}),
+    ...(extraInput ?? {}),
   }
 
   // External packages (e.g. @pilotiq/tiptap) register custom renderers

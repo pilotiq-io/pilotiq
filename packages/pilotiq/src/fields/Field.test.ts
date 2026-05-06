@@ -531,3 +531,109 @@ describe('resolveFields', () => {
     assert.deepEqual(result.map(m => m.name), ['z', 'a', 'm'])
   })
 })
+
+describe('Field Filament-parity additions', () => {
+  describe('autofocus()', () => {
+    it('omits autofocus when unset', () => {
+      const meta = TextField.make('title').toMeta()
+      assert.equal('autofocus' in meta, false)
+    })
+
+    it('emits autofocus: true when set', () => {
+      const meta = TextField.make('title').autofocus().toMeta()
+      assert.equal(meta.autofocus, true)
+    })
+
+    it('autofocus(false) clears the flag', () => {
+      const meta = TextField.make('title').autofocus().autofocus(false).toMeta()
+      assert.equal('autofocus' in meta, false)
+    })
+  })
+
+  describe('hiddenLabel()', () => {
+    it('omits hiddenLabel when unset', () => {
+      const meta = TextField.make('title').toMeta()
+      assert.equal('hiddenLabel' in meta, false)
+    })
+
+    it('emits hiddenLabel: true when set', () => {
+      const meta = TextField.make('title').hiddenLabel().toMeta()
+      assert.equal(meta.hiddenLabel, true)
+    })
+  })
+
+  describe('validationAttribute()', () => {
+    it('keeps the legacy generic message when unset', async () => {
+      const errors = await TextField.make('email').required().runValidators('')
+      assert.deepEqual(errors, ['This field is required'])
+    })
+
+    it('substitutes the attribute into the implicit-required message', async () => {
+      const f = TextField.make('email').required().validationAttribute('email address')
+      const errors = await f.runValidators('')
+      assert.deepEqual(errors, ['The email address is required'])
+    })
+
+    it('mirrors the substituted message into FieldMeta.rules', () => {
+      const meta = TextField.make('email').required().validationAttribute('email address').toMeta()
+      assert.deepEqual(meta.rules, [{ rule: 'required', message: 'The email address is required' }])
+    })
+  })
+
+  describe('extraAttributes / extraInputAttributes / extraFieldWrapperAttributes', () => {
+    it('omits all three when unset', () => {
+      const meta = TextField.make('title').toMeta()
+      assert.equal('extraAttributes' in meta, false)
+      assert.equal('extraInputAttributes' in meta, false)
+      assert.equal('extraFieldWrapperAttributes' in meta, false)
+    })
+
+    it('emits each independently', () => {
+      const meta = TextField.make('title')
+        .extraAttributes({ 'data-cy': 'title' })
+        .extraInputAttributes({ autocomplete: 'off' })
+        .extraFieldWrapperAttributes({ 'data-section': 'header' })
+        .toMeta()
+      assert.deepEqual(meta.extraAttributes,             { 'data-cy': 'title' })
+      assert.deepEqual(meta.extraInputAttributes,        { autocomplete: 'off' })
+      assert.deepEqual(meta.extraFieldWrapperAttributes, { 'data-section': 'header' })
+    })
+  })
+
+  describe('disabledOn / hiddenOn / visibleOn', () => {
+    it('disabledOn flips disabled when ctx.mode matches', () => {
+      const f = TextField.make('id').disabledOn(['edit'])
+      assert.equal(f.isDisabledIn({ mode: 'create' }), false)
+      assert.equal(f.isDisabledIn({ mode: 'edit' }),   true)
+      assert.equal(f.isDisabledIn({ mode: 'view' }),   false)
+    })
+
+    it('disabledOn no-ops when mode is undefined (custom Page)', () => {
+      const f = TextField.make('id').disabledOn(['edit'])
+      assert.equal(f.isDisabledIn(), false)
+    })
+
+    it('hiddenOn flips visible when ctx.mode matches', () => {
+      const f = TextField.make('admin').hiddenOn(['view'])
+      assert.equal(f.isHiddenIn({ mode: 'create' }), false)
+      assert.equal(f.isHiddenIn({ mode: 'view' }),   true)
+    })
+
+    it('visibleOn hides everywhere not listed', () => {
+      const f = TextField.make('draft').visibleOn(['edit'])
+      assert.equal(f.isHiddenIn({ mode: 'edit' }),   false)
+      assert.equal(f.isHiddenIn({ mode: 'create' }), true)
+      assert.equal(f.isHiddenIn({ mode: 'view' }),   true)
+    })
+
+    it('visibleOn keeps the field visible when mode is undefined', () => {
+      const f = TextField.make('draft').visibleOn(['edit'])
+      assert.equal(f.isHiddenIn(), false)
+    })
+
+    it('readonly() still wins over disabledOn', () => {
+      const f = TextField.make('id').readonly().disabledOn(['create'])
+      assert.equal(f.isDisabledIn({ mode: 'view' }), true)
+    })
+  })
+})

@@ -52,7 +52,37 @@ Field.make('name')
   .afterStateUpdated((value, ctx) => ctx.$set('slug', slugify(value)))
   .dehydrated(false)                 // don't submit
   .formatStateUsing(v => `${v} px`)  // display transform
+  .autofocus()                       // browser focuses on first paint
+  .hiddenLabel()                     // sr-only label (a11y kept)
+  .validationAttribute('email address') // tunes the implicit-required text
+  .extraAttributes({ 'data-cy': 'name' })       // outer wrapper attrs
+  .extraInputAttributes({ autocomplete: 'off' }) // <input> attrs
+  .disabledOn(['edit'])              // sugar over disabled(ctx)
+  .hiddenOn(['view'])
+  .visibleOn(['create', 'edit'])
 ```
+
+### Operation-aware shortcuts
+
+`disabledOn / hiddenOn / visibleOn` resolve against the page mode
+(`'table' | 'create' | 'edit' | 'view'`). They no-op on schema-only
+routes (custom Pages) where mode is unset, matching the existing
+`hideFromCreate / hideFromEdit / hideFromView` behaviour. `readonly()`
+still wins over `disabledOn`.
+
+### Validation attribute
+
+`validationAttribute('email address')` swaps the implicit-required
+message from `"This field is required"` to `"The email address is
+required"`. Explicit validators (`required('Custom message')`,
+`email('Bad email')`) keep their argument unchanged.
+
+### Pass-through HTML attrs
+
+- `extraAttributes` and `extraFieldWrapperAttributes` (alias) — merged
+  onto the field's outer wrapper.
+- `extraInputAttributes` — spread onto the underlying `<input>` /
+  `<select>` / `<textarea>`.
 
 > [!TIP]
 > Combine `live()` + `afterStateUpdated()` to wire a reactive pair

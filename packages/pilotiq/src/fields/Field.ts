@@ -56,6 +56,24 @@ export interface FieldMeta extends ElementMeta {
   disabled:     boolean
   placeholder?: string
   rules?:       SerializedRule[]
+  /** When true, the rendered input gets the HTML `autofocus` attribute. */
+  autofocus?:   boolean
+  /**
+   * Render the label as `sr-only` — visually hidden but kept in the DOM
+   * for screen readers. Distinct from omitting the label entirely (which
+   * loses the accessibility hook).
+   */
+  hiddenLabel?: boolean
+  /**
+   * Pass-through HTML attrs for the field's outer wrapper (the `flex
+   * flex-col` container in `FieldShell` — the same node that hosts the
+   * label + input + helper).
+   */
+  extraAttributes?:             Record<string, string | number | boolean>
+  /** Pass-through HTML attrs for the underlying `<input>` / `<select>` / etc. */
+  extraInputAttributes?:        Record<string, string | number | boolean>
+  /** Alias for `extraAttributes`. Filament-parity name kept for clarity. */
+  extraFieldWrapperAttributes?: Record<string, string | number | boolean>
   /**
    * Plan #5 reactive flag. When set, the client wires up a roundtrip
    * to the form's `stateUrl` on change/blur. Bare `true` means "fire
@@ -245,6 +263,21 @@ export abstract class Field extends Element {
   // ToggleButtons) inside their `toMeta` — a no-op everywhere else.
   protected _disableOptionsWhenSelectedInSiblings = false
 
+  // Filament-parity micro-additions. All optional, all serialized only when set.
+  protected _autofocus = false
+  protected _hiddenLabel = false
+  protected _validationAttribute?: string
+  protected _extraAttributes?:             Record<string, string | number | boolean>
+  protected _extraInputAttributes?:        Record<string, string | number | boolean>
+  protected _extraFieldWrapperAttributes?: Record<string, string | number | boolean>
+
+  // Operation-aware shortcuts. Each entry is `'table' | 'create' | 'edit' | 'view'`;
+  // resolved against `RenderContext.mode` by `isHiddenIn / isDisabledIn`.
+  // `disabledOn(['edit'])` reads as "disabled when the page mode is edit".
+  protected _disabledOn?: ReadonlyArray<'table' | 'create' | 'edit' | 'view'>
+  protected _hiddenOn?:   ReadonlyArray<'table' | 'create' | 'edit' | 'view'>
+  protected _visibleOn?:  ReadonlyArray<'table' | 'create' | 'edit' | 'view'>
+
   constructor(name: string, type: FieldType) {
     super()
     this.name = name
@@ -262,12 +295,83 @@ export abstract class Field extends Element {
   readonly(v = true): this { this._readonly = v; return this }
   placeholder(p: string): this { this._placeholder = p; return this }
 
+  /**
+   * Render the input with the HTML `autofocus` attribute. The browser
+   * focuses the first matching control on initial paint; on SPA-nav the
+   * renderer uses a `useEffect` fallback so the focus still lands.
+   */
+  autofocus(v = true): this { this._autofocus = v; return this }
+
+  /**
+   * Render the label as `sr-only` — visually hidden but kept for screen
+   * readers. Use for inputs whose context already names them (e.g. a
+   * search bar in a table header). Distinct from omitting the label.
+   */
+  hiddenLabel(v = true): this { this._hiddenLabel = v; return this }
+
+  /**
+   * Override the name used in default validation messages. Filament
+   * parity: `validationAttribute('email address')` makes the auto-required
+   * message read "The email address is required" instead of "This field
+   * is required". Only consulted by the implicit-required check; explicit
+   * validators with a `message` argument keep their text.
+   */
+  validationAttribute(label: string): this { this._validationAttribute = label; return this }
+
+  /** Pass-through HTML attrs spread on the field's outer wrapper. */
+  extraAttributes(attrs: Record<string, string | number | boolean>): this {
+    this._extraAttributes = attrs
+    return this
+  }
+
+  /** Pass-through HTML attrs spread on the underlying `<input>` / `<select>` / etc. */
+  extraInputAttributes(attrs: Record<string, string | number | boolean>): this {
+    this._extraInputAttributes = attrs
+    return this
+  }
+
+  /** Filament-parity alias for `extraAttributes` — same outer-wrapper target. */
+  extraFieldWrapperAttributes(attrs: Record<string, string | number | boolean>): this {
+    this._extraFieldWrapperAttributes = attrs
+    return this
+  }
+
   // ─── Visibility flags ─────────────────────────────────
 
   hideFromTable(v = true):  this { this._hideFromTable  = v; return this }
   hideFromCreate(v = true): this { this._hideFromCreate = v; return this }
   hideFromEdit(v = true):   this { this._hideFromEdit   = v; return this }
   hideFromView(v = true):   this { this._hideFromView   = v; return this }
+
+  /**
+   * Disable the input only on the listed page modes. Sugar over
+   * `disabledWhen(({ ctx }) => …)` for the common case. Composes with
+   * `readonly()` and `disabledWhen()` — any path returning true wins.
+   */
+  disabledOn(modes: ReadonlyArray<'table' | 'create' | 'edit' | 'view'>): this {
+    this._disabledOn = modes
+    return this
+  }
+
+  /**
+   * Hide the field only on the listed page modes. Distinct from the
+   * existing `hideFromCreate / hideFromEdit / …` flags — accepts a list
+   * so `hiddenOn(['create', 'view'])` reads in one line.
+   */
+  hiddenOn(modes: ReadonlyArray<'table' | 'create' | 'edit' | 'view'>): this {
+    this._hiddenOn = modes
+    return this
+  }
+
+  /**
+   * Inverse of `hiddenOn` — show only on the listed page modes. The
+   * `mode === undefined` case (custom Pages, schema-only routes) keeps
+   * the field visible to match `hideFromX`'s no-op posture there.
+   */
+  visibleOn(modes: ReadonlyArray<'table' | 'create' | 'edit' | 'view'>): this {
+    this._visibleOn = modes
+    return this
+  }
 
   // ─── Conditions ───────────────────────────────────────
 
@@ -487,6 +591,10 @@ export abstract class Field extends Element {
     if (mode === 'create' && this._hideFromCreate) return true
     if (mode === 'edit'   && this._hideFromEdit)   return true
     if (mode === 'view'   && this._hideFromView)   return true
+    if (mode !== undefined) {
+      if (this._hiddenOn  && this._hiddenOn.includes(mode))  return true
+      if (this._visibleOn && !this._visibleOn.includes(mode)) return true
+    }
     if (this._showWhen || this._hideWhen) {
       const condCtx = this.buildConditionContext(ctx)
       if (condCtx) {
@@ -503,6 +611,8 @@ export abstract class Field extends Element {
    */
   isDisabledIn(ctx?: RenderContext): boolean {
     if (this._readonly) return true
+    const mode = ctx?.mode
+    if (mode !== undefined && this._disabledOn && this._disabledOn.includes(mode)) return true
     if (this._disabledWhen) {
       const condCtx = this.buildConditionContext(ctx)
       if (condCtx) return this._disabledWhen(condCtx)
@@ -550,7 +660,7 @@ export abstract class Field extends Element {
 
     if (this._required && !this.hasRequiredValidator()) {
       if (value === undefined || value === null || value === '') {
-        errors.push('This field is required')
+        errors.push(this.requiredMessage())
       }
     }
 
@@ -561,6 +671,18 @@ export abstract class Field extends Element {
     return errors
   }
 
+  /**
+   * Default-required error text. When `validationAttribute()` is set,
+   * substitutes the attribute into a human message — "The email address
+   * is required" — otherwise falls back to the legacy generic phrasing
+   * so existing tests + UI strings keep matching.
+   */
+  private requiredMessage(): string {
+    return this._validationAttribute
+      ? `The ${this._validationAttribute} is required`
+      : 'This field is required'
+  }
+
   private hasRequiredValidator(): boolean {
     return this._validators.some(v => v.serialized?.rule === 'required')
   }
@@ -569,7 +691,7 @@ export abstract class Field extends Element {
   protected getSerializedRules(): SerializedRule[] {
     const rules: SerializedRule[] = []
     if (this._required && !this.hasRequiredValidator()) {
-      rules.push({ rule: 'required', message: 'This field is required' })
+      rules.push({ rule: 'required', message: this.requiredMessage() })
     }
     for (const v of this._validators) {
       if (v.serialized) rules.push(v.serialized)
@@ -637,6 +759,11 @@ export abstract class Field extends Element {
       ...(this._inlineLabel ? { inlineLabel: true } : {}),
       ...(this._default !== undefined ? { defaultValue: this._default } : {}),
       ...(formattedValue !== undefined ? { formattedValue } : {}),
+      ...(this._autofocus ? { autofocus: true } : {}),
+      ...(this._hiddenLabel ? { hiddenLabel: true } : {}),
+      ...(this._extraAttributes !== undefined ? { extraAttributes: this._extraAttributes } : {}),
+      ...(this._extraInputAttributes !== undefined ? { extraInputAttributes: this._extraInputAttributes } : {}),
+      ...(this._extraFieldWrapperAttributes !== undefined ? { extraFieldWrapperAttributes: this._extraFieldWrapperAttributes } : {}),
     }
   }
 
