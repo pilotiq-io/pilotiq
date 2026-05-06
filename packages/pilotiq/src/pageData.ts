@@ -172,9 +172,17 @@ async function buildUserMenu(pilotiq: Pilotiq, user: unknown): Promise<UserMenuM
     })
     .map(x => x.meta)
 
+  // Auto-inject the profile entry from `cfg.profilePage` when set.
+  // Prepended (Filament-style) so it always sits at the top of the
+  // dropdown regardless of user-authored item ordering. Falls through
+  // its own `canAccess(user)` so per-user gating works without the
+  // user repeating the predicate at the menu level.
+  const profileItem = await buildProfileMenuItem(cfg, user)
+  const finalItems  = profileItem ? [profileItem, ...visibleItems] : visibleItems
+
   const meta: UserMenuMeta = {
     user:  extractUserIdentity(user),
-    items: visibleItems,
+    items: finalItems,
   }
   if (cfg.signOut) {
     meta.signOut = {
@@ -183,6 +191,28 @@ async function buildUserMenu(pilotiq: Pilotiq, user: unknown): Promise<UserMenuM
       method: cfg.signOut.method ?? 'POST',
     }
   }
+  return meta
+}
+
+/** Build the auto-injected profile entry from `cfg.profilePage`. The
+ *  Page's `static label` / `static icon` win; defaults `'Edit profile'`
+ *  + `'user-circle'` (registry-resolved). Returns `null` when no
+ *  profile page is configured or `Page.canAccess(user)` denies. */
+async function buildProfileMenuItem(
+  cfg: Readonly<PilotiqConfig>,
+  user: unknown,
+): Promise<UserMenuItemMeta | null> {
+  const P = cfg.profilePage
+  if (!P) return null
+  if (!(await safeAccess(() => P.canAccess(user)))) return null
+  const url  = pageBasePath(cfg.path, P)
+  const icon = serializeIcon(P.icon ?? 'user-circle', P.name)
+  const meta: UserMenuItemMeta = {
+    name:  '__profile',
+    label: P.label ?? 'Edit profile',
+    url,
+  }
+  if (icon !== undefined) meta.icon = icon
   return meta
 }
 

@@ -24,6 +24,7 @@
  * posture.
  */
 import type { ActionVisibilityContext, VisibilityRule } from './actions/Action.js'
+import type { SerializedIcon } from './icons/types.js'
 
 export type UserMenuItemColor = 'default' | 'destructive'
 
@@ -36,11 +37,15 @@ export type UserMenuItemValue<T> =
 
 /** Wire shape consumed by `<UserMenu />`. Items resolve to this in
  *  `panelInfo()` (visibility gate already applied — only visible items
- *  reach the renderer). */
+ *  reach the renderer). `icon` accepts the same `SerializedIcon` shape
+ *  as nav items so the auto-injected profile entry can ride the
+ *  Page's component icon through the build-time `_components.ts`
+ *  manifest. User-authored entries via `UserMenuItem.icon('user')`
+ *  ship as plain strings (registry keys). */
 export interface UserMenuItemMeta {
   name:            string
   label:           string
-  icon?:           string
+  icon?:           SerializedIcon
   url?:            string
   color?:          UserMenuItemColor
   openInNewTab?:   boolean

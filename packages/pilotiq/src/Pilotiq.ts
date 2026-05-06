@@ -72,6 +72,18 @@ export interface PilotiqConfig {
    * the panel root.
    */
   dashboardPage?: typeof Page
+  /**
+   * Profile page — when set, the user-menu dropdown auto-prepends an
+   * entry pointing at this Page's URL. The Page is registered in
+   * `cfg.pages` for routing + nav + canAccess gating. The menu entry's
+   * label and icon read from the Page's `static label` / `static icon`
+   * (with `'Edit profile'` and `'user-circle'` defaults).
+   *
+   * The Page is otherwise a normal `Page` subclass — author the form
+   * (`static schema()`) against your own auth model since pilotiq
+   * treats the user object as opaque.
+   */
+  profilePage?: typeof Page
   theme?:        ThemeConfig
   themeEditor?:  boolean
   guard?:        (req: unknown) => boolean | Promise<boolean>
@@ -176,6 +188,29 @@ export class Pilotiq {
    */
   dashboard(P: typeof Page): this {
     this.config.dashboardPage = P
+    if (!this.config.pages.includes(P)) {
+      this.config.pages = [...this.config.pages, P]
+    }
+    return this
+  }
+
+  /**
+   * Mark a Page as the panel's profile page. The page is auto-added to
+   * `cfg.pages` (routing + canAccess wired up) and the user-menu
+   * dropdown prepends an "Edit profile" entry pointing at it.
+   *
+   *   class ProfilePage extends Page {
+   *     static slug  = 'profile'
+   *     static label = 'My profile'
+   *     static icon  = 'user-circle'
+   *     static schema(ctx) {
+   *       return [Form.make().schema([TextField.make('name')…])]
+   *     }
+   *   }
+   *   panel.profile(ProfilePage)
+   */
+  profile(P: typeof Page): this {
+    this.config.profilePage = P
     if (!this.config.pages.includes(P)) {
       this.config.pages = [...this.config.pages, P]
     }

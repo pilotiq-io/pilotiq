@@ -22,6 +22,7 @@ import { LayoutsDemo } from './pages/LayoutsDemo.js'
 import { RepeaterDemo } from './pages/RepeaterDemo.js'
 import { BuilderDemo } from './pages/BuilderDemo.js'
 import { MyDashboard } from './pages/MyDashboard.js'
+import { ProfilePage } from './pages/ProfilePage.js'
 
 // Register the curated lucide baseline so string-typed icons
 // (Action.icon('check'), Column.icon('star'), etc.) resolve at render time.
@@ -73,7 +74,6 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
     email: 'admin@example.com',
   }))
   .userMenuItems([
-    UserMenuItem.make('profile').label('My profile').icon('user').url('/admin/profile'),
     UserMenuItem.make('docs')
       .label('Documentation')
       .icon('book-open')
@@ -93,6 +93,8 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   // panel.dashboard() registers MyDashboard, collapses its nav URL to
   // `${base}`, and routes `${base}` to its schema.
   .dashboard(MyDashboard)
+  // User-menu auto-injects "Edit profile" pointing at this page.
+  .profile(ProfilePage)
 
 export const pilotiqSimple = Pilotiq.make('Pilotiq simple')
   .path('/simple')
