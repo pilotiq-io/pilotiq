@@ -148,9 +148,9 @@ describe('registerPilotiqRoutes — route registration', () => {
     const result = await callHandler(createRoute!.handler) as { id: string; props: Record<string, unknown> }
     assert.equal(result.id, 'pilotiq.resource-create')
     const schemaData = result.props['schemaData'] as Array<{ type: string; content?: string }>
-    assert.equal(schemaData.length, 1)
-    assert.equal(schemaData[0]!.type, 'heading')
-    assert.equal(schemaData[0]!.content, 'Custom create page')
+    const heading = schemaData.find(s => s.type === 'heading')
+    assert.ok(heading, 'expected the user-supplied heading to survive')
+    assert.equal(heading!.content, 'Custom create page')
   })
 })
 
@@ -173,10 +173,11 @@ describe('registerPilotiqRoutes — handler → schema round-trip', () => {
     assert.equal(response.props['basePath'], '/admin')
 
     const schemaData = response.props['schemaData'] as Array<{ type: string; children?: unknown[] }>
-    assert.equal(schemaData.length, 2)
-    assert.equal(schemaData[0]!.type, 'heading')
-    assert.equal(schemaData[1]!.type, 'table')
-    const tableChildren = schemaData[1]!.children as Array<{ type: string; name?: string }>
+    const heading = schemaData.find(s => s.type === 'heading')
+    const table   = schemaData.find(s => s.type === 'table')
+    assert.ok(heading, 'expected page heading')
+    assert.ok(table,   'expected resource table')
+    const tableChildren = table!.children as Array<{ type: string; name?: string }>
     const cols    = tableChildren.filter(c => c.type === 'column')
     const actions = tableChildren.filter(c => c.type === 'action')
     assert.equal(cols.length, 1)
@@ -200,8 +201,9 @@ describe('registerPilotiqRoutes — handler → schema round-trip', () => {
     assert.equal(response.props['mode'], 'create')
 
     const schemaData = response.props['schemaData'] as Array<{ type: string; children?: unknown[] }>
-    assert.equal(schemaData[1]!.type, 'form')
-    const formChildren = schemaData[1]!.children as Array<{ type: string; name?: string }>
+    const formMeta = schemaData.find(s => s.type === 'form')
+    assert.ok(formMeta, 'expected a form element')
+    const formChildren = formMeta!.children as Array<{ type: string; name?: string }>
     assert.equal(formChildren[0]!.type, 'field')
     assert.equal(formChildren[0]!.name, 'title')
   })
@@ -247,7 +249,9 @@ describe('registerPilotiqRoutes — handler → schema round-trip', () => {
     const response = await callHandler(route.handler) as { props: Record<string, unknown> }
     const schemaData = response.props['schemaData'] as Array<{ type: string; children?: unknown[] }>
     // Form children = visible fields + default submit action.
-    const formChildren = schemaData[1]!.children as Array<{ type: string; name?: string }>
+    const formMeta = schemaData.find(s => s.type === 'form')
+    assert.ok(formMeta, 'expected a form element')
+    const formChildren = formMeta!.children as Array<{ type: string; name?: string }>
     const fields = formChildren.filter(c => c.type === 'field')
     assert.equal(fields.length, 1)
     assert.equal(fields[0]!.name, 'public')
@@ -325,10 +329,11 @@ describe('registerPilotiqRoutes — POST submit lifecycle', () => {
 
     const schemaData = result.props['schemaData'] as Array<{ type: string; content?: string }>
     // Filament-style: no auto-injected Edit/Delete on the view page.
-    // [page-heading, detail-heading]
-    assert.equal(schemaData.length, 2)
-    assert.equal(schemaData[0]!.type, 'heading')              // labelSingular heading
-    assert.equal(schemaData[1]!.content, 'Detail: Article 7') // detail() heading
+    // Two headings survive: the page heading + the detail() heading.
+    const headings = schemaData.filter(s => s.type === 'heading')
+    assert.equal(headings.length, 2)
+    assert.ok(headings.find(h => h.content === 'Detail: Article 7'),
+      'expected detail() heading to survive')
   })
 
   it('delete POST calls Resource.deleteRecord and 303-redirects to list', async () => {
@@ -452,10 +457,10 @@ describe('registerPilotiqRoutes — POST submit lifecycle', () => {
     assert.equal(view.props['hasErrors'], true)
 
     const schemaData = view.props['schemaData'] as Array<{ type: string; values?: unknown; errors?: unknown }>
-    const formMeta = schemaData[1]!
-    assert.equal(formMeta.type, 'form')
-    assert.deepEqual(formMeta.values, { title: '' })
-    assert.deepEqual((formMeta.errors as Record<string, string[]>)['title']?.length! > 0, true)
+    const formMeta = schemaData.find(s => s.type === 'form')
+    assert.ok(formMeta, 'expected a form element')
+    assert.deepEqual(formMeta!.values, { title: '' })
+    assert.deepEqual((formMeta!.errors as Record<string, string[]>)['title']?.length! > 0, true)
   })
 
   it('discriminates by submitted _formId on a multi-form page', async () => {
@@ -502,9 +507,9 @@ describe('registerPilotiqRoutes — POST submit lifecycle', () => {
       props: Record<string, unknown>
     }
     const schemaData = result.props['schemaData'] as Array<{ type: string; values?: Record<string, unknown> }>
-    const formMeta = schemaData[1]!
-    assert.equal(formMeta.type, 'form')
-    assert.deepEqual(formMeta.values, { id: '99', title: 'Loaded 99' })
+    const formMeta = schemaData.find(s => s.type === 'form')
+    assert.ok(formMeta, 'expected a form element')
+    assert.deepEqual(formMeta!.values, { id: '99', title: 'Loaded 99' })
   })
 
   it('POST edit redirects back to the edit URL by default', async () => {
@@ -556,13 +561,13 @@ describe('registerPilotiqRoutes — POST submit lifecycle', () => {
     } satisfies Record<string, unknown>)
 
     const schemaData = result.props['schemaData'] as Array<{ type: string; rows?: unknown[]; total?: number; currentSort?: unknown; search?: unknown; currentPage?: unknown }>
-    const tableMeta = schemaData[1]!
-    assert.equal(tableMeta.type, 'table')
-    assert.equal(tableMeta.rows!.length, 2)
-    assert.equal(tableMeta.total, 17)
-    assert.deepEqual(tableMeta.currentSort, { column: 'title', direction: 'desc' })
-    assert.equal(tableMeta.search, 'foo')
-    assert.equal(tableMeta.currentPage, 3)
+    const tableMeta = schemaData.find(s => s.type === 'table')
+    assert.ok(tableMeta, 'expected a table element')
+    assert.equal(tableMeta!.rows!.length, 2)
+    assert.equal(tableMeta!.total, 17)
+    assert.deepEqual(tableMeta!.currentSort, { column: 'title', direction: 'desc' })
+    assert.equal(tableMeta!.search, 'foo')
+    assert.equal(tableMeta!.currentPage, 3)
   })
 
   it('honors Form.redirectAfterSave when supplied', async () => {

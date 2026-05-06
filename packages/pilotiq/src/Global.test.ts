@@ -134,8 +134,9 @@ describe('Global routes', () => {
     const route = router.list().find(r => r.method === 'GET' && r.path === '/admin/site-settings')!
     const result = await route.handler({} as any, {} as any) as { props: Record<string, unknown> }
     const schemaData = result.props['schemaData'] as Array<{ type: string; values?: unknown }>
-    assert.equal(schemaData[1]!.type, 'form')
-    assert.deepEqual(schemaData[1]!.values, { siteName: 'My Site' })
+    const formMeta = schemaData.find(s => s.type === 'form')
+    assert.ok(formMeta, 'expected a form element')
+    assert.deepEqual(formMeta!.values, { siteName: 'My Site' })
   })
 
   it('POST happy path runs save and 303-redirects back to the same URL', async () => {
@@ -189,6 +190,8 @@ describe('Global routes', () => {
     assert.equal(fakeRes.statusCode, 422)
     assert.equal(result.props['hasErrors'], true)
     const schemaData = result.props['schemaData'] as Array<{ type: string; errors?: Record<string, string[]> }>
-    assert.ok(schemaData[1]!.errors!['siteName']!.length > 0)
+    const formMeta = schemaData.find(s => s.type === 'form')
+    assert.ok(formMeta, 'expected a form element')
+    assert.ok(formMeta!.errors!['siteName']!.length > 0)
   })
 })

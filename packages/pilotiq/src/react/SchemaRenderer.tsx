@@ -2506,6 +2506,9 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
     case 'relation-tabs':
       return <RelationTabsRenderer key={index} el={el} />
 
+    case 'breadcrumbs':
+      return <BreadcrumbsRenderer key={index} el={el} />
+
     case 'listTab':
       // List tabs are rendered by their parent `listTabs` strip; standalone is a no-op.
       return null
@@ -4095,6 +4098,66 @@ interface RelationTabMetaShape {
   url:    string
   active: boolean
   icon?:  unknown
+}
+
+interface BreadcrumbItemShape {
+  label: string
+  url?:  string
+}
+
+/** Phase C — server-resolved breadcrumb chain rendered above any other
+ *  top-of-page chrome. The trailing item carries no `url` and renders
+ *  as plain text + `aria-current="page"`. SPA-navigates on plain
+ *  left-click; modified clicks fall through. */
+function BreadcrumbsRenderer({ el }: { el: ElementMeta }) {
+  const navigate = useNavigate()
+  const items = (el['items'] as BreadcrumbItemShape[] | undefined) ?? []
+  if (items.length < 2) return null
+
+  return (
+    <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground">
+      <ol className="flex flex-wrap items-center gap-1.5">
+        {items.map((item, i) => {
+          const isLast = i === items.length - 1
+          const linkable = !!item.url && !isLast
+
+          const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+            if (e.button !== 0) return
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+            if (!item.url) return
+            e.preventDefault()
+            void navigate(item.url)
+          }
+
+          return (
+            <li key={`${i}:${item.label}`} className="inline-flex items-center gap-1.5">
+              {linkable
+                ? (
+                  <a
+                    href={item.url}
+                    onClick={onClick}
+                    className="hover:text-foreground transition-colors"
+                  >
+                    {item.label}
+                  </a>
+                )
+                : (
+                  <span
+                    aria-current={isLast ? 'page' : undefined}
+                    className={isLast ? 'text-foreground font-medium' : undefined}
+                  >
+                    {item.label}
+                  </span>
+                )}
+              {!isLast && (
+                <span aria-hidden="true" className="text-muted-foreground/50">/</span>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </nav>
+  )
 }
 
 /** Plan #11 — relation manager nav strip. Renders one anchor per tab;

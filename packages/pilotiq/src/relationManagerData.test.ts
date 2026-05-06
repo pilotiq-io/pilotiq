@@ -464,10 +464,12 @@ describe('relationManagerData (Plan #11)', () => {
       })
       const data = out as Record<string, unknown>
       const schema = data['schemaData'] as Array<Record<string, unknown>>
-      // Default Manager.detail() returns []; the only element on the
-      // page is the RelationTabs strip prepended by buildRelationTabs.
-      assert.equal(schema.length, 1)
-      assert.equal(schema[0]!['type'], 'relation-tabs')
+      // Default Manager.detail() returns []; the page surfaces only the
+      // breadcrumbs (Phase C) + the RelationTabs strip — no detail body.
+      assert.deepEqual(
+        schema.map(s => s['type']),
+        ['breadcrumbs', 'relation-tabs'],
+      )
     })
 
     it('marks the manager tab active in the RelationTabs strip', async () => {
