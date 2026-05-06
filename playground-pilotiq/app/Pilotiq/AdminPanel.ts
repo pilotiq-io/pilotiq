@@ -96,15 +96,21 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .dashboard(MyDashboard)
   // User-menu auto-injects "Edit profile" pointing at this page.
   .profile(ProfilePage)
-  // Render-hook smoke — banner across the top of every page chrome,
-  // and a helper note in the sidebar footer. Demonstrates the v1
-  // chrome slots; page-role hooks land in a follow-up.
+  // Render-hook smoke — chrome (Day 1) + page-role (Day 2):
+  // - body.start banner sits at the top of every page chrome
+  // - sidebar.footer label
+  // - list-records.table.before splices an Alert above the Articles list table
   .renderHook('panels::body.start', () => [
     Alert.make('Render-hook demo: this banner is mounted via panel.renderHook(\'panels::body.start\').').info(),
   ])
   .renderHook('panels::sidebar.footer', () => [
     Heading.make('Pilotiq playground').level(6),
   ])
+  .renderHook(
+    'panels::resource.pages.list-records.table.before',
+    () => [Alert.make('Tip: scoped page-role hook — this Alert is only on the Articles list.').info()],
+    { resource: ArticleResource },
+  )
 
 export const pilotiqSimple = Pilotiq.make('Pilotiq simple')
   .path('/simple')

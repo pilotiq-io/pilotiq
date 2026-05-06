@@ -36,9 +36,15 @@ export {
 // Per-page-role data builders (consumed by Vike +data hooks for SPA nav).
 export type { NavItem, UserMenuMeta, PanelInfoRoute } from './pageData.js'
 export {
+  applyPageHooks,
+  pageHooksFor,
+  type PageRole,
+} from './applyPageHooks.js'
+export {
   dispatchPageData,
   panelInfo,
   resolvePageHooks,
+  applyRoleHooks,
   dashboardData,
   resourceIndexData,
   resourceCreateData,

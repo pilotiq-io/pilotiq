@@ -16,7 +16,7 @@ import type { ResourceClass, NavigationBadgeColor } from './Resource.js'
 import type { GlobalClass } from './Global.js'
 import { resourceBasePath, globalBasePath, pageBasePath, clusterBasePath } from './clusterPaths.js'
 import type { ClusterClass } from './Cluster.js'
-import { Element } from './schema/Element.js'
+import { Element, type ElementMeta } from './schema/Element.js'
 import { Field } from './fields/Field.js'
 import { resolveSchema, type RenderContext, type SchemaContext } from './schema/resolveSchema.js'
 import { isServerDataElement, type ServerDataElement } from './schema/ServerDataElement.js'
@@ -54,6 +54,7 @@ import {
   type RenderHookMap,
   type RenderHookName,
 } from './RenderHook.js'
+import { applyPageHooks, pageHooksFor, type PageRole } from './applyPageHooks.js'
 import {
   modelSave, modelLoadRecord, modelRelationTableRecords, findRecord, getPrimaryKey,
   getRelationType,
@@ -195,6 +196,31 @@ async function resolveChromeHooks(
  * `names` lets each builder declare exactly which slots it serves so a
  * list-page builder doesn't ship slots that only fire on the edit page.
  */
+/**
+ * Per-builder one-shot — resolve the role's slot set + splice the
+ * results into the resolved schema. Wraps the two steps a per-builder
+ * data fn always does in lockstep:
+ *
+ *   1. `resolvePageHooks(pilotiq, user, pageHooksFor(role), route)`
+ *   2. `applyPageHooks(schemaData, hooks, role)`
+ *
+ * Returns the wrapped `ElementMeta[]`. No-op when the panel has no
+ * registered hooks. Pass through what you'd pass to `panelInfo()`'s
+ * route arg — same shape.
+ */
+export async function applyRoleHooks(
+  pilotiq:    Pilotiq,
+  user:       unknown,
+  role:       PageRole,
+  schemaData: ElementMeta[],
+  route:      PanelInfoRoute = {},
+): Promise<ElementMeta[]> {
+  const cfg = pilotiq.getConfig()
+  if (!cfg.renderHooks || cfg.renderHooks.length === 0) return schemaData
+  const hooks = await resolvePageHooks(pilotiq, user, pageHooksFor(role), route)
+  return applyPageHooks(schemaData, hooks, role)
+}
+
 export async function resolvePageHooks(
   pilotiq: Pilotiq,
   user:    unknown,
@@ -1210,10 +1236,15 @@ export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Re
   tagWidgetUrls(elements, id => `${cfg.path}/_widget/${id}`)
 
   const widgetData = await resolveServerDataElements(elements, ctx)
-  const schemaData = await resolveSchema(elements, ctx)
+  const dashRoute: PanelInfoRoute = cfg.dashboardPage ? { page: cfg.dashboardPage } : {}
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'dashboard',
+    await resolveSchema(elements, ctx),
+    dashRoute,
+  )
 
   return {
-    panel:    await panelInfo(pilotiq, req, cfg.dashboardPage ? { page: cfg.dashboardPage } : {}),
+    panel:    await panelInfo(pilotiq, req, dashRoute),
     page:     cfg.dashboardPage ? cfg.dashboardPage.toMeta() : undefined,
     basePath: cfg.path,
     layout:   cfg.layout,
@@ -1261,11 +1292,16 @@ export async function resourceIndexData(
   const breadcrumbs = resourceListBreadcrumbs(cfg, R)
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
-  const schemaData = await resolveSchema(elements, ctx)
+  const listRoute: PanelInfoRoute = { resource: R, page: PageClass }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'list',
+    await resolveSchema(elements, ctx),
+    listRoute,
+  )
 
   return {
     pageType: 'resource',
-    panel:    await panelInfo(pilotiq, req, { resource: R, page: PageClass }),
+    panel:    await panelInfo(pilotiq, req, listRoute),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.label, labelSingular: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     basePath: cfg.path,
@@ -1448,10 +1484,15 @@ export async function resourceCreateData(
   const breadcrumbs = resourceCreateBreadcrumbs(cfg, R)
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
-  const schemaData = await resolveSchema(elements, ctx)
+  const createRoute: PanelInfoRoute = { resource: R, page: PageClass }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'create',
+    await resolveSchema(elements, ctx),
+    createRoute,
+  )
 
   return {
-    panel:    await panelInfo(pilotiq, req, { resource: R, page: PageClass }),
+    panel:    await panelInfo(pilotiq, req, createRoute),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'create' as const,
@@ -1521,13 +1562,18 @@ export async function resourceEditData(
   const breadcrumbs = resourceEditBreadcrumbs(cfg, R, recordId, recordTitle)
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
-  const schemaData = await resolveSchema(
-    elements,
-    record !== undefined ? { ...ctx, record } : ctx,
+  const editRoute: PanelInfoRoute = { resource: R, page: PageClass, recordId }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'edit',
+    await resolveSchema(
+      elements,
+      record !== undefined ? { ...ctx, record } : ctx,
+    ),
+    editRoute,
   )
 
   return {
-    panel:    await panelInfo(pilotiq, req, { resource: R, page: PageClass, recordId }),
+    panel:    await panelInfo(pilotiq, req, editRoute),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'edit' as const,
@@ -1878,11 +1924,16 @@ async function buildRelationListData(
   )
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
-  const schemaData = await resolveSchema(elements, ctx)
+  const relationListRoute: PanelInfoRoute = { resource: R, recordId: scope.recordId }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'relation-list',
+    await resolveSchema(elements, ctx),
+    relationListRoute,
+  )
 
   return {
     pageType: 'relation-list',
-    panel:    await panelInfo(pilotiq, req, { resource: R, recordId: scope.recordId }),
+    panel:    await panelInfo(pilotiq, req, relationListRoute),
     resource: { name: R.name, label: R.label, labelSingular: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -1955,11 +2006,16 @@ async function buildRelationCreateData(
     record:   parentRecord,
   }, user), cfg)
 
-  const schemaData = await resolveSchema(elements, ctx)
+  const relationCreateRoute: PanelInfoRoute = { resource: R, recordId: scope.recordId }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'relation-create',
+    await resolveSchema(elements, ctx),
+    relationCreateRoute,
+  )
 
   return {
     pageType: 'relation-create',
-    panel:    await panelInfo(pilotiq, req, { resource: R, recordId: scope.recordId }),
+    panel:    await panelInfo(pilotiq, req, relationCreateRoute),
     resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -2054,11 +2110,16 @@ async function buildRelationViewData(
     recordId: scope.childId,
   }, user), cfg)
 
-  const schemaData = await resolveSchema(elements, ctx)
+  const relationViewRoute: PanelInfoRoute = { resource: R, recordId: scope.childId }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'relation-view',
+    await resolveSchema(elements, ctx),
+    relationViewRoute,
+  )
 
   return {
     pageType: 'relation-view',
-    panel:    await panelInfo(pilotiq, req, { resource: R, recordId: scope.childId }),
+    panel:    await panelInfo(pilotiq, req, relationViewRoute),
     resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -2160,11 +2221,16 @@ async function buildRelationEditData(
     recordId: scope.childId,
   }, user), cfg)
 
-  const schemaData = await resolveSchema(elements, ctx)
+  const relationEditRoute: PanelInfoRoute = { resource: R, recordId: scope.childId }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'relation-edit',
+    await resolveSchema(elements, ctx),
+    relationEditRoute,
+  )
 
   return {
     pageType: 'relation-edit',
-    panel:    await panelInfo(pilotiq, req, { resource: R, recordId: scope.childId }),
+    panel:    await panelInfo(pilotiq, req, relationEditRoute),
     resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -2468,11 +2534,16 @@ async function buildNestedRelationListData(
   )
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
-  const schemaData = await resolveSchema(elements, ctx)
+  const nestedListRoute: PanelInfoRoute = { resource: resolved.R, recordId: scope.chain[1].recordId }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'relation-list',
+    await resolveSchema(elements, ctx),
+    nestedListRoute,
+  )
 
   return {
     ...nestedResponseEnvelope('nested-relation-list', pilotiq, base, scope, resolved, req),
-    panel:    await panelInfo(pilotiq, req, { resource: resolved.R, recordId: scope.chain[1].recordId }),
+    panel:    await panelInfo(pilotiq, req, nestedListRoute),
     schemaData,
   }
 }
@@ -2523,11 +2594,16 @@ async function buildNestedRelationCreateData(
     record:   child1,
   }, user), cfg)
 
-  const schemaData = await resolveSchema(elements, ctx)
+  const nestedCreateRoute: PanelInfoRoute = { resource: resolved.R, recordId: scope.chain[1].recordId }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'relation-create',
+    await resolveSchema(elements, ctx),
+    nestedCreateRoute,
+  )
 
   return {
     ...nestedResponseEnvelope('nested-relation-create', pilotiq, base, scope, resolved, req),
-    panel:    await panelInfo(pilotiq, req, { resource: resolved.R, recordId: scope.chain[1].recordId }),
+    panel:    await panelInfo(pilotiq, req, nestedCreateRoute),
     mode:     'create' as const,
     schemaData,
     ...(scope.prefill?.errors ? { hasErrors: true } : {}),
@@ -2585,11 +2661,16 @@ async function buildNestedRelationViewData(
     recordId: scope.childId,
   }, user), cfg)
 
-  const schemaData = await resolveSchema(elements, ctx)
+  const nestedViewRoute: PanelInfoRoute = { resource: resolved.R, recordId: scope.childId }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'relation-view',
+    await resolveSchema(elements, ctx),
+    nestedViewRoute,
+  )
 
   return {
     ...nestedResponseEnvelope('nested-relation-view', pilotiq, base, scope, resolved, req),
-    panel:    await panelInfo(pilotiq, req, { resource: resolved.R, recordId: scope.childId }),
+    panel:    await panelInfo(pilotiq, req, nestedViewRoute),
     mode:     'view' as const,
     childId:  scope.childId,
     schemaData,
@@ -2663,11 +2744,16 @@ async function buildNestedRelationEditData(
     recordId: scope.childId,
   }, user), cfg)
 
-  const schemaData = await resolveSchema(elements, ctx)
+  const nestedEditRoute: PanelInfoRoute = { resource: resolved.R, recordId: scope.childId }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'relation-edit',
+    await resolveSchema(elements, ctx),
+    nestedEditRoute,
+  )
 
   return {
     ...nestedResponseEnvelope('nested-relation-edit', pilotiq, base, scope, resolved, req),
-    panel:    await panelInfo(pilotiq, req, { resource: resolved.R, recordId: scope.childId }),
+    panel:    await panelInfo(pilotiq, req, nestedEditRoute),
     mode:     'edit' as const,
     childId:  scope.childId,
     schemaData,
@@ -3588,13 +3674,18 @@ export async function resourceViewData(
   const breadcrumbs = resourceViewBreadcrumbs(cfg, R, recordTitle)
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
-  const schemaData = await resolveSchema(
-    elements,
-    record !== undefined ? { ...ctx, record } : ctx,
+  const viewRoute: PanelInfoRoute = { resource: R, page: PageClass, recordId }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'view',
+    await resolveSchema(
+      elements,
+      record !== undefined ? { ...ctx, record } : ctx,
+    ),
+    viewRoute,
   )
 
   return {
-    panel:    await panelInfo(pilotiq, req, { resource: R, page: PageClass, recordId }),
+    panel:    await panelInfo(pilotiq, req, viewRoute),
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'view' as const,
@@ -3644,14 +3735,19 @@ export async function globalEditData(
   const breadcrumbs = globalBreadcrumbs(cfg, G)
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
-  const schemaData = await resolveSchema(
-    elements,
-    record !== undefined ? { ...ctx, record } : ctx,
+  const globalEditRoute: PanelInfoRoute = { global: G, page: PageClass }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'global-edit',
+    await resolveSchema(
+      elements,
+      record !== undefined ? { ...ctx, record } : ctx,
+    ),
+    globalEditRoute,
   )
 
   return {
     pageType: 'global',
-    panel:    await panelInfo(pilotiq, req, { global: G, page: PageClass }),
+    panel:    await panelInfo(pilotiq, req, globalEditRoute),
     page:     PageClass.toMeta(),
     global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
@@ -3681,10 +3777,15 @@ export async function globalViewData(
   const breadcrumbs = globalBreadcrumbs(cfg, G)
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
-  const schemaData = await resolveSchema(elements, ctx)
+  const globalViewRoute: PanelInfoRoute = { global: G, page: PageClass }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'global-view',
+    await resolveSchema(elements, ctx),
+    globalViewRoute,
+  )
 
   return {
-    panel:    await panelInfo(pilotiq, req, { global: G, page: PageClass }),
+    panel:    await panelInfo(pilotiq, req, globalViewRoute),
     page:     PageClass.toMeta(),
     global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
@@ -3720,11 +3821,16 @@ export async function customPageData(
   const breadcrumbs = customPageBreadcrumbs(cfg, PageClass)
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
-  const schemaData = await resolveSchema(elements, ctx)
+  const customRoute: PanelInfoRoute = { page: PageClass }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'page',
+    await resolveSchema(elements, ctx),
+    customRoute,
+  )
 
   return {
     pageType: 'page',
-    panel:    await panelInfo(pilotiq, req, { page: PageClass }),
+    panel:    await panelInfo(pilotiq, req, customRoute),
     page:     PageClass.toMeta(),
     schemaData,
     _widgetData: widgetData,

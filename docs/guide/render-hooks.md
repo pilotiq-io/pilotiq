@@ -51,26 +51,23 @@ every page in the panel.
 
 ### Page-level
 
-Resolved per page-role by the matching data builder; available on
-`viewProps.renderHooks`. Wiring shipping in a follow-up — the closed
-name union is already in the type so you can register today; the
-mounts will start firing without changes once the per-builder
-resolution lands.
+Resolved per page-role by the matching data builder and spliced into
+the page's `schemaData` at the position implied by the slot name.
 
-```ts
-'panels::page.start' | 'panels::page.end'
-'panels::resource.pages.list-records.table.before'
-'panels::resource.pages.list-records.table.after'
-'panels::resource.pages.list-records.tabs.end'
-'panels::resource.pages.create-record.form.before'
-'panels::resource.pages.create-record.form.after'
-'panels::resource.pages.edit-record.form.before'
-'panels::resource.pages.edit-record.form.after'
-'panels::resource.pages.view-record.start'
-'panels::resource.pages.view-record.end'
-'panels::global-search.results.before'
-'panels::global-search.results.after'
-```
+| Slot | Position |
+|---|---|
+| `panels::page.start` / `panels::page.end` | Top / bottom of the page schema (every role: dashboard, list, create, edit, view, global-edit, global-view, custom page, all relation/nested-relation) |
+| `panels::resource.pages.list-records.table.before` / `.after` | Immediately above / below the first top-level `Table` on the resource list page |
+| `panels::resource.pages.list-records.tabs.end` | Appended into the `ListTabs` strip's children (after the user's tabs) |
+| `panels::resource.pages.create-record.form.before` / `.after` | Around the first top-level `Form` on the resource create page |
+| `panels::resource.pages.edit-record.form.before` / `.after` | Around the first top-level `Form` on the resource edit page |
+| `panels::resource.pages.view-record.start` / `.end` | Wraps the resource view page schema (inside `panels::page.start/.end` if both are set) |
+| `panels::global-search.results.before` / `.after` | Reserved — palette mounting wires up in a follow-up |
+
+The `*-records.table.*` and `*-record.form.*` splice points work on the
+**first top-level** match. Tables / Forms nested inside a Section or
+Group don't currently receive these hooks — register `panels::page.start`
+or use the universal slots if you need to wrap a nested anchor.
 
 ## Scope
 
