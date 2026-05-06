@@ -1404,6 +1404,61 @@ function FilterPopover({ filters, prefix }: { filters: ElementMeta[]; prefix?: s
 }
 
 /**
+ * Inline strip of filter controls — used by `Table.filtersLayout('above-content'
+ * | 'above-content-collapsible' | 'below-content')`. Mirrors `FilterPopover`'s
+ * inner body but lays the controls out in a wrapping row instead of a
+ * vertical stack inside a popover.
+ */
+function FilterStrip({ filters, prefix }: { filters: ElementMeta[]; prefix?: string | undefined }) {
+  if (filters.length === 0) return null
+  return (
+    <div className="flex flex-col gap-3 rounded-md border bg-muted/30 p-3 sm:flex-row sm:flex-wrap sm:items-end">
+      {filters.map((f, i) => (
+        <div key={i} className="min-w-[12rem] flex-1 sm:max-w-xs">
+          {renderFilterControl(f, i, prefix)}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Toolbar button paired with `FilterStrip` for `Table.filtersLayout(
+ * 'above-content-collapsible')`. Visually matches the modal-mode trigger
+ * (filter icon + "Filters" label + active-count badge) but flips a parent-
+ * owned `open` state instead of opening a Popover.
+ */
+function FilterStripToggle({
+  filters, open, onToggle,
+}: {
+  filters: ElementMeta[]
+  open:    boolean
+  onToggle: () => void
+}) {
+  const activeCount = filters.filter(f => {
+    const v = f['value']
+    return typeof v === 'string' && v !== ''
+  }).length
+  return (
+    <button
+      type="button"
+      aria-label="Filters"
+      aria-expanded={open}
+      onClick={onToggle}
+      className="relative inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+    >
+      <FilterIcon className="size-4" />
+      <span>Filters</span>
+      {activeCount > 0 && (
+        <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+          {activeCount}
+        </span>
+      )}
+    </button>
+  )
+}
+
+/**
  * Render row actions inline. Each Action becomes a small button next to
  * the others; an `ActionGroup` placed in row position keeps its dropdown
  * via `ActionGroupTrigger` (the dropdown UX is opt-in via grouping, not
@@ -4877,6 +4932,42 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
   const totalPages = perPage && perPage > 0 ? Math.max(1, Math.ceil(total / perPage)) : 1
   const showPagination = totalPages > 1
   const hasFilters     = filters.length > 0
+  // Filter layout positions (Filament v5). `'modal'` (default) keeps the
+  // toolbar Filters button + popover. The three inline modes lay every
+  // filter widget out as a wrapping strip in the matching slot. The
+  // collapsible variant adds a toolbar toggle + per-table-path persisted
+  // open state.
+  const filtersLayout = (el['filtersLayout'] as
+    | 'above-content' | 'above-content-collapsible' | 'below-content'
+    | undefined) ?? 'modal'
+  const filtersInModal = filtersLayout === 'modal'
+  const filtersAbove   = filtersLayout === 'above-content'
+                       || filtersLayout === 'above-content-collapsible'
+  const filtersBelow   = filtersLayout === 'below-content'
+  const filtersCollapsible = filtersLayout === 'above-content-collapsible'
+  const filtersStripStorageKey = `pilotiq.table.${currentPath}.filters.open`
+  const [filtersOpen, setFiltersOpen] = useState<boolean>(() => {
+    if (!filtersCollapsible) return true
+    if (typeof window === 'undefined') return false
+    try {
+      const stored = window.localStorage.getItem(filtersStripStorageKey)
+      // Default to OPEN when filters are active (URL carried filter values
+      // in) so the user can see what's filtering — same UX cue as the
+      // active-filters pill row.
+      if (stored === null) return Object.keys(activeFilters).length > 0
+      return stored === '1'
+    } catch { return false }
+  })
+  const toggleFiltersOpen = (): void => {
+    setFiltersOpen(prev => {
+      const next = !prev
+      if (typeof window !== 'undefined') {
+        try { window.localStorage.setItem(filtersStripStorageKey, next ? '1' : '0') }
+        catch { /* private mode / quota — silent */ }
+      }
+      return next
+    })
+  }
   // Show the "Group by" dropdown when 2+ groups are registered, or 1
   // group with rich metadata (label/collapsible/etc.). A single bare
   // `defaultGroup('col')` with no `groups([...])` registration shouldn't
@@ -4889,7 +4980,10 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
     ))
   const sortableColumns  = isCardsLayout ? columns.filter(c => Boolean(c['sortable'])) : []
   const hasSortPicker    = isCardsLayout && sortableColumns.length > 0
-  const showHeaderBar    = searchable || headerActions.length > 0 || hasFilters || hasGroupPicker || hasSortPicker
+  // Only modal + collapsible mount a toolbar widget; the always-visible
+  // strip modes don't add anything to the header bar.
+  const showFiltersInToolbar = hasFilters && (filtersInModal || filtersCollapsible)
+  const showHeaderBar    = searchable || headerActions.length > 0 || showFiltersInToolbar || hasGroupPicker || hasSortPicker
   const hasBulkActions = bulkActions.length > 0
   const hasRowActions  = rowActions.length > 0
 
@@ -4941,7 +5035,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
       )}
       {showHeaderBar && (
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-          {(searchable || hasFilters || hasGroupPicker || hasSortPicker) ? (
+          {(searchable || showFiltersInToolbar || hasGroupPicker || hasSortPicker) ? (
             <div className="flex items-center gap-2">
               {searchable && (
                 <form method="get" action={currentPath || undefined} className="flex items-end gap-2">
@@ -4964,8 +5058,15 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
                   </button>
                 </form>
               )}
-              {hasFilters && (
+              {hasFilters && filtersInModal && (
                 <FilterPopover filters={filters} prefix={queryPrefix} />
+              )}
+              {hasFilters && filtersCollapsible && (
+                <FilterStripToggle
+                  filters={filters}
+                  open={filtersOpen}
+                  onToggle={toggleFiltersOpen}
+                />
               )}
               {hasGroupPicker && (
                 <TableGroupPicker
@@ -5010,7 +5111,10 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
           )}
         </div>
       )}
-      {hasFilters && <ActiveFiltersBar filters={filters} prefix={queryPrefix} />}
+      {hasFilters && filtersInModal && <ActiveFiltersBar filters={filters} prefix={queryPrefix} />}
+      {hasFilters && filtersAbove && filtersOpen && (
+        <FilterStrip filters={filters} prefix={queryPrefix} />
+      )}
       {hasBulkActions && someChecked && (
         <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
           <span className="text-muted-foreground">
@@ -5387,6 +5491,9 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
             )}
           </div>
         </div>
+      )}
+      {hasFilters && filtersBelow && (
+        <FilterStrip filters={filters} prefix={queryPrefix} />
       )}
     </div>
   )

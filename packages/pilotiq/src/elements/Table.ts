@@ -131,6 +131,27 @@ export interface CardsPerRow {
  */
 export type ContentLayout = 'table' | 'cards'
 
+/**
+ * Where filters render relative to the table.
+ * - `'modal'` (default) — chrome-only popover above the table, opened by
+ *   the toolbar Filters button.
+ * - `'above-content'` — inline strip rendered between the header bar and
+ *   the table; every filter widget is always visible.
+ * - `'above-content-collapsible'` — same strip, hidden behind the toolbar
+ *   Filters button. Open / closed state persists per table path.
+ * - `'below-content'` — inline strip rendered after the table (under the
+ *   pagination row).
+ *
+ * Filament v5's sidebar positions (`BeforeContent` / `AfterContent`)
+ * reshape the page rather than the table chrome and are deferred until a
+ * consumer asks.
+ */
+export type FiltersLayout =
+  | 'modal'
+  | 'above-content'
+  | 'above-content-collapsible'
+  | 'below-content'
+
 export interface TableMeta extends ElementMeta {
   type:        'table'
   defaultSort?: { column: string; direction: SortDirection }
@@ -250,6 +271,11 @@ export interface TableMeta extends ElementMeta {
    * maps each breakpoint to a `@container`-scoped Tailwind grid class. */
   cardsPerRow?: CardsPerRow
 
+  /** Filter layout position. Absent = `'modal'` (current popover behavior).
+   * The renderer swaps the toolbar Filters button for an inline strip in
+   * the matching slot when set. See `FiltersLayout` for the full enum. */
+  filtersLayout?: Exclude<FiltersLayout, 'modal'>
+
   // Render-time state — populated by the framework after `records()` runs.
   rows?:        unknown[]
   total?:       number
@@ -307,6 +333,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _contentLayout: ContentLayout = 'table'
   private _cardSchema?:   CardSchemaHandler<R>
   private _cardsPerRow?:  CardsPerRow
+  private _filtersLayout: FiltersLayout = 'modal'
 
   private constructor() { super() }
 
@@ -633,6 +660,18 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
+  /**
+   * Where filters render relative to the table. Default `'modal'` keeps
+   * the toolbar Filters button + popover. The three inline modes
+   * (`'above-content'` / `'above-content-collapsible'` / `'below-content'`)
+   * lay every filter widget out as a horizontal strip in place of the
+   * popover.
+   */
+  filtersLayout(layout: FiltersLayout): this {
+    this._filtersLayout = layout
+    return this
+  }
+
   /** Render-time setter — the column rows are actually banded by for
    * this request, after `?group=` and `defaultGroup(...)` are reconciled.
    * Set by `loadTableRecords`. Empty string explicitly clears (URL
@@ -685,6 +724,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   isCardsLayout(): boolean { return this._contentLayout === 'cards' }
   getCardSchema(): CardSchemaHandler<R> | undefined { return this._cardSchema }
   getCardsPerRow(): CardsPerRow | undefined { return this._cardsPerRow }
+  getFiltersLayout(): FiltersLayout { return this._filtersLayout }
 
   /** Convenience: the `Column` children only. */
   getColumns(): Column[] {
@@ -750,6 +790,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
         ? { queryStringIdentifier: this._queryStringIdentifier } : {}),
       ...(this._contentLayout === 'cards' ? { contentLayout: 'cards' as const } : {}),
       ...(cardsPerRow !== undefined ? { cardsPerRow } : {}),
+      ...(this._filtersLayout !== 'modal' ? { filtersLayout: this._filtersLayout } : {}),
       ...(this._rows         !== undefined ? { rows:        this._rows }        : {}),
       ...(this._total        !== undefined ? { total:       this._total }       : {}),
       ...(this._currentSort  !== undefined ? { currentSort: this._currentSort } : {}),

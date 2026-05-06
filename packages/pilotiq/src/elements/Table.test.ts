@@ -388,4 +388,35 @@ describe('Table Element', () => {
       assert.equal(resolved[0]!['contentLayout'], 'cards')
     })
   })
+
+  describe('filtersLayout', () => {
+    it('default is "modal" and meta omits the field', () => {
+      const t = Table.make()
+      assert.equal(t.getFiltersLayout(), 'modal')
+      assert.equal(t.toMeta().filtersLayout, undefined)
+    })
+
+    it('"above-content" round-trips on the meta', () => {
+      const meta = Table.make().filtersLayout('above-content').toMeta()
+      assert.equal(meta.filtersLayout, 'above-content')
+    })
+
+    it('"above-content-collapsible" round-trips on the meta', () => {
+      const meta = Table.make().filtersLayout('above-content-collapsible').toMeta()
+      assert.equal(meta.filtersLayout, 'above-content-collapsible')
+    })
+
+    it('"below-content" round-trips on the meta', () => {
+      const meta = Table.make().filtersLayout('below-content').toMeta()
+      assert.equal(meta.filtersLayout, 'below-content')
+    })
+
+    it('explicit "modal" still omits the field', () => {
+      const t = Table.make()
+        .filtersLayout('above-content')
+        .filtersLayout('modal')
+      assert.equal(t.getFiltersLayout(), 'modal')
+      assert.equal(t.toMeta().filtersLayout, undefined)
+    })
+  })
 })
