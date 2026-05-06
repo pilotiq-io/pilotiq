@@ -3,6 +3,7 @@ import { Separator } from '../ui/separator.js'
 import { ThemeToggle } from '../ThemeToggle.js'
 import { SearchTrigger } from '../SearchTrigger.js'
 import { UserMenu } from '../UserMenu.js'
+import { NotificationBell } from '../NotificationBell.js'
 import { RenderHookSlot } from '../RenderHookSlot.js'
 import {
   DropdownMenu,
@@ -168,6 +169,10 @@ export function TopbarLayout({ panel, basePath, currentPath, children }: AppShel
   const title = panel.branding?.title ?? panel.name
   const groups = groupItems(panel.navigation ?? [])
   const hooks = panel.renderHooks
+  // Topbar layout treats `position: 'sidebar'` as a fallback to topbar —
+  // no sidebar exists in this layout, so the bell rides in the topbar
+  // chrome regardless of the configured position.
+  const dn = panel.databaseNotifications
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
@@ -219,6 +224,7 @@ export function TopbarLayout({ panel, basePath, currentPath, children }: AppShel
         </nav>
         <SearchTrigger />
         <ThemeToggle />
+        {dn && <NotificationBell meta={dn} />}
         <UserMenu
           userMenu={panel.userMenu}
           before={<RenderHookSlot name="panels::user-menu.before" hooks={hooks} />}

@@ -1,0 +1,299 @@
+'use client'
+
+import React from 'react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu.js'
+import { useNavigate } from './navigate.js'
+import { useIconFor } from './icon-context.js'
+import { cn } from './utils.js'
+import type { DatabaseNotificationsMeta } from '../pageData.js'
+import type { DatabaseNotificationMeta } from '../notifications/database.js'
+import type { NavigationBadgeColor } from '../Resource.js'
+
+const BADGE_COLOR: Record<NavigationBadgeColor, string> = {
+  default:     'bg-muted text-muted-foreground',
+  primary:     'bg-primary text-primary-foreground',
+  success:     'bg-emerald-500 text-white',
+  warning:     'bg-amber-500   text-white',
+  destructive: 'bg-red-500     text-white',
+  info:        'bg-sky-500     text-white',
+}
+
+const TYPE_DOT: Record<NonNullable<DatabaseNotificationMeta['type']>, string> = {
+  info:    'bg-sky-500',
+  success: 'bg-emerald-500',
+  warning: 'bg-amber-500',
+  error:   'bg-red-500',
+}
+
+/**
+ * Bell-icon dropdown for `Pilotiq.databaseNotifications()`. Renders
+ * nothing when `meta` is absent — `panelInfo()` only ships the meta
+ * when the panel opted in AND a user resolved.
+ *
+ * Lifecycle:
+ *   - First mount: fetch the current list via `meta.listUrl`.
+ *   - Polling: when `meta.polling > 0`, refetch every N seconds.
+ *     Pauses while `document.visibilityState !== 'visible'` so a
+ *     backgrounded tab doesn't keep tickling the server.
+ *   - Mark-read: optimistic — flips `readAt` immediately, refetches
+ *     after the POST so the unread count rebases against the server.
+ *   - Click-through: when a row carries a `url`, the click marks-read
+ *     + SPA-navigates in the same step.
+ */
+export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta }) {
+  if (!meta) return null
+  const navigate = useNavigate()
+
+  const [open, setOpen] = React.useState(false)
+  const [data, setData] = React.useState<{
+    notifications: DatabaseNotificationMeta[]
+    unreadCount:   number
+  } | null>(null)
+  const [loading, setLoading] = React.useState(false)
+
+  // ── Fetch helpers ─────────────────────────────────────
+  // Latest-wins seq tracking — same pattern as the global-search
+  // palette / live-form state. A slow first request can't clobber a
+  // fresh second one.
+  const seqRef     = React.useRef(0)
+  const latestRef  = React.useRef(0)
+  const refetch = React.useCallback(async () => {
+    const seq = ++seqRef.current
+    setLoading(true)
+    try {
+      const r = await fetch(meta.listUrl, {
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+      })
+      if (!r.ok) return
+      const json = await r.json() as {
+        notifications?: DatabaseNotificationMeta[]
+        unreadCount?:   number
+      }
+      if (seq < latestRef.current) return
+      latestRef.current = seq
+      setData({
+        notifications: json.notifications ?? [],
+        unreadCount:   json.unreadCount   ?? 0,
+      })
+    } catch { /* network-flake; the next poll retries */ }
+    finally {
+      if (seq >= latestRef.current) setLoading(false)
+    }
+  }, [meta.listUrl])
+
+  // ── First mount + polling ────────────────────────────
+  React.useEffect(() => {
+    void refetch()
+  }, [refetch])
+
+  React.useEffect(() => {
+    if (meta.polling === null || meta.polling === 0) return
+    const ms = meta.polling * 1000
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      void refetch()
+    }
+    const id = window.setInterval(tick, ms)
+    return () => window.clearInterval(id)
+  }, [meta.polling, refetch])
+
+  // ── Mutations ────────────────────────────────────────
+  const markRead = React.useCallback(async (id: string) => {
+    // Optimistic flip — the bell stays responsive even on slow networks.
+    setData(prev => prev && {
+      notifications: prev.notifications.map(n =>
+        n.id === id ? { ...n, readAt: n.readAt ?? new Date().toISOString() } : n,
+      ),
+      unreadCount: Math.max(0, prev.unreadCount - 1),
+    })
+    try {
+      await fetch(meta.readUrl.replace(':id', encodeURIComponent(id)), {
+        method:  'POST',
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+      })
+    } catch { /* swallow — next poll resyncs */ }
+    void refetch()
+  }, [meta.readUrl, refetch])
+
+  const markAllRead = React.useCallback(async () => {
+    setData(prev => prev && {
+      notifications: prev.notifications.map(n =>
+        n.readAt ? n : { ...n, readAt: new Date().toISOString() }),
+      unreadCount: 0,
+    })
+    try {
+      await fetch(meta.readAllUrl, {
+        method:  'POST',
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+      })
+    } catch { /* swallow */ }
+    void refetch()
+  }, [meta.readAllUrl, refetch])
+
+  const unreadCount = data?.unreadCount ?? 0
+  const items       = data?.notifications ?? []
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger
+        className="relative inline-flex items-center justify-center size-9 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors focus:outline-none"
+        aria-label={meta.trigger?.label ?? 'Notifications'}
+      >
+        <BellIcon icon={meta.trigger?.icon} />
+        {unreadCount > 0 && (
+          <span
+            className={cn(
+              'absolute -top-0.5 -end-0.5 inline-flex min-w-[1rem] h-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none',
+              BADGE_COLOR[meta.badgeColor],
+            )}
+            aria-label={`${unreadCount} unread`}
+          >
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent align="end" className="w-80 p-0">
+        <header className="flex items-center justify-between px-3 py-2 border-b">
+          <span className="text-sm font-medium">Notifications</span>
+          {unreadCount > 0 && (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => { void markAllRead() }}
+            >
+              Mark all as read
+            </button>
+          )}
+        </header>
+
+        <div className="max-h-96 overflow-y-auto">
+          {items.length === 0
+            ? <EmptyState loading={loading} />
+            : items.map(n => (
+                <NotificationRow
+                  key={n.id}
+                  notification={n}
+                  onMarkRead={markRead}
+                  onNavigate={(href) => { setOpen(false); navigate(href) }}
+                />
+              ))
+          }
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function NotificationRow({
+  notification: n,
+  onMarkRead,
+  onNavigate,
+}: {
+  notification: DatabaseNotificationMeta
+  onMarkRead:   (id: string) => void
+  onNavigate:   (url: string) => void
+}) {
+  const RowIcon = useIconFor(n.icon)
+  const unread  = !n.readAt
+
+  const onClick = (e: React.MouseEvent) => {
+    // Modified clicks (cmd/ctrl/middle) preserve native semantics.
+    if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey) return
+    e.preventDefault()
+    if (unread) onMarkRead(n.id)
+    if (n.url) onNavigate(n.url)
+  }
+
+  const Tag: 'a' | 'button' = n.url ? 'a' : 'button'
+  const tagProps: React.AnchorHTMLAttributes<HTMLAnchorElement> & React.ButtonHTMLAttributes<HTMLButtonElement> = {
+    onClick,
+    className: cn(
+      'w-full text-start px-3 py-2 flex items-start gap-2 hover:bg-accent transition-colors border-b last:border-b-0',
+      unread && 'bg-primary/5',
+    ),
+  }
+  if (Tag === 'a') {
+    tagProps.href = n.url!
+  } else {
+    tagProps.type = 'button'
+  }
+
+  return (
+    <Tag {...(tagProps as React.HTMLAttributes<HTMLElement>)}>
+      <span
+        className={cn(
+          'mt-1.5 inline-block size-2 rounded-full shrink-0',
+          n.type ? TYPE_DOT[n.type] : 'bg-muted-foreground/40',
+        )}
+        aria-hidden="true"
+      />
+      <span className="flex-1 min-w-0">
+        <span className="flex items-center gap-1.5">
+          {RowIcon && <RowIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />}
+          <span className={cn('text-sm leading-tight', unread ? 'font-medium' : '')}>
+            {n.title || 'Notification'}
+          </span>
+        </span>
+        {n.body && (
+          <span className="block text-xs text-muted-foreground mt-0.5 line-clamp-2">
+            {n.body}
+          </span>
+        )}
+        <span className="block text-[11px] text-muted-foreground/70 mt-1">
+          {formatRelative(n.createdAt)}
+        </span>
+      </span>
+    </Tag>
+  )
+}
+
+function EmptyState({ loading }: { loading: boolean }) {
+  return (
+    <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+      {loading ? 'Loading…' : 'No notifications'}
+    </div>
+  )
+}
+
+function BellIcon({ icon }: { icon: string | undefined }) {
+  // Honor `meta.trigger.icon` when set (string registry name); fall
+  // through to the bundled bell glyph otherwise. The registry-resolved
+  // hook returns `null` when no entry is registered, so a misspelt name
+  // still shows the default bell — better than a silent blank.
+  const Icon = useIconFor(icon)
+  if (Icon) return <Icon className="size-5" aria-hidden="true" />
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="20" height="20" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
+  )
+}
+
+function formatRelative(ts: number): string {
+  const now = Date.now()
+  const diff = Math.max(0, now - ts)
+  const sec  = Math.floor(diff / 1000)
+  if (sec < 45)         return 'Just now'
+  if (sec < 90)         return '1 minute ago'
+  const min = Math.floor(sec / 60)
+  if (min < 60)         return `${min} minutes ago`
+  const hr  = Math.floor(min / 60)
+  if (hr  < 24)         return `${hr} hour${hr === 1 ? '' : 's'} ago`
+  const day = Math.floor(hr / 24)
+  if (day < 7)          return `${day} day${day === 1 ? '' : 's'} ago`
+  return new Date(ts).toLocaleDateString()
+}

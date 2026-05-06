@@ -83,6 +83,35 @@ export interface UserMenuMeta {
 }
 
 /**
+ * Bell-icon dropdown configuration shipped under `viewProps.panel`. Sparse —
+ * absent when `Pilotiq.databaseNotifications()` wasn't called OR when no
+ * user resolves (anonymous request → no inbox to surface). Renderer mounts
+ * the bell only when this is set.
+ *
+ * Routes are absolute URLs (panel `basePath` already applied). Client
+ * substitutes `:id` per row when calling read / unread; `_widget`-style
+ * params aren't used here because the bell only ever issues these four
+ * fetch shapes.
+ *
+ * `polling` mirrors `DatabaseNotificationsConfig.polling` — `null` ships
+ * over the wire to disable client-side polling. The bell still fetches on
+ * mount + after every mark-read mutation.
+ */
+export interface DatabaseNotificationsMeta {
+  position:    'topbar' | 'sidebar'
+  polling:     number | null
+  pageSize:    number
+  badgeColor:  NavigationBadgeColor
+  trigger?:    { icon?: string; label?: string }
+  listUrl:     string
+  readAllUrl:  string
+  /** Template URL with literal `:id` placeholder. Client replaces. */
+  readUrl:     string
+  /** Template URL with literal `:id` placeholder. Client replaces. */
+  unreadUrl:   string
+}
+
+/**
  * Single nav-tree entry. `name` is the JS class name (`R.name` /
  * `G.name` / `P.name`) — also the lookup key into the build-time
  * `_components.ts` manifest the Vite plugin emits, so component-typed
@@ -150,6 +179,7 @@ export async function panelInfo(
     buildUserMenu(pilotiq, user),
     resolveChromeHooks(pilotiq, user, route),
   ])
+  const databaseNotifications = buildDatabaseNotificationsMeta(cfg, user)
   return {
     name: cfg.name,
     branding: cfg.branding,
@@ -157,8 +187,40 @@ export async function panelInfo(
     theme,
     themeEditor: cfg.themeEditor ?? false,
     ...(userMenu ? { userMenu } : {}),
+    ...(databaseNotifications ? { databaseNotifications } : {}),
     ...(Object.keys(renderHooks).length > 0 ? { renderHooks } : {}),
   }
+}
+
+/**
+ * Build the bell-icon meta. Returns `null` when:
+ *   - `Pilotiq.databaseNotifications()` was never called, OR
+ *   - no user resolves (no inbox to surface).
+ *
+ * Defaults follow Filament: 30s polling, 25 rows per page, primary
+ * badge color, topbar position.
+ */
+function buildDatabaseNotificationsMeta(
+  cfg:  Readonly<PilotiqConfig>,
+  user: unknown,
+): DatabaseNotificationsMeta | null {
+  if (!cfg.databaseNotifications?.enabled) return null
+  if (user === null || user === undefined) return null
+
+  const dn   = cfg.databaseNotifications
+  const base = cfg.path
+  const meta: DatabaseNotificationsMeta = {
+    position:   dn.position   ?? 'topbar',
+    polling:    dn.polling    === null ? null : (dn.polling ?? 30),
+    pageSize:   dn.pageSize   ?? 25,
+    badgeColor: dn.badgeColor ?? 'primary',
+    listUrl:    `${base}/_notifications`,
+    readAllUrl: `${base}/_notifications/read-all`,
+    readUrl:    `${base}/_notifications/:id/read`,
+    unreadUrl:  `${base}/_notifications/:id/unread`,
+  }
+  if (dn.trigger) meta.trigger = { ...dn.trigger }
+  return meta
 }
 
 /**

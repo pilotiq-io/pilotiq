@@ -6,6 +6,7 @@ import type { SchemaDefinition } from './schema/resolveSchema.js'
 import type { ThemeConfig } from './theme/types.js'
 import type { UploadAdapter } from './uploads/UploadAdapter.js'
 import type { UserMenuItem } from './UserMenuItem.js'
+import type { NavigationBadgeColor } from './Resource.js'
 import type {
   RenderHookEntry,
   RenderHookFn,
@@ -43,6 +44,56 @@ export type UserResolver = (req: unknown) => unknown | null | Promise<unknown | 
  */
 export interface UploadConfig {
   adapter: UploadAdapter
+}
+
+/**
+ * Database notifications configuration. Wired through
+ * `Pilotiq.databaseNotifications(opts?)`.
+ *
+ * Pilotiq stores rows on the `notification` table shipped by
+ * `@rudderjs/notification` (`prisma/schema/notification.prisma`). The
+ * panel consumes that table directly via `@rudderjs/orm`'s
+ * `ModelRegistry` adapter so apps that already have rudder's
+ * `NotificationProvider` running can read existing rows alongside ones
+ * authored by `Notification.make(...).sendToDatabase(recipient)`.
+ *
+ * `position` chooses where the bell mounts in the panel chrome.
+ * `'topbar'` (default) sits between `<ThemeToggle>` and `<UserMenu>` in
+ * both the sidebar and topbar layouts; `'sidebar'` moves it into the
+ * sidebar footer (parity with Filament's
+ * `DatabaseNotificationsPosition::Sidebar`).
+ *
+ * `polling` is the seconds between background refetches. `null`
+ * disables auto-polling — the bell fetches once on mount and after
+ * mark-read mutations. Filament default is 30 seconds; we mirror that.
+ *
+ * `pageSize` caps the list endpoint's page size (default 25).
+ *
+ * `badgeColor` recolors the unread-count pill on the bell trigger.
+ * Default `'primary'`. Reuses the same `NavigationBadgeColor` palette
+ * that the sidebar nav badges use.
+ *
+ * `trigger.icon` overrides the bell icon (registry name); `trigger.label`
+ * overrides the trigger's `aria-label`.
+ *
+ * `notifiableType` is the value pilotiq writes/reads against the
+ * `notifiable_type` column. Defaults to `'users'` to match
+ * `@rudderjs/notification`'s `DatabaseChannel`. Override when your app
+ * stores rows tagged for a different notifiable.
+ */
+export interface DatabaseNotificationsConfig {
+  /** Where the bell mounts. Default `'topbar'`. */
+  position?: 'topbar' | 'sidebar'
+  /** Auto-poll interval in seconds. `null` disables. Default `30`. */
+  polling?:  number | null
+  /** Max rows the list endpoint returns. Default `25`. */
+  pageSize?: number
+  /** Unread badge color on the bell trigger. Default `'primary'`. */
+  badgeColor?: NavigationBadgeColor
+  /** Bell trigger overrides. */
+  trigger?:  { icon?: string; label?: string }
+  /** `notifiable_type` column value. Default `'users'`. */
+  notifiableType?: string
 }
 
 /**
@@ -105,6 +156,12 @@ export interface PilotiqConfig {
    *  separator + Sign-out entry. Without this, the menu shows custom
    *  items (if any) and the user identity, but no sign-out affordance. */
   signOut?:      SignOutConfig
+  /** Database notifications — opt-in. Mounts the bell + 4 endpoints
+   *  (`_notifications` list / `:id/read` / `:id/unread` / `read-all`).
+   *  Reads rows from `@rudderjs/notification`'s `notification` table via
+   *  `@rudderjs/orm`'s `ModelRegistry` adapter, scoped to
+   *  `pilotiq.resolveUser(req).id`. */
+  databaseNotifications?: DatabaseNotificationsConfig & { enabled: true }
   /**
    * Render-hook entries registered via `Pilotiq.renderHook(name, fn,
    * scope?)`. Resolved per-request by `panelInfo()` (chrome slots) and
@@ -310,6 +367,57 @@ export class Pilotiq {
    */
   signOut(config: string | SignOutConfig): this {
     this.config.signOut = typeof config === 'string' ? { url: config } : config
+    return this
+  }
+
+  /**
+   * Enable persistent database-backed notifications. Mounts the bell in
+   * the panel chrome + a small set of `_notifications` endpoints. The
+   * bell only renders when a non-null user resolves from
+   * `Pilotiq.user(req => …)` — anonymous requests never see the
+   * affordance.
+   *
+   * Sends originate from `Notification.make('Saved')
+   * .sendToDatabase(user)` (and the rudder `Notifier.send(user, ...)` /
+   * `notify(user, ...)` paths when the app uses the upstream
+   * notification class). Both write to the same `notification` table so
+   * the bell surfaces both.
+   *
+   *   Pilotiq.make('admin')
+   *     .user(req => Auth.user())
+   *     .databaseNotifications()                              // defaults
+   *     .databaseNotifications({ position: 'sidebar' })       // bell in sidebar
+   *     .databaseNotifications({ polling: null })             // disable polling
+   *     .databaseNotifications({ polling: 10, pageSize: 50 }) // custom
+   */
+  databaseNotifications(opts: DatabaseNotificationsConfig = {}): this {
+    this.config.databaseNotifications = { ...opts, enabled: true }
+    return this
+  }
+
+  /**
+   * Sugar setter for the polling interval. `null` disables auto-poll.
+   * Has no effect unless `.databaseNotifications()` was called.
+   */
+  databaseNotificationsPolling(seconds: number | null): this {
+    if (!this.config.databaseNotifications) return this
+    this.config.databaseNotifications = {
+      ...this.config.databaseNotifications,
+      polling: seconds,
+    }
+    return this
+  }
+
+  /**
+   * Sugar setter for the bell mount position. Has no effect unless
+   * `.databaseNotifications()` was called.
+   */
+  databaseNotificationsPosition(position: 'topbar' | 'sidebar'): this {
+    if (!this.config.databaseNotifications) return this
+    this.config.databaseNotifications = {
+      ...this.config.databaseNotifications,
+      position,
+    }
     return this
   }
 

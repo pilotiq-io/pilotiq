@@ -24,6 +24,7 @@ import { RepeaterDemo } from './pages/RepeaterDemo.js'
 import { BuilderDemo } from './pages/BuilderDemo.js'
 import { MyDashboard } from './pages/MyDashboard.js'
 import { ProfilePage } from './pages/ProfilePage.js'
+import { NotificationsDemo } from './pages/NotificationsDemo.js'
 
 // Register the curated lucide baseline so string-typed icons
 // (Action.icon('check'), Column.icon('star'), etc.) resolve at render time.
@@ -68,8 +69,11 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .use(themeEditor())
   // Plan #10 demo — pretend everyone is an admin so the canDelete()
   // check on `ArticleResource` shows the Delete row action. Real apps
-  // would pass `req => Auth.user()` (from `@rudderjs/auth`).
+  // would pass `req => Auth.user()` (from `@rudderjs/auth`). The `id`
+  // matters for `Notification.sendToDatabase(user)` — the bell scopes
+  // every read/write through `String(user.id)`.
   .user(() => ({
+    id:    1,
     role:  'admin',
     name:  'Demo Admin',
     email: 'admin@example.com',
@@ -82,13 +86,18 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
       .openUrlInNewTab(),
   ])
   .signOut('/logout')
+  // Bell-icon dropdown — reads from the `notification` table shipped by
+  // `@rudderjs/notification`'s `NotificationProvider` (already in the
+  // playground's providers list). Author rows via
+  // `Notification.make('…').sendToDatabase(user)` from any action handler.
+  .databaseNotifications({ polling: 30 })
   // Note: `.uploads(...)` is wired in `bootstrap/providers.ts` (server-only)
   // because `localUpload` imports `node:fs/promises` and the panel module
   // is read on the client through the auto-gen `_components.ts` manifest.
   .clusters([ContentCluster])
   .resources([ArticleResource, UserResource, PostResource, TagResource, VideoResource, CommentResource])
   .globals([SiteSettings])
-  .pages([MyDashboard, SimplePage, ElementsShowcase, ReactiveDemo, FieldTypesDemo, LayoutsDemo, RepeaterDemo, BuilderDemo])
+  .pages([MyDashboard, SimplePage, ElementsShowcase, ReactiveDemo, FieldTypesDemo, LayoutsDemo, RepeaterDemo, BuilderDemo, NotificationsDemo])
   // Plan #15 — mark MyDashboard as the panel's root page. The custom
   // root replaces the previous `.schema(async () => [...])` placeholder;
   // panel.dashboard() registers MyDashboard, collapses its nav URL to

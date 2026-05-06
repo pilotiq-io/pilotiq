@@ -470,6 +470,17 @@ export {
   type NotificationType,
   type NotificationMeta,
 } from './notifications/Notification.js'
+export type { Notifiable } from './notifications/types.js'
+export {
+  listForUser    as listDatabaseNotifications,
+  unreadCount    as databaseNotificationsUnreadCount,
+  markAsRead     as markDatabaseNotificationAsRead,
+  markAsUnread   as markDatabaseNotificationAsUnread,
+  markAllAsRead  as markAllDatabaseNotificationsAsRead,
+  persistDatabaseNotification,
+  type DatabaseNotificationMeta,
+} from './notifications/index.js'
+export type { DatabaseNotificationsConfig } from './Pilotiq.js'
 
 // ─── Validation ───────────────────────────────────────
 export {

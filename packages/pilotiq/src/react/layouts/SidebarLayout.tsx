@@ -23,6 +23,7 @@ import { Separator } from '../ui/separator.js'
 import { ThemeToggle } from '../ThemeToggle.js'
 import { SearchTrigger } from '../SearchTrigger.js'
 import { UserMenu } from '../UserMenu.js'
+import { NotificationBell } from '../NotificationBell.js'
 import { RenderHookSlot } from '../RenderHookSlot.js'
 import type { AppShellProps } from '../AppShell.js'
 import { useIconFor } from '../icon-context.js'
@@ -142,6 +143,9 @@ export function SidebarLayout({ panel, basePath, currentPath, children }: AppShe
   const title = panel.branding?.title ?? panel.name
   const groups = groupItems(panel.navigation ?? [])
   const hooks = panel.renderHooks
+  const dn = panel.databaseNotifications
+  const bellInTopbar  = dn && dn.position === 'topbar'
+  const bellInSidebar = dn && dn.position === 'sidebar'
 
   return (
     <SidebarProvider>
@@ -180,6 +184,16 @@ export function SidebarLayout({ panel, basePath, currentPath, children }: AppShe
 
         <SidebarFooter>
           <RenderHookSlot name="panels::sidebar.footer" hooks={hooks} />
+          {bellInSidebar && (
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <div className="flex items-center justify-between px-2 py-1">
+                  <span className="text-xs text-muted-foreground">Notifications</span>
+                  <NotificationBell meta={dn} />
+                </div>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          )}
           {panel.themeEditor && (
             <SidebarMenu>
               <SidebarMenuItem>
@@ -204,6 +218,7 @@ export function SidebarLayout({ panel, basePath, currentPath, children }: AppShe
           </div>
           <div className="flex items-center gap-1 px-3">
             <ThemeToggle />
+            {bellInTopbar && <NotificationBell meta={dn} />}
             <UserMenu
               userMenu={panel.userMenu}
               before={<RenderHookSlot name="panels::user-menu.before" hooks={hooks} />}

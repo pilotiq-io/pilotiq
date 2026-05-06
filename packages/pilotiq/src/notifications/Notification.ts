@@ -2,7 +2,15 @@
  * Notification — fluent builder for toast/flash messages emitted from
  * action handlers, form lifecycle hooks, or the route layer. Serializes
  * to a `NotificationMeta` that the client `<Toaster>` consumes.
+ *
+ * The same builder also doubles as the entry-point for persistent
+ * notifications: `notification.sendToDatabase(user)` writes a row on
+ * the `notification` table shipped by `@rudderjs/notification`. The
+ * panel's bell-icon dropdown reads from that table so the same call
+ * site that emits a toast can also drop a row into the user's inbox.
  */
+import type { Notifiable } from './types.js'
+import { persist as persistDatabaseNotification } from './database.js'
 
 export type NotificationType = 'info' | 'success' | 'warning' | 'error'
 
@@ -62,6 +70,16 @@ export class Notification {
   /** Override the auto-generated id (rarely needed). */
   id(s: string): this { this._id = s; return this }
 
+  /**
+   * Optional click-through URL. When set on a row that's been written
+   * to the database via `sendToDatabase()`, the bell-icon dropdown
+   * navigates here when the row is clicked (and marks it read in the
+   * same step). Ignored on transient toasts.
+   */
+  url(href: string): this { this._url = href; return this }
+
+  protected _url?: string
+
   // ─── Serialization ────────────────────────────────────
 
   toMeta(): NotificationMeta {
@@ -73,6 +91,52 @@ export class Notification {
       ...(this._icon     !== undefined ? { icon:     this._icon     } : {}),
       ...(this._duration !== undefined ? { duration: this._duration } : {}),
     }
+  }
+
+  /**
+   * Build the JSON payload stored in the `notification.data` column.
+   * Mirrors the toast meta but always includes `type` (so the bell
+   * dropdown can apply the matching tint chip) and `url` when set.
+   */
+  toDatabase(): Record<string, unknown> {
+    const data: Record<string, unknown> = {
+      type:  this._type,
+      title: this._title,
+    }
+    if (this._body !== undefined) data['body'] = this._body
+    if (this._icon !== undefined) data['icon'] = this._icon
+    if (this._url  !== undefined) data['url']  = this._url
+    return data
+  }
+
+  /**
+   * Persist this notification on the `notification` table for
+   * `recipient`. The bell-icon dropdown surfaces it on the recipient's
+   * next poll (or immediately on broadcast — see Phase 2).
+   *
+   * Throws when no `@rudderjs/orm` adapter is registered, with a clear
+   * message pointing at the providers list.
+   *
+   * `notifiableType` lets the caller override the column value when an
+   * app stores notifications scoped to a non-`'users'` notifiable
+   * (teams, projects, etc). Default `'users'` matches the table layout
+   * `@rudderjs/notification`'s `DatabaseChannel` writes.
+   *
+   *   await Notification.make('Saved successfully')
+   *     .body('Changes to the post have been saved.')
+   *     .success()
+   *     .sendToDatabase(currentUser)
+   */
+  async sendToDatabase(
+    recipient: Notifiable,
+    opts: { notifiableType?: string } = {},
+  ): Promise<{ id: string }> {
+    const data = this.toDatabase() as NotificationMeta & Record<string, unknown>
+    return persistDatabaseNotification({
+      notifiableType: opts.notifiableType ?? 'users',
+      notifiableId:   String(recipient.id),
+      data,
+    })
   }
 }
 

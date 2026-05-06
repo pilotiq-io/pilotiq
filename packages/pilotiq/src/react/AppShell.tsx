@@ -6,7 +6,7 @@ import { CommandPalette, CommandPaletteProvider } from './CommandPalette.js'
 import type { NotificationMeta } from '../notifications/Notification.js'
 import type { ComponentRegistry } from './icon-context.js'
 import { ComponentRegistryProvider } from './icon-context.js'
-import type { NavItem, UserMenuMeta } from '../pageData.js'
+import type { NavItem, UserMenuMeta, DatabaseNotificationsMeta } from '../pageData.js'
 import type { RenderHookMap } from '../RenderHook.js'
 import { RenderHookSlot } from './RenderHookSlot.js'
 
@@ -19,6 +19,10 @@ export interface AppShellProps {
     /** Top-right dropdown shape — `null`/absent suppresses the menu
      *  entirely (no resolver configured or no logged-in user). */
     userMenu?: UserMenuMeta | null
+    /** Bell-icon dropdown config — absent suppresses the bell.
+     *  `panelInfo()` only ships this when the panel opted in via
+     *  `Pilotiq.databaseNotifications()` AND a user resolved. */
+    databaseNotifications?: DatabaseNotificationsMeta
     /** Pre-resolved render-hook slots for the panel chrome (body /
      *  topbar / sidebar / user-menu / footer / head). Sparse map —
      *  slots with no registered entries are absent. Built by

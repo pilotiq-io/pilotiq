@@ -1,0 +1,205 @@
+# Database notifications
+
+Pilotiq ships a bell-icon dropdown that surfaces persistent notifications
+authored elsewhere in your app. Author rows from any action handler with
+
+```ts
+import { Notification } from '@pilotiq/pilotiq'
+
+await Notification.make('Saved successfully')
+  .body('Changes to the post have been saved.')
+  .success()
+  .sendToDatabase(currentUser)
+```
+
+The current user sees the new row on the bell's next poll — or
+immediately, if they click the bell to refetch.
+
+---
+
+## Storage
+
+Pilotiq doesn't ship its own table. Rows live on the `notification`
+table that `@rudderjs/notification`'s `NotificationProvider` already
+publishes — the same one Laravel-style channel notifications write to.
+Add `NotificationProvider` to your providers list to vendor the schema:
+
+```bash
+pnpm rudder vendor:publish --tag=notification-schema
+pnpm exec prisma db push --schema prisma/schema
+```
+
+Or copy `prisma/schema/notification.prisma` from the package directly.
+Either way the table looks like:
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `String @id @default(cuid())` | Primary key |
+| `notifiable_id` | `String` | Recipient id (coerced to string) |
+| `notifiable_type` | `String` | `'users'` by default |
+| `type` | `String` | `'PilotiqNotification'` for rows pilotiq writes |
+| `data` | `String` | JSON-encoded payload |
+| `read_at` | `String?` | ISO timestamp; null = unread |
+| `created_at` / `updated_at` | `String` | ISO timestamps |
+
+Pilotiq queries the table through `@rudderjs/orm`'s `ModelRegistry`
+adapter, so any orm-supported database works (SQLite / Postgres /
+MySQL via Prisma, Drizzle adapters too).
+
+---
+
+## Enabling the bell
+
+Two preconditions:
+
+1. A user resolver — `Pilotiq.user(req => …)` must return an object with
+   a non-null `id`. The bell scopes every read/write through that id, so
+   no resolver = no inbox.
+2. The opt-in toggle:
+
+```ts
+import { Pilotiq } from '@pilotiq/pilotiq'
+
+Pilotiq.make('admin')
+  .user(req => Auth.user())
+  .databaseNotifications()         // defaults: topbar / 30s poll / 25 rows
+```
+
+When both are present, `panelInfo()` ships a `databaseNotifications`
+block to the renderer and the bell mounts in the panel chrome between
+`<ThemeToggle>` and `<UserMenu>`.
+
+---
+
+## Configuration
+
+Every option is keyword-only. Pass them in the toggle, or use the sugar
+setters for the common knobs:
+
+```ts
+.databaseNotifications({
+  position:   'topbar',  // or 'sidebar' (sidebar layout only)
+  polling:    30,        // seconds; null disables auto-poll
+  pageSize:   25,        // max rows the list endpoint returns
+  badgeColor: 'primary', // 'default' | 'primary' | 'success' | 'warning' | 'destructive' | 'info'
+  trigger:    {          // bell trigger overrides
+    icon:  'inbox',      // any registered icon name
+    label: 'Inbox',      // aria-label
+  },
+  notifiableType: 'users',  // matches the `notifiable_type` column
+})
+
+// Sugar setters (no-ops without `.databaseNotifications()` first):
+.databaseNotificationsPolling(120)         // bump the interval
+.databaseNotificationsPolling(null)        // disable auto-poll
+.databaseNotificationsPosition('sidebar')  // move to the sidebar footer
+```
+
+`position` only honors `'sidebar'` in the sidebar layout; the topbar
+layout has no sidebar to mount into and falls back to the topbar.
+
+---
+
+## Sending notifications
+
+`Notification.make(title)` is the same builder that emits transient
+toasts — calling `.sendToDatabase(recipient)` persists it instead of
+returning the meta. The two are independent: a handler can do both.
+
+```ts
+import { Action, Notification } from '@pilotiq/pilotiq'
+
+Action.make('publish')
+  .label('Publish')
+  .handler(async ({ record, user }) => {
+    await publishPost(record)
+
+    // Drop a row on every editor's inbox.
+    for (const editor of await getEditors()) {
+      await Notification.make('Post published')
+        .body((record as any).title)
+        .icon('check-circle-2')
+        .success()
+        .url(`/new-admin/posts/${(record as any).id}`)
+        .sendToDatabase(editor)
+    }
+
+    // Toast the action's invoker.
+    return {
+      notify: Notification.make('Published').success().toMeta(),
+    }
+  })
+```
+
+`recipient` is anything with a non-null `id`. The bell coerces the id
+to a string before reading or writing — mixed `number`/`string` ids
+stay consistent on disk.
+
+### Click-through URLs
+
+`.url(href)` stores a URL alongside the row. The bell renders the row
+as a real `<a>`; clicking it marks the row read AND SPA-navigates in a
+single step. Modified clicks (cmd / ctrl / shift) preserve native
+browser semantics for opening in new tabs.
+
+### Wire payload
+
+`.toDatabase()` builds the JSON blob written to the `data` column:
+
+```jsonc
+{
+  "type":  "success",     // mirrors the toast type chip on the bell
+  "title": "Saved",
+  "body":  "All good.",   // optional
+  "icon":  "check-circle-2",
+  "url":   "/admin/posts/42"
+}
+```
+
+Rows authored by other tools (e.g., a regular `@rudderjs/notification`
+subclass via `Notifier.send`) round-trip too — the bell parses
+`title` / `body` / `icon` / `url` / `type` from whatever's in `data`
+and ignores the rest.
+
+---
+
+## Endpoints
+
+`databaseNotifications()` mounts four endpoints under `${basePath}`:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET`  | `/_notifications?unread=true&limit=25` | List rows + unread count |
+| `POST` | `/_notifications/:id/read`            | Mark one row read |
+| `POST` | `/_notifications/:id/unread`          | Mark one row unread |
+| `POST` | `/_notifications/read-all`            | Mark every unread row read |
+
+Every route 401s when no user resolves. Mark-read routes scope by
+`notifiable_id` so a tampered POST can't mark another user's row.
+
+---
+
+## Polling
+
+The default 30-second interval matches Filament. The bell pauses
+polling while `document.visibilityState !== 'visible'` so a
+backgrounded tab doesn't keep tickling the server.
+
+Set `polling: null` to disable polling entirely — the bell still
+fetches once on mount and after every mark-read mutation.
+
+---
+
+## v1 limits
+
+- **Single notifiable type per panel.** Every read/write uses the same
+  `notifiableType` (default `'users'`).
+- **No live broadcast yet.** Polling is the only refresh path; new rows
+  surface on the next tick. Real-time push via `@rudderjs/broadcast` is
+  a planned Phase 2.
+- **No `Action.markAsRead()` factory inside notifications.** Filament's
+  `Notification::actions([Action::make('view')->markAsRead()])` is not
+  yet wired; click-through marks-read instead.
+- **No bulk inbox modal page.** The dropdown is the primary surface;
+  a full inbox page (Filament's `database-notifications` modal) is
+  deferred until a consumer asks.

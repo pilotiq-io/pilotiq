@@ -14,3 +14,17 @@ export {
   flashNotifications,
   consumeFlashedNotifications,
 } from './flash.js'
+
+export type { Notifiable } from './types.js'
+
+export {
+  listForUser,
+  unreadCount,
+  markAsRead,
+  markAsUnread,
+  markAllAsRead,
+  persist as persistDatabaseNotification,
+  type DatabaseNotificationMeta,
+  type ListOptions    as DatabaseNotificationListOptions,
+  type ListResult     as DatabaseNotificationListResult,
+} from './database.js'

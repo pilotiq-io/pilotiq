@@ -29,6 +29,12 @@ import {
   widgetData, type WidgetScope,
 } from './pageData.js'
 import {
+  listForUser    as listDatabaseNotifications,
+  markAsRead     as markDatabaseNotificationAsRead,
+  markAsUnread   as markDatabaseNotificationAsUnread,
+  markAllAsRead  as markAllDatabaseNotificationsAsRead,
+} from './notifications/database.js'
+import {
   RelationManager, RESERVED_RELATIONSHIP_TOKENS,
   normalizeRelationMode,
   type RelationMode,
@@ -707,6 +713,81 @@ export function registerPilotiqRoutes(
     return res.json(data)
   })
 
+  // ── Database notifications (bell-icon dropdown) ───────
+  // Only mounted when `Pilotiq.databaseNotifications()` was called.
+  // Every route 401s when no user resolves so a non-authenticated
+  // request never sees another user's inbox. The `notifiable_type`
+  // value is configurable but defaults to `'users'` to match
+  // `@rudderjs/notification`'s `DatabaseChannel` writes.
+  if (cfg.databaseNotifications?.enabled) {
+    const dn = cfg.databaseNotifications
+    const notifiableType = dn.notifiableType ?? 'users'
+    const pageSize = dn.pageSize ?? 25
+
+    /** Resolve `{ id }` from the panel's user resolver. Returns null
+     *  when no user / unknown id — every route then 401s. The user
+     *  object is opaque to pilotiq; we duck-type `.id`. */
+    const resolveUserId = async (req: AppRequest): Promise<string | null> => {
+      const user = await pilotiq.resolveUser(req)
+      if (!user || typeof user !== 'object') return null
+      const id = (user as { id?: unknown }).id
+      if (id === undefined || id === null) return null
+      return String(id)
+    }
+
+    // GET ${base}/_notifications → { notifications, unreadCount }
+    router.get(`${base}/_notifications`, async (req, res) => {
+      const id = await resolveUserId(req)
+      if (id === null) { res.status(401); return res.json({ ok: false, error: 'Not authenticated' }) }
+      const url = new URL(req.url ?? '/', 'http://localhost')
+      const unreadOnly = url.searchParams.get('unread') === 'true'
+      const limitRaw = Number(url.searchParams.get('limit') ?? pageSize)
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : pageSize
+      const data = await listDatabaseNotifications({
+        notifiableType,
+        notifiableId: id,
+        limit,
+        unreadOnly,
+      })
+      return res.json({ ok: true, ...data })
+    })
+
+    // POST ${base}/_notifications/:id/read
+    router.post(`${base}/_notifications/:id/read`, async (req, res) => {
+      const userId = await resolveUserId(req)
+      if (userId === null) { res.status(401); return res.json({ ok: false, error: 'Not authenticated' }) }
+      const rowId = (req.params as Record<string, string | undefined>)['id'] ?? ''
+      const updated = await markDatabaseNotificationAsRead(rowId, {
+        notifiableType,
+        notifiableId: userId,
+      })
+      return res.json({ ok: updated })
+    })
+
+    // POST ${base}/_notifications/:id/unread
+    router.post(`${base}/_notifications/:id/unread`, async (req, res) => {
+      const userId = await resolveUserId(req)
+      if (userId === null) { res.status(401); return res.json({ ok: false, error: 'Not authenticated' }) }
+      const rowId = (req.params as Record<string, string | undefined>)['id'] ?? ''
+      const updated = await markDatabaseNotificationAsUnread(rowId, {
+        notifiableType,
+        notifiableId: userId,
+      })
+      return res.json({ ok: updated })
+    })
+
+    // POST ${base}/_notifications/read-all
+    router.post(`${base}/_notifications/read-all`, async (req, res) => {
+      const userId = await resolveUserId(req)
+      if (userId === null) { res.status(401); return res.json({ ok: false, error: 'Not authenticated' }) }
+      const count = await markAllDatabaseNotificationsAsRead({
+        notifiableType,
+        notifiableId: userId,
+      })
+      return res.json({ ok: true, count })
+    })
+  }
+
   // ── Resource routes ───────────────────────────────────
   for (const R of cfg.resources) {
     const slug  = R.getSlug()
@@ -788,6 +869,7 @@ export function registerPilotiqRoutes(
         const result = await dispatchAction(target.action, {
           ...input,
           request: req,
+          user,
           ...(target.rowField   ? { rowField:   target.rowField   } : {}),
           ...(target.formSchema ? { formSchema: target.formSchema } : {}),
         }, resolveRecord)
@@ -1099,6 +1181,7 @@ export function registerPilotiqRoutes(
         const result = await dispatchAction(target.action, {
           ...input,
           request: req,
+          user,
           ...(target.rowField   ? { rowField:   target.rowField   } : {}),
           ...(target.formSchema ? { formSchema: target.formSchema } : {}),
         })
@@ -1406,6 +1489,7 @@ export function registerPilotiqRoutes(
         const result = await dispatchAction(target.action, {
           ...input,
           request: req,
+          user,
           ...(target.rowField   ? { rowField:   target.rowField   } : {}),
           ...(target.formSchema ? { formSchema: target.formSchema } : {}),
         }, resolveRecord)
@@ -2882,6 +2966,7 @@ export function registerPilotiqRoutes(
       const result = await dispatchAction(target.action, {
         ...input,
         request: req,
+        user,
         ...(target.rowField   ? { rowField:   target.rowField   } : {}),
         ...(target.formSchema ? { formSchema: target.formSchema } : {}),
       })
