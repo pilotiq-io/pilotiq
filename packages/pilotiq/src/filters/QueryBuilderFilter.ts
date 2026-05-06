@@ -22,18 +22,31 @@ export interface QueryBuilderRule {
 }
 
 /**
- * Top-level shape of the QueryBuilder URL value. v1 supports a single
- * root operator (`'and'`) and a flat `rules` array — no nested groups.
+ * Top-level (or nested) shape of the QueryBuilder URL value. Each node
+ * carries a connector (`'and' | 'or'`) and a list of child rules — every
+ * child is either a single condition (`QueryBuilderRule`) or another
+ * sub-tree, so groups can nest arbitrarily deep.
  *
- * `'or'` is reserved in the type but rejected at apply time until the
- * rudder ORM ships `whereGroup(fn => …)` (see
- * `~/Projects/rudder/docs/plans/where-group.md`). Without a parenthesized
- * group, OR-root would merge incorrectly with the table's other where
- * clauses (search / tab predicate / sibling filters).
+ * v2 dispatches the tree through the rudder ORM's `whereGroup` /
+ * `orWhereGroup` callbacks so nested OR / nested AND compose without
+ * leaking conditions into surrounding `where` clauses (search / tab
+ * predicate / sibling filters). When the underlying query lacks
+ * `whereGroup` (custom test stubs, exotic adapters), `applyTreeToQuery`
+ * falls back to flat AND chaining for compatibility.
  */
 export interface QueryBuilderTree {
   operator: 'and' | 'or'
-  rules:    QueryBuilderRule[]
+  rules:    QueryBuilderTreeChild[]
+}
+
+/** A child node in a tree — either a single rule or another sub-tree. */
+export type QueryBuilderTreeChild = QueryBuilderRule | QueryBuilderTree
+
+/** Type predicate: is this node a sub-tree (vs. a leaf rule)? */
+export function isQueryBuilderTree(node: QueryBuilderTreeChild): node is QueryBuilderTree {
+  if (!node || typeof node !== 'object') return false
+  const o = node as unknown as Record<string, unknown>
+  return Array.isArray(o['rules']) && (o['operator'] === 'and' || o['operator'] === 'or')
 }
 
 /** Empty tree — used when the URL key is absent or unparseable. */
@@ -45,23 +58,44 @@ export function emptyQueryBuilderTree(): QueryBuilderTree {
  * Parse the URL-encoded JSON payload back into a tree. Empty string,
  * non-object, or malformed payloads yield the empty tree (silently —
  * never throws so a tampered URL can't 500 the list page).
+ *
+ * Recurses into nested groups; child nodes that are neither well-formed
+ * rules nor well-formed sub-trees are dropped silently.
  */
 export function parseQueryBuilderValue(value: string | undefined): QueryBuilderTree {
   if (!value) return emptyQueryBuilderTree()
   try {
     const parsed = JSON.parse(value)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return emptyQueryBuilderTree()
-    }
-    const op = (parsed as { operator?: unknown }).operator
-    const rules = (parsed as { rules?: unknown }).rules
-    return {
-      operator: op === 'or' ? 'or' : 'and',
-      rules:    Array.isArray(rules) ? rules.filter(isRule) : [],
-    }
+    return parseTreeNode(parsed) ?? emptyQueryBuilderTree()
   } catch {
     return emptyQueryBuilderTree()
   }
+}
+
+function parseTreeNode(raw: unknown): QueryBuilderTree | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const op    = (raw as { operator?: unknown }).operator
+  const rules = (raw as { rules?: unknown }).rules
+  if (!Array.isArray(rules)) return undefined
+  const children: QueryBuilderTreeChild[] = []
+  for (const r of rules) {
+    if (isRawTree(r)) {
+      const sub = parseTreeNode(r)
+      if (sub) children.push(sub)
+    } else if (isRule(r)) {
+      children.push(r)
+    }
+  }
+  return {
+    operator: op === 'or' ? 'or' : 'and',
+    rules:    children,
+  }
+}
+
+function isRawTree(r: unknown): boolean {
+  if (!r || typeof r !== 'object') return false
+  const o = r as Record<string, unknown>
+  return Array.isArray(o['rules']) && (o['operator'] === 'and' || o['operator'] === 'or')
 }
 
 function isRule(r: unknown): r is QueryBuilderRule {
@@ -71,17 +105,32 @@ function isRule(r: unknown): r is QueryBuilderRule {
 }
 
 /**
- * Encode a tree back into the canonical URL payload. Empty rule sets
- * yield `''` (caller should drop the URL key entirely rather than
- * emitting `{"operator":"and","rules":[]}`).
+ * Encode a tree back into the canonical URL payload. Empty trees (zero
+ * meaningful descendants) yield `''` so the caller can drop the URL key
+ * entirely rather than emitting a stub envelope.
  *
- * Rules with no `value` AND a value-bearing operator are dropped so the
- * URL doesn't bloat with half-typed in-progress rows.
+ * Rules with no `value` AND a value-bearing operator are dropped on
+ * encode so the URL doesn't bloat with half-typed in-progress rows.
+ * Sub-trees that collapse to zero meaningful children are dropped too.
  */
 export function encodeQueryBuilderValue(tree: QueryBuilderTree): string {
-  const rules = tree.rules.filter(isMeaningfulRule)
-  if (rules.length === 0) return ''
-  return JSON.stringify({ operator: tree.operator, rules })
+  const compacted = compactTree(tree)
+  if (!compacted) return ''
+  return JSON.stringify(compacted)
+}
+
+function compactTree(tree: QueryBuilderTree): QueryBuilderTree | undefined {
+  const out: QueryBuilderTreeChild[] = []
+  for (const child of tree.rules) {
+    if (isQueryBuilderTree(child)) {
+      const sub = compactTree(child)
+      if (sub) out.push(sub)
+    } else if (isMeaningfulRule(child)) {
+      out.push(child)
+    }
+  }
+  if (out.length === 0) return undefined
+  return { operator: tree.operator, rules: out }
 }
 
 function isMeaningfulRule(r: QueryBuilderRule): boolean {
@@ -185,22 +234,22 @@ export class QueryBuilderFilter extends Filter {
 
   protected override formatActiveValue(value: string): string {
     const tree = parseQueryBuilderValue(value)
-    const n = tree.rules.length
+    const n = countLeafRules(tree)
     if (n === 0) return ''
     return `${n} condition${n === 1 ? '' : 's'}`
   }
 
   /**
    * Override so that a stored value of `'{"operator":"and","rules":[]}'`
-   * (legitimately parsed JSON with zero rules) doesn't paint an empty
-   * `"Label: "` pill. The base `getIndicator` only checks for raw empty-
-   * string / undefined.
+   * (legitimately parsed JSON with zero rules — including trees where every
+   * rule was dropped as empty) doesn't paint an empty `"Label: "` pill.
+   * The base `getIndicator` only checks for raw empty-string / undefined.
    */
   override getIndicator(): string | undefined {
     const value = this.getValue()
     if (value === undefined || value === '') return undefined
     const tree = parseQueryBuilderValue(value)
-    if (tree.rules.length === 0) return undefined
+    if (countLeafRules(tree) === 0) return undefined
     return super.getIndicator()
   }
 
@@ -215,11 +264,15 @@ export class QueryBuilderFilter extends Filter {
 }
 
 /**
- * Walk a tree against an indexed constraint set and chain `where` calls.
- * v1 only honors `tree.operator === 'and'` — `'or'` requires nested-group
- * support in the underlying ORM (rudder doesn't surface `whereGroup` yet),
- * and naïvely chaining `orWhere` would merge the OR conditions with every
- * other unrelated where clause already on the query.
+ * Walk a tree against an indexed constraint set and translate it into ORM
+ * `where` calls. v2 dispatches every sub-group through `whereGroup` /
+ * `orWhereGroup` so nested AND/OR composes without leaking into the query's
+ * surrounding `where` clauses (search / tab predicate / sibling filters).
+ *
+ * Falls back to flat AND chaining when the running query lacks
+ * `whereGroup` (custom test stubs or exotic adapters that haven't picked
+ * up the rudder ORM contract yet) — same behaviour as v1, but loses OR /
+ * nesting fidelity. Real rudder ORM queries always carry `whereGroup`.
  *
  * Exposed for tests + custom handlers that want the default behavior on
  * top of their own pre-/post-processing.
@@ -230,23 +283,116 @@ export function applyTreeToQuery(
   constraints: Constraint[],
 ): ModelQuery {
   if (tree.rules.length === 0) return query
-  if (tree.operator !== 'and') {
-    // Reserved for v2 — silently fall through to AND so the page still
-    // renders correctly. The renderer should only emit AND for now.
-  }
+
   const map = new Map<string, Constraint>()
   for (const c of constraints) map.set(c.name, c)
 
+  // Without `whereGroup`, OR-root + nested groups can't be expressed safely
+  // — fall back to flat AND chaining (the v1 behaviour) so the page still
+  // renders, just with reduced fidelity. Leaves only; nested groups are
+  // walked and their leaves chained in.
+  if (typeof query.whereGroup !== 'function') {
+    return applyTreeFlat(query, tree, map)
+  }
+
+  return applyTreeGrouped(query, tree, map, /* atRoot */ true)
+}
+
+function applyTreeGrouped(
+  query: ModelQuery,
+  tree:  QueryBuilderTree,
+  map:   Map<string, Constraint>,
+  atRoot: boolean,
+): ModelQuery {
+  // The tree's connector tells us how each child JOINS to its sibling. AND
+  // → child as `where(...)` / `whereGroup(...)`; OR → child as
+  // `orWhere(...)` / `orWhereGroup(...)`. The first child of an OR-rooted
+  // group still uses `whereGroup` at the parent boundary so the whole
+  // group is parenthesized correctly — the inner connector handles
+  // sibling-to-sibling joining.
   let q = query
-  for (const rule of tree.rules) {
-    const c = map.get(rule.constraint)
-    if (!c) continue
-    try {
-      q = c.apply(q, rule.operator, rule.value)
-    } catch {
-      // Malformed values shouldn't 500 the page — skip the offending rule
-      // and continue with the rest. The list still loads.
+  for (let i = 0; i < tree.rules.length; i++) {
+    const child   = tree.rules[i]!
+    const useOr   = tree.operator === 'or' && i > 0
+    if (isQueryBuilderTree(child)) {
+      // Nested group — recurse inside whereGroup / orWhereGroup so the
+      // sub-tree's clauses stay parenthesized.
+      q = useOr
+        ? q.orWhereGroup!(g => { applyTreeGrouped(g, child, map, false) })
+        : q.whereGroup!  (g => { applyTreeGrouped(g, child, map, false) })
+    } else {
+      const c = map.get(child.constraint)
+      if (!c) continue
+      try {
+        q = useOr
+          ? applyAsOr(q, c, child)
+          : c.apply(q, child.operator, child.value)
+      } catch {
+        // Malformed values shouldn't 500 the page — skip the offending rule
+        // and continue with the rest. The list still loads.
+      }
+    }
+  }
+  // Suppress unused-variable warning for atRoot — kept on the signature so
+  // future expansion (e.g. wrapping the root in its own group when mixing
+  // with other top-level wheres) has the discriminator handy.
+  void atRoot
+  return q
+}
+
+/**
+ * Run a single rule against the query inside an `orWhereGroup` so its OR
+ * connector composes correctly. `Constraint.apply()` always emits AND
+ * (`.where()`); to flip the connector we wrap the leaf in a 1-element
+ * orWhereGroup. Multi-clause operators (e.g. `between` → two `.where()`
+ * calls) get AND'd inside the group, then the whole group OR's against
+ * the running query — which is exactly what the user means by
+ * "OR (amount BETWEEN 10 AND 50)".
+ */
+function applyAsOr(q: ModelQuery, c: Constraint, rule: QueryBuilderRule): ModelQuery {
+  if (typeof q.orWhereGroup !== 'function') {
+    // No grouping support — fall back to flat AND so the page still loads.
+    return c.apply(q, rule.operator, rule.value)
+  }
+  return q.orWhereGroup(g => { c.apply(g, rule.operator, rule.value) })
+}
+
+/**
+ * Legacy fallback — chain every leaf through `.where()`, recurse into
+ * sub-trees as if they were AND-ed. Mirrors v1 behaviour for query
+ * builders that don't implement `whereGroup`.
+ */
+function applyTreeFlat(
+  query: ModelQuery,
+  tree:  QueryBuilderTree,
+  map:   Map<string, Constraint>,
+): ModelQuery {
+  let q = query
+  for (const child of tree.rules) {
+    if (isQueryBuilderTree(child)) {
+      q = applyTreeFlat(q, child, map)
+    } else {
+      const c = map.get(child.constraint)
+      if (!c) continue
+      try {
+        q = c.apply(q, child.operator, child.value)
+      } catch {
+        // Same fail-soft posture as the grouped walker.
+      }
     }
   }
   return q
+}
+
+/**
+ * Recursive count of leaf rules in a tree — used by the indicator pill so
+ * "5 conditions" reflects all leaves regardless of how they're grouped.
+ * Exposed for tests + custom indicator formatters.
+ */
+export function countLeafRules(tree: QueryBuilderTree): number {
+  let n = 0
+  for (const child of tree.rules) {
+    n += isQueryBuilderTree(child) ? countLeafRules(child) : 1
+  }
+  return n
 }

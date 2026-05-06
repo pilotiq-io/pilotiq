@@ -35,31 +35,38 @@ table.filters([
 ```
 
 The user clicks **Filters → Runtime filter**, builds something like
-*"title contains tutorial AND status is one of {draft, published}
-AND createdAt after 2026-01-01"*, hits **Apply**, and the list re-runs
-with all three clauses AND'd together.
+*"title contains tutorial AND (status in {draft, published} OR
+createdAt after 2026-01-01)"*, hits **Apply**, and the list re-runs
+against the composed clause.
 
 The active state shows up as a `Runtime filter: 3 conditions` pill in
-the active-filters bar above the table, with an `×` to clear.
+the active-filters bar above the table, with an `×` to clear. The
+counter sums all leaves across nested groups — three rules in the
+example above whether they're flat or grouped.
 
-## v1 scope (what works, what doesn't)
+## Scope
 
-| | v1 |
+| | Status |
 |--|--|
-| Single root operator | **AND only** |
 | Per-row constraint + operator + value | ✅ |
 | Round-trip through URL | ✅ (single JSON-encoded key) |
 | Indicator pill | ✅ (default: `"Label: N conditions"`) |
-| `OR` between rules | ❌ — needs ORM `whereGroup` |
-| Nested groups (`(A AND B) OR C`) | ❌ — needs ORM `whereGroup` |
+| `AND` / `OR` connector at every group | ✅ |
+| Nested groups (`(A AND B) OR C`) | ✅ |
 | Cross-table joins / relation filters | ❌ — write a custom `.handle(fn)` |
+| `notContains` operator on `TextConstraint` | ❌ — Prisma adapter doesn't translate `NOT LIKE` |
 
-The OR + nested-group limitations come from the rudder ORM not
-supporting parenthesized where groups (no `query.whereGroup(fn => …)`).
-A naïve `.orWhere()` chain would merge the OR clauses with every other
-unrelated where clause already on the query (search / tab predicate /
-sibling filters), so v1 ships AND-only and refuses OR until the ORM
-catches up — see `~/Projects/rudder/docs/plans/where-group.md`.
+The renderer ships an AND/OR toggle at the head of every group plus an
+**+ Add group** button, so the user can compose arbitrarily deep trees
+in-place. Server-side, `applyTreeToQuery` recurses through the tree and
+dispatches each sub-group through the rudder ORM's `whereGroup` /
+`orWhereGroup` so groups stay parenthesized — they don't bleed into
+the table's surrounding `where` clauses (search / tab predicate /
+sibling filters).
+
+> Custom query stubs that don't implement `whereGroup` still work — the
+> walker falls back to flat AND chaining (the previous v1 behaviour),
+> losing OR / nesting fidelity but never throwing.
 
 ## Constraints
 
@@ -78,8 +85,11 @@ TextConstraint.make('title').label('Title')
 Operators: `contains` (default) / `equals` / `notEquals` /
 `startsWith` / `endsWith` / `isEmpty` / `isNotEmpty`.
 
-`notContains` is intentionally omitted in v1 — the rudder Prisma
-adapter doesn't translate `NOT LIKE` (only `LIKE`).
+`notContains` is intentionally omitted — the rudder Prisma adapter
+doesn't translate `NOT LIKE` (only `LIKE`). Re-add once the adapter
+learns negation. As a workaround, wrap the `contains` rule in a group
+with the AND/OR connector flipped so the surrounding clause negates
+through the user-visible logic.
 
 LIKE wildcards (`%` `_` `\`) in user input are escaped server-side, so
 typing `50%` searches for the literal string instead of a wildcard.
@@ -139,59 +149,74 @@ input — every operator is binary.
 ## URL shape
 
 Active state JSON-encodes into a single URL key matching the filter
-name:
+name. Each node carries an `operator` (`'and' | 'or'`) and a `rules`
+array, where every entry is either a leaf rule (`constraint` + operator
++ value) or another sub-tree:
 
 ```
 ?runtime={"operator":"and","rules":[
-  {"constraint":"title",   "operator":"contains","value":"tutorial"},
-  {"constraint":"status",  "operator":"in",      "value":["draft","published"]},
-  {"constraint":"createdAt","operator":"after",  "value":"2026-01-01"}
+  {"constraint":"title","operator":"contains","value":"tutorial"},
+  {"operator":"or","rules":[
+    {"constraint":"status",   "operator":"in",   "value":["draft","published"]},
+    {"constraint":"createdAt","operator":"after","value":"2026-01-01"}
+  ]}
 ]}
 ```
 
-Empty rule sets drop the URL key entirely. Rules with empty values
-(except `isEmpty / isNotEmpty / isTrue / isFalse` which are valueless)
-are dropped on encode.
+Empty trees drop the URL key entirely. Empty sub-trees and rules with
+empty values (except `isEmpty / isNotEmpty / isTrue / isFalse` which
+are valueless) are pruned on encode so the URL stays compact.
 
-Helpers `parseQueryBuilderValue / encodeQueryBuilderValue` are exported
-from `@pilotiq/pilotiq` for tests + custom server-side handling.
+Helpers `parseQueryBuilderValue / encodeQueryBuilderValue /
+isQueryBuilderTree / countLeafRules` are exported from `@pilotiq/pilotiq`
+for tests + custom server-side handling.
 
 ## Custom query handler
 
 Override the default tree-walk via `.handle(fn)` when constraints
-can't model your query (e.g. cross-table joins):
+can't model your query (e.g. cross-table joins). The handler is called
+with the parsed tree — including any nested sub-trees — so a
+relation-aware override has to walk the tree itself if it wants to
+preserve grouping:
 
 ```ts
+import { isQueryBuilderTree, applyTreeToQuery } from '@pilotiq/pilotiq'
+
 QueryBuilderFilter.make('runtime')
   .constraints([…])
-  .handle((q, tree) => {
+  .handle((q, tree, filter) => {
     // Pre-process: every rule with constraint='authorName' is a join
     // we need to handle separately before delegating to the standard
     // applyTreeToQuery walker for the rest.
-    const authorRules = tree.rules.filter(r => r.constraint === 'authorName')
-    const otherRules  = tree.rules.filter(r => r.constraint !== 'authorName')
+    const flatLeaves = (t) => t.rules.flatMap(r =>
+      isQueryBuilderTree(r) ? flatLeaves(r) : [r],
+    )
+    const authorRules = flatLeaves(tree).filter(r => r.constraint === 'authorName')
     for (const r of authorRules) {
       q = q.where('authorId', 'IN', /* join lookup */)
     }
-    return applyTreeToQuery(q, { operator: 'and', rules: otherRules }, this.getConstraints())
+    return applyTreeToQuery(q, tree, filter.getConstraints())
   })
 ```
 
 ## Custom indicator
 
 ```ts
+import { countLeafRules } from '@pilotiq/pilotiq'
+
 QueryBuilderFilter.make('runtime')
   .constraints([…])
   .treeIndicator((tree) => {
-    const n = tree.rules.length
+    const n = countLeafRules(tree)
     if (n === 0) return 'Filter'
     if (n === 1) return `1 active rule`
     return `${n} active rules`
   })
 ```
 
-The default formatter pluralises by rule count: `1 condition` /
-`2 conditions`. Pair with `.label('Custom')` to override the prefix.
+The default formatter pluralises across all leaves regardless of
+nesting: `1 condition` / `2 conditions`. Pair with `.label('Custom')`
+to override the prefix.
 
 ## Resource policy
 
@@ -203,11 +228,13 @@ based on the resolved user (the slot is a plain JS array).
 
 ## Limitations to plan around
 
-- **AND-only** — see scope table above.
 - **No relation traversal** — constraints query columns on the parent
   model only. For relation-aware filters, write a `.handle(fn)`
   callback that consults `Resource.model.relations[name]` and emits
   `whereHas` / join clauses manually.
+- **No `notContains` on `TextConstraint`** — the rudder Prisma
+  adapter doesn't translate `NOT LIKE`. Expect this to land alongside a
+  `WhereOperator` widening on the rudder side.
 - **No saved filter sets** — every page visit needs the user to
   re-build their filter from scratch (or arrive via a bookmarked URL).
   Pair with `Resource.persistFiltersInSession = true` to remember the

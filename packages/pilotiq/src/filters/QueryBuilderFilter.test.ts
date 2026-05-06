@@ -7,6 +7,8 @@ import {
   encodeQueryBuilderValue,
   emptyQueryBuilderTree,
   applyTreeToQuery,
+  countLeafRules,
+  isQueryBuilderTree,
   type QueryBuilderTree,
 } from './QueryBuilderFilter.js'
 import { TextConstraint }    from './queryBuilder/TextConstraint.js'
@@ -16,8 +18,30 @@ import { SelectConstraint }  from './queryBuilder/SelectConstraint.js'
 import { BooleanConstraint } from './queryBuilder/BooleanConstraint.js'
 import type { ModelQuery } from '../orm/modelDefaults.js'
 
-interface FakeOp { op: string; args: unknown[] }
+interface FakeOp { op: string; args: unknown[]; sub?: FakeOp[] }
 class FakeQuery implements ModelQuery {
+  ops: FakeOp[] = []
+  where(...args: unknown[]): ModelQuery     { this.ops.push({ op: 'where', args });     return this }
+  orWhere(...args: unknown[]): ModelQuery   { this.ops.push({ op: 'orWhere', args });   return this }
+  whereNull(c: string): ModelQuery          { this.ops.push({ op: 'whereNull', args: [c] }); return this }
+  orderBy(c: string, d: 'ASC' | 'DESC' = 'ASC'): ModelQuery { this.ops.push({ op: 'orderBy', args: [c, d] }); return this }
+  async paginate() { this.ops.push({ op: 'paginate', args: [] }); return { data: [], total: 0 } }
+  whereGroup(fn: (q: ModelQuery) => ModelQuery | void): ModelQuery {
+    const sub = new FakeQuery()
+    fn(sub)
+    if (sub.ops.length > 0) this.ops.push({ op: 'whereGroup', args: [], sub: sub.ops })
+    return this
+  }
+  orWhereGroup(fn: (q: ModelQuery) => ModelQuery | void): ModelQuery {
+    const sub = new FakeQuery()
+    fn(sub)
+    if (sub.ops.length > 0) this.ops.push({ op: 'orWhereGroup', args: [], sub: sub.ops })
+    return this
+  }
+}
+
+/** Stub without `whereGroup` — used to verify the v1-compat fallback. */
+class FlatFakeQuery implements ModelQuery {
   ops: FakeOp[] = []
   where(...args: unknown[]): ModelQuery     { this.ops.push({ op: 'where', args });     return this }
   orWhere(...args: unknown[]): ModelQuery   { this.ops.push({ op: 'orWhere', args });   return this }
@@ -52,8 +76,8 @@ describe('parseQueryBuilderValue', () => {
     const dec = parseQueryBuilderValue(enc)
     assert.equal(dec.operator, 'and')
     assert.equal(dec.rules.length, 2)
-    assert.equal(dec.rules[0]!.constraint, 'title')
-    assert.equal(dec.rules[1]!.value,      5)
+    assert.equal((dec.rules[0] as { constraint: string }).constraint, 'title')
+    assert.equal((dec.rules[1] as { value: unknown }).value,          5)
   })
 
   it('drops malformed rule entries (missing constraint or operator)', () => {
@@ -68,7 +92,7 @@ describe('parseQueryBuilderValue', () => {
       ],
     }))
     assert.equal(tree.rules.length, 1)
-    assert.equal(tree.rules[0]!.constraint, 'title')
+    assert.equal((tree.rules[0] as { constraint: string }).constraint, 'title')
   })
 })
 
@@ -253,7 +277,7 @@ describe('BooleanConstraint', () => {
   })
 })
 
-describe('applyTreeToQuery (AND-root walker)', () => {
+describe('applyTreeToQuery (AND-root)', () => {
   it('chains every rule via .where()', () => {
     const q = new FakeQuery()
     const tree: QueryBuilderTree = {
@@ -363,7 +387,7 @@ describe('QueryBuilderFilter shape', () => {
       })
     const q = new FakeQuery()
     f.getQuery()!(q, '{"operator":"and","rules":[{"constraint":"title","operator":"contains","value":"foo"}]}')
-    assert.deepEqual((received as QueryBuilderTree).rules[0]!.value, 'foo')
+    assert.deepEqual(((received as QueryBuilderTree).rules[0] as { value: unknown }).value, 'foo')
     assert.deepEqual(q.ops[0]!.args, ['overridden', '=', true])
   })
 
@@ -393,5 +417,228 @@ describe('QueryBuilderFilter shape', () => {
       .treeIndicator((tree) => `${tree.rules.length} rule${tree.rules.length === 1 ? '' : 's'} active`)
     f.withValue('{"operator":"and","rules":[{"constraint":"title","operator":"contains","value":"x"}]}')
     assert.equal(f.getIndicator(), '1 rule active')
+  })
+})
+
+describe('applyTreeToQuery (OR-root + nested groups, v2)', () => {
+  it('OR-root with three leaves wraps every leaf after the first in orWhereGroup', () => {
+    const q = new FakeQuery()
+    applyTreeToQuery(q, {
+      operator: 'or',
+      rules: [
+        { constraint: 'title',  operator: 'contains', value: 'foo' },
+        { constraint: 'amount', operator: 'gte',      value: 10    },
+        { constraint: 'status', operator: 'equals',   value: 'published' },
+      ],
+    }, [
+      TextConstraint.make('title'),
+      NumberConstraint.make('amount'),
+      SelectConstraint.make('status'),
+    ])
+    // First leaf joins to the running query as AND (the parent's
+    // surrounding wheres haven't established a connector yet).
+    assert.equal(q.ops[0]!.op, 'where')
+    // Subsequent leaves wrap in orWhereGroup so the OR connector wins.
+    assert.equal(q.ops[1]!.op, 'orWhereGroup')
+    assert.equal(q.ops[2]!.op, 'orWhereGroup')
+    // Each wrapped leaf records the underlying where call inside its sub.
+    assert.equal(q.ops[1]!.sub![0]!.op, 'where')
+    assert.deepEqual(q.ops[2]!.sub![0]!.args, ['status', '=', 'published'])
+  })
+
+  it('AND-root with one nested OR group produces (a AND (b OR c))', () => {
+    const q = new FakeQuery()
+    applyTreeToQuery(q, {
+      operator: 'and',
+      rules: [
+        { constraint: 'title', operator: 'contains', value: 'foo' },
+        {
+          operator: 'or',
+          rules: [
+            { constraint: 'amount', operator: 'gte',    value: 10 },
+            { constraint: 'status', operator: 'equals', value: 'archived' },
+          ],
+        },
+      ],
+    }, [
+      TextConstraint.make('title'),
+      NumberConstraint.make('amount'),
+      SelectConstraint.make('status'),
+    ])
+    assert.equal(q.ops.length, 2)
+    assert.equal(q.ops[0]!.op, 'where')
+    assert.equal(q.ops[1]!.op, 'whereGroup')
+    const inner = q.ops[1]!.sub!
+    // Inside the group: first leaf as AND, second as OR-wrapped.
+    assert.equal(inner[0]!.op, 'where')
+    assert.equal(inner[1]!.op, 'orWhereGroup')
+  })
+
+  it('three-level nesting (A AND (B OR (C AND D))) preserves the shape', () => {
+    const q = new FakeQuery()
+    applyTreeToQuery(q, {
+      operator: 'and',
+      rules: [
+        { constraint: 'title', operator: 'contains', value: 'A' },
+        {
+          operator: 'or',
+          rules: [
+            { constraint: 'title', operator: 'contains', value: 'B' },
+            {
+              operator: 'and',
+              rules: [
+                { constraint: 'amount', operator: 'gte', value: 1 },
+                { constraint: 'amount', operator: 'lte', value: 9 },
+              ],
+            },
+          ],
+        },
+      ],
+    }, [TextConstraint.make('title'), NumberConstraint.make('amount')])
+
+    // Top: `where(title)` then `whereGroup(...)`
+    assert.equal(q.ops.length, 2)
+    assert.equal(q.ops[0]!.op, 'where')
+    assert.equal(q.ops[1]!.op, 'whereGroup')
+
+    // Inside the OR group: `where(title=B)` then `orWhereGroup(...)`
+    const orGroup = q.ops[1]!.sub!
+    assert.equal(orGroup[0]!.op, 'where')
+    assert.equal(orGroup[1]!.op, 'orWhereGroup')
+
+    // The deepest AND group records both `where` calls flat under whereGroup.
+    const deep = orGroup[1]!.sub!
+    assert.equal(deep.length, 2)
+    assert.equal(deep[0]!.op, 'where')
+    assert.equal(deep[1]!.op, 'where')
+  })
+
+  it('empty sub-trees are no-ops (whereGroup never fires)', () => {
+    const q = new FakeQuery()
+    applyTreeToQuery(q, {
+      operator: 'and',
+      rules: [
+        { constraint: 'title', operator: 'contains', value: 'foo' },
+        { operator: 'or', rules: [] },
+      ],
+    }, [TextConstraint.make('title')])
+    // FakeQuery.whereGroup skips empty sub-builders entirely.
+    assert.equal(q.ops.length, 1)
+    assert.equal(q.ops[0]!.op, 'where')
+  })
+
+  it('falls back to flat AND chaining when whereGroup is missing', () => {
+    const q = new FlatFakeQuery()
+    applyTreeToQuery(q, {
+      operator: 'or',
+      rules: [
+        { constraint: 'title',  operator: 'contains', value: 'foo' },
+        { constraint: 'amount', operator: 'gte',      value: 10    },
+      ],
+    }, [TextConstraint.make('title'), NumberConstraint.make('amount')])
+    // Without whereGroup, OR semantics are lost — both leaves chain via .where.
+    assert.equal(q.ops.length, 2)
+    assert.equal(q.ops[0]!.op, 'where')
+    assert.equal(q.ops[1]!.op, 'where')
+  })
+})
+
+describe('parseQueryBuilderValue (nested groups)', () => {
+  it('round-trips a nested tree', () => {
+    const enc = encodeQueryBuilderValue({
+      operator: 'and',
+      rules: [
+        { constraint: 'title', operator: 'contains', value: 'foo' },
+        {
+          operator: 'or',
+          rules: [
+            { constraint: 'amount', operator: 'gte',    value: 10 },
+            { constraint: 'status', operator: 'equals', value: 'archived' },
+          ],
+        },
+      ],
+    })
+    const dec = parseQueryBuilderValue(enc)
+    assert.equal(dec.rules.length, 2)
+    const inner = dec.rules[1]
+    assert.ok(isQueryBuilderTree(inner!))
+    assert.equal((inner as QueryBuilderTree).operator, 'or')
+    assert.equal((inner as QueryBuilderTree).rules.length, 2)
+  })
+
+  it('drops empty sub-trees on encode', () => {
+    const enc = encodeQueryBuilderValue({
+      operator: 'and',
+      rules: [
+        { constraint: 'title', operator: 'contains', value: 'foo' },
+        { operator: 'or', rules: [] },
+        { operator: 'and', rules: [{ constraint: 'amount', operator: 'gte', value: '' }] },
+      ],
+    })
+    const dec = parseQueryBuilderValue(enc)
+    assert.equal(dec.rules.length, 1)
+    assert.equal((dec.rules[0] as { constraint: string }).constraint, 'title')
+  })
+
+  it('drops malformed sub-trees but keeps siblings', () => {
+    const dec = parseQueryBuilderValue(JSON.stringify({
+      operator: 'and',
+      rules: [
+        { constraint: 'title', operator: 'contains', value: 'foo' },
+        { operator: 'or' /* missing rules */ },
+        { operator: 'or', rules: [{ constraint: 'amount', operator: 'gte', value: 10 }] },
+      ],
+    }))
+    assert.equal(dec.rules.length, 2)
+  })
+})
+
+describe('countLeafRules', () => {
+  it('counts every rule across nested sub-trees', () => {
+    const tree: QueryBuilderTree = {
+      operator: 'and',
+      rules: [
+        { constraint: 'title', operator: 'contains', value: 'a' },
+        {
+          operator: 'or',
+          rules: [
+            { constraint: 'title', operator: 'contains', value: 'b' },
+            { constraint: 'title', operator: 'contains', value: 'c' },
+          ],
+        },
+        {
+          operator: 'and',
+          rules: [
+            {
+              operator: 'or',
+              rules: [{ constraint: 'title', operator: 'contains', value: 'd' }],
+            },
+          ],
+        },
+      ],
+    }
+    assert.equal(countLeafRules(tree), 4)
+  })
+
+  it('returns 0 for an empty tree', () => {
+    assert.equal(countLeafRules(emptyQueryBuilderTree()), 0)
+  })
+
+  it('feeds the indicator pluraliser', () => {
+    const f = QueryBuilderFilter.make('adv').label('Adv').constraints([TextConstraint.make('title')])
+    f.withValue(JSON.stringify({
+      operator: 'and',
+      rules: [
+        { constraint: 'title', operator: 'contains', value: 'a' },
+        {
+          operator: 'or',
+          rules: [
+            { constraint: 'title', operator: 'contains', value: 'b' },
+            { constraint: 'title', operator: 'contains', value: 'c' },
+          ],
+        },
+      ],
+    }))
+    assert.equal(f.getIndicator(), 'Adv: 3 conditions')
   })
 })

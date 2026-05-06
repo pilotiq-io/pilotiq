@@ -80,8 +80,10 @@ import { encodeFormFilterValue } from '../filters/FormFilter.js'
 import {
   parseQueryBuilderValue,
   encodeQueryBuilderValue,
+  isQueryBuilderTree,
   type QueryBuilderRule,
   type QueryBuilderTree,
+  type QueryBuilderTreeChild,
 } from '../filters/QueryBuilderFilter.js'
 import type {
   ConstraintMeta,
@@ -3723,9 +3725,8 @@ function FilterForm({
 }
 
 /**
- * Composable advanced filter for `kind === 'queryBuilder'`. Renders a
- * stack of condition rows (constraint + operator + value), an "Add
- * condition" button, and Apply / Clear submit. The whole tree is
+ * Composable advanced filter for `kind === 'queryBuilder'`. v2 emits a
+ * full tree — root AND/OR connector + nested groups arbitrarily deep —
  * JSON-encoded into a single URL key on Apply (see
  * `encodeQueryBuilderValue`).
  *
@@ -3744,55 +3745,12 @@ function FilterQueryBuilder({
 }) {
   const navigate = useNavigate()
   const initialTree = parseQueryBuilderValue(defaultValue)
-  const [rules, setRules] = useState<QueryBuilderRule[]>(initialTree.rules)
+  const [tree, setTree] = useState<QueryBuilderTree>(initialTree)
   const hasValue = defaultValue !== '' && initialTree.rules.length > 0
-
-  const constraintMap = new Map<string, ConstraintMeta>()
-  for (const c of constraints) constraintMap.set(c.name, c)
-
-  const addRule = (): void => {
-    const first = constraints[0]
-    if (!first) return
-    setRules(prev => [...prev, {
-      constraint: first.name,
-      operator:   first.defaultOperator ?? first.operators[0]?.name ?? 'equals',
-      value:      undefined,
-    }])
-  }
-
-  const removeRule = (index: number): void => {
-    setRules(prev => prev.filter((_, i) => i !== index))
-  }
-
-  const updateRule = (index: number, patch: Partial<QueryBuilderRule>): void => {
-    setRules(prev => prev.map((r, i) => i === index ? { ...r, ...patch } : r))
-  }
-
-  const onConstraintChange = (index: number, constraintName: string): void => {
-    const c = constraintMap.get(constraintName)
-    if (!c) return
-    // Reset operator + value when switching constraints — operator sets
-    // and value shapes don't carry between e.g. Text and Number.
-    updateRule(index, {
-      constraint: constraintName,
-      operator:   c.defaultOperator ?? c.operators[0]?.name ?? 'equals',
-      value:      undefined,
-    })
-  }
-
-  const onOperatorChange = (index: number, operatorName: string): void => {
-    // Switching operator can change the value shape (text → numberRange).
-    // Reset value to undefined to avoid carrying garbage across.
-    updateRule(index, {
-      operator: operatorName as ConstraintOperatorName,
-      value:    undefined,
-    })
-  }
 
   const onApply = (e?: React.FormEvent | React.MouseEvent): void => {
     e?.preventDefault()
     if (typeof window === 'undefined') return
-    const tree: QueryBuilderTree = { operator: 'and', rules }
     const encoded = encodeQueryBuilderValue(tree)
     const url = new URL(window.location.href)
     const k = prefixK(prefix, name)
@@ -3803,7 +3761,7 @@ function FilterQueryBuilder({
   }
 
   const onClear = (): void => {
-    setRules([])
+    setTree({ operator: 'and', rules: [] })
     if (typeof window === 'undefined') return
     const url = new URL(window.location.href)
     url.searchParams.delete(prefixK(prefix, name))
@@ -3821,31 +3779,15 @@ function FilterQueryBuilder({
 
   return (
     <div className="flex flex-col gap-2 min-w-[24rem]">
-      <span className="text-muted-foreground text-xs">{label} — match all conditions</span>
+      <span className="text-muted-foreground text-xs">{label}</span>
       <form onSubmit={onApply} className="flex flex-col gap-2">
-        {rules.length === 0 && (
-          <div className="text-muted-foreground text-xs italic">No conditions yet.</div>
-        )}
-        {rules.map((rule, i) => (
-          <QueryBuilderRow
-            key={i}
-            rule={rule}
-            constraints={constraints}
-            constraintMeta={constraintMap.get(rule.constraint)}
-            onConstraintChange={(v) => onConstraintChange(i, v)}
-            onOperatorChange={(v) => onOperatorChange(i, v)}
-            onValueChange={(v) => updateRule(i, { value: v })}
-            onRemove={() => removeRule(i)}
-          />
-        ))}
+        <QueryBuilderGroup
+          tree={tree}
+          constraints={constraints}
+          isRoot={true}
+          onChange={setTree}
+        />
         <div className="flex items-center gap-2 pt-1">
-          <button
-            type="button"
-            onClick={addRule}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-dashed border-input bg-background px-3 text-xs font-medium hover:bg-accent hover:text-accent-foreground"
-          >
-            + Add condition
-          </button>
           <div className="flex-1" />
           <button
             type="submit"
@@ -3853,7 +3795,7 @@ function FilterQueryBuilder({
           >
             Apply
           </button>
-          {(hasValue || rules.length > 0) && (
+          {(hasValue || tree.rules.length > 0) && (
             <button
               type="button"
               onClick={onClear}
@@ -3864,6 +3806,185 @@ function FilterQueryBuilder({
           )}
         </div>
       </form>
+    </div>
+  )
+}
+
+/**
+ * Recursive group renderer — emits a connector picker (AND / OR) at the
+ * top, a vertical stack of children (rules and sub-groups), and footer
+ * buttons for "+ Add condition" and "+ Add group". Calls `onChange` with
+ * the updated sub-tree so parents can splice it back into their own
+ * `rules` array. Root groups skip the outer border so the popover doesn't
+ * carry a redundant frame; nested groups draw a faint left rule + soft
+ * background so the nesting is visible without blowing up the width.
+ */
+function QueryBuilderGroup({
+  tree, constraints, isRoot, onChange, onRemove,
+}: {
+  tree:        QueryBuilderTree
+  constraints: ConstraintMeta[]
+  isRoot:      boolean
+  onChange:    (next: QueryBuilderTree) => void
+  onRemove?:   () => void
+}) {
+  const constraintMap = new Map<string, ConstraintMeta>()
+  for (const c of constraints) constraintMap.set(c.name, c)
+
+  const setOperator = (op: 'and' | 'or'): void => {
+    onChange({ ...tree, operator: op })
+  }
+
+  const updateChildAt = (index: number, next: QueryBuilderTreeChild): void => {
+    onChange({ ...tree, rules: tree.rules.map((r, i) => i === index ? next : r) })
+  }
+
+  const removeChildAt = (index: number): void => {
+    onChange({ ...tree, rules: tree.rules.filter((_, i) => i !== index) })
+  }
+
+  const addRule = (): void => {
+    const first = constraints[0]
+    if (!first) return
+    onChange({
+      ...tree,
+      rules: [...tree.rules, {
+        constraint: first.name,
+        operator:   first.defaultOperator ?? first.operators[0]?.name ?? 'equals',
+        value:      undefined,
+      }],
+    })
+  }
+
+  const addGroup = (): void => {
+    onChange({
+      ...tree,
+      rules: [...tree.rules, { operator: 'and', rules: [] }],
+    })
+  }
+
+  const wrapper = isRoot
+    ? 'flex flex-col gap-2'
+    : 'flex flex-col gap-2 rounded-md border-l-2 border-primary/40 bg-muted/30 pl-2 py-2 pr-2'
+
+  return (
+    <div className={wrapper}>
+      <div className="flex items-center gap-2">
+        <ConnectorToggle value={tree.operator} onChange={setOperator} />
+        <span className="text-muted-foreground text-[11px]">
+          {tree.operator === 'and' ? 'Match all of the following' : 'Match any of the following'}
+        </span>
+        {!isRoot && onRemove && (
+          <>
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={onRemove}
+              aria-label="Remove group"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            >
+              ×
+            </button>
+          </>
+        )}
+      </div>
+
+      {tree.rules.length === 0 && (
+        <div className="text-muted-foreground text-xs italic">No conditions yet.</div>
+      )}
+
+      {tree.rules.map((child, i) => {
+        if (isQueryBuilderTree(child)) {
+          return (
+            <QueryBuilderGroup
+              key={i}
+              tree={child}
+              constraints={constraints}
+              isRoot={false}
+              onChange={(next) => updateChildAt(i, next)}
+              onRemove={() => removeChildAt(i)}
+            />
+          )
+        }
+        return (
+          <QueryBuilderRow
+            key={i}
+            rule={child}
+            constraints={constraints}
+            constraintMeta={constraintMap.get(child.constraint)}
+            onConstraintChange={(v) => {
+              const c = constraintMap.get(v)
+              if (!c) return
+              updateChildAt(i, {
+                constraint: v,
+                operator:   c.defaultOperator ?? c.operators[0]?.name ?? 'equals',
+                value:      undefined,
+              })
+            }}
+            onOperatorChange={(v) => {
+              updateChildAt(i, {
+                ...child,
+                operator: v as ConstraintOperatorName,
+                value:    undefined,
+              })
+            }}
+            onValueChange={(v) => updateChildAt(i, { ...child, value: v })}
+            onRemove={() => removeChildAt(i)}
+          />
+        )
+      })}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={addRule}
+          className="inline-flex h-8 items-center justify-center rounded-md border border-dashed border-input bg-background px-3 text-xs font-medium hover:bg-accent hover:text-accent-foreground"
+        >
+          + Add condition
+        </button>
+        <button
+          type="button"
+          onClick={addGroup}
+          className="inline-flex h-8 items-center justify-center rounded-md border border-dashed border-input bg-background px-3 text-xs font-medium hover:bg-accent hover:text-accent-foreground"
+        >
+          + Add group
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Compact AND/OR segmented control used at the head of every group. Pure
+ * presentation — the parent owns the value.
+ */
+function ConnectorToggle({
+  value, onChange,
+}: {
+  value:    'and' | 'or'
+  onChange: (next: 'and' | 'or') => void
+}) {
+  const base = 'inline-flex h-7 items-center px-2 text-[11px] font-medium uppercase tracking-wide transition'
+  const on   = 'bg-primary text-primary-foreground'
+  const off  = 'bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+  return (
+    <div className="inline-flex overflow-hidden rounded-md border border-input">
+      <button
+        type="button"
+        onClick={() => onChange('and')}
+        className={`${base} ${value === 'and' ? on : off}`}
+        aria-pressed={value === 'and'}
+      >
+        AND
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('or')}
+        className={`${base} ${value === 'or' ? on : off}`}
+        aria-pressed={value === 'or'}
+      >
+        OR
+      </button>
     </div>
   )
 }

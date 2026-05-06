@@ -78,6 +78,23 @@ export interface ModelQuery {
    * the structural shape so test stubs don't need to implement it.
    */
   withPivot?(...columns: string[]): ModelQuery
+
+  /**
+   * Wrap a chain of `where`/`orWhere` (and nested `whereGroup`s) in a
+   * single AND-grouped clause. Used by `QueryBuilderFilter` v2 to
+   * translate nested AND/OR trees into parenthesized SQL groups. The
+   * callback receives a fresh sub-builder and may return it explicitly
+   * or implicitly (`void`); in either case the clauses recorded inside
+   * are spliced back into this builder as one composite clause.
+   *
+   * Optional on the structural shape — when missing, `applyTreeToQuery`
+   * falls back to flat AND chaining (v1 behaviour). The rudder ORM ships
+   * this on every QueryBuilder; test stubs don't have to.
+   */
+  whereGroup?(fn: (q: ModelQuery) => ModelQuery | void): ModelQuery
+
+  /** OR-rooted variant of {@link whereGroup}. */
+  orWhereGroup?(fn: (q: ModelQuery) => ModelQuery | void): ModelQuery
 }
 
 /**
