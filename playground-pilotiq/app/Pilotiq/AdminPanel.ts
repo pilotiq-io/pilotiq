@@ -1,6 +1,7 @@
 import {
   Pilotiq, Global, TextField,
   Form,
+  UserMenuItem,
 } from '@pilotiq/pilotiq'
 import { themeEditor } from '@pilotiq/pilotiq/plugins'
 import { registerIcons } from '@pilotiq/pilotiq/icons'
@@ -66,7 +67,20 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   // Plan #10 demo — pretend everyone is an admin so the canDelete()
   // check on `ArticleResource` shows the Delete row action. Real apps
   // would pass `req => Auth.user()` (from `@rudderjs/auth`).
-  .user(() => ({ role: 'admin', name: 'Demo Admin' }))
+  .user(() => ({
+    role:  'admin',
+    name:  'Demo Admin',
+    email: 'admin@example.com',
+  }))
+  .userMenuItems([
+    UserMenuItem.make('profile').label('My profile').icon('user').url('/admin/profile'),
+    UserMenuItem.make('docs')
+      .label('Documentation')
+      .icon('book-open')
+      .url('https://pilotiq.io/docs')
+      .openUrlInNewTab(),
+  ])
+  .signOut('/logout')
   // Note: `.uploads(...)` is wired in `bootstrap/providers.ts` (server-only)
   // because `localUpload` imports `node:fs/promises` and the panel module
   // is read on the client through the auto-gen `_components.ts` manifest.

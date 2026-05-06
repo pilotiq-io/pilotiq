@@ -6,7 +6,7 @@ import { CommandPalette, CommandPaletteProvider } from './CommandPalette.js'
 import type { NotificationMeta } from '../notifications/Notification.js'
 import type { ComponentRegistry } from './icon-context.js'
 import { ComponentRegistryProvider } from './icon-context.js'
-import type { NavItem } from '../pageData.js'
+import type { NavItem, UserMenuMeta } from '../pageData.js'
 
 export interface AppShellProps {
   panel: {
@@ -14,6 +14,9 @@ export interface AppShellProps {
     branding: { title?: string; logo?: string }
     /** Pre-grouped navigation tree built by `panelInfo()` (Plan #9). */
     navigation?: NavItem[]
+    /** Top-right dropdown shape — `null`/absent suppresses the menu
+     *  entirely (no resolver configured or no logged-in user). */
+    userMenu?: UserMenuMeta | null
     themeEditor?: boolean
   }
   basePath: string

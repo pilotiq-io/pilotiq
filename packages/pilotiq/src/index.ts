@@ -5,7 +5,14 @@ export {
   type PilotiqPlugin,
   type UserResolver,
   type UploadConfig,
+  type SignOutConfig,
 } from './Pilotiq.js'
+export {
+  UserMenuItem,
+  type UserMenuItemMeta,
+  type UserMenuItemColor,
+  type UserMenuItemValue,
+} from './UserMenuItem.js'
 export { PilotiqRegistry } from './PilotiqRegistry.js'
 export { pilotiq } from './PilotiqServiceProvider.js'
 export { registerPilotiqRoutes } from './routes.js'
@@ -16,6 +23,7 @@ export {
 } from './search.js'
 
 // Per-page-role data builders (consumed by Vike +data hooks for SPA nav).
+export type { NavItem, UserMenuMeta } from './pageData.js'
 export {
   dispatchPageData,
   panelInfo,

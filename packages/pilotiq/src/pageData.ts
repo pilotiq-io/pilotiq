@@ -38,6 +38,7 @@ import { resolveTheme } from './theme/resolve.js'
 import type { ThemeMeta } from './theme/types.js'
 import { consumeFlashedNotifications } from './notifications/flash.js'
 import { serializeIcon, type SerializedIcon, type IconValue } from './icons/types.js'
+import type { UserMenuItemMeta } from './UserMenuItem.js'
 import {
   RelationManager,
   safeManagerPolicy as safeManagerPolicyImpl,
@@ -55,6 +56,23 @@ import {
 import { normalizeRelationMode, type RelationMode } from './RelationManager.js'
 
 // ─── Shared helpers ──────────────────────────────────────────
+
+/**
+ * Top-right user dropdown shipped to the renderer in `viewProps.panel`.
+ * `null` when no `Pilotiq.user(req => …)` resolver is configured or the
+ * resolver returns `null` (no logged-in user) — the renderer suppresses
+ * the dropdown entirely in that case.
+ *
+ * `user.name / user.email / user.avatar` are duck-typed off the
+ * resolver's return value; whichever fields are present round-trip into
+ * the dropdown trigger (initials fall back to the first two letters of
+ * `name` when no avatar URL is set).
+ */
+export interface UserMenuMeta {
+  user:     { name?: string; email?: string; avatar?: string }
+  items:    UserMenuItemMeta[]
+  signOut?: { url: string; label: string; method: 'POST' | 'GET' }
+}
 
 /**
  * Single nav-tree entry. `name` is the JS class name (`R.name` /
@@ -98,14 +116,91 @@ export async function panelInfo(pilotiq: Pilotiq, req?: unknown) {
   const merged = pilotiq.getMergedTheme()
   const theme: ThemeMeta | undefined = merged ? resolveTheme(merged) : undefined
   const user = await pilotiq.resolveUser(req)
-  const navigation = await buildNavigation(pilotiq, user)
+  const [navigation, userMenu] = await Promise.all([
+    buildNavigation(pilotiq, user),
+    buildUserMenu(pilotiq, user),
+  ])
   return {
     name: cfg.name,
     branding: cfg.branding,
     navigation,
     theme,
     themeEditor: cfg.themeEditor ?? false,
+    ...(userMenu ? { userMenu } : {}),
   }
+}
+
+/**
+ * Build the top-right user-menu meta. Returns `null` when:
+ *   - `Pilotiq.user()` isn't configured, or
+ *   - the resolver returned `null` (anonymous request), or
+ *   - the user object has no extractable identity AND the panel
+ *     configured no items / no sign-out (nothing to render).
+ *
+ * Items resolve in parallel with their visibility predicates
+ * (`UserMenuItem.visible`). Throwing predicates fail closed (item
+ * dropped). Sort by `.sort(n)` ascending → registration order.
+ */
+async function buildUserMenu(pilotiq: Pilotiq, user: unknown): Promise<UserMenuMeta | null> {
+  if (user === null || user === undefined) return null
+
+  const cfg = pilotiq.getConfig()
+  const items = cfg.userMenuItems ?? []
+  const ctx = { user }
+
+  // Resolve every item in parallel. `null` returns mean "filtered by
+  // visibility predicate" — drop them. Indexed pre-sort so stable ties
+  // resolve to registration order.
+  const resolved = await Promise.all(
+    items.map(async (item, idx) => {
+      try {
+        const meta = await item.resolve(ctx)
+        return meta ? { meta, idx, sort: item.getSort() } : null
+      } catch {
+        return null
+      }
+    }),
+  )
+  const visibleItems = resolved
+    .filter((x): x is { meta: UserMenuItemMeta; idx: number; sort: number | undefined } => x !== null)
+    .sort((a, b) => {
+      const aHas = a.sort !== undefined, bHas = b.sort !== undefined
+      if (aHas && bHas) return a.sort! - b.sort! || a.idx - b.idx
+      if (aHas)         return -1
+      if (bHas)         return  1
+      return a.idx - b.idx
+    })
+    .map(x => x.meta)
+
+  const meta: UserMenuMeta = {
+    user:  extractUserIdentity(user),
+    items: visibleItems,
+  }
+  if (cfg.signOut) {
+    meta.signOut = {
+      url:    cfg.signOut.url,
+      label:  cfg.signOut.label  ?? 'Sign out',
+      method: cfg.signOut.method ?? 'POST',
+    }
+  }
+  return meta
+}
+
+/** Duck-type the user object for display fields. We never throw — a
+ *  user resolver might return literally anything (a primitive, a class
+ *  instance with getters, a plain object) and the dropdown should
+ *  degrade gracefully (initials fallback to '?' when no name found). */
+function extractUserIdentity(user: unknown): { name?: string; email?: string; avatar?: string } {
+  if (user === null || user === undefined) return {}
+  if (typeof user !== 'object') return { name: String(user) }
+  const obj = user as Record<string, unknown>
+  const out: { name?: string; email?: string; avatar?: string } = {}
+  const name = obj.name ?? obj.fullName ?? obj.displayName ?? obj.username
+  if (typeof name   === 'string' && name)   out.name   = name
+  if (typeof obj.email === 'string' && obj.email) out.email = obj.email
+  const avatar = obj.avatar ?? obj.avatarUrl ?? obj.image
+  if (typeof avatar === 'string' && avatar) out.avatar = avatar
+  return out
 }
 
 /** @internal Internal node before nesting; carries the registration index

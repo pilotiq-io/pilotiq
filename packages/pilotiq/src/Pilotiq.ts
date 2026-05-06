@@ -5,6 +5,7 @@ import type { Page } from './Page.js'
 import type { SchemaDefinition } from './schema/resolveSchema.js'
 import type { ThemeConfig } from './theme/types.js'
 import type { UploadAdapter } from './uploads/UploadAdapter.js'
+import type { UserMenuItem } from './UserMenuItem.js'
 
 export type PilotiqLayout = 'sidebar' | 'topbar'
 
@@ -38,6 +39,20 @@ export interface UploadConfig {
   adapter: UploadAdapter
 }
 
+/**
+ * Sign-out configuration. Wired through `Pilotiq.signOut(url | config)`.
+ *
+ * The user menu renders the sign-out entry as a `<form method="POST"
+ * action={url}>` so CSRF middleware downstream can validate the request
+ * (a bare `<a href>` would be GET-only). Set `method: 'GET'` for
+ * traditional logout endpoints that redirect on a normal navigation.
+ */
+export interface SignOutConfig {
+  url:     string
+  label?:  string
+  method?: 'POST' | 'GET'
+}
+
 export interface PilotiqConfig {
   name:          string
   path:          string
@@ -62,6 +77,16 @@ export interface PilotiqConfig {
   guard?:        (req: unknown) => boolean | Promise<boolean>
   user?:         UserResolver
   uploads?:      UploadConfig
+  /**
+   * Top-right user-menu entries (between user identity and sign-out).
+   * Order: items with explicit `.sort(n)` ascending, ties → registration
+   * order; unsorted items follow in registration order.
+   */
+  userMenuItems?: UserMenuItem[]
+  /** Sign-out endpoint config — when set, the user menu appends a
+   *  separator + Sign-out entry. Without this, the menu shows custom
+   *  items (if any) and the user identity, but no sign-out affordance. */
+  signOut?:      SignOutConfig
   /** @internal Runtime theme overrides from DB. */
   _themeOverrides?: Partial<ThemeConfig>
 }
@@ -205,6 +230,39 @@ export class Pilotiq {
    */
   uploads(config: UploadConfig): this {
     this.config.uploads = config
+    return this
+  }
+
+  /**
+   * Register entries for the panel's top-right user-menu dropdown.
+   * Replaces any previously registered set (call once with the full
+   * list). The dropdown only mounts when `Pilotiq.user(req => …)` is
+   * configured AND resolves a non-null user; otherwise the items are
+   * silently ignored.
+   *
+   *   import { UserMenuItem } from '@pilotiq/pilotiq'
+   *   Pilotiq.make('admin')
+   *     .user(req => Auth.user())
+   *     .userMenuItems([
+   *       UserMenuItem.make('profile').label('My profile').url('/profile'),
+   *       UserMenuItem.make('billing').label('Billing').url('/billing').sort(10),
+   *     ])
+   *     .signOut('/logout')
+   */
+  userMenuItems(items: UserMenuItem[]): this {
+    this.config.userMenuItems = items
+    return this
+  }
+
+  /**
+   * Configure the sign-out entry on the user menu. Pass a string for the
+   * default POST shape, or a `SignOutConfig` to override label/method.
+   *
+   *   .signOut('/logout')
+   *   .signOut({ url: '/auth/logout', method: 'GET', label: 'Log out' })
+   */
+  signOut(config: string | SignOutConfig): this {
+    this.config.signOut = typeof config === 'string' ? { url: config } : config
     return this
   }
 

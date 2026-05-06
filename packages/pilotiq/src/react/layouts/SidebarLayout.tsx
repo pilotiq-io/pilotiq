@@ -22,6 +22,7 @@ import {
 import { Separator } from '../ui/separator.js'
 import { ThemeToggle } from '../ThemeToggle.js'
 import { SearchTrigger } from '../SearchTrigger.js'
+import { UserMenu } from '../UserMenu.js'
 import type { AppShellProps } from '../AppShell.js'
 import { useIconFor } from '../icon-context.js'
 import type { SerializedIcon } from '../../icons/types.js'
@@ -196,6 +197,7 @@ export function SidebarLayout({ panel, basePath, currentPath, children }: AppShe
           </div>
           <div className="flex items-center gap-1 px-3">
             <ThemeToggle />
+            <UserMenu userMenu={panel.userMenu} />
           </div>
         </header>
         <div className="flex flex-1 flex-col px-4 pb-4">

@@ -46,6 +46,7 @@ export {
 export { ThemeProvider, useTheme } from './ThemeProvider.js'
 export { ThemeToggle } from './ThemeToggle.js'
 export { ThemeSettingsPage } from './ThemeSettingsPage.js'
+export { UserMenu } from './UserMenu.js'
 
 // Re-export pure theme functions for client-safe usage (avoids importing main barrel which has server-only code)
 export { generateThemeCSS } from '../theme/generate-css.js'
