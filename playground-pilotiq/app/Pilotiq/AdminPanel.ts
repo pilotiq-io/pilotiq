@@ -120,6 +120,9 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
     () => [Alert.make('Tip: scoped page-role hook — this Alert is only on the Articles list.').info()],
     { resource: ArticleResource },
   )
+  .renderHook('panels::global-search.results.before', () => [
+    Alert.make('Tip: press ESC to close the palette, or click any result to navigate.').info(),
+  ])
 
 export const pilotiqSimple = Pilotiq.make('Pilotiq simple')
   .path('/simple')

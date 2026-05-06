@@ -5,9 +5,11 @@ import { SearchIcon, CornerDownLeftIcon, ArrowUpDownIcon } from 'lucide-react'
 import { Dialog, DialogContent } from './ui/dialog.js'
 import { useNavigate } from './navigate.js'
 import { useIconFor } from './icon-context.js'
+import { RenderHookSlot } from './RenderHookSlot.js'
 import type { GlobalSearchResult } from '../search.js'
 import type { NavItem } from '../pageData.js'
 import type { SerializedIcon } from '../icons/types.js'
+import type { RenderHookMap } from '../RenderHook.js'
 
 /**
  * Context exposing the palette's open setter. AppShell hosts the
@@ -51,9 +53,10 @@ const DEBOUNCE_MS = 150
 const MIN_QUERY_LENGTH = 2
 
 interface SearchResponse {
-  ok:      boolean
-  results: GlobalSearchResult[]
-  error?:  string
+  ok:           boolean
+  results:      GlobalSearchResult[]
+  renderHooks?: RenderHookMap
+  error?:       string
 }
 
 export interface CommandPaletteProps {
@@ -96,6 +99,7 @@ export function CommandPalette({
   const setOpen = onOpenChange
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<GlobalSearchResult[]>([])
+  const [renderHooks, setRenderHooks] = useState<RenderHookMap | undefined>(undefined)
   const [active, setActive] = useState(0)
   const [loading, setLoading] = useState(false)
 
@@ -116,6 +120,7 @@ export function CommandPalette({
     if (!open) {
       setQuery('')
       setResults([])
+      setRenderHooks(undefined)
       setActive(0)
     }
   }, [open])
@@ -131,6 +136,7 @@ export function CommandPalette({
   const runFetch = useCallback(async (q: string) => {
     if (q.trim().length < MIN_QUERY_LENGTH) {
       setResults([])
+      setRenderHooks(undefined)
       setLoading(false)
       return
     }
@@ -147,17 +153,21 @@ export function CommandPalette({
       latestSeenRef.current = seq
       if (!res.ok) {
         setResults([])
+        setRenderHooks(undefined)
         return
       }
       const data = await res.json().catch(() => null) as SearchResponse | null
       if (!data?.ok) {
         setResults([])
+        setRenderHooks(undefined)
         return
       }
       setResults(data.results ?? [])
+      setRenderHooks(data.renderHooks)
       setActive(0)
     } catch {
       setResults([])
+      setRenderHooks(undefined)
     } finally {
       // Only flip loading off when this is the latest in-flight.
       if (seq === requestSeqRef.current) setLoading(false)
@@ -217,6 +227,10 @@ export function CommandPalette({
     }
   }, [entries, active, go])
 
+  // Hooks render only when the user is actively searching (>= MIN_QUERY_LENGTH);
+  // empty-input nav state stays clean — chrome / nav slots cover that elsewhere.
+  const showHooks = query.trim().length >= MIN_QUERY_LENGTH
+
   // ─── Group entries for rendering ─────────────────────
   const grouped = useMemo(() => {
     const map = new Map<string, PaletteEntry[]>()
@@ -248,6 +262,11 @@ export function CommandPalette({
         </div>
 
         <div className="max-h-96 overflow-y-auto py-1">
+          {showHooks && renderHooks?.['panels::global-search.results.before'] && (
+            <div className="px-4 py-2">
+              <RenderHookSlot name="panels::global-search.results.before" hooks={renderHooks} />
+            </div>
+          )}
           {entries.length === 0 && (
             <p className="px-4 py-6 text-center text-sm text-muted-foreground">
               {query.trim().length < MIN_QUERY_LENGTH
@@ -299,6 +318,11 @@ export function CommandPalette({
               </ul>
             </div>
           ))}
+          {showHooks && renderHooks?.['panels::global-search.results.after'] && (
+            <div className="px-4 py-2">
+              <RenderHookSlot name="panels::global-search.results.after" hooks={renderHooks} />
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-between border-t border-border px-4 py-2 text-[10px] text-muted-foreground">

@@ -62,7 +62,7 @@ the page's `schemaData` at the position implied by the slot name.
 | `panels::resource.pages.create-record.form.before` / `.after` | Around the first top-level `Form` on the resource create page |
 | `panels::resource.pages.edit-record.form.before` / `.after` | Around the first top-level `Form` on the resource edit page |
 | `panels::resource.pages.view-record.start` / `.end` | Wraps the resource view page schema (inside `panels::page.start/.end` if both are set) |
-| `panels::global-search.results.before` / `.after` | Reserved — palette mounting wires up in a follow-up |
+| `panels::global-search.results.before` / `.after` | Around the Cmd+K palette's result list — only fires when the user is actively searching (≥ 2 chars) |
 
 The `*-records.table.*` and `*-record.form.*` splice points work on the
 **first top-level** match. Tables / Forms nested inside a Section or

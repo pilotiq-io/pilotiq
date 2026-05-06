@@ -8,6 +8,8 @@ import { Table } from './elements/Table.js'
 import type { ModelLike, ModelQuery, ModelWhereOperator } from './orm/modelDefaults.js'
 import { searchAllResources } from './search.js'
 import { searchData } from './pageData.js'
+import { Heading } from './schema/Heading.js'
+import { Text } from './schema/Text.js'
 
 // ─── Fake ModelQuery / ModelLike ────────────────────────────
 
@@ -373,5 +375,72 @@ describe('searchAllResources (Plan #12)', () => {
     const pilotiq = Pilotiq.make('test').path('/admin').resources([A])
     const results = await searchAllResources(pilotiq, 'AB', null)
     assert.equal(results[0]!.icon, 'newspaper')
+  })
+
+  it('omits renderHooks key when no global-search hooks registered', async () => {
+    const M = fakeModel([{ id: '1', title: 'searchable' }])
+    class A extends Resource {
+      static override label = 'Articles'
+      static override slug  = 'articles'
+      static override globalSearch = true
+      static override recordTitleAttribute = 'title'
+      static override model = M
+      static override table(table: Table): Table {
+        return table.columns([Column.make('title').searchable()])
+      }
+    }
+    const pilotiq = Pilotiq.make('test').path('/admin').resources([A])
+    const result = await searchData(pilotiq, 'searchable')
+    assert.equal('renderHooks' in result, false)
+  })
+
+  it('resolves panels::global-search.results.before/.after when registered', async () => {
+    const M = fakeModel([{ id: '1', title: 'searchable' }])
+    class A extends Resource {
+      static override label = 'Articles'
+      static override slug  = 'articles'
+      static override globalSearch = true
+      static override recordTitleAttribute = 'title'
+      static override model = M
+      static override table(table: Table): Table {
+        return table.columns([Column.make('title').searchable()])
+      }
+    }
+    const pilotiq = Pilotiq.make('test').path('/admin').resources([A])
+      .renderHook('panels::global-search.results.before', () => [Heading.make('Before')])
+      .renderHook('panels::global-search.results.after',  () => [Text.make('After')])
+    const result = await searchData(pilotiq, 'searchable')
+    assert.equal(result.ok, true)
+    const hooks = result.renderHooks
+    assert.ok(hooks, 'renderHooks should be present')
+    const before = hooks!['panels::global-search.results.before']
+    const after  = hooks!['panels::global-search.results.after']
+    assert.equal(before?.length, 1)
+    assert.equal(after?.length,  1)
+    assert.equal(before![0]!['type'], 'heading')
+    assert.equal(after![0]!['type'],  'text')
+  })
+
+  it('passes resolved user into the global-search hook context', async () => {
+    const M = fakeModel([{ id: '1', title: 'searchable' }])
+    class A extends Resource {
+      static override label = 'Articles'
+      static override slug  = 'articles'
+      static override globalSearch = true
+      static override recordTitleAttribute = 'title'
+      static override model = M
+      static override table(table: Table): Table {
+        return table.columns([Column.make('title').searchable()])
+      }
+    }
+    let userSeen: unknown = 'untouched'
+    const pilotiq = Pilotiq.make('test').path('/admin').resources([A])
+      .user(() => ({ role: 'editor' }))
+      .renderHook('panels::global-search.results.before', (ctx) => {
+        userSeen = ctx.user
+        return [Heading.make('Hi')]
+      })
+    await searchData(pilotiq, 'searchable', { fakeReq: true })
+    assert.deepEqual(userSeen, { role: 'editor' })
   })
 })

@@ -4077,15 +4077,39 @@ function findWidgetById(elements: ReadonlyArray<Element>, id: string): ServerDat
  * Resolve the user via `pilotiq.resolveUser(req)` and run the
  * panel-wide search. Mirrors the formStateData/formWizardData
  * shape so the `/_search` route handler stays a thin wrapper.
+ *
+ * Also resolves the `panels::global-search.results.before/.after`
+ * render hooks when the panel registered any — sparse, absent when
+ * neither slot has registered fns. Sent as a `RenderHookMap` so the
+ * client `<CommandPalette>` can mount `<RenderHookSlot>` above and
+ * below the result list (same pattern chrome slots use).
  */
 export async function searchData(
   pilotiq: Pilotiq,
   query:   string,
   req?:    unknown,
-): Promise<{ ok: true; results: GlobalSearchResult[] }> {
+): Promise<{
+  ok: true
+  results: GlobalSearchResult[]
+  renderHooks?: RenderHookMap
+}> {
   const user = await pilotiq.resolveUser(req)
   const results = await searchAllResources(pilotiq, query, user)
-  return { ok: true, results }
+  const cfg = pilotiq.getConfig()
+  const out: { ok: true; results: GlobalSearchResult[]; renderHooks?: RenderHookMap } = {
+    ok: true,
+    results,
+  }
+  if (cfg.renderHooks && cfg.renderHooks.length > 0) {
+    const hooks = await resolvePageHooks(
+      pilotiq,
+      user,
+      pageHooksFor('search'),
+      { url: `${cfg.path}/_search` },
+    )
+    if (Object.keys(hooks).length > 0) out.renderHooks = hooks
+  }
+  return out
 }
 
 // ─── Vike +data dispatcher ───────────────────────────────────
