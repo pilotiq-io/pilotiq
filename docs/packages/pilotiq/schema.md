@@ -2,6 +2,8 @@
 
 Short reference for plugin authors and anyone extending `@pilotiq/pilotiq`. Covers the Element contract, the specialized Field/Action subtypes, container elements, validators, and the resolver plugin extension point.
 
+For a hands-on guide to adding custom fields, columns, infolist entries, and widgets, see [`docs/guide/extending-pilotiq.md`](../../guide/extending-pilotiq.md).
+
 For the high-level architecture and rationale, see [`docs/plans/phase-1-schema-foundation.md`](../../plans/phase-1-schema-foundation.md).
 
 ---

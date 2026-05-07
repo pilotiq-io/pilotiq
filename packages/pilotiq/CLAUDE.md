@@ -15,6 +15,8 @@ Pilotiq.make() builder → pilotiq([panels]) provider → registerPilotiqRoutes(
 1. `vite.config.ts` — `import { pilotiq } from '@pilotiq/pilotiq/vite'` → `plugins: [pilotiq(), ...]`
 2. `bootstrap/providers.ts` — `import { pilotiq } from '@pilotiq/pilotiq'` → `pilotiq([adminPanel])`
 
+**Extending the panel:** custom Field / Column / Entry / Widget primitives are documented end-to-end in `docs/guide/extending-pilotiq.md`. Field renderers register via `registerFieldRenderer` (`@pilotiq/pilotiq/react`); ComponentEntry components via `registerEntryComponents` (`@pilotiq/pilotiq/entries`); View components via `registerWidgetComponents` (`@pilotiq/pilotiq/widgets`); whole new widget element types via `registerWidgetRenderer` (`@pilotiq/pilotiq/react`). Columns are switch-dispatched in `SchemaRenderer` — no public registry; subclass an existing `columnType` and lean on `formatStateUsing` for per-row chrome.
+
 ---
 
 ## Key Files
