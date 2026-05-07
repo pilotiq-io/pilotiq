@@ -250,6 +250,8 @@ function renderFieldInput(
 
     case 'select': {
       const options = (el['options'] as Array<{ value: string; label: string; disabled?: boolean }>) ?? []
+      const createOption = el['createOption'] as { formId: string; schema: ElementMeta[]; url?: string } | undefined
+      const fieldLabel   = String(el['label'] ?? name)
       return (
         <SelectFieldInput
           name={name}
@@ -258,6 +260,8 @@ function renderFieldInput(
           required={required}
           placeholder={placeholder}
           options={options}
+          fieldLabel={fieldLabel}
+          {...(createOption ? { createOption } : {})}
         />
       )
     }
@@ -3018,7 +3022,16 @@ function FormBody({
   return <>{children.map((child, i) => renderFormChild(child, i, ctx.values, ctx.errors))}</>
 }
 
-function renderFormChild(
+/**
+ * Render one child of a form's resolved schema with per-field values + errors.
+ *
+ * Exported so sibling renderers (e.g. `SelectFieldInput`'s inline-create
+ * modal) can render a sub-schema with the same FieldShell + error-stamping
+ * conventions as the parent form. Public surface beyond the file boundary
+ * stays narrow — callers should pass `child.type === 'field'` elements;
+ * non-field elements fall through to `renderElement`.
+ */
+export function renderFormChild(
   child: ElementMeta,
   index: number,
   values: Record<string, unknown>,

@@ -1,14 +1,15 @@
 import {
   Resource, Column, Action,
   TextInputColumn, SelectColumn,
-  TextField, MarkdownField, SelectField,
+  TextField, MarkdownField, SelectField, EmailField,
   TernaryFilter, DateRangeFilter,
   TextEntry, BadgeEntry, IconEntry, ComponentEntry,
   Section, Grid,
-  minLength,
+  email, minLength,
   type Form, type Table, type Element,
 } from '@pilotiq/pilotiq'
 import { Post } from '../../Models/Post.js'
+import { User } from '../../Models/User.js'
 import { PostsCommentsManager } from './relations/CommentsManager.js'
 import { PostsTagsManager }     from './relations/TagsManager.js'
 import { ContentCluster }       from '../Content/ContentCluster.js'
@@ -42,7 +43,28 @@ export class PostResource extends Resource {
   static override form(form: Form): Form {
     return form.schema([
       TextField.make('title').required(),
-      TextField.make('authorId').required().helperText('User id'),
+      // Inline-create-from-select demo: pick an author, or click "+" to
+      // spawn a new User on the fly without leaving the post form. The
+      // sub-form runs the same validators (`required`, `email`, `unique`)
+      // as a regular User.create() route.
+      SelectField.make('authorId')
+        .label('Author')
+        .required()
+        .options(async () => {
+          const users = await User.query().paginate(1, 100)
+          return users.data.map((u) => ({ value: u.id, label: `${u.name} (${u.email})` }))
+        })
+        .createOptionForm([
+          TextField.make('name').required().validate(minLength(2)),
+          EmailField.make('email').required().validate(email()),
+        ])
+        .createOptionUsing(async ({ name, email: emailVal }) => {
+          const user = await User.create({
+            name:  String(name),
+            email: String(emailVal),
+          })
+          return { value: user.id, label: `${user.name} (${user.email})` }
+        }),
       MarkdownField.make('body')
         .placeholder('Write the post body in markdown…')
         .minHeight('240px')
