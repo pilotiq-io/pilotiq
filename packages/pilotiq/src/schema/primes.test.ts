@@ -142,10 +142,48 @@ describe('Markdown prime', () => {
     const out = await resolveSchema(tree)
     assert.doesNotMatch(String(out[0]!['html']), /<br/)
   })
+
+  it('sanitizes <script> tags by default', async () => {
+    const tree = [Markdown.make('hi\n\n<script>alert(1)</script>')]
+    const out  = await resolveSchema(tree)
+    const html = String(out[0]!['html'])
+    assert.doesNotMatch(html, /<script/i)
+    assert.doesNotMatch(html, /alert\(1\)/)
+  })
+
+  it('strips javascript: hrefs by default', async () => {
+    const tree = [Markdown.make('[evil](javascript:alert(1))')]
+    const out  = await resolveSchema(tree)
+    const html = String(out[0]!['html'])
+    assert.doesNotMatch(html, /javascript:/i)
+  })
+
+  it('allowRaw() preserves <script> for trusted sources', async () => {
+    const tree = [Markdown.make('hi\n\n<script>alert(1)</script>').allowRaw()]
+    const out  = await resolveSchema(tree)
+    const html = String(out[0]!['html'])
+    assert.match(html, /<script>alert\(1\)<\/script>/)
+  })
+
+  it('sanitize(false) is the explicit opt-out form', async () => {
+    const tree = [Markdown.make('<script>x</script>').sanitize(false)]
+    const out  = await resolveSchema(tree)
+    assert.match(String(out[0]!['html']), /<script>x<\/script>/)
+  })
+
+  it('sanitize({ config }) widens the allowlist for trusted CMS HTML', async () => {
+    const tree = [
+      Markdown.make('<iframe src="https://x.test/embed"></iframe>')
+        .sanitize({ allowedTags: ['iframe'], allowedAttributes: { iframe: ['src'] } }),
+    ]
+    const out  = await resolveSchema(tree)
+    const html = String(out[0]!['html'])
+    assert.match(html, /<iframe src="https:\/\/x\.test\/embed"><\/iframe>/)
+  })
 })
 
 describe('Html prime', () => {
-  it('passes html through verbatim', async () => {
+  it('passes safe html through after default sanitization', async () => {
     const tree = [Html.make('<p>hi <em>there</em></p>')]
     const out = await resolveSchema(tree)
     assert.equal(out[0]!.type, 'html')
@@ -163,6 +201,38 @@ describe('Html prime', () => {
     const tree = [Html.make('<p>hi</p>').size('sm')]
     const out = await resolveSchema(tree)
     assert.equal(out[0]!['size'], 'sm')
+  })
+
+  it('strips <script> by default', async () => {
+    const tree = [Html.make('<p>ok</p><script>steal()</script>')]
+    const out  = await resolveSchema(tree)
+    const html = String(out[0]!['html'])
+    assert.doesNotMatch(html, /<script/i)
+    assert.doesNotMatch(html, /steal\(\)/)
+    assert.match(html, /<p>ok<\/p>/)
+  })
+
+  it('strips inline event handlers by default', async () => {
+    const tree = [Html.make('<a href="https://ok" onclick="x()">link</a>')]
+    const out  = await resolveSchema(tree)
+    const html = String(out[0]!['html'])
+    assert.doesNotMatch(html, /onclick/i)
+    assert.match(html, /href="https:\/\/ok"/)
+  })
+
+  it('allowRaw() preserves <script>', async () => {
+    const tree = [Html.make('<script>raw</script>').allowRaw()]
+    const out  = await resolveSchema(tree)
+    assert.equal(out[0]!['html'], '<script>raw</script>')
+  })
+
+  it('custom config widens the allowlist', async () => {
+    const tree = [
+      Html.make('<iframe src="https://x.test"></iframe>')
+        .sanitize({ allowedTags: ['iframe'], allowedAttributes: { iframe: ['src'] } }),
+    ]
+    const out = await resolveSchema(tree)
+    assert.equal(out[0]!['html'], '<iframe src="https://x.test"></iframe>')
   })
 })
 

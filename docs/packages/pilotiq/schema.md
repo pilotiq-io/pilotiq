@@ -406,8 +406,8 @@ Inline-displayable leaves that render text, images, icons, and chrome inside a s
 | `Divider` | `Divider.make()`                      | `.label('Section break')` for a labeled `<hr>`.                                            |
 | `Image`   | `Image.make('https://…/avatar.png')`  | `.alt() / .width() / .height() / .size(px)` (square sugar) / `.rounded() / .circle()`.     |
 | `Icon`    | `Icon.make('check-circle')`           | `.size(px) / .color(IconColor) / .label(text)`. String-only — see "Icons" below.            |
-| `Markdown`| `Markdown.make('# Hello\n\n…')`       | Read-only Markdown source; server-renders via `marked`. `.gfm() / .breaks() / .prose() / .size('sm'\|'base'\|'lg')`. |
-| `Html`    | `Html.make('<p>Hello</p>')`           | Raw HTML passthrough. `.prose() / .size('sm'\|'base'\|'lg')`.                               |
+| `Markdown`| `Markdown.make('# Hello\n\n…')`       | Read-only Markdown source; server-renders via `marked` and sanitizes by default. `.gfm() / .breaks() / .prose() / .size('sm'\|'base'\|'lg') / .sanitize(false\|config) / .allowRaw()`. |
+| `Html`    | `Html.make('<p>Hello</p>')`           | Raw HTML passthrough; sanitized by default. `.prose() / .size('sm'\|'base'\|'lg') / .sanitize(false\|config) / .allowRaw()`. |
 | `EmptyState` | `EmptyState.make('No reports yet')` | Schema-level empty state — distinct from `Table.emptyState`. `.description() / .icon(name) / .footer([Action…]) / .contained(false)`. |
 
 ### Text formatting
@@ -461,7 +461,24 @@ Html.make('<p>Already-rendered <strong>HTML</strong> from a legacy column.</p>')
 
 Both wrap in a Tailwind Typography (`prose`) container by default — pass `.prose(false)` for bare output, or `.size('sm' | 'base' | 'lg')` to pick the matching `prose-sm` / `prose-lg` modifier. The playground's `src/index.css` adds `@tailwindcss/typography` via `@plugin`; consumers without the plugin get unstyled-but-correct HTML.
 
-**Trust posture.** Output is **not** sanitized in v1 — same posture as `MarkdownField`. Don't pipe untrusted user input through these primes without an external sanitizer.
+**Trust posture — sanitized by default.** Both primes run their HTML through a prose-friendly allowlist (`<p>`, headings, lists, code, tables, links, images) before the wire shape ships, matching Filament v5's default-secure stance. `<script>`, `<iframe>`, `javascript:` URLs, inline `onclick=` handlers, and `style="..."` overrides are stripped.
+
+Three escape hatches when an admin-trusted source needs more:
+
+```ts
+// Off entirely — admin-trusted source AND reader.
+Markdown.make(post.body).allowRaw()
+Html.make(legacyColumn).sanitize(false)
+
+// Widen the allowlist for embedded media or inline color highlighters.
+Html.make(cmsHtml).sanitize({
+  allowedTags:        ['iframe', 'video', 'source'],
+  allowedAttributes:  { iframe: ['src', 'width', 'height', 'allowfullscreen'] },
+  allowedSchemes:     ['http', 'https'],
+})
+```
+
+The companion `MarkdownField` / `RichTextField` editor surfaces stay admin-trusted (no client-side sanitizer in v1) — sanitize on the way out via these display primes.
 
 ---
 
