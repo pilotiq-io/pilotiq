@@ -818,4 +818,4 @@ discriminator column transparently on every pivot operation.
 
 - [`docs/plans/repeater-field.md`](../plans/repeater-field.md) — design
   doc + step-by-step status.
-- Live demo: `playground-pilotiq` → `/new-admin/repeater-demo`.
+- Live demo: `playground` → `/new-admin/repeater-demo`.

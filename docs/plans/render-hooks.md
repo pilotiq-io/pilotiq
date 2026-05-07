@@ -182,7 +182,7 @@ Edits:
 ## Effort estimate
 
 ~2 days end-to-end:
-- Day 1: `RenderHook.ts` + `Pilotiq.renderHook()` + `panelInfo()` chrome resolution + AppShell/layout slot mounts. Smoke via a banner hook in playground-pilotiq.
+- Day 1: `RenderHook.ts` + `Pilotiq.renderHook()` + `panelInfo()` chrome resolution + AppShell/layout slot mounts. Smoke via a banner hook in playground.
 - Day 2: page-role resolution wiring through every per-builder data fn (list/create/edit/view/global/page) + `<RenderHookSlot>` mounts in renderers + `docs/guide/render-hooks.md` + a few demo hooks.
 
 Tests: per-hook-name unit tests aren't valuable (they'd be tautological); integration test the chrome subset via the existing playground SSR snapshot harness.

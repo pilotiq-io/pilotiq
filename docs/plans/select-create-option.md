@@ -131,7 +131,7 @@ No new ORM contract. Handlers are user-supplied (we don't auto-create against `R
 
 `routes.test.ts` smoke: each of the six scopes registers the new route + dispatches correctly.
 
-Demo: wire `SelectField.make('categoryId').options(…).createOptionForm([…]).createOptionUsing(…)` into `playground-pilotiq/app/Pilotiq/Posts/PostResource.ts`.
+Demo: wire `SelectField.make('categoryId').options(…).createOptionForm([…]).createOptionUsing(…)` into `playground/app/Pilotiq/Posts/PostResource.ts`.
 
 ---
 

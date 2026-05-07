@@ -355,4 +355,4 @@ silently loses data.
   isn't implemented. Track via a separate plan if a consumer needs it.
 
 See the working demo at `/new-admin/builder-demo` (run
-`playground-pilotiq`).
+`playground`).

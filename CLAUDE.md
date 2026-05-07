@@ -38,13 +38,13 @@ pnpm clean        # Remove all dist/ directories
 
 Running the playground:
 ```bash
-cd playground-pilotiq      # pilotiq demo
+cd playground      # pilotiq demo
 pnpm dev                   # vike dev on :3003 (HMR :24680 — conflicts with pilotiq-pro if both are up)
 ```
 
 > Always run `pnpm build` from the **rudderjs** root before running the playground — framework packages must be compiled first.
 
-Prisma (run from `playground-pilotiq/`):
+Prisma (run from `playground/`):
 ```bash
 pnpm exec prisma generate --schema prisma/schema
 pnpm exec prisma db push  --schema prisma/schema
@@ -70,10 +70,10 @@ All `@rudderjs/*` packages resolve to `link:../rudder/packages/<name>` via `pnpm
 | Playground | Port | HMR | Purpose |
 |---|---|---|---|
 | `rudderjs/playground` | 3000 | 24678 | Framework demo — zero pilotiq deps |
-| `pilotiq/playground-pilotiq` | 3003 | 24680 | Pilotiq demo — view-based panel + themeEditor |
+| `pilotiq/playground` | 3003 | 24680 | Pilotiq demo — view-based panel + themeEditor |
 | `pilotiq-pro/playground` | 3002 | 24680 | Full stack — framework + pilotiq + AI + collab |
 
-**Providers** (`playground-pilotiq/`): log, orm-prisma, session, cache, pilotiq.
+**Providers** (`playground/`): log, orm-prisma, session, cache, pilotiq.
 
 No AI / live / queue / mail / monitoring — those are framework demos in `rudderjs/playground`.
 

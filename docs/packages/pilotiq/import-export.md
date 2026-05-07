@@ -136,7 +136,7 @@ The CSV codec lives at `@pilotiq/pilotiq` `src/io/csv.ts` (`encodeCsv`,
 - `null` / `undefined` / missing keys → empty cell.
 - `Date` values → ISO 8601 string.
 
-## Demo (playground-pilotiq)
+## Demo (playground)
 
 `PostResource.table()` ships export + import in `headerActions` plus a
 bulk export in `bulkActions`. Visit `/new-admin/posts`, click

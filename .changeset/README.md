@@ -29,7 +29,7 @@ On every push to `main`, the **Release** GitHub Actions workflow runs
    builds and runs `pnpm changeset publish`) to publish to npm under the
    `@pilotiq/*` scope.
 
-The `pilotiq-playground-pilotiq` workspace is ignored — it's a demo app, not
+The `pilotiq-playground` workspace is ignored — it's a demo app, not
 a published package.
 
 ## Quick reference

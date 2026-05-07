@@ -43,7 +43,7 @@ pilotiq/
 │   ├── codemirror/            # CodeMirror 6 code-editor adapter
 │   └── recharts/              # Recharts widget adapter
 ├── docs/                      # Documentation
-└── playground-pilotiq/        # Demo app (port 3003)
+└── playground/        # Demo app (port 3003)
 ```
 
 ---
@@ -211,17 +211,17 @@ All `@rudderjs/*` packages resolve to `link:../rudderjs/packages/<name>` via `pn
 | Playground | Port | HMR | Purpose |
 |---|---|---|---|
 | `rudderjs/playground` | 3000 | 24678 | Framework demo — zero pilotiq deps |
-| `pilotiq/playground-pilotiq` | 3003 | 24680 | Pilotiq demo — view-based panel + themeEditor |
+| `pilotiq/playground` | 3003 | 24680 | Pilotiq demo — view-based panel + themeEditor |
 | `pilotiq-pro/playground` | 3002 | 24680 | Full stack — framework + pilotiq + AI + collab |
 
 ### Playground providers
 
-- **playground-pilotiq/** (pilotiq): log, orm-prisma, session, cache, pilotiq
+- **playground/** (pilotiq): log, orm-prisma, session, cache, pilotiq
 
 ```bash
 cd ~/Projects/rudderjs && pnpm build                       # build framework first
 cd ~/Projects/pilotiq && pnpm build                        # build pilotiq packages
-cd ~/Projects/pilotiq/playground-pilotiq && pnpm dev       # pilotiq on :3003
+cd ~/Projects/pilotiq/playground && pnpm dev       # pilotiq on :3003
 ```
 
 ### Playground panel definitions

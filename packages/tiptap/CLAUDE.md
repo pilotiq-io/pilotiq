@@ -91,7 +91,7 @@ pnpm -F @pilotiq/tiptap test          # node --test (no React mounts)
 cd packages/tiptap && pnpm dev        # watch mode
 ```
 
-Tests are pure — `node:test` + `node:assert/strict`. No DOM, no React mounts. Component-level coverage lives in the playground (run `cd playground-pilotiq && pnpm dev` and exercise the editor manually).
+Tests are pure — `node:test` + `node:assert/strict`. No DOM, no React mounts. Component-level coverage lives in the playground (run `cd playground && pnpm dev` and exercise the editor manually).
 
 ---
 

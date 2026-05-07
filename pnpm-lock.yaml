@@ -241,7 +241,7 @@ importers:
         specifier: ^5
         version: 5.9.3
 
-  playground-pilotiq:
+  playground:
     dependencies:
       '@base-ui/react':
         specifier: ^1

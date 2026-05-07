@@ -196,7 +196,7 @@ pnpm dev         # watch mode
 
 The framework lives at `~/Projects/rudder` (a sibling clone) and is wired via `pnpm.overrides` in the root `package.json`. Build framework packages first with `pnpm -C ~/Projects/rudder build` before running the playground.
 
-The playground is at [`playground-pilotiq/`](./playground-pilotiq) — a fully wired demo app. `cd playground-pilotiq && pnpm dev` to boot it on `:3003`.
+The playground is at [`playground/`](./playground) — a fully wired demo app. `cd playground && pnpm dev` to boot it on `:3003`.
 
 ---
 
