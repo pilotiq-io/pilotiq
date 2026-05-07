@@ -402,7 +402,7 @@ Inline-displayable leaves that render text, images, icons, and chrome inside a s
 | --------- | ------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `Text`    | `Text.make('hello')`                  | Paragraph text. See "Text formatting" below for color / size / weight / badge setters.      |
 | `Heading` | `Heading.make('Profile')`             | `.level(1\|2\|3)`, `.description()`, `.actions([Action…])` for an admin-style page header.  |
-| `Alert`   | `Alert.make('Heads up')`              | `.info() / .warning() / .success() / .danger()` + `.title()`.                              |
+| `Alert`   | `Alert.make('Heads up')`              | `.info() / .warning() / .success() / .danger()` + `.title()` + `.actions([Action…])` for in-alert footer CTAs. |
 | `Divider` | `Divider.make()`                      | `.label('Section break')` for a labeled `<hr>`.                                            |
 | `Image`   | `Image.make('https://…/avatar.png')`  | `.alt() / .width() / .height() / .size(px)` (square sugar) / `.rounded() / .circle()`.     |
 | `Icon`    | `Icon.make('check-circle')`           | `.size(px) / .color(IconColor) / .label(text)`. String-only — see "Icons" below.            |

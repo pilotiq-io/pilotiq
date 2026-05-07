@@ -2609,10 +2609,16 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
       const alertType = String(el['alertType'] ?? 'info')
       const styles = alertStyles[alertType] ?? alertStyles['info']
       const title = el['title'] ? String(el['title']) : undefined
+      const footer = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup')
       return (
         <div key={index} className={`rounded-lg border p-4 ${styles}`}>
           {title && <p className="font-medium mb-1">{title}</p>}
           <p className="text-sm">{String(el['content'] ?? '')}</p>
+          {footer.length > 0 && (
+            <div className="flex items-center gap-2 mt-3">
+              {footer.map((a, i) => renderActionLike(a, i))}
+            </div>
+          )}
         </div>
       )
     }

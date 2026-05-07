@@ -62,6 +62,41 @@ exist in v4:
 - ✅ `belongsToMany` / pivot / M2M — `@rudderjs/orm` shipped pivot support (2026-05-03). Pilotiq's RelationManager M2M follow-up shipped same day — see `relations-m2m.md`.
 - ✅ Polymorphic (`morphMany / morphOne / morphTo`) — `@rudderjs/orm` shipped polymorphic support (2026-05-03). Pilotiq's RelationManager polymorphic follow-up shipped same day — see `relations-polymorphic.md` (`'morphMany' / 'morphTo'` modes + auto-injection of `commentableId / commentableType` on create + edit + anti-tamper guard). `morphToMany / morphedByMany` remain deferred on the rudder side.
 
+### Filament v5 fresh audit pass (2026-05-07)
+
+Re-pulled the v5 sitemap from `filamentphp.com/docs/llms.txt` (108 pages spanning Actions / Advanced / Components / Forms / Infolists / Navigation / Notifications / Plugins / Resources / Schemas / Styling / Tables / Testing / Users / Widgets) and re-walked every section against current source. **No drift** — every prior `✅ DONE` row still maps cleanly. The previous "v5 fill-gap pass (cont'd⁶)" rows are all current; this pass adds the rows below.
+
+**Newly surfaced gaps:**
+
+| Feature | Tier | Notes |
+|---|---|---|
+| ✅ `Alert.actions([Action…])` (Callout-parity footer) DONE | 1 | Shipped 2026-05-07 cont'd⁵ — `Alert.make(content).actions([Action…])` lands on `_children` and resolves through the standard schema walker so per-action `.visible()` / `.authorize()` rules fire unchanged. Renderer paints a footer row below the alert body via the same `renderActionLike` dispatch the `Heading.actions(...)` and `EmptyState.footer(...)` slots already use. Bare `Alert.make(...)` with no actions emits no `children` key (zero overhead for existing call sites). 5 tests in `Alert.test.ts` (default content / variant fluent / title / `actions()` resolves children + visibility-context-honored / no children when unset). Tests `2546 → 2552`. v5's parallel `controlActions()` slot (right-side icon-button affordances inside the body) deferred — no consumer ask. |
+| Markdown / Html sanitization | 1-2 | v5 default-on via Symfony HtmlSanitizer with attribute allowlist. Pilotiq's `Markdown.make()` and `Html.make()` are deliberately admin-trusted ("no sanitizer in v1") — same posture as `MarkdownField` / `RichTextField`. v5's default is the inverse: sanitize unless an admin opts out per-field. Worth picking either (a) `.sanitize(true)` opt-in via DOMPurify, or (b) flip default to sanitized + opt-out for explicit raw-HTML cases. Consumer-driven — no consumer ask yet. |
+| `SingularResource` (single-record settings) | 2 | v5's `resources/singular.md` formalizes the "Settings" pattern — a Resource bound to a single record that auto-creates on first save. Today's workaround (custom `Page` subclass + `Form` + manual `loadRecord` / `save`) works — `playground-pilotiq` uses it for the theme editor — but the boilerplate would shrink with a `SingularResource` / `Resource.singular = true` opt-in that auto-wires fill/save against a single-row model and collapses the URL to `/{slug}` (no list, no `:id`). `Global` is structurally close — could widen Global instead of adding a new sibling. |
+| `CheckboxColumn` (editable cell) | 3 | v5 has a `CheckboxColumn` editable cell distinct from `ToggleColumn`. Pilotiq's `ToggleColumn` already covers the same data semantics — purely a visual difference (checkbox vs switch). Skip until a consumer asks. |
+| Custom-extension scaffolder docs | 3 | v5 has dedicated docs pages for `forms/custom-fields`, `infolists/custom-entries`, `tables/columns/custom-columns`, `schemas/custom-components`. Pilotiq's `Element` + render-registry pattern already supports all four (`registerWidgetComponents` for View, `registerEntryComponents` for ComponentEntry, plain Element subclass + renderer branch for fields/columns/entries). The gap is purely a "How to extend pilotiq" guide page consolidating the four extension points. |
+
+**Verified-deferred** (no change from prior audit pass — listed for completeness):
+- **MFA** (`AppAuthentication / EmailAuthentication`) — auth-provider concern; pilotiq's `Pilotiq.guard()` middleware delegates upstream. Out of scope unless a first-party auth package is added.
+- **Plugin API surface** (`panel-plugins / standalone-plugins / configurable-resources-and-pages`) — current `PilotiqPlugin { name, register }` is intentionally minimal. Tier-3 until a plugin author asks.
+- **CSS hooks** (`fi-*` class naming convention) — pilotiq leans on Tailwind + shadcn primitives; CSS-hook story would be additive (a class-name pass over rendered chrome).
+- **Testing utilities** — Filament leverages Livewire's test helpers; pilotiq has no parallel test harness for end-users (we test the package, not consumer-side panels). Tier-3.
+- **Multi-tenancy** (`users/tenancy`) — large new system, already deferred.
+
+**v5 surfaces verified shipped this pass** (sanity-check sample, not exhaustive — every section was walked):
+- **Actions** (12/12): create, delete, edit, export, force-delete, grouping, import, modals, replicate, restore, view + overview.
+- **Forms** (23/23 fields): builder, checkbox, checkbox-list, code-editor, color-picker, date-time-picker, file-upload, hidden, key-value, markdown-editor, radio, repeater, rich-editor, select, slider, tags-input, text-input, textarea, toggle, toggle-buttons + custom-fields (implicit) + validation.
+- **Infolists** (9/9 entries): code, color, icon, image, key-value, repeatable, text + custom-entries (implicit) + overview.
+- **Schemas** (8/9 surfaces): empty-states, layouts, primes (Heading/Text/Alert/Divider/Image/Icon/Markdown/Html/UnorderedList), sections, tabs, wizards + custom-components (implicit). **Gap:** `Callout` (see new-row above; current `Alert` is the closest analogue, lacks `.actions()`).
+- **Tables** (full): all column types except `CheckboxColumn` (semantic-equivalent ToggleColumn covers it), all filters incl. `QueryBuilder` v2 + nested AND/OR groups, all chrome (heading/description/striped/empty-states/grouping/summaries/layout=cards/filters-layout/poll/recordUrl/reorderable/queryStringIdentifier/persistFiltersInSession/deferLoading/recordClasses).
+- **Resources** (12/13): creating-records, custom-pages, deleting-records, editing-records, global-search, listing-records, managing-relationships, nesting (depth-2; depth-3 audit declared no-op), viewing-records, widgets, code-quality-tips (doc-only). **Gap:** `singular` (see new-row above; close to `Global`).
+- **Notifications** (3/3): overview, broadcast, database + `Notification.actions([…])` slot landed this session as `fc82a7c`.
+- **Navigation** (4/4): clusters, custom-pages, overview, user-menu.
+- **Widgets** (3/3): charts, overview, stats-overview + `TableWidget` + `View` (custom-component widget).
+- **Advanced**: render-hooks ✅ (chrome + page-role; `head.*` mounting still pending — delegated to rudder agent).
+- **Styling**: colors ✅, icons ✅. css-hooks deferred.
+- **Users**: overview ✅ (`Pilotiq.user(req=>…)` + duck-typed `extractUserIdentity` covers HasName / HasAvatar). MFA + tenancy deferred.
+
 ---
 
 ## Inventory by area

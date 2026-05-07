@@ -302,8 +302,8 @@ describe('Action download envelope', () => {
   })
 
   it('partial download envelope (missing required fields) is dropped', async () => {
+    // @ts-expect-error — testing the runtime guard, not the public type.
     const a = Action.make('export').handler(() => ({
-      // @ts-expect-error — testing the runtime guard, not the public type.
       download: { filename: 'x.csv' },
     }))
     const result = await dispatchAction(a, { ids: [], values: {} })
