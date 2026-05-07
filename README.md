@@ -1,6 +1,6 @@
 # Pilotiq
 
-> The open-source admin and CMS for [RudderJS](https://github.com/rudderjs/rudder), with a built-in agent.
+> The open-source admin panel for [RudderJS](https://github.com/rudderjs/rudder). Define a few classes, get a CRUD app.
 
 <p>
   <a href="https://github.com/pilotiq-io/pilotiq/actions/workflows/ci.yml"><img src="https://github.com/pilotiq-io/pilotiq/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
@@ -9,30 +9,13 @@
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-blue" alt="TypeScript" /></a>
 </p>
 
-Pilotiq is the Filament-meets-VS-Code admin builder for the Node.js ecosystem. Define resources, fields, and forms with a Laravel-style API, then let the built-in agent help you write and edit content alongside the user.
-
-**Status:** Early development. See [`docs/comparison.md`](./docs/comparison.md) for how Pilotiq compares to Filament, Nova, and Payload.
-
----
-
-## Why Pilotiq?
-
-Define your admin panel in TypeScript. Pilotiq generates the API and UI automatically — including forms, tables, filters, actions, dashboards, and a rich-text editor.
+Pilotiq turns a TypeScript class into a working admin page — list, create, edit, view, with sort/search/filter/pagination wired up to your ORM. If you've used Filament for Laravel, you'll feel right at home; if you haven't, think Django Admin but typed end-to-end.
 
 ```ts
-import {
-  Pilotiq, Resource, Form, Table,
-  TextField, Column, SelectFilter, BooleanFilter,
-  Heading, Alert, Card,
-} from '@pilotiq/pilotiq'
-import { themeEditor } from '@pilotiq/pilotiq/plugins'
-import { Article } from './app/Models/Article.js'   // @rudderjs/orm Model
-
 class ArticleResource extends Resource {
-  static override label         = 'Articles'
-  static override labelSingular = 'Article'
-  static override icon          = 'file-text'
-  static override model         = Article         // ← auto-wires save / loadRecord / records / delete
+  static override label = 'Articles'
+  static override icon  = 'file-text'
+  static override model = Article    // a @rudderjs/orm Model — auto-wires CRUD
 
   static override form(form: Form): Form {
     return form.schema([
@@ -45,7 +28,6 @@ class ArticleResource extends Resource {
     return table
       .columns([
         Column.make('title').sortable().searchable(),
-        Column.make('slug').searchable(),
         Column.make('createdAt').sortable(),
       ])
       .filters([
@@ -53,121 +35,70 @@ class ArticleResource extends Resource {
           { value: 'draft',     label: 'Draft' },
           { value: 'published', label: 'Published' },
         ]),
-        BooleanFilter.make('featured'),
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
   }
 }
 
-export const admin = Pilotiq.make('Admin')
+Pilotiq.make('Admin')
   .path('/admin')
-  .branding({ title: 'My App' })
-  .theme({ preset: 'nova', accentColor: 'blue', radius: 'medium' })
-  .use(themeEditor())
   .resources([ArticleResource])
-  .schema(async () => [
-    Heading.make('Dashboard').description('Welcome back.'),
-    Card.make('Getting Started').schema([
-      Alert.make('Create your first article to get started.').info(),
-    ]),
-  ])
 ```
 
-**What you get from this:**
-
-- **Working CRUD pages** — list (sort, search, pagination, group banding via `Table.defaultGroup` + multi-option `Table.groups([TableGroup.make(col).label().collapsible().getTitleFromRecordUsing().date().orderUsing(orderByKeys([...]))])` with a "Group by" dropdown, footer summaries via `Column.summarize([Sum/Average/Count/Range])`, auto-refresh via `Table.poll(seconds)`, per-row CSS via `Table.recordClasses(fn)`, drag-to-reorder via `Table.reorderable('sort')` + `Model.reorder(ids)`, inline-edit cells via `TextInputColumn / ToggleColumn / SelectColumn`, per-row Edit/Delete), create form, edit form, view page. URLs `${base}/${slug}`, `/create`, `/:id`, `/:id/edit`.
-- **Auto-wired persistence** — `Resource.model = Article` (a `@rudderjs/orm` Model) plumbs save / loadRecord / records / delete through the ORM. Override per-method when you need custom logic.
-- **Filters** — `SelectFilter` / `MultiSelectFilter` / `BooleanFilter` / `TernaryFilter` (3-state with NULL bucket) / `DateRangeFilter` (`from..to` URL value) render in the table header; values ride in the URL query and feed the ORM `where` clauses. Active selection surfaces as a pill row above the table — `Filter.indicator(string|fn)` overrides the pill text. Auto-submit on change.
-- **Filament-style page header** — title left, Save buttons right (`<button form="…">` driving the form below). `CreatePage` ships two submits by default — primary "Create" + outlined "Create & create another" (posts `_continueCreate=1` so the server redirects back to `/create` with a fresh form). Override hooks: `getHeader / getHeaderActions / getRowActions / getFormActions`.
-- **Action dispatch** — `Action.handler((ctx) => ...)` POSTs to `${base}/${slug}/_action/{name}` server-side; `ctx.record` (row), `ctx.records` (bulk), `ctx.values` (dialog form fields). Bulk actions get a checkbox column + selection toolbar; row actions get a per-row Actions column.
-- **Import / Export** — `Action.export(R, base, opts?)` / `Action.bulkExport(R, base, opts?)` stream the table as CSV (default) or JSON; export honors the active filter / search / sort by default. `Action.import(R, base, opts?)` opens a `FileUpload` modal, parses, and runs each row through `R.model.create` / `R.model.update` (with optional `upsertBy` key). See [`docs/packages/pilotiq/import-export.md`](./docs/packages/pilotiq/import-export.md).
-- **Filament-style file layout** — `app/Pilotiq/Articles/{ArticleResource.ts, Pages/, Schemas/, Tables/}` for non-trivial resources. `ListPage` / `CreatePage` / `EditPage` / `ViewPage` base classes — subclass + `static getResource()` to bind.
-- **SSR + SPA dual data path** — every page works both via direct URL (rudder route handler) and via SPA navigation (Vike's `+data` hook). Both call the same per-role data builders in `pageData.ts`.
-- **Dark/light/system theme** — OKLCH presets (default, nova, maia, lyra), accent colors, FOUC prevention. `.use(themeEditor())` plugin for live theme editing with DB persistence.
-- **No vendoring** — the `pilotiq()` Vite plugin generates Vike page stubs at build time.
+That's a full `/admin/articles` with a list page, create/edit forms, view page, search, filters, sort, and pagination — driven by your ORM model.
 
 ---
 
-## Features
+## Highlights
 
-**Core (free, MIT)**
-
-- **Two layout modes** — collapsible sidebar (shadcn) or horizontal topbar
-- **Resources** — `static form(form: Form)` / `static table(table: Table)` / `static detail(record)`. Auto-wires CRUD when `static model = SomeOrmModel` is set.
-- **Relations** — `RelationManager` embeds a related resource's table on a parent record's Edit/View page. Routes auto-register at `${base}/${slug}/:id/${rel}/...` with two-layer authorization (parent `canEdit` + manager `canX`, the latter falling through to the related Resource's policy by default). Supports `hasOne` / `hasMany` / `belongsTo` for owned children, `belongsToMany` for many-to-many via explicit pivot tables — `Action.relationAttach / relationDetach / relationBulkDetach` factories drive pivot mutations through the rudder ORM's `parent.related(rel).attach / detach` accessors — and the polymorphic `morphMany / morphOne / morphTo` (one related table attached to several parent types via `<morphName>Id` + `<morphName>Type` columns; create + edit auto-fill the morph columns from the URL parent and overwrite tampered body values). `morphToMany / morphedByMany` deferred. See [`docs/guide/relations.md`](./docs/guide/relations.md).
-- **Schema system** — Heading (with optional right-aligned actions), Text (with `.color() / .size() / .weight() / .badge() / .badgeColor()` formatting setters), Alert, Divider, Image (`.size() / .rounded() / .circle()`), Icon (string-typed, registry-resolved), Markdown / Html (read-only display primes; Markdown server-renders via `marked`, both wrap in a `prose` container by default), Card, Section (with `.compact()` for tighter outer padding and `.dense()` for tighter inner gap — orthogonal), Tabs, Grid — async or static
-- **Infolists** — record-bound, read-only label-value pairs for `Resource.detail()`. `TextEntry` (with the same `.since() / .dateTime() / .money() / .numeric() / .limit() / .formatStateUsing()` formatter chain Column ships), `BadgeEntry` (`.colors({ value: BadgeColor })`), `IconEntry` (`.options({ value: { icon, color, label } })`), `ImageEntry` (`.dimensions(px) / .square() / .rounded() / .circle()`). Compose inside the same layout primitives forms use — `Section`, `Grid`, `Tabs`, `Split`. See [`docs/guide/infolists.md`](./docs/guide/infolists.md).
-- **Fields** — TextField, EmailField, NumberField, SelectField, TextareaField, ToggleField, DateField, SlugField, Hidden, Checkbox, Radio, ToggleButtons (segmented chip control), CheckboxList, Slider, ColorPicker, DateTimePicker, KeyValue, TagsInput (chip-style multi-tag with optional `suggestions([...] | fn)`; `.reorderable()` enables native drag-to-reorder of chips), FileUpload, Markdown (plain-markdown editor with toolbar + tabbed live preview; `attachFiles` integrates with the panel's UploadAdapter), Repeater, Builder (heterogeneous-row Repeater — `Block.make(name).schema(…)` block types with a picker dropdown, per-block `maxItems` cap, storage `[{ type, data }]`). Both support `.collapsible() / .collapsed() / .accordion()` (one-row-open-at-a-time mode, persisted to localStorage), `.simple(field)` (Repeater only — flat-array storage `[v, v, …]` instead of `[{name: v}]`), `.distinct()` (cross-row uniqueness on inner fields), `.disableOptionsWhenSelectedInSiblingRepeaterItems()` (greys taken Select/Radio/CheckboxList/ToggleButtons options across rows). Plus adapter-package fields: RichText (Tiptap, via `@pilotiq/tiptap`) and CodeEditor (CodeMirror 6, via `@pilotiq/codemirror` — string-id language registry, `'auto' | 'light' | 'dark'` theme, line numbers, indent-aware tab handling). Visibility flags (`hideFromTable/Create/Edit/View`) + condition callbacks (`showWhen`, `hideWhen`, `disabledWhen`). Validators via `.validate(...)` — sync or async (built-in `unique({ model, where?, caseInsensitive? })` probes the DB; ignores the row under edit by default). `live()` + `afterStateUpdated((value, ctx) => …)` + `$get/$set` for reactive forms.
-- **Filters** — `SelectFilter` / `MultiSelectFilter` (comma-separated URL value, `where(name,'IN',values)`) / `BooleanFilter` / `TernaryFilter` (yes/no/blank — distinguishes NULL from "any") / `DateRangeFilter` (`from..to`-encoded URL value, with `parseDateRangeValue` helper) / `FormFilter` (arbitrary inner schema; JSON-encoded URL value; `.handle((q, values) => q)` typed callback). More kinds extend the `Filter` base. Custom `query(fn)` hook for non-default ORM behavior. `Filter.indicator(string|fn)` configures the active-filter pill — pills sit above the table with × to clear in place.
-- **Actions** — Four modes: `.href(url)` link, `.method(m).action(url)` form-post, `.handler((ctx) => ...)` server-dispatched (`{ ids?, values? }` POST), `.submit()` for `<button type="submit">`. Four placements: `inline`, `header`, `bulk`, `row`. `:id` URL templating for row-level link/form actions.
-- **Custom pages** — `Page` class with `static schema()`, slug, label, icon. Or extend the Filament-style `ListPage` / `CreatePage` / `EditPage` / `ViewPage` bases for resource pages.
-- **Globals (singletons)** — `Global` class with the same shape minus list/create/delete; renders as `${base}/${slug}` (no `/:id`).
-- **Theme engine** — 4 style presets (default, nova, maia, lyra), 6 base colors, 17 accent colors, 6 chart palettes, 5 border radii, Google Fonts + Fontshare (Satoshi), icon library selection
-- **Dark mode** — light/dark/system toggle, localStorage persistence, FOUC prevention via inline script
-- **Theme editor** — `.use(themeEditor())` plugin with live preview, save/reset/shuffle, DB persistence
-- **Widgets** — Dashboard primitives as schema Elements: `StatsOverview` (KPI cards via `Stat.make().value().description().icon().chart([…sparkline])`), `Chart` (line/bar/pie/doughnut, per-chart filter dropdown, via `@pilotiq/recharts`), `TableWidget` (slim "5 newest" lists), `View` (escape hatch — mount any React component fed by `getData(ctx)`). Lazy by default with skeleton + `_widget/:id` polling; `.poll(seconds)` for auto-refresh. Mount under `panel.dashboard(MyPage)` for the panel root, or via `Resource.headerSchema() / footerSchema()` above/below the list table. See [`docs/guide/widgets.md`](./docs/guide/widgets.md).
-- **Auto page generation** — `pilotiq()` Vite plugin writes Vike page stubs + `+data.ts` hooks (for SPA nav) at build time
-- **Plugin system** — `.use()` / `.plugins([…])` for adapter packages and right-sidebar contributions
-
-**Pro features ([pilotiq.io](https://pilotiq.io))**
-
-| Package | Adds |
-|---|---|
-| `@pilotiq-pro/ai` | PanelAgent runtime, chat sidebar, AI field actions, sub-agent dispatch, conversation persistence |
-| `@pilotiq-pro/collab` | Yjs-based real-time collaboration: multi-user cursors, presence, persistence |
-
-Pro packages are commercial. They live in a separate private repo at `pilotiq-io/pilotiq-pro`.
-
----
-
-## Packages
-
-| Package | Description |
-|---|---|
-| [`@pilotiq/pilotiq`](./packages/pilotiq) | View-based admin panel with auto page generation, theme engine, schema system, AppShell layouts |
-| [`@pilotiq/tiptap`](./packages/tiptap) | Tiptap rich-text adapter — slash menu, draggable blocks, custom-block API |
-| [`@pilotiq/codemirror`](./packages/codemirror) | CodeMirror 6 code-editor adapter — `CodeEditorField` with syntax highlight, line numbers, language registry |
-| [`@pilotiq/recharts`](./packages/recharts) | Recharts dashboard chart adapter — `Chart` widget with line / bar / pie / doughnut renderers, per-chart filter dropdown, opt-in `registerChartRenderer()` |
-| [`playground-pilotiq/`](./playground-pilotiq) | Demo app — view-based panel on port 3003 |
+- 🧱 **Schema-driven** — describe forms, tables, and dashboards as TypeScript classes; pilotiq generates the API and UI.
+- 🔌 **ORM auto-wired** — set `static model = SomeModel` and CRUD just works. Override per-method when you need custom logic.
+- 🎨 **Polished UI out of the box** — shadcn-based components, OKLCH theme presets, dark/light/system mode, FOUC-free.
+- 🧠 **Reactive forms** — `Field.live()` + `afterStateUpdated()` for dependent fields, conditional visibility, async option resolvers.
+- 🔍 **Power-user features** — global search (⌘K), bulk actions, import/export (CSV/JSON), soft deletes, relation managers, infolists, widgets, clusters, query-builder filters.
+- 🪄 **Vike-powered** — server-side rendering on first paint, SPA navigation after that. No vendoring; pages are auto-generated by a Vite plugin.
+- 🧩 **Pluggable** — opt-in adapters for [Tiptap](./packages/tiptap) (rich text), [CodeMirror](./packages/codemirror) (code editor), and [Recharts](./packages/recharts) (charts). Plus a [right-sidebar](./docs/guide/right-sidebar.md) registry for chat, presence, outlines.
+- 🛠️ **Customizable** — render hooks at every chrome slot, custom Field/Column/Entry/Widget primitives, fully overridable page roles (`ListPage` / `CreatePage` / `EditPage` / `ViewPage`).
 
 ---
 
 ## Quick start
 
-### 1. Install
-
 ```bash
 pnpm add @pilotiq/pilotiq
 ```
 
-### 2. Define a panel
+**1. Define a panel** — `app/Pilotiq/AdminPanel.ts`:
 
 ```ts
-// app/Pilotiq/AdminPanel.ts
-import { Pilotiq, Resource, TextField, Column } from '@pilotiq/pilotiq'
+import {
+  Pilotiq, Resource, Form, Table,
+  TextField, Column, SelectFilter,
+} from '@pilotiq/pilotiq'
+import { themeEditor } from '@pilotiq/pilotiq/plugins'
+import { Article } from './app/Models/Article.js'
 
-class UserResource extends Resource {
-  static label = 'Users'
-  static labelSingular = 'User'
-  static icon = 'users'
+class ArticleResource extends Resource {
+  static override label = 'Articles'
+  static override icon  = 'file-text'
+  static override model = Article
 
-  table() {
-    return {
-      columns: [
-        Column.make('name').label('Name').sortable().searchable(),
-        Column.make('email').label('Email'),
-      ],
-    }
+  static override form(form: Form): Form {
+    return form.schema([
+      TextField.make('title').required(),
+      TextField.make('slug').required(),
+    ])
   }
 
-  form() {
-    return {
-      fields: [
-        TextField.make('name').label('Name').required(),
-        TextField.make('email').label('Email').required(),
-      ],
-    }
+  static override table(table: Table): Table {
+    return table
+      .columns([
+        Column.make('title').sortable().searchable(),
+        Column.make('createdAt').sortable(),
+      ])
+      .defaultSort('createdAt', 'desc')
+      .paginate(10)
   }
 }
 
@@ -175,13 +106,13 @@ export const adminPanel = Pilotiq.make('Admin')
   .path('/admin')
   .branding({ title: 'My App' })
   .theme({ preset: 'nova', accentColor: 'indigo' })
-  .resources([new UserResource()])
+  .use(themeEditor())
+  .resources([ArticleResource])
 ```
 
-### 3. Register the provider
+**2. Register the provider** — `bootstrap/providers.ts`:
 
 ```ts
-// bootstrap/providers.ts
 import { pilotiq } from '@pilotiq/pilotiq'
 import { adminPanel } from '../app/Pilotiq/AdminPanel.js'
 
@@ -190,10 +121,9 @@ export default [
 ]
 ```
 
-### 4. Add the Vite plugin
+**3. Add the Vite plugin** — `vite.config.ts`:
 
 ```ts
-// vite.config.ts
 import { pilotiq } from '@pilotiq/pilotiq/vite'
 
 export default {
@@ -201,64 +131,81 @@ export default {
 }
 ```
 
-### 5. Run
-
-```bash
-pnpm dev
-```
-
-Visit `/admin` — your admin panel is ready with dark/light toggle and themed UI.
+**4. Run** — `pnpm dev`, visit `/admin`. Done.
 
 ---
 
-## Relationship to RudderJS
+## Packages
 
-Pilotiq is built on top of [RudderJS](https://github.com/rudderjs/rudder), the Laravel-inspired Node.js framework. You'll need:
+| Package | What it does |
+|---|---|
+| [`@pilotiq/pilotiq`](./packages/pilotiq) | The admin panel. Resources, forms, tables, filters, actions, dashboards, theme. |
+| [`@pilotiq/tiptap`](./packages/tiptap) | Rich-text field — slash menu, draggable blocks, mentions, custom blocks. |
+| [`@pilotiq/codemirror`](./packages/codemirror) | Code editor field — CodeMirror 6 with language registry and themes. |
+| [`@pilotiq/recharts`](./packages/recharts) | Chart widgets — line, bar, pie, doughnut. |
 
-- Node.js 20+
-- `@rudderjs/core` — DI container, application bootstrap
-- `@rudderjs/router` — HTTP routing
-- `@rudderjs/view` — View controller routes (used by `@pilotiq/pilotiq`)
-- `@rudderjs/orm` — ORM (Prisma or Drizzle)
-- `@rudderjs/auth` — auth
-- Optional: `@rudderjs/cache`, `@rudderjs/storage`, `@rudderjs/localization`
+Pro extensions (`@pilotiq-pro/{ai,collab,workspaces}`) live in a separate commercial repo at [pilotiq.io](https://pilotiq.io).
 
-Pilotiq's packages declare these as peer dependencies. Install both, register the panel provider in your RudderJS app's `bootstrap/providers.ts`, and you're done.
+---
+
+## Requirements
+
+Pilotiq is built on [RudderJS](https://github.com/rudderjs/rudder). You'll need:
+
+- **Node.js 20+**
+- `@rudderjs/core`, `@rudderjs/router`, `@rudderjs/view`, `@rudderjs/orm`
+- Optional: `@rudderjs/auth`, `@rudderjs/cache`, `@rudderjs/storage`, `@rudderjs/localization`, `@rudderjs/session`, `@rudderjs/notification`
+
+Pilotiq declares these as peer dependencies. Install whichever your app needs.
 
 ---
 
 ## Documentation
 
-| Topic | Link |
-|---|---|
-| Architecture | [`Architecture.md`](./Architecture.md) |
-| Comparison vs Filament/Nova/Payload | [`docs/comparison.md`](./docs/comparison.md) |
-| Relations | [`docs/guide/relations.md`](./docs/guide/relations.md) |
-| Fields reference | [`docs/packages/pilotiq/fields.md`](./docs/packages/pilotiq/fields.md) |
-| Schema elements | [`docs/packages/pilotiq/schema.md`](./docs/packages/pilotiq/schema.md) |
-| Rich-text editor (Tiptap) | [`docs/packages/tiptap.md`](./docs/packages/tiptap.md) |
-| Code editor (CodeMirror) | [`docs/packages/codemirror.md`](./docs/packages/codemirror.md) |
-| Right sidebar | [`docs/guide/right-sidebar.md`](./docs/guide/right-sidebar.md) |
+**Get started**
+
+- [Resources](./docs/packages/pilotiq/resources.md) · [Pages](./docs/packages/pilotiq/pages.md) · [Globals](./docs/packages/pilotiq/globals.md) · [Schema elements](./docs/packages/pilotiq/schema.md)
+
+**Forms & tables**
+
+- [Forms](./docs/packages/pilotiq/forms.md) · [Fields](./docs/packages/pilotiq/fields.md) · [Layouts](./docs/packages/pilotiq/layouts.md) · [Validation](./docs/packages/pilotiq/validation.md) · [Reactive forms](./docs/packages/pilotiq/reactive.md)
+- [Tables](./docs/packages/pilotiq/tables.md) · [Columns](./docs/packages/pilotiq/columns.md) · [Filters](./docs/packages/pilotiq/filters.md)
+
+**Advanced**
+
+- [Relations](./docs/guide/relations.md) · [Repeater](./docs/guide/repeater.md) · [Builder](./docs/guide/builder.md) · [Soft deletes](./docs/guide/soft-deletes.md) · [Infolists](./docs/guide/infolists.md) · [Widgets](./docs/guide/widgets.md) · [Clusters](./docs/guide/clusters.md)
+- [Render hooks](./docs/guide/render-hooks.md) · [Right sidebar](./docs/guide/right-sidebar.md) · [Extending pilotiq](./docs/guide/extending-pilotiq.md)
+- [Card listing](./docs/guide/card-listing.md) · [Defer loading](./docs/guide/defer-loading.md) · [Filter persistence](./docs/guide/filter-persistence.md) · [Query builder](./docs/guide/query-builder.md) · [Query-string identifier](./docs/guide/query-string-identifier.md)
+
+**Other**
+
+- [Actions](./docs/packages/pilotiq/actions.md) · [Import / export](./docs/packages/pilotiq/import-export.md) · [Authorization](./docs/packages/pilotiq/authorization.md) · [Global search](./docs/packages/pilotiq/global-search.md) · [Notifications](./docs/packages/pilotiq/notifications.md) · [Database notifications](./docs/guide/database-notifications.md)
+- [Architecture](./Architecture.md) · [Comparison vs Filament / Nova / Payload](./docs/comparison.md)
 
 ---
 
 ## Development
 
-This is a pnpm + Turborepo monorepo.
-
 ```bash
 pnpm install
-pnpm build       # build all packages
-pnpm typecheck   # strict type-checking
-pnpm lint        # eslint
-pnpm test        # run test suites
+pnpm build       # build all packages (Turbo)
+pnpm typecheck   # strict TypeScript
+pnpm test        # node:test across packages
 pnpm dev         # watch mode
 ```
 
-For cross-repo development with RudderJS, the framework lives at `~/Projects/rudder` and is wired via `pnpm.overrides` in the root `package.json`. Build framework packages (`pnpm -C ~/Projects/rudder build`) before running the playground.
+The framework lives at `~/Projects/rudder` (a sibling clone) and is wired via `pnpm.overrides` in the root `package.json`. Build framework packages first with `pnpm -C ~/Projects/rudder build` before running the playground.
+
+The playground is at [`playground-pilotiq/`](./playground-pilotiq) — a fully wired demo app. `cd playground-pilotiq && pnpm dev` to boot it on `:3003`.
+
+---
+
+## Status
+
+Pilotiq is in active development. The core surface (Resources, Pages, Globals, fields, tables, filters, actions, relations, soft deletes, infolists, widgets, clusters, render hooks, the right-sidebar registry, theme editor) is shipped and stable. New capabilities ship roughly weekly — check the [docs](./docs) and `packages/pilotiq/CLAUDE.md` for what's current.
 
 ---
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE) © Suleiman Shahbari and contributors.
