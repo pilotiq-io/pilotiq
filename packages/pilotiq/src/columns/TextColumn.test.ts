@@ -79,6 +79,98 @@ describe('TextColumn', () => {
       const meta = TextColumn.make('body').limit(40).toMeta()
       assert.deepEqual(meta.format, { kind: 'limit', chars: 40 })
     })
+
+    it('words(n) emits kind:words + words', () => {
+      const meta = TextColumn.make('body').words(20).toMeta()
+      assert.deepEqual(meta.format, { kind: 'words', words: 20 })
+    })
+
+    it('characters(n) is a Filament-parity alias for limit(n)', () => {
+      const a = TextColumn.make('body').characters(40).toMeta()
+      const b = TextColumn.make('body').limit(40).toMeta()
+      assert.deepEqual(a.format, b.format)
+      assert.deepEqual(a.format, { kind: 'limit', chars: 40 })
+    })
+
+    it('formatters overwrite each other — last call wins', () => {
+      const meta = TextColumn.make('body').words(10).limit(40).toMeta()
+      assert.deepEqual(meta.format, { kind: 'limit', chars: 40 })
+    })
+  })
+
+  describe('rich-display chrome', () => {
+    it('listWithLineBreaks() emits flag only when called', () => {
+      const off = TextColumn.make('tags').toMeta()
+      const on  = TextColumn.make('tags').listWithLineBreaks().toMeta()
+      assert.equal(off['listWithLineBreaks'], undefined)
+      assert.equal(on['listWithLineBreaks'],  true)
+    })
+
+    it('bulleted() emits flag only when called', () => {
+      const off = TextColumn.make('tags').toMeta()
+      const on  = TextColumn.make('tags').bulleted().toMeta()
+      assert.equal(off['bulleted'], undefined)
+      assert.equal(on['bulleted'],  true)
+    })
+
+    it('copyMessage() defaults to "Copied!"', () => {
+      const meta = TextColumn.make('email').copyMessage().toMeta()
+      assert.equal(meta['copyMessage'], 'Copied!')
+    })
+
+    it('copyMessage(s) honors the custom toast string', () => {
+      const meta = TextColumn.make('email').copyMessage('Email copied').toMeta()
+      assert.equal(meta['copyMessage'], 'Email copied')
+    })
+
+    it('chrome flags compose with each other and with format()', () => {
+      const meta = TextColumn.make('bio')
+        .words(20)
+        .listWithLineBreaks()
+        .bulleted()
+        .copyMessage('Done')
+        .toMeta()
+      assert.deepEqual(meta.format,            { kind: 'words', words: 20 })
+      assert.equal(meta['listWithLineBreaks'], true)
+      assert.equal(meta['bulleted'],           true)
+      assert.equal(meta['copyMessage'],        'Done')
+    })
+  })
+
+  describe('markdown / html', () => {
+    it('markdown() stamps richText: "markdown"', () => {
+      const meta = TextColumn.make('body').markdown().toMeta()
+      assert.equal(meta['richText'], 'markdown')
+    })
+
+    it('html() stamps richText: "html"', () => {
+      const meta = TextColumn.make('body').html().toMeta()
+      assert.equal(meta['richText'], 'html')
+    })
+
+    it('html() and markdown() are mutually exclusive — last call wins', () => {
+      const a = TextColumn.make('body').markdown().html().toMeta()
+      const b = TextColumn.make('body').html().markdown().toMeta()
+      assert.equal(a['richText'], 'html')
+      assert.equal(b['richText'], 'markdown')
+    })
+
+    it('markdown(false) clears the flag', () => {
+      const col = TextColumn.make('body').markdown()
+      assert.equal(col.isRichText(), true)
+      col.markdown(false)
+      assert.equal(col.isRichText(), false)
+    })
+
+    it('allowRaw() sets sanitize to false', () => {
+      const col = TextColumn.make('body').markdown().allowRaw()
+      assert.equal(col.getSanitize(), false)
+    })
+
+    it('sanitize(opts) carries the widened config through the accessor', () => {
+      const col = TextColumn.make('body').html().sanitize({ allowedTags: ['span'] })
+      assert.deepEqual(col.getSanitize(), { allowedTags: ['span'] })
+    })
   })
 
   it('formatStateUsing stamps hasFormatter:true on the meta', () => {

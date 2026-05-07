@@ -9,6 +9,8 @@ import { isRepeaterField } from '../fields/RepeaterField.js'
 import { isBuilderField } from '../fields/BuilderField.js'
 import { tryRenderRichText, getRichTextRenderer } from '../richtext/registry.js'
 import { resolveSchema, type RenderContext } from '../schema/resolveSchema.js'
+import { sanitizeHtml } from '../schema/sanitize.js'
+import { marked } from 'marked'
 import type { SummaryResult } from '../summarizers/Summarizer.js'
 
 export interface QueryParams {
@@ -277,9 +279,18 @@ export async function loadTableRecords(
               && c.getColumnType() === 'text'
               && !c.hasFormatter()
               && !c.hasFormat()
-              && !c.isEditable(),
+              && !c.isEditable()
+              && !c.isRichText(),
             )
         : []
+
+      // Markdown / HTML columns — opt-in via `Column.markdown() /
+      // Column.html()`. Each row's value gets server-rendered and the
+      // resulting HTML stamps `_formatted[col.name]` +
+      // `_richtextCells[col.name] = true` so the renderer mounts the
+      // existing prose-sm `dangerouslySetInnerHTML` path.
+      const explicitRichTextColumns = (table.getChildren() ?? [])
+        .filter((c): c is Column => c instanceof Column && c.isRichText())
 
       // Columns with their own per-row recordUrl handler — overrides
       // the table-level `Table.recordUrl` for clicks on that column.
@@ -323,6 +334,7 @@ export async function loadTableRecords(
         groupColumn !== undefined ||
         canEditEditableColumns ||
         richTextColumns.length > 0 ||
+        explicitRichTextColumns.length > 0 ||
         cardSchemaFn !== undefined
 
       const rows = !needsRowMutation
@@ -375,6 +387,40 @@ export async function loadTableRecords(
                 const html = tryRenderRichText(recordObj[col.name])
                 if (html === null) continue
                 formatted[col.name] = html
+                rich[col.name]      = true
+              }
+              if (Object.keys(rich).length > 0) {
+                out['_formatted']     = formatted
+                out['_richtextCells'] = rich
+              }
+            }
+
+            if (explicitRichTextColumns.length > 0) {
+              const formatted = (out['_formatted'] as Record<string, string> | undefined) ?? {}
+              const rich      = (out['_richtextCells'] as Record<string, true> | undefined) ?? {}
+              for (const col of explicitRichTextColumns) {
+                // formatStateUsing wins (declared first by the user — we
+                // assume they meant it). markdown()/html() yield only when
+                // the explicit per-row formatter already stamped a value.
+                if (formatted[col.name] !== undefined) continue
+                const raw = recordObj[col.name]
+                if (raw === null || raw === undefined || raw === '') continue
+                const kind = col.getRichTextKind()
+                let html: string
+                try {
+                  html = kind === 'markdown'
+                    ? (marked.parse(String(raw), { gfm: true, breaks: false, async: false }) as string)
+                    : String(raw)
+                } catch {
+                  // marked errors fall through to a string-cast so a
+                  // malformed cell still ships *something* to the user.
+                  html = String(raw)
+                }
+                const sanitizeOpt = col.getSanitize()
+                const finalHtml = sanitizeOpt === false
+                  ? html
+                  : sanitizeHtml(html, sanitizeOpt === true ? undefined : sanitizeOpt)
+                formatted[col.name] = finalHtml
                 rich[col.name]      = true
               }
               if (Object.keys(rich).length > 0) {

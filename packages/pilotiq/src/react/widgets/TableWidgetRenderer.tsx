@@ -183,6 +183,12 @@ function applyFormat(value: unknown, fmt: NonNullable<ColumnMeta['format']>): st
       const s = String(value)
       return s.length > fmt.chars ? `${s.slice(0, fmt.chars)}…` : s
     }
+    case 'words': {
+      const s = String(value).trim()
+      if (s.length === 0) return s
+      const tokens = s.split(/\s+/)
+      return tokens.length > fmt.words ? `${tokens.slice(0, fmt.words).join(' ')}…` : s
+    }
   }
 }
 

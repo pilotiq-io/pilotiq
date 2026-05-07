@@ -42,7 +42,7 @@ serializable or needs to combine multiple fields.
 
 | Class | Renders |
 |---|---|
-| `Column` (or `TextColumn`) | Plain text — supports `.dateTime / .since / .money / .numeric / .limit / .lineClamp / .color / .weight` |
+| `Column` (or `TextColumn`) | Plain text — supports `.dateTime / .since / .money / .numeric / .limit / .words / .characters / .lineClamp / .color / .weight / .listWithLineBreaks / .bulleted / .copyMessage / .markdown / .html` |
 | `BadgeColumn` | Pill — `.colors({ draft: 'warning', published: 'success' })` |
 | `IconColumn` | Value → icon — `.options({ true: { icon, color } })` |
 | `BooleanColumn` | Sugar over IconColumn — defaults to check / circle |
@@ -62,16 +62,51 @@ TextColumn.make('createdAt').since()                   // "5 minutes ago"
 TextColumn.make('price').money('USD')                  // "$1,234.50"
 TextColumn.make('rating').numeric({ decimals: 1 })     // "4.7"
 TextColumn.make('body').limit(80)                      // truncate to N chars + …
+TextColumn.make('body').characters(80)                 // alias for limit(n)
+TextColumn.make('body').words(20)                      // truncate to N words + …
 ```
 
 `dateTime()` accepts a pattern string for future-compat (the wire shape
 preserves it), but the v1 client uses `Intl.DateTimeFormat` defaults.
 `since()` paints the relative label on first paint only — no live timer.
 `money(currency)` and `numeric()` accept an optional `locale` second
-argument to override the user's browser default.
+argument to override the user's browser default. `words(n)` splits on
+whitespace runs (`/\s+/`) so leading/trailing whitespace doesn't count
+toward the cap.
+
+Formatters are mutually exclusive — `words(20).limit(40)` keeps only
+the last call (`limit`).
 
 When `formatStateUsing` AND a built-in `format` are set, the per-row
 result wins.
+
+## TextColumn rich display
+
+```ts
+TextColumn.make('tags').listWithLineBreaks()
+TextColumn.make('tags').bulleted()                     // wins over listWithLineBreaks
+TextColumn.make('email').copyMessage('Email copied')
+TextColumn.make('description').markdown()              // server-renders via marked + sanitize-html
+TextColumn.make('legacyHtml').html().sanitize({ allowedTags: ['span'] })
+```
+
+- `listWithLineBreaks()` and `bulleted()` apply when the cell value is
+  an array. `listWithLineBreaks()` separates entries with `<br>`;
+  `bulleted()` mounts a `<ul>` with bullet markers. When both are set,
+  `bulleted()` wins.
+- `copyMessage(message?)` mounts a small copy-to-clipboard trigger after
+  the cell value. The optional string is the toast text shown after a
+  successful copy (default `"Copied!"`). Reads as `Filament`-parity.
+- `markdown()` server-renders the cell value via `marked` (already a
+  dep) and stamps the resulting HTML on `row._formatted[name]` with
+  `_richtextCells[name] = true`; the renderer paints the cell via the
+  existing prose-sm `dangerouslySetInnerHTML` path.
+- `html()` skips the Markdown step — useful for legacy CMS columns that
+  already store rendered HTML.
+- Both rich-text setters are sanitized by default against the same
+  `DEFAULT_SANITIZE_CONFIG` allowlist as the `Markdown` / `Html` schema
+  primes. Use `.allowRaw()` (admin-trusted source AND reader) or
+  `.sanitize({ allowedTags: [...] })` to widen the allowlist.
 
 ## BadgeColumn
 

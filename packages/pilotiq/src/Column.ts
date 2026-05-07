@@ -1,5 +1,6 @@
 import { Element, type ElementMeta } from './schema/Element.js'
 import { Summarizer, type SummarizerMeta } from './summarizers/Summarizer.js'
+import type { SanitizeConfig } from './schema/sanitize.js'
 import type {
   Validator,
   ValidatorContext,
@@ -44,6 +45,12 @@ export type ColumnFormat =
   | { kind: 'money';    currency: string; locale?: string }
   | { kind: 'numeric';  decimals?: number; locale?: string }
   | { kind: 'limit';    chars: number }
+  | { kind: 'words';    words: number }
+
+/** Rich-text column kind — server-rendered HTML stamped per row.
+ * Markdown values run through `marked` first; HTML values pass straight
+ * to `sanitize-html`. Both honor `_sanitize` (default `true`). */
+export type ColumnRichTextKind = 'markdown' | 'html'
 
 /** Per-row formatter callback. Returns the rendered cell content as a
  * string. Runs server-side inside `loadTableRecords` (the function
@@ -79,6 +86,24 @@ export interface ColumnMeta extends ElementMeta {
    * computed values for each summarizer land on the table meta under
    * `summaries[columnName]` (`SummaryResult[]`), not on the column. */
   summaries?: SummarizerMeta[]
+  /** Render array values one-per-line (each item separated by `<br>`).
+   * Composes with `bulleted()` — when both are set, `bulleted()` wins
+   * and the renderer mounts a `<ul>` with bullet markers instead. */
+  listWithLineBreaks?: true
+  /** Render array values as a `<ul>` bullet list. Wins over
+   * `listWithLineBreaks()` when both are set. */
+  bulleted?: true
+  /** Mounts a copy-to-clipboard trigger after the cell value. The string
+   * is the toast message shown after a successful copy (default
+   * `"Copied!"` when bare `.copyable()` is used). */
+  copyMessage?: string
+  /** Server-rendered rich-text discriminator. When set, the renderer
+   * reads the rendered HTML from `row._formatted[col.name]` and
+   * dangerouslySetsInnerHTML it (matches the existing Tiptap richtext
+   * cell path). The kind drives server-side rendering — `markdown` runs
+   * through `marked` first; `html` is passthrough. Sanitization applies
+   * to both unless the column opts out. */
+  richText?: ColumnRichTextKind
   /**
    * Per-column record-URL behavior. The default (absent) means the cell
    * inherits the table's `recordUrl` for click navigation. `false` opts
@@ -170,6 +195,16 @@ export class Column extends Element {
   // table-level summaries map keyed by column name.
   protected _summarizers: Summarizer[] = []
 
+  // Rich-display chrome (Filament-parity Tier-2). All optional, all
+  // emit-only-when-set — the wire shape stays tidy on the bare-text path.
+  protected _listWithLineBreaks = false
+  protected _bulleted = false
+  protected _copyMessage?: string
+  // Rich-text rendering — either `'markdown'` or `'html'`. The dispatcher
+  // server-renders the cell + stamps `_formatted[name] / _richtextCells[name]`.
+  protected _richText?: ColumnRichTextKind
+  protected _sanitize: boolean | SanitizeConfig = true
+
   // ─── Editable cell columns (TextInput / Toggle / Select) ───
   // Per-cell PATCH validators — same shape as Field validators. Only
   // consulted when the column is editable (the route handler reads
@@ -254,6 +289,99 @@ export class Column extends Element {
     this._format = { kind: 'limit', chars }
     return this
   }
+
+  /**
+   * Truncate the cell to `n` words with an ellipsis. Splits on whitespace
+   * runs (`/\s+/`) — empty lead/trail tokens collapse so a value like
+   * `"  hello world  "` truncates the same as `"hello world"`. Composes
+   * mutually-exclusively with `limit()` and `characters()` (each
+   * formatter overwrites the previous one — last call wins).
+   */
+  words(n: number): this {
+    this._format = { kind: 'words', words: n }
+    return this
+  }
+
+  /**
+   * Filament-parity alias for `limit(n)`. Same wire shape — both call
+   * sites read better depending on whether you're capping by character
+   * count or word count.
+   */
+  characters(n: number): this { return this.limit(n) }
+
+  /**
+   * Render array values one-per-line. Non-array values pass through
+   * unchanged. Composes with `bulleted()` — when both are set,
+   * `bulleted()` wins (bullet list is the strictly richer presentation;
+   * line breaks become implicit).
+   */
+  listWithLineBreaks(v = true): this { this._listWithLineBreaks = v; return this }
+
+  /**
+   * Render array values as a `<ul>` bullet list. Non-array values pass
+   * through unchanged. Wins over `listWithLineBreaks()` when both are
+   * set.
+   */
+  bulleted(v = true): this { this._bulleted = v; return this }
+
+  /**
+   * Mount a copy-to-clipboard trigger next to the cell value. The
+   * `message` (default `"Copied!"`) is the toast shown after a
+   * successful copy. The button copies the rendered cell text — for
+   * rich-text cells (`markdown() / html()`) the underlying source is
+   * copied instead of the rendered HTML so users get the version they
+   * can re-edit. Bare `copyMessage()` opts in with the default copy.
+   */
+  copyMessage(message?: string): this {
+    this._copyMessage = message ?? 'Copied!'
+    return this
+  }
+
+  /**
+   * Render the cell's value as Markdown — server-runs through `marked`
+   * (already a dep of pilotiq from `Markdown` prime) and the result
+   * lands as sanitized HTML in `row._formatted[name]` with
+   * `_richtextCells[name] = true`. The renderer recognizes the flag and
+   * mounts the cell via `dangerouslySetInnerHTML` against the same
+   * `prose-sm` container the Tiptap richtext path uses.
+   *
+   * Mutually exclusive with `html()` — the last call wins. Pair with
+   * `.allowRaw()` / `.sanitize({ allowedTags: [...] })` to relax the
+   * default-secure allowlist for admin-trusted content.
+   */
+  markdown(v = true): this {
+    if (v) this._richText = 'markdown'
+    else delete this._richText
+    return this
+  }
+
+  /**
+   * Render the cell's value as raw HTML — passes straight through
+   * `sanitize-html` against the default-secure allowlist (no Markdown
+   * conversion). Mutually exclusive with `markdown()`.
+   */
+  html(v = true): this {
+    if (v) this._richText = 'html'
+    else delete this._richText
+    return this
+  }
+
+  /**
+   * Sanitization control for `markdown()` / `html()` cells. Default
+   * `true` — runs the rendered HTML through `DEFAULT_SANITIZE_CONFIG`
+   * before the wire shape ships. Pass `false` (or call `.allowRaw()`)
+   * to disable; pass a `sanitize-html` config to widen the allowlist
+   * (e.g. legacy CMS content with embedded media). Mirrors the
+   * `Markdown` / `Html` prime APIs so authors can carry the same
+   * intuition into a column context.
+   */
+  sanitize(v: boolean | SanitizeConfig = true): this {
+    this._sanitize = v
+    return this
+  }
+
+  /** Sugar — opt out of the default-secure sanitizer. */
+  allowRaw(): this { this._sanitize = false; return this }
 
   /** Custom per-row formatter — runs server-side inside `loadTableRecords`
    * and stashes the resulting string on `row._formatted[name]`. Wins
@@ -369,6 +497,12 @@ export class Column extends Element {
   getSummarizers(): ReadonlyArray<Summarizer> { return this._summarizers }
   hasSummarizers(): boolean { return this._summarizers.length > 0 }
 
+  /** Rich-text discriminator. Used by `dispatchTable` to decide whether
+   * to server-render the cell value through `marked` + `sanitize-html`. */
+  getRichTextKind(): ColumnRichTextKind | undefined { return this._richText }
+  isRichText(): boolean { return this._richText !== undefined }
+  getSanitize(): boolean | SanitizeConfig { return this._sanitize }
+
   // ─── Editable getters ─────────────────────────────────
 
   /** True for `TextInputColumn / ToggleColumn / SelectColumn`. The route
@@ -453,6 +587,10 @@ export class Column extends Element {
     if (this._format    !== undefined) meta.format    = this._format
     if (this._formatState !== undefined) meta.hasFormatter = true
     if (this._summarizers.length > 0) meta.summaries = this._summarizers.map(s => s.toMeta())
+    if (this._listWithLineBreaks)        meta.listWithLineBreaks = true
+    if (this._bulleted)                  meta.bulleted = true
+    if (this._copyMessage !== undefined) meta.copyMessage = this._copyMessage
+    if (this._richText !== undefined)    meta.richText = this._richText
     if (this._recordUrl === false)        meta.recordUrl = false
     else if (typeof this._recordUrl === 'function') meta.recordUrl = true
     // Editable cell columns — chrome that the renderer needs to mount
