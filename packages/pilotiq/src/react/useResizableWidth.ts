@@ -53,6 +53,12 @@ export function clampPanelWidth(
   const min          = opts.min          ?? DEFAULT_MIN
   const max          = opts.max          ?? DEFAULT_MAX
   const defaultWidth = opts.defaultWidth ?? DEFAULT_DEFAULT
+  // Explicit "no value" — null / undefined / empty-string land here from
+  // the localStorage round-trip and should fall back to the default
+  // rather than clamp upward via `Number(null) === 0` → MIN.
+  if (value === null || value === undefined || value === '') {
+    return Math.min(Math.max(defaultWidth, min), max)
+  }
   const n = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(n)) return Math.min(Math.max(defaultWidth, min), max)
   if (n < min) return min

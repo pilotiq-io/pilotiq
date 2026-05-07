@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
-import { FormFields, parseFormDataToNested } from '@pilotiq/pilotiq/react'
+import {
+  FormFields,
+  parseFormDataToNested,
+  clampPanelWidth as clampPanelWidthShared,
+  useResizableWidth,
+} from '@pilotiq/pilotiq/react'
 import type { BlockMeta } from '../Block.js'
 
 const PANEL_WIDTH_STORAGE_KEY = 'pilotiq.tiptap.sidePanel.width'
@@ -92,31 +97,16 @@ export function BlockSidePanel({
   const formRef = useRef<HTMLFormElement | null>(null)
 
   // Width memory — survives panel close/reopen and full reload via
-  // localStorage. SSR-safe via the readStoredPanelWidth fallback.
-  const [width, setWidth] = useState<number>(() => readStoredPanelWidth())
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try { window.localStorage?.setItem(PANEL_WIDTH_STORAGE_KEY, String(width)) }
-    catch { /* private mode / quota — width still works for the session */ }
-  }, [width])
-
-  const onResizeStart = useCallback((e: React.MouseEvent<HTMLDivElement>): void => {
-    e.preventDefault()
-    const startX     = e.clientX
-    const startWidth = width
-    const onMove = (ev: MouseEvent): void => {
-      // Panel is right-docked, so dragging the *left* edge to the left
-      // should grow the panel.
-      const delta = startX - ev.clientX
-      setWidth(clampPanelWidth(startWidth + delta))
-    }
-    const onUp = (): void => {
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup',   onUp)
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup',   onUp)
-  }, [width])
+  // localStorage. The shared `useResizableWidth` hook from
+  // `@pilotiq/pilotiq/react` handles the localStorage round-trip + drag
+  // pipeline; we just bind it to this panel's per-key bounds.
+  const { width, onResizeStart } = useResizableWidth({
+    storageKey:   PANEL_WIDTH_STORAGE_KEY,
+    min:          PANEL_WIDTH_MIN,
+    max:          PANEL_WIDTH_MAX,
+    defaultWidth: PANEL_WIDTH_DEFAULT,
+    edge:         'left',
+  })
 
   // Save focus on mount, focus the first focusable inside the panel,
   // restore previous focus on unmount. Mount-only effect — re-mounting
@@ -236,7 +226,7 @@ export function BlockSidePanel({
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize panel"
-        onMouseDown={onResizeStart}
+        onPointerDown={onResizeStart}
         className="absolute left-0 top-0 h-full w-1 cursor-ew-resize hover:bg-border/80"
       />
       <header className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background px-3 py-2">
@@ -270,37 +260,19 @@ export function BlockSidePanel({
 }
 
 /**
- * Clamp + sanitize a candidate panel width. Falls back to the default
- * for non-finite values (NaN, ±Infinity, garbage from localStorage), and
- * clamps finite values into [PANEL_WIDTH_MIN, PANEL_WIDTH_MAX]. Pure;
- * exported for unit tests and re-used inline by the resize handler.
+ * Clamp + sanitize a candidate panel width against this panel's bounds
+ * (`[PANEL_WIDTH_MIN, PANEL_WIDTH_MAX]`, default `PANEL_WIDTH_DEFAULT`).
+ * Thin wrapper around the shared `clampPanelWidth` helper from
+ * `@pilotiq/pilotiq/react` — kept exported with the panel-specific
+ * defaults baked in so existing tests + downstream callers don't have
+ * to plumb the bounds themselves.
  */
 export function clampPanelWidth(value: unknown): number {
-  // Explicit "no value" — null/undefined/empty-string land here from the
-  // localStorage round-trip and should fall back to the default rather
-  // than clamp upward via `Number(null) === 0`.
-  if (value === null || value === undefined || value === '') return PANEL_WIDTH_DEFAULT
-  const n = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(n)) return PANEL_WIDTH_DEFAULT
-  if (n < PANEL_WIDTH_MIN) return PANEL_WIDTH_MIN
-  if (n > PANEL_WIDTH_MAX) return PANEL_WIDTH_MAX
-  return n
-}
-
-/**
- * Read the stored panel width from localStorage, sanitized through
- * `clampPanelWidth`. Returns the default on SSR, in private-mode
- * browsers (where access throws), or when no value has been persisted.
- */
-function readStoredPanelWidth(): number {
-  if (typeof window === 'undefined') return PANEL_WIDTH_DEFAULT
-  try {
-    const raw = window.localStorage?.getItem(PANEL_WIDTH_STORAGE_KEY)
-    if (raw === null || raw === undefined) return PANEL_WIDTH_DEFAULT
-    return clampPanelWidth(raw)
-  } catch {
-    return PANEL_WIDTH_DEFAULT
-  }
+  return clampPanelWidthShared(value, {
+    min:          PANEL_WIDTH_MIN,
+    max:          PANEL_WIDTH_MAX,
+    defaultWidth: PANEL_WIDTH_DEFAULT,
+  })
 }
 
 /**
