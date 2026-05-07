@@ -328,7 +328,3 @@ The panel tracks its position through every editor transaction, so live edits el
 **Field-type coverage:** every pilotiq field type works inside a custom block. Flat fields (`TextField`, `TextareaField`, `SelectField`, `ToggleField`, `CheckboxField`, `RadioField`, `ToggleButtonsField`, `DateField`, `DateTimePickerField`, `EmailField`, `NumberField`, `SliderField`, `ColorPickerField`) flow through directly. Nested-shape fields (`RepeaterField`, `BuilderField`, `FileUploadField`, `MarkdownField`, `KeyValueField`, `TagsInputField`, `CheckboxListField`) round-trip too: the panel snapshots the entire form's DOM state, rebuilds nested arrays / objects from dotted-path inputs, and coerces JSON-encoded hidden inputs (TagsInput, KeyValue, FileUpload-multi) back to their canonical wire shapes before writing into `attrs.blockData`.
 
 **Layout caveat:** the panel is positioned `absolute` to the right of the editor wrapper. On narrow form layouts it may extend into adjacent content; this is intentional — the panel doesn't push the editor sideways or reflow the page.
-
-## Migration from `@pilotiq/lexical`
-
-Same shape — `RichTextField.make().blocks([Block.make()...])`. Lexical's `RichTextEditor` and Tiptap's `RichTextField` both store JSON; you can flip the field type and the form keeps working as long as you're not introspecting the JSON shape elsewhere.

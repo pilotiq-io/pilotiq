@@ -365,8 +365,8 @@ export class Pilotiq {
   /**
    * Configure file uploads. Pass an adapter implementing
    * `UploadAdapter`; `localUpload({ root, urlPrefix })` is bundled for
-   * disk-backed storage. Apps using S3 / R2 / `@pilotiq/media` provide
-   * their own adapter conforming to the same interface.
+   * disk-backed storage. Apps using S3 / R2 / a custom storage backend
+   * provide their own adapter conforming to the same interface.
    *
    *   import { localUpload } from '@pilotiq/pilotiq/uploads'
    *   Pilotiq.make('admin').uploads({

@@ -19,10 +19,9 @@ Guidance for Claude Code when working in this repository. Deep, package-specific
 | Package | Description |
 |---|---|
 | `@pilotiq/pilotiq` | View-based admin panel using `@rudderjs/view` controller routes. Auto-generates Vike pages via Vite plugin. **The active product** — see `packages/pilotiq/CLAUDE.md`. |
-| `@pilotiq/tiptap` | Tiptap rich-text adapter (`@pilotiq/pilotiq` companion). Replaces `@pilotiq/lexical`. |
-| `@pilotiq/media` | Media library — file browser, uploads, preview, image conversions, MediaPickerField. |
-| `@pilotiq/panels` | **Legacy.** Resource builder with vendored Vike pages. **Scheduled for deletion** once the `@pilotiq/pilotiq` migration is complete. Don't extend, don't extract — see "Legacy panels" below. |
-| `@pilotiq/lexical` | **Legacy.** Lexical editor adapter — sunsets with panels. |
+| `@pilotiq/tiptap` | Tiptap rich-text adapter — `RichTextField` with custom blocks, mention/merge tags, slash menu. |
+| `@pilotiq/codemirror` | CodeMirror 6 adapter — `CodeEditorField` for syntax-highlighted code input. |
+| `@pilotiq/recharts` | Recharts widget adapter — `Chart` element for the dashboard / resource header / footer slots. |
 
 ---
 
@@ -37,24 +36,19 @@ pnpm typecheck    # Type-check all packages
 pnpm clean        # Remove all dist/ directories
 ```
 
-Running the playgrounds:
+Running the playground:
 ```bash
-cd playground              # panels (legacy) demo
-pnpm dev                   # vike dev on :3001 (HMR :24679)
-
 cd playground-pilotiq      # pilotiq demo
 pnpm dev                   # vike dev on :3003 (HMR :24680 — conflicts with pilotiq-pro if both are up)
 ```
 
-> Always run `pnpm build` from the **rudderjs** root before running a playground — framework packages must be compiled first.
+> Always run `pnpm build` from the **rudderjs** root before running the playground — framework packages must be compiled first.
 
-Prisma (run from whichever playground you're in):
+Prisma (run from `playground-pilotiq/`):
 ```bash
 pnpm exec prisma generate --schema prisma/schema
 pnpm exec prisma db push  --schema prisma/schema
 ```
-
-Both playgrounds ship the **same Prisma schema files** so the hoisted `@prisma/client` (shared via pnpm) stays consistent. Each has its own `dev.db` (via `DATABASE_URL=file:./dev.db`). If schemas drift, whichever playground runs `prisma generate` last wins and clobbers the other's client — see pitfalls.
 
 ---
 
@@ -65,7 +59,7 @@ All `@rudderjs/*` packages resolve to `link:../rudder/packages/<name>` via `pnpm
 ```
 ~/Projects/
 ├── rudder/         # Framework
-├── pilotiq/        # This repo (free panels)
+├── pilotiq/        # This repo (open-source admin panel)
 └── pilotiq-pro/    # Pro extensions (AI, collab, workspaces)
 ```
 
@@ -76,17 +70,14 @@ All `@rudderjs/*` packages resolve to `link:../rudder/packages/<name>` via `pnpm
 | Playground | Port | HMR | Purpose |
 |---|---|---|---|
 | `rudderjs/playground` | 3000 | 24678 | Framework demo — zero pilotiq deps |
-| `pilotiq/playground` | 3001 | 24679 | **Panels** demo (legacy) — panels + lexical + media |
-| `pilotiq/playground-pilotiq` | 3003 | 24680 | **Pilotiq** demo — view-based panel + themeEditor |
-| `pilotiq-pro/playground` | 3002 | 24680 | Full stack — framework + panels + AI + collab |
+| `pilotiq/playground-pilotiq` | 3003 | 24680 | Pilotiq demo — view-based panel + themeEditor |
+| `pilotiq-pro/playground` | 3002 | 24680 | Full stack — framework + pilotiq + AI + collab |
 
-Split in April 2026 because the panels `@panel/@page` parametric route kept tentatively matching pilotiq URLs on the client, breaking SPA nav. Each package now gets its own isolated dev environment.
-
-**Providers:**
-- `playground/` (panels): log, database, session, hash, cache, auth, storage, localization, panels
-- `playground-pilotiq/` (pilotiq): log, orm-prisma, session, cache, pilotiq
+**Providers** (`playground-pilotiq/`): log, orm-prisma, session, cache, pilotiq.
 
 No AI / live / queue / mail / monitoring — those are framework demos in `rudderjs/playground`.
+
+> **Archived:** the legacy `@pilotiq/panels` resource builder + its companion `@pilotiq/lexical` rich-text adapter + `@pilotiq/media` library + the panels playground (port 3001) were removed in 2026-05. The full tree lives on the `archive/legacy-panels` branch — `git checkout archive/legacy-panels -- packages/panels` to recover any file.
 
 ---
 
@@ -99,22 +90,9 @@ No AI / live / queue / mail / monitoring — those are framework demos in `rudde
 
 ---
 
-## Legacy panels (scheduled for deletion)
-
-`@pilotiq/panels` is being replaced by `@pilotiq/pilotiq` and will be **deleted** once the new package is ready. Implications:
-
-- **Don't preserve the panels API for back-compat.** No compatibility shims, no shared-package extraction — the migration target is a clean cut.
-- **Don't add features.** Bug fixes only, and only when blocking the playground demo.
-- Panels architecture (vendored pages, framework dependencies, vendor:publish workflow) lives entirely in `packages/panels/` — read its source if you need to touch it.
-- After every edit to `packages/panels/pages/`, re-run `pnpm rudder vendor:publish --tag=pilotiq-pages --force`.
-- `pnpm dev` hot-reloads panels frontend only; server handlers need `pnpm build` + restart.
-
----
-
 ## Common Pitfalls (cross-cutting)
 
 - **Stale `dist/`:** Run `pnpm build` from rudderjs root, then pilotiq root. Per-package: `pnpm -F <name> build` or `cd packages/<name> && pnpm dev` for watch mode.
-- **Prisma hoisted client is shared:** pnpm hoists `@prisma/client` into root `node_modules/.pnpm/`. Both playgrounds share one generated client. If `prisma/schema/*.prisma` files diverge, `prisma generate` in one clobbers the other's. Keep schemas identical (each has its own `dev.db`, so data is still isolated).
 - **Prisma client cross-repo resolution:** `config/database.ts` passes `PrismaClient: PrismaClient as any` to fix it.
-- **Port in use:** `lsof -ti :24679 -ti :3001 | xargs kill -9` (panels) or `lsof -ti :24680 -ti :3003 | xargs kill -9` (pilotiq).
+- **Port in use:** `lsof -ti :24680 -ti :3003 | xargs kill -9`.
 - **Pilotiq-specific pitfalls** (Vite plugin, page generation, layout persistence, Tailwind setup) live in `packages/pilotiq/CLAUDE.md`.

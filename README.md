@@ -4,7 +4,7 @@
 
 <p>
   <a href="https://github.com/pilotiq-io/pilotiq/actions/workflows/ci.yml"><img src="https://github.com/pilotiq-io/pilotiq/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://www.npmjs.com/package/@pilotiq/panels"><img src="https://img.shields.io/npm/v/@pilotiq/panels" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@pilotiq/pilotiq"><img src="https://img.shields.io/npm/v/@pilotiq/pilotiq" alt="npm version" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-blue" alt="TypeScript" /></a>
 </p>
@@ -108,12 +108,7 @@ export const admin = Pilotiq.make('Admin')
 - **Theme editor** — `.use(themeEditor())` plugin with live preview, save/reset/shuffle, DB persistence
 - **Widgets** — Dashboard primitives as schema Elements: `StatsOverview` (KPI cards via `Stat.make().value().description().icon().chart([…sparkline])`), `Chart` (line/bar/pie/doughnut, per-chart filter dropdown, via `@pilotiq/recharts`), `TableWidget` (slim "5 newest" lists), `View` (escape hatch — mount any React component fed by `getData(ctx)`). Lazy by default with skeleton + `_widget/:id` polling; `.poll(seconds)` for auto-refresh. Mount under `panel.dashboard(MyPage)` for the panel root, or via `Resource.headerSchema() / footerSchema()` above/below the list table. See [`docs/guide/widgets.md`](./docs/guide/widgets.md).
 - **Auto page generation** — `pilotiq()` Vite plugin writes Vike page stubs + `+data.ts` hooks (for SPA nav) at build time
-- **Plugin system** — `.use()` for extending panels
-
-**Legacy panels (`@pilotiq/panels`)**
-
-- 20+ field types, inline editing, draft/publish, version history, i18n with RTL, theme editor
-- Being migrated to `@pilotiq/pilotiq`
+- **Plugin system** — `.use()` / `.plugins([…])` for adapter packages and right-sidebar contributions
 
 **Pro features ([pilotiq.io](https://pilotiq.io))**
 
@@ -130,15 +125,11 @@ Pro packages are commercial. They live in a separate private repo at `pilotiq-io
 
 | Package | Description |
 |---|---|
-| [`@pilotiq/pilotiq`](./packages/pilotiq) | **New** — View-based admin panel with auto page generation, theme engine, schema system, AppShell layouts |
-| [`@pilotiq/panels`](./packages/panels) | **Legacy** — Resource builder with vendored pages, full field system, i18n, theme editor |
-| [`@pilotiq/tiptap`](./packages/tiptap) | Tiptap rich-text adapter for `@pilotiq/pilotiq` — slash menu, draggable blocks, custom-block API |
-| [`@pilotiq/codemirror`](./packages/codemirror) | CodeMirror 6 code-editor adapter for `@pilotiq/pilotiq` — `CodeEditorField` with syntax highlight, line numbers, language registry |
+| [`@pilotiq/pilotiq`](./packages/pilotiq) | View-based admin panel with auto page generation, theme engine, schema system, AppShell layouts |
+| [`@pilotiq/tiptap`](./packages/tiptap) | Tiptap rich-text adapter — slash menu, draggable blocks, custom-block API |
+| [`@pilotiq/codemirror`](./packages/codemirror) | CodeMirror 6 code-editor adapter — `CodeEditorField` with syntax highlight, line numbers, language registry |
 | [`@pilotiq/recharts`](./packages/recharts) | Recharts dashboard chart adapter — `Chart` widget with line / bar / pie / doughnut renderers, per-chart filter dropdown, opt-in `registerChartRenderer()` |
-| [`@pilotiq/lexical`](./packages/lexical) | **Legacy** — Lexical rich-text adapter for `@pilotiq/panels` (sunsets with panels) |
-| [`@pilotiq/media`](./packages/media) | Media library + `MediaPickerField` |
-| [`playground/`](./playground) | **Panels** demo — panels + lexical + media on port 3001 |
-| [`playground-pilotiq/`](./playground-pilotiq) | **Pilotiq** demo — view-based panel on port 3003 |
+| [`playground-pilotiq/`](./playground-pilotiq) | Demo app — view-based panel on port 3003 |
 
 ---
 
@@ -242,16 +233,12 @@ Pilotiq's packages declare these as peer dependencies. Install both, register th
 |---|---|
 | Architecture | [`Architecture.md`](./Architecture.md) |
 | Comparison vs Filament/Nova/Payload | [`docs/comparison.md`](./docs/comparison.md) |
-| Getting started | [`docs/guide/panels.md`](./docs/guide/panels.md) |
 | Relations | [`docs/guide/relations.md`](./docs/guide/relations.md) |
-| Migrating from `@pilotiq/panels` | [`docs/guide/migrating-from-panels.md`](./docs/guide/migrating-from-panels.md) |
-| Fields reference | [`docs/packages/panels/fields.md`](./docs/packages/panels/fields.md) |
-| Schema elements | [`docs/packages/panels/schema.md`](./docs/packages/panels/schema.md) |
-| Rich-text editor (Tiptap, new) | [`packages/tiptap`](./packages/tiptap) |
+| Fields reference | [`docs/packages/pilotiq/fields.md`](./docs/packages/pilotiq/fields.md) |
+| Schema elements | [`docs/packages/pilotiq/schema.md`](./docs/packages/pilotiq/schema.md) |
+| Rich-text editor (Tiptap) | [`docs/packages/tiptap.md`](./docs/packages/tiptap.md) |
 | Code editor (CodeMirror) | [`docs/packages/codemirror.md`](./docs/packages/codemirror.md) |
-| Rich-text editor (Lexical, legacy) | [`docs/packages/lexical.md`](./docs/packages/lexical.md) |
-| Development setup | [`docs/development.md`](./docs/development.md) |
-| Contributing | [`docs/contributing/panels-extension.md`](./docs/contributing/panels-extension.md) |
+| Right sidebar | [`docs/guide/right-sidebar.md`](./docs/guide/right-sidebar.md) |
 
 ---
 
@@ -268,7 +255,7 @@ pnpm test        # run test suites
 pnpm dev         # watch mode
 ```
 
-For cross-repo development with RudderJS, see [`docs/development.md`](./docs/development.md).
+For cross-repo development with RudderJS, the framework lives at `~/Projects/rudder` and is wired via `pnpm.overrides` in the root `package.json`. Build framework packages (`pnpm -C ~/Projects/rudder build`) before running the playground.
 
 ---
 

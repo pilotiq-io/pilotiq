@@ -2,9 +2,7 @@ import type { Field } from '@pilotiq/pilotiq'
 import type { FieldMeta } from '@pilotiq/pilotiq'
 
 /**
- * JSON-serializable block descriptor sent to the editor renderer. Mirrors
- * the shape `@pilotiq/lexical` used in the panels world so existing intuition
- * carries over.
+ * JSON-serializable block descriptor sent to the editor renderer.
  */
 export interface BlockMeta {
   name:   string

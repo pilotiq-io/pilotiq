@@ -5,11 +5,6 @@ as Resources and Pages — `Form.make().schema([Field, Field, ...])`. Every
 field is a typed builder with validators, conditional visibility, reactive
 state, and a wire-format that round-trips through `FormData` or JSON.
 
-> [!NOTE]
-> The new pilotiq Forms API replaces `@pilotiq/panels`' form pipeline.
-> See [Migrating from `@pilotiq/panels`](../migrating-from-panels) for the
-> field-by-field renaming map.
-
 ## Quick example
 
 ```ts filename="app/Pilotiq/Resources/PostResource.ts"

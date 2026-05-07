@@ -2,8 +2,7 @@
  * Pilotiq's upload contract. Apps register an adapter via
  * `Pilotiq.uploads({ adapter })`; the `_uploads` route hands every
  * incoming file to it. Pilotiq stays storage-agnostic — disk, S3,
- * R2, GCS, or `@pilotiq/media` integration all implement the same
- * shape.
+ * R2, GCS, or a custom storage backend all implement the same shape.
  */
 export interface UploadAdapter {
   /**
