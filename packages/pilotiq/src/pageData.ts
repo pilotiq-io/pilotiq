@@ -1389,6 +1389,7 @@ export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Re
     tagFormStateUrls(elements, formId => `${cfg.path}/_form/${formId}/state`)
     tagFormWizardUrls(elements, formId => `${cfg.path}/_form/${formId}/wizard`)
     tagRichTextMentionUrls(elements, formId => `${cfg.path}/_form/${formId}/mentions`)
+    tagSelectCreateOptionUrls(elements, (formId, fieldName) => `${cfg.path}/_form/${formId}/create-option/${fieldName}`)
     tagActionDispatch(elements, cfg.path)
   } else {
     elements = []
@@ -1641,6 +1642,7 @@ export async function resourceCreateData(
   tagFormStateUrls(elements, formId => `${resourceBase}/_form/${formId}/state`)
   tagFormWizardUrls(elements, formId => `${resourceBase}/_form/${formId}/wizard`)
   tagRichTextMentionUrls(elements, formId => `${resourceBase}/_form/${formId}/mentions`)
+  tagSelectCreateOptionUrls(elements, (formId, fieldName) => `${resourceBase}/_form/${formId}/create-option/${fieldName}`)
   if (prefill) {
     const form = findForms(elements)[0]
     if (form) {
@@ -1696,6 +1698,7 @@ export async function resourceEditData(
   tagFormStateUrls(elements, formId => `${resourceBase}/${recordId}/_form/${formId}/state`)
   tagFormWizardUrls(elements, formId => `${resourceBase}/${recordId}/_form/${formId}/wizard`)
   tagRichTextMentionUrls(elements, formId => `${resourceBase}/${recordId}/_form/${formId}/mentions`)
+  tagSelectCreateOptionUrls(elements, (formId, fieldName) => `${resourceBase}/${recordId}/_form/${formId}/create-option/${fieldName}`)
 
   // Locate the primary form, load the record, fill values.
   const form = findForms(elements)[0]
@@ -4045,6 +4048,7 @@ export async function globalEditData(
   tagFormStateUrls(elements, formId => `${editUrl}/_form/${formId}/state`)
   tagFormWizardUrls(elements, formId => `${editUrl}/_form/${formId}/wizard`)
   tagRichTextMentionUrls(elements, formId => `${editUrl}/_form/${formId}/mentions`)
+  tagSelectCreateOptionUrls(elements, (formId, fieldName) => `${editUrl}/_form/${formId}/create-option/${fieldName}`)
 
   const form = findForms(elements)[0]
   let record: unknown = undefined
@@ -4139,6 +4143,7 @@ export async function customPageData(
   tagFormStateUrls(elements, formId => `${pageUrl}/_form/${formId}/state`)
   tagFormWizardUrls(elements, formId => `${pageUrl}/_form/${formId}/wizard`)
   tagRichTextMentionUrls(elements, formId => `${pageUrl}/_form/${formId}/mentions`)
+  tagSelectCreateOptionUrls(elements, (formId, fieldName) => `${pageUrl}/_form/${formId}/create-option/${fieldName}`)
   tagActionDispatch(elements, pageUrl)
   // Page-scope polling URL (mirrors `${base}/${pageSlug}/_widget/:id`
   // route registered in routes.ts).

@@ -22,6 +22,7 @@ import {
   resourceViewData, globalEditData, globalViewData, customPageData,
   formStateData, type FormStateScope,
   formWizardData,
+  formCreateOptionData,
   mentionResolveData,
   searchData,
   relationManagerData, findRelatedResource, safeManagerPolicy,
@@ -310,6 +311,60 @@ async function handleFormWizard(
     return res.json({ ok: true })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Wizard step validation failed'
+    res.status(500)
+    return res.json({ ok: false, error: message })
+  }
+}
+
+/**
+ * Audit row 2026-05-07 cont'd⁸ — `SelectField.createOptionForm()` modal
+ * submit. Body carries `{ values }`; `formId` + `fieldName` come from
+ * the URL path. Returns `{ ok, option: { value, label } }` on success
+ * or `{ ok: false, error }` for missing scope / form / field, 403 for
+ * authorize failure, or 422 with `errors` for validation.
+ *
+ * One handler shared across all four scopes (resource-create /
+ * resource-edit / global-edit / custom-page) — caller passes the
+ * matching `FormStateScope` so the same `canAccess + canCreate / canEdit`
+ * predicates apply to the parent form's policy gate.
+ */
+interface FormCreateOptionBody {
+  values?: unknown
+}
+
+async function handleFormCreateOption(
+  req:       AppRequest,
+  res:       AppResponse,
+  pilotiq:   Pilotiq,
+  scope:     FormStateScope,
+  formId:    string,
+  fieldName: string,
+): Promise<unknown> {
+  const body   = (await readFormBody(req)) as FormCreateOptionBody
+  const values = (body.values && typeof body.values === 'object' && !Array.isArray(body.values))
+    ? body.values as Record<string, unknown>
+    : {}
+  if (!formId || !fieldName) {
+    res.status(400)
+    return res.json({ ok: false, error: 'Missing formId or fieldName' })
+  }
+
+  try {
+    const result = await formCreateOptionData(pilotiq, scope, { formId, fieldName, values }, req)
+    if (result === null) {
+      res.status(404)
+      return res.json({ ok: false, error: 'Page not found' })
+    }
+    if (!result.ok) {
+      res.status(result.status)
+      const payload: Record<string, unknown> = { ok: false }
+      if (result.error)  payload['error']  = result.error
+      if (result.errors) payload['errors'] = result.errors
+      return res.json(payload)
+    }
+    return res.json({ ok: true, option: result.option })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'createOption failed'
     res.status(500)
     return res.json({ ok: false, error: message })
   }
@@ -1082,6 +1137,16 @@ export function registerPilotiqRoutes(
         const formId = req.params['formId']!
         return handleFormMentions(req, res, pilotiq, { kind: 'resource-create', slug }, formId)
       })
+
+      // SelectField inline-create modal endpoint for create-mode forms.
+      router.post(`${resourceBase}/_form/:formId/create-option/:fieldName`, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await policyAccess(R, user)) return forbidden(res, true)
+        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, true)
+        const formId    = req.params['formId']!
+        const fieldName = req.params['fieldName']!
+        return handleFormCreateOption(req, res, pilotiq, { kind: 'resource-create', slug }, formId, fieldName)
+      })
     }
 
     // Plan #5 — partial-resolve endpoint for edit-mode forms.
@@ -1117,6 +1182,18 @@ export function registerPilotiqRoutes(
         const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormMentions(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
+      })
+
+      // SelectField inline-create modal endpoint for edit-mode forms.
+      router.post(`${resourceBase}/:id/_form/:formId/create-option/:fieldName`, async (req, res) => {
+        const recordId  = req.params['id']!
+        const formId    = req.params['formId']!
+        const fieldName = req.params['fieldName']!
+        const user = await pilotiq.resolveUser(req)
+        if (!await policyAccess(R, user)) return forbidden(res, true)
+        const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
+        if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
+        return handleFormCreateOption(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId, fieldName)
       })
     }
 
@@ -2858,6 +2935,16 @@ export function registerPilotiqRoutes(
         return handleFormMentions(req, res, pilotiq, { kind: 'global-edit', slug }, formId)
       })
 
+      // SelectField inline-create modal endpoint for the global's edit form.
+      router.post(`${editUrl}/_form/:formId/create-option/:fieldName`, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await policyAccess(G, user)) return forbidden(res, true)
+        if (!await checkPolicy(() => G.canEdit(user, undefined))) return forbidden(res, true)
+        const formId    = req.params['formId']!
+        const fieldName = req.params['fieldName']!
+        return handleFormCreateOption(req, res, pilotiq, { kind: 'global-edit', slug }, formId, fieldName)
+      })
+
       router.get(editUrl, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
         if (!await policyAccess(G, user)) return forbidden(res, wantsJson(req))
@@ -2979,6 +3066,15 @@ export function registerPilotiqRoutes(
       if (!await policyAccess(PageClass, user)) return forbidden(res, true)
       const formId = req.params['formId']!
       return handleFormMentions(req, res, pilotiq, { kind: 'page', pageSlug }, formId)
+    })
+
+    // SelectField inline-create modal endpoint for custom pages.
+    router.post(`${pageUrl}/_form/:formId/create-option/:fieldName`, async (req, res) => {
+      const user = await pilotiq.resolveUser(req)
+      if (!await policyAccess(PageClass, user)) return forbidden(res, true)
+      const formId    = req.params['formId']!
+      const fieldName = req.params['fieldName']!
+      return handleFormCreateOption(req, res, pilotiq, { kind: 'page', pageSlug }, formId, fieldName)
     })
 
     router.get(pageUrl, async (req, res) => {
