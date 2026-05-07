@@ -13,26 +13,16 @@ permissions:
   pull-requests: write
   id-token: write
 
-# Like CI, release builds need rudder cloned + built as a sibling so
-# pnpm.overrides resolve. Package-scoped build keeps the playground out
-# of the publish path.
 jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
-      - name: Checkout pilotiq
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          path: pilotiq
           fetch-depth: 0
-
-      - name: Checkout rudder (sibling)
-        uses: actions/checkout@v4
-        with:
-          repository: rudderjs/rudder
-          path: rudder
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -43,38 +33,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: pnpm
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Resolve pnpm store path
-        id: pnpm-store
-        shell: bash
-        working-directory: pilotiq
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pilotiq/pnpm-lock.yaml', 'rudder/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-pnpm-
-
-      - name: Install rudder
-        working-directory: rudder
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build rudder
-        working-directory: rudder
-        run: pnpm build
-
-      - name: Install pilotiq
-        working-directory: pilotiq
-        run: pnpm install --frozen-lockfile
+      - name: Test
+        run: pnpm test
 
       - name: Create Release PR or Publish
         id: changesets
         uses: changesets/action@v1
         with:
-          cwd: pilotiq
           version: pnpm changeset:version
           publish: pnpm release
           title: 'chore: version packages'
