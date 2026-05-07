@@ -9,7 +9,7 @@
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-blue" alt="TypeScript" /></a>
 </p>
 
-Pilotiq turns a TypeScript class into a working admin page — list, create, edit, view, with sort/search/filter/pagination wired up to your ORM. If you've used Filament for Laravel, you'll feel right at home; if you haven't, think Django Admin but typed end-to-end.
+Pilotiq turns a TypeScript class into a working admin page — list, create, edit, view, with sort/search/filter/pagination wired up to your ORM. Think Django Admin, but typed end-to-end.
 
 ```ts
 class ArticleResource extends Resource {
@@ -180,7 +180,7 @@ Pilotiq declares these as peer dependencies. Install whichever your app needs.
 **Other**
 
 - [Actions](./docs/packages/pilotiq/actions.md) · [Import / export](./docs/packages/pilotiq/import-export.md) · [Authorization](./docs/packages/pilotiq/authorization.md) · [Global search](./docs/packages/pilotiq/global-search.md) · [Notifications](./docs/packages/pilotiq/notifications.md) · [Database notifications](./docs/guide/database-notifications.md)
-- [Architecture](./Architecture.md) · [Comparison vs Filament / Nova / Payload](./docs/comparison.md)
+- [Architecture](./Architecture.md) · [Comparison vs other admin panels](./docs/comparison.md)
 
 ---
 
