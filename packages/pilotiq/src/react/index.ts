@@ -43,6 +43,13 @@ export {
   type WidgetDataProviderProps,
 } from './WidgetDataContext.js'
 
+export {
+  RightPanelRegistryProvider,
+  useRightPanelRegistry,
+  useRightPanelComponent,
+  type RightPanelRegistry,
+} from './right-panel-registry.js'
+
 export { ThemeProvider, useTheme } from './ThemeProvider.js'
 export { ThemeToggle } from './ThemeToggle.js'
 export { ThemeSettingsPage } from './ThemeSettingsPage.js'

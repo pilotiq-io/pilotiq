@@ -608,6 +608,7 @@ export function clusterOffset(parts: string[]): number {
     lines.push('// (no panels found — register classes via Pilotiq.make() in your panel module)')
     lines.push('export const componentRegistry: Record<string, unknown> = {}')
     lines.push('export const clusterSlugsByBasePath: Record<string, string[]> = {}')
+    lines.push('export const rightPanelRegistry: Record<string, unknown> = {}')
     lines.push('')
     writeIfChanged(path.join(outDir, '_components.ts'), lines.join('\n'))
     return
@@ -630,12 +631,18 @@ export function clusterOffset(parts: string[]): number {
   lines.push('')
   lines.push('const _all: Record<string, unknown> = {}')
   lines.push('const _clusters: Record<string, string[]> = {}')
+  lines.push('const _rightPanels: Record<string, unknown> = {}')
   lines.push('function _add(c: any) { if (typeof c === \'function\' && c.name) _all[c.name] = c }')
   lines.push('function _walk(p: any) {')
   lines.push('  const cfg = p?.getConfig?.()')
   lines.push('  cfg?.resources?.forEach(_add)')
   lines.push('  cfg?.globals?.forEach(_add)')
   lines.push('  cfg?.pages?.forEach(_add)')
+  lines.push('  if (Array.isArray(cfg?.rightPanels)) {')
+  lines.push('    for (const _c of cfg.rightPanels) {')
+  lines.push('      if (_c && typeof _c.id === \'string\' && _c.render) _rightPanels[_c.id] = _c.render')
+  lines.push('    }')
+  lines.push('  }')
   lines.push('  if (cfg?.path && Array.isArray(cfg?.clusters)) {')
   lines.push('    const slugs = cfg.clusters.map((C: any) => (typeof C?.getSlug === \'function\' ? C.getSlug() : \'\')).filter(Boolean)')
   lines.push('    if (slugs.length > 0) _clusters[cfg.path] = slugs')
@@ -645,6 +652,7 @@ export function clusterOffset(parts: string[]): number {
   lines.push('')
   lines.push('export const componentRegistry: Record<string, unknown> = _all')
   lines.push('export const clusterSlugsByBasePath: Record<string, string[]> = _clusters')
+  lines.push('export const rightPanelRegistry: Record<string, unknown> = _rightPanels')
   lines.push('')
 
   writeIfChanged(path.join(outDir, '_components.ts'), lines.join('\n'))
@@ -660,7 +668,7 @@ function writeLayoutWithManifest(pagesRoot: string): void {
 import { usePageContext } from 'vike-react/usePageContext'
 import { AppShell, ThemeProvider, generateThemeCSS, NavigateProvider } from '@pilotiq/pilotiq/react'
 import { navigate as vikeNavigate } from 'vike/client/router'
-import { componentRegistry } from './_components.js'
+import { componentRegistry, rightPanelRegistry } from './_components.js'
 import type { ReactNode } from 'react'
 
 // Wrap vike's async navigate so the NavigateProvider's fire-and-forget
@@ -683,7 +691,7 @@ export default function PilotiqLayout({ children }: { children: ReactNode }) {
     <NavigateProvider navigate={navigate}>
       <ThemeProvider theme={panel.theme}>
         {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
-        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} currentPath={currentPath} componentRegistry={componentRegistry as any}>
+        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} currentPath={currentPath} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any}>
           {children}
         </AppShell>
       </ThemeProvider>

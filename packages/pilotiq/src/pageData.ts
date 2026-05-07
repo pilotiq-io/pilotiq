@@ -43,6 +43,11 @@ import {
   NOTIFICATION_CREATED_EVENT,
 } from './notifications/broadcast.js'
 import { serializeIcon, type SerializedIcon, type IconValue } from './icons/types.js'
+import {
+  RIGHT_PANEL_DEFAULT_WIDTH,
+  RIGHT_PANEL_MIN_WIDTH,
+  RIGHT_PANEL_MAX_WIDTH,
+} from './RightPanel.js'
 import type { UserMenuItemMeta } from './UserMenuItem.js'
 import {
   RelationManager,
@@ -139,6 +144,37 @@ export interface DatabaseNotificationsMeta {
 }
 
 /**
+ * Right-sidebar shipped under `viewProps.panel.rightSidebar`. Sparse —
+ * absent from `panelInfo()` when no contributions are registered, every
+ * registered contribution failed `canAccess(user)`, or every visible
+ * contribution is `hidden: true`. Renderer mounts the chrome only when
+ * this is set.
+ *
+ * The React component reference for each contribution does NOT travel
+ * here — only its tab-strip metadata. The actual body component is
+ * resolved client-side from the Vite plugin's `_components.ts` manifest
+ * keyed by contribution `id`, mirroring the icon-class round-trip.
+ *
+ * `defaultWidth` rolls up: contribution-level value when one
+ * contribution was registered with one, otherwise the panel-level
+ * baseline (`RIGHT_PANEL_DEFAULT_WIDTH`). Client also clamps
+ * localStorage values to `[minWidth, maxWidth]`.
+ */
+export interface RightPanelMeta {
+  id:           string
+  label:        string
+  icon?:        SerializedIcon
+  defaultWidth: number
+}
+
+export interface RightSidebarMeta {
+  panels:       RightPanelMeta[]
+  defaultWidth: number
+  minWidth:     number
+  maxWidth:     number
+}
+
+/**
  * Single nav-tree entry. `name` is the JS class name (`R.name` /
  * `G.name` / `P.name`) — also the lookup key into the build-time
  * `_components.ts` manifest the Vite plugin emits, so component-typed
@@ -201,10 +237,11 @@ export async function panelInfo(
   const merged = pilotiq.getMergedTheme()
   const theme: ThemeMeta | undefined = merged ? resolveTheme(merged) : undefined
   const user = await pilotiq.resolveUser(req)
-  const [navigation, userMenu, renderHooks] = await Promise.all([
+  const [navigation, userMenu, renderHooks, rightSidebar] = await Promise.all([
     buildNavigation(pilotiq, user),
     buildUserMenu(pilotiq, user),
     resolveChromeHooks(pilotiq, user, route),
+    buildRightSidebarMeta(cfg, user),
   ])
   const databaseNotifications = buildDatabaseNotificationsMeta(cfg, user)
   return {
@@ -215,6 +252,7 @@ export async function panelInfo(
     themeEditor: cfg.themeEditor ?? false,
     ...(userMenu ? { userMenu } : {}),
     ...(databaseNotifications ? { databaseNotifications } : {}),
+    ...(rightSidebar ? { rightSidebar } : {}),
     ...(Object.keys(renderHooks).length > 0 ? { renderHooks } : {}),
   }
 }
@@ -266,6 +304,85 @@ function buildDatabaseNotificationsMeta(
     }
   }
   return meta
+}
+
+/**
+ * Build the right-sidebar meta from registered contributions. Returns
+ * `null` when:
+ *
+ *   - no contributions were registered, OR
+ *   - every contribution failed `canAccess(user)` (or its predicate
+ *     threw — fail-closed), OR
+ *   - every passing contribution is `hidden: true` (no tab-strip
+ *     surface to mount; programmatic-open consumers should ship at
+ *     least one visible tab).
+ *
+ * Visible contributions are sorted by `sort` ascending (default 100),
+ * with registration order as a stable tiebreaker. Each entry's icon is
+ * serialized through `serializeIcon` keyed on the contribution `id`
+ * (Phase B's Vite plugin extends `_components.ts` to round-trip
+ * component-typed icons under that key). `defaultWidth` rolls up:
+ * panel-level baseline is `RIGHT_PANEL_DEFAULT_WIDTH`; per-contribution
+ * overrides ride on `RightPanelMeta.defaultWidth`.
+ *
+ * Errors thrown by `canAccess` are swallowed (the contribution is
+ * dropped + a single console warn is emitted) so a flaky predicate on
+ * one pane never blanks the whole sidebar.
+ */
+async function buildRightSidebarMeta(
+  cfg:  Readonly<PilotiqConfig>,
+  user: unknown,
+): Promise<RightSidebarMeta | null> {
+  const list = cfg.rightPanels ?? []
+  if (list.length === 0) return null
+
+  const indexed = list.map((c, idx) => ({ c, idx }))
+  const gated = await Promise.all(
+    indexed.map(async ({ c, idx }) => {
+      if (c.canAccess) {
+        try {
+          const ok = await c.canAccess(user)
+          if (!ok) return null
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(`[Pilotiq] rightPanel "${c.id}" canAccess threw — dropping`, err)
+          return null
+        }
+      }
+      return { c, idx }
+    }),
+  )
+
+  const visible = gated
+    .filter((x): x is { c: typeof list[number]; idx: number } => x !== null)
+    .filter((x) => !x.c.hidden)
+    .sort((a, b) => {
+      const sa = a.c.sort ?? 100
+      const sb = b.c.sort ?? 100
+      if (sa !== sb) return sa - sb
+      return a.idx - b.idx
+    })
+
+  if (visible.length === 0) return null
+
+  const panels: RightPanelMeta[] = visible.map(({ c }) => {
+    const meta: RightPanelMeta = {
+      id:           c.id,
+      label:        c.label ?? c.id,
+      defaultWidth: c.defaultWidth ?? RIGHT_PANEL_DEFAULT_WIDTH,
+    }
+    if (c.icon !== undefined) {
+      meta.icon = serializeIcon(c.icon, c.id)
+    }
+    return meta
+  })
+
+  return {
+    panels,
+    defaultWidth: panels[0]?.defaultWidth ?? RIGHT_PANEL_DEFAULT_WIDTH,
+    minWidth:     RIGHT_PANEL_MIN_WIDTH,
+    maxWidth:     RIGHT_PANEL_MAX_WIDTH,
+  }
 }
 
 /**

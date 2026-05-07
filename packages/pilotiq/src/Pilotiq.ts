@@ -14,6 +14,11 @@ import type {
   RenderHookScope,
 } from './RenderHook.js'
 import type { NotificationActionHandler } from './notifications/types.js'
+import {
+  validateRightPanel,
+  findDuplicateRightPanelId,
+  type RightPanelContribution,
+} from './RightPanel.js'
 
 export type PilotiqLayout = 'sidebar' | 'topbar'
 
@@ -196,6 +201,14 @@ export interface PilotiqConfig {
    * the per-page-role data builders (page-role slots).
    */
   renderHooks?:  RenderHookEntry[]
+  /**
+   * Right-sidebar plugin contributions registered via
+   * `Pilotiq.rightPanel(c)` / `Pilotiq.rightPanels([c, …])`. Each entry
+   * is auth-gated, sorted, and serialized into `panel.rightSidebar`
+   * under `panelInfo()`. Empty / all-gated → `panel.rightSidebar` is
+   * absent and the chrome doesn't mount.
+   */
+  rightPanels?:  RightPanelContribution[]
   /** @internal Runtime theme overrides from DB. */
   _themeOverrides?: Partial<ThemeConfig>
 }
@@ -594,6 +607,66 @@ export class Pilotiq {
   plugins(list: PilotiqPlugin[]): this {
     for (const plugin of list) this.use(plugin)
     return this
+  }
+
+  /**
+   * Register a single right-sidebar contribution. Plugins surface chat
+   * boxes, presence panels, document outlines, etc. through this — pilotiq
+   * core ships the sidebar chrome (collapse / resize / tab strip / mobile
+   * sheet); each contribution provides only its body component.
+   *
+   * @example
+   * ```ts
+   * Pilotiq.make('Admin').rightPanel({
+   *   id:        'ai.chat',
+   *   label:     'AI Assistant',
+   *   icon:      'sparkles',
+   *   render:    AiChatBody,
+   *   defaultWidth: 360,
+   * })
+   * ```
+   *
+   * Adapter packages typically call this from inside their plugin's
+   * `register(panel)` so consumers wire everything via `.plugins([…])`.
+   *
+   * @throws when `id` is missing/invalid, when `render` isn't a
+   *         component, when `defaultWidth` is out of [240, 800], or when
+   *         the same `id` was already registered.
+   */
+  rightPanel(contribution: RightPanelContribution): this {
+    validateRightPanel(contribution)
+    const existing = this.config.rightPanels ?? []
+    const dup = findDuplicateRightPanelId(existing, contribution)
+    if (dup) {
+      throw new Error(
+        `[Pilotiq] rightPanel: contribution id "${contribution.id}" is already ` +
+        `registered. Each right-sidebar contribution must use a unique id.`,
+      )
+    }
+    this.config.rightPanels = [...existing, contribution]
+    return this
+  }
+
+  /**
+   * Bulk variant of {@link rightPanel}. Registers each contribution in
+   * array order; throws on the first invalid or duplicate id.
+   *
+   * @example
+   * ```ts
+   * Pilotiq.make('Admin').rightPanels([
+   *   { id: 'ai.chat',  render: AiChatBody },
+   *   { id: 'outline',  render: OutlineBody, defaultWidth: 280 },
+   * ])
+   * ```
+   */
+  rightPanels(list: RightPanelContribution[]): this {
+    for (const c of list) this.rightPanel(c)
+    return this
+  }
+
+  /** @internal — `panelInfo()` reads this to build `RightSidebarMeta`. */
+  getRightPanels(): readonly RightPanelContribution[] {
+    return this.config.rightPanels ?? []
   }
 
   /** @internal */

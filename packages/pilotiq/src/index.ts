@@ -14,6 +14,13 @@ export {
   type UserMenuItemValue,
 } from './UserMenuItem.js'
 export {
+  type RightPanelContribution,
+  type RightPanelProps,
+  RIGHT_PANEL_DEFAULT_WIDTH,
+  RIGHT_PANEL_MIN_WIDTH,
+  RIGHT_PANEL_MAX_WIDTH,
+} from './RightPanel.js'
+export {
   resolveRenderHooks,
   CHROME_HOOK_NAMES,
   PAGE_HOOK_NAMES,
