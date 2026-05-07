@@ -152,6 +152,18 @@ Deep notes for many of these also live in `~/.claude/projects/-Users-sleman-Proj
 - `@pilotiq/pilotiq/plugins` export path for built-in plugins (`themeEditor()`)
 - Adapter packages ship matching plugin factories alongside their `register*()` exports: `tiptap()` (`@pilotiq/tiptap`), `codeEditor({ languages? })` (`@pilotiq/codemirror`), `recharts()` (`@pilotiq/recharts`). The plugin form is the recommended setup — registers run through the panel module so it's wired in one place. `register*()` exports remain for direct use from `pages/+Layout.tsx` if desired. Both forms are idempotent (`Map.set` under the hood).
 
+### Right sidebar (Phases A + B + C)
+
+- `Pilotiq.rightPanel({ id, label?, icon?, render, defaultWidth?, canAccess?, hidden?, sort? })` registers a single contribution; `Pilotiq.rightPanels([…])` is the bulk variant. Boot validates id shape `^[A-Za-z0-9_.-]+$`, dup ids, defaultWidth bounds, and that `render` is a component.
+- Server pipeline (Phase A): `panelInfo()` calls `buildRightSidebarMeta(cfg, user)` — runs `canAccess(user)` in parallel via `Promise.all`, drops `hidden:true`, sorts by `sort` ascending (registration order ties), serializes per-tab `RightPanelMeta { id, label, icon?, defaultWidth }`. Sparse: absent from `panelInfo()` when no contributions registered, every `canAccess` failed/threw, or every survivor was hidden.
+- Build-time wiring (Phase B): `_components.ts` Vite emitter walks `cfg.rightPanels` and stamps `rightPanelRegistry: { [id]: RenderComponent }` parallel to `componentRegistry`. `useRightPanelComponent(id)` resolves the body at mount time — render references never travel over the wire.
+- Chrome (Phase C): `RightSidebar.tsx` renders a fixed-position right rail on desktop with a 4 px left-edge resize handle, mobile Sheet fallback below `md`, tab strip auto-hidden when only one contribution is registered. `RightSidebarTrigger.tsx` mounts in the topbar between `<NotificationBell>` and `<UserMenu>` in both layouts; uses the contribution's icon when single, `PanelRightOpen/Close` lucide icons when multiple. Mod-Shift-\ (`code === 'Backslash'`) toggles open/close — owned by core, not pluggable.
+- Runtime state lives in `RightSidebarContext.tsx` — `useRightSidebar()` returns `{ open, setOpen, toggle, activeId, setActiveId, width, setWidth, contributions, bounds }`; `useRightSidebarOptional()` returns `null` outside the provider for chrome that wants to render conditionally. Persists three slots per `basePath`: `pilotiq.rightSidebar.<basePath>.{open,activeId,width}`. Width writes only on `pointerup` to avoid Storage churn.
+- Layout-flow shim: `AppShell` wraps the layout in a `<div>` with `paddingInlineEnd: width` when the panel is open on desktop (no padding on mobile or when closed). The wrapper element is stable across open/close so the Layout subtree never remounts. Real layout-column promotion deferred to v2.
+- Width bounds: `RIGHT_PANEL_MIN_WIDTH=240`, `RIGHT_PANEL_MAX_WIDTH=800`, `RIGHT_PANEL_DEFAULT_WIDTH=360`. Per-contribution `defaultWidth` clamps to the same range. `clampPanelWidth(value, opts?)` helper is exported from `@pilotiq/pilotiq/react` for tests + the Tiptap side-panel adopter (deferred).
+- Plugin authors expose factories: `panel.rightPanel(...)` from inside their `register(panel)` so consumers wire via `.plugins([…])`.
+- Plan: `docs/plans/right-sidebar.md`. Guide: `docs/guide/right-sidebar.md`.
+
 ---
 
 ## Theme system

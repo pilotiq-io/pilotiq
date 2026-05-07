@@ -50,6 +50,25 @@ export {
   type RightPanelRegistry,
 } from './right-panel-registry.js'
 
+export {
+  RightSidebarProvider,
+  useRightSidebar,
+  useRightSidebarOptional,
+  type RightSidebarApi,
+  type RightSidebarProviderProps,
+} from './RightSidebarContext.js'
+export {
+  RightSidebar,
+  type RightSidebarProps,
+} from './RightSidebar.js'
+export { RightSidebarTrigger } from './RightSidebarTrigger.js'
+export {
+  useResizableWidth,
+  clampPanelWidth,
+  type UseResizableWidthOptions,
+  type UseResizableWidthApi,
+} from './useResizableWidth.js'
+
 export { ThemeProvider, useTheme } from './ThemeProvider.js'
 export { ThemeToggle } from './ThemeToggle.js'
 export { ThemeSettingsPage } from './ThemeSettingsPage.js'

@@ -8,6 +8,9 @@ import type { ComponentRegistry } from './icon-context.js'
 import { ComponentRegistryProvider } from './icon-context.js'
 import type { RightPanelRegistry } from './right-panel-registry.js'
 import { RightPanelRegistryProvider } from './right-panel-registry.js'
+import { RightSidebarProvider, useRightSidebarOptional } from './RightSidebarContext.js'
+import { RightSidebar } from './RightSidebar.js'
+import { useIsMobile } from './hooks/use-mobile.js'
 import type { NavItem, UserMenuMeta, DatabaseNotificationsMeta, RightSidebarMeta } from '../pageData.js'
 import type { RenderHookMap } from '../RenderHook.js'
 import { RenderHookSlot } from './RenderHookSlot.js'
@@ -82,19 +85,64 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
   if (props.panel.navigation) paletteProps.navigation = props.panel.navigation
 
   const hooks = props.panel.renderHooks
+  const rightSidebarMeta = props.panel.rightSidebar
+
+  const inner = (
+    <ToasterProvider {...toasterProps}>
+      <CommandPaletteProvider setOpen={setPaletteOpen}>
+        <RenderHookSlot name="panels::body.start" hooks={hooks} />
+        <RightSidebarLayoutFrame>
+          <Layout {...props} />
+        </RightSidebarLayoutFrame>
+        <RenderHookSlot name="panels::body.end" hooks={hooks} />
+        <CommandPalette {...paletteProps} />
+        {rightSidebarMeta && (
+          <RightSidebar
+            basePath={props.basePath}
+            {...(props.currentPath !== undefined ? { currentPath: props.currentPath } : {})}
+          />
+        )}
+      </CommandPaletteProvider>
+    </ToasterProvider>
+  )
 
   return (
     <ComponentRegistryProvider value={componentRegistry}>
       <RightPanelRegistryProvider value={rightPanelRegistry}>
-        <ToasterProvider {...toasterProps}>
-          <CommandPaletteProvider setOpen={setPaletteOpen}>
-            <RenderHookSlot name="panels::body.start" hooks={hooks} />
-            <Layout {...props} />
-            <RenderHookSlot name="panels::body.end" hooks={hooks} />
-            <CommandPalette {...paletteProps} />
-          </CommandPaletteProvider>
-        </ToasterProvider>
+        {rightSidebarMeta ? (
+          <RightSidebarProvider meta={rightSidebarMeta} basePath={props.basePath}>
+            {inner}
+          </RightSidebarProvider>
+        ) : (
+          inner
+        )}
       </RightPanelRegistryProvider>
     </ComponentRegistryProvider>
   )
+}
+
+/**
+ * Padding shim that compresses host content when the right sidebar is
+ * open on desktop. The fixed-position rail would otherwise overlap
+ * content; this wrapper reads the optional `RightSidebarProvider`
+ * context (it's a no-op when the surface isn't mounted) and applies
+ * `padding-inline-end` matching the active panel width.
+ *
+ * The shim avoids touching SidebarLayout / TopbarLayout internals — the
+ * layouts expand to fill the wrapper's content box, so trimming inside
+ * the wrapper compresses both the sticky header and the main scroll
+ * region together.
+ */
+function RightSidebarLayoutFrame({ children }: { children: React.ReactNode }) {
+  const sidebar = useRightSidebarOptional()
+  const isMobile = useIsMobile()
+  const apply = sidebar && sidebar.open && !isMobile
+  // Always render the same wrapper element so toggling open/closed
+  // doesn't remount the Layout subtree (which would drop the user's
+  // scroll position and any uncontrolled-input state). Only the inline
+  // style flips.
+  const style: React.CSSProperties | undefined = apply
+    ? { paddingInlineEnd: sidebar!.width, transition: 'padding-inline-end 150ms ease-out' }
+    : { transition: 'padding-inline-end 150ms ease-out' }
+  return <div style={style}>{children}</div>
 }

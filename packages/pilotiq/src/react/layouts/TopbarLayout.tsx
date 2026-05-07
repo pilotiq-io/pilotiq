@@ -4,6 +4,7 @@ import { ThemeToggle } from '../ThemeToggle.js'
 import { SearchTrigger } from '../SearchTrigger.js'
 import { UserMenu } from '../UserMenu.js'
 import { NotificationBell } from '../NotificationBell.js'
+import { RightSidebarTrigger } from '../RightSidebarTrigger.js'
 import { RenderHookSlot } from '../RenderHookSlot.js'
 import {
   DropdownMenu,
@@ -225,6 +226,7 @@ export function TopbarLayout({ panel, basePath, currentPath, children }: AppShel
         <SearchTrigger />
         <ThemeToggle />
         {dn && <NotificationBell meta={dn} />}
+        <RightSidebarTrigger />
         <UserMenu
           userMenu={panel.userMenu}
           before={<RenderHookSlot name="panels::user-menu.before" hooks={hooks} />}

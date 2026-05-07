@@ -24,6 +24,7 @@ import { ThemeToggle } from '../ThemeToggle.js'
 import { SearchTrigger } from '../SearchTrigger.js'
 import { UserMenu } from '../UserMenu.js'
 import { NotificationBell } from '../NotificationBell.js'
+import { RightSidebarTrigger } from '../RightSidebarTrigger.js'
 import { RenderHookSlot } from '../RenderHookSlot.js'
 import type { AppShellProps } from '../AppShell.js'
 import { useIconFor } from '../icon-context.js'
@@ -219,6 +220,7 @@ export function SidebarLayout({ panel, basePath, currentPath, children }: AppShe
           <div className="flex items-center gap-1 px-3">
             <ThemeToggle />
             {bellInTopbar && <NotificationBell meta={dn} />}
+            <RightSidebarTrigger />
             <UserMenu
               userMenu={panel.userMenu}
               before={<RenderHookSlot name="panels::user-menu.before" hooks={hooks} />}
