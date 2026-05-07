@@ -43,6 +43,52 @@ The trigger renders a Dialog with the schema as form. Submit fetches
 with `Accept: application/json`; server returns `{ ok, redirect, notifications }`
 on success or `{ ok: false, errors }` on validation failure.
 
+### Modal chrome
+
+Both confirm-only and form-modal actions accept the same chrome setters.
+All defaults match the legacy renderer — calling none of them keeps the
+modal byte-identical.
+
+```ts
+Action.make('publish')
+  .schema([Toggle.make('notifySubscribers')])
+  .handler(handler)
+  // Header chrome
+  .modalHeading('Publish article')
+  .modalDescription('Subscribers receive an email immediately on publish.')
+  .modalIcon('rocket')
+  .modalIconColor('primary')             // gray | primary | success | warning | destructive | info
+  .modalAlignment('start')               // start | center (default) | end
+  // Footer chrome
+  .modalSubmitActionLabel('Publish now') // Filament v5 alias for modalSubmitLabel
+  .modalCancelActionLabel('Keep as draft')
+  // Width / layout
+  .modalWidth('lg')                      // sm | md (default) | lg | xl
+  .slideOver()                           // right-side slide-over instead of centered popup
+  .stickyModalHeader()                   // long forms: heading stays pinned while body scrolls
+  .stickyModalFooter()                   // long forms: footer buttons stay reachable
+  // Dismissal
+  .closeModalByClickingAway(false)       // disable outside-click dismissal
+  .closeModalByEscaping(false)           // disable Esc-key dismissal
+  .modalCloseButton()                    // render an X button in the top-right
+  // Focus
+  .modalAutofocus()                      // focus first form input on open
+  .modalAutofocus(false)                 // skip the default submit-button autofocus
+```
+
+**Defaults preserved.** `closeModalByClickingAway` / `closeModalByEscaping`
+are on by default — calling without an argument turns them OFF (Filament's
+`->closeModalByClickingAway(false)` shape). Sticky chrome and the X close
+button are off by default; call without an argument to turn ON.
+
+**`modalAutofocus` semantics:**
+
+| Call | Behaviour |
+|---|---|
+| _(omitted)_ | Submit button autofocuses for confirm-only modals; nothing autofocuses when the modal contains a form. |
+| `.modalAutofocus()` | First form input (or submit button when no form) autofocuses on open. |
+| `.modalAutofocus(false)` | Nothing autofocuses on open. |
+
 ## Replicate (clone a row)
 
 `Action.replicate(R, base, recordId?, opts?)` is a handler-style factory — load the source row → strip the primary key + soft-delete column → optionally mutate the prepared payload → `R.model.create(...)` → redirect to the new record's edit page.

@@ -169,6 +169,15 @@ export type VisibilityRule =
 /** Modal width preset — maps to a max-width class on the Dialog popup. */
 export type ActionModalWidth = 'sm' | 'md' | 'lg' | 'xl'
 
+/** Horizontal alignment applied to the modal's header / body / footer
+ *  text. Matches Filament v5's `modalAlignment()` (start / center / end). */
+export type ActionModalAlignment = 'start' | 'center' | 'end'
+
+/** Color preset for the icon shown next to the modal heading. Mirrors
+ *  `BadgeColor` so userspace doesn't have to learn another scale. */
+export type ActionModalIconColor =
+  | 'gray' | 'primary' | 'success' | 'warning' | 'destructive' | 'info'
+
 /** Context shape passed to `ReplicateOptions.getCreatedNotificationTitle`.
  *  Single-row factories (`replicate`, `relationReplicate`) populate
  *  `replica` (the just-created record returned by `M.create`) and
@@ -487,8 +496,32 @@ export interface ActionModalMeta {
   submitLabel?: string
   cancelLabel?: string
   icon?:        string
+  /** Color preset applied to the heading icon (`modalIconColor()`).
+   *  Renderer maps to a tailwind text-color class. */
+  iconColor?:   ActionModalIconColor
   width?:       ActionModalWidth
   slideOver?:   boolean
+  /** Default `true`; emitted only when the user passed `false`. The
+   *  renderer turns this into Base UI's `disablePointerDismissal`. */
+  closeByClickingAway?: boolean
+  /** Default `true`; emitted only when `false`. Renderer cancels the
+   *  Base UI `onOpenChange` event when reason is `'escapeKey'`. */
+  closeByEscaping?:     boolean
+  /** Sticky header inside a scrolling modal body. Default `false`. */
+  stickyHeader?:        boolean
+  /** Sticky footer inside a scrolling modal body. Default `false`. */
+  stickyFooter?:        boolean
+  /** Override the default autofocus behaviour. When `false` no element
+   *  inside the modal receives focus on mount; when `true` the renderer
+   *  focuses the first form input (or the submit button when there is
+   *  no form). When omitted, the legacy default applies (the submit
+   *  button autofocuses for confirm-only modals). */
+  autofocus?:           boolean
+  /** Horizontal alignment for the heading / body / footer text. */
+  alignment?:           ActionModalAlignment
+  /** When `true`, an X close-button renders in the top-right of the
+   *  popup. Default `false`. */
+  closeButton?:         boolean
 }
 
 export interface ActionMeta extends ElementMeta {
@@ -615,8 +648,20 @@ export class Action extends Element {
   protected _modalSubmitLabel?: string
   protected _modalCancelLabel?: string
   protected _modalIcon?: string
+  protected _modalIconColor?: ActionModalIconColor
   protected _modalWidth?: ActionModalWidth
   protected _slideOver = false
+  // Defaults match the existing renderer behaviour (closeable both ways,
+  // no sticky chrome, no X button). Setters with a default arg of `false`
+  // / `true` mirror Filament's call shapes — `closeModalByClickingAway()`
+  // disables pointer dismiss, `stickyModalHeader()` enables sticky.
+  protected _closeModalByClickingAway = true
+  protected _closeModalByEscaping     = true
+  protected _stickyModalHeader        = false
+  protected _stickyModalFooter        = false
+  protected _modalAutofocus?: boolean
+  protected _modalAlignment?: ActionModalAlignment
+  protected _modalCloseButton         = false
 
   // Trigger variants & cosmetics
   protected _color?: ActionColor
@@ -1817,9 +1862,86 @@ export class Action extends Element {
   modalDescription(s: string): this { this._modalDescription = s; this._hasModal = true; return this }
   modalSubmitLabel(s: string): this { this._modalSubmitLabel = s; this._hasModal = true; return this }
   modalCancelLabel(s: string): this { this._modalCancelLabel = s; this._hasModal = true; return this }
+  /** Filament v5 alias for `modalSubmitLabel`. Reads more naturally
+   *  alongside `modalCancelActionLabel` when both are set. */
+  modalSubmitActionLabel(s: string): this { return this.modalSubmitLabel(s) }
+  /** Filament v5 alias for `modalCancelLabel`. */
+  modalCancelActionLabel(s: string): this { return this.modalCancelLabel(s) }
   modalIcon(i: string): this        { this._modalIcon = i;        this._hasModal = true; return this }
+  modalIconColor(c: ActionModalIconColor): this {
+    this._modalIconColor = c
+    this._hasModal       = true
+    return this
+  }
   modalWidth(w: ActionModalWidth): this { this._modalWidth = w;   this._hasModal = true; return this }
+  modalAlignment(a: ActionModalAlignment): this {
+    this._modalAlignment = a
+    this._hasModal       = true
+    return this
+  }
   slideOver(v = true): this         { this._slideOver = v;        this._hasModal = true; return this }
+
+  /**
+   * Disable / re-enable closing the modal by clicking outside the popup.
+   * Default: enabled. Calling without an arg disables (matches Filament's
+   * `->closeModalByClickingAway(false)` shape — most uses are to gate
+   * accidental dismissal of important modals).
+   */
+  closeModalByClickingAway(v: boolean = false): this {
+    this._closeModalByClickingAway = v
+    this._hasModal                 = true
+    return this
+  }
+
+  /**
+   * Disable / re-enable closing the modal with the Escape key. Default:
+   * enabled. Same shape as `closeModalByClickingAway`. Useful when a
+   * partially-completed multi-step modal would lose work on a stray Esc.
+   */
+  closeModalByEscaping(v: boolean = false): this {
+    this._closeModalByEscaping = v
+    this._hasModal             = true
+    return this
+  }
+
+  /** Sticky header inside the modal body. Useful when the body scrolls
+   *  past the heading on long forms. Default: off. */
+  stickyModalHeader(v: boolean = true): this {
+    this._stickyModalHeader = v
+    this._hasModal          = true
+    return this
+  }
+
+  /** Sticky footer inside the modal body. Pairs naturally with
+   *  `stickyModalHeader` on long forms — keeps the Submit / Cancel
+   *  buttons visible while the user scrolls. Default: off. */
+  stickyModalFooter(v: boolean = true): this {
+    this._stickyModalFooter = v
+    this._hasModal          = true
+    return this
+  }
+
+  /**
+   * Override the default autofocus behaviour. `true` focuses the first
+   * form input on mount (or the submit button when there is no form);
+   * `false` disables autofocus entirely. Omit to keep the legacy default
+   * (submit button autofocuses for confirm-only modals).
+   */
+  modalAutofocus(v: boolean = true): this {
+    this._modalAutofocus = v
+    this._hasModal       = true
+    return this
+  }
+
+  /** Render an X close button in the top-right corner of the popup.
+   *  Default: off (the Cancel button in the footer is the documented
+   *  affordance). Useful for slide-over panels where the footer is
+   *  far from the top of the viewport. */
+  modalCloseButton(v: boolean = true): this {
+    this._modalCloseButton = v
+    this._hasModal         = true
+    return this
+  }
 
   // ─── Link / form modes ────────────────────────────────
 
@@ -1955,8 +2077,19 @@ export class Action extends Element {
       ...(this._modalSubmitLabel  !== undefined ? { submitLabel: this._modalSubmitLabel  } : {}),
       ...(this._modalCancelLabel  !== undefined ? { cancelLabel: this._modalCancelLabel  } : {}),
       ...(this._modalIcon         !== undefined ? { icon:        this._modalIcon         } : {}),
+      ...(this._modalIconColor    !== undefined ? { iconColor:   this._modalIconColor    } : {}),
       ...(this._modalWidth        !== undefined ? { width:       this._modalWidth        } : {}),
+      ...(this._modalAlignment    !== undefined ? { alignment:   this._modalAlignment    } : {}),
       ...(this._slideOver                       ? { slideOver:   true                    } : {}),
+      // Boolean defaults are emitted only when the user has flipped them
+      // away from the default — keeps the wire-shape unchanged for the
+      // common case (no setter ever called).
+      ...(this._closeModalByClickingAway === false ? { closeByClickingAway: false } : {}),
+      ...(this._closeModalByEscaping     === false ? { closeByEscaping:     false } : {}),
+      ...(this._stickyModalHeader                  ? { stickyHeader:        true  } : {}),
+      ...(this._stickyModalFooter                  ? { stickyFooter:        true  } : {}),
+      ...(this._modalCloseButton                   ? { closeButton:         true  } : {}),
+      ...(this._modalAutofocus !== undefined       ? { autofocus: this._modalAutofocus } : {}),
     } : undefined
     return {
       type:        'action',

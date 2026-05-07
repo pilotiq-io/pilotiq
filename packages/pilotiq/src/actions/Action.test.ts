@@ -2324,3 +2324,156 @@ describe('Action.markAsRead factory', () => {
     assert.equal(read.visible,   false)
   })
 })
+
+describe('Action modal chrome extras (audit gap #2)', () => {
+  // Helper: pull the `modal` slot off a built meta. Cast through unknown
+  // because `ActionMeta.modal` is sparse — the tests want a concrete map.
+  type ModalSlot = {
+    closeByClickingAway?: boolean
+    closeByEscaping?:     boolean
+    stickyHeader?:        boolean
+    stickyFooter?:        boolean
+    autofocus?:           boolean
+    alignment?:           'start'|'center'|'end'
+    iconColor?:           string
+    closeButton?:         boolean
+    submitLabel?:         string
+    cancelLabel?:         string
+  }
+  const modal = (a: Action): ModalSlot | undefined =>
+    (a.toMeta() as unknown as { modal?: ModalSlot }).modal
+
+  it('emits no modal slot when no modal setter ran', () => {
+    assert.equal(modal(Action.make('save')), undefined)
+  })
+
+  describe('closeModalByClickingAway / closeModalByEscaping', () => {
+    it('default (true) does NOT emit either flag', () => {
+      // Force a modal slot via .modalHeading so the rest of the meta builds,
+      // but don't touch the close-* flags. Defaults must round-trip as
+      // omissions (sparse meta) so existing modals stay byte-identical.
+      const a = Action.make('a').modalHeading('Hello')
+      const m = modal(a)
+      assert.equal(m?.closeByClickingAway, undefined)
+      assert.equal(m?.closeByEscaping,     undefined)
+    })
+
+    it('closeModalByClickingAway() with no arg disables (Filament shape)', () => {
+      const m = modal(Action.make('a').closeModalByClickingAway())
+      assert.equal(m?.closeByClickingAway, false)
+    })
+
+    it('closeModalByEscaping(false) disables; closeModalByEscaping(true) re-arms', () => {
+      assert.equal(modal(Action.make('a').closeModalByEscaping(false))?.closeByEscaping, false)
+      // Re-arming back to default must not emit (sparse).
+      assert.equal(modal(Action.make('a').closeModalByEscaping(false).closeModalByEscaping(true))?.closeByEscaping, undefined)
+    })
+  })
+
+  describe('sticky chrome', () => {
+    it('stickyModalHeader() arms by default; stickyModalHeader(false) disarms', () => {
+      assert.equal(modal(Action.make('a').stickyModalHeader())?.stickyHeader,       true)
+      assert.equal(modal(Action.make('a').stickyModalHeader(false))?.stickyHeader,  undefined)
+    })
+
+    it('stickyModalFooter() round-trips independently', () => {
+      const m = modal(Action.make('a').stickyModalFooter())
+      assert.equal(m?.stickyHeader, undefined)
+      assert.equal(m?.stickyFooter, true)
+    })
+  })
+
+  describe('modalAutofocus', () => {
+    it('omits when not set', () => {
+      assert.equal(modal(Action.make('a').modalHeading('h'))?.autofocus, undefined)
+    })
+
+    it('emits true when called with no arg', () => {
+      assert.equal(modal(Action.make('a').modalAutofocus())?.autofocus, true)
+    })
+
+    it('emits false when explicitly disarmed', () => {
+      assert.equal(modal(Action.make('a').modalAutofocus(false))?.autofocus, false)
+    })
+  })
+
+  describe('modalAlignment + modalIconColor', () => {
+    it('emits the alignment string', () => {
+      assert.equal(modal(Action.make('a').modalAlignment('start'))?.alignment, 'start')
+      assert.equal(modal(Action.make('a').modalAlignment('end'))?.alignment,   'end')
+    })
+
+    it('emits the icon color string', () => {
+      assert.equal(modal(Action.make('a').modalIconColor('warning'))?.iconColor, 'warning')
+    })
+  })
+
+  describe('modalCloseButton', () => {
+    it('default (off) emits no flag', () => {
+      assert.equal(modal(Action.make('a').modalHeading('h'))?.closeButton, undefined)
+    })
+
+    it('modalCloseButton() arms; modalCloseButton(false) disarms', () => {
+      assert.equal(modal(Action.make('a').modalCloseButton())?.closeButton,      true)
+      assert.equal(modal(Action.make('a').modalCloseButton(false))?.closeButton, undefined)
+    })
+  })
+
+  describe('Filament v5 alias setters', () => {
+    it('modalSubmitActionLabel routes to modalSubmitLabel', () => {
+      const m = modal(Action.make('a').modalSubmitActionLabel('Apply'))
+      assert.equal(m?.submitLabel, 'Apply')
+    })
+
+    it('modalCancelActionLabel routes to modalCancelLabel', () => {
+      const m = modal(Action.make('a').modalCancelActionLabel('Never mind'))
+      assert.equal(m?.cancelLabel, 'Never mind')
+    })
+  })
+
+  it('any modal setter flips _hasModal (modal slot present)', () => {
+    // Each setter must trigger `_hasModal = true` so the slot gets emitted
+    // even when the user only customizes one chrome detail (no schema, no
+    // heading). Otherwise `closeModalByClickingAway()` on a confirm-only
+    // action would silently drop on the floor.
+    for (const customise of [
+      (a: Action) => a.closeModalByClickingAway(),
+      (a: Action) => a.closeModalByEscaping(false),
+      (a: Action) => a.stickyModalHeader(),
+      (a: Action) => a.stickyModalFooter(),
+      (a: Action) => a.modalAutofocus(),
+      (a: Action) => a.modalAlignment('end'),
+      (a: Action) => a.modalIconColor('info'),
+      (a: Action) => a.modalCloseButton(),
+    ]) {
+      const a = customise(Action.make('a'))
+      assert.notEqual(modal(a), undefined, 'modal slot must be present')
+    }
+  })
+
+  it('chains across multiple chrome setters in one builder', () => {
+    const m = modal(
+      Action.make('save')
+        .modalHeading('Bulk update')
+        .modalAlignment('end')
+        .modalIconColor('primary')
+        .stickyModalHeader()
+        .stickyModalFooter()
+        .modalAutofocus(false)
+        .closeModalByClickingAway()
+        .closeModalByEscaping(false)
+        .modalCloseButton(),
+    )
+    assert.deepEqual(m, {
+      heading:             'Bulk update',
+      alignment:           'end',
+      iconColor:           'primary',
+      stickyHeader:        true,
+      stickyFooter:        true,
+      autofocus:           false,
+      closeByClickingAway: false,
+      closeByEscaping:     false,
+      closeButton:         true,
+    })
+  })
+})
