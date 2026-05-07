@@ -187,6 +187,34 @@ export function modelLoadRecord(R: ResourceLike): LoadRecordHandler {
 }
 
 /**
+ * Default `Form.loadRecord` handler for the singular-record settings
+ * pattern — one row in a table, auto-loaded on every page render.
+ * `Global` subclasses with `static model = M` set get this wired
+ * automatically by `defaultGlobalEditPage`.
+ *
+ * Default strategy: paginate(1, 1) — i.e. "the first row". Pass
+ * `findSingular` to switch to a fixed-id lookup
+ * (`(q) => q.where('id', '=', 1)`) or a slug-style lookup
+ * (`(q) => q.where('key', '=', 'site')`).
+ *
+ * Returns `null` when no row exists yet — the paired `modelSave(M)`
+ * handler will then run `M.create(data)` on the first POST so the
+ * record auto-creates on first save.
+ */
+export function loadSingularRecord(
+  M:     ModelLike,
+  opts?: { findSingular?: (q: ModelQuery) => ModelQuery },
+): LoadRecordHandler {
+  return async (): Promise<unknown> => {
+    let q = M.query()
+    if (opts?.findSingular) q = opts.findSingular(q)
+    const result = await q.paginate(1, 1)
+    const data = (result?.data ?? []) as unknown[]
+    return data[0] ?? null
+  }
+}
+
+/**
  * Find a record by primary key through `R.query(ctx)`. The standard
  * "load record for edit / view / policy" path — replaces direct
  * `R.model.find(id)` calls so user `Resource.query` overrides scope the

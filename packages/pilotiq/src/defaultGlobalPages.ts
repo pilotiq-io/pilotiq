@@ -2,6 +2,7 @@ import { Page } from './Page.js'
 import { Form } from './elements/Form.js'
 import { Heading } from './schema/Heading.js'
 import { Action } from './actions/Action.js'
+import { loadSingularRecord, modelSave } from './orm/modelDefaults.js'
 import type { Element } from './schema/Element.js'
 import type { SchemaContext } from './schema/resolveSchema.js'
 import type { GlobalClass, GlobalPages } from './Global.js'
@@ -12,6 +13,22 @@ function noSaveHandler(G: GlobalClass): () => never {
     throw new Error(
       `[Pilotiq] ${G.name}: no save handler. Configure Form.save() inside Global.form() — singleton globals upsert through this handler.`,
     )
+  }
+}
+
+/**
+ * Auto-wire `loadRecord` + `save` from the configured `static model` when
+ * the user's `Global.form()` didn't already provide them. Hand-wired
+ * handlers always win — this only fills empty slots so existing globals
+ * (which wired both manually) keep their behavior unchanged.
+ */
+function installModelDefaults(form: Form, G: GlobalClass): void {
+  if (!G.model) return
+  if (!form.getLoadRecord()) {
+    form.loadRecord(loadSingularRecord(G.model, G.findSingular ? { findSingular: G.findSingular } : undefined))
+  }
+  if (!form.getSave()) {
+    form.save(modelSave(G.model))
   }
 }
 
@@ -28,6 +45,7 @@ export function defaultGlobalEditPage(G: GlobalClass): typeof Page {
 
     static override schema(): Element[] {
       const form = G.form(Form.make())
+      installModelDefaults(form, G)
       if (!form.getSave()) form.save(noSaveHandler(G))
       // Page-header Save button targets the form below via HTML `form` attr.
       const heading = Heading.make(G.labelSingular).level(1).actions([
@@ -49,6 +67,7 @@ export function defaultGlobalViewPage(G: GlobalClass): typeof Page {
     static override async schema(ctx?: SchemaContext): Promise<Element[]> {
       const basePath = (ctx?.['basePath'] as string | undefined) ?? ''
       const form = G.form(Form.make())
+      installModelDefaults(form, G)
       const loader = form.getLoadRecord()
       let record: unknown = null
       if (loader) {

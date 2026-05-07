@@ -8,36 +8,24 @@ By default a Global ships only an edit page. View mode is opt-in via `Global.pag
 
 ## Minimal example
 
+When the singleton lives in its own table, point `static model` at a `ModelLike` and the framework auto-wires both `loadRecord` and `save`:
+
 ```ts
 import { Global, Form, TextField } from '@pilotiq/pilotiq'
-import { app } from '@rudderjs/core'
-
-const prisma = () => app().make('prisma') as any
+import { siteSettingsModel } from '../models/SiteSettings.js'
 
 export class SiteSettings extends Global {
   static override label         = 'Site Settings'
   static override labelSingular = 'Site Settings'
   static override slug          = 'site-settings'
   static override icon          = 'settings'
+  static override model         = siteSettingsModel
 
   static override form(form: Form): Form {
-    return form
-      .schema([
-        TextField.make('siteName').required(),
-        TextField.make('tagline'),
-      ])
-      .loadRecord(async () => {
-        const row = await prisma().panelGlobal.findUnique({ where: { slug: 'panel__site' } })
-        return row?.data ? JSON.parse(row.data) : {}
-      })
-      .save(async (data) => {
-        await prisma().panelGlobal.upsert({
-          where:  { slug: 'panel__site' },
-          update: { data: JSON.stringify(data) },
-          create: { slug: 'panel__site', data: JSON.stringify(data) },
-        })
-        return data
-      })
+    return form.schema([
+      TextField.make('siteName').required(),
+      TextField.make('tagline'),
+    ])
   }
 }
 ```
@@ -48,7 +36,9 @@ Register on the panel:
 Pilotiq.make('Admin').path('/admin').globals([SiteSettings])
 ```
 
-That gives you `GET /admin/site-settings` (renders the form pre-filled from `loadRecord`) and `POST /admin/site-settings` (runs the dispatch lifecycle, 303-redirects back to the same URL on success).
+That gives you `GET /admin/site-settings` (renders the form pre-filled from the first row in the model — empty defaults on first visit) and `POST /admin/site-settings` (creates the row on first save, updates it on subsequent saves, 303-redirects back to the same URL).
+
+For singletons stored in a generic key-value table, JSON file, or external service, hand-wire `Form.loadRecord` + `Form.save` instead — see "Hand-wired `loadRecord`" below.
 
 ---
 
@@ -60,8 +50,9 @@ That gives you `GET /admin/site-settings` (renders the form pre-filled from `loa
 | `labelSingular`    | `string`                     | Singular variant; defaults to `label` if you don't override.             |
 | `slug`             | `string`                     | URL slug. Optional — derived from `label` when unset.                    |
 | `icon`             | `string`                     | Sidebar icon name.                                                       |
-| `model?`           | `string`                     | Reserved for Phase 3 ORM adapters.                                       |
-| `form(form)`       | `Form`                       | Configure the singleton's form. Wire `loadRecord` + `save` here.         |
+| `model?`           | `ModelLike`                  | Auto-wires `Form.loadRecord` + `Form.save` against a single record. See "Singular-record auto-wiring" below. |
+| `findSingular?`    | `(q) => ModelQuery`          | Strategy for finding the singular record. Default: first row. Override for fixed-id or slug-style lookups. |
+| `form(form)`       | `Form`                       | Configure the singleton's form. Wire `loadRecord` + `save` here when `model` is unset (or to override the auto-wire). |
 | `detail(record)`   | `Element[]`                  | Schema for the optional `view` page.                                     |
 | `pages()`          | `{ edit?, view? }`           | User-overridable page map.                                               |
 | `resolvePages()`   | `{ edit?, view? }`           | Final page map — defaults overlaid with `pages()` overrides.             |
@@ -71,9 +62,52 @@ That gives you `GET /admin/site-settings` (renders the form pre-filled from `loa
 
 ---
 
-## `loadRecord` for singletons
+## Singular-record auto-wiring
 
-The `Form.loadRecord` signature is `(id, ctx) => Promise<R | null>`. Globals ignore the `id` — the framework calls it with an empty string. Common patterns:
+Point `static model` at a `ModelLike` and the framework auto-wires both ends of the round-trip — no `loadRecord`, no `save`. The first POST creates the record; subsequent submits update it.
+
+```ts
+import { Global, Form, TextField } from '@pilotiq/pilotiq'
+import { siteSettingsModel } from '../models/SiteSettings.js'
+
+export class SiteSettings extends Global {
+  static override label  = 'Site Settings'
+  static override slug   = 'site-settings'
+  static override icon   = 'settings'
+  static override model  = siteSettingsModel  // ← that's it
+
+  static override form(form: Form): Form {
+    return form.schema([
+      TextField.make('siteName').required(),
+      TextField.make('tagline'),
+    ])
+  }
+}
+```
+
+The default strategy fetches the first row (`paginate(1, 1)`). For fixed-id or slug-keyed singletons, override `static findSingular`:
+
+```ts
+class BrandConfig extends Global {
+  static override model        = brandConfigModel
+  static override findSingular = (q) => q.where('id', '=', 1)
+}
+
+class FeatureFlags extends Global {
+  static override model        = featureFlagsModel
+  static override findSingular = (q) => q.where('key', '=', 'global')
+}
+```
+
+When the query returns no row, `loadRecord` returns `null` and the form renders with empty defaults. The first POST runs `M.create(submittedData)`. After that, every subsequent visit loads the now-existing row and updates it via `M.update(pk, submittedData)`.
+
+Hand-wired `Form.loadRecord` / `Form.save` always win — the auto-wire only fills empty slots. Mix and match: keep `static model` for the query-shaped path, but override `Form.save(...)` for custom upsert semantics (e.g. dual-write to a cache).
+
+---
+
+## Hand-wired `loadRecord` (without `static model`)
+
+Skip the `static model` shortcut when the singleton's storage doesn't fit a `ModelLike` — JSON file, key-value blob, external service. The `Form.loadRecord` signature is `(id, ctx) => Promise<R | null>`. Globals ignore the `id` — the framework calls it with an empty string. Common patterns:
 
 ```ts
 .loadRecord(async () => prisma.siteConfig.findFirst())

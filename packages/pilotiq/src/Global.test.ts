@@ -111,6 +111,176 @@ describe('Global (singleton resource)', () => {
   })
 })
 
+// ─── Singular-record auto-wiring ─────────────────────────────────────
+//
+// `Global.model` widened from a vestigial string identifier to a real
+// `ModelLike`. When set, the default edit page auto-wires `Form.loadRecord`
+// (via `loadSingularRecord(M)`) + `Form.save` (via `modelSave(M)`) so
+// users don't need to hand-roll upsert against a `panelGlobal` blob —
+// they just point `static model = M` and submit.
+
+describe('Global — singular-record auto-wiring (static model)', () => {
+  // Minimal in-memory ModelLike stub. Stores a single row; query() returns
+  // a tiny query interface that just supports paginate(1, 1).
+  type Row = { id: number; siteName: string }
+  function makeStubModel(initial?: Row) {
+    let nextId = 1
+    let row: Row | null = initial ?? null
+    const M = {
+      primaryKey: 'id',
+      async find(id: string | number) { return row && row.id === Number(id) ? row : null },
+      async create(data: Record<string, unknown>) {
+        row = { id: nextId++, siteName: '', ...(data as Record<string, unknown>) } as Row
+        return row
+      },
+      async update(id: string | number, data: Record<string, unknown>) {
+        if (!row || row.id !== Number(id)) throw new Error('not found')
+        row = { ...row, ...(data as Record<string, unknown>) } as Row
+        return row
+      },
+      async delete(_id: string | number) { row = null },
+      query() {
+        const chain: any = {
+          _where: [] as Array<[string, unknown, unknown]>,
+          where(col: string, opOrVal: unknown, maybeVal?: unknown) {
+            const value = maybeVal === undefined ? opOrVal : maybeVal
+            chain._where.push([col, '=', value])
+            return chain
+          },
+          orWhere() { return chain },
+          orderBy() { return chain },
+          async paginate() {
+            // Honor a single where filter for findSingular tests.
+            if (chain._where.length > 0) {
+              const matching = row && chain._where.every(([col, , val]: [string, unknown, unknown]) =>
+                (row as Record<string, unknown>)[col] === val) ? [row] : []
+              return { data: matching, total: matching.length }
+            }
+            return { data: row ? [row] : [], total: row ? 1 : 0 }
+          },
+        }
+        return chain
+      },
+      _peek() { return row },
+    }
+    return M as any
+  }
+
+  it('without a model configured, no auto-wire fires', () => {
+    class NoModel extends Global {
+      static override label = 'NM'
+      static override labelSingular = 'NM'
+      static override slug  = 'nm'
+      static override form(form: Form) { return form.schema([TextField.make('x')]) }
+    }
+    const Edit = defaultGlobalEditPage(NoModel)
+    const elements = Edit.schema() as Array<{ getType(): string }>
+    const form = elements[1] as Form
+    assert.equal(form.getLoadRecord(), undefined)
+    // Save falls through to the sentinel — throws when invoked.
+    assert.throws(() => (form.getSave() as () => unknown)())
+  })
+
+  it('with a model configured, auto-wires loadRecord + save', async () => {
+    const M = makeStubModel({ id: 1, siteName: 'Hello' })
+    class Settings extends Global {
+      static override label         = 'Settings'
+      static override labelSingular = 'Settings'
+      static override slug          = 'settings'
+      static override model         = M
+      static override form(form: Form) { return form.schema([TextField.make('siteName')]) }
+    }
+    const Edit = defaultGlobalEditPage(Settings)
+    const elements = Edit.schema() as Array<{ getType(): string }>
+    const form = elements[1] as Form
+
+    const loader = form.getLoadRecord()
+    assert.ok(loader, 'loadRecord auto-wired')
+    const loaded = await loader!('', { values: {} })
+    assert.deepEqual(loaded, { id: 1, siteName: 'Hello' })
+
+    const save = form.getSave()
+    assert.ok(save, 'save auto-wired')
+  })
+
+  it('save handler creates on first submit when no record exists', async () => {
+    const M = makeStubModel(null as any)
+    class FreshSettings extends Global {
+      static override label         = 'Fresh'
+      static override labelSingular = 'Fresh'
+      static override slug          = 'fresh'
+      static override model         = M
+      static override form(form: Form) { return form.schema([TextField.make('siteName')]) }
+    }
+    const Edit = defaultGlobalEditPage(FreshSettings)
+    const elements = Edit.schema() as Array<{ getType(): string }>
+    const form = elements[1] as Form
+
+    const save = form.getSave()!
+    // First save: no ctx.record → create.
+    const created = await save({ siteName: 'Initial' }, { values: {} } as any)
+    assert.ok(M._peek(), 'row created')
+    assert.equal((created as Row).siteName, 'Initial')
+
+    // Second save: ctx.record present → update path.
+    const updated = await save({ siteName: 'Updated' }, { values: {}, record: M._peek() } as any)
+    assert.equal((updated as Row).siteName, 'Updated')
+    assert.equal((M._peek() as Row).siteName, 'Updated')
+  })
+
+  it('hand-wired loadRecord / save still win over auto-wire', () => {
+    const M = makeStubModel({ id: 1, siteName: 'A' })
+    const customLoader = async () => ({ siteName: 'CUSTOM' })
+    const customSave   = async (d: Record<string, unknown>) => d
+    class Hybrid extends Global {
+      static override label         = 'H'
+      static override labelSingular = 'H'
+      static override slug          = 'h'
+      static override model         = M
+      static override form(form: Form) {
+        return form
+          .schema([TextField.make('siteName')])
+          .loadRecord(customLoader)
+          .save(customSave)
+      }
+    }
+    const Edit = defaultGlobalEditPage(Hybrid)
+    const elements = Edit.schema() as Array<{ getType(): string }>
+    const form = elements[1] as Form
+    assert.equal(form.getLoadRecord(), customLoader)
+    assert.equal(form.getSave(),       customSave)
+  })
+
+  it('findSingular shapes the query (e.g. WHERE key=…)', async () => {
+    const M = makeStubModel({ id: 7, siteName: 'tagged' })
+    ;(M._peek() as Record<string, unknown>)['key'] = 'site'
+    class Keyed extends Global {
+      static override label         = 'K'
+      static override labelSingular = 'K'
+      static override slug          = 'k'
+      static override model         = M
+      static override findSingular  = (q: any) => q.where('key', '=', 'site')
+      static override form(form: Form) { return form.schema([TextField.make('siteName')]) }
+    }
+    const Edit = defaultGlobalEditPage(Keyed)
+    const elements = Edit.schema() as Array<{ getType(): string }>
+    const form = elements[1] as Form
+    const loaded = await form.getLoadRecord()!('', { values: {} }) as Row | null
+    assert.ok(loaded)
+    assert.equal(loaded!.siteName, 'tagged')
+
+    // Mismatched filter returns null (auto-create-on-first-save kicks in).
+    class Wrong extends Keyed {
+      static override findSingular = (q: any) => q.where('key', '=', 'never-matches')
+    }
+    const Edit2 = defaultGlobalEditPage(Wrong)
+    const elements2 = Edit2.schema() as Array<{ getType(): string }>
+    const form2 = elements2[1] as Form
+    const loaded2 = await form2.getLoadRecord()!('', { values: {} })
+    assert.equal(loaded2, null)
+  })
+})
+
 describe('Global routes', () => {
   let router: Router
   beforeEach(() => { router = new Router() })

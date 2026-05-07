@@ -4,6 +4,7 @@ import type { Page } from './Page.js'
 import type { IconValue } from './icons/types.js'
 import type { NavigationBadgeColor, NavigationBadgeHandler } from './Resource.js'
 import type { ClusterClass } from './Cluster.js'
+import type { ModelLike, ModelQuery } from './orm/modelDefaults.js'
 import { defaultGlobalPages } from './defaultGlobalPages.js'
 
 /**
@@ -84,8 +85,31 @@ export abstract class Global {
    */
   static cluster?: ClusterClass
 
-  /** Optional model identifier. Phase 3 ORM adapters use this. */
-  static model?: string
+  /**
+   * Optional `ModelLike` binding. When set, the framework auto-wires
+   * the edit page's `Form.loadRecord` (loads the singular record via
+   * `loadSingularRecord(M)`) and `Form.save` (upserts via `modelSave(M)`
+   * — `M.update(pk, data)` when a record exists, `M.create(data)` on
+   * first save). Mirrors the reference admin's "singular resource"
+   * pattern — one record auto-creates on first submission.
+   *
+   * Hand-wiring `Form.loadRecord` / `Form.save` inside `form()` still
+   * wins; the auto-wire only fills the slot when the user didn't.
+   */
+  static model?: ModelLike
+
+  /**
+   * Strategy for finding the single record when `static model` is set.
+   * Default: `paginate(1, 1)` (the first row). Override to pin a
+   * specific lookup, e.g.
+   *
+   *   static findSingular = (q) => q.where('id', '=', 1)
+   *   static findSingular = (q) => q.where('key', '=', 'brand')
+   *
+   * Returns `null` when no match exists — `modelSave` will then run
+   * `M.create(data)` on first POST.
+   */
+  static findSingular?: (q: ModelQuery) => ModelQuery
 
   // ─── Plan #10: authorization predicates ────────────────────
   // Subset of `Resource`'s predicates — globals have no list / create /
