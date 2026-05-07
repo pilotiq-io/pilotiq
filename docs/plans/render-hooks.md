@@ -70,8 +70,8 @@ Ported from Filament's chrome positions. Each name maps to a fixed slot in the r
 
 | Name | Slot |
 |---|---|
-| `panels::head.start` | First child of generated `+Head.tsx` |
-| `panels::head.end` | Last child of generated `+Head.tsx` |
+| `panels::head.start` | First child of generated `+Head.tsx` (before fonts + FOUC script) |
+| `panels::head.end` | Inside generated `+Head.tsx`, after the built-in chrome |
 | `panels::body.start` | First child inside `<AppShell>` `children` |
 | `panels::body.end` | Last child inside `<AppShell>` `children` |
 | `panels::topbar.start` | Inside the layout header, before `<SearchTrigger>` |
@@ -173,7 +173,7 @@ Edits:
 
 ## Open questions
 
-- **Where does `panels::head.scripts` write to?** Vike owns the `+Head.tsx`. Probably `<script>`-typed elements emitted into the head fragment via a dedicated branch in the auto-gen layout. Punt to implementation — the generic `panels::head.end` covers most cases.
+- ~~**Where does `panels::head.scripts` write to?**~~ Answered 2026-05-07 cont'd⁸. Path B (request-time read; Filament-equivalent). The four `panels::head.start / .end / .scripts / .styles` slots resolve per request inside `panelInfo()` (already wired by Day 1), the resolved `RenderHookMap` rides through `panel.renderHooks`, and the auto-generated `+Head.tsx` reads it via `usePageContext()` and dispatches through a new `<HeadHooks position="start"|"end">` component (`@pilotiq/pilotiq/react`). Hooks return head-safe primitives (`MetaTag` / `LinkTag` / `ScriptTag` / `StyleTag`) — body-level Elements would emit `<div>` / `<p>` wrappers that terminate `<head>` parsing in the browser, so they're skipped with a warning. Slot ordering inside `<head>`: `head.start` → built-in fonts + FOUC → `head.end` → `scripts` → `styles`. Path A (codegen-time emission) deferred — would lose request-scoped context (`user`, `resource`, `recordId`). ✅ DONE.
 - **Caching.** `panelInfo()` runs per-request; hook resolvers may do DB lookups for a real-time banner. Add a `.cache(seconds)` setter in v2 if measurable.
 - **Order across multiple panels.** A single repo can register multiple `Pilotiq` instances. Each has its own `cfg.renderHooks` — no cross-panel sharing in v1. (Filament has none either.)
 

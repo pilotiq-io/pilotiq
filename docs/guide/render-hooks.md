@@ -47,7 +47,10 @@ every page in the panel.
 | `panels::user-menu.before` | Top of the user-menu dropdown (above identity) |
 | `panels::user-menu.after` | Bottom of the user-menu dropdown (above sign-out) |
 | `panels::footer` | Below the page content |
-| `panels::head.start` / `panels::head.end` | Around the generated `<head>` (mount points reserved; v1 wiring shipping in a follow-up) |
+| `panels::head.start` | First child of the generated `<head>` — before font links and the FOUC-prevention script |
+| `panels::head.end` | After the built-in chrome inside `<head>` |
+| `panels::scripts` | Late-load `<script>` block — appended after `panels::head.end` |
+| `panels::styles` | Late-load `<style>` block — appended after `panels::scripts` |
 
 ### Page-level
 
@@ -85,6 +88,51 @@ panel.renderHook(
 ```
 
 Without a scope, the hook fires every time the slot is rendered.
+
+## Head-only elements
+
+The four `panels::head.*` slots render directly inside the document
+`<head>`. Body-level Elements (`Heading`, `Alert`, `Card`, …) emit
+`<div>` / `<p>` wrappers that would terminate `<head>` parsing in the
+browser, so they're skipped with a warning.
+
+Use the four head-safe primitives instead — they map to native head
+children:
+
+```ts
+import { Pilotiq, MetaTag, LinkTag, ScriptTag, StyleTag } from '@pilotiq/pilotiq'
+
+Pilotiq.make('admin')
+  .renderHook('panels::head.start', () => [
+    LinkTag.make({ rel: 'icon', href: '/favicon.svg', mimeType: 'image/svg+xml' }),
+    LinkTag.make({ rel: 'canonical', href: 'https://app.example.com' }),
+  ])
+  .renderHook('panels::head.end', ({ user }) => [
+    MetaTag.make({ name: 'csrf-token', content: getCsrf(user) }),
+    MetaTag.make({ property: 'og:title', content: 'Acme Admin' }),
+  ])
+  .renderHook('panels::scripts', () => [
+    ScriptTag.make({
+      src: 'https://plausible.io/js/script.js',
+      defer: true,
+      dataAttributes: { domain: 'app.example.com' },
+    }),
+    ScriptTag.make({ body: 'window.__APP_TENANT__ = "acme"' }),
+  ])
+  .renderHook('panels::styles', ({ user }) => [
+    StyleTag.make(`:root { --pilotiq-brand: ${tenantBrand(user)} }`),
+  ])
+```
+
+Each tag's setter receives the same `RenderHookContext` (next section)
+so per-user / per-route content works the same as body slots. Schema-side
+`visible(...)` / `hidden(...)` predicates still apply.
+
+> **Why `mimeType` instead of `type`?** The wire shape uses `type` as the
+> element discriminator (`'meta' | 'link' | 'script' | 'style'`). The
+> head-tag classes rename the HTML `type=` attribute to `mimeType` to
+> avoid the collision. Renderer maps it back to `type=` on the rendered
+> `<link>` / `<script>`.
 
 ## Hook context
 

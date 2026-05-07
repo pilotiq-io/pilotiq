@@ -480,6 +480,28 @@ Html.make(cmsHtml).sanitize({
 
 The companion `MarkdownField` / `RichTextField` editor surfaces stay admin-trusted (no client-side sanitizer in v1) — sanitize on the way out via these display primes.
 
+### Head-safe elements
+
+These render directly inside the document `<head>` — only valid as the
+return value of a `panels::head.*` / `panels::scripts` / `panels::styles`
+render hook callback. They map 1:1 to the corresponding HTML head
+children.
+
+| Element     | Make                                                              | Renders to                              |
+| ----------- | ----------------------------------------------------------------- | --------------------------------------- |
+| `MetaTag`   | `MetaTag.make({ name, content })` / `{ property, content }` / `{ httpEquiv, content }` / `{ charset }` | `<meta>`                                |
+| `LinkTag`   | `LinkTag.make({ rel, href, mimeType?, as?, integrity?, crossOrigin? })` | `<link>`                                |
+| `ScriptTag` | `ScriptTag.make({ src?, body?, async?, defer?, dataAttributes? })` | `<script>` (external when `src` set, inline body otherwise) |
+| `StyleTag`  | `StyleTag.make(css, { nonce? })`                                  | `<style>` with inline CSS              |
+
+Body-level Elements inside a head slot are skipped with a console warning
+(`<div>` / `<p>` wrappers would terminate `<head>` parsing). The
+discriminator-collision rename: `mimeType` on `LinkTag` / `ScriptTag`
+maps back to the HTML `type=` attribute on the rendered element.
+
+See [`docs/guide/render-hooks.md`](../../guide/render-hooks.md) for usage
+examples.
+
 ---
 
 ## Container elements

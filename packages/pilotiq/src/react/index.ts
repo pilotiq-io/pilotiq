@@ -49,6 +49,7 @@ export { ThemeSettingsPage } from './ThemeSettingsPage.js'
 export { UserMenu } from './UserMenu.js'
 export { NotificationBell } from './NotificationBell.js'
 export { RenderHookSlot } from './RenderHookSlot.js'
+export { HeadHooks }      from './HeadHooks.js'
 
 // Re-export pure theme functions for client-safe usage (avoids importing main barrel which has server-only code)
 export { generateThemeCSS } from '../theme/generate-css.js'

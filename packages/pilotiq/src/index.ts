@@ -161,6 +161,10 @@ export { Image, type ImageShape } from './schema/Image.js'
 export { Icon, type IconColor } from './schema/Icon.js'
 export { Markdown, type MarkdownProseSize } from './schema/Markdown.js'
 export { Html } from './schema/Html.js'
+export { MetaTag,   type MetaTagAttrs }   from './schema/MetaTag.js'
+export { LinkTag,   type LinkTagAttrs }   from './schema/LinkTag.js'
+export { ScriptTag, type ScriptTagAttrs } from './schema/ScriptTag.js'
+export { StyleTag } from './schema/StyleTag.js'
 
 // Plan #16 — read-only entry primitives for `Resource.detail()`.
 export {
