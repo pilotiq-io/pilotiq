@@ -17,6 +17,7 @@ export {
   type MentionProviderMeta,
 } from './MentionProvider.js'
 export { registerTiptap } from './register.js'
+export { tiptap } from './plugin.js'
 export { TiptapEditor } from './react/TiptapEditor.js'
 export {
   renderRichTextToHtml,

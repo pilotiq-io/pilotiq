@@ -6,4 +6,5 @@ export {
   type CodeLanguageFactory,
 } from './languageRegistry.js'
 export { registerCodeEditor } from './register.js'
+export { codeEditor, type CodeEditorPluginOptions } from './plugin.js'
 export { CodeMirrorEditor } from './react/CodeMirrorEditor.js'

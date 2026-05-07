@@ -323,12 +323,12 @@ RichTextField.make('body').blocks([
 ])
 ```
 
-`@pilotiq/tiptap` ships its own `Block` builder mirroring the panels API. Wire the renderer once on the client:
+`@pilotiq/tiptap` ships its own `Block` builder mirroring the panels API. Register the plugin on your panel:
 
 ```ts
-// app/bootstrap.ts
-import { registerTiptap } from '@pilotiq/tiptap/register'
-registerTiptap()
+// app/Pilotiq/AdminPanel.ts
+import { tiptap } from '@pilotiq/tiptap'
+Pilotiq.make('Admin').plugins([tiptap()])
 ```
 
 ---

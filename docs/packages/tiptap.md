@@ -19,16 +19,22 @@ pnpm add @pilotiq/tiptap \
 
 ## Setup
 
-One call in your client entry (e.g. `pages/+Layout.tsx`):
+Register the plugin on your `Pilotiq.make(...)` panel (typically `app/Pilotiq/AdminPanel.ts`):
 
 ```ts
-import { registerTiptap } from '@pilotiq/tiptap'
+import { Pilotiq } from '@pilotiq/pilotiq'
+import { tiptap } from '@pilotiq/tiptap'
 
-// Tells pilotiq's SchemaRenderer how to render fieldType: 'richtext'.
-registerTiptap()
+Pilotiq.make('Admin').plugins([
+  tiptap(),
+])
 ```
 
-Without `registerTiptap()`, `RichTextField` form fields render as nothing — `SchemaRenderer` can't find a renderer for the `'richtext'` type.
+The plugin tells pilotiq's `SchemaRenderer` how to render `fieldType: 'richtext'` and wires a server-side renderer for finished HTML on display surfaces. The panel module is imported on both server and client, so a single registration covers both.
+
+> Prefer to register without going through the panel? `import { registerTiptap } from '@pilotiq/tiptap'` and call `registerTiptap()` from your client entry (`pages/+Layout.tsx`). The plugin form is just sugar over this call.
+
+Without one of the two, `RichTextField` form fields render as nothing — `SchemaRenderer` can't find a renderer for the `'richtext'` type.
 
 ## Usage
 

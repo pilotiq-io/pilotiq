@@ -25,15 +25,18 @@ pnpm add @pilotiq/recharts recharts
 
 ## Setup
 
-One-time call in your client entry (e.g. `pages/+Layout.tsx`):
+Register the plugin on your `Pilotiq.make(...)` panel (typically `app/Pilotiq/AdminPanel.ts`):
 
 ```ts
-import { registerChartRenderer } from '@pilotiq/recharts'
+import { Pilotiq } from '@pilotiq/pilotiq'
+import { recharts } from '@pilotiq/recharts'
 
-registerChartRenderer()
+Pilotiq.make('Admin').plugins([recharts()])
 ```
 
-Without this call, every `Chart` widget paints a clear inline error:
+> Prefer to register manually? `import { registerChartRenderer } from '@pilotiq/recharts'` and call it from your client entry (`pages/+Layout.tsx`). The plugin form is just sugar over that call.
+
+Without one of the two, every `Chart` widget paints a clear inline error:
 
 > No renderer registered for widget type `chart`. Install
 > `@pilotiq/recharts` and call `registerChartRenderer()` at app boot.

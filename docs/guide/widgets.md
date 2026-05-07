@@ -125,16 +125,18 @@ Lives in `@pilotiq/recharts`. Install once:
 pnpm add @pilotiq/recharts recharts
 ```
 
-Register the renderer in your client entry (e.g. `pages/+Layout.tsx`):
+Register the renderer on your panel (typically `app/Pilotiq/AdminPanel.ts`):
 
 ```ts
-import { registerChartRenderer } from '@pilotiq/recharts'
-registerChartRenderer()
+import { Pilotiq } from '@pilotiq/pilotiq'
+import { recharts } from '@pilotiq/recharts'
+
+Pilotiq.make('Admin').plugins([recharts()])
 ```
 
 Without that call, `Chart` widgets render an inline error pointing at
 the install command — silent rendering would let a missing
-`registerChartRenderer()` slip into production.
+plugin registration slip into production.
 
 ```ts
 import { Chart } from '@pilotiq/recharts'

@@ -7,6 +7,11 @@ import {
 import { themeEditor } from '@pilotiq/pilotiq/plugins'
 import { registerIcons } from '@pilotiq/pilotiq/icons'
 import { lucideIcons } from '@pilotiq/pilotiq/icons/lucide'
+import { tiptap }      from '@pilotiq/tiptap'
+import { codeEditor }  from '@pilotiq/codemirror'
+import { recharts }    from '@pilotiq/recharts'
+import { json } from '@codemirror/lang-json'
+import { sql }  from '@codemirror/lang-sql'
 import { app } from '@rudderjs/core'
 import { ArticleResource } from './Articles/ArticleResource.js'
 import { UserResource }    from './Users/UserResource.js'
@@ -66,7 +71,17 @@ class SiteSettings extends Global {
 export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .path('/new-admin')
   .branding({ title: 'Pilotiq' })
-  .use(themeEditor())
+  // Adapter packages register through the panel module — no separate
+  // `register*()` calls in `pages/+Layout.tsx`. AdminPanel.ts is re-imported
+  // on the client via the Vite plugin's `_components.ts` manifest, so each
+  // plugin's `register()` runs in both SSR + the browser. Idempotent
+  // (Map.set under the hood).
+  .plugins([
+    tiptap(),
+    codeEditor({ languages: { json, sql } }),
+    recharts(),
+    themeEditor(),
+  ])
   // Plan #10 demo — pretend everyone is an admin so the canDelete()
   // check on `ArticleResource` shows the Delete row action. Real apps
   // would pass `req => Auth.user()` (from `@rudderjs/auth`). The `id`
@@ -109,20 +124,20 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   // - body.start banner sits at the top of every page chrome
   // - sidebar.footer label
   // - list-records.table.before splices an Alert above the Articles list table
-  .renderHook('panels::body.start', () => [
-    Alert.make('Render-hook demo: this banner is mounted via panel.renderHook(\'panels::body.start\').').info(),
-  ])
-  .renderHook('panels::sidebar.footer', () => [
-    Heading.make('Pilotiq playground').level(6),
-  ])
-  .renderHook(
-    'panels::resource.pages.list-records.table.before',
-    () => [Alert.make('Tip: scoped page-role hook — this Alert is only on the Articles list.').info()],
-    { resource: ArticleResource },
-  )
-  .renderHook('panels::global-search.results.before', () => [
-    Alert.make('Tip: press ESC to close the palette, or click any result to navigate.').info(),
-  ])
+  // .renderHook('panels::body.start', () => [
+  //   Alert.make('Render-hook demo: this banner is mounted via panel.renderHook(\'panels::body.start\').').info(),
+  // ])
+  // .renderHook('panels::sidebar.footer', () => [
+  //   Heading.make('Pilotiq playground').level(6),
+  // ])
+  // .renderHook(
+  //   'panels::resource.pages.list-records.table.before',
+  //   () => [Alert.make('Tip: scoped page-role hook — this Alert is only on the Articles list.').info()],
+  //   { resource: ArticleResource },
+  // )
+  // .renderHook('panels::global-search.results.before', () => [
+  //   Alert.make('Tip: press ESC to close the palette, or click any result to navigate.').info(),
+  // ])
 
 export const pilotiqSimple = Pilotiq.make('Pilotiq simple')
   .path('/simple')

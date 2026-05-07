@@ -9,4 +9,5 @@ export {
   type ChartMeta,
 } from './types.js'
 export { registerChartRenderer } from './register.js'
+export { recharts } from './plugin.js'
 export { ChartRenderer } from './react/ChartRenderer.js'

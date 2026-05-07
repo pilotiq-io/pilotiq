@@ -21,22 +21,24 @@ pnpm add @codemirror/lang-json @codemirror/lang-sql @codemirror/lang-javascript
 
 ## Setup
 
-Two one-time calls in your client entry (e.g. `pages/+Layout.tsx`):
+Register the plugin on your `Pilotiq.make(...)` panel (typically `app/Pilotiq/AdminPanel.ts`):
 
 ```ts
-import { registerCodeEditor, registerCodeLanguage } from '@pilotiq/codemirror'
+import { Pilotiq } from '@pilotiq/pilotiq'
+import { codeEditor } from '@pilotiq/codemirror'
 import { json } from '@codemirror/lang-json'
 import { sql }  from '@codemirror/lang-sql'
 
-// Tells pilotiq's SchemaRenderer how to render fieldType: 'code'.
-registerCodeEditor()
-
-// Register the languages the panel actually uses.
-registerCodeLanguage('json', json)
-registerCodeLanguage('sql',  sql)
+Pilotiq.make('Admin').plugins([
+  codeEditor({ languages: { json, sql } }),
+])
 ```
 
-Without `registerCodeEditor()`, `CodeEditorField` form fields render as nothing — `SchemaRenderer` can't find a renderer for the `'code'` type.
+The plugin registers the editor renderer plus every language pack you pass in. Apps register only the languages they actually ship.
+
+> Prefer to register manually? `import { registerCodeEditor, registerCodeLanguage }` from `@pilotiq/codemirror` and call them from your client entry (`pages/+Layout.tsx`). The plugin form is just sugar over those calls.
+
+Without one of the two, `CodeEditorField` form fields render as nothing — `SchemaRenderer` can't find a renderer for the `'code'` type.
 
 ## Usage
 

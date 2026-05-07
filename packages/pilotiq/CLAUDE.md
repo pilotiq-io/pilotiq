@@ -148,7 +148,9 @@ Deep notes for many of these also live in `~/.claude/projects/-Users-sleman-Proj
 
 - `PilotiqPlugin` interface: `{ name: string, register(panel): void }`
 - `.use(plugin)` on builder — calls `plugin.register(panel)`
-- `@pilotiq/pilotiq/plugins` export path for built-in plugins
+- `.plugins([p1, p2, …])` array sugar — `.use()`s each in order
+- `@pilotiq/pilotiq/plugins` export path for built-in plugins (`themeEditor()`)
+- Adapter packages ship matching plugin factories alongside their `register*()` exports: `tiptap()` (`@pilotiq/tiptap`), `codeEditor({ languages? })` (`@pilotiq/codemirror`), `recharts()` (`@pilotiq/recharts`). The plugin form is the recommended setup — registers run through the panel module so it's wired in one place. `register*()` exports remain for direct use from `pages/+Layout.tsx` if desired. Both forms are idempotent (`Map.set` under the hood).
 
 ---
 

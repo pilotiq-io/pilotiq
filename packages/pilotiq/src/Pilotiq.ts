@@ -202,7 +202,7 @@ export interface PilotiqConfig {
 
 export class Pilotiq {
   private config: PilotiqConfig
-  private plugins: PilotiqPlugin[] = []
+  private installedPlugins: PilotiqPlugin[] = []
 
   private constructor(name: string) {
     this.config = {
@@ -567,8 +567,32 @@ export class Pilotiq {
   }
 
   use(plugin: PilotiqPlugin): this {
-    this.plugins.push(plugin)
+    this.installedPlugins.push(plugin)
     plugin.register(this)
+    return this
+  }
+
+  /**
+   * Register multiple plugins in a single call. Each plugin's `register()`
+   * runs in array order — equivalent to chaining `.use(p)` per item.
+   *
+   * @example
+   * ```ts
+   * import { tiptap } from '@pilotiq/tiptap'
+   * import { codeEditor } from '@pilotiq/codemirror'
+   * import { recharts } from '@pilotiq/recharts'
+   * import { json } from '@codemirror/lang-json'
+   *
+   * Pilotiq.make('Admin')
+   *   .plugins([
+   *     tiptap(),
+   *     codeEditor({ languages: { json } }),
+   *     recharts(),
+   *   ])
+   * ```
+   */
+  plugins(list: PilotiqPlugin[]): this {
+    for (const plugin of list) this.use(plugin)
     return this
   }
 
@@ -603,6 +627,6 @@ export class Pilotiq {
 
   /** @internal */
   getPlugins(): readonly PilotiqPlugin[] {
-    return this.plugins
+    return this.installedPlugins
   }
 }
