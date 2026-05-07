@@ -23,9 +23,10 @@ import { isServerDataElement, type ServerDataElement } from './schema/ServerData
 import { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
-import { applyStateUpdate, findForms, findWizardStepFields, loadRelationRows, selectFormById } from './elements/dispatchForm.js'
+import { applyStateUpdate, coerceFormValues, findForms, findWizardStepFields, loadRelationRows, selectFormById } from './elements/dispatchForm.js'
 import { isRepeaterField, RepeaterField } from './fields/RepeaterField.js'
 import { isBuilderField, BuilderField } from './fields/BuilderField.js'
+import { SelectField } from './fields/SelectField.js'
 import { validateSchema } from './validation/index.js'
 import { searchAllResources, type GlobalSearchResult } from './search.js'
 import { loadTableRecords, findTables, type QueryParams } from './elements/dispatchTable.js'
@@ -834,6 +835,51 @@ export function tagFormWizardUrls(
     if (formHasWizard(form)) {
       form.withWizardUrl(urlBuilder(form.getFormId()))
     }
+  }
+}
+
+/**
+ * Audit row 2026-05-07 cont'd⁸ — stamp the inline-create-option endpoint
+ * URL on every `SelectField` that has called `createOptionForm()`. Walks
+ * every form on the page so the URL carries the parent form's id; URL
+ * shape `${formScopeUrl}/_form/${formId}/create-option/${fieldName}` so
+ * the route handler can pick the form by id and the field by name.
+ *
+ * Mirrors `tagFormStateUrls / tagFormWizardUrls` — operates on the
+ * un-resolved Element tree, mutates field-instance state via
+ * `field.withCreateOptionUrl(url)`, and the field's `toMeta()` reads it
+ * back to emit `createOption.url`.
+ *
+ * Stops at Repeater / Builder boundaries (parallel to the form-state /
+ * wizard walkers): inside-row schemas are dispatched per-row and the
+ * createOption shape doesn't compose with row body coercion in v1.
+ */
+export function tagSelectCreateOptionUrls(
+  elements:   ReadonlyArray<Element>,
+  urlBuilder: (formId: string, fieldName: string) => string,
+): void {
+  for (const form of findForms(elements)) {
+    const formId = form.getFormId()
+    walkSelectFields(form.getChildren() as Element[] ?? [], (field) => {
+      if (field.hasCreateOption() && !field.getCreateOptionUrl()) {
+        field.withCreateOptionUrl(urlBuilder(formId, field.name))
+      }
+    })
+  }
+}
+
+function walkSelectFields(elements: Element[], visit: (f: SelectField) => void): void {
+  for (const el of elements) {
+    if (el instanceof SelectField) {
+      visit(el)
+      // SelectField has no children of its own — no recursion needed.
+      continue
+    }
+    // Stop at row-array boundaries — see comment on `tagSelectCreateOptionUrls`.
+    if (el instanceof RepeaterField) continue
+    if (el instanceof BuilderField)  continue
+    const children = el.getChildren()
+    if (children && children.length > 0) walkSelectFields(children as Element[], visit)
   }
 }
 
@@ -3541,6 +3587,165 @@ export async function formWizardData(
     return { ok: false, status: 422, errors }
   }
   return { ok: true }
+}
+
+// ─── SelectField inline-create-option data builder ───────────
+
+export interface FormCreateOptionRequest {
+  formId:    string
+  fieldName: string
+  values:    Record<string, unknown>
+}
+
+export interface FormCreateOptionSuccess {
+  ok:     true
+  option: { value: string; label: string }
+}
+
+export interface FormCreateOptionFailure {
+  ok:     false
+  status: 403 | 404 | 422 | 500
+  error?:  string
+  errors?: Record<string, string[]>
+}
+
+/** Find a `SelectField` by name inside a form's children, walking through
+ *  layout containers but stopping at Repeater / Builder boundaries
+ *  (parallel to `tagSelectCreateOptionUrls`'s walker). Returns the first
+ *  match or `undefined`. */
+function findSelectFieldByName(elements: Element[], name: string): SelectField | undefined {
+  for (const el of elements) {
+    if (el instanceof SelectField) {
+      if (el.name === name) return el
+      continue
+    }
+    if (el instanceof RepeaterField) continue
+    if (el instanceof BuilderField)  continue
+    const children = el.getChildren()
+    if (children && children.length > 0) {
+      const found = findSelectFieldByName(children as Element[], name)
+      if (found) return found
+    }
+  }
+  return undefined
+}
+
+/**
+ * Audit row 2026-05-07 cont'd⁸ — handle a `SelectField.createOptionForm()`
+ * modal submit. Locates the parent form by `formId`, finds the SelectField
+ * by `fieldName`, re-evaluates the `createOptionAuthorize` rule (so a
+ * tampered URL can't bypass), coerces + validates the body against the
+ * sub-form's fields, then calls `createOptionUsing(handler)` and returns
+ * `{ option }` for the client to append + select.
+ *
+ * Returns `null` when the route prefix doesn't resolve to a real
+ * resource/global/page (route handler turns into 404).
+ */
+export async function formCreateOptionData(
+  pilotiq: Pilotiq,
+  scope:   FormStateScope,
+  body:    FormCreateOptionRequest,
+  req?:    unknown,
+): Promise<FormCreateOptionSuccess | FormCreateOptionFailure | null> {
+  const cfg = pilotiq.getConfig()
+  const user = await pilotiq.resolveUser(req)
+
+  let PageClass: typeof Page | undefined
+  let mode: 'create' | 'edit'
+  let record: unknown = undefined
+  let baseCtxExtras: Record<string, unknown> = {}
+
+  if (scope.kind === 'resource-create' || scope.kind === 'resource-edit') {
+    const R = cfg.resources.find(r => r.getSlug() === scope.slug)
+    if (!R) return null
+    const pages = R.resolvePages()
+    if (scope.kind === 'resource-create') {
+      if (!pages.create) return null
+      PageClass = pages.create
+      mode = 'create'
+    } else {
+      if (!pages.edit) return null
+      PageClass = pages.edit
+      mode = 'edit'
+      baseCtxExtras = { recordId: scope.recordId }
+      if (R.model) {
+        try { record = await findRecord(R, scope.recordId, { user }) } catch { /* ignore */ }
+      } else {
+        record = { id: scope.recordId }
+      }
+    }
+  } else if (scope.kind === 'global-edit') {
+    const G = cfg.globals.find(g => g.getSlug() === scope.slug)
+    if (!G) return null
+    const pages = G.resolvePages()
+    if (!pages.edit) return null
+    PageClass = pages.edit
+    mode = 'edit'
+  } else {
+    const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
+    if (!P) return null
+    PageClass = P
+    mode = 'edit'
+  }
+
+  if (!PageClass) return null
+
+  const baseCtx: SchemaContext = uploadCtx(userCtx({ mode, basePath: cfg.path, ...baseCtxExtras }, user), cfg)
+  const elements = await callPageSchema(PageClass, baseCtx)
+  const form = selectFormById(findForms(elements), body.formId)
+  if (!form) return { ok: false, status: 404, error: `Form "${body.formId}" not found on page` }
+
+  const field = findSelectFieldByName(form.getChildren() as Element[] ?? [], body.fieldName)
+  if (!field) return { ok: false, status: 404, error: `SelectField "${body.fieldName}" not found on form "${body.formId}"` }
+  if (!field.hasCreateOption()) return { ok: false, status: 404, error: `SelectField "${body.fieldName}" does not configure createOptionForm()` }
+
+  const createForm = field.getCreateOptionForm()!
+  const handler    = field.getCreateOptionHandler()
+  if (!handler) {
+    return { ok: false, status: 500, error: `SelectField "${body.fieldName}" has createOptionForm() but no createOptionUsing() handler` }
+  }
+
+  // Re-evaluate authorize. Build the same ActionVisibilityContext shape
+  // the field's `toMeta` did — keeps server / meta-build paths consistent.
+  const authorize = field.getCreateOptionAuthorize()
+  if (authorize !== undefined) {
+    const authVisible = await (async () => {
+      if (typeof authorize !== 'function') return authorize
+      const visCtx: import('./actions/Action.js').ActionVisibilityContext = {}
+      if (record !== undefined) visCtx.record = record
+      if (user   !== null     ) visCtx.user   = user
+      try { return await authorize(visCtx) } catch { return false }
+    })()
+    if (!authVisible) return { ok: false, status: 403, error: 'createOptionAuthorize denied' }
+  }
+
+  // Coerce + validate body against the sub-form's fields. The createOption
+  // sub-schema is detached from the parent form so we run it against its
+  // own children only — coerceFormValues mutates `out` to normalize toggle
+  // / number / date / etc. shapes (same shape parent forms use).
+  const coerced = coerceFormValues(createForm, { ...body.values })
+  const errors  = await validateSchema(createForm, coerced, undefined)
+  if (Object.keys(errors).length > 0) {
+    return { ok: false, status: 422, errors }
+  }
+
+  const ctx: RenderContext = {
+    ...baseCtx,
+    values: coerced,
+    ...(record !== undefined ? { record } : {}),
+  }
+  let option: { value: string; label: string }
+  try {
+    option = await handler(coerced, ctx)
+  } catch (e) {
+    return { ok: false, status: 500, error: e instanceof Error ? e.message : String(e) }
+  }
+
+  if (!option || typeof option.value !== 'string' || typeof option.label !== 'string') {
+    return { ok: false, status: 500, error: `createOptionUsing must return { value: string, label: string }` }
+  }
+
+  return { ok: true, option }
 }
 
 // ─── Async-mention resolve data builder ──────────────────────

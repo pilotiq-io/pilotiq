@@ -141,6 +141,32 @@ describe('SelectField', () => {
       })
     })
 
+    describe('withCreateOptionUrl', () => {
+      it('round-trips via getCreateOptionUrl', () => {
+        const f = SelectField.make('a').withCreateOptionUrl('/p/_form/x/create-option/a')
+        assert.equal(f.getCreateOptionUrl(), '/p/_form/x/create-option/a')
+      })
+
+      it('emits url into createOption slot when set', async () => {
+        const meta = await SelectField.make('a').options([])
+          .createOptionForm([TextField.make('name')])
+          .createOptionUsing(async () => ({ value: '1', label: 'x' }))
+          .withCreateOptionUrl('/admin/things/_form/parent/create-option/a')
+          .toMeta()
+        const slot = (meta as { createOption?: { url?: string } }).createOption!
+        assert.equal(slot.url, '/admin/things/_form/parent/create-option/a')
+      })
+
+      it('omits url key when no walker has stamped it', async () => {
+        const meta = await SelectField.make('a').options([])
+          .createOptionForm([TextField.make('name')])
+          .createOptionUsing(async () => ({ value: '1', label: 'x' }))
+          .toMeta()
+        const slot = (meta as { createOption?: { url?: string } }).createOption!
+        assert.equal('url' in slot, false)
+      })
+    })
+
     describe('accessors', () => {
       it('getCreateOptionForm / Handler / Authorize round-trip', () => {
         const fields    = [TextField.make('name')]

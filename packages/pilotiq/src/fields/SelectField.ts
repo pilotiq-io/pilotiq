@@ -73,6 +73,11 @@ export class SelectField extends Field {
    *  the option being created is rarely the same model as the parent
    *  form's record. */
   private _createOptionAuthorize?: VisibilityRule
+  /** POST endpoint stamped at page-data time by `tagSelectCreateOptionUrls`.
+   *  Field-instance state (parallel to `Form.withStateUrl`); read by
+   *  `toMeta` and emitted into the `createOption.url` slot. Absent ⇒ no
+   *  walker has run yet ⇒ renderer skips the trigger. */
+  private _createOptionUrl?: string
 
   private constructor(name: string) {
     super(name, 'select')
@@ -157,6 +162,14 @@ export class SelectField extends Field {
   getCreateOptionHandler(): CreateOptionHandler | undefined { return this._createOptionHandler }
   getCreateOptionAuthorize(): VisibilityRule | undefined { return this._createOptionAuthorize }
 
+  /** Stamped by `tagSelectCreateOptionUrls` at page-data time. Mirrors
+   *  the `Form.withStateUrl` / `Table.withReorderUrl` pattern. */
+  withCreateOptionUrl(url: string): this {
+    this._createOptionUrl = url
+    return this
+  }
+  getCreateOptionUrl(): string | undefined { return this._createOptionUrl }
+
   override async toMeta(ctx?: RenderContext): Promise<FieldMeta & { options: SelectOption[]; createOption?: CreateOptionMeta }> {
     const base    = this.buildMeta(ctx)
     const options = disableOptionsTakenInSiblings(
@@ -196,6 +209,7 @@ export class SelectField extends Field {
     return {
       formId: `${this.name}_create-option`,
       schema,
+      ...(this._createOptionUrl !== undefined ? { url: this._createOptionUrl } : {}),
     }
   }
 }

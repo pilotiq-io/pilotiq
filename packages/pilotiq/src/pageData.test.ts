@@ -6,12 +6,14 @@ import { ListTab } from './Tab.js'
 import { ListTabs } from './elements/ListTabs.js'
 import {
   applyFillPipeline,
+  formCreateOptionData,
   formStateData,
   mentionResolveData,
   panelInfo,
   resolveActiveTab,
   tagFormStateUrls,
   tagRichTextMentionUrls,
+  tagSelectCreateOptionUrls,
   tagTableReorderUrls,
   tagCellEditUrls,
 } from './pageData.js'
@@ -24,6 +26,7 @@ import { Resource } from './Resource.js'
 import { Global } from './Global.js'
 import { Page } from './Page.js'
 import { TextField } from './fields/TextField.js'
+import { SelectField } from './fields/SelectField.js'
 import { ToggleField } from './fields/ToggleField.js'
 import { Section } from './schema/Section.js'
 import { Repeater } from './fields/RepeaterField.js'
@@ -461,6 +464,209 @@ describe('tagFormStateUrls (Plan #5)', () => {
     ])
     tagFormStateUrls([form], (id) => `/admin/x/_form/${id}/state`)
     assert.equal(form.getStateUrl(), '/admin/x/_form/js/state')
+  })
+})
+
+describe('tagSelectCreateOptionUrls (audit row 2026-05-07 cont\'d⁸)', () => {
+  it('stamps url on SelectFields configured with createOptionForm', () => {
+    const sel = SelectField.make('categoryId').options([])
+      .createOptionForm([TextField.make('name')])
+      .createOptionUsing(async () => ({ value: '1', label: 'x' }))
+    const form = Form.make().formId('post-create').schema([sel])
+
+    tagSelectCreateOptionUrls(
+      [form],
+      (formId, fieldName) => `/admin/posts/_form/${formId}/create-option/${fieldName}`,
+    )
+    assert.equal(sel.getCreateOptionUrl(), '/admin/posts/_form/post-create/create-option/categoryId')
+  })
+
+  it('skips bare SelectFields with no createOptionForm', () => {
+    const sel = SelectField.make('status').options([{ value: 'a', label: 'A' }])
+    const form = Form.make().formId('f').schema([sel])
+    tagSelectCreateOptionUrls([form], (id, name) => `/x/${id}/${name}`)
+    assert.equal(sel.getCreateOptionUrl(), undefined)
+  })
+
+  it('walks nested layout containers', () => {
+    const sel = SelectField.make('tagId').options([])
+      .createOptionForm([TextField.make('name')])
+      .createOptionUsing(async () => ({ value: '1', label: 'x' }))
+    const form = Form.make().formId('nest').schema([
+      Section.make('Meta').schema([sel]),
+    ])
+    tagSelectCreateOptionUrls(
+      [form],
+      (id, name) => `/p/_form/${id}/create-option/${name}`,
+    )
+    assert.equal(sel.getCreateOptionUrl(), '/p/_form/nest/create-option/tagId')
+  })
+
+  it('does not overwrite an already-stamped url', () => {
+    const sel = SelectField.make('a').options([])
+      .createOptionForm([TextField.make('name')])
+      .createOptionUsing(async () => ({ value: '1', label: 'x' }))
+      .withCreateOptionUrl('/preset')
+    const form = Form.make().formId('f').schema([sel])
+    tagSelectCreateOptionUrls([form], () => '/clobber')
+    assert.equal(sel.getCreateOptionUrl(), '/preset')
+  })
+
+  it('stamps url on multiple selects independently', () => {
+    const a = SelectField.make('a').options([])
+      .createOptionForm([TextField.make('n')])
+      .createOptionUsing(async () => ({ value: '1', label: 'x' }))
+    const b = SelectField.make('b').options([])
+      .createOptionForm([TextField.make('n')])
+      .createOptionUsing(async () => ({ value: '2', label: 'y' }))
+    const form = Form.make().formId('multi').schema([a, b])
+    tagSelectCreateOptionUrls(
+      [form],
+      (id, name) => `/p/${id}/${name}`,
+    )
+    assert.equal(a.getCreateOptionUrl(), '/p/multi/a')
+    assert.equal(b.getCreateOptionUrl(), '/p/multi/b')
+  })
+
+  it('stops at Repeater boundaries — inside-row SelectFields are not stamped', () => {
+    const innerSel = SelectField.make('childCat').options([])
+      .createOptionForm([TextField.make('n')])
+      .createOptionUsing(async () => ({ value: '1', label: 'x' }))
+    const outerSel = SelectField.make('rootCat').options([])
+      .createOptionForm([TextField.make('n')])
+      .createOptionUsing(async () => ({ value: '1', label: 'x' }))
+    const form = Form.make().formId('rep').schema([
+      outerSel,
+      Repeater.make('rows').schema([innerSel]),
+    ])
+    tagSelectCreateOptionUrls([form], (id, name) => `/p/${id}/${name}`)
+    assert.equal(outerSel.getCreateOptionUrl(), '/p/rep/rootCat')
+    assert.equal(innerSel.getCreateOptionUrl(), undefined)
+  })
+})
+
+describe('formCreateOptionData (audit row 2026-05-07 cont\'d⁸)', () => {
+  function makePanelWithCreateOption(opts?: {
+    handler?: (values: Record<string, unknown>) => Promise<{ value: string; label: string }>
+    authorize?: import('./actions/Action.js').VisibilityRule
+    createForm?: Element[]
+  }) {
+    const handler    = opts?.handler    ?? (async (v: Record<string, unknown>) => ({ value: 'new-id', label: String(v['name']) }))
+    const createForm = opts?.createForm ?? [TextField.make('name')]
+
+    class DemoPage extends Page {
+      static override slug = 'demo'
+      static override async schema() {
+        const sel = SelectField.make('categoryId').options([])
+          .createOptionForm(createForm)
+          .createOptionUsing(handler)
+        if (opts?.authorize !== undefined) sel.createOptionAuthorize(opts.authorize)
+        // Two forms on the page so `selectFormById` doesn't fall back to
+        // the only form (single-form fallback is intentional for SPA
+        // edge cases — strict-match tests need 2+ forms).
+        return [
+          Form.make().formId('the-form').schema([sel]),
+          Form.make().formId('other-form').schema([TextField.make('decoy')]),
+        ]
+      }
+    }
+    return Pilotiq.make('T').path('/admin').pages([DemoPage])
+  }
+
+  it('returns null when route prefix does not resolve', async () => {
+    const panel = Pilotiq.make('T').path('/admin')
+    const result = await formCreateOptionData(
+      panel,
+      { kind: 'page', pageSlug: 'no-such-page' },
+      { formId: 'x', fieldName: 'y', values: {} },
+    )
+    assert.equal(result, null)
+  })
+
+  it('returns 404 when form is not found on page', async () => {
+    const panel = makePanelWithCreateOption()
+    const result = await formCreateOptionData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'wrong-form', fieldName: 'categoryId', values: { name: 'X' } },
+    )
+    assert.deepEqual(result, { ok: false, status: 404, error: 'Form "wrong-form" not found on page' })
+  })
+
+  it('returns 404 when SelectField is not found on form', async () => {
+    const panel = makePanelWithCreateOption()
+    const result = await formCreateOptionData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', fieldName: 'unknownField', values: {} },
+    )
+    const r = result as { ok: false; status: number; error: string }
+    assert.equal(r.ok, false)
+    assert.equal(r.status, 404)
+    assert.match(r.error, /not found on form/)
+  })
+
+  it('returns 403 when authorize rule rejects', async () => {
+    const panel = makePanelWithCreateOption({ authorize: false })
+    const result = await formCreateOptionData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', fieldName: 'categoryId', values: { name: 'X' } },
+    )
+    assert.deepEqual(result, { ok: false, status: 403, error: 'createOptionAuthorize denied' })
+  })
+
+  it('returns 422 when validation fails', async () => {
+    const panel = makePanelWithCreateOption({
+      createForm: [TextField.make('name').required()],
+    })
+    const result = await formCreateOptionData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', fieldName: 'categoryId', values: { name: '' } },
+    )
+    const r = result as { ok: false; status: number; errors: Record<string, string[]> }
+    assert.equal(r.ok, false)
+    assert.equal(r.status, 422)
+    assert.ok(r.errors['name'])
+  })
+
+  it('returns 200 + option on happy path', async () => {
+    const panel = makePanelWithCreateOption()
+    const result = await formCreateOptionData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', fieldName: 'categoryId', values: { name: 'Tech' } },
+    )
+    assert.deepEqual(result, { ok: true, option: { value: 'new-id', label: 'Tech' } })
+  })
+
+  it('returns 500 when handler throws', async () => {
+    const panel = makePanelWithCreateOption({
+      handler: async () => { throw new Error('boom') },
+    })
+    const result = await formCreateOptionData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', fieldName: 'categoryId', values: { name: 'X' } },
+    )
+    assert.deepEqual(result, { ok: false, status: 500, error: 'boom' })
+  })
+
+  it('returns 500 when handler returns malformed shape', async () => {
+    const panel = makePanelWithCreateOption({
+      // @ts-expect-error testing runtime shape guard
+      handler: async () => ({ value: 'x' /* missing label */ }),
+    })
+    const result = await formCreateOptionData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', fieldName: 'categoryId', values: { name: 'X' } },
+    )
+    const r = result as { ok: false; status: number; error: string }
+    assert.equal(r.ok, false)
+    assert.equal(r.status, 500)
+    assert.match(r.error, /\{ value: string, label: string \}/)
   })
 })
 
