@@ -3,50 +3,91 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.29.3
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
+# Pilotiq's `pnpm.overrides` resolve every `@rudderjs/*` package to
+# `link:../rudder/packages/<name>` (sibling clones on disk, no submodules).
+# CI must therefore check out the rudder repo as a sibling directory and
+# build it before installing pilotiq, otherwise the linked targets miss
+# their `dist/` and pilotiq's typecheck / build can't resolve the
+# `@rudderjs/*` types.
 
+jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout pilotiq
+        uses: actions/checkout@v4
+        with:
+          path: pilotiq
 
-      - uses: pnpm/action-setup@v4
+      - name: Checkout rudder (sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: rudderjs/rudder
+          path: rudder
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
         with:
           version: 10.29.3
 
-      - uses: actions/setup-node@v4
+      - name: Install Node
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: pnpm
 
-      - name: Install dependencies
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        shell: bash
+        working-directory: pilotiq
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pilotiq/pnpm-lock.yaml', 'rudder/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install rudder
+        working-directory: rudder
         run: pnpm install --frozen-lockfile
 
+      - name: Build rudder
+        working-directory: rudder
+        run: pnpm build
+
+      - name: Install pilotiq
+        working-directory: pilotiq
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        working-directory: pilotiq/playground-pilotiq
+        run: pnpm exec prisma generate --schema prisma/schema
+
       - name: Typecheck
+        working-directory: pilotiq
         run: pnpm typecheck
 
       - name: Build
+        working-directory: pilotiq
         run: pnpm build
 
       - name: Test
+        working-directory: pilotiq
         run: pnpm test
