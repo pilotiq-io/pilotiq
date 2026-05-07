@@ -13,9 +13,11 @@
   "author": "Suleiman Shahbari",
   "scripts": {
     "build": "turbo run build",
+    "build:packages": "turbo run build --filter='./packages/*'",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "typecheck:packages": "turbo run typecheck --filter='./packages/*'",
     "clean": "turbo run clean",
     "test": "turbo run test",
     "changeset": "changeset",

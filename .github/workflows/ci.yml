@@ -76,17 +76,13 @@ jobs:
         working-directory: pilotiq
         run: pnpm install --frozen-lockfile
 
-      - name: Generate Prisma client
-        working-directory: pilotiq/playground-pilotiq
-        run: pnpm exec prisma generate --schema prisma/schema
-
       - name: Typecheck
         working-directory: pilotiq
-        run: pnpm typecheck
+        run: pnpm typecheck:packages
 
       - name: Build
         working-directory: pilotiq
-        run: pnpm build
+        run: pnpm build:packages
 
       - name: Test
         working-directory: pilotiq

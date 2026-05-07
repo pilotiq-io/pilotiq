@@ -13,33 +13,76 @@ permissions:
   pull-requests: write
   id-token: write
 
+# Like CI, release builds need rudder cloned + built as a sibling so
+# pnpm.overrides resolve. Package-scoped build keeps the playground out
+# of the publish path.
 jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout pilotiq
+        uses: actions/checkout@v4
         with:
+          path: pilotiq
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - name: Checkout rudder (sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: rudderjs/rudder
+          path: rudder
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
         with:
           version: 10.29.3
 
-      - uses: actions/setup-node@v4
+      - name: Install Node
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: pnpm
           registry-url: 'https://registry.npmjs.org'
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm test
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        shell: bash
+        working-directory: pilotiq
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pilotiq/pnpm-lock.yaml', 'rudder/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install rudder
+        working-directory: rudder
+        run: pnpm install --frozen-lockfile
+
+      - name: Build rudder
+        working-directory: rudder
+        run: pnpm build
+
+      - name: Install pilotiq
+        working-directory: pilotiq
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        working-directory: pilotiq
+        run: pnpm build:packages
+
+      - name: Test
+        working-directory: pilotiq
+        run: pnpm test
 
       - name: Create Release PR or Publish
         id: changesets
         uses: changesets/action@v1
         with:
+          cwd: pilotiq
           publish: pnpm changeset publish
           title: 'chore: version packages'
           commit: 'chore: version packages'
