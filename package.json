@@ -22,7 +22,7 @@
     "test": "turbo run test",
     "changeset": "changeset",
     "changeset:version": "changeset version",
-    "release": "pnpm build && pnpm -r publish --access public --no-git-checks"
+    "release": "pnpm build:packages && pnpm changeset publish"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

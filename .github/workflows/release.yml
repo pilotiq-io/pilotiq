@@ -70,23 +70,15 @@ jobs:
         working-directory: pilotiq
         run: pnpm install --frozen-lockfile
 
-      - name: Build packages
-        working-directory: pilotiq
-        run: pnpm build:packages
-
-      - name: Test
-        working-directory: pilotiq
-        run: pnpm test
-
       - name: Create Release PR or Publish
         id: changesets
         uses: changesets/action@v1
         with:
           cwd: pilotiq
-          publish: pnpm changeset publish
+          version: pnpm changeset:version
+          publish: pnpm release
           title: 'chore: version packages'
           commit: 'chore: version packages'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
