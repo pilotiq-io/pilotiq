@@ -10,7 +10,7 @@ Every form field is a static `make(name)` builder that extends `Field`.
 | `EmailField` | `<input type="email">` | Auto-attaches `email()` validator |
 | `NumberField` | `<input type="number">` | `min() / max() / step()` |
 | `Slider` | range track | `range() / step()` |
-| `Textarea` | `<textarea>` | `rows()` |
+| `Textarea` | `<textarea>` | `rows() / cols() / autosize() / disableGrammarly()` |
 | `MarkdownField` | textarea + preview | tabs Write / Preview |
 | `RichTextField` | Tiptap editor | from `@pilotiq/tiptap` |
 | `CodeEditorField` | CodeMirror 6 | from `@pilotiq/codemirror` |
@@ -88,3 +88,23 @@ required"`. Explicit validators (`required('Custom message')`,
 > Combine `live()` + `afterStateUpdated()` to wire a reactive pair
 > (e.g. title → slug, country → state options). See
 > [Reactive fields](./reactive).
+
+## Textarea-specific setters
+
+```ts
+Textarea.make('bio')
+  .rows(8)              // initial visible rows (default 4)
+  .cols(60)             // HTML cols attr — explicit char-grid width
+  .autosize()           // grow with content; unsets the explicit rows
+  .disableGrammarly()   // suppress the Grammarly browser overlay
+```
+
+`autosize()` rides the existing `field-sizing-content` CSS utility on
+the underlying `<textarea>` — the box grows with typed content until
+the parent's max-height. `cols()` and `rows()` still apply when both
+are set, but `autosize()` drops the explicit `rows` so the browser
+sizes purely to content. `disableGrammarly()` adds
+`data-gramm="false" / data-gramm_editor="false" /
+data-enable-grammarly="false"` so the third-party extension skips the
+field — useful for sensitive content (slug source, code snippets, DB
+queries) where the overlay corrupts cursor placement.

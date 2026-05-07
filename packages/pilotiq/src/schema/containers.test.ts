@@ -14,6 +14,7 @@ import { Heading } from './Heading.js'
 import { Text } from './Text.js'
 import { TextField } from '../fields/TextField.js'
 import { SelectField } from '../fields/SelectField.js'
+import { Action } from '../actions/Action.js'
 
 beforeEach(() => _resetResolverRegistry())
 
@@ -102,6 +103,50 @@ describe('Section', () => {
     assert.equal(result[0]!.children?.length, 2)
     assert.equal(result[0]!.children![0]!.type, 'field')
     assert.equal(result[0]!.children![1]!.type, 'text')
+  })
+
+  it('emits secondary flag only when the chainable was called', async () => {
+    const off = Section.make('A').schema([])
+    const on  = Section.make('B').secondary().schema([])
+    const ra = (await resolveSchema([off]))[0]!
+    const rb = (await resolveSchema([on ]))[0]!
+    assert.equal(ra['secondary'], undefined)
+    assert.equal(rb['secondary'], true)
+  })
+
+  it('afterHeader([Action…]) resolves Actions through the standard walker', async () => {
+    const tree = [
+      Section.make('Posts').afterHeader([
+        Action.make('refresh').label('Refresh'),
+        Action.make('export').label('Export'),
+      ]).schema([]),
+    ]
+    const result = await resolveSchema(tree)
+    const after = result[0]!['afterHeader'] as Array<{ type: string; name: string }> | undefined
+    assert.ok(after)
+    assert.equal(after.length,    2)
+    assert.equal(after[0]!.type,  'action')
+    assert.equal(after[0]!.name,  'refresh')
+    assert.equal(after[1]!.name,  'export')
+  })
+
+  it('afterHeader is omitted when no actions are passed', async () => {
+    const result = await resolveSchema([Section.make('A').schema([])])
+    assert.equal(result[0]!['afterHeader'], undefined)
+  })
+
+  it('afterHeader Actions evaluate their .visible() rules', async () => {
+    const tree = [
+      Section.make('Posts').afterHeader([
+        Action.make('shown').label('Shown'),
+        Action.make('gone').label('Gone').visible(false),
+      ]).schema([]),
+    ]
+    const result = await resolveSchema(tree)
+    const after = result[0]!['afterHeader'] as Array<{ name: string }> | undefined
+    assert.ok(after)
+    assert.equal(after.length,    1)
+    assert.equal(after[0]!.name,  'shown')
   })
 })
 

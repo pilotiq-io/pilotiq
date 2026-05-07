@@ -21,6 +21,7 @@ import {
   readRepeatableRowId,
   type RepeatableEntryRowMeta,
 } from '../entries/RepeatableEntry.js'
+import { Section } from './Section.js'
 
 export interface SchemaContext {
   user?: { name?: string; email?: string; [key: string]: unknown }
@@ -306,6 +307,18 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
   const children = el.getChildren()
   if (children && children.length > 0) {
     meta.children = await resolveAll(children, ctx)
+  }
+
+  // Filament v5 — `Section.afterHeader([Action…])` resolves through the
+  // standard walker so every Action's `.visible() / .disabled()` rule
+  // evaluates the same way it does anywhere else. Stamped under
+  // `meta.afterHeader` so the renderer doesn't confuse it with the
+  // section's body content (`meta.children`).
+  if (el instanceof Section) {
+    const afterHeader = el.getAfterHeader()
+    if (afterHeader && afterHeader.length > 0) {
+      meta['afterHeader'] = await resolveAll(afterHeader, ctx)
+    }
   }
 
   return meta

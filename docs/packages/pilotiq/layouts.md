@@ -26,10 +26,25 @@ Section.make('Customer details')
 | `.aside()` | Renders as right-rail when nested in `Split` |
 | `.compact()` | Tightens outer padding + heading size |
 | `.dense()` | Tightens inner gap (gap-2 vs gap-4) |
+| `.secondary()` | Muted background variant — recedes beneath a primary section |
 | `.collapsible()` | Adds chevron toggle |
 | `.collapsed()` | Start collapsed |
 | `.persistCollapsed(key?)` | Remember collapse state in localStorage |
 | `.columns(n)` | Inner CSS grid columns |
+| `.afterHeader([Action…])` | Right-aligned action buttons in the section header |
+
+```ts
+Section.make('Posts')
+  .afterHeader([
+    Action.make('refresh').label('Refresh').icon('refresh-cw').iconButton(),
+    Action.make('export').label('Export').handler(async () => { /* … */ }),
+  ])
+  .schema([ /* … */ ])
+```
+
+`afterHeader` accepts `Action[]` only — every Action's chrome
+(`.color() / .icon() / .iconButton() / .visible() / .disabled()`)
+works the same as in any other slot.
 
 ## Grid / Group / Fieldset / Split
 

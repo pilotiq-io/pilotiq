@@ -1,4 +1,5 @@
 import { Element } from './Element.js'
+import type { Action } from '../actions/Action.js'
 
 /**
  * Container that groups related Elements (typically Fields) under a heading
@@ -20,8 +21,10 @@ export class Section extends Element {
   private _aside = false
   private _compact = false
   private _dense = false
+  private _secondary = false
   private _persistCollapsed = false
   private _persistKey?: string
+  private _afterHeader?: Action[]
 
   private constructor(private _title?: string) {
     super()
@@ -71,6 +74,13 @@ export class Section extends Element {
   dense(v = true): this { this._dense = v; return this }
 
   /**
+   * Muted background variant — uses the `bg-muted/40` token instead of
+   * `bg-card`. Pairs well with sections that wrap secondary or auxiliary
+   * controls (e.g. an "Advanced settings" group inside a primary card).
+   */
+  secondary(v = true): this { this._secondary = v; return this }
+
+  /**
    * Persist the open/closed state to localStorage so user choices survive
    * navigation. Only meaningful when `collapsible` is true. The optional
    * `key` overrides the auto-key (which is built from the page slug +
@@ -81,6 +91,26 @@ export class Section extends Element {
     if (key !== undefined) this._persistKey = key
     return this
   }
+
+  /**
+   * Action buttons rendered to the right of the section header. v1
+   * accepts `Action[]` only — Element-typed children would require a
+   * second resolver pass; keeping the slot Action-only dodges the
+   * resolution question (Actions serialize via `toMeta()` and their
+   * visibility evaluates inside the standard resolver walk that
+   * `resolveSchema` runs against `getAfterHeader()`).
+   *
+   * Actions placed here keep their full chrome surface — `.color() /
+   * .icon() / .iconButton() / .visible() / .disabled()` all work the
+   * same as anywhere else.
+   */
+  afterHeader(actions: Action[]): this {
+    this._afterHeader = actions
+    return this
+  }
+
+  /** Read-only access for the resolver. */
+  getAfterHeader(): Action[] | undefined { return this._afterHeader }
 
   /** Set the section's children. Any Element type is accepted. */
   schema(elements: Element[]): this {
@@ -104,9 +134,10 @@ export class Section extends Element {
         persistCollapsed: true,
         ...(this._persistKey ? { persistKey: this._persistKey } : {}),
       } : {}),
-      ...(this._aside   ? { aside:   true } : {}),
-      ...(this._compact ? { compact: true } : {}),
-      ...(this._dense   ? { dense:   true } : {}),
+      ...(this._aside     ? { aside:     true } : {}),
+      ...(this._compact   ? { compact:   true } : {}),
+      ...(this._dense     ? { dense:     true } : {}),
+      ...(this._secondary ? { secondary: true } : {}),
     }
   }
 }

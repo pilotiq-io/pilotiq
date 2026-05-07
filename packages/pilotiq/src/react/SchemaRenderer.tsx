@@ -236,17 +236,31 @@ function renderFieldInput(
   placeholder:  string | undefined,
 ): React.ReactNode {
   switch (fieldType) {
-    case 'textarea':
+    case 'textarea': {
+      const autosize = el['autosize'] === true
+      const cols     = typeof el['cols'] === 'number' ? Number(el['cols']) : undefined
+      const extra: Record<string, unknown> = {}
+      // `field-sizing-content` on the Textarea component already grows
+      // the box with content; `autosize()` just unsets the explicit
+      // `rows` so the browser doesn't reserve a fixed minimum height.
+      if (!autosize) extra['rows'] = Number(el['rows']) || 4
+      if (cols !== undefined) extra['cols'] = cols
+      if (el['disableGrammarly'] === true) {
+        extra['data-gramm']             = 'false'
+        extra['data-gramm_editor']      = 'false'
+        extra['data-enable-grammarly']  = 'false'
+      }
       return (
         <TextLikeInput
           el={el}
           name={name}
           common={common}
           type="text"
-          extraProps={{ rows: Number(el['rows']) || 4 }}
+          extraProps={extra}
           multiline
         />
       )
+    }
 
     case 'select': {
       const options = (el['options'] as Array<{ value: string; label: string; disabled?: boolean }>) ?? []
@@ -1823,6 +1837,8 @@ function SectionRenderer({ el, index }: { el: ElementMeta; index: number }) {
   const collapsible = Boolean(el['collapsible'])
   const compact     = Boolean(el['compact'])
   const dense       = Boolean(el['dense'])
+  const secondary   = Boolean(el['secondary'])
+  const afterHeader = (el['afterHeader'] as ElementMeta[] | undefined) ?? []
   const persist     = Boolean(el['persistCollapsed'])
   const persistKey  = el['persistKey']
     ? `pilotiq.section.${String(el['persistKey'])}`
@@ -1861,12 +1877,19 @@ function SectionRenderer({ el, index }: { el: ElementMeta; index: number }) {
   const titleSize = compact ? 'text-sm' : 'text-base'
   const Icon = resolveIcon(iconName)
 
+  // `secondary()` flips the section background to the muted token so it
+  // visually recedes beneath a primary section. The border thins to the
+  // same muted tone for the same reason — a sharp `border-input` line
+  // around a muted block looks like a typographic ledger rather than a
+  // grouping container.
+  const surfaceClass = secondary ? 'bg-muted/40 border-muted' : 'bg-card'
+
   return (
     <section
       key={index}
-      className={`flex flex-col ${compact ? 'gap-2' : 'gap-3'} rounded-lg border bg-card ${padding} ${layoutClasses(el)}`.trim()}
+      className={`flex flex-col ${compact ? 'gap-2' : 'gap-3'} rounded-lg border ${surfaceClass} ${padding} ${layoutClasses(el)}`.trim()}
     >
-      {(title || description || collapsible || badge) && (
+      {(title || description || collapsible || badge || afterHeader.length > 0) && (
         <header className="flex items-start justify-between gap-2">
           <div className="flex items-start gap-2">
             {Icon && <Icon className="size-4 mt-0.5 text-muted-foreground" aria-hidden="true" />}
@@ -1882,15 +1905,22 @@ function SectionRenderer({ el, index }: { el: ElementMeta; index: number }) {
               {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
             </div>
           </div>
-          {collapsible && (
-            <button
-              type="button"
-              onClick={() => setCollapsed(c => !c)}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              {collapsed ? 'Expand' : 'Collapse'}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {afterHeader.length > 0 && (
+              <div className="flex items-center gap-1">
+                {afterHeader.map((a, i) => renderElement(a, i))}
+              </div>
+            )}
+            {collapsible && (
+              <button
+                type="button"
+                onClick={() => setCollapsed(c => !c)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                {collapsed ? 'Expand' : 'Collapse'}
+              </button>
+            )}
+          </div>
         </header>
       )}
       {!collapsed && el.children && el.children.length > 0 && (
