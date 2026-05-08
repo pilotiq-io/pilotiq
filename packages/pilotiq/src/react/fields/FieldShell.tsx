@@ -28,9 +28,12 @@ export interface FieldShellProps {
   /** Right-of-input counterpart. Used by `revealable() / copyable() /
    *  suffixAction()`. Renders after the passive `suffix` decoration. */
   after?:    React.ReactNode
+  /** Optional ReactNode rendered inline next to the label — used by
+   *  plugins that register via `registerFieldLabelSlot()`. */
+  labelSlot?: React.ReactNode
 }
 
-export function FieldShell({ el, name, label, required, children, before, after }: FieldShellProps): React.ReactElement {
+export function FieldShell({ el, name, label, required, children, before, after, labelSlot }: FieldShellProps): React.ReactElement {
   const prefix     = el['prefix']     as string | { icon: string } | undefined
   const suffix     = el['suffix']     as string | { icon: string } | undefined
   const helperText = el['helperText'] as string | undefined
@@ -44,6 +47,7 @@ export function FieldShell({ el, name, label, required, children, before, after 
   const labelEl = label !== '' ? (
     <label htmlFor={name} className={labelClass}>
       {label}{required && <span className="text-destructive ml-0.5">*</span>}
+      {labelSlot}
     </label>
   ) : null
 

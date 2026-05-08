@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import type { ElementMeta } from '../schema/Element.js'
 import { getFieldRenderer } from './registry.js'
+import { getFieldLabelSlot } from './FieldLabelSlotRegistry.js'
 import { FormStateProvider, useFormState, FormIdContext } from './FormStateContext.js'
 import { Checkbox } from './ui/checkbox.js'
 import { Input } from './ui/input.js'
@@ -185,6 +186,16 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
     return <HiddenInput key={index} name={name} defaultValue={defaultValue} />
   }
 
+  // Field label slot — rendered next to the label when a plugin registered
+  // a component via registerFieldLabelSlot() and the field has aiActions +
+  // _agentRunBase stamped on its meta (set by tagFieldAiUrls in pageData).
+  const LabelSlot = getFieldLabelSlot()
+  const aiActions = Array.isArray(el['aiActions']) ? el['aiActions'] as Array<{ slug: string; label: string; icon?: string }> : undefined
+  const agentRunBase = typeof el['_agentRunBase'] === 'string' ? el['_agentRunBase'] : undefined
+  const labelSlot = (LabelSlot && aiActions?.length && agentRunBase)
+    ? <LabelSlot fieldName={name} actions={aiActions} agentRunBase={agentRunBase} />
+    : undefined
+
   const autofocus = el['autofocus'] === true
   const extraInput = el['extraInputAttributes'] as Record<string, string | number | boolean> | undefined
   const common = {
@@ -204,7 +215,7 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
   const Custom = getFieldRenderer(fieldType)
   if (Custom) {
     return (
-      <FieldShell key={index} el={el} name={name} label={label} required={required}>
+      <FieldShell key={index} el={el} name={name} label={label} required={required} labelSlot={labelSlot}>
         <Custom
           el={el}
           name={name}
@@ -230,6 +241,7 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
         label={label}
         required={required}
         common={common}
+        labelSlot={labelSlot}
       />
     )
   }
@@ -237,7 +249,7 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
   const input = renderFieldInput(fieldType, el, name, defaultValue, defaultStr, common, disabled, required, placeholder)
 
   return (
-    <FieldShell key={index} el={el} name={name} label={label} required={required}>
+    <FieldShell key={index} el={el} name={name} label={label} required={required} labelSlot={labelSlot}>
       {input}
     </FieldShell>
   )
@@ -249,13 +261,14 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
  * Keeps `renderField` itself hook-free.
  */
 function TextFieldShell({
-  el, name, label, required, common,
+  el, name, label, required, common, labelSlot,
 }: {
-  el:        ElementMeta
-  name:      string
-  label:     string
-  required:  boolean
-  common:    Record<string, unknown>
+  el:          ElementMeta
+  name:        string
+  label:       string
+  required:    boolean
+  common:      Record<string, unknown>
+  labelSlot?:  React.ReactNode
 }): React.ReactElement {
   const controls = useTextInputControls(el, name, (m) => renderElement(m, 0))
 
@@ -297,6 +310,7 @@ function TextFieldShell({
       required={required}
       before={controls.before}
       after={controls.after}
+      labelSlot={labelSlot}
     >
       {input}
     </FieldShell>

@@ -956,6 +956,37 @@ export function tagFormWizardUrls(
 }
 
 /**
+ * Stamp `_agentRunBase` on every field element in the resolved
+ * `ElementMeta[]` tree that carries `aiActions`. Operates on the
+ * post-`resolveSchema` wire shape (plain objects) rather than on
+ * `Element` instances — `aiActions` is added by the `field-ai.ts`
+ * wrapper during `toMeta()`, so it isn't visible to pre-resolve walkers.
+ *
+ * Only called on edit pages where a `recordId` is known. Create pages
+ * deliberately skip it — field AI actions target existing content.
+ */
+export function tagFieldAiUrls(
+  elements: ReadonlyArray<Record<string, unknown>>,
+  agentBase: string,
+): void {
+  for (const el of elements) {
+    if (Array.isArray(el['aiActions']) && (el['aiActions'] as unknown[]).length > 0) {
+      ;(el as Record<string, unknown>)['_agentRunBase'] = agentBase
+    }
+    const children = el['children']
+    if (Array.isArray(children)) tagFieldAiUrls(children as Record<string, unknown>[], agentBase)
+    // Repeater rows
+    const rows = el['rows']
+    if (Array.isArray(rows)) {
+      for (const row of rows as Record<string, unknown>[]) {
+        const rowChildren = row['children']
+        if (Array.isArray(rowChildren)) tagFieldAiUrls(rowChildren as Record<string, unknown>[], agentBase)
+      }
+    }
+  }
+}
+
+/**
  * Audit row 2026-05-07 cont'd⁸ — stamp the inline-create-option endpoint
  * URL on every `SelectField` that has called `createOptionForm()`. Walks
  * every form on the page so the URL carries the parent form's id; URL
@@ -1859,6 +1890,8 @@ export async function resourceEditData(
     ),
     editRoute,
   )
+
+  tagFieldAiUrls(schemaData as Record<string, unknown>[], `${resourceBase}/${recordId}/_agents`)
 
   return {
     panel:    await panelInfo(pilotiq, req, editRoute),

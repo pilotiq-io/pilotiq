@@ -13,6 +13,7 @@ export {
   type FormFieldsProps,
 } from './SchemaRenderer.js'
 export { registerFieldRenderer, getFieldRenderer, type FieldRendererProps } from './registry.js'
+export { registerFieldLabelSlot, getFieldLabelSlot, type FieldLabelSlotProps } from './FieldLabelSlotRegistry.js'
 export {
   registerWidgetRenderer,
   getWidgetRenderer,

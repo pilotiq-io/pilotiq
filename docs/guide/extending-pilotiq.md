@@ -425,6 +425,43 @@ Consumers call `registerChartRenderer()` once at boot.
   a single `registerXyz()` boot helper rather than asking consumers to
   call the registry directly.
 
+## Field label slot
+
+`registerFieldLabelSlot` lets a plugin inject a React component inline
+next to any field label that has opted into the slot via extra meta
+keys. It's a plugin-author API — regular app code doesn't call it
+directly.
+
+```ts
+import { registerFieldLabelSlot, type FieldLabelSlotProps } from '@pilotiq/pilotiq/react'
+
+function MyTrigger({ fieldName, actions, agentRunBase }: FieldLabelSlotProps) {
+  return <button>✦</button>
+}
+
+// Call once from your plugin's register(panel) step:
+registerFieldLabelSlot(MyTrigger)
+```
+
+`SchemaRenderer` calls `getFieldLabelSlot()` inside `renderField`.
+When a slot is registered and the field's resolved meta carries
+`aiActions` + `_agentRunBase` (stamped server-side by
+`tagFieldAiUrls`), the component renders inside the `<label>` row.
+
+Only one slot can be registered globally (last write wins). The
+`FieldLabelSlotProps` shape is:
+
+```ts
+interface FieldLabelSlotProps {
+  fieldName:    string
+  actions:      Array<{ slug: string; label: string; icon?: string }>
+  agentRunBase: string  // pre-composed POST base URL
+}
+```
+
+**First-party reference:** `@pilotiq-pro/ai` uses this to mount the
+✦ quick-action button + dropdown on every field that called `.ai([...])`.
+
 ## Subpath cheatsheet
 
 ```ts
@@ -433,7 +470,8 @@ import { Field, Column, Entry, View, ComponentEntry, ServerDataElement } from '@
 
 // React-side registries
 import { registerFieldRenderer, registerWidgetRenderer } from '@pilotiq/pilotiq/react'
-import type { FieldRendererProps, WidgetRendererProps } from '@pilotiq/pilotiq/react'
+import { registerFieldLabelSlot } from '@pilotiq/pilotiq/react'
+import type { FieldRendererProps, WidgetRendererProps, FieldLabelSlotProps } from '@pilotiq/pilotiq/react'
 
 // Component-by-name registries (kept on dedicated subpaths so they
 // don't drag SchemaRenderer onto Node-only paths at boot)
