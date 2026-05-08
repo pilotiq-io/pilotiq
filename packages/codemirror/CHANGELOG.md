@@ -1,5 +1,12 @@
 # @pilotiq/codemirror
 
+## 0.2.0
+
+### Patch Changes
+
+- Updated dependencies [2dedc56]
+  - @pilotiq/pilotiq@0.2.0
+
 ## 0.1.0
 
 ### Patch Changes
