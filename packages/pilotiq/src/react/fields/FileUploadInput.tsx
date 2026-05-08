@@ -1,19 +1,26 @@
 import React, { useRef, useState } from 'react'
-import { UploadIcon, XIcon, FileIcon, Loader2Icon } from 'lucide-react'
+import {
+  UploadIcon, XIcon, FileIcon, Loader2Icon,
+  GripVerticalIcon, DownloadIcon,
+} from 'lucide-react'
 import { useFieldState } from '../FormStateContext.js'
 import { useToast } from '../Toaster.js'
 import { Button } from '../ui/button.js'
+import { reorderRows } from './RepeaterInput.js'
 
 /**
  * File upload UI. On file pick → POST multipart to `uploadUrl` →
  * stash returned URL in form state. Single-file shows the URL +
  * preview thumb (when image). Multi-file accumulates a list.
- *
- * No DnD upload, no chunked uploads, no client-side image processing
- * — v1 is "pick a file, send it, store the URL." Adapters do the work.
  */
 export function FileUploadInput({
-  name, defaultValue, disabled, accept, maxSize, multiple, preview, directory, uploadUrl,
+  name, defaultValue, disabled,
+  accept, maxSize, multiple, preview, directory, uploadUrl,
+  downloadable = false,
+  openable     = false,
+  reorderable  = false,
+  appendFiles  = false,
+  panelLayout  = 'list',
 }: {
   name:         string
   defaultValue: unknown
@@ -24,16 +31,24 @@ export function FileUploadInput({
   preview:      boolean
   directory:    string | undefined
   uploadUrl:    string | undefined
+  downloadable: boolean
+  openable:     boolean
+  reorderable:  boolean
+  appendFiles:  boolean
+  panelLayout:  'list' | 'grid' | 'integrated'
 }): React.ReactElement {
-  const fs   = useFieldState(name)
+  const fs        = useFieldState(name)
   const { notify } = useToast()
-  const inputRef = useRef<HTMLInputElement | null>(null)
+  const inputRef  = useRef<HTMLInputElement | null>(null)
+
+  // Drag-and-drop state (reorderable only)
+  const [dragFromIdx, setDragFromIdx] = useState<number | null>(null)
+  const [dropAt, setDropAt]           = useState<number | null>(null)
 
   const toUrls = (v: unknown): string[] => {
     if (v === undefined || v === null || v === '') return []
     if (Array.isArray(v)) return v.map(String)
     if (typeof v === 'string') {
-      // JSON-array string from a previous round-trip
       if (v.startsWith('[')) {
         try {
           const arr = JSON.parse(v)
@@ -46,7 +61,7 @@ export function FileUploadInput({
   }
 
   const [localUrls, setLocalUrls] = useState<string[]>(toUrls(defaultValue))
-  const urls = fs.controlled ? toUrls(fs.value) : localUrls
+  const urls  = fs.controlled ? toUrls(fs.value) : localUrls
   const [busy, setBusy] = useState(false)
 
   const setUrls = (next: string[]): void => {
@@ -67,7 +82,8 @@ export function FileUploadInput({
       return
     }
     setBusy(true)
-    const next = multiple ? [...urls] : []
+    // appendFiles keeps existing URLs; default replaces them
+    const next = appendFiles ? [...urls] : []
     try {
       for (const file of Array.from(files)) {
         const fd = new FormData()
@@ -76,99 +92,279 @@ export function FileUploadInput({
         if (accept)    fd.append('accept', accept.join(','))
         if (maxSize !== undefined) fd.append('maxSize', String(maxSize))
         fd.append('fieldName', name)
-        const res = await fetch(uploadUrl, {
-          method:  'POST',
-          body:    fd,
-          headers: { Accept: 'application/json' },
-        })
+        const res  = await fetch(uploadUrl, { method: 'POST', body: fd, headers: { Accept: 'application/json' } })
         const json = await res.json().catch(() => ({})) as { ok?: boolean; url?: string; error?: string }
         if (!res.ok || !json.ok || !json.url) {
           notify({ type: 'error', title: 'Upload failed', body: json.error ?? `HTTP ${res.status}` })
           continue
         }
         next.push(json.url)
-        if (!multiple) break
+        if (!multiple && !appendFiles) break
       }
       setUrls(next)
     } finally {
       setBusy(false)
-      // Reset the input so the user can re-pick the same file (browsers
-      // suppress onChange when the value hasn't changed).
       if (inputRef.current) inputRef.current.value = ''
     }
   }
 
-  const removeAt = (i: number): void => {
-    const next = urls.filter((_, idx) => idx !== i)
-    setUrls(next)
+  const removeAt = (i: number): void => setUrls(urls.filter((_, idx) => idx !== i))
+
+  // ── Drag handlers ─────────────────────────────────────────────────────────
+
+  const onDragStart = (e: React.DragEvent, i: number): void => {
+    setDragFromIdx(i)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(i))
   }
 
-  // Hidden input for form-post fallback. Multi-file mode encodes as JSON
-  // so the server's coerceFormValues fileUpload branch can decode.
+  const onDragEnd = (): void => { setDragFromIdx(null); setDropAt(null) }
+
+  // Vertical list: insert before/after based on cursor Y vs item midpoint
+  const onItemDragOver = (e: React.DragEvent, i: number): void => {
+    if (dragFromIdx == null) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect   = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const before = e.clientY < rect.top + rect.height / 2
+    setDropAt(before ? i : i + 1)
+  }
+
+  // Grid tiles: insert before/after based on cursor X vs tile midpoint
+  const onTileDragOver = (e: React.DragEvent, i: number): void => {
+    if (dragFromIdx == null) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect   = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const before = e.clientX < rect.left + rect.width / 2
+    setDropAt(before ? i : i + 1)
+  }
+
+  const onDrop = (e: React.DragEvent): void => {
+    e.preventDefault()
+    if (dragFromIdx == null || dropAt == null) { onDragEnd(); return }
+    const next = reorderRows(urls, dragFromIdx, dropAt)
+    if (next !== urls) setUrls(next)
+    onDragEnd()
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
   const hiddenValue = multiple ? JSON.stringify(urls) : (urls[0] ?? '')
+  const isGrid      = panelLayout === 'grid' || panelLayout === 'integrated'
+
+  // ── Shared sub-renders ────────────────────────────────────────────────────
+
+  const thumbOrIcon = (url: string): React.ReactElement =>
+    preview && isImage(url)
+      ? <img src={url} alt="" className="size-full object-cover" />
+      : <FileIcon className="size-8 text-muted-foreground" />
+
+  const downloadBtn = (url: string): React.ReactElement => (
+    <a
+      href={url}
+      download={fileNameFrom(url)}
+      className="text-muted-foreground hover:text-foreground"
+      aria-label="Download file"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <DownloadIcon className="size-4" />
+    </a>
+  )
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col gap-2">
       <input type="hidden" name={name} value={hiddenValue} readOnly />
 
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => inputRef.current?.click()}
-          disabled={disabled || busy}
-        >
-          {busy ? (
-            <Loader2Icon className="size-4 animate-spin" />
-          ) : (
-            <UploadIcon className="size-4" />
+      {/* Upload trigger — hidden in integrated mode (button lives inside the grid) */}
+      {panelLayout !== 'integrated' && (
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => inputRef.current?.click()}
+            disabled={disabled || busy}
+          >
+            {busy
+              ? <Loader2Icon className="size-4 animate-spin" />
+              : <UploadIcon  className="size-4" />
+            }
+            {multiple ? 'Choose files' : 'Choose file'}
+          </Button>
+          {maxSize !== undefined && (
+            <span className="text-xs text-muted-foreground">
+              Max {Math.round(maxSize / 1024)} KB
+            </span>
           )}
-          {multiple ? 'Choose files' : 'Choose file'}
-        </Button>
-        <input
-          ref={inputRef}
-          type="file"
-          className="hidden"
-          accept={accept ? accept.join(',') : undefined}
-          multiple={multiple}
-          onChange={(e) => { void onPick(e.target.files) }}
-        />
-        {maxSize !== undefined && (
-          <span className="text-xs text-muted-foreground">
-            Max {Math.round(maxSize / 1024)} KB
-          </span>
-        )}
-      </div>
+        </div>
+      )}
 
-      {urls.length > 0 && (
-        <ul className="flex flex-col gap-1.5">
+      <input
+        ref={inputRef}
+        type="file"
+        className="hidden"
+        accept={accept ? accept.join(',') : undefined}
+        multiple={multiple || appendFiles}
+        onChange={(e) => { void onPick(e.target.files) }}
+      />
+
+      {/* ── Grid / integrated layout ────────────────────────────────────── */}
+      {isGrid && (
+        <div className="flex flex-wrap gap-2">
           {urls.map((url, i) => (
-            <li key={i} className="flex items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5 text-sm">
-              {preview && isImage(url)
-                ? <img src={url} alt="" className="size-8 rounded object-cover" />
-                : <FileIcon className="size-4 text-muted-foreground" />
-              }
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 truncate hover:underline"
+            <React.Fragment key={i}>
+              {/* Drop indicator before tile */}
+              {reorderable && dropAt === i && dragFromIdx !== null && dragFromIdx !== i && dragFromIdx + 1 !== i && (
+                <div aria-hidden className="w-0.5 self-stretch rounded bg-primary" />
+              )}
+              <div
+                className={[
+                  'group relative flex flex-col items-center gap-1',
+                  reorderable ? 'cursor-grab active:cursor-grabbing' : '',
+                  dragFromIdx === i ? 'opacity-40' : '',
+                ].join(' ')}
+                draggable={reorderable}
+                onDragStart={reorderable ? (e) => onDragStart(e, i) : undefined}
+                onDragOver={reorderable  ? (e) => onTileDragOver(e, i) : undefined}
+                onDragEnd={reorderable   ? onDragEnd : undefined}
+                onDrop={reorderable      ? onDrop : undefined}
               >
-                {fileNameFrom(url)}
-              </a>
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-destructive"
-                onClick={() => removeAt(i)}
-                disabled={disabled}
-                aria-label="Remove file"
-              >
-                <XIcon className="size-4" />
-              </button>
-            </li>
+                {/* Thumbnail tile */}
+                <div className="relative size-20 rounded-md border border-input bg-muted overflow-hidden flex items-center justify-center">
+                  {openable
+                    ? (
+                      <a href={url} target="_blank" rel="noopener noreferrer" className="size-full block">
+                        {thumbOrIcon(url)}
+                      </a>
+                    )
+                    : thumbOrIcon(url)
+                  }
+                  {/* Hover overlay — actions */}
+                  <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto">
+                    {downloadable && (
+                      <a
+                        href={url}
+                        download={fileNameFrom(url)}
+                        className="rounded p-0.5 text-white hover:text-primary-foreground"
+                        aria-label="Download file"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <DownloadIcon className="size-3.5" />
+                      </a>
+                    )}
+                    {!disabled && (
+                      <button
+                        type="button"
+                        className="rounded p-0.5 text-white hover:text-red-300"
+                        onClick={() => removeAt(i)}
+                        aria-label="Remove file"
+                      >
+                        <XIcon className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <span className="w-20 truncate text-center text-xs text-muted-foreground">
+                  {fileNameFrom(url)}
+                </span>
+              </div>
+            </React.Fragment>
           ))}
+
+          {/* Drop indicator after last tile */}
+          {reorderable && dropAt === urls.length && dragFromIdx !== null && dragFromIdx !== urls.length - 1 && (
+            <div aria-hidden className="w-0.5 self-stretch rounded bg-primary" />
+          )}
+
+          {/* Integrated: "Add" tile embedded in the grid */}
+          {panelLayout === 'integrated' && !disabled && (
+            <button
+              type="button"
+              className="flex size-20 flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-input text-muted-foreground hover:border-primary hover:text-foreground transition-colors"
+              onClick={() => inputRef.current?.click()}
+              disabled={busy}
+            >
+              {busy
+                ? <Loader2Icon className="size-6 animate-spin" />
+                : <UploadIcon  className="size-6" />
+              }
+              <span className="text-xs">Add</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── List layout ─────────────────────────────────────────────────── */}
+      {!isGrid && urls.length > 0 && (
+        <ul className="flex flex-col">
+          {urls.map((url, i) => (
+            <React.Fragment key={i}>
+              {/* Drop indicator before row */}
+              {reorderable && dropAt === i && dragFromIdx !== null && dragFromIdx !== i && dragFromIdx + 1 !== i && (
+                <li aria-hidden className="h-0.5 rounded bg-primary mx-1" />
+              )}
+              <li
+                className={[
+                  'flex items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5 text-sm',
+                  i > 0 ? 'mt-1.5' : '',
+                  dragFromIdx === i ? 'opacity-40' : '',
+                ].join(' ')}
+                draggable={reorderable}
+                onDragStart={reorderable ? (e) => onDragStart(e, i) : undefined}
+                onDragOver={reorderable  ? (e) => onItemDragOver(e, i) : undefined}
+                onDragEnd={reorderable   ? onDragEnd : undefined}
+                onDrop={reorderable      ? onDrop : undefined}
+              >
+                {reorderable && (
+                  <GripVerticalIcon
+                    className="size-4 shrink-0 cursor-grab active:cursor-grabbing text-muted-foreground"
+                    aria-hidden
+                  />
+                )}
+                {preview && isImage(url)
+                  ? openable
+                    ? (
+                      <a href={url} target="_blank" rel="noopener noreferrer">
+                        <img src={url} alt="" className="size-8 rounded object-cover shrink-0" />
+                      </a>
+                    )
+                    : <img src={url} alt="" className="size-8 rounded object-cover shrink-0" />
+                  : <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+                }
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 truncate hover:underline"
+                >
+                  {fileNameFrom(url)}
+                </a>
+                {downloadable && downloadBtn(url)}
+                <button
+                  type="button"
+                  className="shrink-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => removeAt(i)}
+                  disabled={disabled}
+                  aria-label="Remove file"
+                >
+                  <XIcon className="size-4" />
+                </button>
+              </li>
+            </React.Fragment>
+          ))}
+          {/* Drop indicator after last row */}
+          {reorderable && dropAt === urls.length && dragFromIdx !== null && dragFromIdx !== urls.length - 1 && (
+            <li aria-hidden className="mt-1.5 h-0.5 rounded bg-primary mx-1" />
+          )}
         </ul>
+      )}
+
+      {/* Max-size hint for integrated mode (no separate button row) */}
+      {panelLayout === 'integrated' && maxSize !== undefined && (
+        <p className="text-xs text-muted-foreground">Max {Math.round(maxSize / 1024)} KB</p>
       )}
     </div>
   )

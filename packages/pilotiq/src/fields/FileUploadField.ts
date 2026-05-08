@@ -1,6 +1,8 @@
 import { Field, type FieldMeta } from './Field.js'
 import type { RenderContext } from '../schema/resolveSchema.js'
 
+export type PanelLayout = 'list' | 'grid' | 'integrated'
+
 /**
  * File upload. The field stores the resolved upload's URL string —
  * `string` for single-file mode, `string[]` for multi.
@@ -17,6 +19,11 @@ export class FileUploadField extends Field {
   private _multiple = false
   private _preview = true
   private _directory?: string
+  private _downloadable = false
+  private _openable = false
+  private _reorderable = false
+  private _appendFiles = false
+  private _panelLayout: PanelLayout = 'list'
 
   private constructor(name: string) {
     super(name, 'fileUpload')
@@ -45,20 +52,48 @@ export class FileUploadField extends Field {
    */
   directory(d: string): this { this._directory = d; return this }
 
+  /** Add a download button to each uploaded file item. */
+  downloadable(value: boolean = true): this { this._downloadable = value; return this }
+
+  /** Make the file thumbnail/icon link to the file (open in new tab). */
+  openable(value: boolean = true): this { this._openable = value; return this }
+
+  /** Allow files to be reordered via drag-and-drop. Only useful with `multiple()`. */
+  reorderable(value: boolean = true): this { this._reorderable = value; return this }
+
+  /**
+   * Append new uploads to the existing file list instead of replacing it.
+   * By default new picks replace the current value. Combine with `multiple()`.
+   */
+  appendFiles(value: boolean = true): this { this._appendFiles = value; return this }
+
+  /** Display layout for the uploaded file list. `'grid'` shows square tiles; `'integrated'` embeds the upload button as a tile. */
+  panelLayout(layout: PanelLayout): this { this._panelLayout = layout; return this }
+
   getAccept(): string[] | undefined { return this._accept }
   getMaxSize(): number | undefined { return this._maxSize }
   isMultiple(): boolean { return this._multiple }
   hasPreview(): boolean { return this._preview }
   getDirectory(): string | undefined { return this._directory }
+  isDownloadable(): boolean { return this._downloadable }
+  isOpenable(): boolean { return this._openable }
+  isReorderable(): boolean { return this._reorderable }
+  doesAppendFiles(): boolean { return this._appendFiles }
+  getPanelLayout(): PanelLayout { return this._panelLayout }
 
   override toMeta(ctx?: RenderContext): FieldMeta {
     return {
       ...this.buildMeta(ctx),
       multiple: this._multiple,
       preview:  this._preview,
-      ...(this._accept   ? { accept: this._accept }    : {}),
+      ...(this._accept     ? { accept: this._accept }     : {}),
       ...(this._maxSize !== undefined ? { maxSize: this._maxSize } : {}),
-      ...(this._directory ? { directory: this._directory } : {}),
+      ...(this._directory  ? { directory: this._directory }  : {}),
+      ...(this._downloadable           ? { downloadable: true }             : {}),
+      ...(this._openable               ? { openable: true }                 : {}),
+      ...(this._reorderable            ? { reorderable: true }              : {}),
+      ...(this._appendFiles            ? { appendFiles: true }              : {}),
+      ...(this._panelLayout !== 'list' ? { panelLayout: this._panelLayout } : {}),
       // `uploadUrl` is stamped via RenderContext by the page-data
       // builders. Without it the renderer falls back to a clear error
       // ("no upload URL configured"); the route handler (and therefore

@@ -483,6 +483,15 @@ function renderFieldInput(
           preview={el['preview'] !== false}
           directory={typeof el['directory'] === 'string' ? el['directory'] : undefined}
           uploadUrl={typeof el['uploadUrl'] === 'string' ? el['uploadUrl'] : undefined}
+          downloadable={Boolean(el['downloadable'])}
+          openable={Boolean(el['openable'])}
+          reorderable={Boolean(el['reorderable'])}
+          appendFiles={Boolean(el['appendFiles'])}
+          panelLayout={
+            el['panelLayout'] === 'grid' ? 'grid'
+            : el['panelLayout'] === 'integrated' ? 'integrated'
+            : 'list'
+          }
         />
       )
     }
