@@ -495,6 +495,12 @@ function renderFieldInput(
           {...(el['automaticallyResize'] && typeof el['automaticallyResize'] === 'object'
             ? { automaticallyResize: el['automaticallyResize'] as { width: number; height: number } }
             : {})}
+          imageEditor={Boolean(el['imageEditor'])}
+          circleCropper={Boolean(el['circleCropper'])}
+          automaticallyCropImagesToAspectRatio={Boolean(el['automaticallyCropImagesToAspectRatio'])}
+          {...(Array.isArray(el['imageEditorAspectRatioOptions'])
+            ? { imageEditorAspectRatioOptions: el['imageEditorAspectRatioOptions'] as Array<{ ratio: number; label: string }> }
+            : {})}
         />
       )
     }

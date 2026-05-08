@@ -212,9 +212,19 @@ FileUpload.make('profile')
 
 The crop modal opens client-side after the user selects a file. The
 cropped canvas blob replaces the original before the POST reaches the
-server. `automaticallyCropImagesToAspectRatio()` silently applies the
-first ratio and uploads immediately — the modal only appears if the user
-clicks to change the crop.
+server — no unprocessed pixels ever leave the browser.
+
+`automaticallyCropImagesToAspectRatio()` silently applies the first
+ratio and uploads immediately — the modal is skipped entirely. Useful
+for bulk workflows where every image should be uniformly cropped without
+prompting.
+
+The playground's global stylesheet (or your app's equivalent) must
+import the crop component's CSS:
+
+```css
+@import "react-image-crop/dist/ReactCrop.css";
+```
 
 ### Server-side resize
 

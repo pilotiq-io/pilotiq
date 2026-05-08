@@ -3,9 +3,16 @@ import {
   UploadIcon, XIcon, FileIcon, Loader2Icon,
   GripVerticalIcon, DownloadIcon,
 } from 'lucide-react'
+import ReactCrop, {
+  type Crop, type PixelCrop,
+  centerCrop, makeAspectCrop, convertToPixelCrop,
+} from 'react-image-crop'
 import { useFieldState } from '../FormStateContext.js'
 import { useToast } from '../Toaster.js'
 import { Button } from '../ui/button.js'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '../ui/dialog.js'
 import { reorderRows } from './RepeaterInput.js'
 
 /**
@@ -22,6 +29,10 @@ export function FileUploadInput({
   appendFiles        = false,
   panelLayout        = 'list',
   automaticallyResize,
+  imageEditor        = false,
+  imageEditorAspectRatioOptions,
+  circleCropper      = false,
+  automaticallyCropImagesToAspectRatio = false,
 }: {
   name:               string
   defaultValue:       unknown
@@ -38,6 +49,10 @@ export function FileUploadInput({
   appendFiles:        boolean
   panelLayout:        'list' | 'grid' | 'integrated'
   automaticallyResize?: { width: number; height: number }
+  imageEditor?:       boolean
+  imageEditorAspectRatioOptions?: Array<{ ratio: number; label: string }>
+  circleCropper?:     boolean
+  automaticallyCropImagesToAspectRatio?: boolean
 }): React.ReactElement {
   const fs        = useFieldState(name)
   const { notify } = useToast()
@@ -46,6 +61,18 @@ export function FileUploadInput({
   // Drag-and-drop state (reorderable only)
   const [dragFromIdx, setDragFromIdx] = useState<number | null>(null)
   const [dropAt, setDropAt]           = useState<number | null>(null)
+
+  // Image editor state
+  const [editorState, setEditorState] = useState<{
+    src: string
+    file: File
+    resolve: (f: File) => void
+    reject:  () => void
+  } | null>(null)
+  const [crop, setCrop]                   = useState<Crop>({ unit: '%', x: 5, y: 5, width: 90, height: 90 })
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop | undefined>()
+  const [activeRatio, setActiveRatio]     = useState<number | undefined>()
+  const imgRef = useRef<HTMLImageElement | null>(null)
 
   const toUrls = (v: unknown): string[] => {
     if (v === undefined || v === null || v === '') return []
@@ -77,6 +104,84 @@ export function FileUploadInput({
     }
   }
 
+  // ── Image editor helpers ──────────────────────────────────────────────────
+
+  const onImgLoad = (e: React.SyntheticEvent<HTMLImageElement>): void => {
+    const img = e.currentTarget
+    const { naturalWidth: nw, naturalHeight: nh } = img
+    const initialCrop = activeRatio
+      ? centerCrop(makeAspectCrop({ unit: '%', width: 90 }, activeRatio, nw, nh), nw, nh)
+      : centerCrop({ unit: '%', width: 90, height: 90 }, nw, nh)
+    setCrop(initialCrop)
+    setCompletedCrop(convertToPixelCrop(initialCrop, img.width, img.height))
+  }
+
+  const onRatioChange = (ratio: number | undefined): void => {
+    setActiveRatio(ratio)
+    const img = imgRef.current
+    if (!img) return
+    const { naturalWidth: nw, naturalHeight: nh } = img
+    const next = ratio
+      ? centerCrop(makeAspectCrop({ unit: '%', width: 90 }, ratio, nw, nh), nw, nh)
+      : centerCrop({ unit: '%', width: 90, height: 90 }, nw, nh)
+    setCrop(next)
+    setCompletedCrop(convertToPixelCrop(next, img.width, img.height))
+  }
+
+  const handleEditorApply = async (): Promise<void> => {
+    if (!editorState || !completedCrop || !imgRef.current) return
+    try {
+      const blob = await cropToBlob(imgRef.current, completedCrop, circleCropper, /* fromDisplay */ true)
+      editorState.resolve(new File([blob], editorState.file.name, { type: blob.type }))
+    } catch {
+      editorState.reject()
+    } finally {
+      URL.revokeObjectURL(editorState.src)
+      setEditorState(null)
+    }
+  }
+
+  const handleEditorCancel = (): void => {
+    if (!editorState) return
+    editorState.reject()
+    URL.revokeObjectURL(editorState.src)
+    setEditorState(null)
+  }
+
+  /** Intercepts a file through the crop editor (or auto-crop) before upload. */
+  const prepareFile = (file: File): Promise<File> => {
+    if (!imageEditor) return Promise.resolve(file)
+
+    const src = URL.createObjectURL(file)
+
+    // Auto-crop: load image, compute center crop at first ratio, skip modal
+    if (automaticallyCropImagesToAspectRatio && imageEditorAspectRatioOptions?.length) {
+      const ratio = imageEditorAspectRatioOptions[0]!.ratio
+      return new Promise<File>((resolve, reject) => {
+        const img = new Image()
+        img.onload = (): void => {
+          URL.revokeObjectURL(src)
+          const pct = centerCrop(
+            makeAspectCrop({ unit: '%', width: 90 }, ratio, img.naturalWidth, img.naturalHeight),
+            img.naturalWidth, img.naturalHeight,
+          )
+          const px = convertToPixelCrop(pct, img.naturalWidth, img.naturalHeight)
+          cropToBlob(img, px, circleCropper, /* fromDisplay */ false)
+            .then(blob => resolve(new File([blob], file.name, { type: blob.type })))
+            .catch(reject)
+        }
+        img.onerror = (): void => { URL.revokeObjectURL(src); reject(new Error('Image load failed')) }
+        img.src = src
+      })
+    }
+
+    // Manual editor: open modal, await user action
+    return new Promise<File>((resolve, reject) => {
+      setActiveRatio(imageEditorAspectRatioOptions?.[0]?.ratio)
+      setEditorState({ src, file, resolve, reject })
+    })
+  }
+
   const onPick = async (files: FileList | null): Promise<void> => {
     if (!files || files.length === 0) return
     if (!uploadUrl) {
@@ -88,8 +193,14 @@ export function FileUploadInput({
     const next = appendFiles ? [...urls] : []
     try {
       for (const file of Array.from(files)) {
+        let preparedFile: File
+        try {
+          preparedFile = await prepareFile(file)
+        } catch {
+          continue // user cancelled the editor for this file
+        }
         const fd = new FormData()
-        fd.append('file', file)
+        fd.append('file', preparedFile)
         if (directory) fd.append('directory', directory)
         if (accept)    fd.append('accept', accept.join(','))
         if (maxSize !== undefined) fd.append('maxSize', String(maxSize))
@@ -372,8 +483,126 @@ export function FileUploadInput({
       {panelLayout === 'integrated' && maxSize !== undefined && (
         <p className="text-xs text-muted-foreground">Max {Math.round(maxSize / 1024)} KB</p>
       )}
+
+      {/* ── Image editor modal ───────────────────────────────────────────── */}
+      {editorState && (
+        <Dialog open onOpenChange={(open) => { if (!open) handleEditorCancel() }}>
+          <DialogContent className="max-w-2xl gap-4">
+            <DialogHeader>
+              <DialogTitle>Crop image</DialogTitle>
+            </DialogHeader>
+
+            {/* Aspect ratio picker */}
+            {imageEditorAspectRatioOptions?.length && (
+              <div className="flex flex-wrap gap-2">
+                {imageEditorAspectRatioOptions.map((opt) => (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    className={[
+                      'rounded border px-2.5 py-1 text-sm font-medium transition-colors',
+                      activeRatio === opt.ratio
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-input bg-background hover:bg-muted',
+                    ].join(' ')}
+                    onClick={() => onRatioChange(opt.ratio)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className={[
+                    'rounded border px-2.5 py-1 text-sm font-medium transition-colors',
+                    activeRatio === undefined
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-input bg-background hover:bg-muted',
+                  ].join(' ')}
+                  onClick={() => onRatioChange(undefined)}
+                >
+                  Free
+                </button>
+              </div>
+            )}
+
+            <div className="flex justify-center overflow-auto">
+              <ReactCrop
+                crop={crop}
+                onChange={setCrop}
+                onComplete={setCompletedCrop}
+                {...(activeRatio !== undefined ? { aspect: activeRatio } : {})}
+                circularCrop={circleCropper}
+              >
+                <img
+                  ref={imgRef}
+                  src={editorState.src}
+                  alt="Crop preview"
+                  className="max-h-[55vh] max-w-full object-contain"
+                  onLoad={onImgLoad}
+                />
+              </ReactCrop>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleEditorCancel}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => { void handleEditorApply() }}
+                disabled={!completedCrop?.width || !completedCrop?.height}
+              >
+                Apply crop
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
+}
+
+/**
+ * Draw a crop region from `img` onto a canvas and return the result as a Blob.
+ * When `fromDisplay` is true, `pixelCrop` coordinates are in *display* pixels
+ * (as returned by ReactCrop's onComplete); they are scaled to the image's
+ * natural dimensions before drawing.
+ */
+function cropToBlob(
+  img: HTMLImageElement,
+  pixelCrop: PixelCrop,
+  circular: boolean,
+  fromDisplay: boolean,
+): Promise<Blob> {
+  const scaleX = fromDisplay ? img.naturalWidth  / img.width  : 1
+  const scaleY = fromDisplay ? img.naturalHeight / img.height : 1
+  const w = Math.round(pixelCrop.width  * scaleX)
+  const h = Math.round(pixelCrop.height * scaleY)
+
+  const canvas = document.createElement('canvas')
+  canvas.width  = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')!
+
+  if (circular) {
+    ctx.beginPath()
+    ctx.arc(w / 2, h / 2, Math.min(w, h) / 2, 0, Math.PI * 2)
+    ctx.clip()
+  }
+
+  ctx.drawImage(
+    img,
+    pixelCrop.x * scaleX, pixelCrop.y * scaleY,
+    pixelCrop.width * scaleX, pixelCrop.height * scaleY,
+    0, 0, w, h,
+  )
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => blob ? resolve(blob) : reject(new Error('Canvas toBlob failed')),
+      'image/webp', 0.92,
+    )
+  })
 }
 
 function isImage(url: string): boolean {
