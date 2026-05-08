@@ -180,6 +180,18 @@ export async function dispatchFormSubmit<R = unknown>(
  *
  * Other field types are passed through untouched.
  */
+/** Remove every occurrence of any character in `chars` from `value`.
+ *  O(n) — uses a Set for membership lookup. Multi-codepoint entries
+ *  in `chars` (e.g. an emoji passed as one mask token) are matched
+ *  whole; the function compares against `Array.from(value)` so
+ *  surrogate pairs round-trip correctly. */
+function stripChars(value: string, chars: string[]): string {
+  const set = new Set(chars)
+  let out = ''
+  for (const ch of value) if (!set.has(ch)) out += ch
+  return out
+}
+
 export function coerceFormValues(
   elements: Element[],
   body:     Record<string, unknown>,
@@ -383,6 +395,22 @@ export function coerceFormValues(
       default:
         // text/textarea/email/select/slug — leave as string.
         break
+    }
+
+    // `TextField.stripCharacters([…])` — applies after type-specific
+    // coercion so the persisted value never carries the listed
+    // characters. Duck-typed: any Field whose `getStripCharacters?`
+    // returns a non-empty list opts in. Skipped for non-strings (the
+    // pre-coerce switch may have produced numbers / booleans / arrays).
+    const stripper = (field as { getStripCharacters?: () => string[] | undefined }).getStripCharacters
+    if (typeof stripper === 'function') {
+      const chars = stripper.call(field)
+      if (chars && chars.length > 0) {
+        const cur = out[name]
+        if (typeof cur === 'string' && cur.length > 0) {
+          out[name] = stripChars(cur, chars)
+        }
+      }
     }
   })
   return out

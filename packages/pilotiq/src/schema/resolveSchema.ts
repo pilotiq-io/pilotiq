@@ -22,6 +22,7 @@ import {
   type RepeatableEntryRowMeta,
 } from '../entries/RepeatableEntry.js'
 import { Section } from './Section.js'
+import { TextField } from '../fields/TextField.js'
 
 export interface SchemaContext {
   user?: { name?: string; email?: string; [key: string]: unknown }
@@ -331,6 +332,24 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
     const footer = el.getModalContentFooter()
     if (footer && footer.length > 0) {
       meta['modalContentFooter'] = await resolveAll(footer, ctx)
+    }
+  }
+
+  // `TextField.prefixAction(Action) / suffixAction(Action)` — resolve the
+  // bound Actions through `resolveAll` so visibility / disabled rules
+  // evaluate the same way as anywhere else. Hidden Actions are dropped
+  // from the slot (returning a sparse single-element array → undefined
+  // collapses cleanly).
+  if (el instanceof TextField) {
+    const pre  = el.getPrefixAction()
+    const suf  = el.getSuffixAction()
+    if (pre) {
+      const [resolved] = await resolveAll([pre], ctx)
+      if (resolved) meta['prefixAction'] = resolved
+    }
+    if (suf) {
+      const [resolved] = await resolveAll([suf], ctx)
+      if (resolved) meta['suffixAction'] = resolved
     }
   }
 

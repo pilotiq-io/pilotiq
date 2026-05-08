@@ -20,9 +20,17 @@ export interface FieldShellProps {
   label:     string
   required:  boolean
   children:  React.ReactNode
+  /** Optional ReactNode rendered to the left of the input, after the
+   *  passive `prefix` decoration (when set). Used by `TextField`'s
+   *  `prefixAction()` / mask / datalist / etc. — composes with the
+   *  passive `prefix` slot rather than replacing it. */
+  before?:   React.ReactNode
+  /** Right-of-input counterpart. Used by `revealable() / copyable() /
+   *  suffixAction()`. Renders after the passive `suffix` decoration. */
+  after?:    React.ReactNode
 }
 
-export function FieldShell({ el, name, label, required, children }: FieldShellProps): React.ReactElement {
+export function FieldShell({ el, name, label, required, children, before, after }: FieldShellProps): React.ReactElement {
   const prefix     = el['prefix']     as string | { icon: string } | undefined
   const suffix     = el['suffix']     as string | { icon: string } | undefined
   const helperText = el['helperText'] as string | undefined
@@ -39,12 +47,15 @@ export function FieldShell({ el, name, label, required, children }: FieldShellPr
     </label>
   ) : null
 
-  const input = (prefix || suffix)
+  const hasDecoration = !!(prefix || suffix || before || after)
+  const input = hasDecoration
     ? (
       <div className="flex items-center gap-2">
+        {before}
         {prefix && <Decoration content={prefix} side="prefix" />}
         <div className="flex-1 min-w-0">{children}</div>
         {suffix && <Decoration content={suffix} side="suffix" />}
+        {after}
       </div>
     )
     : children

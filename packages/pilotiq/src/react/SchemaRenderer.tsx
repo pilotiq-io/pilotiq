@@ -7,6 +7,7 @@ import { Input } from './ui/input.js'
 import { Popover, PopoverTrigger, PopoverContent } from './ui/popover.js'
 import { FieldShell } from './fields/FieldShell.js'
 import { TextLikeInput }     from './fields/TextLikeInput.js'
+import { useTextInputControls } from './fields/textInputControls.js'
 import { SelectFieldInput }  from './fields/SelectFieldInput.js'
 import { ToggleFieldInput }  from './fields/ToggleFieldInput.js'
 import { DateFieldInput }    from './fields/DateFieldInput.js'
@@ -216,10 +217,87 @@ function renderField(el: ElementMeta, index: number): React.ReactNode {
     )
   }
 
+  // TextField (and slug) rich affordances live in a dedicated shell so
+  // `useTextInputControls` can hold reveal-toggle / mask state via React
+  // hooks (renderField itself is a plain function, hooks would violate
+  // rules-of-hooks here).
+  if (fieldType === 'text' || fieldType === 'slug') {
+    return (
+      <TextFieldShell
+        key={index}
+        el={el}
+        name={name}
+        label={label}
+        required={required}
+        common={common}
+      />
+    )
+  }
+
   const input = renderFieldInput(fieldType, el, name, defaultValue, defaultStr, common, disabled, required, placeholder)
 
   return (
     <FieldShell key={index} el={el} name={name} label={label} required={required}>
+      {input}
+    </FieldShell>
+  )
+}
+
+/**
+ * Component-shape TextField renderer — wraps the input shell so we can
+ * use `useTextInputControls()` (which holds the eye-toggle / mask state).
+ * Keeps `renderField` itself hook-free.
+ */
+function TextFieldShell({
+  el, name, label, required, common,
+}: {
+  el:        ElementMeta
+  name:      string
+  label:     string
+  required:  boolean
+  common:    Record<string, unknown>
+}): React.ReactElement {
+  const controls = useTextInputControls(el, name, (m) => renderElement(m, 0))
+
+  // Build the input with all the new HTML attrs (inputMode /
+  // autocapitalize / list / maxLength + the password/text type from
+  // the controls hook).
+  const textExtra: Record<string, unknown> = {}
+  if (el['maxLength']      !== undefined) textExtra['maxLength']      = Number(el['maxLength'])
+  if (el['inputMode']      !== undefined) textExtra['inputMode']      = String(el['inputMode'])
+  if (el['autocapitalize'] !== undefined) textExtra['autoCapitalize'] = String(el['autocapitalize'])
+  if (Array.isArray(el['datalist'])) textExtra['list'] = `${name}__datalist`
+
+  const datalist = Array.isArray(el['datalist']) ? (el['datalist'] as string[]) : undefined
+
+  const input = (
+    <>
+      <TextLikeInput
+        el={el}
+        name={name}
+        common={common}
+        type={controls.type}
+        extraProps={textExtra}
+        multiline={false}
+        applyMask={controls.applyMask}
+      />
+      {datalist && (
+        <datalist id={`${name}__datalist`}>
+          {datalist.map((v, i) => <option key={i} value={v} />)}
+        </datalist>
+      )}
+    </>
+  )
+
+  return (
+    <FieldShell
+      el={el}
+      name={name}
+      label={label}
+      required={required}
+      before={controls.before}
+      after={controls.after}
+    >
       {input}
     </FieldShell>
   )

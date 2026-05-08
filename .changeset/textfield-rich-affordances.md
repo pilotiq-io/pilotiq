@@ -1,0 +1,5 @@
+---
+"@pilotiq/pilotiq": minor
+---
+
+Add 10 rich affordances to `TextField` (audit gap #3): `password()` / `revealable()` (eye-icon toggle for password fields), `copyable(message?)` (suffix click-to-copy + toast), `mask(pattern)` (keystroke formatter — `9` digit / `a` alpha / `*` any / literals passthrough), `stripCharacters(chars)` (strip listed chars before save — runs server-side in `coerceFormValues` AND client-side), `datalist([…])` (HTML5 native suggestions), `inputMode()` and `autocapitalize()` (HTML5 attrs for mobile virtual keyboards), `prefixAction(Action)` / `suffixAction(Action)` (clickable Action buttons inside the input shell — distinct from the passive `prefix() / suffix()` decorations; resolve through the standard schema walker so inner Action `.visible() / .disabled()` rules evaluate the same way as anywhere else). `FieldShell` widened with `before` / `after` ReactNode slots; new `useTextInputControls()` hook owns the reveal/copy/mask state in a `<TextFieldShell>` component to keep `renderField` hook-free. Closes audit gap #3.

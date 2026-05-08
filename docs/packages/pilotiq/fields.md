@@ -6,7 +6,7 @@ Every form field is a static `make(name)` builder that extends `Field`.
 
 | Field | Renders | Notes |
 |---|---|---|
-| `TextField` | `<input type="text">` | `prefix() / suffix() / mask()` |
+| `TextField` | `<input type="text">` | `password() / revealable() / copyable() / mask() / datalist() / stripCharacters() / inputMode() / autocapitalize() / prefixAction() / suffixAction()` |
 | `EmailField` | `<input type="email">` | Auto-attaches `email()` validator |
 | `NumberField` | `<input type="number">` | `min() / max() / step()` |
 | `Slider` | range track | `range() / step()` |
@@ -88,6 +88,74 @@ required"`. Explicit validators (`required('Custom message')`,
 > Combine `live()` + `afterStateUpdated()` to wire a reactive pair
 > (e.g. title → slug, country → state options). See
 > [Reactive fields](./reactive).
+
+## TextField-specific setters
+
+```ts
+TextField.make('apiKey')
+  .password()                      // type="password"
+  .revealable()                    // eye-icon toggle to flip password ↔ text
+  .copyable('Key copied!')         // suffix click-to-copy + toast
+  .mask('(999) 999-9999')          // keystroke formatter (alphabet below)
+  .stripCharacters('()- ')         // remove from value before save
+  .datalist(['gmail.com', 'outlook.com']) // HTML5 native suggestions
+  .inputMode('numeric')            // virtual-keyboard hint
+  .autocapitalize('off')           // mobile-keyboard auto-cap behaviour
+  .prefixAction(Action.make('generate').icon('plus').handler(...))
+  .suffixAction(Action.make('rotate').icon('refresh').handler(...))
+```
+
+**`password()`** flips the input to `type="password"`. **`revealable()`**
+mounts an eye-icon toggle in the suffix slot — only renders when paired
+with `password()` (a stray `revealable()` on a non-password input is a
+no-op, not an error).
+
+**`copyable(message?)`** mounts a copy button that writes the current
+input value to the clipboard via `navigator.clipboard.writeText`; the
+optional message overrides the default `'Copied!'` success toast. Falls
+back to `document.execCommand('copy')` on browsers without the
+clipboard API.
+
+**`mask(pattern)`** formats the value keystroke-by-keystroke against
+this alphabet:
+
+| Token | Matches |
+|---|---|
+| `9` | digit `0-9` |
+| `a` | alpha `A-Za-z` |
+| `*` | any character |
+| anything else | literal — rendered verbatim |
+
+Examples: `'(999) 999-9999'`, `'9999-9999-9999-9999'`, `'aaa-9999'`.
+Pair with `stripCharacters` so the persisted column doesn't carry the
+literals (`stripCharacters('()- ')` removes the four mask chars before
+the value lands on the server).
+
+**`stripCharacters(chars)`** runs server-side (the source of truth — a
+tampered client can't post unstripped values) AND client-side (so what
+the user sees matches what gets posted). Pass either a string of
+single characters or an explicit array.
+
+**`datalist(values)`** adds an HTML5 `<datalist>` next to the input.
+Browsers render an autocomplete dropdown; users can still type values
+not on the list. Useful for canonical-but-not-exclusive sets (countries,
+departments, common email domains).
+
+**`inputMode(mode)`** sets the HTML `inputmode` attribute — drives the
+virtual-keyboard layout on mobile. Modes: `'none' | 'text' | 'numeric'
+| 'tel' | 'email' | 'decimal' | 'search' | 'url'`. Distinct from
+`type=` — a `text` field with `inputMode('numeric')` still accepts
+non-digit pastes; for strict numeric-only, use `NumberField`.
+
+**`autocapitalize(mode)`** sets the HTML `autocapitalize` attribute.
+Modes: `'off' | 'sentences' | 'words' | 'characters'`.
+
+**`prefixAction / suffixAction`** mount a clickable `Action` button
+inside the input shell. Distinct from the passive `prefix() / suffix()`
+decorations (which accept a string or icon descriptor only). The Action
+keeps its full chrome — `.icon() / .color() / .visible() / .modal*()`
+all work, and visibility rules evaluate through the standard schema
+walker the same way they do anywhere else.
 
 ## Textarea-specific setters
 
