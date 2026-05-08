@@ -3254,6 +3254,18 @@ export function registerPilotiqRoutes(
       return res.json({ ok: true })
     })
   }
+
+  // Plugin route hook — runs AFTER all core routes register so plugins
+  // can mount their own HTTP surface alongside the panel's. Order
+  // matches the registration order on `.use()` / `.plugins([…])`. Each
+  // plugin owns its own URL convention; pilotiq's underscore-prefixed
+  // sibling-route precedent (`_search`, `_uploads`, `_widget`,
+  // `_notifications`) is the recommended shape. Failures inside a
+  // plugin's hook propagate — boot order is "register all core, then
+  // each plugin in order"; a throw on hook N stops hooks N+1..N+M.
+  for (const plugin of pilotiq.getPlugins()) {
+    plugin.registerRoutes?.(router, pilotiq)
+  }
 }
 
 // ─── Lifecycle helpers exported for tests ────────────────

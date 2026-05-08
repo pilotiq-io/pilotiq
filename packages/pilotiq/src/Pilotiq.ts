@@ -1,3 +1,4 @@
+import type { Router } from '@rudderjs/router'
 import type { ResourceClass } from './Resource.js'
 import type { GlobalClass } from './Global.js'
 import type { ClusterClass } from './Cluster.js'
@@ -25,8 +26,26 @@ export type PilotiqLayout = 'sidebar' | 'topbar'
 /** Plugin interface for extending Pilotiq panels. */
 export interface PilotiqPlugin {
   name: string
-  /** Called when .use() is invoked — mutate config as needed. */
+  /** Called when `.use()` / `.plugins([…])` runs at panel-build time —
+   *  mutate config as needed (register a right-sidebar contribution,
+   *  register a field renderer, seed an internal registry, install a
+   *  `Field.prototype` augment, etc). Idempotent under HMR / re-mount. */
   register(panel: Pilotiq): void
+  /**
+   * Optional — called by `registerPilotiqRoutes(router, pilotiq)` AFTER
+   *  the core routes are mounted, so plugins can register their own
+   *  HTTP surface alongside the panel's. The mount order matches the
+   *  order plugins were registered via `.use()` / `.plugins([…])`.
+   *
+   *  Use this for plugin-owned endpoints (`POST {base}/_chat`,
+   *  `POST {base}/_collab`, …) — the path prefix should mirror
+   *  pilotiq's own underscore-prefixed precedent (`_search`,
+   *  `_uploads`, `_widget`, `_notifications`).
+   *
+   *  Skip this hook for plugins that only mutate panel config; nothing
+   *  inside core walks plugins outside `register()` / `registerRoutes()`.
+   */
+  registerRoutes?(router: Router, pilotiq: Pilotiq): void
 }
 
 /**
