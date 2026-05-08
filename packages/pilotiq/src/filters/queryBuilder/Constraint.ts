@@ -26,7 +26,7 @@ export type ConstraintValueKind =
  */
 export type ConstraintOperatorName =
   | 'equals' | 'notEquals'
-  | 'contains' | 'startsWith' | 'endsWith'
+  | 'contains' | 'notContains' | 'startsWith' | 'endsWith'
   | 'lt' | 'lte' | 'gt' | 'gte' | 'between'
   | 'before' | 'after' | 'dateBetween'
   | 'in' | 'notIn'

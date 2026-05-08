@@ -8,7 +8,7 @@ import type { SaveHandler, LoadRecordHandler, FormContext } from '../elements/Fo
  * structurally assignable to `ModelLike` — but pilotiq doesn't import
  * `@rudderjs/contracts` here to keep this file dependency-light.
  */
-export type ModelWhereOperator = '=' | '!=' | '>' | '>=' | '<' | '<=' | 'LIKE' | 'IN' | 'NOT IN'
+export type ModelWhereOperator = '=' | '!=' | '>' | '>=' | '<' | '<=' | 'LIKE' | 'NOT LIKE' | 'IN' | 'NOT IN'
 
 /**
  * Context passed into `Resource.query(ctx)`. Carries the resolved user so

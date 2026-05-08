@@ -1,11 +1,9 @@
 import { Constraint, type ConstraintOperator, type ConstraintOperatorName } from './Constraint.js'
 import type { ModelQuery } from '../../orm/modelDefaults.js'
 
-// `notContains` is intentionally omitted in v1 — the rudder Prisma adapter
-// doesn't translate `NOT LIKE` (only `LIKE`). Re-add once the adapter
-// learns negation, mirrored on the pilotiq `ModelWhereOperator` union.
 const OPERATORS: ConstraintOperator[] = [
   { name: 'contains',     label: 'Contains',         valueKind: 'text' },
+  { name: 'notContains',  label: 'Does not contain', valueKind: 'text' },
   { name: 'equals',       label: 'Equals',           valueKind: 'text' },
   { name: 'notEquals',    label: 'Does not equal',   valueKind: 'text' },
   { name: 'startsWith',   label: 'Starts with',      valueKind: 'text' },
@@ -38,9 +36,10 @@ export class TextConstraint extends Constraint {
     if (v === '') return query
 
     switch (operator) {
-      case 'contains':    return query.where(this.name, 'LIKE', `%${escapeLike(v)}%`)
-      case 'startsWith':  return query.where(this.name, 'LIKE', `${escapeLike(v)}%`)
-      case 'endsWith':    return query.where(this.name, 'LIKE', `%${escapeLike(v)}`)
+      case 'contains':    return query.where(this.name, 'LIKE',     `%${escapeLike(v)}%`)
+      case 'notContains': return query.where(this.name, 'NOT LIKE', `%${escapeLike(v)}%`)
+      case 'startsWith':  return query.where(this.name, 'LIKE',     `${escapeLike(v)}%`)
+      case 'endsWith':    return query.where(this.name, 'LIKE',     `%${escapeLike(v)}`)
       case 'equals':      return query.where(this.name, '=', v)
       case 'notEquals':   return query.where(this.name, '!=', v)
       default:            return query

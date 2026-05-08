@@ -18,24 +18,26 @@ export function FileUploadInput({
   accept, maxSize, multiple, preview, directory, uploadUrl,
   downloadable = false,
   openable     = false,
-  reorderable  = false,
-  appendFiles  = false,
-  panelLayout  = 'list',
+  reorderable        = false,
+  appendFiles        = false,
+  panelLayout        = 'list',
+  automaticallyResize,
 }: {
-  name:         string
-  defaultValue: unknown
-  disabled:     boolean
-  accept:       string[] | undefined
-  maxSize:      number | undefined
-  multiple:     boolean
-  preview:      boolean
-  directory:    string | undefined
-  uploadUrl:    string | undefined
-  downloadable: boolean
-  openable:     boolean
-  reorderable:  boolean
-  appendFiles:  boolean
-  panelLayout:  'list' | 'grid' | 'integrated'
+  name:               string
+  defaultValue:       unknown
+  disabled:           boolean
+  accept:             string[] | undefined
+  maxSize:            number | undefined
+  multiple:           boolean
+  preview:            boolean
+  directory:          string | undefined
+  uploadUrl:          string | undefined
+  downloadable:       boolean
+  openable:           boolean
+  reorderable:        boolean
+  appendFiles:        boolean
+  panelLayout:        'list' | 'grid' | 'integrated'
+  automaticallyResize?: { width: number; height: number }
 }): React.ReactElement {
   const fs        = useFieldState(name)
   const { notify } = useToast()
@@ -91,6 +93,10 @@ export function FileUploadInput({
         if (directory) fd.append('directory', directory)
         if (accept)    fd.append('accept', accept.join(','))
         if (maxSize !== undefined) fd.append('maxSize', String(maxSize))
+        if (automaticallyResize) {
+          fd.append('resize_width',  String(automaticallyResize.width))
+          fd.append('resize_height', String(automaticallyResize.height))
+        }
         fd.append('fieldName', name)
         const res  = await fetch(uploadUrl, { method: 'POST', body: fd, headers: { Accept: 'application/json' } })
         const json = await res.json().catch(() => ({})) as { ok?: boolean; url?: string; error?: string }

@@ -140,6 +140,24 @@ describe('TextConstraint', () => {
     assert.deepEqual(q.ops[0]!.args, ['title', 'LIKE', '%hello%'])
   })
 
+  it('notContains → NOT LIKE %v%', () => {
+    const q = new FakeQuery()
+    TextConstraint.make('title').apply(q, 'notContains', 'spam')
+    assert.deepEqual(q.ops[0]!.args, ['title', 'NOT LIKE', '%spam%'])
+  })
+
+  it('notContains escapes LIKE wildcards', () => {
+    const q = new FakeQuery()
+    TextConstraint.make('title').apply(q, 'notContains', '50% off')
+    assert.deepEqual(q.ops[0]!.args, ['title', 'NOT LIKE', '%50\\% off%'])
+  })
+
+  it('notContains drops empty string', () => {
+    const q = new FakeQuery()
+    TextConstraint.make('title').apply(q, 'notContains', '')
+    assert.equal(q.ops.length, 0)
+  })
+
   it('startsWith / endsWith / equals / notEquals', () => {
     const checks: Array<[string, string, string]> = [
       ['startsWith', 'LIKE', 'foo%'],

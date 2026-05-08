@@ -492,6 +492,9 @@ function renderFieldInput(
             : el['panelLayout'] === 'integrated' ? 'integrated'
             : 'list'
           }
+          {...(el['automaticallyResize'] && typeof el['automaticallyResize'] === 'object'
+            ? { automaticallyResize: el['automaticallyResize'] as { width: number; height: number } }
+            : {})}
         />
       )
     }
