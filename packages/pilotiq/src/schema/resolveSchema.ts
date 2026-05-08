@@ -321,6 +321,19 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
     }
   }
 
+  // Filament v5 — `Action.modalContentFooter([Element…])` resolves through
+  // the standard walker so any inner Actions evaluate `.visible() /
+  // .disabled()` the same way as anywhere else, and non-Action chrome
+  // (Alert / Text / Heading / …) flows through the same rendering path.
+  // Stamped under `meta.modalContentFooter` so the renderer can mount it
+  // between the form body and the Cancel/Submit footer.
+  if (el instanceof Action) {
+    const footer = el.getModalContentFooter()
+    if (footer && footer.length > 0) {
+      meta['modalContentFooter'] = await resolveAll(footer, ctx)
+    }
+  }
+
   return meta
 }
 

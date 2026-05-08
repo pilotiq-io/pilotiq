@@ -733,6 +733,9 @@ function ActionModalDialog({
   const dispatchUrl = meta['dispatchUrl'] as string | undefined
   const fields      = (meta.children ?? []) as ElementMeta[]
   const hasForm     = fields.length > 0
+  // Filament v5 — auxiliary Elements stamped by the resolver between
+  // the body and the footer (Alert / Text / Heading / Action / …).
+  const contentFooter = (meta['modalContentFooter'] ?? []) as ElementMeta[]
 
   const heading     = modal?.heading ?? confirm?.title ?? (hasForm ? String(meta['label'] ?? 'Submit') : 'Are you sure?')
   const description = modal?.description ?? confirm?.message
@@ -898,12 +901,13 @@ function ActionModalDialog({
               </DialogTitle>
               {description && <DialogDescription>{description}</DialogDescription>}
             </DialogHeader>
-            {hasForm && (
+            {(hasForm || contentFooter.length > 0) && (
               <div className={`flex flex-col gap-3 py-2 ${bodyCls}`.trim()}>
                 {fields.map((f, i) => renderFormChild(f, i, initialValues, errors))}
+                {contentFooter.map((c, i) => renderElement(c, fields.length + i))}
               </div>
             )}
-            {!hasForm && stickyMode && <div className={bodyCls} />}
+            {!hasForm && contentFooter.length === 0 && stickyMode && <div className={bodyCls} />}
             {serverError && (
               <p className={`py-2 text-sm text-destructive ${stickyMode ? 'px-6' : ''}`.trim()}>{serverError}</p>
             )}

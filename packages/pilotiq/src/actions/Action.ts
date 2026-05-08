@@ -524,6 +524,7 @@ export interface ActionModalMeta {
   closeButton?:         boolean
 }
 
+
 export interface ActionMeta extends ElementMeta {
   type:         'action'
   name:         string
@@ -556,6 +557,13 @@ export interface ActionMeta extends ElementMeta {
    * the `modalXxx` builders ran. The fields themselves arrive on
    * `meta.children` via the schema resolver. */
   modal?:       ActionModalMeta
+  /** Resolved Elements stamped by `resolveSchema` after `toMeta()` when
+   *  `.modalContentFooter([…])` was called. Renderer mounts them between
+   *  the form body and the Cancel/Submit footer — useful for an inline
+   *  Alert, summary text, or auxiliary Action that lives alongside the
+   *  primary submit. Mirrors `Section.afterHeader`'s parallel-slot
+   *  pattern; not populated when the setter wasn't used. */
+  modalContentFooter?: Array<Record<string, unknown>>
   /** Color preset — drives button colors at render time. `destructive`
    * coincides with `destructive: true` (kept for back-compat). */
   color?:       ActionColor
@@ -662,6 +670,10 @@ export class Action extends Element {
   protected _modalAutofocus?: boolean
   protected _modalAlignment?: ActionModalAlignment
   protected _modalCloseButton         = false
+  // Filament v5 — auxiliary Elements rendered between the modal body
+  // and the Cancel/Submit footer. Resolved by `resolveSchema` after
+  // `toMeta()` (parallel-slot pattern, mirrors `Section.afterHeader`).
+  protected _modalContentFooter?: Element[]
 
   // Trigger variants & cosmetics
   protected _color?: ActionColor
@@ -1942,6 +1954,29 @@ export class Action extends Element {
     this._hasModal         = true
     return this
   }
+
+  /**
+   * Auxiliary Elements rendered between the modal body and the
+   * Cancel/Submit footer. Useful for an inline `Alert` summarising
+   * the consequence of the action, supplemental `Text` / `Heading`,
+   * or a secondary `Action` (e.g. a "Learn more" link) that sits
+   * alongside the primary submit. Resolved through the standard
+   * walker so any `.visible() / .disabled()` rules on inner Actions
+   * evaluate the same way as anywhere else.
+   *
+   * Mirrors `Section.afterHeader([Action…])`'s parallel-slot pattern;
+   * unlike `afterHeader`, this slot accepts any Element type since
+   * non-Action chrome (alerts, copy) is the documented use case in
+   * Filament v5's `modalContentFooter` API.
+   */
+  modalContentFooter(elements: Element[]): this {
+    this._modalContentFooter = elements
+    this._hasModal           = true
+    return this
+  }
+
+  /** Read-only accessor used by `resolveSchema` to walk the slot. */
+  getModalContentFooter(): Element[] | undefined { return this._modalContentFooter }
 
   // ─── Link / form modes ────────────────────────────────
 

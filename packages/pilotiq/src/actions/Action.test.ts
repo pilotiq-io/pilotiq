@@ -4,6 +4,8 @@ import assert from 'node:assert/strict'
 import { Action } from './Action.js'
 import { resolveSchema, _resetResolverRegistry } from '../schema/resolveSchema.js'
 import { Card } from '../schema/Card.js'
+import { Alert } from '../schema/Alert.js'
+import { Text } from '../schema/Text.js'
 import { RelationManager, type RelationManagerContext } from '../RelationManager.js'
 
 beforeEach(() => _resetResolverRegistry())
@@ -2419,6 +2421,50 @@ describe('Action modal chrome extras (audit gap #2)', () => {
     })
   })
 
+  describe('modalContentFooter', () => {
+    it('round-trips Elements through resolveSchema as `meta.modalContentFooter`', async () => {
+      const result = await resolveSchema([
+        Action.make('save').modalContentFooter([
+          Alert.make('Heads up').warning(),
+          Text.make('Fine print'),
+        ]),
+      ])
+      const footer = result[0]!['modalContentFooter'] as Array<Record<string, unknown>> | undefined
+      assert.equal(footer?.length, 2)
+      assert.equal(footer![0]!['type'],      'alert')
+      assert.equal(footer![0]!['content'],   'Heads up')
+      assert.equal(footer![0]!['alertType'], 'warning')
+      assert.equal(footer![1]!['type'],      'text')
+    })
+
+    it('omits the slot when the setter was not called', async () => {
+      const result = await resolveSchema([Action.make('save').modalHeading('h')])
+      assert.equal(result[0]!['modalContentFooter'], undefined)
+    })
+
+    it('omits the slot when called with an empty array', async () => {
+      const result = await resolveSchema([Action.make('save').modalContentFooter([])])
+      assert.equal(result[0]!['modalContentFooter'], undefined)
+    })
+
+    it('flips _hasModal so the modal slot emits even without other chrome', () => {
+      const a = Action.make('save').modalContentFooter([Text.make('Hi')])
+      assert.equal(a.hasModal(), true)
+    })
+
+    it('inner Action `.visible(false)` rules drop the action from the resolved slot', async () => {
+      const result = await resolveSchema([
+        Action.make('save').modalContentFooter([
+          Action.make('learnMore').href('https://example.com').visible(true),
+          Action.make('hidden').href('/x').visible(false),
+        ]),
+      ])
+      const footer = result[0]!['modalContentFooter'] as Array<Record<string, unknown>> | undefined
+      assert.equal(footer?.length, 1)
+      assert.equal(footer![0]!['name'], 'learnMore')
+    })
+  })
+
   describe('Filament v5 alias setters', () => {
     it('modalSubmitActionLabel routes to modalSubmitLabel', () => {
       const m = modal(Action.make('a').modalSubmitActionLabel('Apply'))
@@ -2445,6 +2491,7 @@ describe('Action modal chrome extras (audit gap #2)', () => {
       (a: Action) => a.modalAlignment('end'),
       (a: Action) => a.modalIconColor('info'),
       (a: Action) => a.modalCloseButton(),
+      (a: Action) => a.modalContentFooter([Text.make('x')]),
     ]) {
       const a = customise(Action.make('a'))
       assert.notEqual(modal(a), undefined, 'modal slot must be present')

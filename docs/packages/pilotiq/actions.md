@@ -74,12 +74,25 @@ Action.make('publish')
   // Focus
   .modalAutofocus()                      // focus first form input on open
   .modalAutofocus(false)                 // skip the default submit-button autofocus
+  // Auxiliary content between the form body and the Cancel/Submit footer
+  .modalContentFooter([
+    Alert.make('Subscribers will be emailed immediately.').warning(),
+  ])
 ```
 
 **Defaults preserved.** `closeModalByClickingAway` / `closeModalByEscaping`
 are on by default — calling without an argument turns them OFF (Filament's
 `->closeModalByClickingAway(false)` shape). Sticky chrome and the X close
 button are off by default; call without an argument to turn ON.
+
+**`modalContentFooter([Element…])`** mounts auxiliary Elements between
+the form body (or confirmation copy) and the Cancel/Submit row. Useful
+for an inline `Alert` summarising the consequence of the action,
+supplemental `Text` / `Heading`, or a secondary `Action` (e.g. a
+"Learn more" link) sitting alongside the primary submit. Inner Actions
+keep their `.visible() / .disabled()` rules — the slot resolves through
+the standard schema walker. In sticky-footer mode the slot scrolls with
+the body; only the action row stays pinned.
 
 **`modalAutofocus` semantics:**
 
