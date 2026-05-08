@@ -1,5 +1,13 @@
 # @pilotiq/pilotiq
 
+## 0.3.0
+
+### Minor Changes
+
+- 58232be: Add `Action.modalContentFooter([Element…])` — auxiliary Elements rendered between the modal body and the Cancel/Submit footer. Useful for an inline `Alert` summarising the consequence of the action, supplemental `Text` / `Heading`, or a secondary `Action` (e.g. a "Learn more" link) that sits alongside the primary submit. Mirrors `Section.afterHeader([Action…])`'s parallel-slot pattern; resolves through the standard schema walker so inner Action `.visible() / .disabled()` rules evaluate the same way as anywhere else. In sticky-footer mode the slot scrolls with the body; only the action row stays pinned. Closes the carved-off remainder of the Action modal chrome audit gap (every sibling setter in that group already shipped).
+- 58232be: Add `Repeater.expandAction()` / `Repeater.expandAllAction()` / `Repeater.collapseAllAction()` (and the same trio on `Builder`) so consumers can override the per-row chevron and the bulk expand/collapse buttons that sit above collapsible rows. `RowButtonKind` widens from 7 → 10 slots (`'expand' | 'expandAll' | 'collapseAll'`); `BulkCollapseHeader` chrome renders above rows when either bulk action is configured, and `CollapseChevron` falls through to a per-row `expand` override when present. Closes audit gap #7 (Filament parity).
+- 43428d6: Add 10 rich affordances to `TextField` (audit gap #3): `password()` / `revealable()` (eye-icon toggle for password fields), `copyable(message?)` (suffix click-to-copy + toast), `mask(pattern)` (keystroke formatter — `9` digit / `a` alpha / `*` any / literals passthrough), `stripCharacters(chars)` (strip listed chars before save — runs server-side in `coerceFormValues` AND client-side), `datalist([…])` (HTML5 native suggestions), `inputMode()` and `autocapitalize()` (HTML5 attrs for mobile virtual keyboards), `prefixAction(Action)` / `suffixAction(Action)` (clickable Action buttons inside the input shell — distinct from the passive `prefix() / suffix()` decorations; resolve through the standard schema walker so inner Action `.visible() / .disabled()` rules evaluate the same way as anywhere else). `FieldShell` widened with `before` / `after` ReactNode slots; new `useTextInputControls()` hook owns the reveal/copy/mask state in a `<TextFieldShell>` component to keep `renderField` hook-free. Closes audit gap #3.
+
 ## 0.2.0
 
 ### Minor Changes
