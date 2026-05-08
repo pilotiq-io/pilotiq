@@ -56,6 +56,52 @@ describe('FileUploadField', () => {
     assert.equal('uploadUrl' in meta, false)
   })
 
+  describe('image editor (Phase A)', () => {
+    it('imageEditor() stamps imageEditor:true', () => {
+      const meta = FileUploadField.make('photo').imageEditor().toMeta()
+      assert.equal(meta['imageEditor'], true)
+    })
+
+    it('imageEditor() absent by default', () => {
+      const meta = FileUploadField.make('photo').toMeta()
+      assert.equal('imageEditor' in meta, false)
+    })
+
+    it('imageEditorAspectRatioOptions() stamps options array', () => {
+      const opts = [{ ratio: 16 / 9, label: 'Widescreen' }, { ratio: 1, label: 'Square' }]
+      const meta = FileUploadField.make('photo').imageEditor().imageEditorAspectRatioOptions(opts).toMeta()
+      assert.deepEqual(meta['imageEditorAspectRatioOptions'], opts)
+    })
+
+    it('circleCropper() stamps circleCropper:true', () => {
+      const meta = FileUploadField.make('photo').imageEditor().circleCropper().toMeta()
+      assert.equal(meta['circleCropper'], true)
+    })
+
+    it('automaticallyCropImagesToAspectRatio() stamps flag', () => {
+      const meta = FileUploadField.make('photo').imageEditor().automaticallyCropImagesToAspectRatio().toMeta()
+      assert.equal(meta['automaticallyCropImagesToAspectRatio'], true)
+    })
+
+    it('automaticallyResize() stamps width+height', () => {
+      const meta = FileUploadField.make('photo').automaticallyResize(800, 600).toMeta()
+      assert.deepEqual(meta['automaticallyResize'], { width: 800, height: 600 })
+    })
+
+    it('avatar() sets imageEditor + circleCropper + multiple:false', () => {
+      const meta = FileUploadField.make('avatar').avatar().toMeta()
+      assert.equal(meta['imageEditor'],    true)
+      assert.equal(meta['circleCropper'],  true)
+      assert.equal(meta['multiple'],       false)
+    })
+
+    it('avatar() does not override an explicit multiple(true)', () => {
+      // avatar() forces multiple false — explicit multiple() after avatar() wins
+      const meta = FileUploadField.make('avatar').avatar().multiple(true).toMeta()
+      assert.equal(meta['multiple'], true)
+    })
+  })
+
   describe('coerceFormValues', () => {
     it('passes URL string through (single mode)', () => {
       const out = coerceFormValues(

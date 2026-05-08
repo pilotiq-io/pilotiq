@@ -3,6 +3,13 @@ import type { RenderContext } from '../schema/resolveSchema.js'
 
 export type PanelLayout = 'list' | 'grid' | 'integrated'
 
+export interface AspectRatioOption {
+  /** Numeric ratio, e.g. `16/9`, `4/3`, `1` for square. */
+  ratio: number
+  /** Human-readable label shown in the editor picker, e.g. `'Widescreen'`. */
+  label: string
+}
+
 /**
  * File upload. The field stores the resolved upload's URL string —
  * `string` for single-file mode, `string[]` for multi.
@@ -24,6 +31,11 @@ export class FileUploadField extends Field {
   private _reorderable = false
   private _appendFiles = false
   private _panelLayout: PanelLayout = 'list'
+  private _imageEditor = false
+  private _imageEditorAspectRatioOptions?: AspectRatioOption[]
+  private _circleCropper = false
+  private _automaticallyCropImagesToAspectRatio = false
+  private _automaticallyResize?: { width: number; height: number }
 
   private constructor(name: string) {
     super(name, 'fileUpload')
@@ -70,6 +82,37 @@ export class FileUploadField extends Field {
   /** Display layout for the uploaded file list. `'grid'` shows square tiles; `'integrated'` embeds the upload button as a tile. */
   panelLayout(layout: PanelLayout): this { this._panelLayout = layout; return this }
 
+  /** Open a crop/resize modal after the user selects an image, before it is uploaded. */
+  imageEditor(value: boolean = true): this { this._imageEditor = value; return this }
+
+  /** Aspect ratio presets shown in the image editor picker. */
+  imageEditorAspectRatioOptions(options: AspectRatioOption[]): this { this._imageEditorAspectRatioOptions = options; return this }
+
+  /** Render a circular crop overlay in the image editor. */
+  circleCropper(value: boolean = true): this { this._circleCropper = value; return this }
+
+  /**
+   * When aspect ratio options are configured, automatically apply the first
+   * ratio and skip showing the editor UI unless the user explicitly opens it.
+   */
+  automaticallyCropImagesToAspectRatio(value: boolean = true): this { this._automaticallyCropImagesToAspectRatio = value; return this }
+
+  /**
+   * Resize the image to the given dimensions on the server after upload.
+   * Requires `@rudderjs/image` to be installed and the upload adapter to
+   * forward the `resize_width` / `resize_height` FormData fields.
+   */
+  automaticallyResize(width: number, height: number): this { this._automaticallyResize = { width, height }; return this }
+
+  /**
+   * Shorthand for `.imageEditor().circleCropper().multiple(false)`.
+   * Ideal for single avatar / profile-picture fields.
+   */
+  avatar(value: boolean = true): this {
+    if (value) { this._imageEditor = true; this._circleCropper = true; this._multiple = false }
+    return this
+  }
+
   getAccept(): string[] | undefined { return this._accept }
   getMaxSize(): number | undefined { return this._maxSize }
   isMultiple(): boolean { return this._multiple }
@@ -80,6 +123,11 @@ export class FileUploadField extends Field {
   isReorderable(): boolean { return this._reorderable }
   doesAppendFiles(): boolean { return this._appendFiles }
   getPanelLayout(): PanelLayout { return this._panelLayout }
+  hasImageEditor(): boolean { return this._imageEditor }
+  getImageEditorAspectRatioOptions(): AspectRatioOption[] | undefined { return this._imageEditorAspectRatioOptions }
+  hasCircleCropper(): boolean { return this._circleCropper }
+  doesAutomaticallyCrop(): boolean { return this._automaticallyCropImagesToAspectRatio }
+  getAutomaticallyResize(): { width: number; height: number } | undefined { return this._automaticallyResize }
 
   override toMeta(ctx?: RenderContext): FieldMeta {
     return {
@@ -94,6 +142,11 @@ export class FileUploadField extends Field {
       ...(this._reorderable            ? { reorderable: true }              : {}),
       ...(this._appendFiles            ? { appendFiles: true }              : {}),
       ...(this._panelLayout !== 'list' ? { panelLayout: this._panelLayout } : {}),
+      ...(this._imageEditor ? { imageEditor: true } : {}),
+      ...(this._imageEditorAspectRatioOptions?.length ? { imageEditorAspectRatioOptions: this._imageEditorAspectRatioOptions } : {}),
+      ...(this._circleCropper ? { circleCropper: true } : {}),
+      ...(this._automaticallyCropImagesToAspectRatio ? { automaticallyCropImagesToAspectRatio: true } : {}),
+      ...(this._automaticallyResize ? { automaticallyResize: this._automaticallyResize } : {}),
       // `uploadUrl` is stamped via RenderContext by the page-data
       // builders. Without it the renderer falls back to a clear error
       // ("no upload URL configured"); the route handler (and therefore
