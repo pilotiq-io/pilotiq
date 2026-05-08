@@ -1,5 +1,12 @@
 # @pilotiq/recharts
 
+## 2.0.0
+
+### Patch Changes
+
+- Updated dependencies [a1c3e40]
+  - @pilotiq/pilotiq@0.4.0
+
 ## 1.0.0
 
 ### Patch Changes
