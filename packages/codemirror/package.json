@@ -35,7 +35,7 @@
   },
   "dependencies": {},
   "peerDependencies": {
-    "@pilotiq/pilotiq": "workspace:*",
+    "@pilotiq/pilotiq": "workspace:^",
     "@codemirror/commands": "^6",
     "@codemirror/language": "^6",
     "@codemirror/state": "^6",
@@ -46,7 +46,7 @@
     "react-dom": "^18 || ^19"
   },
   "devDependencies": {
-    "@pilotiq/pilotiq": "workspace:*",
+    "@pilotiq/pilotiq": "workspace:^",
     "@codemirror/commands": "^6",
     "@codemirror/language": "^6",
     "@codemirror/state": "^6",
