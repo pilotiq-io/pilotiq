@@ -6,9 +6,9 @@
 
 - Updated dependencies [2dedc56]
   - @pilotiq/pilotiq@0.2.0
-  - @pilotiq/codemirror@1.0.0
-  - @pilotiq/recharts@1.0.0
-  - @pilotiq/tiptap@1.0.0
+  - @pilotiq/codemirror@0.2.0
+  - @pilotiq/recharts@0.2.0
+  - @pilotiq/tiptap@0.2.0
 
 ## 0.0.2
 
