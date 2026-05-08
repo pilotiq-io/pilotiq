@@ -54,7 +54,7 @@ example above whether they're flat or grouped.
 | `AND` / `OR` connector at every group | ✅ |
 | Nested groups (`(A AND B) OR C`) | ✅ |
 | Cross-table joins / relation filters | ❌ — write a custom `.handle(fn)` |
-| `notContains` operator on `TextConstraint` | ❌ — Prisma adapter doesn't translate `NOT LIKE` |
+| `notContains` operator on `TextConstraint` | ✅ |
 
 The renderer ships an AND/OR toggle at the head of every group plus an
 **+ Add group** button, so the user can compose arbitrarily deep trees
@@ -82,14 +82,8 @@ Five built-in constraints ship with pilotiq:
 TextConstraint.make('title').label('Title')
 ```
 
-Operators: `contains` (default) / `equals` / `notEquals` /
+Operators: `contains` (default) / `notContains` / `equals` / `notEquals` /
 `startsWith` / `endsWith` / `isEmpty` / `isNotEmpty`.
-
-`notContains` is intentionally omitted — the rudder Prisma adapter
-doesn't translate `NOT LIKE` (only `LIKE`). Re-add once the adapter
-learns negation. As a workaround, wrap the `contains` rule in a group
-with the AND/OR connector flipped so the surrounding clause negates
-through the user-visible logic.
 
 LIKE wildcards (`%` `_` `\`) in user input are escaped server-side, so
 typing `50%` searches for the literal string instead of a wildcard.
@@ -232,9 +226,6 @@ based on the resolved user (the slot is a plain JS array).
   model only. For relation-aware filters, write a `.handle(fn)`
   callback that consults `Resource.model.relations[name]` and emits
   `whereHas` / join clauses manually.
-- **No `notContains` on `TextConstraint`** — the rudder Prisma
-  adapter doesn't translate `NOT LIKE`. Expect this to land alongside a
-  `WhereOperator` widening on the rudder side.
 - **No saved filter sets** — every page visit needs the user to
   re-build their filter from scratch (or arrive via a bookmarked URL).
   Pair with `Resource.persistFiltersInSession = true` to remember the

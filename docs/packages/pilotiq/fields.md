@@ -176,3 +176,65 @@ sizes purely to content. `disableGrammarly()` adds
 data-enable-grammarly="false"` so the third-party extension skips the
 field — useful for sensitive content (slug source, code snippets, DB
 queries) where the overlay corrupts cursor placement.
+
+## FileUpload-specific setters
+
+```ts
+FileUpload.make('avatar')
+  .multiple()                          // accept multiple files
+  .accept(['image/jpeg', 'image/png']) // MIME allowlist
+  .maxSize(5 * 1024 * 1024)           // 5 MB cap
+  .directory('avatars')               // sub-directory hint for the adapter
+  .preview()                          // show image thumbnail after upload
+  .downloadable()                     // add a download icon per file
+  .openable()                         // add an open-in-tab icon per file
+  .reorderable()                       // drag-to-reorder uploaded files
+  .appendFiles()                       // accumulate uploads instead of replacing
+  .panelLayout('grid')                // 'list' (default) | 'grid' | 'integrated'
+  .preserveFilenames()                // keep the original filename on the adapter
+```
+
+### Image editor
+
+```ts
+FileUpload.make('cover')
+  .imageEditor()                              // crop modal on file pick
+  .imageEditorAspectRatioOptions([           // optional ratio presets
+    { ratio: 16 / 9,  label: '16:9' },
+    { ratio: 4 / 3,   label: '4:3' },
+    { ratio: 1,       label: 'Square' },
+  ])
+  .automaticallyCropImagesToAspectRatio()    // auto-apply first ratio, skip modal
+
+FileUpload.make('profile')
+  .avatar()                                  // imageEditor() + circleCropper() + single
+```
+
+The crop modal opens client-side after the user selects a file. The
+cropped canvas blob replaces the original before the POST reaches the
+server. `automaticallyCropImagesToAspectRatio()` silently applies the
+first ratio and uploads immediately — the modal only appears if the user
+clicks to change the crop.
+
+### Server-side resize
+
+```ts
+FileUpload.make('thumbnail')
+  .automaticallyResize(800, 600)
+```
+
+When `automaticallyResize(width, height)` is set, the client appends
+`resize_width` and `resize_height` to the upload FormData. The
+`_uploads` route handler reads those values, calls `@rudderjs/image`'s
+`image(file).resize(w, h).format('webp').toBuffer()`, and passes the
+resized WebP buffer to the adapter instead of the original file. The
+stored filename gains a `.webp` extension.
+
+Requires `@rudderjs/image` as an optional peer dependency:
+
+```bash
+pnpm add @rudderjs/image
+```
+
+If the package is not installed, the route silently falls back to
+uploading the original file unchanged — no error is thrown.
