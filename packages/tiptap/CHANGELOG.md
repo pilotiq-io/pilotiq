@@ -1,5 +1,11 @@
 # @pilotiq/tiptap
 
+## 2.0.1
+
+### Patch Changes
+
+- 863505c: Use caret peer dep for `@pilotiq/pilotiq` so adapter packages stay compatible across minor bumps.
+
 ## 2.0.0
 
 ### Patch Changes
