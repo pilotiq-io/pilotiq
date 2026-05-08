@@ -1,5 +1,14 @@
 # @pilotiq/tiptap
 
+## 1.0.0
+
+### Patch Changes
+
+- Updated dependencies [58232be]
+- Updated dependencies [58232be]
+- Updated dependencies [43428d6]
+  - @pilotiq/pilotiq@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes
