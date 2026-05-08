@@ -71,7 +71,8 @@ The submitted body has shape:
 | `.itemCanClone(rule)` | Per-row gate for the clone button. No-op when `cloneable()` is off |
 | `.itemCanReorder(rule)` | Per-row gate for the drag grip + Up/Down arrows. No-op when `reorderable()` is off |
 | `.addActionLabel(text)` | Label for the Add button (default `'Add'`) — shorthand for `.addAction(RowButton.make().label(text))` |
-| `.addAction(b)` / `.cloneAction(b)` / `.deleteAction(b)` / `.moveUpAction(b)` / `.moveDownAction(b)` / `.reorderAction(b)` / `.collapseAction(b)` | Customize the chrome of the seven built-in row buttons (label / icon / color / tooltip). See [Row-button customizers](#row-button-customizers) below. |
+| `.addAction(b)` / `.cloneAction(b)` / `.deleteAction(b)` / `.moveUpAction(b)` / `.moveDownAction(b)` / `.reorderAction(b)` / `.collapseAction(b)` / `.expandAction(b)` | Customize the chrome of the per-row built-in buttons (label / icon / color / tooltip). See [Row-button customizers](#row-button-customizers) below. |
+| `.expandAllAction(b?)` / `.collapseAllAction(b?)` | Mount field-header bulk chips that open / close every row. Opt-in — calling enables the button. Auto-arms `collapsible()`. |
 
 Inherited from `Field`: `.label() / .required() / .helperText() /
 .dehydrated() / .live() / .visible() / .hidden() / .disabled()`.
@@ -416,7 +417,7 @@ runs against its own rows only.
 
 ## Row-button customizers
 
-The seven built-in row chrome buttons can be re-skinned without owning
+The built-in row chrome buttons can be re-skinned without owning
 the button markup. `RowButton.make()` is a tiny fluent builder — set
 any subset of `label / icon / color / tooltip` and pass it to the
 matching slot setter:
@@ -428,6 +429,7 @@ Repeater.make('lineItems')
   .schema([…])
   .reorderable()
   .cloneable()
+  .collapsible()
   // Every slot accepts a RowButton; absent slots keep their defaults.
   .addAction(RowButton.make().label('Add line item').icon('plus-circle'))
   .deleteAction(RowButton.make().tooltip('Remove this line').color('destructive'))
@@ -435,7 +437,10 @@ Repeater.make('lineItems')
   .moveUpAction(RowButton.make().tooltip('Move earlier'))
   .moveDownAction(RowButton.make().tooltip('Move later'))
   .reorderAction(RowButton.make().tooltip('Hold and drag'))
-  .collapseAction(RowButton.make().icon('chevrons-up-down'))
+  .collapseAction(RowButton.make().icon('chevron-down').tooltip('Hide details'))
+  .expandAction(RowButton.make().icon('chevron-right').tooltip('Show details'))
+  .expandAllAction()    // mounts the bulk "Expand all" header chip
+  .collapseAllAction()  // mounts the bulk "Collapse all" header chip
 ```
 
 | Slot | Default icon | What it controls |
@@ -446,7 +451,10 @@ Repeater.make('lineItems')
 | `moveUpAction` | arrow up | Keyboard-fallback Up arrow. |
 | `moveDownAction` | arrow down | Keyboard-fallback Down arrow. |
 | `reorderAction` | grip | Drag handle (a `<span>`, not a button — `label` becomes the `aria-label`, `tooltip` the `title`). |
-| `collapseAction` | chevron | Collapse / expand chevron. When you set a custom icon it's used in both states (matches Filament's flat surface). |
+| `collapseAction` | chevron-down (open) / chevron-right (collapsed) | Per-row chevron. By default the override applies to BOTH states; pair with `expandAction` for state-specific chrome. |
+| `expandAction` | chevron-right | Sibling of `collapseAction` for the *collapsed* state only. Sets the icon / label / tooltip / color used when the row is currently collapsed; the open-state glyph still routes through `collapseAction`. |
+| `expandAllAction` | chevrons-down | Field-header chip that opens every collapsed row. **Opt-in** — calling enables the button (with or without a `RowButton` override). Auto-arms `collapsible()`. In `accordion()` mode it opens the first visible row. |
+| `collapseAllAction` | chevrons-up | Field-header chip that collapses every open row. Opt-in (same posture). Auto-arms `collapsible()`. In `accordion()` mode it closes the currently-open row. |
 
 **Icons** are string-only — resolved through the `registerIcons({ … })`
 runtime registry, the same way `Block.icon()` and `Section.icon()`

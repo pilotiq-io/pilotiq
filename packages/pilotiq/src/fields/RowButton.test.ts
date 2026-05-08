@@ -98,6 +98,63 @@ describe('RepeaterField row-action customizers', () => {
     assert.equal(r.getButton('delete')!.getColor(), 'destructive')
     assert.equal(r.getButton('clone'), undefined)
   })
+
+  test('expandAction lands on meta.buttons.expand (separate from collapseAction)', () => {
+    const meta = Repeater.make('items')
+      .schema([TextField.make('text')])
+      .collapsible()
+      .collapseAction(RowButton.make().icon('chevron-down'))
+      .expandAction(RowButton.make().icon('chevron-right').tooltip('Open'))
+      .toMeta() as { buttons?: { collapse?: { icon?: string }; expand?: { icon?: string; tooltip?: string } } }
+    assert.deepEqual(meta.buttons?.collapse, { icon: 'chevron-down' })
+    assert.deepEqual(meta.buttons?.expand,   { icon: 'chevron-right', tooltip: 'Open' })
+  })
+
+  test('expandAllAction() with no arg flips on the slot with empty defaults', () => {
+    const meta = Repeater.make('items')
+      .schema([TextField.make('text')])
+      .expandAllAction()
+      .toMeta()
+    assert.deepEqual(meta.buttons?.expandAll, {})
+    assert.equal(meta.collapsible, true, 'expandAllAction() auto-arms collapsible()')
+  })
+
+  test('expandAllAction(button) keeps the override and still auto-arms collapsible', () => {
+    const meta = Repeater.make('items')
+      .schema([TextField.make('text')])
+      .expandAllAction(RowButton.make().label('Open everything').icon('chevrons-down'))
+      .toMeta() as { buttons?: { expandAll?: { label?: string; icon?: string } }; collapsible?: boolean }
+    assert.deepEqual(meta.buttons?.expandAll, { label: 'Open everything', icon: 'chevrons-down' })
+    assert.equal(meta.collapsible, true)
+  })
+
+  test('collapseAllAction() with no arg flips on the slot and auto-arms collapsible', () => {
+    const meta = Repeater.make('items')
+      .schema([TextField.make('text')])
+      .collapseAllAction()
+      .toMeta()
+    assert.deepEqual(meta.buttons?.collapseAll, {})
+    assert.equal(meta.collapsible, true)
+  })
+
+  test('collapseAllAction(button) routes through the override', () => {
+    const meta = Repeater.make('items')
+      .schema([TextField.make('text')])
+      .collapseAllAction(RowButton.make().label('Hide all').color('muted'))
+      .toMeta() as { buttons?: { collapseAll?: { label?: string; color?: string } } }
+    assert.deepEqual(meta.buttons?.collapseAll, { label: 'Hide all', color: 'muted' })
+  })
+
+  test('non-customized field omits the new slots entirely', () => {
+    // Bare field never serializes any of the four new slots — back-compat
+    // for renderers that read `meta.buttons` and assume only the original
+    // seven keys are reachable.
+    const meta = Repeater.make('items')
+      .schema([TextField.make('text')])
+      .collapsible()
+      .toMeta() as { buttons?: unknown }
+    assert.equal(meta.buttons, undefined)
+  })
 })
 
 describe('BuilderField row-action customizers', () => {
@@ -145,5 +202,18 @@ describe('BuilderField row-action customizers', () => {
       .deleteAction(overrides.delete)
       .toMeta() as { buttons?: unknown }
     assert.deepEqual(r.buttons, b.buttons)
+  })
+
+  test('expandAction / expandAllAction / collapseAllAction land on Builder meta with the same kind keys', () => {
+    const meta = Builder.make('blocks')
+      .blocks([Block.make('hero').schema([TextField.make('title')])])
+      .expandAction(RowButton.make().icon('chevron-right'))
+      .expandAllAction(RowButton.make().label('Open everything'))
+      .collapseAllAction()
+      .toMeta()
+    assert.deepEqual(meta.buttons?.expand,      { icon: 'chevron-right' })
+    assert.deepEqual(meta.buttons?.expandAll,   { label: 'Open everything' })
+    assert.deepEqual(meta.buttons?.collapseAll, {})
+    assert.equal(meta.collapsible, true, 'Builder bulk setters auto-arm collapsible()')
   })
 })

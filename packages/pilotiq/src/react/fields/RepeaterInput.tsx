@@ -12,6 +12,7 @@ import {
   RowChromeIconButton,
   ReorderGrip,
   CollapseChevron,
+  BulkCollapseHeader,
   resolveRowChrome,
   DEFAULT_MOVE_UP,
   DEFAULT_MOVE_DOWN,
@@ -428,6 +429,37 @@ export function RepeaterInput({
     })
   }
 
+  // ── Bulk expand / collapse ──────────────────────────────
+  // Accordion's "only one open" invariant survives both bulk actions:
+  // expandAll opens the first visible row (matches the implicit
+  // "always show something" mental model); collapseAll sets null.
+  // Per-row mode iterates every row id and writes the storage slot
+  // alongside the in-memory map so reload restores the bulk action.
+  const expandAll = (): void => {
+    if (accordion) {
+      const firstVisible = rows.find(r => !r.hidden)
+      const next = firstVisible?.id ?? null
+      setAccordionOpenId(next)
+      writeAccordionToStorage(formId, name, next)
+      return
+    }
+    setCollapsed({})
+    for (const r of rows) writeCollapsedToStorage(formId, name, r.id, false)
+  }
+  const collapseAll = (): void => {
+    if (accordion) {
+      setAccordionOpenId(null)
+      writeAccordionToStorage(formId, name, null)
+      return
+    }
+    const next: Record<string, boolean> = {}
+    for (const r of rows) {
+      next[r.id] = true
+      writeCollapsedToStorage(formId, name, r.id, true)
+    }
+    setCollapsed(next)
+  }
+
   // Visibility computed each render — hidden rows still occupy slots in
   // `rows` (so values round-trip + reorder-around math stays simple), but
   // they don't count for the user-facing empty state, drop indicator, or
@@ -494,6 +526,13 @@ export function RepeaterInput({
       onChange={onContainerChange}
       onBlur={onContainerBlur}
     >
+      <BulkCollapseHeader
+        buttons={buttons}
+        disabled={disabled || !hasVisibleRow}
+        onExpandAll={expandAll}
+        onCollapseAll={collapseAll}
+      />
+
       {!hasVisibleRow && (
         <div className="rounded-md border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
           No items yet. Click {addLabel} to start.

@@ -107,9 +107,16 @@ export class RowButton {
 }
 
 /**
- * Slot id for one of the seven built-in row chrome buttons. The renderer
+ * Slot id for one of the built-in row chrome buttons. The renderer
  * looks these up in `meta.buttons[kind]` to merge customizer overrides
  * onto its hardcoded defaults.
+ *
+ * `expand` is the per-row sibling of `collapse` — used when the row is
+ * currently collapsed so authors can override icon/label/tooltip
+ * separately for each state. `expandAll` / `collapseAll` are the bulk
+ * field-header buttons; presence of either slot is what flips the
+ * matching button into existence (different from the always-rendered
+ * per-row chrome — see `RepeaterField.expandAllAction` for posture).
  */
 export type RowButtonKind =
   | 'add'
@@ -119,6 +126,9 @@ export type RowButtonKind =
   | 'moveDown'
   | 'reorder'
   | 'collapse'
+  | 'expand'
+  | 'expandAll'
+  | 'collapseAll'
 
 export type RowButtonsMeta = {
   [K in RowButtonKind]?: RowButtonMeta

@@ -4,6 +4,8 @@ import {
   ArrowUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  ChevronsDownIcon,
+  ChevronsUpIcon,
   CopyIcon,
   GripVerticalIcon,
   Trash2Icon,
@@ -154,11 +156,14 @@ export function ReorderGrip({
 }
 
 /**
- * Collapse chevron — picks the open/closed glyph from state, then lets a
- * `collapseAction` customizer override icon / label / tooltip / color.
- * When a custom icon is set, both states use it (matches Filament; flat
- * customizer surface — separate open/closed icon overrides aren't worth
- * the extra setter).
+ * Collapse chevron — picks the open/closed glyph from state, then lets
+ * customizer overrides take over. When the row is currently collapsed,
+ * `expand` (from `expandAction(...)`) wins, falling back to `collapse`
+ * (from `collapseAction(...)`) for back-compat with single-override
+ * setups. When the row is open, `collapse` is used directly. Authors
+ * who want different chrome per state set both `collapseAction` and
+ * `expandAction`; authors who want a single uniform override keep
+ * setting just `collapseAction`.
  */
 export function CollapseChevron({
   isCollapsed,
@@ -177,10 +182,13 @@ export function CollapseChevron({
     tooltip:    isCollapsed ? 'Expand' : 'Collapse',
     colorClass: 'text-muted-foreground hover:text-foreground',
   }
+  const override = isCollapsed
+    ? (buttons?.expand ?? buttons?.collapse)
+    : buttons?.collapse
   return (
     <RowChromeIconButton
       defaults={defaults}
-      override={buttons?.collapse}
+      override={override}
       disabled={disabled}
       onClick={onToggle}
       ariaExpanded={!isCollapsed}
@@ -222,4 +230,92 @@ export const DEFAULT_REORDER: ButtonDefaults = {
   label:      'Drag to reorder',
   tooltip:    'Drag to reorder',
   colorClass: 'text-muted-foreground',
+}
+export const DEFAULT_EXPAND_ALL: ButtonDefaults = {
+  Icon:       ChevronsDownIcon,
+  label:      'Expand all',
+  tooltip:    'Expand all',
+  colorClass: 'text-muted-foreground hover:text-foreground',
+}
+export const DEFAULT_COLLAPSE_ALL: ButtonDefaults = {
+  Icon:       ChevronsUpIcon,
+  label:      'Collapse all',
+  tooltip:    'Collapse all',
+  colorClass: 'text-muted-foreground hover:text-foreground',
+}
+
+/**
+ * Field-header strip with bulk Expand-all / Collapse-all chips. Renders
+ * only the buttons whose customizer slot is set on `buttons` — the
+ * presence of `buttons.expandAll` / `buttons.collapseAll` is what flips
+ * the matching button into existence (different from per-row chrome,
+ * which always renders when collapsible). Returns `null` when neither
+ * slot is configured so callers can mount the strip unconditionally.
+ */
+export function BulkCollapseHeader({
+  buttons,
+  disabled,
+  onExpandAll,
+  onCollapseAll,
+}: {
+  buttons:        RowButtonsMeta | undefined
+  disabled:       boolean
+  onExpandAll:    () => void
+  onCollapseAll:  () => void
+}): React.ReactElement | null {
+  const expandAllOverride   = buttons?.expandAll
+  const collapseAllOverride = buttons?.collapseAll
+  if (!expandAllOverride && !collapseAllOverride) return null
+  return (
+    <div className="flex items-center justify-end gap-1">
+      {expandAllOverride && (
+        <BulkChromeButton
+          defaults={DEFAULT_EXPAND_ALL}
+          override={expandAllOverride}
+          disabled={disabled}
+          onClick={onExpandAll}
+        />
+      )}
+      {collapseAllOverride && (
+        <BulkChromeButton
+          defaults={DEFAULT_COLLAPSE_ALL}
+          override={collapseAllOverride}
+          disabled={disabled}
+          onClick={onCollapseAll}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Compact button used by `BulkCollapseHeader` — icon + label, sized to
+ * read as a header chip (smaller than a full Action button, larger than
+ * the icon-only per-row chrome). Picks up the same `RowButton`
+ * override surface as every other slot.
+ */
+function BulkChromeButton({
+  defaults,
+  override,
+  disabled,
+  onClick,
+}: {
+  defaults: ButtonDefaults
+  override: RowButtonMeta | undefined
+  disabled: boolean
+  onClick:  () => void
+}): React.ReactElement {
+  const { Icon, label, tooltip, colorClass } = resolveRowChrome(defaults, override)
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={tooltip}
+      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs ${colorClass} disabled:opacity-30`}
+    >
+      <Icon className="size-3.5" />
+      {label}
+    </button>
+  )
 }

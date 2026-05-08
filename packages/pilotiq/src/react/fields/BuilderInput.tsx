@@ -13,6 +13,7 @@ import {
   RowChromeIconButton,
   ReorderGrip,
   CollapseChevron,
+  BulkCollapseHeader,
   resolveRowChrome,
   DEFAULT_MOVE_UP,
   DEFAULT_MOVE_DOWN,
@@ -368,6 +369,35 @@ export function BuilderInput({
     })
   }
 
+  // Bulk expand / collapse — accordion preserves its "only one open"
+  // invariant by opening the first visible row on expandAll and clearing
+  // openId on collapseAll. Per-row mode iterates every row and writes
+  // the storage slot so reload restores the bulk state.
+  const expandAll = (): void => {
+    if (accordion) {
+      const firstVisible = rows.find(r => !r.hidden)
+      const next = firstVisible?.id ?? null
+      setAccordionOpenId(next)
+      writeAccordionToStorage(formId, name, next)
+      return
+    }
+    setCollapsed({})
+    for (const r of rows) writeCollapsedToStorage(formId, name, r.id, false)
+  }
+  const collapseAll = (): void => {
+    if (accordion) {
+      setAccordionOpenId(null)
+      writeAccordionToStorage(formId, name, null)
+      return
+    }
+    const next: Record<string, boolean> = {}
+    for (const r of rows) {
+      next[r.id] = true
+      writeCollapsedToStorage(formId, name, r.id, true)
+    }
+    setCollapsed(next)
+  }
+
   const hasVisibleRow    = rows.some(r => !r.hidden)
   const firstVisibleIdx  = rows.findIndex(r => !r.hidden)
   const lastVisibleIdx   = (() => {
@@ -388,6 +418,13 @@ export function BuilderInput({
       onChange={onContainerChange}
       onBlur={onContainerBlur}
     >
+      <BulkCollapseHeader
+        buttons={buttons}
+        disabled={disabled || !hasVisibleRow}
+        onExpandAll={expandAll}
+        onCollapseAll={collapseAll}
+      />
+
       {!hasVisibleRow && (
         <div className="rounded-md border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
           No items yet. Click {addLabel} to start.

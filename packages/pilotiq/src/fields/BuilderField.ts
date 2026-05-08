@@ -462,8 +462,45 @@ export class BuilderField extends Field {
    */
   reorderAction(b: RowButton): this { this._buttons.reorder = b; return this }
 
-  /** Customize the per-row collapse chevron. */
+  /**
+   * Customize the per-row collapse chevron. Applies to BOTH states by
+   * default — the open chevron and the collapsed chevron share the
+   * override unless `expandAction(...)` is also set, in which case
+   * `collapseAction` covers only the open state and `expandAction`
+   * covers the collapsed state. Mirrors `RepeaterField.collapseAction`.
+   */
   collapseAction(b: RowButton): this { this._buttons.collapse = b; return this }
+
+  /**
+   * Customize the per-row chevron when the row is currently *collapsed*.
+   * Sibling of `collapseAction` for the closed-state glyph. Mirrors
+   * `RepeaterField.expandAction`.
+   */
+  expandAction(b: RowButton): this { this._buttons.expand = b; return this }
+
+  /**
+   * Mount an "Expand all" button in the field header. Opt-in: calling
+   * without args shows the button with default chrome; pass a
+   * `RowButton` to override icon / label / tooltip / color. Auto-arms
+   * `collapsible()`. In `accordion()` mode the button opens the first
+   * visible row. Mirrors `RepeaterField.expandAllAction`.
+   */
+  expandAllAction(button?: RowButton): this {
+    this._buttons.expandAll = button ?? RowButton.make()
+    this._collapsible = true
+    return this
+  }
+
+  /**
+   * Mount a "Collapse all" button in the field header. Opt-in (calling
+   * enables; pass a `RowButton` to customize). Auto-arms `collapsible()`.
+   * Mirrors `RepeaterField.collapseAllAction`.
+   */
+  collapseAllAction(button?: RowButton): this {
+    this._buttons.collapseAll = button ?? RowButton.make()
+    this._collapsible = true
+    return this
+  }
 
   // ─── Read-only access ────────────────────────────────
 
