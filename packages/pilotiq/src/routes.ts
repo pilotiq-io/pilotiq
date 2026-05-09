@@ -556,7 +556,10 @@ async function handleUploadRequest(
     }
   }
 
-  // Server-side resize via @rudderjs/image (optional peer dep)
+  // Server-side resize via @rudderjs/image (optional peer dep). Variable-
+  // string `import(name)` keeps Vite's static import-analysis from trying
+  // to pre-resolve the module on host apps that don't have @rudderjs/image
+  // installed — same pattern as `notifications/database.ts` for `@rudderjs/orm`.
   const resizeWidthStr  = typeof body['resize_width']  === 'string' ? body['resize_width']  : ''
   const resizeHeightStr = typeof body['resize_height'] === 'string' ? body['resize_height'] : ''
   let uploadFile: File = file
@@ -565,8 +568,9 @@ async function handleUploadRequest(
     const h = Number(resizeHeightStr)
     if (Number.isFinite(w) && w > 0 && Number.isFinite(h) && h > 0) {
       try {
+        const imageModuleName = '@rudderjs/image'
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const pkg = await import('@rudderjs/image' as string) as { image: (input: unknown) => { resize(w: number, h: number): { format(f: string): { toBuffer(): Promise<Buffer> } } } }
+        const pkg = await import(/* @vite-ignore */ imageModuleName) as { image: (input: unknown) => { resize(w: number, h: number): { format(f: string): { toBuffer(): Promise<Buffer> } } } }
         const buf = await pkg.image(file).resize(w, h).format('webp').toBuffer()
         const baseName = file.name.replace(/\.[^.]+$/, '')
         uploadFile = new File([buf.buffer as ArrayBuffer], `${baseName}.webp`, { type: 'image/webp' })

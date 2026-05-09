@@ -93,20 +93,43 @@ export function RightSidebarProvider({ meta, basePath, children }: RightSidebarP
 
   const fallbackId = meta.panels[0]?.id ?? null
 
-  const [open,     setOpenState]     = useState<boolean>(() => readBool(openKey, false))
-  const [activeId, setActiveIdState] = useState<string | null>(() => {
-    const stored = readString(activeKey)
-    if (stored && meta.panels.some(p => p.id === stored)) return stored
-    return fallbackId
-  })
-  const [width,    setWidthState]    = useState<number>(() => {
-    const stored = readString(widthKey)
-    return clampPanelWidth(stored ?? meta.defaultWidth, {
+  // SSR-safety: initialise to closed / fallback / default-width so the
+  // server-rendered tree matches a fresh client (no localStorage). The
+  // useEffect below rehydrates from localStorage AFTER mount, avoiding a
+  // hydration mismatch warning every time a returning user reloads with
+  // the panel previously open. Brief closed→open flash is acceptable and
+  // identical to first-visit behaviour.
+  const [open,     setOpenState]     = useState<boolean>(false)
+  const [activeId, setActiveIdState] = useState<string | null>(fallbackId)
+  const [width,    setWidthState]    = useState<number>(() =>
+    clampPanelWidth(meta.defaultWidth, {
       min: meta.minWidth,
       max: meta.maxWidth,
       defaultWidth: meta.defaultWidth,
-    })
-  })
+    }),
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const storedOpen = readBool(openKey, false)
+    setOpenState(storedOpen)
+    const storedActive = readString(activeKey)
+    if (storedActive && meta.panels.some(p => p.id === storedActive)) {
+      setActiveIdState(storedActive)
+    }
+    const storedWidth = readString(widthKey)
+    if (storedWidth !== null) {
+      setWidthState(clampPanelWidth(storedWidth, {
+        min: meta.minWidth,
+        max: meta.maxWidth,
+        defaultWidth: meta.defaultWidth,
+      }))
+    }
+    // Run once on mount per basePath. Width / activeId / open keys are
+    // basePath-derived, so the dependency list is effectively static for
+    // a given panel — no stale-closure risk on subsequent renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basePath])
 
   // Re-validate `activeId` when the contribution set changes (e.g.,
   // canAccess gating flipped after a route nav). If the stored id has
