@@ -1,6 +1,6 @@
-import sanitizeHtmlLib from 'sanitize-html'
+import type sanitizeHtmlNs from 'sanitize-html'
 
-export type SanitizeConfig = sanitizeHtmlLib.IOptions
+export type SanitizeConfig = sanitizeHtmlNs.IOptions
 
 /**
  * Default-secure allowlist for `Markdown` and `Html` primes — covers prose
@@ -39,11 +39,20 @@ export const DEFAULT_SANITIZE_CONFIG: SanitizeConfig = {
   disallowedTagsMode:    'discard',
 }
 
+// Lazy import — keeps `sanitize-html` (and its transitive `postcss` chain that
+// reaches into Node built-ins) out of the client bundle. Cached after first
+// resolve so per-call overhead is just the `sanitize-html` invocation itself.
+let sanitizerPromise: Promise<typeof sanitizeHtmlNs> | null = null
+function loadSanitizer(): Promise<typeof sanitizeHtmlNs> {
+  return sanitizerPromise ??= import('sanitize-html').then(m => m.default ?? m)
+}
+
 /**
  * Sanitizes an HTML string against `DEFAULT_SANITIZE_CONFIG` (or a
  * caller-supplied config). Server-side only — never call from a renderer,
  * since the wire shape ships pre-rendered HTML.
  */
-export function sanitizeHtml(html: string, config?: SanitizeConfig): string {
-  return sanitizeHtmlLib(html, config ?? DEFAULT_SANITIZE_CONFIG)
+export async function sanitizeHtml(html: string, config?: SanitizeConfig): Promise<string> {
+  const sanitizer = await loadSanitizer()
+  return sanitizer(html, config ?? DEFAULT_SANITIZE_CONFIG)
 }

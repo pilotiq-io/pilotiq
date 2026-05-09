@@ -22,7 +22,8 @@
     "test": "turbo run test",
     "changeset": "changeset",
     "changeset:version": "changeset version",
-    "release": "pnpm build:packages && pnpm changeset publish"
+    "release": "pnpm build:packages && pnpm changeset publish",
+    "yalc:push": "pnpm build:packages && pnpm -r --filter='./packages/*' exec yalc push && pnpm --dir=../pilotiq-pro install --prefer-offline --silent"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

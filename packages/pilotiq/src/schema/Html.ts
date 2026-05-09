@@ -53,10 +53,10 @@ export class Html extends Element {
 
   getType(): string { return 'html' }
 
-  toMeta() {
+  async toMeta() {
     const html = this._sanitize === false
       ? this.html
-      : sanitizeHtml(this.html, this._sanitize === true ? undefined : this._sanitize)
+      : await sanitizeHtml(this.html, this._sanitize === true ? undefined : this._sanitize)
     return {
       type:  'html' as const,
       html,

@@ -66,7 +66,7 @@ export class Markdown extends Element {
 
   getType(): string { return 'markdown' }
 
-  toMeta() {
+  async toMeta() {
     const html = marked.parse(this.source, {
       gfm:    this._gfm,
       breaks: this._breaks,
@@ -74,7 +74,7 @@ export class Markdown extends Element {
     }) as string
     const finalHtml = this._sanitize === false
       ? html
-      : sanitizeHtml(html, this._sanitize === true ? undefined : this._sanitize)
+      : await sanitizeHtml(html, this._sanitize === true ? undefined : this._sanitize)
     return {
       type:  'markdown' as const,
       html:  finalHtml,

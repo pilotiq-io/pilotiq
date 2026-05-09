@@ -419,7 +419,7 @@ export async function loadTableRecords(
                 const sanitizeOpt = col.getSanitize()
                 const finalHtml = sanitizeOpt === false
                   ? html
-                  : sanitizeHtml(html, sanitizeOpt === true ? undefined : sanitizeOpt)
+                  : await sanitizeHtml(html, sanitizeOpt === true ? undefined : sanitizeOpt)
                 formatted[col.name] = finalHtml
                 rich[col.name]      = true
               }
