@@ -1,7 +1,7 @@
 import { Element } from '../schema/Element.js'
 import { Field, type AfterStateUpdatedContext } from '../fields/Field.js'
 import { RepeaterField, isRepeaterField } from '../fields/RepeaterField.js'
-import type { RepeaterRelationshipConfig } from '../fields/RepeaterField.js'
+import type { RepeaterRelationshipConfig, RepeaterRowContext } from '../fields/RepeaterField.js'
 import { BuilderField, isBuilderField } from '../fields/BuilderField.js'
 import type { BuilderRelationshipConfig } from '../fields/BuilderField.js'
 import { Form, type FormContext } from './Form.js'
@@ -1527,6 +1527,21 @@ async function persistRelationshipRows(
     )
   }
 
+  // Per-row hooks — fire after each create / update / delete completes.
+  // No-op when the field hasn't registered the corresponding handler.
+  // Errors propagate; v1 isn't transactional so a throwing handler
+  // leaves earlier rows persisted.
+  const afterCreate = field.getAfterCreate()
+  const afterUpdate = field.getAfterUpdate()
+  const afterDelete = field.getAfterDelete()
+  const buildRowCtx = (index: number): RepeaterRowContext => ({
+    parent,
+    parentId: parentPk as string | number,
+    field:    field.name,
+    index,
+    mode:     attachment.kind,
+  })
+
   // Compute the morph stamp once — `computeMorphPayload` is pure.
   const morphStamp = attachment.kind === 'morphMany'
     ? computeMorphPayload(parent, attachment.morph)
@@ -1606,8 +1621,17 @@ async function persistRelationshipRows(
       // child-row update (user may have edited the child's own
       // columns through the Repeater). Skip the child write only
       // when the payload would be empty (M2M + pivot-only edits).
+      let updatedRecord: unknown = existingByPk.get(submittedId!)
       if (Object.keys(payload).length > 0) {
-        await model.update(submittedId!, payload)
+        const ret = await model.update(submittedId!, payload)
+        // ModelLike.update may return the updated record OR void; fall
+        // back to the existing snapshot merged with the payload so the
+        // hook always receives a usable record shape.
+        if (ret !== undefined && ret !== null) {
+          updatedRecord = ret
+        } else {
+          updatedRecord = { ...(existingByPk.get(submittedId!) ?? {}), ...payload }
+        }
       }
       if (hasPivotPayload) {
         if (typeof m2mAccessor!.updatePivot !== 'function') {
@@ -1620,13 +1644,15 @@ async function persistRelationshipRows(
         await m2mAccessor!.updatePivot(submittedId!, pivotPayload)
       }
       keptPks.add(submittedId!)
+      if (afterUpdate) await afterUpdate(updatedRecord, buildRowCtx(idx))
     } else {
+      let createdRecord: unknown = undefined
       if (attachment.kind === 'hasMany') {
         payload[attachment.foreignKey] = parentPk
-        await model.create(payload)
+        createdRecord = await model.create(payload)
       } else if (attachment.kind === 'morphMany') {
         Object.assign(payload, morphStamp)
-        await model.create(payload)
+        createdRecord = await model.create(payload)
       } else {
         // M2M: create the related record first, then attach via the
         // pivot accessor. The accessor handles polymorphic stamping
@@ -1647,12 +1673,13 @@ async function persistRelationshipRows(
         } else {
           await m2mAccessor!.attach!([newPk as string | number])
         }
+        createdRecord = created
       }
+      if (afterCreate) await afterCreate(createdRecord, buildRowCtx(idx))
     }
-    void field
   }
 
-  for (const [pkVal, _row] of existingByPk) {
+  for (const [pkVal, removedRow] of existingByPk) {
     if (keptPks.has(pkVal)) continue
     if (isM2M) {
       // Detach the pivot link only — the related record may still be
@@ -1662,7 +1689,7 @@ async function persistRelationshipRows(
     } else {
       await model.delete(pkVal)
     }
-    void _row
+    if (afterDelete) await afterDelete(removedRow, buildRowCtx(-1))
   }
 }
 

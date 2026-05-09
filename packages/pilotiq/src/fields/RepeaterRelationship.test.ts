@@ -1628,3 +1628,176 @@ describe('Repeater.relationship — pivotColumns', () => {
     assert.deepEqual(rows, [])
   })
 })
+
+describe('Repeater.relationship — afterCreate / afterUpdate / afterDelete hooks', () => {
+  it('afterCreate fires once per created child with parent + index + mode in ctx', async () => {
+    const child = makeFakeChildModel([])
+    const parent = makeFakeParentModel({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'items',
+      foreignKey:   'orderId',
+    })
+
+    const calls: Array<{ record: unknown; ctx: Record<string, unknown> }> = []
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items')
+          .relationship('items')
+          .schema([TextField.make('label').required()])
+          .afterCreate((record, ctx) => {
+            calls.push({ record, ctx: { ...ctx } as Record<string, unknown> })
+          }),
+      ])
+      .save(async () => ({ id: 'p1', title: 'Order' }))
+
+    await dispatchFormSubmit(
+      form,
+      { items: [{ label: 'A' }, { label: 'B' }] },
+      { values: { items: [{ label: 'A' }, { label: 'B' }] }, parentModel: parent },
+    )
+
+    assert.equal(calls.length, 2)
+    assert.equal((calls[0]!.record as Record<string, unknown>)['label'], 'A')
+    assert.equal((calls[1]!.record as Record<string, unknown>)['label'], 'B')
+    assert.equal(calls[0]!.ctx['index'], 0)
+    assert.equal(calls[1]!.ctx['index'], 1)
+    assert.equal(calls[0]!.ctx['field'], 'items')
+    assert.equal(calls[0]!.ctx['mode'],  'hasMany')
+    assert.equal(calls[0]!.ctx['parentId'], 'p1')
+    assert.deepEqual(calls[0]!.ctx['parent'], { id: 'p1', title: 'Order' })
+  })
+
+  it('afterUpdate fires per updated child (skipping pure-create rows)', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', orderId: 'p1', label: 'old A' },
+    ])
+    const parent = makeFakeParentModel({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'items',
+      foreignKey:   'orderId',
+    })
+
+    const updates: Array<{ record: unknown; index: number }> = []
+    const creates: Array<{ record: unknown; index: number }> = []
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items')
+          .relationship('items')
+          .schema([TextField.make('label').required()])
+          .afterCreate((record, ctx) => { creates.push({ record, index: ctx.index }) })
+          .afterUpdate((record, ctx) => { updates.push({ record, index: ctx.index }) }),
+      ])
+      .save(async () => ({ id: 'p1' }))
+
+    await dispatchFormSubmit(
+      form,
+      { items: [{ __id: 'c1', label: 'new A' }, { label: 'fresh B' }] },
+      {
+        values: { items: [{ __id: 'c1', label: 'new A' }, { label: 'fresh B' }] },
+        record: { id: 'p1' },
+        parentModel: parent,
+      },
+    )
+
+    assert.equal(updates.length, 1)
+    assert.equal((updates[0]!.record as Record<string, unknown>)['label'], 'new A')
+    assert.equal(updates[0]!.index, 0)
+    assert.equal(creates.length, 1)
+    assert.equal((creates[0]!.record as Record<string, unknown>)['label'], 'fresh B')
+    assert.equal(creates[0]!.index, 1)
+  })
+
+  it('afterDelete fires once per removed child with the previous row data', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', orderId: 'p1', label: 'A' },
+      { id: 'c2', orderId: 'p1', label: 'B' },
+      { id: 'c3', orderId: 'p1', label: 'C' },
+    ])
+    const parent = makeFakeParentModel({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'items',
+      foreignKey:   'orderId',
+    })
+
+    const removed: Array<{ record: unknown; ctx: Record<string, unknown> }> = []
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items')
+          .relationship('items')
+          .schema([TextField.make('label').required()])
+          .afterDelete((record, ctx) => {
+            removed.push({ record, ctx: { ...ctx } as Record<string, unknown> })
+          }),
+      ])
+      .save(async () => ({ id: 'p1' }))
+
+    // Submit only c1 — c2 and c3 disappear.
+    await dispatchFormSubmit(
+      form,
+      { items: [{ __id: 'c1', label: 'A' }] },
+      {
+        values: { items: [{ __id: 'c1', label: 'A' }] },
+        record: { id: 'p1' },
+        parentModel: parent,
+      },
+    )
+
+    assert.equal(removed.length, 2)
+    const labels = removed.map(r => (r.record as Record<string, unknown>)['label']).sort()
+    assert.deepEqual(labels, ['B', 'C'])
+    assert.equal(removed[0]!.ctx['index'], -1)
+    assert.equal(removed[0]!.ctx['mode'],  'hasMany')
+    assert.equal(removed[0]!.ctx['parentId'], 'p1')
+  })
+
+  it('hooks are no-op outside relationship() mode (throw at config time)', () => {
+    assert.throws(() =>
+      RepeaterField.make('json').afterCreate(() => {}),
+      /requires relationship/,
+    )
+    assert.throws(() =>
+      RepeaterField.make('json').afterUpdate(() => {}),
+      /requires relationship/,
+    )
+    assert.throws(() =>
+      RepeaterField.make('json').afterDelete(() => {}),
+      /requires relationship/,
+    )
+  })
+
+  it('throwing handler propagates and aborts the rest of the persist diff', async () => {
+    const child = makeFakeChildModel([])
+    const parent = makeFakeParentModel({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'items',
+      foreignKey:   'orderId',
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items')
+          .relationship('items')
+          .schema([TextField.make('label').required()])
+          .afterCreate((record) => {
+            const r = record as Record<string, unknown>
+            if (r['label'] === 'B') throw new Error('reject B')
+          }),
+      ])
+      .save(async () => ({ id: 'p1' }))
+
+    await assert.rejects(
+      () => dispatchFormSubmit(
+        form,
+        { items: [{ label: 'A' }, { label: 'B' }, { label: 'C' }] },
+        { values: { items: [{ label: 'A' }, { label: 'B' }, { label: 'C' }] }, parentModel: parent },
+      ),
+      /reject B/,
+    )
+    // Two creates fired before the throw — no rollback (v1 isn't transactional).
+    assert.equal(child.calls.filter(c => c.kind === 'create').length, 2)
+  })
+})

@@ -787,6 +787,54 @@ discriminator column transparently on every pivot operation.
   rows are homogeneous, or open an issue if you have a use case for
   per-block-type pivot dispatch.
 
+### Per-row hooks — `afterCreate / afterUpdate / afterDelete`
+
+Wire side effects to the per-row create / update / delete events that fire
+during the persist diff:
+
+```ts
+RepeaterField.make('attachments')
+  .relationship('attachments')
+  .schema([
+    TextField.make('filename'),
+    FileUpload.make('file'),
+  ])
+  .afterCreate(async (record, ctx) => {
+    await Audit.log('attachment.created', { recordId: record.id, parentId: ctx.parentId })
+  })
+  .afterUpdate(async (record, ctx) => {
+    await Audit.log('attachment.updated', { recordId: record.id, parentId: ctx.parentId })
+  })
+  .afterDelete(async (removed, ctx) => {
+    if (ctx.mode === 'hasMany' || ctx.mode === 'morphMany') {
+      await S3.delete(removed.s3Key)  // child record was physically deleted
+    }
+    // For M2M only the pivot was detached — the child may still exist.
+  })
+```
+
+The handler receives the persisted child record and a `RepeaterRowContext`
+carrying:
+
+- `parent` — post-save parent record (the same shape the surrounding
+  form's `afterSave` would see).
+- `parentId` — convenience for `parent[primaryKey]`.
+- `field` — the Repeater field name (so a single handler can serve
+  multiple fields).
+- `index` — 0-based row index in the submitted set; `-1` for
+  `afterDelete` (deleted rows aren't in the submitted set).
+- `mode` — `'hasMany' | 'morphMany' | 'belongsToMany' | 'morphToMany' | 'morphedByMany'`.
+  Branch on this in `afterDelete` when your cleanup depends on physical
+  deletion vs pivot detach.
+
+Hooks throw to abort: a throwing handler propagates and stops the rest
+of the persist diff. Earlier rows have already saved (v1 isn't
+transactional), so use sparingly for state that you can recover from
+or for precondition checks that should fail loud.
+
+Each hook is opt-in per field; calling them on a Repeater that hasn't
+declared `relationship(...)` throws at config time.
+
 ### Limitations and trade-offs
 
 - **Five relation types supported.** `hasMany`, `morphMany`, `morphOne`,

@@ -52,6 +52,52 @@ export interface RepeaterRelationshipMeta {
 }
 
 /**
+ * Mode of the underlying relation, derived from the parent's `static
+ * relations` map at submit time. Surfaced on `RepeaterRowContext.mode`
+ * so per-row hooks can branch when needed (e.g. an `afterDelete` that
+ * runs cleanup only when the child record was actually removed, not
+ * when a pivot row was detached).
+ */
+export type RepeaterRelationMode =
+  | 'hasMany'
+  | 'morphMany'
+  | 'belongsToMany'
+  | 'morphToMany'
+  | 'morphedByMany'
+
+/**
+ * Context passed to `Repeater.afterCreate / afterUpdate / afterDelete`
+ * hooks. One invocation per row; `parent` is the post-save parent record
+ * (PK already set), `record` carries the persisted child.
+ *
+ * For M2M modes (`belongsToMany / morphToMany / morphedByMany`)
+ * `afterDelete` fires after `accessor.detach(...)` — the child record
+ * may still exist (other parents may link to it). Branch on `ctx.mode`
+ * if your cleanup depends on physical deletion vs detach.
+ */
+export interface RepeaterRowContext<P = unknown> {
+  /** Post-save parent record (the same `record` the surrounding form's
+   *  `afterSave` would see). */
+  parent:   P
+  /** Convenience — `parent[primaryKey]`. */
+  parentId: string | number
+  /** The Repeater field's `name`. */
+  field:    string
+  /** 0-based index of the row in the submitted set; `-1` for `afterDelete`
+   *  since deleted rows aren't in the submitted set. */
+  index:    number
+  /** Underlying relation mode — see above for `afterDelete` semantics
+   *  on M2M. */
+  mode:     RepeaterRelationMode
+}
+
+/** Handler signature shared by the three after-hooks. */
+export type RepeaterRowAfterHandler<C = unknown, P = unknown> = (
+  record: C,
+  ctx:    RepeaterRowContext<P>,
+) => void | Promise<void>
+
+/**
  * Function evaluated once per row at meta-build to derive a human-readable
  * label for the collapsed-row header. Called with the row's submitted values
  * (or `{}` on a fresh blank row); should return a short string. Errors are
@@ -295,6 +341,9 @@ export class RepeaterField extends Field {
   private _tableColumns?:    RepeaterTableColumn[]
   private _buttons:          { [K in RowButtonKind]?: RowButton } = {}
   private _relationship?:    RepeaterRelationshipConfig
+  private _afterCreate?:     RepeaterRowAfterHandler
+  private _afterUpdate?:     RepeaterRowAfterHandler
+  private _afterDelete?:     RepeaterRowAfterHandler
 
   private constructor(name: string) {
     super(name, 'repeater')
@@ -561,6 +610,57 @@ export class RepeaterField extends Field {
   }
 
   /**
+   * Per-row hook that fires after each newly created child record is
+   * persisted in `relationship()` mode. Receives the created record
+   * (with its primary key set) and a `RepeaterRowContext` carrying
+   * the parent record + row index + relation mode. Errors propagate
+   * — a throwing handler aborts the rest of the persist diff (the
+   * parent + any earlier rows have already saved; v1 is non-
+   * transactional).
+   *
+   * No-op outside `relationship()` mode. Use `Form.afterCreate(...)`
+   * for hooks that fire on the parent record's create.
+   */
+  afterCreate(fn: RepeaterRowAfterHandler): this {
+    if (!this._relationship) {
+      throw new Error(
+        `[Pilotiq] Repeater "${this.name}": afterCreate() requires relationship() to be configured first.`,
+      )
+    }
+    this._afterCreate = fn
+    return this
+  }
+
+  /** Per-row hook that fires after each existing child record is
+   *  updated. Receives the updated record from the child model's
+   *  `update()` return (or the post-update reload when `update`
+   *  returns void). See `afterCreate` notes for error semantics. */
+  afterUpdate(fn: RepeaterRowAfterHandler): this {
+    if (!this._relationship) {
+      throw new Error(
+        `[Pilotiq] Repeater "${this.name}": afterUpdate() requires relationship() to be configured first.`,
+      )
+    }
+    this._afterUpdate = fn
+    return this
+  }
+
+  /** Per-row hook that fires after each removed row is processed.
+   *  For `hasMany / morphMany` modes the child record was physically
+   *  deleted via `model.delete()`; for M2M modes only the pivot row
+   *  was detached and the child may still exist. Branch on
+   *  `ctx.mode` when that distinction matters. */
+  afterDelete(fn: RepeaterRowAfterHandler): this {
+    if (!this._relationship) {
+      throw new Error(
+        `[Pilotiq] Repeater "${this.name}": afterDelete() requires relationship() to be configured first.`,
+      )
+    }
+    this._afterDelete = fn
+    return this
+  }
+
+  /**
    * Customize the bottom Add button's chrome (label / icon / color /
    * tooltip). Equivalent to `addActionLabel()` plus icon + color
    * overrides — when both are set, this customizer wins (it ships under
@@ -692,6 +792,10 @@ export class RepeaterField extends Field {
   /** Resolved relationship config (`undefined` when not configured). */
   getRelationship(): RepeaterRelationshipConfig | undefined { return this._relationship }
   isRelationship(): boolean { return this._relationship !== undefined }
+
+  getAfterCreate(): RepeaterRowAfterHandler | undefined { return this._afterCreate }
+  getAfterUpdate(): RepeaterRowAfterHandler | undefined { return this._afterUpdate }
+  getAfterDelete(): RepeaterRowAfterHandler | undefined { return this._afterDelete }
   /** The configured customizer for a given slot, or `undefined`. */
   getButton(kind: RowButtonKind): RowButton | undefined { return this._buttons[kind] }
   /**
