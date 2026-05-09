@@ -1,5 +1,12 @@
 # pilotiq-playground
 
+## 0.0.8
+
+### Patch Changes
+
+- Updated dependencies [5c60418]
+  - @pilotiq/pilotiq@0.6.1
+
 ## 0.0.7
 
 ### Patch Changes
