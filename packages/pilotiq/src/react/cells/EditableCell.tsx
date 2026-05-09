@@ -81,11 +81,15 @@ async function patchCell(url: string, value: unknown): Promise<PatchResult> {
 }
 
 /** Pull the first error message out of a `{ errors: { value: [...] } }`
- * response. Falls back to a generic "Couldn't save" string. */
+ * response. Also reads the reserved `_cell` key surfaced by
+ * `Column.beforeStateUpdated / afterStateUpdated` halts. Falls back to
+ * a generic "Couldn't save" string. */
 function firstErrorMessage(result: PatchResultErrors | PatchResultError): string {
   if ('errors' in result) {
     const fieldErrs = result.errors['value']
     if (fieldErrs && fieldErrs.length > 0) return fieldErrs[0]!
+    const cellErrs = result.errors['_cell']
+    if (cellErrs && cellErrs.length > 0) return cellErrs[0]!
   }
   if ('error' in result) return result.error
   return "Couldn't save"

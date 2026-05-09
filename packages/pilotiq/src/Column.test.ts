@@ -137,4 +137,27 @@ describe('Column', () => {
       assert.equal(typeof col.getRecordUrlHandler(), 'function')
     })
   })
+
+  describe('beforeStateUpdated / afterStateUpdated accessors', () => {
+    it('return undefined when no hooks are set', () => {
+      const col = Column.make('title')
+      assert.equal(col.getBeforeStateUpdated(), undefined)
+      assert.equal(col.getAfterStateUpdated(),  undefined)
+    })
+
+    it('return the registered hook function', () => {
+      const before = async () => {}
+      const after  = () => {}
+      const col = Column.make('title').beforeStateUpdated(before).afterStateUpdated(after)
+      assert.equal(col.getBeforeStateUpdated(), before)
+      assert.equal(col.getAfterStateUpdated(),  after)
+    })
+
+    it('hooks are not serialized into the wire shape', () => {
+      const col = Column.make('title').beforeStateUpdated(() => {}).afterStateUpdated(() => {})
+      const meta = col.toMeta()
+      assert.equal((meta as Record<string, unknown>)['beforeStateUpdated'], undefined)
+      assert.equal((meta as Record<string, unknown>)['afterStateUpdated'],  undefined)
+    })
+  })
 })

@@ -219,6 +219,28 @@ toast.
 **Confirm-gating.** Add `.confirm('Are you sure?')` to wrap the PATCH
 in a Dialog before firing.
 
+**Lifecycle hooks.** `beforeStateUpdated((value, { record, user }) => …)`
+runs after validators pass and before the DB write — use for
+cross-cell invariants, audit-log writes that must precede the update,
+or async availability checks. `afterStateUpdated` mirrors the same
+shape but fires after the DB write succeeds — use for notifications,
+broadcasts, or follow-up writes that should fire only on a confirmed
+save. Throw an `Error` from either to halt; the message lands under
+the reserved `_cell` error key in the 422 response so the renderer
+can surface it next to the cell.
+
+```ts
+TextInputColumn.make('title')
+  .beforeStateUpdated(async (value, { record, user }) => {
+    if (await Lock.exists({ post: record['id'], holder: user?.id })) {
+      throw new Error('Another editor is holding this row.')
+    }
+  })
+  .afterStateUpdated(async (value, { record }) => {
+    await ActivityLog.create({ post: record['id'], change: { title: value } })
+  })
+```
+
 **Boot guard.** Declaring an editable column on a Resource without
 `R.model.update(id, data)` throws a clear error at panel boot — every
 inline-edit column needs an ORM behind it.

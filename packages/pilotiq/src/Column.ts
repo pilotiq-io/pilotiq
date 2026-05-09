@@ -25,6 +25,23 @@ export type ColumnType =
  * inside `loadTableRecords` so the renderer just reads the result. */
 export type ColumnDisabledFn = (record: Record<string, unknown>) => boolean
 
+/** Context handed to `Column.beforeStateUpdated / afterStateUpdated`
+ *  hooks on editable cell columns. `record` is the row as loaded
+ *  *before* the update; `user` is the resolved panel user. */
+export interface CellStateHookContext {
+  record: Record<string, unknown>
+  user?:  unknown
+}
+
+/** Hook signature for `Column.beforeStateUpdated / afterStateUpdated`.
+ *  Return value is ignored — these are side-effect hooks. Throw an
+ *  Error to halt the PATCH; the thrown message lands under `errors._cell`
+ *  in the 422 response so the renderer can surface it next to the cell. */
+export type CellStateHook = (
+  value: unknown,
+  ctx:   CellStateHookContext,
+) => void | Promise<void>
+
 /** SelectColumn option shape — mirrors `SelectField`'s static option form. */
 export interface ColumnSelectOption {
   value: string
@@ -214,6 +231,8 @@ export class Column extends Element {
   protected _confirm?: string
   protected _staticDisabled = false
   protected _disabledFn?: ColumnDisabledFn
+  protected _beforeStateUpdated?: CellStateHook
+  protected _afterStateUpdated?:  CellStateHook
 
   protected constructor(name: string) {
     super()
@@ -447,6 +466,31 @@ export class Column extends Element {
    * optimistic local state.
    */
   confirm(message: string): this { this._confirm = message; return this }
+
+  /**
+   * Run a hook on the server BEFORE the editable cell's value is written
+   * to the database. Receives the coerced + validated value plus the
+   * current row as `{ record, user }`. Use for cross-cell invariants,
+   * audit-log writes that must precede the update, or async availability
+   * checks that the schema-level validators don't cover. Throw an Error
+   * to halt — the thrown message lands under the reserved `_cell` error
+   * key in the 422 response.
+   */
+  beforeStateUpdated(fn: CellStateHook): this { this._beforeStateUpdated = fn; return this }
+
+  /**
+   * Run a hook on the server AFTER the editable cell's value is written
+   * to the database. Same context shape as `beforeStateUpdated`. Use for
+   * notifications, broadcast events, or follow-up writes that should
+   * fire only on a confirmed save. Throwing here returns 422 with the
+   * message under `_cell` — the row is already updated, so prefer
+   * surfacing the error and letting the user retry rather than rolling
+   * back manually.
+   */
+  afterStateUpdated(fn: CellStateHook): this { this._afterStateUpdated = fn; return this }
+
+  getBeforeStateUpdated(): CellStateHook | undefined { return this._beforeStateUpdated }
+  getAfterStateUpdated():  CellStateHook | undefined { return this._afterStateUpdated }
 
   /**
    * Render the inline-edit control disabled. Pass `true` (or call with no

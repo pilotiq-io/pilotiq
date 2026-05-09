@@ -1608,6 +1608,147 @@ describe('Editable cell columns — _cell route', () => {
     assert.equal(body.ok, false)
     assert.match(body.error, /database is on fire/)
   })
+
+  describe('beforeStateUpdated / afterStateUpdated hooks', () => {
+    it('runs beforeStateUpdated before the DB update and afterStateUpdated after', async () => {
+      const order: string[] = []
+      const { M, calls } = makeUpdatableModel([{ id: '1', title: 'old' }])
+      class Posts extends Resource {
+        static override label = 'Posts'
+        static override slug  = 'posts'
+        static override model = M as any
+        static override table(t: Table): Table {
+          return t.columns([
+            Column.make('id'),
+            TextInputColumn.make('title')
+              .beforeStateUpdated((value, { record }) => {
+                order.push(`before:${value}:${(record as { title: string }).title}`)
+              })
+              .afterStateUpdated((value) => {
+                order.push(`after:${value}`)
+              }),
+          ])
+        }
+      }
+      registerPilotiqRoutes(router, panelWith(Posts))
+      const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+      const { res } = await callHandlerCapturing(route.handler, fakeReq({
+        params: { id: '1', column: 'title' },
+        body:   { value: 'new' },
+      }))
+      assert.equal(res.statusCode, 200)
+      assert.deepEqual(calls.update, [{ id: '1', data: { title: 'new' } }])
+      assert.deepEqual(order, ['before:new:old', 'after:new'])
+    })
+
+    it('throwing from beforeStateUpdated halts before the DB update with 422 _cell', async () => {
+      const { M, calls } = makeUpdatableModel([{ id: '1', title: 'a' }])
+      class Posts extends Resource {
+        static override label = 'Posts'
+        static override slug  = 'posts'
+        static override model = M as any
+        static override table(t: Table): Table {
+          return t.columns([
+            Column.make('id'),
+            TextInputColumn.make('title').beforeStateUpdated(() => {
+              throw new Error('locked while review is pending')
+            }),
+          ])
+        }
+      }
+      registerPilotiqRoutes(router, panelWith(Posts))
+      const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+      const { res } = await callHandlerCapturing(route.handler, fakeReq({
+        params: { id: '1', column: 'title' },
+        body:   { value: 'new' },
+      }))
+      assert.equal(res.statusCode, 422)
+      const body = res.sentBody as { ok: boolean; errors: { _cell: string[] } }
+      assert.equal(body.ok, false)
+      assert.deepEqual(body.errors, { _cell: ['locked while review is pending'] })
+      assert.equal(calls.update.length, 0)
+    })
+
+    it('throwing from afterStateUpdated returns 422 _cell but the row is already updated', async () => {
+      const { M, calls } = makeUpdatableModel([{ id: '1', title: 'a' }])
+      class Posts extends Resource {
+        static override label = 'Posts'
+        static override slug  = 'posts'
+        static override model = M as any
+        static override table(t: Table): Table {
+          return t.columns([
+            Column.make('id'),
+            TextInputColumn.make('title').afterStateUpdated(async () => {
+              throw new Error('broadcast queue down')
+            }),
+          ])
+        }
+      }
+      registerPilotiqRoutes(router, panelWith(Posts))
+      const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+      const { res } = await callHandlerCapturing(route.handler, fakeReq({
+        params: { id: '1', column: 'title' },
+        body:   { value: 'new' },
+      }))
+      assert.equal(res.statusCode, 422)
+      const body = res.sentBody as { ok: boolean; errors: { _cell: string[] } }
+      assert.deepEqual(body.errors, { _cell: ['broadcast queue down'] })
+      assert.deepEqual(calls.update, [{ id: '1', data: { title: 'new' } }])
+    })
+
+    it('hooks do not run when validators fail', async () => {
+      let beforeRan = false
+      const { M, calls } = makeUpdatableModel([{ id: '1', title: 'a' }])
+      class Posts extends Resource {
+        static override label = 'Posts'
+        static override slug  = 'posts'
+        static override model = M as any
+        static override table(t: Table): Table {
+          return t.columns([
+            Column.make('id'),
+            TextInputColumn.make('title')
+              .validate(minLength(3))
+              .beforeStateUpdated(() => { beforeRan = true }),
+          ])
+        }
+      }
+      registerPilotiqRoutes(router, panelWith(Posts))
+      const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+      const { res } = await callHandlerCapturing(route.handler, fakeReq({
+        params: { id: '1', column: 'title' },
+        body:   { value: 'ab' },
+      }))
+      assert.equal(res.statusCode, 422)
+      assert.equal(beforeRan, false)
+      assert.equal(calls.update.length, 0)
+    })
+
+    it('non-Error throws still produce a usable _cell message', async () => {
+      const { M } = makeUpdatableModel([{ id: '1', title: 'a' }])
+      class Posts extends Resource {
+        static override label = 'Posts'
+        static override slug  = 'posts'
+        static override model = M as any
+        static override table(t: Table): Table {
+          return t.columns([
+            Column.make('id'),
+            TextInputColumn.make('title').beforeStateUpdated(() => {
+              throw 'plain string failure' as unknown as Error
+            }),
+          ])
+        }
+      }
+      registerPilotiqRoutes(router, panelWith(Posts))
+      const route = router.list().find(r => r.path === '/admin/posts/:id/_cell/:column' && r.method === 'POST')!
+      const { res } = await callHandlerCapturing(route.handler, fakeReq({
+        params: { id: '1', column: 'title' },
+        body:   { value: 'new' },
+      }))
+      assert.equal(res.statusCode, 422)
+      const body = res.sentBody as { ok: boolean; errors: { _cell: string[] } }
+      assert.deepEqual(body.errors, { _cell: ['plain string failure'] })
+    })
+  })
 })
 
 describe('persistFiltersInSession — list-page filter restore', () => {

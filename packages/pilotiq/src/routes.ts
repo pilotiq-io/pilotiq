@@ -161,6 +161,15 @@ function forbidden(res: AppResponse, json: boolean): unknown {
   return res.send('Forbidden')
 }
 
+/** Extract a user-facing message from a thrown value inside an editable
+ *  column's beforeStateUpdated / afterStateUpdated hook. Stamped under
+ *  the reserved `_cell` key in the 422 response. */
+function cellHookErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message
+  if (typeof err === 'string' && err.length > 0) return err
+  return 'Update halted'
+}
+
 /** Run a `canX(...)` predicate, treating throws as `false`. The predicate
  * is user-authored and we want a flaky check to fail closed (deny) rather
  * than 500 the page. */
@@ -1114,6 +1123,17 @@ export function registerPilotiqRoutes(
             return res.json({ ok: false, errors: { value: errors } })
           }
 
+          // beforeStateUpdated — runs after validators pass, before the
+          // DB write. Throwing halts with 422 under `_cell`.
+          const beforeHook = col.getBeforeStateUpdated()
+          if (beforeHook) {
+            try { await beforeHook(value, { record: record as Record<string, unknown>, user }) }
+            catch (err) {
+              res.status(422)
+              return res.json({ ok: false, errors: { _cell: [cellHookErrorMessage(err)] } })
+            }
+          }
+
           try {
             await R.model!.update(id, { [col.name]: value })
           } catch (err) {
@@ -1122,6 +1142,18 @@ export function registerPilotiqRoutes(
               ok:    false,
               error: err instanceof Error ? err.message : 'Update failed',
             })
+          }
+
+          // afterStateUpdated — runs only on a confirmed write. Throwing
+          // surfaces the error to the user; the DB row is already
+          // updated (the hook is for follow-up effects, not rollback).
+          const afterHook = col.getAfterStateUpdated()
+          if (afterHook) {
+            try { await afterHook(value, { record: record as Record<string, unknown>, user }) }
+            catch (err) {
+              res.status(422)
+              return res.json({ ok: false, errors: { _cell: [cellHookErrorMessage(err)] } })
+            }
           }
 
           return res.json({ ok: true, value, notifications: [] })
