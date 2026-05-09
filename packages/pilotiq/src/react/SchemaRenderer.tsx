@@ -6148,9 +6148,18 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
                       : null
                     if (EditableComp && editUrl !== undefined) {
                       const cellDisabled = col['disabled'] === true || cellDisabledMap?.[name] === true
+                      const cellSelectOptionsMap = recordObj['_cellSelectOptions'] as
+                        Record<string, Array<{ value: string; label: string }>> | undefined
+                      const rowOptions = cellSelectOptionsMap?.[name]
                       return (
                         <TableCell key={ci} className={`text-sm text-foreground ${align} p-0`} style={widthStyle}>
-                          <EditableComp url={editUrl} col={col} value={value} disabled={cellDisabled} />
+                          <EditableComp
+                            url={editUrl}
+                            col={col}
+                            value={value}
+                            disabled={cellDisabled}
+                            {...(rowOptions ? { rowOptions } : {})}
+                          />
                         </TableCell>
                       )
                     }

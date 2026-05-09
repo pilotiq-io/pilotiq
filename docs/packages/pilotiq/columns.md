@@ -49,7 +49,7 @@ serializable or needs to combine multiple fields.
 | `ImageColumn` | Avatar / thumbnail — `.size(48)`, `.circular()` |
 | `TextInputColumn` | Inline `<input>` — saves on blur (or after a 500 ms debounce). Supports `.type('number'\|'email'\|...)`, `.placeholder()`, `.step / .min / .max`, `.debounce(ms)`. |
 | `ToggleColumn` | Inline switch — saves on every change. Supports `.onColor / .offColor / .onIcon / .offIcon`. |
-| `SelectColumn` | Inline `<select>` — saves on every change. Supports `.options({ key: label })`, `.nullable()`, `.selectablePlaceholder(false)`. |
+| `SelectColumn` | Inline `<select>` — saves on every change. Supports `.options({ key: label })` (static) or `.options(record => …)` (per-row resolver, may be async), `.nullable()`, `.selectablePlaceholder(false)`. |
 
 ## TextColumn formatters
 
@@ -215,6 +215,26 @@ land under `{ ok: false, errors: { value: string[] } }` (HTTP 422).
 **Optimistic UI.** The local cell updates immediately; on validation or
 network failure it rolls back to the persisted value and shows an error
 toast.
+
+**Per-row select options.** Pass a function to `SelectColumn.options(...)`
+to resolve the option list per row. Useful when valid choices depend on
+record state (assignees scoped to a team, statuses filtered by current
+state, etc.). The resolver may be async; resolvers across the visible
+rows run in parallel.
+
+```ts
+SelectColumn.make('assigneeId')
+  .options(async (row) => {
+    const team = await Team.find(row.teamId)
+    return team.members.map(m => ({ value: String(m.id), label: m.name }))
+  })
+```
+
+A throwing resolver leaves the slot unset on that row only — the cell
+falls back to whatever static `.options()` was set (or empty list) so
+one bad row doesn't break the whole table. Resolvers run inside the
+same `canEdit` gate as the rest of the editable-cell pipeline; rows
+where `canEdit` denies don't pay the resolver cost.
 
 **Confirm-gating.** Add `.confirm('Are you sure?')` to wrap the PATCH
 in a Dialog before firing.

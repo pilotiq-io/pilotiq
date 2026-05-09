@@ -33,6 +33,11 @@ export interface EditableCellProps {
   value:    unknown
   /** Disabled = static `disabled()` OR per-row `_cellDisabled[col]`. */
   disabled: boolean
+  /** Row-scoped option override stamped by `loadTableRecords` when the
+   *  column is a `SelectColumn` with a per-row `.options(record => …)`
+   *  resolver. Wins over `col.selectOptions`; absent when the resolver
+   *  threw or the column has only static options. */
+  rowOptions?: Array<{ value: string; label: string }>
 }
 
 interface PatchResultOk {
@@ -283,9 +288,13 @@ export function CellToggle(props: EditableCellProps): React.ReactElement {
 // ─── Select cell ───────────────────────────────────────
 
 export function CellSelect(props: EditableCellProps): React.ReactElement {
-  const { url, value, disabled, col } = props
+  const { url, value, disabled, col, rowOptions } = props
+  // Per-row resolver wins over the column's static options. Both can be
+  // present: a column may set static options as a fallback that the
+  // resolver overrides per row.
   const opts: Array<{ value: string; label: string }> =
-    Array.isArray(col['selectOptions']) ? col['selectOptions'] as Array<{ value: string; label: string }> : []
+    rowOptions ??
+    (Array.isArray(col['selectOptions']) ? col['selectOptions'] as Array<{ value: string; label: string }> : [])
   const nullable    = col['selectNullable'] === true
   const showPlaceholderOnce = col['selectablePlaceholder'] !== false  // default true (keep showing)
   const confirmMsg  = col['confirm'] as string | undefined

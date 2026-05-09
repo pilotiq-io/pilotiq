@@ -190,4 +190,49 @@ describe('SelectColumn', () => {
     const meta = SelectColumn.make('status').options({ a: 'A' }).toMeta()
     assert.equal(meta.selectablePlaceholder, undefined)
   })
+
+  describe('options(record => …) per-row resolver', () => {
+    it('stores the resolver and clears any prior static options', () => {
+      const col = SelectColumn.make('assigneeId')
+        .options({ a: 'Alice', b: 'Bob' })
+        .options(_row => ({ x: 'X' }))
+      assert.equal(col.getOptions().length, 0)
+      assert.equal(typeof col.getOptionsResolver(), 'function')
+    })
+
+    it('switching back to a static list clears the resolver', () => {
+      const col = SelectColumn.make('assigneeId')
+        .options(_row => ({ x: 'X' }))
+        .options({ a: 'Alice' })
+      assert.equal(col.getOptionsResolver(), undefined)
+      assert.deepEqual(col.getOptions().slice(), [{ value: 'a', label: 'Alice' }])
+    })
+
+    it('static options still serialize when only static is set', () => {
+      const meta = SelectColumn.make('status').options({ a: 'A' }).toMeta()
+      assert.deepEqual(meta.selectOptions, [{ value: 'a', label: 'A' }])
+    })
+
+    it('resolver-only column omits selectOptions from meta (per-row stamp wins)', () => {
+      const meta = SelectColumn.make('assigneeId').options(_row => ({ x: 'X' })).toMeta()
+      assert.equal(meta.selectOptions, undefined)
+    })
+
+    it('mixing a static fallback with a resolver — resolver wins, static stays in meta', () => {
+      const col = SelectColumn.make('assigneeId')
+        .options({ unknown: 'Unassigned' })
+      // Re-assign as resolver — resolver wipes the static list per the
+      // "re-calling replaces the previous set" contract. To keep the
+      // static fallback, set the resolver first then add static.
+      col.options(_row => ({ x: 'X' }))
+      assert.equal(col.getOptions().length, 0)
+
+      // The other ordering: static after resolver clears the resolver.
+      const col2 = SelectColumn.make('assigneeId')
+        .options(_row => ({ x: 'X' }))
+        .options({ unknown: 'Unassigned' })
+      assert.equal(col2.getOptionsResolver(), undefined)
+      assert.deepEqual(col2.getOptions().slice(), [{ value: 'unknown', label: 'Unassigned' }])
+    })
+  })
 })

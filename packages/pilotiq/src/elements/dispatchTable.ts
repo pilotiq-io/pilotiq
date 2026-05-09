@@ -3,7 +3,8 @@ import { Table, type TableContext, type SortDirection } from './Table.js'
 import { TableGroup, bucketDateValue, formatDateBucketTitle } from './TableGroup.js'
 import type { Filter } from '../filters/Filter.js'
 import { Action } from '../actions/Action.js'
-import { Column } from '../Column.js'
+import { Column, type ColumnSelectOption } from '../Column.js'
+import { SelectColumn, normalizeSelectOptions, type SelectColumnOptionsResolver } from '../columns/SelectColumn.js'
 import { ListTab } from '../Tab.js'
 import { isRepeaterField } from '../fields/RepeaterField.js'
 import { isBuilderField } from '../fields/BuilderField.js'
@@ -305,6 +306,15 @@ export async function loadTableRecords(
         .filter((c): c is Column => c instanceof Column && c.isEditable())
       const canEditEditableColumns = editableColumns.length > 0 && hooks?.canEdit !== undefined
 
+      // SelectColumns with a per-row options resolver — pre-filtered so the
+      // row loop doesn't re-walk `editableColumns` to find them. Stamps
+      // `row._cellSelectOptions[col.name]` with the resolved option list.
+      const selectColumnsWithResolver: Array<{ name: string; resolve: SelectColumnOptionsResolver }> =
+        editableColumns
+          .filter((c): c is SelectColumn => c instanceof SelectColumn)
+          .map(c => ({ name: c.name, resolve: c.getOptionsResolver() }))
+          .filter((c): c is { name: string; resolve: SelectColumnOptionsResolver } => c.resolve !== undefined)
+
       const recordUrlFn     = table.getRecordUrl()
       const recordClassesFn = table.getRecordClasses()
       const cardSchemaFn    = table.isCardsLayout() ? table.getCardSchema() : undefined
@@ -530,6 +540,30 @@ export async function loadTableRecords(
                 out['_cellEditable'] = editableMap
                 if (Object.keys(disabledMap).length > 0) {
                   out['_cellDisabled'] = disabledMap
+                }
+
+                // Per-row select options. Resolvers run in parallel so a
+                // table with several SelectColumn resolvers doesn't stall
+                // on serial awaits. A throwing resolver leaves the slot
+                // unset — the renderer falls back to the column-level
+                // static `selectOptions` (or an empty list) so one bad
+                // row doesn't break the whole table.
+                if (selectColumnsWithResolver.length > 0) {
+                  const resolvedEntries = await Promise.all(selectColumnsWithResolver.map(async (c) => {
+                    try {
+                      const opts = await c.resolve(recordObj)
+                      return [c.name, normalizeSelectOptions(opts)] as const
+                    } catch {
+                      return [c.name, undefined] as const
+                    }
+                  }))
+                  const optionsMap: Record<string, ColumnSelectOption[]> = {}
+                  for (const [name, opts] of resolvedEntries) {
+                    if (opts !== undefined) optionsMap[name] = opts
+                  }
+                  if (Object.keys(optionsMap).length > 0) {
+                    out['_cellSelectOptions'] = optionsMap
+                  }
                 }
               }
             }

@@ -1061,6 +1061,88 @@ describe('loadTableRecords', () => {
       const rows = t.getRows() as Array<Record<string, unknown>>
       assert.equal(rows[0]!['_cellEditable'], undefined)
     })
+
+    describe('SelectColumn.options(record => …) per-row resolver', () => {
+      it('stamps _cellSelectOptions per row when canEdit allows', async () => {
+        const t = Table.make<{ id: string; teamId: string }>()
+          .columns([
+            Column.make('id'),
+            SelectColumn.make('assigneeId').options((row) => {
+              const r = row as { teamId: string }
+              return r.teamId === 'red'
+                ? { alice: 'Alice', bob: 'Bob' }
+                : { carol: 'Carol' }
+            }),
+          ])
+          .records(async () => ({
+            rows:  [{ id: '1', teamId: 'red' }, { id: '2', teamId: 'blue' }],
+            total: 2,
+          }))
+
+        await loadTableRecords([t], {}, undefined, undefined, { canEdit: () => true })
+        const rows = t.getRows() as Array<Record<string, unknown>>
+        assert.deepEqual(rows[0]!['_cellSelectOptions'], {
+          assigneeId: [
+            { value: 'alice', label: 'Alice' },
+            { value: 'bob',   label: 'Bob' },
+          ],
+        })
+        assert.deepEqual(rows[1]!['_cellSelectOptions'], {
+          assigneeId: [{ value: 'carol', label: 'Carol' }],
+        })
+      })
+
+      it('does not stamp when canEdit denies the row (cell stays read-only)', async () => {
+        const t = Table.make<{ id: string }>()
+          .columns([
+            Column.make('id'),
+            SelectColumn.make('assigneeId').options(() => ({ a: 'A' })),
+          ])
+          .records(async () => ({ rows: [{ id: '1' }], total: 1 }))
+
+        await loadTableRecords([t], {}, undefined, undefined, { canEdit: () => false })
+        const rows = t.getRows() as Array<Record<string, unknown>>
+        assert.equal(rows[0]!['_cellEditable'],       undefined)
+        assert.equal(rows[0]!['_cellSelectOptions'],  undefined)
+      })
+
+      it('throwing resolver leaves the slot unset on that row only — others still stamp', async () => {
+        const t = Table.make<{ id: string; bad: boolean }>()
+          .columns([
+            Column.make('id'),
+            SelectColumn.make('assigneeId').options((row) => {
+              const r = row as { bad: boolean }
+              if (r.bad) throw new Error('lookup failed')
+              return { x: 'X' }
+            }),
+          ])
+          .records(async () => ({
+            rows:  [{ id: '1', bad: true }, { id: '2', bad: false }],
+            total: 2,
+          }))
+
+        await loadTableRecords([t], {}, undefined, undefined, { canEdit: () => true })
+        const rows = t.getRows() as Array<Record<string, unknown>>
+        assert.equal(rows[0]!['_cellSelectOptions'], undefined)
+        assert.deepEqual(rows[1]!['_cellSelectOptions'], {
+          assigneeId: [{ value: 'x', label: 'X' }],
+        })
+      })
+
+      it('skips _cellSelectOptions entirely when no resolver is configured', async () => {
+        const t = Table.make<{ id: string }>()
+          .columns([
+            Column.make('id'),
+            SelectColumn.make('assigneeId').options({ a: 'A' }),
+          ])
+          .records(async () => ({ rows: [{ id: '1' }], total: 1 }))
+
+        await loadTableRecords([t], {}, undefined, undefined, { canEdit: () => true })
+        const rows = t.getRows() as Array<Record<string, unknown>>
+        assert.equal(rows[0]!['_cellEditable']?.['assigneeId' as never], true)
+        assert.equal(rows[0]!['_cellSelectOptions'], undefined)
+      })
+    })
   })
 })
 
