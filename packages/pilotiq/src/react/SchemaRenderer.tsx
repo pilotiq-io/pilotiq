@@ -68,6 +68,7 @@ import {
   CircleIcon, InboxIcon, GripVerticalIcon,
   ChevronDownIcon, CopyIcon, CheckIcon, XIcon,
   InfoIcon, TriangleAlertIcon, CircleCheckIcon, CircleAlertIcon,
+  Columns3Icon,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { useNavigate, type NavigateFn } from './navigate.js'
@@ -5248,6 +5249,61 @@ function SortByPicker({
 }
 
 /**
+ * Toolbar dropdown for `Column.toggleable()` columns. Lists every
+ * toggleable column with a checkbox; toggling writes through to a
+ * caller-supplied `onToggle` (the `TableRendererBody` owns the state
+ * + the localStorage round-trip). Mounted only when at least one
+ * column is toggleable.
+ */
+function ColumnsToggleDropdown({
+  columns, hidden, onToggle,
+}: {
+  columns: ElementMeta[]
+  hidden:  Set<string>
+  onToggle: (name: string, nextHidden: boolean) => void
+}) {
+  if (columns.length === 0) return null
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={(props) => (
+          <button
+            {...props}
+            type="button"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium text-foreground hover:bg-accent"
+            aria-label="Show or hide columns"
+          >
+            <Columns3Icon className="h-4 w-4" aria-hidden="true" />
+            <span>Columns</span>
+          </button>
+        )}
+      />
+      <DropdownMenuContent align="end" className="min-w-[12rem]">
+        {columns.map((col, i) => {
+          const name  = String(col['name']  ?? '')
+          const label = String(col['label'] ?? name)
+          const isHidden = hidden.has(name)
+          return (
+            <DropdownMenuItem
+              key={i}
+              // Suppress menu-close so users can toggle multiple columns
+              // without re-opening the dropdown.
+              closeOnClick={false}
+              onClick={() => onToggle(name, !isHidden)}
+            >
+              <span className="inline-flex w-4 items-center justify-center">
+                {!isHidden && <CheckIcon className="h-4 w-4" aria-hidden="true" />}
+              </span>
+              <span>{label}</span>
+            </DropdownMenuItem>
+          )
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/**
  * Lookup tables for responsive grid column-counts in `contentLayout:
  * 'cards'`. Tailwind's JIT scanner needs **literal** class strings; we
  * can't construct them at runtime via template literals (`grid-cols-${n}`
@@ -5444,6 +5500,11 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
   const navigate = useNavigate()
   const children = el.children ?? []
   const columns  = children.filter(c => c.type === 'column')
+  // `Column.toggleable()` columns — sourced from the resolved meta. The
+  // user's per-table visibility map is owned + persisted below; the full
+  // `columns` list stays available for the toolbar dropdown so hidden
+  // columns can be re-shown without a roundtrip.
+  const toggleableColumns = columns.filter(c => c['toggleable'] !== undefined)
   // Actions and ActionGroups share placement — both show up in the
   // header/bulk/row toolbars depending on their `placement` field.
   const actionLike = children.filter(c => c.type === 'action' || c.type === 'actionGroup' || c.type === 'slotComponent')
@@ -5519,6 +5580,59 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
   const perPage     = el['perPage'] as number | undefined
   const searchable  = Boolean(el['searchable'])
   const currentPath = (el['currentPath'] as string | undefined) ?? ''
+
+  // `Column.toggleable()` user-visibility map. Persisted per-table at
+  // `pilotiq.table.<currentPath>.columns.<name>` ('1' = hidden,
+  // '0' = visible). On first paint, fall back to `meta.toggleable.initiallyHidden`.
+  // SSR returns the meta default — the localStorage hydrate happens
+  // inside the effect so server + first client render match.
+  const columnsVisibilityKey = (name: string): string =>
+    `pilotiq.table.${currentPath}.columns.${name}`
+  const initialHidden = (): Set<string> => {
+    const out = new Set<string>()
+    for (const col of toggleableColumns) {
+      const cfg = col['toggleable'] as { initiallyHidden?: boolean } | undefined
+      if (cfg?.initiallyHidden) out.add(String(col['name']))
+    }
+    return out
+  }
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(initialHidden)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (toggleableColumns.length === 0) return
+    const next = new Set<string>()
+    for (const col of toggleableColumns) {
+      const name = String(col['name'])
+      const cfg  = col['toggleable'] as { initiallyHidden?: boolean } | undefined
+      try {
+        const stored = window.localStorage.getItem(columnsVisibilityKey(name))
+        if (stored === '1') next.add(name)
+        else if (stored === '0') { /* visible */ }
+        else if (cfg?.initiallyHidden) next.add(name)
+      } catch {
+        if (cfg?.initiallyHidden) next.add(name)
+      }
+    }
+    setHiddenColumns(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPath, toggleableColumns.length])
+  const toggleColumnHidden = (name: string, nextHidden: boolean): void => {
+    setHiddenColumns(prev => {
+      const next = new Set(prev)
+      if (nextHidden) next.add(name)
+      else            next.delete(name)
+      if (typeof window !== 'undefined') {
+        try { window.localStorage.setItem(columnsVisibilityKey(name), nextHidden ? '1' : '0') }
+        catch { /* private mode / quota — silent */ }
+      }
+      return next
+    })
+  }
+  // Filtered column list used by every render path (header, body cells,
+  // group + footer summaries, empty-state colSpan). Non-toggleable
+  // columns always survive.
+  const visibleColumns = columns.filter(c => !hiddenColumns.has(String(c['name'])))
+
   // Tier-3 — when the table opts into `Table.queryStringIdentifier(...)`,
   // every URL key (search / sort / page / perPage / group / filter names)
   // gets prefixed with `${id}_` so multiple tables on one page don't
@@ -5760,7 +5874,8 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
   // Only modal + collapsible mount a toolbar widget; the always-visible
   // strip modes don't add anything to the header bar.
   const showFiltersInToolbar = hasFilters && (filtersInModal || filtersCollapsible)
-  const showHeaderBar    = searchable || headerActions.length > 0 || showFiltersInToolbar || hasGroupPicker || hasSortPicker
+  const hasColumnsToggle = toggleableColumns.length > 0
+  const showHeaderBar    = searchable || headerActions.length > 0 || showFiltersInToolbar || hasGroupPicker || hasSortPicker || hasColumnsToggle
   const hasBulkActions = bulkActions.length > 0
   const hasRowActions  = rowActions.length > 0
 
@@ -5783,7 +5898,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
     !searchActive                   &&
     currentPage === 1
   const reorderColumnVisible = reorderableColumn !== undefined
-  const totalCols = columns.length
+  const totalCols = visibleColumns.length
                   + (hasBulkActions      ? 1 : 0)
                   + (hasRowActions       ? 1 : 0)
                   + (reorderColumnVisible ? 1 : 0)
@@ -5812,7 +5927,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
       )}
       {showHeaderBar && (
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-          {(searchable || showFiltersInToolbar || hasGroupPicker || hasSortPicker) ? (
+          {(searchable || showFiltersInToolbar || hasGroupPicker || hasSortPicker || hasColumnsToggle) ? (
             <div className="flex items-center gap-2">
               {searchable && (
                 <form method="get" action={currentPath || undefined} className="flex items-end gap-2">
@@ -5877,6 +5992,13 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
                     )
                     navigate(href)
                   }}
+                />
+              )}
+              {toggleableColumns.length > 0 && (
+                <ColumnsToggleDropdown
+                  columns={toggleableColumns}
+                  hidden={hiddenColumns}
+                  onToggle={toggleColumnHidden}
                 />
               )}
             </div>
@@ -5953,7 +6075,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
                   />
                 </TableHead>
               )}
-              {columns.map((col, i) => {
+              {visibleColumns.map((col, i) => {
                 const name     = String(col['name'] ?? '')
                 const label    = String(col['label'] ?? name)
                 const sortable = Boolean(col['sortable'])
@@ -6125,7 +6247,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
                       />
                     </TableCell>
                   )}
-                  {columns.map((col, ci) => {
+                  {visibleColumns.map((col, ci) => {
                     const name = String(col['name'] ?? '')
                     const value = recordObj[name]
                     const align = col['alignment'] === 'center' ? 'text-center'
@@ -6199,7 +6321,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
                     <TableRow key={`group-summary-${id}`} className="bg-muted/20 hover:bg-muted/20">
                       {reorderColumnVisible && <TableCell />}
                       {hasBulkActions      && <TableCell />}
-                      {columns.map((col, ci) => {
+                      {visibleColumns.map((col, ci) => {
                         const name  = String(col['name'] ?? '')
                         const align = col['alignment'] === 'center' ? 'text-center'
                                     : col['alignment'] === 'end'    ? 'text-right'
@@ -6229,7 +6351,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
               <TableRow>
                 {reorderColumnVisible && <TableCell />}
                 {hasBulkActions && <TableCell />}
-                {columns.map((col, ci) => {
+                {visibleColumns.map((col, ci) => {
                   const name  = String(col['name'] ?? '')
                   const align = col['alignment'] === 'center' ? 'text-center'
                               : col['alignment'] === 'end'    ? 'text-right'

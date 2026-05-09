@@ -160,4 +160,40 @@ describe('Column', () => {
       assert.equal((meta as Record<string, unknown>)['afterStateUpdated'],  undefined)
     })
   })
+
+  describe('toggleable() user-visibility chrome', () => {
+    it('isToggleable + getToggleableConfig default to false / undefined', () => {
+      const col = Column.make('email')
+      assert.equal(col.isToggleable(),         false)
+      assert.equal(col.getToggleableConfig(),  undefined)
+    })
+
+    it('bare toggleable() opts in with defaults (visible by default)', () => {
+      const col = Column.make('email').toggleable()
+      assert.equal(col.isToggleable(), true)
+      assert.deepEqual(col.getToggleableConfig(), {})
+      const meta = col.toMeta() as Record<string, unknown>
+      assert.deepEqual(meta['toggleable'], {})
+    })
+
+    it('toggleable({ initiallyHidden: true }) starts off-screen', () => {
+      const col = Column.make('internalId').toggleable({ initiallyHidden: true })
+      const cfg = col.getToggleableConfig()
+      assert.equal(cfg?.initiallyHidden, true)
+      const meta = col.toMeta() as Record<string, unknown>
+      assert.deepEqual(meta['toggleable'], { initiallyHidden: true })
+    })
+
+    it('toggleable(false) explicitly opts back out', () => {
+      const col = Column.make('email').toggleable().toggleable(false)
+      assert.equal(col.isToggleable(), false)
+      const meta = col.toMeta() as Record<string, unknown>
+      assert.equal(meta['toggleable'], undefined)
+    })
+
+    it('omits the meta key when not opted in (sparse wire shape)', () => {
+      const meta = Column.make('plain').toMeta() as Record<string, unknown>
+      assert.equal('toggleable' in meta, false)
+    })
+  })
 })

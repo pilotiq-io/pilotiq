@@ -216,6 +216,33 @@ land under `{ ok: false, errors: { value: string[] } }` (HTTP 422).
 network failure it rolls back to the persisted value and shows an error
 toast.
 
+## User-toggleable columns — `toggleable()`
+
+Let users show / hide columns from the table toolbar's **Columns** dropdown.
+Preference persists per-table to `localStorage` (key
+`pilotiq.table.<currentPath>.columns.<col>`) so the choice sticks across
+reloads + SPA navigations.
+
+```ts
+Resource.table = (t) => t.columns([
+  TextColumn.make('name'),
+  TextColumn.make('email').toggleable(),                          // user can hide
+  TextColumn.make('internalId').toggleable({ initiallyHidden: true }), // starts off-screen
+  TextColumn.make('createdAt').dateTime().toggleable(),
+])
+```
+
+The dropdown trigger renders in the toolbar next to Filters / Sort. Each
+toggleable column is listed with a checkbox; non-toggleable columns
+always render and never appear in the dropdown. Hidden state is purely
+presentational — the column's data still loads from the server, so
+sorts / filters that reference a hidden column keep working and a
+re-toggle paints fresh values without a roundtrip.
+
+`initiallyHidden` flips the default state so the column starts off until
+the user opts in — useful for technical / debug columns that the typical
+viewer doesn't need but power users might.
+
 **Per-row select options.** Pass a function to `SelectColumn.options(...)`
 to resolve the option list per row. Useful when valid choices depend on
 record state (assignees scoped to a team, statuses filtered by current

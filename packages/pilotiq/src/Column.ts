@@ -79,6 +79,14 @@ export type FormatStateHandler = (value: unknown, record: Record<string, unknown
  * server-side inside `loadTableRecords`. */
 export type ColumnRecordUrlHandler = (record: Record<string, unknown>) => string | undefined
 
+/** Configuration for `Column.toggleable(...)`. The user can show / hide the
+ * column from a per-table dropdown; preference persists to localStorage so
+ * it survives reloads + SPA navs. `initiallyHidden` flips the default state
+ * so the column starts off-screen and the user opts in. */
+export interface ColumnToggleableConfig {
+  initiallyHidden?: boolean
+}
+
 export interface ColumnMeta extends ElementMeta {
   type:        'column'
   name:        string
@@ -103,6 +111,10 @@ export interface ColumnMeta extends ElementMeta {
    * computed values for each summarizer land on the table meta under
    * `summaries[columnName]` (`SummaryResult[]`), not on the column. */
   summaries?: SummarizerMeta[]
+  /** True when the user can show / hide this column from the toolbar's
+   * "Columns" dropdown. `initiallyHidden` flips the default state so
+   * the column starts off until the user opts in. */
+  toggleable?: { initiallyHidden?: true }
   /** Render array values one-per-line (each item separated by `<br>`).
    * Composes with `bulleted()` — when both are set, `bulleted()` wins
    * and the renderer mounts a `<ul>` with bullet markers instead. */
@@ -222,6 +234,11 @@ export class Column extends Element {
   protected _richText?: ColumnRichTextKind
   protected _sanitize: boolean | SanitizeConfig = true
 
+  // User-toggleable column visibility — `Table.toggleColumns()` opt-in
+  // chrome reads this and stamps the toolbar dropdown. State persists
+  // per-table to localStorage so the user's choice sticks across loads.
+  protected _toggleable: false | ColumnToggleableConfig = false
+
   // ─── Editable cell columns (TextInput / Toggle / Select) ───
   // Per-cell PATCH validators — same shape as Field validators. Only
   // consulted when the column is editable (the route handler reads
@@ -248,6 +265,40 @@ export class Column extends Element {
   label(l: string): this { this._label = l; return this }
   sortable(v = true): this { this._sortable = v; return this }
   searchable(v = true): this { this._searchable = v; return this }
+
+  /**
+   * Let the user show / hide this column from the table toolbar's
+   * "Columns" dropdown. Preference persists per-table to localStorage
+   * under `pilotiq.table.<currentPath>.columns.<col>` so the choice
+   * sticks across reloads + SPA navigations.
+   *
+   * Pass `{ initiallyHidden: true }` to start the column off-screen —
+   * useful for technical / debug columns the user opts into.
+   *
+   *   Column.make('email').toggleable()
+   *   Column.make('internalId').toggleable({ initiallyHidden: true })
+   *   Column.make('name').toggleable(false)  // explicit opt-out
+   *
+   * Any non-toggleable column always renders. Hidden state is purely
+   * presentational — the column's data still loads from the server (so
+   * sorts / filters that reference it keep working, and a re-toggle
+   * shows fresh values without a roundtrip).
+   */
+  toggleable(opts: boolean | ColumnToggleableConfig = true): this {
+    if (opts === false) {
+      this._toggleable = false
+    } else if (opts === true) {
+      this._toggleable = {}
+    } else {
+      this._toggleable = { ...opts }
+    }
+    return this
+  }
+
+  isToggleable(): boolean { return this._toggleable !== false }
+  getToggleableConfig(): ColumnToggleableConfig | undefined {
+    return this._toggleable === false ? undefined : this._toggleable
+  }
 
   // ─── Layout ───────────────────────────────────────────
 
@@ -631,6 +682,9 @@ export class Column extends Element {
     if (this._format    !== undefined) meta.format    = this._format
     if (this._formatState !== undefined) meta.hasFormatter = true
     if (this._summarizers.length > 0) meta.summaries = this._summarizers.map(s => s.toMeta())
+    if (this._toggleable !== false) {
+      meta.toggleable = this._toggleable.initiallyHidden ? { initiallyHidden: true } : {}
+    }
     if (this._listWithLineBreaks)        meta.listWithLineBreaks = true
     if (this._bulleted)                  meta.bulleted = true
     if (this._copyMessage !== undefined) meta.copyMessage = this._copyMessage
