@@ -75,3 +75,30 @@ Wizard.make()
 > [!IMPORTANT]
 > Wizards work with reactive fields — cross-step `$get` reads always see
 > the freshest values because all steps resolve every cycle.
+
+### Step hooks
+
+Each `Step` can run async hooks around the validation gate that fires
+when the user clicks Next. Use them to mutate values before validators
+run, run availability checks the schema-level validators don't cover,
+or fire side effects that should only run on confirmed advance.
+
+```ts
+Step.make('Email')
+  .schema([TextField.make('email').required()])
+  .beforeValidation(async (values, { user }) => {
+    // Mutate values in place — the validators see the updated object.
+    values['email'] = String(values['email'] ?? '').toLowerCase()
+  })
+  .afterValidation(async (values, { record, user }) => {
+    // Async availability check that schema-level validators don't cover.
+    const taken = await User.query().where('email', '=', values['email']).paginate(1, 1)
+    if (taken.data.length > 0) throw new Error('That email is already in use.')
+  })
+```
+
+Both hooks receive `(values, { record, user })` and may be async. Throw
+to halt the advance — the thrown message lands under the reserved
+`_step` error key in the 422 response so the renderer can surface it
+next to the Next button. `beforeValidation` runs first, then the
+schema validators, then `afterValidation` only when validators pass.

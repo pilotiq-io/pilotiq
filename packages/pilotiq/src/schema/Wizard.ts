@@ -1,6 +1,27 @@
 import { Element } from './Element.js'
 
 /**
+ * Context handed to `Step.beforeValidation` / `afterValidation` hooks.
+ * Mirrors the shape used by Form lifecycle hooks (record + user; values
+ * are passed positionally so handlers can mutate them in place).
+ */
+export interface StepValidationContext {
+  record?: unknown
+  user?:   unknown
+}
+
+/**
+ * Hook signature for `Step.beforeValidation` / `afterValidation`.
+ * Throwing aborts the wizard advance with a 422 stamped under the
+ * reserved `_step` error key — surface a user-facing message via the
+ * thrown Error's `.message`.
+ */
+export type StepValidationHook = (
+  values: Record<string, unknown>,
+  ctx:    StepValidationContext,
+) => void | Promise<void>
+
+/**
  * Single step inside a `Wizard`. Holds a label, optional icon/description,
  * and a list of child Elements. Children resolve unconditionally on every
  * Wizard render so cross-step `$get` (Plan #5) sees values from every step,
@@ -9,6 +30,8 @@ import { Element } from './Element.js'
 export class Step extends Element {
   private _icon?: string
   private _description?: string
+  private _beforeValidation?: StepValidationHook
+  private _afterValidation?:  StepValidationHook
 
   private constructor(private _label: string) {
     super()
@@ -29,6 +52,28 @@ export class Step extends Element {
     this._children = elements
     return this
   }
+
+  /**
+   * Runs on the server BEFORE the step's fields are validated when the
+   * user clicks Next. Use to mutate `values` in place (e.g. stamp a
+   * computed field needed by validators) or run an async availability
+   * check that should block advance. Throw an Error to halt — the
+   * thrown message lands under the reserved `_step` key in the 422
+   * response so the renderer can show it next to the Next button.
+   */
+  beforeValidation(fn: StepValidationHook): this { this._beforeValidation = fn; return this }
+
+  /**
+   * Runs on the server AFTER the step's validators pass and before the
+   * 200 advance response. Use for cross-field invariants, side-effects
+   * that should fire only on confirmed advance, or computed-field stamps
+   * that downstream steps will read. Throw to halt — same `_step` key
+   * convention as `beforeValidation`.
+   */
+  afterValidation(fn: StepValidationHook): this { this._afterValidation = fn; return this }
+
+  getBeforeValidation(): StepValidationHook | undefined { return this._beforeValidation }
+  getAfterValidation():  StepValidationHook | undefined { return this._afterValidation }
 
   getType(): string { return 'step' }
 

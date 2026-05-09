@@ -23,7 +23,7 @@ import { isServerDataElement, type ServerDataElement } from './schema/ServerData
 import { Form } from './elements/Form.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
-import { applyStateUpdate, coerceFormValues, findForms, findWizardStepFields, loadRelationRows, selectFormById } from './elements/dispatchForm.js'
+import { applyStateUpdate, coerceFormValues, findForms, findWizardStep, loadRelationRows, selectFormById } from './elements/dispatchForm.js'
 import { isRepeaterField, RepeaterField } from './fields/RepeaterField.js'
 import { isBuilderField, BuilderField } from './fields/BuilderField.js'
 import { SelectField } from './fields/SelectField.js'
@@ -3732,14 +3732,47 @@ export async function formWizardData(
   if (!form) return { ok: false, status: 404, error: `Form "${body.formId}" not found on page` }
 
   const formChildren = form.getChildren() ?? []
-  const stepFields = findWizardStepFields(formChildren, body.step)
-  if (!stepFields) return { ok: false, status: 404, error: `Step ${body.step} not found on form "${body.formId}"` }
+  const step = findWizardStep(formChildren, body.step)
+  if (!step) return { ok: false, status: 404, error: `Step ${body.step} not found on form "${body.formId}"` }
 
-  const errors = await validateSchema(stepFields, body.values, record)
+  // Step.beforeValidation — runs before validators. May mutate `body.values`
+  // in place (the validator reads from the same object), or throw to halt
+  // with a 422 stamped under the reserved `_step` key.
+  type StepHook = (values: Record<string, unknown>, ctx: { record?: unknown; user?: unknown }) => void | Promise<void>
+  const stepHooks = step as {
+    getBeforeValidation?: () => StepHook | undefined
+    getAfterValidation?:  () => StepHook | undefined
+  }
+  const beforeHook = stepHooks.getBeforeValidation?.call(step)
+  if (beforeHook) {
+    try { await beforeHook(body.values, { record, user }) }
+    catch (err) {
+      return { ok: false, status: 422, errors: { _step: [stepHookErrorMessage(err)] } }
+    }
+  }
+
+  const errors = await validateSchema(step.getChildren() ?? [], body.values, record)
   if (Object.keys(errors).length > 0) {
     return { ok: false, status: 422, errors }
   }
+
+  // Step.afterValidation — fires only when validators pass. Same throw →
+  // 422 contract as beforeValidation.
+  const afterHook = stepHooks.getAfterValidation?.call(step)
+  if (afterHook) {
+    try { await afterHook(body.values, { record, user }) }
+    catch (err) {
+      return { ok: false, status: 422, errors: { _step: [stepHookErrorMessage(err)] } }
+    }
+  }
+
   return { ok: true }
+}
+
+function stepHookErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message
+  if (typeof err === 'string' && err.length > 0) return err
+  return 'Step validation failed'
 }
 
 // ─── SelectField inline-create-option data builder ───────────

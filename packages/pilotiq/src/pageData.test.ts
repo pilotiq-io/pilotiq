@@ -8,6 +8,7 @@ import {
   applyFillPipeline,
   formCreateOptionData,
   formStateData,
+  formWizardData,
   mentionResolveData,
   panelInfo,
   resolveActiveTab,
@@ -29,6 +30,7 @@ import { TextField } from './fields/TextField.js'
 import { SelectField } from './fields/SelectField.js'
 import { ToggleField } from './fields/ToggleField.js'
 import { Section } from './schema/Section.js'
+import { Wizard, Step } from './schema/Wizard.js'
 import { Repeater } from './fields/RepeaterField.js'
 import { Builder } from './fields/BuilderField.js'
 import { Block } from './schema/Block.js'
@@ -1095,6 +1097,87 @@ describe('mentionResolveData (async mention items)', () => {
     assert.notEqual(result, null)
     assert.equal((result as { ok: false; status: number }).ok, false)
     assert.equal((result as { ok: false; status: number }).status, 404)
+  })
+})
+
+describe('formWizardData — Step.beforeValidation / afterValidation hooks', () => {
+  function panelWithWizard(steps: Step[]) {
+    class TestPage extends Page {
+      static override slug = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([Wizard.make().steps(steps)])]
+      }
+    }
+    return Pilotiq.make('T').path('/admin').pages([TestPage])
+  }
+
+  const dispatch = (panel: ReturnType<typeof Pilotiq.make>, body: { formId: string; step: number; values: Record<string, unknown> }) =>
+    formWizardData(panel, { kind: 'page', pageSlug: 'demo' }, body)
+
+  it('returns ok:true when no hooks are set and validation passes', async () => {
+    const panel = panelWithWizard([Step.make('a').schema([TextField.make('x')])])
+    const result = await dispatch(panel, { formId: 'the-form', step: 0, values: { x: 'v' } })
+    assert.deepEqual(result, { ok: true })
+  })
+
+  it('runs beforeValidation before validators and lets it mutate values in place', async () => {
+    const seen: string[] = []
+    const panel = panelWithWizard([
+      Step.make('a').schema([TextField.make('email').required()])
+        .beforeValidation((values) => {
+          seen.push('before')
+          values['email'] = 'auto@example.com'
+        }),
+    ])
+    const result = await dispatch(panel, { formId: 'the-form', step: 0, values: {} })
+    assert.deepEqual(result, { ok: true })
+    assert.deepEqual(seen, ['before'])
+  })
+
+  it('throwing from beforeValidation halts with 422 under the _step key', async () => {
+    const panel = panelWithWizard([
+      Step.make('a').schema([TextField.make('x')])
+        .beforeValidation(async () => { throw new Error('email already in use') }),
+    ])
+    const result = await dispatch(panel, { formId: 'the-form', step: 0, values: { x: 'v' } })
+    assert.equal((result as { ok: false; status: number }).ok, false)
+    assert.equal((result as { ok: false; status: number }).status, 422)
+    assert.deepEqual((result as { errors: Record<string, string[]> }).errors, { _step: ['email already in use'] })
+  })
+
+  it('runs afterValidation only when validators pass', async () => {
+    let afterRan = false
+    const panel = panelWithWizard([
+      Step.make('a').schema([TextField.make('x').required()])
+        .afterValidation(() => { afterRan = true }),
+    ])
+    // Failing field validators short-circuit before afterValidation fires.
+    const failed = await dispatch(panel, { formId: 'the-form', step: 0, values: { x: '' } })
+    assert.equal((failed as { ok: false }).ok, false)
+    assert.equal(afterRan, false)
+    // Passing values let afterValidation run.
+    const passed = await dispatch(panel, { formId: 'the-form', step: 0, values: { x: 'v' } })
+    assert.deepEqual(passed, { ok: true })
+    assert.equal(afterRan, true)
+  })
+
+  it('throwing from afterValidation halts with 422 under the _step key', async () => {
+    const panel = panelWithWizard([
+      Step.make('a').schema([TextField.make('x')])
+        .afterValidation(() => { throw new Error('cross-field invariant failed') }),
+    ])
+    const result = await dispatch(panel, { formId: 'the-form', step: 0, values: { x: 'v' } })
+    assert.equal((result as { ok: false; status: number }).status, 422)
+    assert.deepEqual((result as { errors: Record<string, string[]> }).errors, { _step: ['cross-field invariant failed'] })
+  })
+
+  it('non-Error throws still produce a usable message', async () => {
+    const panel = panelWithWizard([
+      Step.make('a').schema([TextField.make('x')])
+        .beforeValidation(() => { throw 'plain string failure' as unknown as Error }),
+    ])
+    const result = await dispatch(panel, { formId: 'the-form', step: 0, values: { x: 'v' } })
+    assert.deepEqual((result as { errors: Record<string, string[]> }).errors, { _step: ['plain string failure'] })
   })
 })
 

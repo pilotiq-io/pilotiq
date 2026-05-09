@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { Form } from './Form.js'
-import { applyStateUpdate, coerceFormValues, dispatchFormSubmit, findForms, findWizardStepFields, selectForm, selectFormById } from './dispatchForm.js'
+import { applyStateUpdate, coerceFormValues, dispatchFormSubmit, findForms, findWizardStep, findWizardStepFields, selectForm, selectFormById } from './dispatchForm.js'
 import { Wizard, Step } from '../schema/Wizard.js'
 import { TextField } from '../fields/TextField.js'
 import { NumberField } from '../fields/NumberField.js'
@@ -451,5 +451,27 @@ describe('findWizardStepFields (Plan #8)', () => {
     const fields = findWizardStepFields(form.getChildren()!, 0)
     assert.ok(fields)
     assert.equal((fields![0] as TextField).name, 'nested')
+  })
+})
+
+describe('findWizardStep (Plan #8)', () => {
+  it('returns the live Step instance for the requested index', () => {
+    const stepA = Step.make('a').schema([TextField.make('email')])
+    const stepB = Step.make('b').schema([TextField.make('name')])
+    const form = Form.make().schema([Wizard.make().steps([stepA, stepB])])
+    const found = findWizardStep(form.getChildren()!, 1)
+    assert.equal(found, stepB)
+  })
+
+  it('returns undefined when no Wizard descendant exists', () => {
+    const form = Form.make().schema([TextField.make('plain')])
+    assert.equal(findWizardStep(form.getChildren()!, 0), undefined)
+  })
+
+  it('returns undefined when the step index is out of range', () => {
+    const form = Form.make().schema([
+      Wizard.make().steps([Step.make('only').schema([])]),
+    ])
+    assert.equal(findWizardStep(form.getChildren()!, 5), undefined)
   })
 })

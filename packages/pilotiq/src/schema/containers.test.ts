@@ -399,6 +399,34 @@ describe('Wizard / Step (Plan #8)', () => {
     assert.equal(result[0]!['persist'], false)
   })
 
+  describe('Step.beforeValidation / afterValidation', () => {
+    it('accessors return undefined when no hooks are set', () => {
+      const step = Step.make('x').schema([])
+      assert.equal(step.getBeforeValidation(), undefined)
+      assert.equal(step.getAfterValidation(),  undefined)
+    })
+
+    it('accessors return the registered hook function', () => {
+      const before = async () => {}
+      const after  = () => {}
+      const step = Step.make('x').schema([]).beforeValidation(before).afterValidation(after)
+      assert.equal(step.getBeforeValidation(), before)
+      assert.equal(step.getAfterValidation(),  after)
+    })
+
+    it('hooks are not serialized into the wire shape', async () => {
+      const tree = [
+        Wizard.make().steps([
+          Step.make('a').schema([]).beforeValidation(() => {}).afterValidation(() => {}),
+        ]),
+      ]
+      const result = await resolveSchema(tree)
+      const step = result[0]!.children![0]!
+      assert.equal(step['beforeValidation'], undefined)
+      assert.equal(step['afterValidation'],  undefined)
+    })
+  })
+
   it('all step children resolve so cross-step $get works', async () => {
     // Step 2 has a Section that hides based on a value entered in Step 0;
     // both steps must be resolved on every cycle for the predicate to fire.

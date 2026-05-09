@@ -777,17 +777,18 @@ export function findForms(elements: ReadonlyArray<Element>): Form[] {
 }
 
 /**
- * Plan #8 — locate the children of a Wizard step at the given index inside
- * the form's tree. Returns `undefined` when the form has no Wizard
- * descendant or the step index is out of range. Step children are returned
- * as a fresh Element[] so callers can pass them straight to
- * `validateSchema`. Walks structurally (`getType() === 'wizard'/'step'`)
- * to stay robust to Vite SSR module-cache duplication.
+ * Plan #8 — locate the Wizard step Element at the given index inside the
+ * form's tree. Returns the live Step instance so callers can read both
+ * its children (`step.getChildren()`) and any hooks attached to it
+ * (`getBeforeValidation / getAfterValidation`). Walks structurally
+ * (`getType() === 'wizard'/'step'`) to stay robust to Vite SSR
+ * module-cache duplication. `undefined` when the form has no Wizard
+ * descendant or the step index is out of range.
  */
-export function findWizardStepFields(
+export function findWizardStep(
   formChildren: ReadonlyArray<Element>,
   stepIndex:    number,
-): Element[] | undefined {
+): Element | undefined {
   let wizard: Element | undefined
   const walk = (els: ReadonlyArray<Element>): void => {
     for (const el of els) {
@@ -800,7 +801,20 @@ export function findWizardStepFields(
   walk(formChildren)
   if (!wizard) return undefined
   const steps = (wizard.getChildren() ?? []).filter(c => c.getType() === 'step')
-  const step = steps[stepIndex]
+  return steps[stepIndex]
+}
+
+/**
+ * Sibling helper: returns just the children of the Wizard step at the
+ * given index. Thin wrapper over `findWizardStep` for callers that only
+ * need to validate the step's fields without touching the Step instance
+ * itself. `undefined` when the step is missing.
+ */
+export function findWizardStepFields(
+  formChildren: ReadonlyArray<Element>,
+  stepIndex:    number,
+): Element[] | undefined {
+  const step = findWizardStep(formChildren, stepIndex)
   if (!step) return undefined
   return step.getChildren() ?? []
 }

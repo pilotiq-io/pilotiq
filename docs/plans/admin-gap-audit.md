@@ -97,6 +97,23 @@ Re-pulled the v5 sitemap from `filamentphp.com/docs/llms.txt` (108 pages spannin
 - **Styling**: colors ✅, icons ✅. css-hooks deferred.
 - **Users**: overview ✅ (`Pilotiq.user(req=>…)` + duck-typed `extractUserIdentity` covers HasName / HasAvatar). MFA + tenancy deferred.
 
+### Filament v5 fresh audit pass (2026-05-09)
+
+Re-walked sections after the prior pass closed every open row. Most surfaces continue to match cleanly; remaining deltas are micro-additions on existing surfaces.
+
+**Newly surfaced gaps + status:**
+
+| Feature | Tier | Notes |
+|---|---|---|
+| ✅ `TextField.trim()` DONE | 1 | Shipped 2026-05-09. Server-side leading/trailing whitespace strip mirroring Laravel's `TrimStrings` middleware. Runs BEFORE `stripCharacters` in `coerceFormValues` so a value like `'  (415) 555-1212  '` first trims, then has mask literals removed. Composes with the existing rich-affordance setters; emit-only-when-set on the meta. 6 new tests. |
+| ✅ `Step.beforeValidation()` / `afterValidation()` DONE | 1 | Shipped 2026-05-09 cont'd. Per-step async hooks around the wizard validation gate. `beforeValidation((values, { record, user }) => …)` runs before validators (may mutate values in place, throw to halt); `afterValidation((values, { record, user }) => …)` runs after validators pass (cross-field invariants, computed-field stamps, side-effects on confirmed advance). Throwing returns 422 with the message stamped under the reserved `_step` error key. Wired through `formWizardData` via the new `findWizardStep` helper (returns the live Step instance instead of just its children, like the existing `findWizardStepFields` does). 12 new tests across `containers.test.ts` / `dispatchForm.test.ts` / `pageData.test.ts`. |
+| `TextInputColumn.beforeStateUpdated()` / `afterStateUpdated()` | 1 | Editable-cell PATCH hooks. Pilotiq's `TextInputColumn` ships `validate / confirm / coerce` but no before/after hooks. |
+| `Wizard.submitAction()` / `nextAction()` / `previousAction()` | 2 | Customize built-in nav button label/icon/color/disabled. Pilotiq currently hard-codes them in the renderer. |
+| `Wizard.persistStepInQueryString()` | 2 | Sync the active step to a URL param. Pilotiq persists to localStorage only. |
+| `Repeater.afterCreate()` / `afterUpdate()` / `afterDelete()` (relationship-mode) | 2 | Per-row lifecycle hooks for relationship-backed Repeater rows. The mutate-* siblings are already shipped; the after-* hooks are the missing trio. |
+| `SelectColumn.options(fn)` reactive resolver | 2 | Editable cell — accept an options callback that receives the row record so per-row dropdowns can vary. Pilotiq's `SelectColumn` accepts a static array only. |
+| `Column.toggleable()` | 2 | User-toggleable column visibility (per-table localStorage). Complements `Table.queryStringIdentifier`. |
+
 ### Filament v5 fresh audit pass (2026-05-07 cont'd⁸)
 
 Re-walked Filament v5 (`docs/llms.txt` — 108 pages) once more after this morning's five ships. **Stale-row cleanup:** five rows in earlier pass tables that were marked open are now actually shipped — flipped above (Render hooks / User menu / Database notifications / Broadcast notifications / Custom-extension scaffolder docs).
