@@ -1,4 +1,19 @@
 import { Element } from './Element.js'
+import type { Action } from '../actions/Action.js'
+
+/**
+ * Customizer for the wizard's built-in nav buttons (`submitAction`,
+ * `nextAction`, `previousAction`). Pass an `Action` to replace the
+ * default outright, or a function that receives the framework-built
+ * default and returns a customized clone.
+ *
+ * Only chrome carries through to the renderer (label / icon / color /
+ * size / outlined / iconOnly / tooltip / disabled rules). The button's
+ * click behavior stays hardwired to advance / recede / submit-form —
+ * dispatch overrides (`.handler()`, `.action()`, `.href()`) are
+ * intentionally ignored so the wizard chrome never breaks navigation.
+ */
+export type WizardActionCustomizer = Action | ((defaultAction: Action) => Action)
 
 /**
  * Context handed to `Step.beforeValidation` / `afterValidation` hooks.
@@ -108,6 +123,10 @@ export class Wizard extends Element {
   private _skippable = false
   private _startOnStep = 0
   private _persist = true
+  private _persistStepInQueryString: string | undefined = undefined
+  private _submitAction?:   WizardActionCustomizer
+  private _nextAction?:     WizardActionCustomizer
+  private _previousAction?: WizardActionCustomizer
 
   private constructor() { super() }
 
@@ -140,6 +159,51 @@ export class Wizard extends Element {
    */
   persist(v: boolean): this { this._persist = v; return this }
 
+  /**
+   * Sync the active step index to the URL as `?<key>=N` (1-based for
+   * human-friendly URLs). When set, the URL value wins over localStorage
+   * on initial mount, so deep-linking to a specific step works. Bare
+   * `persistStepInQueryString()` uses the default key `'step'`; pass a
+   * string to override (multi-wizard pages should use distinct keys to
+   * avoid collisions). Pass `false` to disable.
+   */
+  persistStepInQueryString(key: string | boolean = true): this {
+    if (key === false) { this._persistStepInQueryString = undefined; return this }
+    this._persistStepInQueryString = key === true ? 'step' : key
+    return this
+  }
+
+  /**
+   * Customize the chrome of the built-in Submit button shown on the
+   * wizard's final step. By default the wizard renders a hint pointing
+   * at the surrounding form's Save button — calling this method instead
+   * mounts a real `<button type="submit">` inside the wizard chrome so
+   * the wizard becomes self-contained. Pair with `CreatePage.getFormActions(R)`
+   * returning `[]` to suppress the page-level Save when you don't want
+   * two submits on the same page.
+   */
+  submitAction(action: WizardActionCustomizer): this {
+    this._submitAction = action
+    return this
+  }
+
+  /** Customize the chrome of the built-in Next button. */
+  nextAction(action: WizardActionCustomizer): this {
+    this._nextAction = action
+    return this
+  }
+
+  /** Customize the chrome of the built-in Back / Previous button. */
+  previousAction(action: WizardActionCustomizer): this {
+    this._previousAction = action
+    return this
+  }
+
+  getPersistStepInQueryString(): string | undefined { return this._persistStepInQueryString }
+  getSubmitAction():             WizardActionCustomizer | undefined { return this._submitAction }
+  getNextAction():               WizardActionCustomizer | undefined { return this._nextAction }
+  getPreviousAction():           WizardActionCustomizer | undefined { return this._previousAction }
+
   getType(): string { return 'wizard' }
 
   toMeta(): Record<string, unknown> {
@@ -148,6 +212,9 @@ export class Wizard extends Element {
       skippable:   this._skippable,
       startOnStep: this._startOnStep,
       persist:     this._persist,
+      ...(this._persistStepInQueryString
+        ? { persistStepInQueryString: this._persistStepInQueryString }
+        : {}),
     }
   }
 }

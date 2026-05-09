@@ -22,6 +22,7 @@ import {
   type RepeatableEntryRowMeta,
 } from '../entries/RepeatableEntry.js'
 import { Section } from './Section.js'
+import { Wizard, type WizardActionCustomizer } from './Wizard.js'
 import { TextField } from '../fields/TextField.js'
 
 export interface SchemaContext {
@@ -332,6 +333,30 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
     const footer = el.getModalContentFooter()
     if (footer && footer.length > 0) {
       meta['modalContentFooter'] = await resolveAll(footer, ctx)
+    }
+  }
+
+  // `Wizard.submitAction() / nextAction() / previousAction()` — build a
+  // framework default Action for each slot, run the user's customizer
+  // (or take the explicit Action), then resolve through the standard
+  // walker so `.visible() / .disabled()` rules evaluate the same way
+  // as anywhere else. Stamped under `meta.submitAction / nextAction /
+  // previousAction`; sparse — absent when the user hasn't customized.
+  if (el instanceof Wizard) {
+    const submitC   = el.getSubmitAction()
+    const nextC     = el.getNextAction()
+    const previousC = el.getPreviousAction()
+    if (submitC) {
+      const [resolved] = await resolveAll([resolveWizardAction(submitC, 'submit')], ctx)
+      if (resolved) meta['submitAction'] = resolved
+    }
+    if (nextC) {
+      const [resolved] = await resolveAll([resolveWizardAction(nextC, 'next')], ctx)
+      if (resolved) meta['nextAction'] = resolved
+    }
+    if (previousC) {
+      const [resolved] = await resolveAll([resolveWizardAction(previousC, 'previous')], ctx)
+      if (resolved) meta['previousAction'] = resolved
     }
   }
 
@@ -827,6 +852,23 @@ async function evalItemCan(
  * Mirrors the `Field.buildConditionContext` shape so layout `visible(fn)`
  * callbacks can destructure the same way as `Field.showWhen` callbacks.
  */
+/**
+ * Resolve a `WizardActionCustomizer` against the framework default for
+ * the given slot. The default carries a stable `name` (`wizardSubmit /
+ * wizardNext / wizardPrevious`) and sensible chrome — the customizer
+ * may pass through verbatim, mutate, or replace entirely. Returned
+ * `Action` is then resolved through the standard walker so visibility
+ * and disabled rules evaluate the same way as any other Action.
+ */
+function resolveWizardAction(customizer: WizardActionCustomizer, slot: 'submit' | 'next' | 'previous'): Action {
+  const def = slot === 'submit'
+    ? Action.make('wizardSubmit').label('Submit').color('primary')
+    : slot === 'next'
+      ? Action.make('wizardNext').label('Next').color('primary')
+      : Action.make('wizardPrevious').label('Back').color('ghost')
+  return typeof customizer === 'function' ? customizer(def) : customizer
+}
+
 function buildLayoutContext(ctx: RenderContext): LayoutContext {
   const out: LayoutContext = {}
   if (ctx.record !== undefined) out.record = ctx.record

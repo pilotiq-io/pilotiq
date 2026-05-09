@@ -102,3 +102,41 @@ to halt the advance — the thrown message lands under the reserved
 `_step` error key in the 422 response so the renderer can surface it
 next to the Next button. `beforeValidation` runs first, then the
 schema validators, then `afterValidation` only when validators pass.
+
+### Custom nav buttons
+
+Override the chrome of the built-in Back / Next / Submit buttons. The
+customizer receives a default `Action` and returns a customized one (or
+a brand-new `Action`); chrome (`label`, `icon`, `color`, `size`,
+`outlined`, `iconOnly`, `tooltip`, `disabled`) flows through to the
+rendered button. Click behavior stays hardwired (advance / recede /
+submit-form) — dispatch overrides like `.handler()` are ignored.
+
+```ts
+Wizard.make()
+  .steps([...])
+  .previousAction(a => a.label('Go back'))
+  .nextAction(a => a.label('Continue').icon('arrow-right'))
+  .submitAction(a => a.label('Create campaign').size('lg'))
+```
+
+`submitAction` is the opt-in case: by default the wizard renders a hint
+pointing at the surrounding form's Save button. Setting `submitAction`
+mounts a real `<button type="submit">` inside the wizard chrome on the
+final step — use this when the wizard is the entire form and there's no
+page-level Save. Pair with `CreatePage.getFormActions(R)` returning `[]`
+to suppress the page-level Save when you'd otherwise have two submits.
+
+### Persist step in URL
+
+```ts
+Wizard.make().steps([...]).persistStepInQueryString()           // ?step=2
+Wizard.make().steps([...]).persistStepInQueryString('checkout') // ?checkout=2
+```
+
+Mirrors the active step to the URL as `?<key>=N` (1-based for human-
+friendly URLs). When set, the URL value wins over `localStorage` on
+initial mount, so deep-linking to a specific step works. Bare wizards
+keep `localStorage` as the only persistence — toggle with `.persist(false)`
+to disable that. Multi-wizard pages should use distinct keys to avoid
+collisions on the same query string.

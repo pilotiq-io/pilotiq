@@ -427,6 +427,96 @@ describe('Wizard / Step (Plan #8)', () => {
     })
   })
 
+  describe('persistStepInQueryString', () => {
+    it('omits the meta key by default', async () => {
+      const tree = [Wizard.make().steps([Step.make('a').schema([])])]
+      const result = await resolveSchema(tree)
+      assert.equal(result[0]!['persistStepInQueryString'], undefined)
+    })
+
+    it('bare call defaults to "step"', async () => {
+      const tree = [
+        Wizard.make().persistStepInQueryString().steps([Step.make('a').schema([])]),
+      ]
+      const result = await resolveSchema(tree)
+      assert.equal(result[0]!['persistStepInQueryString'], 'step')
+    })
+
+    it('explicit string overrides the key', async () => {
+      const tree = [
+        Wizard.make().persistStepInQueryString('checkout').steps([Step.make('a').schema([])]),
+      ]
+      const result = await resolveSchema(tree)
+      assert.equal(result[0]!['persistStepInQueryString'], 'checkout')
+    })
+
+    it('false clears a previously-set key', async () => {
+      const tree = [
+        Wizard.make().persistStepInQueryString('foo').persistStepInQueryString(false)
+          .steps([Step.make('a').schema([])]),
+      ]
+      const result = await resolveSchema(tree)
+      assert.equal(result[0]!['persistStepInQueryString'], undefined)
+    })
+  })
+
+  describe('submitAction / nextAction / previousAction customizers', () => {
+    it('omits the meta keys when no customizer is set', async () => {
+      const tree = [Wizard.make().steps([Step.make('a').schema([])])]
+      const result = await resolveSchema(tree)
+      assert.equal(result[0]!['submitAction'],   undefined)
+      assert.equal(result[0]!['nextAction'],     undefined)
+      assert.equal(result[0]!['previousAction'], undefined)
+    })
+
+    it('customizer receives a default Action with sensible chrome', async () => {
+      let receivedSubmit:   string | undefined
+      let receivedNext:     string | undefined
+      let receivedPrevious: string | undefined
+      const tree = [
+        Wizard.make()
+          .submitAction(a => { receivedSubmit = a.getLabel(); return a })
+          .nextAction(a => { receivedNext = a.getLabel(); return a })
+          .previousAction(a => { receivedPrevious = a.getLabel(); return a })
+          .steps([Step.make('a').schema([])]),
+      ]
+      await resolveSchema(tree)
+      assert.equal(receivedSubmit,   'Submit')
+      assert.equal(receivedNext,     'Next')
+      assert.equal(receivedPrevious, 'Back')
+    })
+
+    it('customizer chrome flows through to the resolved meta', async () => {
+      const tree = [
+        Wizard.make()
+          .submitAction(a => a.label('Create campaign').size('lg'))
+          .nextAction(a => a.label('Continue').icon('arrow-right'))
+          .previousAction(Action.make('back').label('Go back').color('ghost'))
+          .steps([Step.make('a').schema([])]),
+      ]
+      const result = await resolveSchema(tree)
+      const submit   = result[0]!['submitAction']   as Record<string, unknown>
+      const next     = result[0]!['nextAction']     as Record<string, unknown>
+      const previous = result[0]!['previousAction'] as Record<string, unknown>
+      assert.equal(submit['label'], 'Create campaign')
+      assert.equal(submit['size'],  'lg')
+      assert.equal(next['label'],   'Continue')
+      assert.equal(next['icon'],    'arrow-right')
+      assert.equal(previous['label'], 'Go back')
+      assert.equal(previous['color'], 'ghost')
+    })
+
+    it('customizer that hides the action drops the slot from meta', async () => {
+      const tree = [
+        Wizard.make()
+          .nextAction(a => a.visible(false))
+          .steps([Step.make('a').schema([])]),
+      ]
+      const result = await resolveSchema(tree)
+      assert.equal(result[0]!['nextAction'], undefined)
+    })
+  })
+
   it('all step children resolve so cross-step $get works', async () => {
     // Step 2 has a Section that hides based on a value entered in Step 0;
     // both steps must be resolved on every cycle for the predicate to fire.
