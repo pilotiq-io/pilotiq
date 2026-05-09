@@ -477,13 +477,101 @@ import type { FieldRendererProps, WidgetRendererProps, FieldLabelSlotProps } fro
 // don't drag SchemaRenderer onto Node-only paths at boot)
 import { registerEntryComponents }  from '@pilotiq/pilotiq/entries'
 import { registerWidgetComponents } from '@pilotiq/pilotiq/widgets'
+import { registerSlotComponents }   from '@pilotiq/pilotiq/slot-components'
 ```
 
-The `entries` and `widgets` subpaths are deliberately separate from
-the main package entry — that lets `bootstrap/providers.ts` register
-components on the server without pulling in the React renderer tree.
-Mirror the pattern when you split your own extensions into a
-side-effect-free boot file.
+The `entries`, `widgets`, and `slot-components` subpaths are
+deliberately separate from the main package entry — that lets
+`bootstrap/providers.ts` register components on the server without
+pulling in the React renderer tree. Mirror the pattern when you split
+your own extensions into a side-effect-free boot file.
+
+## Plugin-contributed UI via `SlotComponent`
+
+`Entry` and `View` are record-shaped (label / value / state); `Field`
+binds to form input. When you need to mount a plugin-contributed React
+component **anywhere a layout slot accepts an Element** — toolbar
+chips, header dropdowns, sidebar contributions, custom action rows —
+reach for `SlotComponent`. It's a generic escape hatch: the schema
+element ships only the registered component name + a serialisable
+`props` bag, and the renderer mounts the registered component verbatim
+at that position.
+
+The headline use case is the **resource-page header actions row**.
+Pilotiq's render-hook API exposes
+`panels::resource.pages.{list,create,edit,view}-record(s).header.actions.{before,after}`
+— a plugin (or your `bootstrap/providers.ts`) registers a callback that
+returns `[SlotComponent.make('YourComponent').props({ basePath, recordId })]`,
+and the renderer mounts the React component alongside the built-in
+`Create` / `View` / `Delete` / `Save` chips. Same applies to alert /
+empty-state action rows and the table bulk-toolbar — `SlotComponent`
+passes their `'action' | 'actionGroup'` filter alongside.
+
+The example below adds a "bookmark this page" star chip into every
+resource role's header. Same shape works for any custom component —
+swap `BookmarkButton` for the React component you actually need.
+
+```tsx
+// BookmarkButton.tsx — your custom React component
+import { useNavigate } from '@pilotiq/pilotiq/react'
+
+export interface BookmarkButtonProps {
+  basePath:     string
+  resourceSlug: string
+  recordId?:    string
+}
+
+export function BookmarkButton({ basePath, resourceSlug, recordId }: BookmarkButtonProps) {
+  // …handle bookmark add/remove against your favourites table…
+  return <button type="button">★</button>
+}
+```
+
+```ts
+// bootstrap/providers.ts — register the component by name
+import { registerSlotComponents } from '@pilotiq/pilotiq/slot-components'
+import { BookmarkButton } from '#components/BookmarkButton.js'
+
+registerSlotComponents({ BookmarkButton })
+```
+
+```ts
+// app/Pilotiq/AdminPanel.ts — contribute the chip via render-hooks
+import { Pilotiq, SlotComponent, type RenderHookName } from '@pilotiq/pilotiq'
+
+const RESOURCE_HEADER_SLOTS = [
+  'panels::resource.pages.list-records.header.actions.before',
+  'panels::resource.pages.create-record.header.actions.before',
+  'panels::resource.pages.edit-record.header.actions.before',
+  'panels::resource.pages.view-record.header.actions.before',
+] as const satisfies readonly RenderHookName[]
+
+export const adminPanel = Pilotiq.make('Admin')
+  .resources([/* … */])
+  .use({
+    name: 'app:bookmark-button',
+    register(panel) {
+      for (const slot of RESOURCE_HEADER_SLOTS) {
+        panel.renderHook(slot, (ctx) => {
+          if (!ctx.resource) return []
+          return [
+            SlotComponent.make('BookmarkButton').props({
+              basePath:     ctx.basePath,
+              resourceSlug: ctx.resource.getSlug(),
+              recordId:     ctx.recordId,
+            }),
+          ]
+        })
+      }
+    },
+  })
+```
+
+The component is registered by name (string), not by reference. That
+keeps the wire shape small (a string id, not a serialised React tree)
+and lets the schema travel through SSR / SPA-nav `viewProps` without
+ever shipping the renderer reference itself. Same model as `View`
+widgets and `ComponentEntry` infolist leaves.
 
 ## Related
 

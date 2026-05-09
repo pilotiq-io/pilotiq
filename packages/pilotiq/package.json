@@ -50,6 +50,10 @@
       "import": "./dist/entries/index.js",
       "types": "./dist/entries/index.d.ts"
     },
+    "./slot-components": {
+      "import": "./dist/slot-components/index.js",
+      "types": "./dist/slot-components/index.d.ts"
+    },
     "./richtext": {
       "import": "./dist/richtext/index.js",
       "types": "./dist/richtext/index.d.ts"

@@ -172,6 +172,7 @@ export { MetaTag,   type MetaTagAttrs }   from './schema/MetaTag.js'
 export { LinkTag,   type LinkTagAttrs }   from './schema/LinkTag.js'
 export { ScriptTag, type ScriptTagAttrs } from './schema/ScriptTag.js'
 export { StyleTag } from './schema/StyleTag.js'
+export { SlotComponent } from './schema/SlotComponent.js'
 
 // Plan #16 — read-only entry primitives for `Resource.detail()`.
 export {

@@ -28,6 +28,7 @@ export { Group } from './Group.js'
 export { Fieldset } from './Fieldset.js'
 export { Split, type SplitFrom } from './Split.js'
 export { Wizard, Step } from './Wizard.js'
+export { SlotComponent } from './SlotComponent.js'
 export {
   resolveSchema,
   registerResolver,

@@ -104,6 +104,7 @@ import { StatsOverviewRenderer } from './widgets/StatsOverviewRenderer.js'
 import { TableWidgetRenderer } from './widgets/TableWidgetRenderer.js'
 import { ViewRenderer } from './widgets/ViewRenderer.js'
 import { getEntryComponent } from '../entries/registry.js'
+import { getSlotComponent } from '../slot-components/registry.js'
 import { getWidgetRenderer } from './widgetRegistry.js'
 
 /** Resolve an icon name through the user-extensible registry. Returns
@@ -1205,6 +1206,14 @@ function renderActionLike(
   index: number,
   opts:  RenderActionOptions = {},
 ): React.ReactNode {
+  if (el.type === 'slotComponent') {
+    // Plugin-contributed React mount — render through the main element
+    // dispatcher, which looks up the registered component and forwards
+    // its serialised props bag. Keeps every action-row slot (heading
+    // children, alert footer, empty-state footer, table-toolbar bulk
+    // strip) usable as a plugin extension point.
+    return renderElement(el, index)
+  }
   if (el.type === 'actionGroup') {
     return <ActionGroupTrigger key={index} el={el} ids={opts.ids ?? []} />
   }
@@ -2949,7 +2958,7 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
       const level = (el['level'] as number) ?? 1
       const content = String(el['content'] ?? '')
       const description = el['description'] ? String(el['description']) : undefined
-      const headerActions = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup')
+      const headerActions = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup' || c.type === 'slotComponent')
       const Tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3'
       const sizes = { 1: 'text-2xl', 2: 'text-xl', 3: 'text-lg' } as const
       const titleBlock = (
@@ -2976,7 +2985,7 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
     }
 
     case 'alert': {
-      const footer = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup')
+      const footer = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup' || c.type === 'slotComponent')
       return (
         <AlertRenderer
           key={index}
@@ -2998,7 +3007,7 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
       const iconName    = el['icon']        ? String(el['icon'])        : undefined
       const contained   = el['contained'] !== false
       const Icon        = iconName ? resolveIcon(iconName) : undefined
-      const footer      = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup')
+      const footer      = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup' || c.type === 'slotComponent')
       const wrapper = contained
         ? 'rounded-lg border border-border bg-card text-card-foreground py-12 px-6'
         : 'py-8'
@@ -3200,6 +3209,36 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
 
     case 'view':
       return <ViewRenderer key={index} meta={el} />
+
+    case 'slotComponent': {
+      const componentName = String(el['component'] ?? '')
+      if (!componentName) {
+        return (
+          <div
+            key={index}
+            className="rounded-md border border-amber-500/40 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+            role="alert"
+          >
+            SlotComponent without a registered <code className="font-mono">component</code> name.
+          </div>
+        )
+      }
+      const Component = getSlotComponent(componentName)
+      if (!Component) {
+        return (
+          <div
+            key={index}
+            className="rounded-md border border-amber-500/40 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+            role="alert"
+          >
+            No slot component registered for <code className="font-mono">{componentName}</code>.
+            Call <code className="font-mono">registerSlotComponents({'{ '}{componentName}{' }'})</code> at app boot.
+          </div>
+        )
+      }
+      const props = (el['props'] ?? {}) as Record<string, unknown>
+      return <Component key={index} {...props} />
+    }
 
     default: {
       // Plan #15 Phase C — server-data widget elements registered by
@@ -5281,7 +5320,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
   const columns  = children.filter(c => c.type === 'column')
   // Actions and ActionGroups share placement — both show up in the
   // header/bulk/row toolbars depending on their `placement` field.
-  const actionLike = children.filter(c => c.type === 'action' || c.type === 'actionGroup')
+  const actionLike = children.filter(c => c.type === 'action' || c.type === 'actionGroup' || c.type === 'slotComponent')
   const filters    = children.filter(c => c.type === 'filter')
   const hasRecordUrl     = Boolean(el['recordUrl'])
   const hasRecordClasses = Boolean(el['recordClasses'])
