@@ -1,6 +1,6 @@
 {
   "name": "@pilotiq/recharts",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "description": "Recharts dashboard chart adapter for @pilotiq/pilotiq — line / bar / pie / doughnut widgets",
   "license": "MIT",
   "repository": {
