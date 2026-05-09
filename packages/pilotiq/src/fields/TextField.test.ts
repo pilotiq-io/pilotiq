@@ -91,6 +91,51 @@ describe('TextField rich affordances (audit gap #3)', () => {
     })
   })
 
+  describe('trim', () => {
+    it('emits the flag only when set', () => {
+      const a = TextField.make('x').trim().toMeta()
+      assert.equal(a['trim'], true)
+
+      const b = TextField.make('x').toMeta()
+      assert.equal(b['trim'], undefined)
+    })
+
+    it('disarms with explicit false', () => {
+      const a = TextField.make('x').trim(false).toMeta()
+      assert.equal(a['trim'], undefined)
+    })
+
+    it('strips leading and trailing whitespace during coerce', () => {
+      const f = TextField.make('email').trim()
+      const out = coerceFormValues([f], { email: '   user@example.com\n' })
+      assert.equal(out['email'], 'user@example.com')
+    })
+
+    it('coerce no-ops when not configured', () => {
+      const f = TextField.make('plain')
+      const out = coerceFormValues([f], { plain: '  spaced  ' })
+      assert.equal(out['plain'], '  spaced  ')
+    })
+
+    it('coerce skips non-string values', () => {
+      const f = TextField.make('x').trim()
+      const out = coerceFormValues([f], { x: 42 as unknown as string })
+      assert.equal(out['x'], 42)
+    })
+
+    it('runs before stripCharacters when both are set', () => {
+      const f = TextField.make('phone').trim().stripCharacters('()- ')
+      const out = coerceFormValues([f], { phone: '  (415) 555-1212  ' })
+      assert.equal(out['phone'], '4155551212')
+    })
+
+    it('preserves empty strings', () => {
+      const f = TextField.make('x').trim()
+      const out = coerceFormValues([f], { x: '   ' })
+      assert.equal(out['x'], '')
+    })
+  })
+
   describe('inputMode + autocapitalize', () => {
     it('emits each attribute when set', () => {
       const a = TextField.make('q').inputMode('search').autocapitalize('off').toMeta()

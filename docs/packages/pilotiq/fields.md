@@ -6,7 +6,7 @@ Every form field is a static `make(name)` builder that extends `Field`.
 
 | Field | Renders | Notes |
 |---|---|---|
-| `TextField` | `<input type="text">` | `password() / revealable() / copyable() / mask() / datalist() / stripCharacters() / inputMode() / autocapitalize() / prefixAction() / suffixAction()` |
+| `TextField` | `<input type="text">` | `password() / revealable() / copyable() / mask() / datalist() / stripCharacters() / trim() / inputMode() / autocapitalize() / prefixAction() / suffixAction()` |
 | `EmailField` | `<input type="email">` | Auto-attaches `email()` validator |
 | `NumberField` | `<input type="number">` | `min() / max() / step()` |
 | `Slider` | range track | `range() / step()` |
@@ -98,6 +98,7 @@ TextField.make('apiKey')
   .copyable('Key copied!')         // suffix click-to-copy + toast
   .mask('(999) 999-9999')          // keystroke formatter (alphabet below)
   .stripCharacters('()- ')         // remove from value before save
+  .trim()                          // strip leading/trailing whitespace
   .datalist(['gmail.com', 'outlook.com']) // HTML5 native suggestions
   .inputMode('numeric')            // virtual-keyboard hint
   .autocapitalize('off')           // mobile-keyboard auto-cap behaviour
@@ -135,6 +136,12 @@ the value lands on the server).
 tampered client can't post unstripped values) AND client-side (so what
 the user sees matches what gets posted). Pass either a string of
 single characters or an explicit array.
+
+**`trim()`** strips leading and trailing whitespace from the submitted
+value before validation runs (server-side authority — equivalent to
+Laravel's `TrimStrings` middleware). Composes with `stripCharacters` —
+trim runs first, then stripping. Empty strings remain empty; non-string
+values pass through.
 
 **`datalist(values)`** adds an HTML5 `<datalist>` next to the input.
 Browsers render an autocomplete dropdown; users can still type values

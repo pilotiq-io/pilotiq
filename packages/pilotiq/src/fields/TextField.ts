@@ -38,6 +38,7 @@ export class TextField extends Field {
   private _mask?:        string
   private _datalist?:    string[]
   private _stripCharacters?: string[]
+  private _trim              = false
   private _inputMode?:        TextInputMode
   private _autocapitalize?:   TextAutocapitalize
   private _prefixAction?: Action
@@ -118,6 +119,17 @@ export class TextField extends Field {
   getStripCharacters(): string[] | undefined { return this._stripCharacters }
 
   /**
+   * Strip leading and trailing whitespace from the submitted value
+   * before validation runs. Mirrors Laravel's `TrimStrings` middleware
+   * — server-side authority, so a tampered client still gets trimmed
+   * values. Composes with `stripCharacters()` (trim runs first). Empty
+   * strings remain empty; non-string values pass through.
+   */
+  trim(v: boolean = true): this { this._trim = v; return this }
+
+  getTrim(): boolean { return this._trim }
+
+  /**
    * Set the HTML `inputmode` attribute — drives the virtual-keyboard
    * layout on mobile. Distinct from `type=` (a `text` field with
    * `inputMode('numeric')` still accepts non-digit pastes; for strict
@@ -157,6 +169,7 @@ export class TextField extends Field {
       ...(this._mask           !== undefined ? { mask:           this._mask           } : {}),
       ...(this._datalist       !== undefined ? { datalist:       this._datalist       } : {}),
       ...(this._stripCharacters!== undefined ? { stripCharacters:this._stripCharacters} : {}),
+      ...(this._trim                           ? { trim:            true                  } : {}),
       ...(this._inputMode      !== undefined ? { inputMode:      this._inputMode      } : {}),
       ...(this._autocapitalize !== undefined ? { autocapitalize: this._autocapitalize } : {}),
     }

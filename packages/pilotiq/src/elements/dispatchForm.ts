@@ -397,6 +397,16 @@ export function coerceFormValues(
         break
     }
 
+    // `TextField.trim()` — strips leading/trailing whitespace from the
+    // submitted value. Runs BEFORE stripCharacters so a value like
+    // `'  (415) 555-1212  '` first trims, then has the listed mask
+    // characters removed. Skipped for non-strings.
+    const trimmer = (field as { getTrim?: () => boolean }).getTrim
+    if (typeof trimmer === 'function' && trimmer.call(field)) {
+      const cur = out[name]
+      if (typeof cur === 'string') out[name] = cur.trim()
+    }
+
     // `TextField.stripCharacters([…])` — applies after type-specific
     // coercion so the persisted value never carries the listed
     // characters. Duck-typed: any Field whose `getStripCharacters?`
