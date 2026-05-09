@@ -9,13 +9,16 @@ import { Form } from './elements/Form.js'
 import { TextField } from './fields/TextField.js'
 import { Heading } from './schema/Heading.js'
 import { Alert } from './schema/Alert.js'
-import { resourceIndexData, resourceCreateData, resourceViewData, customPageData } from './pageData.js'
+import { Action } from './actions/Action.js'
+import { resourceIndexData, resourceCreateData, resourceViewData, resourceEditData, customPageData } from './pageData.js'
 import { Page } from './Page.js'
 
-const heading = (content: string): ElementMeta => ({ type: 'heading', content })
+const heading = (content: string, children?: ElementMeta[]): ElementMeta =>
+  children ? { type: 'heading', content, children } : { type: 'heading', content }
 const table   = (rows = 0): ElementMeta => ({ type: 'table', rows })
 const form    = (id = 'f'): ElementMeta => ({ type: 'form', formId: id })
 const tabs    = (children: ElementMeta[] = []): ElementMeta => ({ type: 'listTabs', children })
+const action  = (label: string): ElementMeta => ({ type: 'action', label })
 
 describe('pageHooksFor()', () => {
   it('returns universal page bounds for non-resource roles', () => {
@@ -35,6 +38,24 @@ describe('pageHooksFor()', () => {
     const names = pageHooksFor('create')
     assert.ok(names.includes('panels::resource.pages.create-record.form.before'))
     assert.ok(names.includes('panels::resource.pages.create-record.form.after'))
+  })
+
+  it('extends with header.actions.before/.after for the four resource roles', () => {
+    assert.ok(pageHooksFor('list').includes('panels::resource.pages.list-records.header.actions.before'))
+    assert.ok(pageHooksFor('list').includes('panels::resource.pages.list-records.header.actions.after'))
+    assert.ok(pageHooksFor('create').includes('panels::resource.pages.create-record.header.actions.before'))
+    assert.ok(pageHooksFor('create').includes('panels::resource.pages.create-record.header.actions.after'))
+    assert.ok(pageHooksFor('edit').includes('panels::resource.pages.edit-record.header.actions.before'))
+    assert.ok(pageHooksFor('edit').includes('panels::resource.pages.edit-record.header.actions.after'))
+    assert.ok(pageHooksFor('view').includes('panels::resource.pages.view-record.header.actions.before'))
+    assert.ok(pageHooksFor('view').includes('panels::resource.pages.view-record.header.actions.after'))
+  })
+
+  it('does not include header.actions slots on non-resource roles', () => {
+    const names = pageHooksFor('dashboard')
+    assert.ok(!names.some(n => n.includes('header.actions')))
+    const search = pageHooksFor('search')
+    assert.ok(!search.some(n => n.includes('header.actions')))
   })
 })
 
@@ -172,6 +193,107 @@ describe('applyPageHooks()', () => {
     assert.deepEqual(contents, ['outer-top', 'inner-top', 'detail', 'inner-bottom', 'outer-bottom'])
   })
 
+  it('appends list-records.header.actions.before/.after into the first heading children', () => {
+    const out = applyPageHooks(
+      [heading('Posts', [action('Create')]), table()],
+      {
+        'panels::resource.pages.list-records.header.actions.before': [action('Plugin Pre')],
+        'panels::resource.pages.list-records.header.actions.after':  [action('Plugin Post')],
+      },
+      'list',
+    )
+    const updated = out[0] as ElementMeta
+    assert.equal(updated.type, 'heading')
+    assert.equal(updated.children?.length, 3)
+    assert.equal(updated.children?.[0]?.['label'], 'Plugin Pre')
+    assert.equal(updated.children?.[1]?.['label'], 'Create')
+    assert.equal(updated.children?.[2]?.['label'], 'Plugin Post')
+  })
+
+  it('header.actions.before fires on create-record role around the heading children', () => {
+    const out = applyPageHooks(
+      [heading('Create Post', [action('Save')]), form()],
+      {
+        'panels::resource.pages.create-record.header.actions.before': [action('Agents')],
+      },
+      'create',
+    )
+    const updated = out[0] as ElementMeta
+    assert.equal(updated.children?.length, 2)
+    assert.equal(updated.children?.[0]?.['label'], 'Agents')
+    assert.equal(updated.children?.[1]?.['label'], 'Save')
+  })
+
+  it('header.actions.after fires on edit-record role appended after existing children', () => {
+    const out = applyPageHooks(
+      [heading('Edit Post', [action('Save'), action('Delete')]), form()],
+      {
+        'panels::resource.pages.edit-record.header.actions.after': [action('Agents')],
+      },
+      'edit',
+    )
+    const updated = out[0] as ElementMeta
+    assert.equal(updated.children?.length, 3)
+    assert.equal(updated.children?.[2]?.['label'], 'Agents')
+  })
+
+  it('header.actions.before/.after fires on view-record role', () => {
+    const out = applyPageHooks(
+      [heading('View Post', [action('Edit')])],
+      {
+        'panels::resource.pages.view-record.header.actions.before': [action('Pre')],
+        'panels::resource.pages.view-record.header.actions.after':  [action('Post')],
+      },
+      'view',
+    )
+    const updated = out[0] as ElementMeta
+    assert.deepEqual(updated.children?.map(c => c['label']), ['Pre', 'Edit', 'Post'])
+  })
+
+  it('drops header.actions hooks silently when no heading anchor exists', () => {
+    const out = applyPageHooks(
+      [table()],
+      { 'panels::resource.pages.list-records.header.actions.before': [action('lost')] },
+      'list',
+    )
+    assert.equal(out.length, 1)
+    assert.equal(out[0]?.type, 'table')
+  })
+
+  it('only the first top-level heading receives header.actions splice', () => {
+    const out = applyPageHooks(
+      [heading('First'), heading('Second')],
+      { 'panels::resource.pages.list-records.header.actions.before': [action('Once')] },
+      'list',
+    )
+    assert.equal((out[0] as ElementMeta).children?.length, 1)
+    assert.equal((out[1] as ElementMeta).children, undefined)
+  })
+
+  it('non-action contributions land in heading.children at meta level (renderer filters at paint)', () => {
+    const out = applyPageHooks(
+      [heading('Posts', [action('Create')])],
+      {
+        'panels::resource.pages.list-records.header.actions.before': [heading('non-action')],
+      },
+      'list',
+    )
+    const updated = out[0] as ElementMeta
+    assert.equal(updated.children?.length, 2)
+    assert.equal(updated.children?.[0]?.type, 'heading')
+    assert.equal(updated.children?.[1]?.['label'], 'Create')
+  })
+
+  it('does not splice header.actions on non-resource roles', () => {
+    const out = applyPageHooks(
+      [heading('Hello', [action('Built-in')])],
+      { 'panels::resource.pages.list-records.header.actions.before': [action('Lost')] },
+      'dashboard',
+    )
+    assert.equal((out[0] as ElementMeta).children?.length, 1)
+    assert.equal((out[0] as ElementMeta).children?.[0]?.['label'], 'Built-in')
+  })
+
   it('does not splice list-records.* on a non-list role', () => {
     const out = applyPageHooks(
       [table()],
@@ -272,6 +394,49 @@ describe('Per-builder render-hook integration', () => {
     const data = await customPageData(panel, 'help')
     const schema = data?.['schemaData'] as ElementMeta[]
     assert.equal(schema[0]?.['content'], 'Page banner')
+  })
+
+  it('resourceIndexData splices header.actions.before into the page heading children', async () => {
+    const panel = Pilotiq.make('admin')
+      .path('/admin')
+      .resources([Articles])
+      .renderHook(
+        'panels::resource.pages.list-records.header.actions.before',
+        () => [Action.make('agents').label('Agents')],
+      )
+    const data = await resourceIndexData(panel, 'articles')
+    const schema = data?.['schemaData'] as ElementMeta[]
+    const headingMeta = schema.find(m => m.type === 'heading')
+    assert.ok(headingMeta, 'expected page heading')
+    const labels = (headingMeta.children ?? []).map(c => c['label'])
+    assert.ok(labels.includes('Agents'))
+    // Plugin chip appears at the start (before the resource's built-in
+    // "New Article" / equivalents).
+    assert.equal(labels[0], 'Agents')
+  })
+
+  it('resourceEditData scoped header.actions hook only fires for matching Resource', async () => {
+    class OtherResource extends Resource {
+      static override label = 'Other'
+      static override slug  = 'other'
+      static override form(form: Form): Form { return form.schema([TextField.make('name')]) }
+    }
+    const panel = Pilotiq.make('admin')
+      .path('/admin')
+      .resources([Articles, OtherResource])
+      .renderHook(
+        'panels::resource.pages.edit-record.header.actions.after',
+        () => [Action.make('agents').label('Agents')],
+        { resource: Articles },
+      )
+    const onArticles = await resourceEditData(panel, 'articles', 'rec-1')
+    const onOther    = await resourceEditData(panel, 'other',    'rec-2')
+    const findAgents = (sd: ElementMeta[] | undefined): boolean => {
+      const h = (sd ?? []).find(m => m.type === 'heading')
+      return Boolean((h?.children ?? []).some(c => c['label'] === 'Agents'))
+    }
+    assert.ok(findAgents(onArticles?.['schemaData'] as ElementMeta[]))
+    assert.equal(findAgents(onOther?.['schemaData'] as ElementMeta[]), false)
   })
 
   it('scoped hook only fires when the matching resource is active', async () => {

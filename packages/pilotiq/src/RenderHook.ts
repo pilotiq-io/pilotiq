@@ -54,12 +54,20 @@ export type RenderHookName =
   | 'panels::resource.pages.list-records.table.before'
   | 'panels::resource.pages.list-records.table.after'
   | 'panels::resource.pages.list-records.tabs.end'
+  | 'panels::resource.pages.list-records.header.actions.before'
+  | 'panels::resource.pages.list-records.header.actions.after'
   | 'panels::resource.pages.create-record.form.before'
   | 'panels::resource.pages.create-record.form.after'
+  | 'panels::resource.pages.create-record.header.actions.before'
+  | 'panels::resource.pages.create-record.header.actions.after'
   | 'panels::resource.pages.edit-record.form.before'
   | 'panels::resource.pages.edit-record.form.after'
+  | 'panels::resource.pages.edit-record.header.actions.before'
+  | 'panels::resource.pages.edit-record.header.actions.after'
   | 'panels::resource.pages.view-record.start'
   | 'panels::resource.pages.view-record.end'
+  | 'panels::resource.pages.view-record.header.actions.before'
+  | 'panels::resource.pages.view-record.header.actions.after'
   | 'panels::global-search.results.before'
   | 'panels::global-search.results.after'
 
@@ -94,12 +102,20 @@ export const PAGE_HOOK_NAMES = [
   'panels::resource.pages.list-records.table.before',
   'panels::resource.pages.list-records.table.after',
   'panels::resource.pages.list-records.tabs.end',
+  'panels::resource.pages.list-records.header.actions.before',
+  'panels::resource.pages.list-records.header.actions.after',
   'panels::resource.pages.create-record.form.before',
   'panels::resource.pages.create-record.form.after',
+  'panels::resource.pages.create-record.header.actions.before',
+  'panels::resource.pages.create-record.header.actions.after',
   'panels::resource.pages.edit-record.form.before',
   'panels::resource.pages.edit-record.form.after',
+  'panels::resource.pages.edit-record.header.actions.before',
+  'panels::resource.pages.edit-record.header.actions.after',
   'panels::resource.pages.view-record.start',
   'panels::resource.pages.view-record.end',
+  'panels::resource.pages.view-record.header.actions.before',
+  'panels::resource.pages.view-record.header.actions.after',
   'panels::global-search.results.before',
   'panels::global-search.results.after',
 ] as const satisfies readonly RenderHookName[]

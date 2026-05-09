@@ -62,15 +62,30 @@ the page's `schemaData` at the position implied by the slot name.
 | `panels::page.start` / `panels::page.end` | Top / bottom of the page schema (every role: dashboard, list, create, edit, view, global-edit, global-view, custom page, all relation/nested-relation) |
 | `panels::resource.pages.list-records.table.before` / `.after` | Immediately above / below the first top-level `Table` on the resource list page |
 | `panels::resource.pages.list-records.tabs.end` | Appended into the `ListTabs` strip's children (after the user's tabs) |
+| `panels::resource.pages.list-records.header.actions.before` / `.after` | Action chips alongside the page-title actions on the resource list page |
 | `panels::resource.pages.create-record.form.before` / `.after` | Around the first top-level `Form` on the resource create page |
+| `panels::resource.pages.create-record.header.actions.before` / `.after` | Action chips alongside the page-title actions on the resource create page |
 | `panels::resource.pages.edit-record.form.before` / `.after` | Around the first top-level `Form` on the resource edit page |
+| `panels::resource.pages.edit-record.header.actions.before` / `.after` | Action chips alongside the page-title actions on the resource edit page |
 | `panels::resource.pages.view-record.start` / `.end` | Wraps the resource view page schema (inside `panels::page.start/.end` if both are set) |
+| `panels::resource.pages.view-record.header.actions.before` / `.after` | Action chips alongside the page-title actions on the resource view page |
 | `panels::global-search.results.before` / `.after` | Around the Cmd+K palette's result list — only fires when the user is actively searching (≥ 2 chars) |
 
 The `*-records.table.*` and `*-record.form.*` splice points work on the
 **first top-level** match. Tables / Forms nested inside a Section or
 Group don't currently receive these hooks — register `panels::page.start`
 or use the universal slots if you need to wrap a nested anchor.
+
+The `*.header.actions.before / .after` slots splice into the first
+top-level page heading's children — the same row pilotiq mounts the
+built-in resource actions on (`Create`, `View`, `Delete`, `Save`).
+Contributions are appended into that slot, so only `Action` /
+`ActionGroup`-typed elements end up rendered (other element types are
+silently skipped at render, mirroring the head-slot posture for
+body-level elements). When a custom page header doesn't include a
+`Heading` at the top level, the contribution drops silently — register
+`panels::page.start` instead if you need to mount a toolbar without a
+heading anchor.
 
 ## Scope
 

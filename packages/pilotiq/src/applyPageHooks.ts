@@ -55,24 +55,32 @@ export function pageHooksFor(role: PageRole): readonly RenderHookName[] {
         'panels::resource.pages.list-records.table.before',
         'panels::resource.pages.list-records.table.after',
         'panels::resource.pages.list-records.tabs.end',
+        'panels::resource.pages.list-records.header.actions.before',
+        'panels::resource.pages.list-records.header.actions.after',
       ]
     case 'create':
       return [
         ...PAGE_BOUNDS,
         'panels::resource.pages.create-record.form.before',
         'panels::resource.pages.create-record.form.after',
+        'panels::resource.pages.create-record.header.actions.before',
+        'panels::resource.pages.create-record.header.actions.after',
       ]
     case 'edit':
       return [
         ...PAGE_BOUNDS,
         'panels::resource.pages.edit-record.form.before',
         'panels::resource.pages.edit-record.form.after',
+        'panels::resource.pages.edit-record.header.actions.before',
+        'panels::resource.pages.edit-record.header.actions.after',
       ]
     case 'view':
       return [
         ...PAGE_BOUNDS,
         'panels::resource.pages.view-record.start',
         'panels::resource.pages.view-record.end',
+        'panels::resource.pages.view-record.header.actions.before',
+        'panels::resource.pages.view-record.header.actions.after',
       ]
     case 'search':
       return [
@@ -82,6 +90,40 @@ export function pageHooksFor(role: PageRole): readonly RenderHookName[] {
       ]
     default:
       return PAGE_BOUNDS
+  }
+}
+
+/**
+ * Map a resource page role to its `header.actions.before / .after`
+ * slot pair. Returns `undefined` for non-resource roles where the
+ * concept doesn't apply.
+ */
+function headerActionSlotsFor(
+  role: PageRole,
+): readonly [RenderHookName, RenderHookName] | undefined {
+  switch (role) {
+    case 'list':
+      return [
+        'panels::resource.pages.list-records.header.actions.before',
+        'panels::resource.pages.list-records.header.actions.after',
+      ]
+    case 'create':
+      return [
+        'panels::resource.pages.create-record.header.actions.before',
+        'panels::resource.pages.create-record.header.actions.after',
+      ]
+    case 'edit':
+      return [
+        'panels::resource.pages.edit-record.header.actions.before',
+        'panels::resource.pages.edit-record.header.actions.after',
+      ]
+    case 'view':
+      return [
+        'panels::resource.pages.view-record.header.actions.before',
+        'panels::resource.pages.view-record.header.actions.after',
+      ]
+    default:
+      return undefined
   }
 }
 
@@ -167,6 +209,20 @@ export function applyPageHooks(
     )
   }
 
+  // Resource-page header actions — splice into the first top-level
+  // Heading's children alongside built-in actions. Slot is action-only
+  // by convention (the heading renderer filters children to action /
+  // actionGroup); non-action contributions are silently skipped at
+  // render time.
+  const headerSlots = headerActionSlotsFor(role)
+  if (headerSlots) {
+    result = spliceHeadingActions(
+      result,
+      hooks[headerSlots[0]],
+      hooks[headerSlots[1]],
+    )
+  }
+
   // Universal page.start / page.end wrap everything else.
   result = wrap(
     result,
@@ -203,6 +259,38 @@ function spliceAroundType(
     }
   }
   return result
+}
+
+/**
+ * Splice `before` / `after` into the first top-level `'heading'` meta's
+ * `children` array — the slot the heading renderer uses to mount the
+ * page-title's right-aligned action chips. No-op when neither slot has
+ * content; drops silently when no heading anchor exists (custom
+ * headers carry their own action layout).
+ */
+function spliceHeadingActions(
+  metas:  ElementMeta[],
+  before: ElementMeta[] | undefined,
+  after:  ElementMeta[] | undefined,
+): ElementMeta[] {
+  const hasBefore = before && before.length > 0
+  const hasAfter  = after  && after.length  > 0
+  if (!hasBefore && !hasAfter) return metas
+  let mutated = false
+  return metas.map(m => {
+    if (!mutated && m.type === 'heading') {
+      mutated = true
+      return {
+        ...m,
+        children: [
+          ...(hasBefore ? before : []),
+          ...(m.children ?? []),
+          ...(hasAfter  ? after  : []),
+        ],
+      }
+    }
+    return m
+  })
 }
 
 /** Append `toAppend` into the first top-level meta whose `type`
