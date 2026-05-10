@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import type { PendingSuggestion } from './PendingSuggestionsContext.js'
+import type { ElementMeta } from '../schema/Element.js'
 
 /**
  * Props the per-field overlay component receives from `FieldShell` when
@@ -23,6 +24,15 @@ export interface PendingSuggestionOverlayProps {
   onApprove:  () => void
   /** Drop from queue without applying. */
   onReject:   () => void
+  /** Field type string (`text` / `select` / `toggle` / `slider` / `color` /
+   *  …) so per-fieldType overlay renderers can branch. Sparse — older
+   *  hosts may omit. Phase C of ai-review-mode. */
+  fieldType?: string
+  /** Resolved field meta — gives the overlay access to per-field config
+   *  (`options` for Select, `min/max` for Slider, etc.) needed to render
+   *  human-friendly comparisons rather than raw values. Sparse — older
+   *  hosts may omit. */
+  el?:        ElementMeta
 }
 
 let _component: ComponentType<PendingSuggestionOverlayProps> | null = null

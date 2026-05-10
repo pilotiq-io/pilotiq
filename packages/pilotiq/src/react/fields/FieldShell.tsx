@@ -68,12 +68,24 @@ export function FieldShell({ el, name, label, required, children, before, after,
   // so field types that own their visible state (Select / Toggle / Slider /
   // Color / etc.) get their registered applier — not the overlay's
   // hardcoded `field.setValue` + DOM-write fallback, which would silently
-  // miss the React state of those custom components. Reject just dismisses.
+  // miss the React state of those custom components. Reject just dismisses
+  // and restores focus to the input so the user can keep typing without
+  // a stray click.
+  const onReject = (): void => {
+    dismiss(overlaySuggestion!.id)
+    if (typeof document === 'undefined') return
+    queueMicrotask(() => {
+      const el = document.getElementsByName(name)[0]
+      if (el instanceof HTMLElement) el.focus()
+    })
+  }
   const overlayNode = Overlay && overlaySuggestion ? (
     <Overlay
       suggestion={overlaySuggestion}
       onApprove={() => approve(overlaySuggestion.id)}
-      onReject={() => dismiss(overlaySuggestion.id)}
+      onReject={onReject}
+      {...(fieldType !== undefined ? { fieldType } : {})}
+      el={el}
     />
   ) : null
 
@@ -127,13 +139,29 @@ export function FieldShell({ el, name, label, required, children, before, after,
     )
     : children
 
+  // When a suggestion is pending we hide the real input visually but
+  // keep it in the DOM — both so the applier's DOM-write fallback can
+  // resolve `[name="…"]` and so the input doesn't unmount + lose its
+  // typed value. The wrapper div is rendered unconditionally (just
+  // toggling a class) — switching between bare input and wrapped input
+  // would unmount the uncontrolled `<input>`, resetting its value to
+  // `defaultValue` and silently undoing the approved write right after
+  // the overlay closes.
+  const inputBlock = (
+    <>
+      <div className={overlayNode !== null ? 'hidden' : 'contents'} aria-hidden={overlayNode !== null}>
+        {input}
+      </div>
+      {overlayNode}
+    </>
+  )
+
   if (inline) {
     return (
       <div className="flex items-baseline gap-3" {...wrapperAttrs}>
         {labelEl && <div className="min-w-32 pt-2">{labelEl}</div>}
         <div className="min-w-0 flex-1">
-          {input}
-          {overlayNode}
+          {inputBlock}
           {helperText && (
             <p className="mt-1 text-xs text-muted-foreground">{helperText}</p>
           )}
@@ -145,8 +173,7 @@ export function FieldShell({ el, name, label, required, children, before, after,
   return (
     <div className="flex flex-col gap-1.5" {...wrapperAttrs}>
       {labelEl}
-      {input}
-      {overlayNode}
+      {inputBlock}
       {helperText && (
         <p className="text-xs text-muted-foreground">{helperText}</p>
       )}
