@@ -244,6 +244,12 @@ export async function panelInfo(
     buildRightSidebarMeta(cfg, user),
   ])
   const databaseNotifications = buildDatabaseNotificationsMeta(cfg, user)
+  // AI suggestion mode — sparse: omit when 'auto' (the default) so the
+  // wire shape stays minimal for panels that don't opt into review mode.
+  // Plugin clients (e.g. @pilotiq-pro/ai's `AiClientToolBindings`) read
+  // this to decide whether to apply writes immediately or stage them as
+  // PendingSuggestions for user approval.
+  const aiSuggestionsMode = pilotiq.getAiSuggestionsMode()
   return {
     name: cfg.name,
     branding: cfg.branding,
@@ -254,6 +260,7 @@ export async function panelInfo(
     ...(databaseNotifications ? { databaseNotifications } : {}),
     ...(rightSidebar ? { rightSidebar } : {}),
     ...(Object.keys(renderHooks).length > 0 ? { renderHooks } : {}),
+    ...(aiSuggestionsMode !== 'auto' ? { aiSuggestionsMode } : {}),
   }
 }
 

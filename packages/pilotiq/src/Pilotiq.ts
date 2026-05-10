@@ -240,6 +240,20 @@ export interface PilotiqConfig {
    * closest to the page tree (innermost wrap).
    */
   layoutProviders?: LayoutProviderComponent[]
+  /**
+   * AI suggestion mode — controls what happens when an AI agent calls a
+   * write tool against a form field.
+   *
+   * - `'auto'` (default): the write applies immediately to the form state.
+   *   Existing behavior — agents take effect as soon as the tool returns.
+   * - `'review'`: the write is staged as a `PendingSuggestion` and the
+   *   field shows an inline diff (text fields) or current → suggested
+   *   comparison (other types) with Approve / Reject buttons. Approve
+   *   runs the field's registered applier; Reject discards.
+   *
+   * VS Code-style review flow. Plan: `docs/plans/ai-review-mode.md`.
+   */
+  aiSuggestionsMode?: 'auto' | 'review'
   /** @internal Runtime theme overrides from DB. */
   _themeOverrides?: Partial<ThemeConfig>
 }
@@ -760,6 +774,27 @@ export class Pilotiq {
   /** @internal — read by the Vite plugin's `_components.ts` emitter. */
   getLayoutProviders(): readonly LayoutProviderComponent[] {
     return this.config.layoutProviders ?? []
+  }
+
+  /**
+   * Set the panel-wide AI suggestion mode.
+   *
+   * - `'auto'` (default) — agent writes apply immediately.
+   * - `'review'` — agent writes stage as `PendingSuggestion`s; the user
+   *   approves/rejects via inline diff (text) or value-comparison panel
+   *   (non-text). Reuses the Phase 8.5 applier registry on approve.
+   *
+   * Plan: `docs/plans/ai-review-mode.md`.
+   */
+  aiSuggestionsMode(mode: 'auto' | 'review'): this {
+    this.config.aiSuggestionsMode = mode
+    return this
+  }
+
+  /** @internal — read by `panelInfo()` and stamped onto the wire shape so
+   *  the AI client tool knows which branch (apply vs queue) to take. */
+  getAiSuggestionsMode(): 'auto' | 'review' {
+    return this.config.aiSuggestionsMode ?? 'auto'
   }
 
   /** @internal */

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { SidebarLayout } from './layouts/SidebarLayout.js'
 import { TopbarLayout } from './layouts/TopbarLayout.js'
 import { ToasterProvider } from './Toaster.js'
@@ -38,6 +38,11 @@ export interface AppShellProps {
      *  `panelInfo()` server-side. */
     renderHooks?: RenderHookMap
     themeEditor?: boolean
+    /** AI suggestion mode — absent means `'auto'` (the default). When
+     *  set to `'review'`, AI plugins read this and stage writes as
+     *  `PendingSuggestion`s for user approval instead of applying
+     *  immediately. Plan: `docs/plans/ai-review-mode.md`. */
+    aiSuggestionsMode?: 'auto' | 'review'
   }
   basePath: string
   /** Pathname used to compute active-link state in the sidebar/topbar. */
@@ -75,6 +80,16 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
   const Layout = layout === 'topbar' ? TopbarLayout : SidebarLayout
   // exactOptionalPropertyTypes: only spread `initialNotifications` when set.
   const toasterProps = notifications ? { initialNotifications: notifications } : {}
+
+  // Stamp the panel-wide AI suggestion mode on a window global so the
+  // AI plugin's `update_form_state` client-tool handler can read it
+  // without context plumbing. Singleton flag — doesn't change between
+  // pages within the same panel. Plan: `docs/plans/ai-review-mode.md`.
+  const aiSuggestionsMode = props.panel.aiSuggestionsMode ?? 'auto'
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    ;(window as unknown as { __pilotiqAiSuggestionsMode?: 'auto' | 'review' }).__pilotiqAiSuggestionsMode = aiSuggestionsMode
+  }, [aiSuggestionsMode])
 
   // Plan #12 — palette open state lives at AppShell so the trigger pill
   // (rendered inside the layout's header) and the palette dialog both
