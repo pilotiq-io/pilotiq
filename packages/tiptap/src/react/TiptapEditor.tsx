@@ -24,6 +24,7 @@ import {
 import { DragHandleExtension } from '../extensions/DragHandleExtension.js'
 import { MergeTagExtension } from '../extensions/MergeTagExtension.js'
 import { LeadMarkExtension, SmallMarkExtension } from '../extensions/TextSizeMarks.js'
+import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
 import {
   MentionExtension,
   type MentionState,
@@ -246,6 +247,10 @@ function ClientEditor(props: FieldRendererProps) {
         fieldName:     name,
       })] : [MentionExtension]),
       DragHandleExtension,
+      // AI suggestions — always-on extension that tracks suggested edits as
+      // inline strikethrough + Approve/Reject chip widgets. Idle until the
+      // host calls `editor.commands.addAiSuggestion(...)`.
+      AiSuggestionExtension,
     ],
     content: initialContent ?? '',
     onUpdate: ({ editor: ed }) => {

@@ -20,6 +20,18 @@ export { registerTiptap } from './register.js'
 export { tiptap } from './plugin.js'
 export { TiptapEditor } from './react/TiptapEditor.js'
 export {
+  AiSuggestionExtension,
+  aiSuggestionPluginKey,
+  upsertSuggestion,
+  upsertSuggestions,
+  removeSuggestion,
+  remapSuggestions,
+  sortForApproveAll,
+  clampPos,
+  type AiSuggestion,
+  type AiSuggestionExtensionOptions,
+} from './extensions/AiSuggestionExtension.js'
+export {
   renderRichTextToHtml,
   isRichTextValue,
   type RenderRichTextOptions,
