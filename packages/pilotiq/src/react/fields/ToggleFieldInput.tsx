@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
-import { useFieldState } from '../FormStateContext.js'
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { useFieldState, FormIdContext } from '../FormStateContext.js'
+import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 import { Switch } from '../ui/switch.js'
 
 export function ToggleFieldInput({
@@ -21,6 +22,26 @@ export function ToggleFieldInput({
     if (fs.controlled) { fs.setValue(next); fs.triggerLive(next) }
     else { setLocalChecked(next); fs.triggerLive(next) }
   }
+
+  // Cross-tree applier — Switch state lives in React, not in the hidden
+  // mirror input below. FieldShell's generic DOM-write applier would
+  // dispatch a change on the hidden input, but the visible Switch has
+  // no listener for it, so the toggle wouldn't flip. FieldShell skips
+  // its generic registration for fieldType === 'toggle'.
+  const fsRef = useRef(fs)
+  useEffect(() => { fsRef.current = fs }, [fs])
+  const formId = useContext(FormIdContext) || undefined
+  useEffect(() => {
+    if (name.includes('.')) return
+    const applier: PendingSuggestionApplier = (suggestion) => {
+      const v = suggestion.suggestedValue
+      const next = v === true || v === 'true' || v === 1 || v === '1'
+      const cur = fsRef.current
+      if (cur.controlled) { cur.setValue(next); cur.triggerLive(next) }
+      else { setLocalChecked(next); cur.triggerLive(next) }
+    }
+    return registerPendingSuggestionApplier(formId, name, applier)
+  }, [name, formId])
   return (
     <div className="flex items-center gap-2">
       <input type="hidden" name={name} value={checked ? 'true' : 'false'} />

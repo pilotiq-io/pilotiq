@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React, { useContext, useEffect, useRef, useState } from 'react'
 import {
   UploadIcon, XIcon, FileIcon, Loader2Icon,
   GripVerticalIcon, DownloadIcon,
@@ -7,7 +7,8 @@ import ReactCrop, {
   type Crop, type PixelCrop,
   centerCrop, makeAspectCrop, convertToPixelCrop,
 } from 'react-image-crop'
-import { useFieldState } from '../FormStateContext.js'
+import { useFieldState, FormIdContext } from '../FormStateContext.js'
+import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 import { useToast } from '../Toaster.js'
 import { Button } from '../ui/button.js'
 import {
@@ -103,6 +104,24 @@ export function FileUploadInput({
       fs.triggerLive(stored)
     }
   }
+
+  // Cross-tree applier — FileUpload state lives in `urls` (React); the
+  // hidden mirror input is write-only. FieldShell skips its generic
+  // registration for fieldType === 'fileUpload'.
+  const fsRef = useRef(fs)
+  useEffect(() => { fsRef.current = fs }, [fs])
+  const formId = useContext(FormIdContext) || undefined
+  useEffect(() => {
+    if (name.includes('.')) return
+    const applier: PendingSuggestionApplier = (suggestion) => {
+      const next = toUrls(suggestion.suggestedValue)
+      const stored = multiple ? next : (next[0] ?? null)
+      const cur = fsRef.current
+      if (cur.controlled) { cur.setValue(stored); cur.triggerLive(stored) }
+      else { setLocalUrls(next); cur.triggerLive(stored) }
+    }
+    return registerPendingSuggestionApplier(formId, name, applier)
+  }, [name, formId, multiple])
 
   // ── Image editor helpers ──────────────────────────────────────────────────
 

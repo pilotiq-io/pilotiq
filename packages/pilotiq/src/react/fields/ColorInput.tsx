@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
-import { useFieldState } from '../FormStateContext.js'
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { useFieldState, FormIdContext } from '../FormStateContext.js'
+import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 import { Input } from '../ui/input.js'
 
 /**
@@ -26,6 +27,25 @@ export function ColorInput({
     if (fs.controlled) { fs.setValue(v); fs.triggerLive(v) }
     else { setLocalValue(v); fs.triggerLive(v) }
   }
+
+  // Cross-tree applier — color/text inputs are React-controlled (`value`,
+  // not `defaultValue`), so a DOM-write to the hidden mirror wouldn't
+  // reach them. FieldShell skips its generic registration for
+  // fieldType === 'color'.
+  const fsRef = useRef(fs)
+  useEffect(() => { fsRef.current = fs }, [fs])
+  const formId = useContext(FormIdContext) || undefined
+  useEffect(() => {
+    if (name.includes('.')) return
+    const applier: PendingSuggestionApplier = (suggestion) => {
+      const raw = suggestion.suggestedValue
+      const next = typeof raw === 'string' && raw ? raw : '#000000'
+      const cur = fsRef.current
+      if (cur.controlled) { cur.setValue(next); cur.triggerLive(next) }
+      else { setLocalValue(next); cur.triggerLive(next) }
+    }
+    return registerPendingSuggestionApplier(formId, name, applier)
+  }, [name, formId])
 
   return (
     <div className="flex items-center gap-2">

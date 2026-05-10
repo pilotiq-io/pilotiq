@@ -7,6 +7,27 @@ import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from 
 import { FormIdContext, useFieldState } from '../FormStateContext.js'
 
 /**
+ * Field types whose visible state is driven by React (not by a matching
+ * `[name]` DOM input). Each registers its own applier inside the field
+ * renderer; FieldShell skips its generic DOM-write applier for these so
+ * the field-owned applier stays last-write-wins in the registry. Keep in
+ * sync with the per-field `useEffect(registerPendingSuggestionApplier…)`
+ * blocks under `react/fields/`.
+ */
+const SELF_APPLIER_FIELD_TYPES = new Set<string>([
+  'select',
+  'toggle',
+  'slider',
+  'color',
+  'keyValue',
+  'fileUpload',
+  'tagsInput',
+  'dateTime',
+  'radio',
+  'checkboxList',
+])
+
+/**
  * Shared chrome around every field input — label + required asterisk +
  * helper text + prefix/suffix decoration. The actual input component
  * is passed as `children`. Keeps `renderField` in `SchemaRenderer.tsx`
@@ -59,7 +80,7 @@ export function FieldShell({ el, name, label, required, children, before, after,
   // effects run AFTER children) would overwrite the field-owned applier
   // in the registry. Skip registration here so the field-owned applier
   // stays the winner.
-  const ownsApplier = fieldType === 'select'
+  const ownsApplier = fieldType !== undefined && SELF_APPLIER_FIELD_TYPES.has(fieldType)
   const { list: pending, dismiss } = usePendingSuggestionsForField(name)
   const { approve } = usePendingSuggestions()
   const Overlay = isRichText ? null : getPendingSuggestionOverlay()

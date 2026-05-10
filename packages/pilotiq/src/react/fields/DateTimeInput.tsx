@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
-import { useFieldState } from '../FormStateContext.js'
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { useFieldState, FormIdContext } from '../FormStateContext.js'
+import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 import { Input } from '../ui/input.js'
 
 /**
@@ -27,6 +28,25 @@ export function DateTimeInput({
     if (fs.controlled) { fs.setValue(v); fs.triggerLive(v) }
     else { setLocalValue(v); fs.triggerLive(v) }
   }
+
+  // Cross-tree applier — the visible `<input type="datetime-local">` is
+  // React-controlled (`value`, not `defaultValue`), so a DOM-write to
+  // it bypasses the controller. FieldShell skips its generic
+  // registration for fieldType === 'dateTime'.
+  const fsRef = useRef(fs)
+  useEffect(() => { fsRef.current = fs }, [fs])
+  const formId = useContext(FormIdContext) || undefined
+  useEffect(() => {
+    if (name.includes('.')) return
+    const applier: PendingSuggestionApplier = (suggestion) => {
+      const v = suggestion.suggestedValue
+      const next = v == null || v === '' ? '' : String(v)
+      const cur = fsRef.current
+      if (cur.controlled) { cur.setValue(next); cur.triggerLive(next) }
+      else { setLocalValue(next); cur.triggerLive(next) }
+    }
+    return registerPendingSuggestionApplier(formId, name, applier)
+  }, [name, formId])
 
   return (
     <Input

@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
-import { useFieldState } from '../FormStateContext.js'
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { useFieldState, FormIdContext } from '../FormStateContext.js'
+import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 import { Checkbox } from '../ui/checkbox.js'
 
 /**
@@ -38,6 +39,26 @@ export function CheckboxListInput({
     if (fs.controlled) { fs.setValue(next); fs.triggerLive(next) }
     else { setLocalValue(next); fs.triggerLive(next) }
   }
+
+  // Cross-tree applier — the visible checkboxes are React-controlled
+  // (Base UI `<Checkbox checked={…}>`); the per-option hidden mirrors
+  // share the `[name]` attribute, so FieldShell's generic applier would
+  // overwrite every one of them with the suggestion's stringified value
+  // instead of replacing the array. FieldShell skips its generic
+  // registration for fieldType === 'checkboxList'.
+  const fsRef = useRef(fs)
+  useEffect(() => { fsRef.current = fs }, [fs])
+  const formId = useContext(FormIdContext) || undefined
+  useEffect(() => {
+    if (name.includes('.')) return
+    const applier: PendingSuggestionApplier = (suggestion) => {
+      const next = toArray(suggestion.suggestedValue)
+      const cur = fsRef.current
+      if (cur.controlled) { cur.setValue(next); cur.triggerLive(next) }
+      else { setLocalValue(next); cur.triggerLive(next) }
+    }
+    return registerPendingSuggestionApplier(formId, name, applier)
+  }, [name, formId])
 
   const layout = columns > 1
     ? `grid grid-cols-${columns} gap-2`

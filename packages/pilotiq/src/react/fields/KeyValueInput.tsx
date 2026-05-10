@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react'
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Trash2Icon, PlusIcon, ArrowUpIcon, ArrowDownIcon } from 'lucide-react'
-import { useFieldState } from '../FormStateContext.js'
+import { useFieldState, FormIdContext } from '../FormStateContext.js'
+import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 import { Input } from '../ui/input.js'
 import { Button } from '../ui/button.js'
 
@@ -70,6 +71,35 @@ export function KeyValueInput({
   const addRow = (): void => {
     setRows([...rows, { id: newId(), key: '', value: '' }])
   }
+  // Cross-tree applier — KeyValue rows are React-controlled; the JSON in
+  // the hidden input below is a write-only serialization. FieldShell skips
+  // its generic registration for fieldType === 'keyValue'.
+  const fsRef = useRef(fs)
+  useEffect(() => { fsRef.current = fs }, [fs])
+  const localRowsRef = useRef(localRows)
+  useEffect(() => { localRowsRef.current = localRows }, [localRows])
+  const formId = useContext(FormIdContext) || undefined
+  useEffect(() => {
+    if (name.includes('.')) return
+    const applier: PendingSuggestionApplier = (suggestion) => {
+      const obj = parseToObject(suggestion.suggestedValue)
+      const entries = Object.entries(obj)
+      const fallback = localRowsRef.current
+      const nextRows: Row[] = entries.length > 0
+        ? entries.map(([k, v], i) => ({ id: fallback[i]?.id ?? newId(), key: k, value: v }))
+        : [{ id: newId(), key: '', value: '' }]
+      const cur = fsRef.current
+      if (cur.controlled) {
+        cur.setValue(obj)
+        setLocalRows(nextRows)
+      } else {
+        setLocalRows(nextRows)
+      }
+      cur.triggerLive(obj)
+    }
+    return registerPendingSuggestionApplier(formId, name, applier)
+  }, [name, formId])
+
   const moveRow = (id: number, dir: -1 | 1): void => {
     const idx = rows.findIndex(r => r.id === id)
     if (idx < 0) return

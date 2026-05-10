@@ -1,6 +1,7 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { GripVerticalIcon, XIcon } from 'lucide-react'
-import { useFieldState } from '../FormStateContext.js'
+import { useFieldState, FormIdContext } from '../FormStateContext.js'
+import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 import { reorderRows } from './RepeaterInput.js'
 
 /**
@@ -47,6 +48,23 @@ export function TagsInput({
     if (fs.controlled) { fs.setValue(next); fs.triggerLive(next) }
     else                { setLocalTags(next); fs.triggerLive(next) }
   }
+
+  // Cross-tree applier — chip set lives in React; hidden mirror is a
+  // write-only JSON serialization. FieldShell skips its generic
+  // registration for fieldType === 'tagsInput'.
+  const fsRef = useRef(fs)
+  useEffect(() => { fsRef.current = fs }, [fs])
+  const formId = useContext(FormIdContext) || undefined
+  useEffect(() => {
+    if (name.includes('.')) return
+    const applier: PendingSuggestionApplier = (suggestion) => {
+      const next = toArray(suggestion.suggestedValue)
+      const cur = fsRef.current
+      if (cur.controlled) { cur.setValue(next); cur.triggerLive(next) }
+      else { setLocalTags(next); cur.triggerLive(next) }
+    }
+    return registerPendingSuggestionApplier(formId, name, applier)
+  }, [name, formId])
 
   const canAddMore = maxTags == null || tags.length < maxTags
 

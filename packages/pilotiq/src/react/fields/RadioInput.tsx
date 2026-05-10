@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
-import { useFieldState } from '../FormStateContext.js'
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { useFieldState, FormIdContext } from '../FormStateContext.js'
+import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 
 /**
  * Single-choice field rendered as a vertical (or `inline:true` horizontal)
@@ -24,6 +25,26 @@ export function RadioInput({
     if (fs.controlled) { fs.setValue(next); fs.triggerLive(next) }
     else { setLocalValue(next); fs.triggerLive(next) }
   }
+
+  // Cross-tree applier — the visible radios live under a
+  // `${name}__radio`-named group (separate from the `[name]` hidden
+  // mirror), and they're React-controlled via `checked={value === o.value}`.
+  // FieldShell skips its generic registration for fieldType === 'radio'.
+  const fsRef = useRef(fs)
+  useEffect(() => { fsRef.current = fs }, [fs])
+  const formId = useContext(FormIdContext) || undefined
+  useEffect(() => {
+    if (name.includes('.')) return
+    const applier: PendingSuggestionApplier = (suggestion) => {
+      const v = suggestion.suggestedValue
+      const next = v == null ? '' : String(v)
+      const cur = fsRef.current
+      if (cur.controlled) { cur.setValue(next); cur.triggerLive(next) }
+      else { setLocalValue(next); cur.triggerLive(next) }
+    }
+    return registerPendingSuggestionApplier(formId, name, applier)
+  }, [name, formId])
+
   const layout = inline ? 'flex flex-row flex-wrap gap-4' : 'flex flex-col gap-2'
   return (
     <div role="radiogroup" className={layout}>
