@@ -328,3 +328,130 @@ The panel tracks its position through every editor transaction, so live edits el
 **Field-type coverage:** every pilotiq field type works inside a custom block. Flat fields (`TextField`, `TextareaField`, `SelectField`, `ToggleField`, `CheckboxField`, `RadioField`, `ToggleButtonsField`, `DateField`, `DateTimePickerField`, `EmailField`, `NumberField`, `SliderField`, `ColorPickerField`) flow through directly. Nested-shape fields (`RepeaterField`, `BuilderField`, `FileUploadField`, `MarkdownField`, `KeyValueField`, `TagsInputField`, `CheckboxListField`) round-trip too: the panel snapshots the entire form's DOM state, rebuilds nested arrays / objects from dotted-path inputs, and coerces JSON-encoded hidden inputs (TagsInput, KeyValue, FileUpload-multi) back to their canonical wire shapes before writing into `attrs.blockData`.
 
 **Layout caveat:** the panel is positioned `absolute` to the right of the editor wrapper. On narrow form layouts it may extend into adjacent content; this is intentional — the panel doesn't push the editor sideways or reflow the page.
+
+## AI suggestions
+
+`@pilotiq/tiptap` ships an always-on `AiSuggestionExtension` that turns
+any range in the document into an **inline-diff hunk**: strikethrough on
+the original text, a chip-widget at the range end carrying a preview of
+the replacement, and per-hunk Approve / Reject buttons. The extension
+is idle until the host calls `editor.commands.addAiSuggestion(...)` or
+the cross-package suggestion bridge pushes one in.
+
+```ts
+editor.commands.addAiSuggestion({
+  id:          'seo-1',
+  from:        12,
+  to:          18,
+  replacement: 'better',
+  source:      { agentLabel: 'SEO' },
+})
+
+// User clicks ✓ on the chip, or the host calls programmatically:
+editor.commands.approveAiSuggestion('seo-1')
+```
+
+### Command surface
+
+| Command | What it does |
+|---|---|
+| `addAiSuggestion(s)` | Add or replace a suggestion (matched by id). |
+| `addAiSuggestions(s[])` | Add or replace many in one transaction. |
+| `approveAiSuggestion(id)` | Replace the range with the suggestion's text + drop from state. |
+| `rejectAiSuggestion(id)` | Drop from state without touching the document. |
+| `approveAllAiSuggestions()` | Apply every replacement in highest-`from`-first order so earlier replacements don't shift later positions. |
+| `rejectAllAiSuggestions()` | Drop every suggestion. |
+| `clearAiSuggestions()` | Alias for `rejectAllAiSuggestions`. |
+
+### Suggestion shape
+
+```ts
+import type { AiSuggestion } from '@pilotiq/tiptap'
+
+interface AiSuggestion {
+  id:          string                 // stable; re-adding replaces
+  from:        number                 // inclusive document position
+  to:          number                 // exclusive position; from===to = pure insertion
+  replacement: string                 // plain text in v1
+  source?:     { agentSlug?: string; agentLabel?: string }
+}
+```
+
+Plain-text replacement only in v1 — marks and structure are not carried
+on the inserted text node. Document marks at the original range are
+preserved by ProseMirror when the chip is approved.
+
+### Range remapping
+
+Suggestion ranges remap through every doc transaction's `tr.mapping`
+(left-bias `from`, right-bias `to`). Ranges that collapse past each
+other (`to < from`) drop automatically — if the user types over the
+suggested range and obliterates it, the chip vanishes silently.
+
+### Styling
+
+The package stays CSS-free — consumers ship the matching styles. Default
+classes:
+
+| Class | Where |
+|---|---|
+| `pilotiq-ai-suggestion-original` | Inline decoration on the original `from..to` range (typically strikethrough + muted color). |
+| `pilotiq-ai-suggestion-chip` | Widget root at `to`. |
+| `pilotiq-ai-suggestion-replacement` | Inline preview of the suggested text inside the chip. |
+| `pilotiq-ai-suggestion-accept` | The ✓ button. |
+| `pilotiq-ai-suggestion-reject` | The ✕ button. |
+
+The class prefix is configurable via the extension's `classPrefix`
+option (`'pilotiq-ai-suggestion'` by default).
+
+### Cross-package bridge — `useAiSuggestionBridge(editor, fieldName)`
+
+For the typical AI use case, the editor's suggestion list is mirrored
+to/from pilotiq core's [`PendingSuggestionsContext`](/docs/pro/ai-suggestions)
+— that context is what the chat-sidebar pending pill, FieldShell overlay,
+and out-of-tree approve actions read. `TiptapEditor` mounts the bridge
+automatically, so the typical pilotiq install gets the round-trip for
+free.
+
+For a custom editor mount (e.g. a standalone Tiptap instance outside
+pilotiq's field renderer), wire the bridge yourself:
+
+```tsx
+import { useAiSuggestionBridge } from '@pilotiq/tiptap'
+
+function MyEditor() {
+  const editor = useEditor({ /* … */ })
+  useAiSuggestionBridge(editor ?? null, 'myField')
+  return <EditorContent editor={editor} />
+}
+```
+
+The bridge:
+
+- **Context → editor**: every queue entry whose
+  `meta.editorRange = { from, to }` is set and whose `suggestedValue`
+  is a string gets pushed into the editor as an inline-diff hunk via
+  `addAiSuggestion`. Entries that leave the queue are removed via
+  `rejectAiSuggestion` (no document edit).
+- **Editor → context**: when a chip's Approve / Reject button removes
+  a hunk from the editor's plugin state, the matching id is dismissed
+  from the queue (`dismiss(id)`) so other surfaces (chat-pill,
+  FieldShell overlay registered by another plugin) clear in lock-step.
+
+The bridge is cycle-protected via an internal `pushedRef: Set<string>`
+so direct `editor.commands.addAiSuggestion(...)` calls (host code) don't
+echo back through a context that never knew about them.
+
+### Pure helpers (testing)
+
+For consumers that want to unit-test producer logic without spinning up
+an editor, the extension's pure helpers are exported:
+
+| Helper | Purpose |
+|---|---|
+| `upsertSuggestion(list, next)` | Append or replace by id. |
+| `upsertSuggestions(list, nexts)` | Fold multi-add over `upsertSuggestion`. |
+| `removeSuggestion(list, id)` | Filter by id. |
+| `remapSuggestions(list, mapFn)` | Drop collapsed ranges; remap survivors. |
+| `sortForApproveAll(list)` | Highest-`from`-first order. |
+| `clampPos(pos, max)` | Bound a position into `[0, max]`. |
