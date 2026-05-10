@@ -19,6 +19,30 @@ export type TableGroupDescriptionHandler<R = unknown> = (
 ) => string | undefined
 
 /**
+ * Per-record key resolver. The returned string is what `scopeQueryByKey`
+ * receives at drill-in time. Default resolution = the raw column value
+ * cast to string (or `YYYY-MM-DD` when `.date()` is on). Override when the
+ * stable bucket key differs from what the column literally stores —
+ * e.g. when grouping by an enum object whose `.value` is the persisted
+ * column.
+ */
+export type TableGroupKeyHandler<R = unknown> = (
+  record: R,
+) => string | undefined
+
+/**
+ * Query scoper applied when the user clicks a group heading to drill into
+ * a single group. Receives the raw model query and the resolved group key
+ * (the same value `getKeyFromRecordUsing` produced). Should narrow the
+ * query to records belonging to that group. Default narrows by exact-match
+ * `where(column, '=', key)`; date groups install a whole-day range default.
+ */
+export type TableGroupQueryScoper<Q = unknown> = (
+  query: Q,
+  key:   string,
+) => Q
+
+/**
  * Comparator on resolved group keys. Receives the same string values that
  * the dispatcher stamps onto `_groupValue` (so for `date()` groups the keys
  * are `YYYY-MM-DD`, not raw timestamps). Return < 0 to put `a` first, > 0
@@ -38,6 +62,12 @@ export interface TableGroupMeta {
    * already arrives as `YYYY-MM-DD` and `_groupTitle` carries the
    * formatted display text. */
   date?:         true
+  /** Heading is clickable — renderer wraps the title text in a real
+   * `<a href>` that sets `?<prefix>groupKey=<value>` to drill into a
+   * single group. Sparse: omitted unless the user opted in (directly
+   * via `.scopable(true)` or implicitly by calling `.scopeQueryByKey()`
+   * / `.getKeyFromRecordUsing()`). */
+  scopable?:     true
 }
 
 export class TableGroup<R = unknown> {
@@ -49,6 +79,9 @@ export class TableGroup<R = unknown> {
   private _descriptionFn?: TableGroupDescriptionHandler<R>
   private _date           = false
   private _keyComparator?: TableGroupKeyComparator
+  private _scopable       = false
+  private _scopeFn?:       TableGroupQueryScoper<unknown>
+  private _keyFn?:         TableGroupKeyHandler<R>
 
   private constructor(column: string) {
     this._column = column
@@ -111,6 +144,52 @@ export class TableGroup<R = unknown> {
     return this
   }
 
+  /**
+   * Make the group heading clickable — clicking it drills the table into
+   * just that group's rows, suppressing the banded layout. Opt-in: most
+   * tables stay in the banded view. Auto-armed whenever the user calls
+   * `.scopeQueryByKey(fn)` or `.getKeyFromRecordUsing(fn)` since neither
+   * is meaningful without the drill-in affordance; pass `.scopable(false)`
+   * explicitly to opt back out after the fact.
+   */
+  scopable(v: boolean = true): this {
+    this._scopable = v
+    return this
+  }
+
+  /**
+   * Narrow the query to a single group's rows when the user drills in.
+   * Receives the raw model query and the resolved group key (same value
+   * `getKeyFromRecordUsing` produces). Default narrows by exact-match
+   * `where(column, '=', key)`; date groups install a whole-day range
+   * default. Auto-arms `.scopable(true)` since a custom scoper without
+   * a clickable heading would never fire.
+   *
+   * ```ts
+   * TableGroup.make('status').scopeQueryByKey((q, key) =>
+   *   q.where('status', '=', key).where('archived', '=', false),
+   * )
+   * ```
+   */
+  scopeQueryByKey<Q = unknown>(fn: TableGroupQueryScoper<Q>): this {
+    this._scopeFn  = fn as TableGroupQueryScoper<unknown>
+    this._scopable = true
+    return this
+  }
+
+  /**
+   * Override the per-record key resolver. The returned string is the
+   * stable bucket key — it round-trips through `?<prefix>groupKey=` on
+   * drill-in and lands as the second arg of `scopeQueryByKey`. Default
+   * = the raw column value cast to string (or `YYYY-MM-DD` when
+   * `.date()` is on). Auto-arms `.scopable(true)`.
+   */
+  getKeyFromRecordUsing(fn: TableGroupKeyHandler<R>): this {
+    this._keyFn    = fn
+    this._scopable = true
+    return this
+  }
+
   // ─── Getters ──────────────────────────────────────────
 
   getColumn(): string { return this._column }
@@ -122,6 +201,61 @@ export class TableGroup<R = unknown> {
   getDescriptionHandler(): TableGroupDescriptionHandler<R> | undefined { return this._descriptionFn }
   isDate(): boolean { return this._date }
   getKeyComparator(): TableGroupKeyComparator | undefined { return this._keyComparator }
+  isScopable(): boolean { return this._scopable }
+  getKeyHandler(): TableGroupKeyHandler<R> | undefined { return this._keyFn }
+
+  /**
+   * Resolve the active scoper. Returns the user-supplied function when
+   * set; otherwise installs a default:
+   *
+   * - **Date groups** (`.date()`): whole-day range over the column —
+   *   `(q, key) => q.where(col, '>=', key + ' 00:00:00').where(col, '<=', key + ' 23:59:59')`.
+   *   Strings are picked over `Date` instances so the default composes
+   *   with ORMs that accept date-string literals; consumers wanting
+   *   sub-day buckets / timezone-aware ranges supply their own scoper.
+   * - **Plain groups**: exact-match — `(q, key) => q.where(col, '=', key)`.
+   *
+   * Note: the default uses `where(col, '>=', …)` 3-arg form. Adapter that
+   * only supports 2-arg `where(col, value)` need to detect the comparison
+   * argument shape — every ORM pilotiq ships against today supports the
+   * 3-arg form via `ModelQuery.where`.
+   */
+  resolveScoper<Q = unknown>(): TableGroupQueryScoper<Q> {
+    if (this._scopeFn) return this._scopeFn as TableGroupQueryScoper<Q>
+    const col = this._column
+    if (this._date) {
+      return ((q: { where: (...args: unknown[]) => unknown }, key: string) => {
+        // Empty key clears the bucket — fall back to a no-op so a stale
+        // groupKey doesn't accidentally filter the table to zero rows.
+        if (key === '') return q
+        return (q
+          .where(col, '>=', `${key} 00:00:00`) as typeof q)
+          .where(col, '<=', `${key} 23:59:59`)
+      }) as unknown as TableGroupQueryScoper<Q>
+    }
+    return ((q: { where: (...args: unknown[]) => unknown }, key: string) =>
+      q.where(col, '=', key)) as unknown as TableGroupQueryScoper<Q>
+  }
+
+  /**
+   * Derive the stable bucket key for a record. User-supplied handler
+   * wins; otherwise falls back to the column's raw value cast to string
+   * (or the `YYYY-MM-DD` bucket when `.date()` is on). Unparseable /
+   * null values resolve to `''` so they cluster under the empty bucket.
+   */
+  resolveKey(record: R): string {
+    if (this._keyFn) {
+      try {
+        const k = this._keyFn(record)
+        return k === undefined ? '' : String(k)
+      } catch {
+        return ''
+      }
+    }
+    const raw = (record as Record<string, unknown>)[this._column]
+    if (this._date) return bucketDateValue(raw)
+    return raw == null || raw === '' ? '' : String(raw)
+  }
 
   toMeta(): TableGroupMeta {
     return {
@@ -130,6 +264,7 @@ export class TableGroup<R = unknown> {
       ...(this._collapsible ? { collapsible: true as const } : {}),
       ...(this._collapsed   ? { collapsed:   true as const } : {}),
       ...(this._date        ? { date:        true as const } : {}),
+      ...(this._scopable    ? { scopable:    true as const } : {}),
     }
   }
 }

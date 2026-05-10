@@ -298,6 +298,19 @@ export function modelTableRecords(R: ResourceLike, table: Table): TableRecordsHa
     // and lets a tab's narrower `where` win on collision.
     if (ctx.tabQuery) q = ctx.tabQuery(q)
 
+    // Apply group drill-in scoper when the user clicked a banded heading.
+    // Runs after filters + tab so the bucket narrowing composes on top of
+    // whatever scope the page already had. User-supplied
+    // `TableGroup.scopeQueryByKey(fn)` wins over the framework default
+    // (exact-match `where(column, '=', key)` / whole-day range for date
+    // groups); throwing scopers propagate so a config bug surfaces loudly
+    // rather than silently rendering every row.
+    if (ctx.groupScope) {
+      const scope = ctx.groupScope
+      const scoper = scope.group.resolveScoper<ModelQuery>()
+      q = scoper(q, scope.key)
+    }
+
     if (ctx.sort) {
       q = q.orderBy(ctx.sort.column, ctx.sort.direction === 'desc' ? 'DESC' : 'ASC')
     }
@@ -618,6 +631,14 @@ export function modelRelationTableRecords(
     }
 
     if (ctx.tabQuery) q = ctx.tabQuery(q)
+
+    // Group drill-in scoper — same shape as `modelTableRecords`. Composes
+    // with `relatedQuery` since the scoper just chains another `where`.
+    if (ctx.groupScope) {
+      const scope  = ctx.groupScope
+      const scoper = scope.group.resolveScoper<ModelQuery>()
+      q = scoper(q, scope.key)
+    }
 
     if (ctx.sort) {
       q = q.orderBy(ctx.sort.column, ctx.sort.direction === 'desc' ? 'DESC' : 'ASC')

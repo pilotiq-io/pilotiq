@@ -17,6 +17,7 @@ import {
 import {
   parseTableQuery,
   parseActiveGroup,
+  parseActiveGroupKey,
   findTables,
   loadTableRecords,
 } from './dispatchTable.js'
@@ -787,6 +788,190 @@ describe('loadTableRecords', () => {
       assert.equal(groups[0]!['column'], 'status')
       assert.equal(groups[0]!['label'],  'Status')
       assert.equal(groups[0]!['collapsible'], true)
+    })
+  })
+
+  describe('TableGroup.scopeQueryByKey — drill-in', () => {
+    it('parseActiveGroupKey: returns the key when group is scopable', () => {
+      const t = Table.make()
+        .groups([TableGroup.make('status').scopable()])
+        .defaultGroup('status')
+      assert.equal(parseActiveGroupKey({ groupKey: 'draft' }, t, 'status'), 'draft')
+    })
+
+    it('parseActiveGroupKey: drops silently when group is not scopable', () => {
+      const t = Table.make()
+        .groups([TableGroup.make('status')])  // not scopable
+        .defaultGroup('status')
+      assert.equal(parseActiveGroupKey({ groupKey: 'draft' }, t, 'status'), undefined)
+    })
+
+    it('parseActiveGroupKey: drops silently when no active group', () => {
+      const t = Table.make()
+      assert.equal(parseActiveGroupKey({ groupKey: 'draft' }, t, undefined), undefined)
+    })
+
+    it('parseActiveGroupKey: drops silently when group not registered (bare-column form)', () => {
+      const t = Table.make().defaultGroup('status')  // bare; no scopable() call
+      assert.equal(parseActiveGroupKey({ groupKey: 'draft' }, t, 'status'), undefined)
+    })
+
+    it('parseActiveGroupKey: empty string explicitly clears', () => {
+      const t = Table.make()
+        .groups([TableGroup.make('status').scopable()])
+        .defaultGroup('status')
+      assert.equal(parseActiveGroupKey({ groupKey: '' }, t, 'status'), undefined)
+    })
+
+    it('suppresses _groupValue banding when drilled in', async () => {
+      const t = Table.make<{ id: string; status: string }>()
+        .columns([Column.make('status')])
+        .groups([TableGroup.make('status').scopable()])
+        .defaultGroup('status')
+        .records(async () => [
+          { id: '1', status: 'draft' },
+          { id: '2', status: 'draft' },
+        ])
+
+      await loadTableRecords([t], { groupKey: 'draft' })
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      // No banding when drilled in — the rows are already filtered to
+      // the bucket, so heading rows would be redundant.
+      assert.equal(rows[0]!['_groupValue'], undefined)
+      assert.equal(rows[1]!['_groupValue'], undefined)
+      assert.equal(meta['activeGroupKey'], 'draft')
+      assert.equal(meta['defaultGroup'], 'status')  // active group preserved
+    })
+
+    it('resets the visible page to 1 on drill-in', async () => {
+      const t = Table.make<{ id: string }>()
+        .columns([Column.make('id')])
+        .groups([TableGroup.make('status').scopable()])
+        .defaultGroup('status')
+        .records(async () => [{ id: '1' }])
+
+      await loadTableRecords([t], { groupKey: 'draft', page: '5' })
+      const meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['currentPage'], 1)
+    })
+
+    it('threads ctx.groupScope into the records handler', async () => {
+      let received: unknown
+      const t = Table.make<{ id: string }>()
+        .columns([Column.make('id')])
+        .groups([TableGroup.make('status').scopable()])
+        .defaultGroup('status')
+        .records(async (ctx) => {
+          received = (ctx as { groupScope?: unknown }).groupScope
+          return []
+        })
+
+      await loadTableRecords([t], { groupKey: 'draft' })
+      const scope = received as { group?: { getColumn: () => string }; key?: string }
+      assert.equal(scope?.group?.getColumn(), 'status')
+      assert.equal(scope?.key, 'draft')
+    })
+
+    it('omits ctx.groupScope when not drilled in', async () => {
+      let received: unknown = 'unset'
+      const t = Table.make<{ id: string }>()
+        .columns([Column.make('id')])
+        .groups([TableGroup.make('status').scopable()])
+        .defaultGroup('status')
+        .records(async (ctx) => {
+          received = (ctx as { groupScope?: unknown }).groupScope
+          return [{ id: '1' }]
+        })
+
+      await loadTableRecords([t], {})
+      assert.equal(received, undefined)
+    })
+
+    it('suppresses groupSummaries when drilled in', async () => {
+      const t = Table.make<{ id: string; status: string; price: number }>()
+        .columns([
+          Column.make('status'),
+          Column.make('price').summarize([Sum.make()]),
+        ])
+        .groups([TableGroup.make('status').scopable()])
+        .defaultGroup('status')
+        .records(async () => [
+          { id: '1', status: 'draft', price: 100 },
+          { id: '2', status: 'draft', price: 200 },
+        ])
+
+      await loadTableRecords([t], { groupKey: 'draft' })
+      const meta = (await resolveSchema([t]))[0]!
+      // Global summary still computed across the bucket — it's the only
+      // total that makes sense once you've drilled in.
+      assert.ok(meta['summaries'] !== undefined)
+      // Per-group summary block is gone because banding is gone.
+      assert.equal(meta['groupSummaries'], undefined)
+    })
+
+    it('queryStringIdentifier — drilled key reads from <id>_groupKey', async () => {
+      const t = Table.make<{ id: string; status: string }>()
+        .queryStringIdentifier('orders')
+        .columns([Column.make('status')])
+        .groups([TableGroup.make('status').scopable()])
+        .defaultGroup('status')
+        .records(async () => [{ id: '1', status: 'draft' }])
+
+      // Bare `?groupKey=` shouldn't drill in when the table is prefixed.
+      await loadTableRecords([t], { groupKey: 'wat' })
+      let meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['activeGroupKey'], undefined)
+
+      await loadTableRecords([t], { orders_group: 'status', orders_groupKey: 'draft' })
+      meta = (await resolveSchema([t]))[0]!
+      assert.equal(meta['activeGroupKey'], 'draft')
+    })
+
+    it('date() group — drill-in threads bucket key through scope', async () => {
+      let calls: Array<[string, string, unknown]> = []
+      const t = Table.make<{ id: string; createdAt: string }>()
+        .columns([Column.make('createdAt')])
+        .groups([TableGroup.make('createdAt').date().scopable()])
+        .defaultGroup('createdAt')
+        .records(async (ctx) => {
+          const scope = (ctx as { groupScope?: { group: { resolveScoper: <Q>() => (q: Q, k: string) => Q }; key: string } }).groupScope
+          if (scope) {
+            const q = { where: (col: string, op: string, val: unknown) => { calls.push([col, op, val]); return q } }
+            scope.group.resolveScoper<typeof q>()(q, scope.key)
+          }
+          return [] as { id: string; createdAt: string }[]
+        })
+
+      calls = []
+      await loadTableRecords([t], { groupKey: '2026-05-04' })
+      assert.deepEqual(calls, [
+        ['createdAt', '>=', '2026-05-04 00:00:00'],
+        ['createdAt', '<=', '2026-05-04 23:59:59'],
+      ])
+    })
+
+    it('user-supplied scopeQueryByKey wins over default', async () => {
+      let captured = ''
+      const t = Table.make<{ id: string; status: string }>()
+        .columns([Column.make('status')])
+        .groups([
+          TableGroup.make('status').scopeQueryByKey<{ where: (...a: unknown[]) => unknown }>(
+            (q, key) => { captured = `custom:${key}`; return q },
+          ),
+        ])
+        .defaultGroup('status')
+        .records(async (ctx) => {
+          const scope = (ctx as { groupScope?: { group: { resolveScoper: <Q>() => (q: Q, k: string) => Q }; key: string } }).groupScope
+          if (scope) {
+            const q = { where: () => q }
+            scope.group.resolveScoper<typeof q>()(q, scope.key)
+          }
+          return []
+        })
+
+      await loadTableRecords([t], { groupKey: 'draft' })
+      assert.equal(captured, 'custom:draft')
     })
   })
 

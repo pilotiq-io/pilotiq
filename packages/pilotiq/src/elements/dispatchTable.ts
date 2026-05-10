@@ -24,7 +24,7 @@ export interface QueryParams {
   [key: string]: unknown
 }
 
-const RESERVED_QUERY_KEYS = new Set(['search', 'sort', 'page', 'perPage', 'group'])
+const RESERVED_QUERY_KEYS = new Set(['search', 'sort', 'page', 'perPage', 'group', 'groupKey'])
 
 export function prefixedKey(prefix: string | undefined, key: string): string {
   return prefix === undefined || prefix === '' ? key : `${prefix}_${key}`
@@ -148,6 +148,35 @@ export function parseActiveGroup(
   return table.getDefaultGroup()
 }
 
+/**
+ * Read the drilled-in group key from the URL. Returns the key string when
+ * the URL carries a value AND the active group exists AND is `scopable`;
+ * `undefined` otherwise (stale bookmark, group dropped, or never set).
+ *
+ * The active column resolution runs first so the drill-in state can be
+ * silently dropped without affecting the parent group's reconciliation —
+ * a stale `groupKey` from a renamed-column or non-scopable group falls
+ * through to "no drill-in", which is the same as the user not having
+ * clicked a heading.
+ */
+export function parseActiveGroupKey(
+  query:  QueryParams,
+  table:  Table,
+  activeColumn: string | undefined,
+  prefix?: string,
+): string | undefined {
+  if (activeColumn === undefined) return undefined
+  const raw = query[prefixedKey(prefix, 'groupKey')]
+  if (typeof raw !== 'string') return undefined
+  if (raw === '') return undefined  // explicit clear
+  const group = table.getGroups().find(g => g.getColumn() === activeColumn)
+  // Bare-column groups (synthesized from defaultGroup with no entry in
+  // `groups([…])`) can't be scopable — `.scopeQueryByKey()` is a builder
+  // call. Drop the drill-in silently.
+  if (!group || !group.isScopable()) return undefined
+  return raw
+}
+
 /** Walk an Element tree and return every `Table` instance in document order. */
 export function findTables(elements: ReadonlyArray<Element>): Table[] {
   const tables: Table[] = []
@@ -225,6 +254,20 @@ export async function loadTableRecords(
     // `ctx.tabQuery` to splice the predicate into its ORM query chain.
     const activeTab = findActiveTab(elements)
 
+    // Reconcile group + drill-in BEFORE building ctx so `groupScope` can
+    // be threaded into the records handler (model adapter splices the
+    // scoper after filters). A live drill-in also resets the page to 1
+    // server-side — clicking a heading should reliably land on the first
+    // page of the bucket regardless of where the user was paginated to.
+    const activeGroupCol  = parseActiveGroup(query, table, prefix)
+    // Stamp the reconciled column onto the table early so
+    // `getActiveGroupInstance()` can resolve to a registered group (or
+    // synthesize a bare-column instance) consistently across the file.
+    table.withActiveGroup(activeGroupCol ?? '')
+    const activeGroup     = table.getActiveGroupInstance()
+    const drilledKey      = parseActiveGroupKey(query, table, activeGroupCol, prefix)
+    const effectivePageWithDrill = drilledKey !== undefined ? 1 : effectivePage
+
     const ctx: TableContext = {
       ...(search !== undefined           ? { search }                       : {}),
       ...(effectiveSort !== undefined    ? { sort: effectiveSort }          : {}),
@@ -233,7 +276,10 @@ export async function loadTableRecords(
       ...(activeTab            ? { tab: activeTab.name }                    : {}),
       ...(activeTab?.getQuery() ? { tabQuery: activeTab.getQuery()! }       : {}),
       ...(user != null         ? { user }                                  : {}),
-      page: effectivePage,
+      ...(drilledKey !== undefined && activeGroup !== undefined
+        ? { groupScope: { group: activeGroup, key: drilledKey } }
+        : {}),
+      page: effectivePageWithDrill,
     }
 
     // Apply the tab's TableContext customizer last (escape hatch — wins
@@ -318,22 +364,19 @@ export async function loadTableRecords(
       const recordUrlFn     = table.getRecordUrl()
       const recordClassesFn = table.getRecordClasses()
       const cardSchemaFn    = table.isCardsLayout() ? table.getCardSchema() : undefined
-      // Reconcile `?group=` against the configured groups + defaultGroup.
-      // Stamp the resolved column back onto the table so `toMeta()`
-      // emits it as the meta's `defaultGroup` (the renderer reads from
-      // there). Empty-string "explicit clear" is distinct from `undefined`
-      // ("never reconciled") so we can tell tests-skipping-loadTableRecords
-      // apart from URL-cleared.
-      const activeGroupCol  = parseActiveGroup(query, table, prefix)
-      table.withActiveGroup(activeGroupCol ?? '')
-      // Resolve to a TableGroup instance — synth a no-metadata instance
-      // for bare-column / unregistered columns so per-row stamping has
-      // a uniform shape.
-      const activeGroup     = activeGroupCol === undefined
-        ? undefined
-        : (table.getGroups().find(g => g.getColumn() === activeGroupCol)
-            ?? TableGroup.make(activeGroupCol))
-      const groupColumn     = activeGroup?.getColumn()
+      // `activeGroupCol` + `activeGroup` are reconciled at the top of
+      // the table-async callback. Stamp the drilled key back onto the
+      // table here so `toMeta()` emits `activeGroupKey` alongside the
+      // rest of the render-time state. When drilled in, the rendered
+      // set is already filtered to one bucket — the renderer doesn't
+      // want heading rows or per-group summaries. `bandingActive`
+      // gates every banding-side decision (`_groupValue` stamping,
+      // stable-sort, per-group summaries); `activeGroup` stays bound
+      // so the chip + scope wiring can still reach the resolved
+      // group instance.
+      table.withActiveGroupKey(drilledKey)
+      const bandingActive   = activeGroup !== undefined && drilledKey === undefined
+      const groupColumn     = bandingActive ? activeGroup!.getColumn() : undefined
 
       const needsRowMutation =
         rowActionsWithRules.length > 0 ||
@@ -458,30 +501,28 @@ export async function loadTableRecords(
               }
             }
 
-            if (activeGroup !== undefined) {
-              const raw = recordObj[activeGroup.getColumn()]
+            if (bandingActive) {
+              const raw = recordObj[activeGroup!.getColumn()]
               // Date-bucketed groups use `YYYY-MM-DD` as the stable-sort
               // key so all rows from the same day cluster together;
               // unparseable values bucket to '' (bottom).
-              const value = activeGroup.isDate()
-                ? bucketDateValue(raw)
-                : (raw == null || raw === '' ? '' : String(raw))
+              const value = activeGroup!.resolveKey(row)
               out['_groupValue'] = value
 
               // Per-row resolved title. User-supplied handler wins over
               // the date() default formatter. Throwing handler stays
               // silent — falls back to the raw `_groupValue`.
-              const titleFn = activeGroup.getTitleHandler()
+              const titleFn = activeGroup!.getTitleHandler()
               if (titleFn) {
                 try {
                   const t = titleFn(row)
                   if (t !== undefined) out['_groupTitle'] = String(t)
                 } catch { /* silent */ }
-              } else if (activeGroup.isDate() && value !== '') {
+              } else if (activeGroup!.isDate() && value !== '') {
                 out['_groupTitle'] = formatDateBucketTitle(raw)
               }
 
-              const descFn = activeGroup.getDescriptionHandler()
+              const descFn = activeGroup!.getDescriptionHandler()
               if (descFn) {
                 try {
                   const d = descFn(row)
@@ -600,11 +641,13 @@ export async function loadTableRecords(
         table.withSummaries(summaries)
 
         // Per-group summaries — one summary set per `_groupValue`. Only
-        // computed when a group is active; otherwise the global tfoot
+        // computed when a group is banded; otherwise the global tfoot
         // is the only summary row. Empty-group bucket ('') still gets
         // its own row when present (mirrors the bucket-to-bottom rule
-        // already used for sorting).
-        if (activeGroup !== undefined) {
+        // already used for sorting). Drill-in mode (`bandingActive=false`)
+        // intentionally skips per-group summaries — the visible rows are
+        // already one bucket.
+        if (bandingActive) {
           const buckets: Record<string, Array<Record<string, unknown>>> = {}
           for (const r of finalRows as Array<Record<string, unknown>>) {
             const key = String(r['_groupValue'] ?? '')
@@ -628,10 +671,12 @@ export async function loadTableRecords(
     }
 
     // Mirror the resolved context back onto the table so the renderer can
-    // produce sort/search/page links without re-parsing the URL.
+    // produce sort/search/page links without re-parsing the URL. Drilled-in
+    // requests reset the visible page to 1 — keep the mirror in sync so
+    // pagination chrome doesn't claim page N on a single-bucket render.
     if (effectiveSort)  table.withSort(effectiveSort.column, effectiveSort.direction)
     if (search !== undefined) table.withSearch(search)
-    table.withPage(effectivePage)
+    table.withPage(effectivePageWithDrill)
     if (pathname) table.withCurrentPath(pathname)
   }))
 }

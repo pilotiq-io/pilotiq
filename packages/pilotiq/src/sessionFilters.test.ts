@@ -104,6 +104,29 @@ describe('writePersistedListQuery', () => {
     assert.deepEqual(session.data[key], { orders_status: 'draft' })
   })
 
+  it('skips groupKey (drill-in is page-state, not filter-state)', () => {
+    const session = makeSession()
+    const req = { session }
+    const key = listFiltersKey('/admin', 'posts')
+    writePersistedListQuery(req, key, {
+      status:   'draft',
+      groupKey: 'archive-2025',
+    })
+    assert.deepEqual(session.data[key], { status: 'draft' })
+  })
+
+  it('skips Tier-3 prefixed groupKey keys', () => {
+    const session = makeSession()
+    const req = { session }
+    const key = listFiltersKey('/admin', 'posts')
+    writePersistedListQuery(req, key, {
+      orders_status:   'draft',
+      orders_groupKey: 'old',
+      groupKey:        'older',  // bare also dropped
+    })
+    assert.deepEqual(session.data[key], { orders_status: 'draft' })
+  })
+
   it('preserves empty-string values (explicit-clear marker)', () => {
     const session = makeSession()
     const req = { session }

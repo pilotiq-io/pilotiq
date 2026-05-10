@@ -51,14 +51,15 @@ Now the two tables sort, paginate, search, and filter independently.
 
 Every URL key the framework writes for a table:
 
-| Concept       | Bare key   | With `queryStringIdentifier('orders')` |
-| ------------- | ---------- | -------------------------------------- |
-| Search        | `search`   | `orders_search`                        |
-| Sort          | `sort`     | `orders_sort`                          |
-| Page          | `page`     | `orders_page`                          |
-| Per-page      | `perPage`  | `orders_perPage`                       |
-| Active group  | `group`    | `orders_group`                         |
-| Filter values | `<name>`   | `orders_<name>`                        |
+| Concept           | Bare key   | With `queryStringIdentifier('orders')` |
+| ----------------- | ---------- | -------------------------------------- |
+| Search            | `search`   | `orders_search`                        |
+| Sort              | `sort`     | `orders_sort`                          |
+| Page              | `page`     | `orders_page`                          |
+| Per-page          | `perPage`  | `orders_perPage`                       |
+| Active group      | `group`    | `orders_group`                         |
+| Drilled group key | `groupKey` | `orders_groupKey`                      |
+| Filter values     | `<name>`   | `orders_<name>`                        |
 
 A bare key on the URL no longer matches a prefixed table — it belongs
 either to another table on the page or to some unrelated app param,
@@ -85,8 +86,9 @@ silently fall back to the bare-key path while implying namespacing.
 - **`persistFiltersInSession`** — page-key skipping in the session
   helper recognises both `page` and `<prefix>_page`, so a prefixed
   page number doesn't get persisted and clobber the next bare-visit
-  restore. Filter / sort / search keys persist verbatim under their
-  prefixed names.
+  restore. The `<prefix>groupKey` drill-in key is similarly excluded
+  (drill-in is page-state, not filter-state). Filter / sort / search
+  keys persist verbatim under their prefixed names.
 
 - **`deferLoading`** — composes naturally. The deferred fetch sends
   `tableUrl + window.location.search`, and the JSON endpoint's
@@ -106,8 +108,8 @@ silently fall back to the bare-key path while implying namespacing.
   prefixing.** A filter literally named `page` on a table with
   `queryStringIdentifier('a')` would write to `?a_page`, which the
   framework reads as the table's pagination cursor. Filter names that
-  match `search`, `sort`, `page`, `perPage`, or `group` were already
-  rejected at registration time and that hasn't changed.
+  match `search`, `sort`, `page`, `perPage`, `group`, or `groupKey`
+  were already rejected at registration time and that hasn't changed.
 
 - **`persistFiltersInSession` heuristic.** The session writer drops
   any URL key ending in `_page` to handle prefixed pagination. A

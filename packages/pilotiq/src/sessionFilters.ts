@@ -4,7 +4,7 @@
 
 const PREFIX = 'pilotiq:filters:'
 
-const EXCLUDED_KEYS = new Set(['page', 'tab'])
+const EXCLUDED_KEYS = new Set(['page', 'tab', 'groupKey'])
 
 // Heuristic also catches `<prefix>_page` from `Table.queryStringIdentifier`.
 // A filter literally named `something_page` would be dropped too, but
@@ -12,6 +12,15 @@ const EXCLUDED_KEYS = new Set(['page', 'tab'])
 function isPageKey(key: string): boolean {
   if (key === 'page') return true
   return key.endsWith('_page')
+}
+
+// Sibling heuristic for `<prefix>_groupKey`. Group drill-in is page-
+// state (click-to-drill, × to clear), not filter-state — restoring it
+// on a bare visit would land the user on the bucket they last drilled
+// into instead of the banded list they probably expect.
+function isGroupKeyKey(key: string): boolean {
+  if (key === 'groupKey') return true
+  return key.endsWith('_groupKey')
 }
 
 interface StorableSession {
@@ -73,6 +82,7 @@ export function writePersistedListQuery(
   for (const [k, v] of Object.entries(query)) {
     if (EXCLUDED_KEYS.has(k)) continue
     if (isPageKey(k))         continue
+    if (isGroupKeyKey(k))     continue
     if (typeof v !== 'string') continue
     slice[k] = v
   }

@@ -32,6 +32,18 @@ export interface TableContext<R = unknown> {
    * filter `where` clauses in `modelTableRecords`. Set by the framework;
    * users configure it via `ListTab.modifyQuery(fn)`. */
   tabQuery?: (q: import('../orm/modelDefaults.js').ModelQuery) => import('../orm/modelDefaults.js').ModelQuery
+  /** Drill-in scope when the user clicked a group heading. Carries the
+   * resolved `TableGroup` instance + the bucket key (the same value
+   * `getKeyFromRecordUsing` would produce). Set by `loadTableRecords`
+   * after reconciling `?<prefix>groupKey=`. The model adapter calls
+   * `group.resolveScoper()(q, key)` after filters but before pagination;
+   * user-supplied `Table.records(fn)` handlers can branch on this for
+   * cross-table joins or non-default narrowing. */
+  groupScope?: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    group: import('./TableGroup.js').TableGroup<any>
+    key:   string
+  }
   /** Whatever `Pilotiq.user(req => …)` returned for the current request.
    * Forwarded into `Resource.query(ctx)` by `modelTableRecords` so user-
    * installed scopes (tenant filters, etc.) see the same opaque user
@@ -210,6 +222,15 @@ export interface TableMeta extends ElementMeta {
    * (`Table.defaultGroup('col')` only). */
   groups?: TableGroupMeta[]
 
+  /** The drilled-in group key for this request. When set, the renderer
+   * suppresses group banding (no heading rows, no per-group summaries),
+   * shows a "Drilled into <Label>: <Key>" chip above the table with an
+   * × to clear, and the records have already been narrowed to that
+   * bucket server-side via `TableGroup.scopeQueryByKey`. Sparse —
+   * omitted unless `?<prefix>groupKey=<value>` is present AND the named
+   * group exists AND is `scopable`. */
+  activeGroupKey?: string
+
   /** Per-column summary results — keyed by column name, each entry is the
    * computed `SummaryResult[]` for that column's `summarize([…])`. Filled
    * in by `loadTableRecords` after `records()` runs. Renderer emits a
@@ -319,10 +340,11 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _recordClasses?: RecordClassesHandler<R>
   private _pollInterval?: number
   private _defaultGroup?: string
-  // Variance-relaxed — Filament-style covariant `TableGroup<R>[]` ergonomics
+  // Variance-relaxed — covariant `TableGroup<R>[]` ergonomics
   // matter more than tight invariance against the table's `R` parameter.
   private _groups:        TableGroup<any>[] = []  // eslint-disable-line @typescript-eslint/no-explicit-any
   private _activeGroup?:  string
+  private _activeGroupKey?: string
   private _summaries?:    Record<string, SummaryResult[]>
   private _groupSummaries?: Record<string, Record<string, SummaryResult[]>>
   private _reorderableColumn?: string
@@ -682,6 +704,16 @@ export class Table<R = unknown, Q = unknown> extends Element {
     return this
   }
 
+  /** Render-time setter — the drilled-in group key for this request,
+   * after `?<prefix>groupKey=` was reconciled against a `scopable`
+   * group. Set by `loadTableRecords`. Empty string / undefined both
+   * clear, since drill-in needs an actual key to scope against. */
+  withActiveGroupKey(key: string | undefined): this {
+    if (key === undefined || key === '') delete this._activeGroupKey
+    else this._activeGroupKey = key
+    return this
+  }
+
   // ─── Getters ──────────────────────────────────────────
 
   getQuery(): TableQueryHandler<Q> | undefined { return this._query }
@@ -701,6 +733,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getGroups(): TableGroup<any>[] { return this._groups }
   getActiveGroup(): string | undefined { return this._activeGroup }
+  getActiveGroupKey(): string | undefined { return this._activeGroupKey }
   /** Resolve the active column to a `TableGroup` instance. Returns the
    * matching registered group, or — when the active column is set but
    * not registered (bare-column form) — synthesizes a no-metadata group
@@ -782,6 +815,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
         : {}),
       ...(this._summaries    !== undefined ? { summaries:    this._summaries    } : {}),
       ...(this._groupSummaries !== undefined ? { groupSummaries: this._groupSummaries } : {}),
+      ...(this._activeGroupKey !== undefined ? { activeGroupKey: this._activeGroupKey } : {}),
       ...(this._reorderableColumn !== undefined ? { reorderable: true as const, reorderableColumn: this._reorderableColumn } : {}),
       ...(this._reorderUrl   !== undefined ? { reorderUrl:  this._reorderUrl  } : {}),
       ...(this._deferred                   ? { deferred:    true as const   } : {}),

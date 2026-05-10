@@ -146,4 +146,115 @@ describe('TableGroup', () => {
       assert.equal(formatDateBucketTitle('blob'), 'blob')
     })
   })
+
+  describe('scopable + scopeQueryByKey + getKeyFromRecordUsing', () => {
+    it('default — not scopable, no meta emit', () => {
+      assert.equal(TableGroup.make('status').isScopable(), false)
+      assert.equal(TableGroup.make('status').toMeta().scopable, undefined)
+    })
+
+    it('scopable() flips the meta flag', () => {
+      assert.equal(TableGroup.make('s').scopable().toMeta().scopable, true)
+      assert.equal(TableGroup.make('s').scopable(false).toMeta().scopable, undefined)
+    })
+
+    it('scopeQueryByKey() auto-arms scopable', () => {
+      const g = TableGroup.make('status').scopeQueryByKey((q, _k) => q)
+      assert.equal(g.isScopable(), true)
+      assert.equal(g.toMeta().scopable, true)
+    })
+
+    it('getKeyFromRecordUsing() auto-arms scopable', () => {
+      const g = TableGroup.make<{ s: string }>('status')
+        .getKeyFromRecordUsing(r => r.s.toUpperCase())
+      assert.equal(g.isScopable(), true)
+    })
+
+    it('scopable(false) after auto-arm opts back out', () => {
+      const g = TableGroup.make('status').scopeQueryByKey((q, _k) => q).scopable(false)
+      assert.equal(g.isScopable(), false)
+      assert.equal(g.toMeta().scopable, undefined)
+    })
+  })
+
+  describe('resolveKey', () => {
+    it('default — raw column value as string', () => {
+      const g = TableGroup.make('status')
+      assert.equal(g.resolveKey({ status: 'draft' }), 'draft')
+      assert.equal(g.resolveKey({ status: 42 }),      '42')
+    })
+
+    it('empty / null collapses to ""', () => {
+      const g = TableGroup.make('status')
+      assert.equal(g.resolveKey({ status: null }),      '')
+      assert.equal(g.resolveKey({ status: undefined }), '')
+      assert.equal(g.resolveKey({ status: '' }),        '')
+    })
+
+    it('date() returns the YYYY-MM-DD bucket', () => {
+      const g = TableGroup.make('createdAt').date()
+      assert.equal(g.resolveKey({ createdAt: '2026-05-04T12:00:00.000Z' }), '2026-05-04')
+    })
+
+    it('user handler wins', () => {
+      const g = TableGroup.make<{ s: string }>('status')
+        .getKeyFromRecordUsing(r => `K_${r.s}`)
+      assert.equal(g.resolveKey({ s: 'a' }), 'K_a')
+    })
+
+    it('handler returning undefined collapses to ""', () => {
+      const g = TableGroup.make<{ s: string | undefined }>('status')
+        .getKeyFromRecordUsing(r => r.s)
+      assert.equal(g.resolveKey({ s: undefined }), '')
+    })
+
+    it('throwing handler fails soft to ""', () => {
+      const g = TableGroup.make('status')
+        .getKeyFromRecordUsing(() => { throw new Error('boom') })
+      assert.equal(g.resolveKey({ status: 'draft' }), '')
+    })
+  })
+
+  describe('resolveScoper defaults', () => {
+    it('plain group — exact match where(col, "=", key)', () => {
+      const calls: Array<[string, string, unknown]> = []
+      const q = { where: (col: string, op: string, val: unknown) => { calls.push([col, op, val]); return q } }
+      const g = TableGroup.make('status')
+      const scoper = g.resolveScoper<typeof q>()
+      scoper(q, 'draft')
+      assert.deepEqual(calls, [['status', '=', 'draft']])
+    })
+
+    it('date group — whole-day range', () => {
+      const calls: Array<[string, string, unknown]> = []
+      const q = { where: (col: string, op: string, val: unknown) => { calls.push([col, op, val]); return q } }
+      const g = TableGroup.make('createdAt').date()
+      const scoper = g.resolveScoper<typeof q>()
+      scoper(q, '2026-05-04')
+      assert.deepEqual(calls, [
+        ['createdAt', '>=', '2026-05-04 00:00:00'],
+        ['createdAt', '<=', '2026-05-04 23:59:59'],
+      ])
+    })
+
+    it('date group — empty key is a no-op (no where call)', () => {
+      let calls = 0
+      const q = { where: (..._args: unknown[]) => { calls++; return q } }
+      const g = TableGroup.make('createdAt').date()
+      const scoper = g.resolveScoper<typeof q>()
+      scoper(q, '')
+      assert.equal(calls, 0)
+    })
+
+    it('user scoper wins over date() default', () => {
+      const calls: string[] = []
+      const q = { where: (col: string, op: string, val: unknown) => { calls.push(`${col} ${op} ${val}`); return q } }
+      const g = TableGroup.make<unknown>('createdAt')
+        .date()
+        .scopeQueryByKey<typeof q>((qq, key) => qq.where('createdAt', '=', key))
+      const scoper = g.resolveScoper<typeof q>()
+      scoper(q, '2026-05-04')
+      assert.deepEqual(calls, ['createdAt = 2026-05-04'])
+    })
+  })
 })

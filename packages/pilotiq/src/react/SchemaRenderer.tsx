@@ -3604,6 +3604,11 @@ interface TableUrlState {
    * in the dropdown to override `defaultGroup`); `undefined` omits the
    * key entirely so the configured default takes over. */
   group?:  string
+  /** Drilled-in group key for `?groupKey=`. `undefined` omits — the
+   * heading is banded (or no group at all); empty string explicitly
+   * clears (used by the chip's × so a stale URL value doesn't return
+   * via foreign-param round-trip). */
+  groupKey?: string
 }
 
 // Mirror of `prefixedKey` in `elements/dispatchTable.ts`. Kept inline so
@@ -3658,6 +3663,7 @@ function buildTableQuery(
       prefixK(prefix, 'page'),
       prefixK(prefix, 'perPage'),
       prefixK(prefix, 'group'),
+      prefixK(prefix, 'groupKey'),
       ...Object.keys(filterValues).map(n => prefixK(prefix, n)),
     ])
     for (const [k, v] of currentParams) {
@@ -3675,6 +3681,11 @@ function buildTableQuery(
   if (merged.sort)      params.set(prefixK(prefix, 'sort'), `${merged.sort.column}:${merged.sort.direction}`)
   if (merged.page && merged.page > 1) params.set(prefixK(prefix, 'page'), String(merged.page))
   if (merged.group !== undefined) params.set(prefixK(prefix, 'group'), merged.group)
+  // groupKey is sparse — only writes when the override sets a non-empty
+  // value. Drill-out (chip ×) passes `''` to clear; the foreign-param
+  // dedupe set above already filtered the stale value out, so an empty
+  // override produces a URL without the key.
+  if (merged.groupKey) params.set(prefixK(prefix, 'groupKey'), merged.groupKey)
   const qs = params.toString()
   // Always anchor to a real pathname — Vike's client-side router treats
   // a bare `?qs` href as a fresh URL with empty pathname, which routes
@@ -5010,6 +5021,78 @@ function RecordCellLink({
 }
 
 /**
+ * "Drilled into <Label>: <Value>" chip above the table when a group
+ * heading has been clicked. The × clears `?<prefix>groupKey=`, returning
+ * the table to its banded view. Real `<a href>` with `useNavigate()`
+ * intercept on plain left-click so cmd-click / middle-click open a
+ * fresh tab (rare but valid for sharing the banded view URL).
+ */
+function ActiveGroupKeyChip({
+  label, value, displayValue, clearHref, navigate,
+}: {
+  label:        string
+  value:        string
+  displayValue: string
+  clearHref:    string
+  navigate:     NavigateFn
+}) {
+  const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (e.button !== 0) return
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    e.preventDefault()
+    void navigate(clearHref)
+  }
+  return (
+    <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+      <span className="text-muted-foreground">Drilled into</span>
+      <span className="font-medium text-foreground">
+        {label ? `${label}: ` : ''}{displayValue || value}
+      </span>
+      <a
+        href={clearHref}
+        onClick={onClick}
+        aria-label="Clear drill-in"
+        className="ms-auto text-muted-foreground hover:text-foreground"
+      >
+        ×
+      </a>
+    </div>
+  )
+}
+
+/**
+ * Group-heading text wrapped in a real `<a href>` that SPA-navs into the
+ * drilled-in URL. Plain left-click intercepts for `useNavigate()`;
+ * cmd/ctrl/shift-click + middle-click fall through to the browser so
+ * "open in new tab" semantics work. Visually inherits the heading
+ * styling — the link adds underline-on-hover affordance without
+ * disturbing the surrounding text-transform / size.
+ */
+function GroupHeadingLink({
+  href, navigate, children,
+}: {
+  href:     string
+  navigate: NavigateFn
+  children: React.ReactNode
+}) {
+  const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (e.button !== 0) return
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    e.preventDefault()
+    void navigate(href)
+  }
+  return (
+    <a
+      href={href}
+      onClick={onClick}
+      className="inline-flex items-center gap-1 text-inherit no-underline hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+    >
+      {children}
+    </a>
+  )
+}
+
+/**
  * List-page tab strip — Filament-style query shortcuts above the table
  * ("All / Drafts / Published / Archived"). Each trigger is a real `<a>`
  * (right-click / cmd-click "open in new tab" works); plain left-click is
@@ -5513,6 +5596,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
   const hasRecordClasses = Boolean(el['recordClasses'])
   const pollInterval     = typeof el['pollInterval'] === 'number' ? el['pollInterval'] as number : undefined
   const defaultGroup     = typeof el['defaultGroup'] === 'string' ? el['defaultGroup'] as string : undefined
+  const activeGroupKey   = typeof el['activeGroupKey'] === 'string' ? el['activeGroupKey'] as string : undefined
   const summaries        = el['summaries'] as Record<string, Array<{ kind: string; value: string; label?: string }>> | undefined
   const groupSummaries   = el['groupSummaries'] as
     Record<string, Record<string, Array<{ kind: string; value: string; label?: string }>>> | undefined
@@ -5522,6 +5606,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
     collapsible?: true
     collapsed?:   true
     date?:        true
+    scopable?:    true
   }> | undefined) ?? []
   // Active group's registered metadata (if any). Falls back to a synth
   // for the bare-column form so the heading row still has a label.
@@ -5535,6 +5620,11 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
       })
     : undefined
   const groupColumnLabel = activeGroupMeta?.label
+  // Heading text becomes a real `<a href>` when the active group opts in
+  // via `.scopable()`. Synthesized bare-column groups can't be scopable
+  // (no builder call ran).
+  const groupHeadingScopable = activeGroupMeta !== undefined
+    && (activeGroupMeta as { scopable?: true }).scopable === true
 
   // Auto-refresh: re-visit current URL on a timer so sort/filter/pagination
   // state survives. Pause while the document is hidden — background tabs
@@ -5714,6 +5804,7 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
     ...(urlGroup     !== undefined ? { group: urlGroup }
         : defaultGroup !== undefined ? { group: defaultGroup }
         : {}),
+    ...(activeGroupKey !== undefined ? { groupKey: activeGroupKey } : {}),
   }
 
   // Snapshot active filter values for sort/pagination href construction.
@@ -5724,6 +5815,17 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
     const v = f['value']
     if (typeof v === 'string' && v !== '') activeFilters[String(f['name'])] = v
   }
+
+  // Drill-in / drill-out URL builders for the group heading link and the
+  // active-key chip's clear button. Drill-in sets `?<prefix>groupKey=v`
+  // and resets `page`; drill-out clears it. Both round-trip foreign
+  // params (other tables' state) through `buildTableQuery`.
+  const buildGroupKeyHref = (value: string): string => buildTableQuery(
+    state, { groupKey: value, page: 1 }, currentPath, activeFilters, queryPrefix,
+  )
+  const drillOutHref = (): string => buildTableQuery(
+    state, { groupKey: '', page: 1 }, currentPath, activeFilters, queryPrefix,
+  )
 
   // Track which row ids are currently checked. Keyed by id (string), not
   // by index, so pagination and re-renders don't drop selection state.
@@ -6014,6 +6116,29 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
       {hasFilters && filtersAbove && filtersOpen && (
         <FilterStrip filters={filters} prefix={queryPrefix} />
       )}
+      {activeGroupKey !== undefined && (
+        <ActiveGroupKeyChip
+          label={groupColumnLabel ?? defaultGroup ?? ''}
+          value={activeGroupKey}
+          displayValue={(() => {
+            // Prefer a row-resolved `_groupTitle` (server stamped via
+            // `getTitleFromRecordUsing`) so the chip reads the same as
+            // a banded heading. Falls back to the raw bucket key when
+            // no row matched — empty drilled-in pages still show what
+            // they're drilled into.
+            for (const r of rows) {
+              const obj = r as Record<string, unknown>
+              if (String(obj['_groupValue'] ?? '') !== activeGroupKey) continue
+              const t = obj['_groupTitle']
+              if (typeof t === 'string' && t !== '') return t
+              break
+            }
+            return activeGroupKey
+          })()}
+          clearHref={drillOutHref()}
+          navigate={navigate}
+        />
+      )}
       {hasBulkActions && someChecked && (
         <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
           <span className="text-muted-foreground">
@@ -6057,6 +6182,8 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
           toggleGroupCollapsed={toggleGroupCollapsed}
           cardsPerRow={cardsPerRow}
           navigate={navigate}
+          groupHeadingScopable={groupHeadingScopable}
+          buildGroupKeyHref={buildGroupKeyHref}
         />
       ) : (
       <div className="rounded-xl border bg-card overflow-hidden">
@@ -6179,34 +6306,44 @@ function TableRendererBody({ el }: { el: ElementMeta }) {
                       colSpan={totalCols}
                       className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
                     >
-                      {groupCollapsible ? (
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 text-left"
-                          onClick={() => toggleGroupCollapsed(groupValue!)}
-                          aria-expanded={!isInCollapsedGroup}
-                        >
-                          <ChevronDownIcon
-                            className={[
-                              'size-4 transition-transform',
-                              isInCollapsedGroup ? '-rotate-90' : '',
-                            ].filter(Boolean).join(' ')}
-                          />
+                      {(() => {
+                        const drillable = groupHeadingScopable
+                          && groupValue !== undefined
+                          && groupValue !== ''
+                        const headingText = (
                           <GroupHeaderText
                             label={groupColumnLabel}
                             value={groupValue}
                             title={groupTitle}
                             description={groupDescription}
                           />
-                        </button>
-                      ) : (
-                        <GroupHeaderText
-                          label={groupColumnLabel}
-                          value={groupValue}
-                          title={groupTitle}
-                          description={groupDescription}
-                        />
-                      )}
+                        )
+                        const headingNode = drillable
+                          ? <GroupHeadingLink href={buildGroupKeyHref(groupValue!)} navigate={navigate}>{headingText}</GroupHeadingLink>
+                          : headingText
+                        if (groupCollapsible) {
+                          return (
+                            <div className="flex w-full items-center gap-2">
+                              <button
+                                type="button"
+                                className="inline-flex items-center"
+                                onClick={() => toggleGroupCollapsed(groupValue!)}
+                                aria-expanded={!isInCollapsedGroup}
+                                aria-label={isInCollapsedGroup ? 'Expand group' : 'Collapse group'}
+                              >
+                                <ChevronDownIcon
+                                  className={[
+                                    'size-4 transition-transform',
+                                    isInCollapsedGroup ? '-rotate-90' : '',
+                                  ].filter(Boolean).join(' ')}
+                                />
+                              </button>
+                              {headingNode}
+                            </div>
+                          )
+                        }
+                        return headingNode
+                      })()}
                     </TableCell>
                   </TableRow>
                 )}
@@ -6431,6 +6568,7 @@ function CardsLayoutBody({
   striped, activeEmpty, EmptyIcon, hasFilterOrSearch,
   defaultGroup, groupColumnLabel, groupCollapsible, collapsedGroups, toggleGroupCollapsed,
   cardsPerRow, navigate,
+  groupHeadingScopable, buildGroupKeyHref,
 }: {
   el:                ElementMeta
   columns:           ElementMeta[]
@@ -6454,6 +6592,10 @@ function CardsLayoutBody({
   toggleGroupCollapsed: (groupValue: string) => void
   cardsPerRow:       Record<string, number> | undefined
   navigate:          NavigateFn
+  // Drill-in affordances. Sparse: when `groupHeadingScopable` is false,
+  // the heading renders as before; `buildGroupKeyHref` is unused.
+  groupHeadingScopable?: boolean
+  buildGroupKeyHref?:    (value: string) => string
 }) {
   void el // keep prop for future telemetry; silences unused-prop lint
   void columns
@@ -6517,38 +6659,48 @@ function CardsLayoutBody({
           && collapsedGroups[section.groupValue] === true
         return (
           <div key={si} className="flex flex-col gap-3">
-            {section.groupValue !== undefined && (
-              groupCollapsible ? (
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-                  onClick={() => toggleGroupCollapsed(section.groupValue!)}
-                  aria-expanded={!collapsed}
-                >
-                  <ChevronDownIcon
-                    className={[
-                      'size-4 transition-transform',
-                      collapsed ? '-rotate-90' : '',
-                    ].filter(Boolean).join(' ')}
-                  />
-                  <GroupHeaderText
-                    label={groupColumnLabel}
-                    value={section.groupValue}
-                    title={section.title}
-                    description={section.description}
-                  />
-                </button>
-              ) : (
+            {section.groupValue !== undefined && (() => {
+              const drillable = groupHeadingScopable === true
+                && buildGroupKeyHref !== undefined
+                && section.groupValue !== ''
+              const headingText = (
+                <GroupHeaderText
+                  label={groupColumnLabel}
+                  value={section.groupValue}
+                  title={section.title}
+                  description={section.description}
+                />
+              )
+              const headingNode = drillable
+                ? <GroupHeadingLink href={buildGroupKeyHref!(section.groupValue!)} navigate={navigate}>{headingText}</GroupHeadingLink>
+                : headingText
+              if (groupCollapsible) {
+                return (
+                  <div className="flex w-full items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <button
+                      type="button"
+                      className="inline-flex items-center"
+                      onClick={() => toggleGroupCollapsed(section.groupValue!)}
+                      aria-expanded={!collapsed}
+                      aria-label={collapsed ? 'Expand group' : 'Collapse group'}
+                    >
+                      <ChevronDownIcon
+                        className={[
+                          'size-4 transition-transform',
+                          collapsed ? '-rotate-90' : '',
+                        ].filter(Boolean).join(' ')}
+                      />
+                    </button>
+                    {headingNode}
+                  </div>
+                )
+              }
+              return (
                 <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <GroupHeaderText
-                    label={groupColumnLabel}
-                    value={section.groupValue}
-                    title={section.title}
-                    description={section.description}
-                  />
+                  {headingNode}
                 </div>
               )
-            )}
+            })()}
             {!collapsed && (
               <div className={gridClass}>
                 {section.indices.map((ri) => {

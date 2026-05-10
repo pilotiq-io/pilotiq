@@ -157,7 +157,7 @@ function buildTableCtxFromQuery(
 
   const tableFilters = table.getFilters?.() ?? []
   const filterValues: Record<string, string> = {}
-  const reserved = new Set(['search', 'sort', 'page', 'perPage', 'group'])
+  const reserved = new Set(['search', 'sort', 'page', 'perPage', 'group', 'groupKey'])
   for (const f of tableFilters) {
     const name = f.name as string
     if (reserved.has(name)) continue
