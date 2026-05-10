@@ -27,6 +27,11 @@ export {
   type PendingSuggestionsApi,
 } from './PendingSuggestionsContext.js'
 export {
+  registerPendingSuggestionApplier,
+  getPendingSuggestionApplier,
+  type PendingSuggestionApplier,
+} from './PendingSuggestionApplierRegistry.js'
+export {
   registerWidgetRenderer,
   getWidgetRenderer,
   type WidgetRendererProps,

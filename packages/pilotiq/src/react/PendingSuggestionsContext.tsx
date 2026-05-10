@@ -54,23 +54,47 @@ export interface PendingSuggestionsApi {
   /** Add a suggestion to the queue. Returns the (possibly producer-supplied) id. */
   push:        (suggestion: Omit<PendingSuggestion, 'createdAt'> & { createdAt?: number }) => string
   /**
-   * Drop the suggestion from the queue. Used by both Approve and Reject
-   * paths — the renderer is responsible for applying the suggestion's
-   * value to the underlying field on Approve before calling `dismiss`.
+   * Drop the suggestion from the queue. Used by both inline approval
+   * paths (where the renderer applies directly and just notifies the
+   * queue) AND by Reject. For aggregate consumers (e.g. a chat-pill
+   * "Approve all" button) that live outside the form's React tree, see
+   * `approve` below — it looks up a registered applier and calls it
+   * before dismissing.
    */
   dismiss:     (id: string) => void
+  /**
+   * Apply + dismiss. Resolves the suggestion's `(formId, fieldName)`
+   * pair against `PendingSuggestionApplierRegistry`; if an applier is
+   * registered (FieldShell + Tiptap bridge auto-register on mount),
+   * runs it and then dismisses. If no applier is registered (or the
+   * applier throws), falls through to a plain `dismiss` so the queue
+   * still clears — never strands an entry.
+   *
+   * Use this from cross-tree surfaces (chat-sidebar pending-pill).
+   * Inline surfaces (FieldShell overlay, Tiptap chip) apply via their
+   * own React-tree-local mutators and call `dismiss` directly.
+   */
+  approve:     (id: string) => void
   /**
    * Drop every suggestion matching the optional filter. With no filter,
    * empties the entire queue.
    */
   dismissAll:  (filter?: { fieldName?: string; formId?: string }) => void
+  /**
+   * Apply + dismiss every suggestion matching the optional filter.
+   * Calls `approve(id)` per entry — same fall-through semantics if an
+   * applier is missing or throws.
+   */
+  approveAll:  (filter?: { fieldName?: string; formId?: string }) => void
 }
 
 const NOOP_API: PendingSuggestionsApi = Object.freeze({
   list:       Object.freeze([]) as readonly PendingSuggestion[],
   push:       () => '',
   dismiss:    () => {},
+  approve:    () => {},
   dismissAll: () => {},
+  approveAll: () => {},
 })
 
 /**

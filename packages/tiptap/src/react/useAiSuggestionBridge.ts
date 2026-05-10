@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react'
 import type { Editor } from '@tiptap/core'
 import {
+  registerPendingSuggestionApplier,
   usePendingSuggestionsForField,
   type PendingSuggestion,
+  type PendingSuggestionApplier,
 } from '@pilotiq/pilotiq/react'
 import { aiSuggestionPluginKey } from '../extensions/AiSuggestionExtension.js'
 
@@ -87,6 +89,28 @@ export function useAiSuggestionBridge(editor: Editor | null, fieldName: string):
     editor.on('transaction', handler)
     return () => { editor.off('transaction', handler) }
   }, [editor])
+
+  // Cross-tree applier (Phase 8.5). When an aggregate consumer (e.g. a
+  // chat-sidebar pending-pill) calls `pendingSuggestions.approve(id)`,
+  // the pro provider looks up the applier registered for this
+  // `(formId, fieldName)` and invokes it. We translate that into the
+  // editor's own approve command — same path the inline chip click takes.
+  useEffect(() => {
+    if (!editor) return
+    const applier: PendingSuggestionApplier = (suggestion) => {
+      // Bail when the suggestion isn't one of ours (no editor range or
+      // bridge-pushed entry). Pro provider falls back to plain dismiss.
+      if (!pushedRef.current.has(suggestion.id)) return
+      editor.chain().focus().approveAiSuggestion(suggestion.id).run()
+      // The transaction listener above sees the editor state drop the id
+      // and calls `dismiss(id)` on its own — no manual mirror needed.
+    }
+    // Editor renderers don't currently have access to a `formId` here;
+    // pass `undefined` so the wildcard form scope resolves. Phase 8.5+
+    // can thread `formId` via the bridge call site if a future multi-
+    // form richtext consumer needs it.
+    return registerPendingSuggestionApplier(undefined, fieldName, applier)
+  }, [editor, fieldName])
 }
 
 // Re-export the pending-suggestion type for consumers that import the hook

@@ -1,8 +1,10 @@
-import React from 'react'
+import React, { useContext, useEffect, useRef } from 'react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { getIcon } from '../../icons/registry.js'
-import { usePendingSuggestionsForField } from '../PendingSuggestionsContext.js'
+import { usePendingSuggestionsForField, type PendingSuggestion } from '../PendingSuggestionsContext.js'
 import { getPendingSuggestionOverlay } from '../PendingSuggestionOverlayRegistry.js'
+import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
+import { FormIdContext, useFieldState } from '../FormStateContext.js'
 
 /**
  * Shared chrome around every field input — label + required asterisk +
@@ -61,6 +63,32 @@ export function FieldShell({ el, name, label, required, children, before, after,
     />
   ) : null
 
+  // Cross-tree applier registration (Phase 8.5). Lets aggregate consumers
+  // (e.g. a chat-sidebar pending-pill living outside the form's React
+  // tree) reach this field's mutator via
+  // `PendingSuggestionApplierRegistry`. Skipped for richtext — the
+  // Tiptap bridge registers its own editor-command applier. Skipped for
+  // dotted-path fields (Repeater inner rows) since `useFieldState` is
+  // a no-op for them; pill-driven approve falls back to `dismiss` which
+  // is the right semantics (pill cannot reach into row state).
+  const fieldState = useFieldState(name)
+  const fieldStateRef = useRef(fieldState)
+  useEffect(() => { fieldStateRef.current = fieldState }, [fieldState])
+  const formId = useContext(FormIdContext) || undefined
+  useEffect(() => {
+    if (isRichText) return
+    if (name.includes('.')) return
+    const applier: PendingSuggestionApplier = (suggestion) => {
+      const fs = fieldStateRef.current
+      if (fs.controlled) {
+        fs.setValue(suggestion.suggestedValue)
+      } else {
+        applyToUncontrolledInputs(name, suggestion.suggestedValue)
+      }
+    }
+    return registerPendingSuggestionApplier(formId, name, applier)
+  }, [isRichText, name, formId])
+
   const labelClass = hiddenLabel
     ? 'sr-only'
     : 'text-sm font-medium leading-none'
@@ -109,6 +137,57 @@ export function FieldShell({ el, name, label, required, children, before, after,
       )}
     </div>
   )
+}
+
+/**
+ * Best-effort DOM apply for forms without a `<FormStateProvider>` (i.e.
+ * forms whose fields aren't `live()`). Walks every `[name="…"]` input,
+ * uses React's internal value-setter (`Object.getOwnPropertyDescriptor`)
+ * so the change is visible to `onChange` handlers + uncontrolled
+ * `defaultValue` paths. Coercion is intentionally minimal — `String()`
+ * for primitives, `JSON.stringify` for objects/arrays.
+ *
+ * Used by FieldShell's pending-suggestion applier and exposed for
+ * plugins that need the same fallback.
+ */
+function applyToUncontrolledInputs(fieldName: string, value: unknown): void {
+  if (typeof document === 'undefined') return
+  const stringValue = typeof value === 'string'
+    ? value
+    : typeof value === 'number' || typeof value === 'boolean'
+      ? String(value)
+      : safeStringify(value)
+
+  const elements = document.getElementsByName(fieldName)
+  for (const el of Array.from(elements)) {
+    if (el instanceof HTMLInputElement) {
+      if (el.type === 'checkbox') {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked')?.set
+        setter?.call(el, Boolean(value))
+      } else {
+        setNativeValue(HTMLInputElement.prototype, el, stringValue)
+      }
+    } else if (el instanceof HTMLTextAreaElement) {
+      setNativeValue(HTMLTextAreaElement.prototype, el, stringValue)
+    } else if (el instanceof HTMLSelectElement) {
+      setNativeValue(HTMLSelectElement.prototype, el, stringValue)
+    } else {
+      continue
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+}
+
+function setNativeValue(proto: object, el: HTMLElement, value: string): void {
+  const desc = Object.getOwnPropertyDescriptor(proto, 'value')
+  desc?.set?.call(el, value)
+}
+
+function safeStringify(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  try { return JSON.stringify(value) ?? '' }
+  catch { return '' }
 }
 
 /**
