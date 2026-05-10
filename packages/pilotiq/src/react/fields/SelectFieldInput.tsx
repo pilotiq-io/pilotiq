@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import React, { useContext, useEffect, useRef, useState } from 'react'
 import { PlusIcon } from 'lucide-react'
 import type { ElementMeta } from '../../schema/Element.js'
-import { useFieldState } from '../FormStateContext.js'
+import { useFieldState, FormIdContext } from '../FormStateContext.js'
+import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 import { useToast } from '../Toaster.js'
 import { renderFormChild } from '../SchemaRenderer.js'
 import {
@@ -73,6 +74,28 @@ export function SelectFieldInput({
     if (fs.controlled) { fs.setValue(option.value); fs.triggerLive(option.value) }
     else { setLocalValue(option.value); fs.triggerLive(option.value) }
   }
+
+  // Cross-tree applier registration. FieldShell's generic applier writes
+  // to the matching `[name]` input via the React prototype-descriptor
+  // setter — but Base UI Select isn't driven by the hidden `<input>` in
+  // this component, it's driven by `value`/`localValue` React state. So
+  // a DOM write moves the hidden input but leaves the visible select
+  // unchanged. Register a Select-aware applier that writes to local
+  // state instead. FieldShell skips the generic registration for
+  // fieldType === 'select' so this one stays the winner.
+  const fsRef = useRef(fs)
+  useEffect(() => { fsRef.current = fs }, [fs])
+  const formId = useContext(FormIdContext) || undefined
+  useEffect(() => {
+    if (name.includes('.')) return
+    const applier: PendingSuggestionApplier = (suggestion) => {
+      const next = suggestion.suggestedValue == null ? '' : String(suggestion.suggestedValue)
+      const cur = fsRef.current
+      if (cur.controlled) { cur.setValue(next); cur.triggerLive(next) }
+      else { setLocalValue(next); cur.triggerLive(next) }
+    }
+    return registerPendingSuggestionApplier(formId, name, applier)
+  }, [name, formId])
 
   const showCreateTrigger = createOption !== undefined
     && typeof createOption.url === 'string'

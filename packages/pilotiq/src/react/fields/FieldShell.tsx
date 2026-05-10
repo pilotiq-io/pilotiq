@@ -52,6 +52,14 @@ export function FieldShell({ el, name, label, required, children, before, after,
   // suggestion in the queue.
   const fieldType = el['fieldType'] as string | undefined
   const isRichText = fieldType === 'richtext'
+  // Field types that drive their visible state from React (not from a
+  // matching `[name]` DOM input) register their own applier — see
+  // `SelectFieldInput` for the canonical example. FieldShell's generic
+  // DOM-write applier would silently no-op on these, and (since parent
+  // effects run AFTER children) would overwrite the field-owned applier
+  // in the registry. Skip registration here so the field-owned applier
+  // stays the winner.
+  const ownsApplier = fieldType === 'select'
   const { list: pending, dismiss } = usePendingSuggestionsForField(name)
   const Overlay = isRichText ? null : getPendingSuggestionOverlay()
   const overlaySuggestion = pending[0] ?? null
@@ -77,6 +85,7 @@ export function FieldShell({ el, name, label, required, children, before, after,
   const formId = useContext(FormIdContext) || undefined
   useEffect(() => {
     if (isRichText) return
+    if (ownsApplier) return
     if (name.includes('.')) return
     const applier: PendingSuggestionApplier = (suggestion) => {
       const fs = fieldStateRef.current
@@ -87,7 +96,7 @@ export function FieldShell({ el, name, label, required, children, before, after,
       }
     }
     return registerPendingSuggestionApplier(formId, name, applier)
-  }, [isRichText, name, formId])
+  }, [isRichText, ownsApplier, name, formId])
 
   const labelClass = hiddenLabel
     ? 'sr-only'
