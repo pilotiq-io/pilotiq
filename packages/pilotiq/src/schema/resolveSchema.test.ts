@@ -10,6 +10,9 @@ import {
 import { Text } from './Text.js'
 import { Heading } from './Heading.js'
 import { Card } from './Card.js'
+import { Section } from './Section.js'
+import { Form } from '../elements/Form.js'
+import { TextField } from '../fields/TextField.js'
 
 beforeEach(() => _resetResolverRegistry())
 
@@ -324,6 +327,53 @@ describe('resolveSchema', () => {
       const tree = [new TestLeaf('a')]
       const result = await resolveSchema(tree)
       assert.equal(result[0]!._layout, undefined)
+    })
+  })
+
+  describe('inlineLabel cascade (Form / Section)', () => {
+    it('Form.inlineLabel(true) cascades to descendant fields', async () => {
+      const tree = [Form.make().inlineLabel().schema([TextField.make('a'), TextField.make('b')])]
+      const [form] = await resolveSchema(tree)
+      const [a, b] = form!.children! as ElementMeta[]
+      assert.equal((a as { inlineLabel?: boolean }).inlineLabel, true)
+      assert.equal((b as { inlineLabel?: boolean }).inlineLabel, true)
+    })
+
+    it('Field.inlineLabel(false) overrides the Form cascade', async () => {
+      const tree = [Form.make().inlineLabel().schema([
+        TextField.make('a'),
+        TextField.make('b').inlineLabel(false),
+      ])]
+      const [form] = await resolveSchema(tree)
+      const [a, b] = form!.children! as ElementMeta[]
+      assert.equal((a as { inlineLabel?: boolean }).inlineLabel, true)
+      assert.equal('inlineLabel' in (b as object), false)
+    })
+
+    it('nested Section.inlineLabel(false) overrides the Form cascade for its subtree', async () => {
+      const tree = [Form.make().inlineLabel().schema([
+        TextField.make('above'),
+        Section.make('inner').inlineLabel(false).schema([TextField.make('inside')]),
+      ])]
+      const [form] = await resolveSchema(tree)
+      const [above, section] = form!.children! as ElementMeta[]
+      const [inside] = (section as ElementMeta).children! as ElementMeta[]
+      assert.equal((above as { inlineLabel?: boolean }).inlineLabel, true)
+      assert.equal('inlineLabel' in (inside as object), false)
+    })
+
+    it('Section.inlineLabel(true) cascades without an outer Form', async () => {
+      const tree = [Section.make('s').inlineLabel().schema([TextField.make('a')])]
+      const [section] = await resolveSchema(tree)
+      const [a] = section!.children! as ElementMeta[]
+      assert.equal((a as { inlineLabel?: boolean }).inlineLabel, true)
+    })
+
+    it('default (no setter calls) emits no inlineLabel anywhere', async () => {
+      const tree = [Form.make().schema([TextField.make('a')])]
+      const [form] = await resolveSchema(tree)
+      const [a] = form!.children! as ElementMeta[]
+      assert.equal('inlineLabel' in (a as object), false)
     })
   })
 })

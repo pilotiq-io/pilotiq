@@ -250,7 +250,7 @@ export abstract class Field extends Element {
   protected _prefix?: FieldDecoration
   protected _suffix?: FieldDecoration
   protected _helperText?: string
-  protected _inlineLabel = false
+  protected _inlineLabel?: boolean
   protected _default?: unknown
   protected _dehydrated = true
   protected _formatStateUsing?: FormatStateUsingHandler
@@ -452,7 +452,12 @@ export abstract class Field extends Element {
   /**
    * Render the label to the left of the input rather than above it.
    * Mirrors `Entry.inlineLabel()`. Default is label-above; pass `false`
-   * to clear the flag.
+   * to clear the flag — including overriding a cascading default set
+   * via `Form.inlineLabel()` / `Section.inlineLabel()`.
+   *
+   * Resolution at meta-build time: explicit field setting wins; when
+   * unset, the nearest ancestor `Form` / `Section` cascade kicks in
+   * (`RenderContext.inlineLabelDefault`); when neither is set, label-above.
    */
   inlineLabel(v = true): this { this._inlineLabel = v; return this }
 
@@ -756,7 +761,7 @@ export abstract class Field extends Element {
       ...(this._prefix !== undefined ? { prefix: this._prefix } : {}),
       ...(this._suffix !== undefined ? { suffix: this._suffix } : {}),
       ...(this._helperText !== undefined ? { helperText: this._helperText } : {}),
-      ...(this._inlineLabel ? { inlineLabel: true } : {}),
+      ...(this._inlineLabel === true || (this._inlineLabel === undefined && ctx?.inlineLabelDefault === true) ? { inlineLabel: true } : {}),
       ...(this._default !== undefined ? { defaultValue: this._default } : {}),
       ...(formattedValue !== undefined ? { formattedValue } : {}),
       ...(this._autofocus ? { autofocus: true } : {}),

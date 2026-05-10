@@ -24,6 +24,7 @@ import {
 import { Section } from './Section.js'
 import { Wizard, type WizardActionCustomizer } from './Wizard.js'
 import { TextField } from '../fields/TextField.js'
+import { Form } from '../elements/Form.js'
 
 export interface SchemaContext {
   user?: { name?: string; email?: string; [key: string]: unknown }
@@ -114,6 +115,14 @@ export interface RenderContext extends SchemaContext {
      */
     blockType?: string
   }
+  /**
+   * Cascading `inlineLabel` default set by an ancestor `Form` or
+   * `Section` via `.inlineLabel(true)`. Read by `Field.buildMeta` when the
+   * field hasn't called `inlineLabel()` itself; explicit field-level
+   * setting always wins. A nested container's `.inlineLabel(false)`
+   * overrides an outer container's `.inlineLabel(true)` for its subtree.
+   */
+  inlineLabelDefault?: boolean
 }
 
 export type SchemaDefinition =
@@ -306,9 +315,15 @@ async function resolveOne(el: Element, ctx: RenderContext): Promise<ElementMeta 
     return meta
   }
 
+  // Push `inlineLabelDefault` into the child ctx when this element is a
+  // `Form` or `Section` whose `.inlineLabel(...)` was set. Children inherit
+  // until another container resets the flag. Field-level `inlineLabel(...)`
+  // calls always win on read (see `Field.buildMeta`).
+  const childCtx = deriveChildContext(el, ctx)
+
   const children = el.getChildren()
   if (children && children.length > 0) {
-    meta.children = await resolveAll(children, ctx)
+    meta.children = await resolveAll(children, childCtx)
   }
 
   // Filament v5 — `Section.afterHeader([Action…])` resolves through the
@@ -878,4 +893,25 @@ function buildLayoutContext(ctx: RenderContext): LayoutContext {
   if (ctx.user !== undefined) out.user = ctx.user
   if (ctx.row   !== undefined) out.row   = ctx.row
   return out
+}
+
+/**
+ * Derive the render context that this element's children should see.
+ * Currently only handles the `inlineLabelDefault` cascade — `Form` /
+ * `Section` with `.inlineLabel(true|false)` push the value into the
+ * descendant context so every nested `Field.buildMeta` can read it.
+ * A nested container that re-sets the flag overrides the outer value
+ * for its subtree (the current ctx's value is replaced, not merged).
+ *
+ * Returns the same `ctx` reference when nothing needs to change so
+ * call sites that pass it down skip a fresh object allocation.
+ */
+function deriveChildContext(el: Element, ctx: RenderContext): RenderContext {
+  if (el instanceof Form || el instanceof Section) {
+    const v = (el as Form | Section).getInlineLabel?.()
+    if (v !== undefined && v !== ctx.inlineLabelDefault) {
+      return { ...ctx, inlineLabelDefault: v }
+    }
+  }
+  return ctx
 }

@@ -25,6 +25,13 @@ export class Section extends Element {
   private _persistCollapsed = false
   private _persistKey?: string
   private _afterHeader?: Action[]
+  /**
+   * Cascading `inlineLabel` default for descendant `Field`s. Read by
+   * `resolveSchema.deriveChildContext`. Per-field
+   * `Field.inlineLabel(...)` overrides; a more deeply-nested
+   * `Section.inlineLabel(...)` overrides for its subtree.
+   */
+  private _inlineLabel?: boolean
 
   private constructor(private _title?: string) {
     super()
@@ -64,6 +71,16 @@ export class Section extends Element {
 
   /** Tighter padding + smaller heading. Useful in dense settings pages. */
   compact(v = true): this { this._compact = v; return this }
+
+  /**
+   * Cascade `inlineLabel` to every descendant `Field` in this section
+   * whose own `.inlineLabel(...)` hasn't been called. Overrides any
+   * outer-form / outer-section setting for this subtree only. Pass
+   * `false` to revert to label-above for the subtree.
+   */
+  inlineLabel(v = true): this { this._inlineLabel = v; return this }
+  /** Internal — read by `resolveSchema.deriveChildContext`. */
+  getInlineLabel(): boolean | undefined { return this._inlineLabel }
 
   /**
    * Tighter spacing between the section's children. Orthogonal to

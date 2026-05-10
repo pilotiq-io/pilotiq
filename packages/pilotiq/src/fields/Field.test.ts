@@ -393,6 +393,21 @@ describe('Field cross-field plumbing (Plan #6)', () => {
       const meta = TextField.make('amount').inlineLabel().inlineLabel(false).toMeta()
       assert.equal('inlineLabel' in meta, false)
     })
+
+    it('reads RenderContext.inlineLabelDefault as a fallback when unset', () => {
+      const meta = TextField.make('amount').toMeta({ inlineLabelDefault: true })
+      assert.equal(meta.inlineLabel, true)
+    })
+
+    it('explicit inlineLabel(false) wins over RenderContext.inlineLabelDefault', () => {
+      const meta = TextField.make('amount').inlineLabel(false).toMeta({ inlineLabelDefault: true })
+      assert.equal('inlineLabel' in meta, false)
+    })
+
+    it('explicit inlineLabel(true) emits regardless of ctx', () => {
+      const meta = TextField.make('amount').inlineLabel(true).toMeta({ inlineLabelDefault: false })
+      assert.equal(meta.inlineLabel, true)
+    })
   })
 
   describe('default()', () => {

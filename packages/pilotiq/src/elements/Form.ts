@@ -147,6 +147,15 @@ export class Form<R = unknown> extends Element {
   private _values?: Record<string, unknown>
   private _errors?: ValidationErrors
 
+  /**
+   * Cascading `inlineLabel` default for every descendant `Field`. Read
+   * by the resolver in `deriveChildContext` and pushed down via
+   * `RenderContext.inlineLabelDefault`. Per-field `Field.inlineLabel(...)`
+   * overrides; nested `Section.inlineLabel(...)` overrides for its
+   * subtree.
+   */
+  private _inlineLabel?: boolean
+
   // Plan #5 — partial-resolve endpoint. Stamped by the route handler at
   // render time when any descendant field is `live()`; emits as
   // (Plan #8) `wizardUrl` for step validation endpoint. Stamped only when
@@ -175,6 +184,16 @@ export class Form<R = unknown> extends Element {
   formId(id: string): this { this._formId = id; return this }
   method(m: FormMethod): this { this._method = m; return this }
   action(url: string): this { this._action = url; return this }
+
+  /**
+   * Cascade `inlineLabel` to every descendant `Field` whose own
+   * `.inlineLabel(...)` hasn't been called. Pass `false` explicitly to
+   * cascade label-above when a parent (rare) had set it. Read by the
+   * resolver and pushed down via `RenderContext.inlineLabelDefault`.
+   */
+  inlineLabel(v = true): this { this._inlineLabel = v; return this }
+  /** Internal — read by `resolveSchema.deriveChildContext`. */
+  getInlineLabel(): boolean | undefined { return this._inlineLabel }
 
   // ─── Lifecycle setters ────────────────────────────────
 
