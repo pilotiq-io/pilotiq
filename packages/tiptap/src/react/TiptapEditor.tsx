@@ -14,6 +14,7 @@ import { Details, DetailsSummary, DetailsContent } from '@tiptap/extension-detai
 import { Grid, GridColumn } from '../extensions/GridExtension.js'
 import { Popover } from '@base-ui/react/popover'
 import type { FieldRendererProps } from '@pilotiq/pilotiq/react'
+import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 import type { BlockMeta } from '../Block.js'
 import type { ToolbarGroups, RichTextStorage, ColorSwatch } from '../RichTextField.js'
 import { BlockNodeExtension } from '../extensions/BlockNodeExtension.js'
@@ -336,6 +337,11 @@ function ClientEditor(props: FieldRendererProps) {
   // every render. Re-creation would force the editor to rebuild from
   // scratch on every keystroke.
   useEffect(() => { editorRef.current = editor ?? null }, [editor])
+
+  // Cross-package suggestion bridge — sync the host's
+  // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
+  // extension. No-op when no provider is mounted (default no-op context).
+  useAiSuggestionBridge(editor ?? null, name)
 
   // Re-render the toolbar when the selection / marks change so active-state
   // booleans stay fresh.

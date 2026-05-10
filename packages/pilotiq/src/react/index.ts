@@ -15,6 +15,18 @@ export {
 export { registerFieldRenderer, getFieldRenderer, type FieldRendererProps } from './registry.js'
 export { registerFieldLabelSlot, getFieldLabelSlot, type FieldLabelSlotProps } from './FieldLabelSlotRegistry.js'
 export {
+  registerPendingSuggestionOverlay,
+  getPendingSuggestionOverlay,
+  type PendingSuggestionOverlayProps,
+} from './PendingSuggestionOverlayRegistry.js'
+export {
+  PendingSuggestionsContext,
+  usePendingSuggestions,
+  usePendingSuggestionsForField,
+  type PendingSuggestion,
+  type PendingSuggestionsApi,
+} from './PendingSuggestionsContext.js'
+export {
   registerWidgetRenderer,
   getWidgetRenderer,
   type WidgetRendererProps,

@@ -31,6 +31,7 @@ export {
   type AiSuggestion,
   type AiSuggestionExtensionOptions,
 } from './extensions/AiSuggestionExtension.js'
+export { useAiSuggestionBridge } from './react/useAiSuggestionBridge.js'
 export {
   renderRichTextToHtml,
   isRichTextValue,

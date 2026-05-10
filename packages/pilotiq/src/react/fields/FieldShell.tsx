@@ -1,6 +1,8 @@
 import React from 'react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { getIcon } from '../../icons/registry.js'
+import { usePendingSuggestionsForField } from '../PendingSuggestionsContext.js'
+import { getPendingSuggestionOverlay } from '../PendingSuggestionOverlayRegistry.js'
 
 /**
  * Shared chrome around every field input — label + required asterisk +
@@ -41,6 +43,24 @@ export function FieldShell({ el, name, label, required, children, before, after,
   const hiddenLabel = el['hiddenLabel'] === true
   const wrapperAttrs = pickWrapperAttrs(el)
 
+  // Pending-suggestion overlay (Plan 6/7). RichText fields render the diff
+  // inline inside the editor instead — they opt out via the hidden marker
+  // below. Other field types pick up the slot whenever a plugin (e.g.
+  // `@pilotiq-pro/ai`) has registered a renderer AND there's a matching
+  // suggestion in the queue.
+  const fieldType = el['fieldType'] as string | undefined
+  const isRichText = fieldType === 'richtext'
+  const { list: pending, dismiss } = usePendingSuggestionsForField(name)
+  const Overlay = isRichText ? null : getPendingSuggestionOverlay()
+  const overlaySuggestion = pending[0] ?? null
+  const overlayNode = Overlay && overlaySuggestion ? (
+    <Overlay
+      suggestion={overlaySuggestion}
+      onApprove={() => dismiss(overlaySuggestion.id)}
+      onReject={() => dismiss(overlaySuggestion.id)}
+    />
+  ) : null
+
   const labelClass = hiddenLabel
     ? 'sr-only'
     : 'text-sm font-medium leading-none'
@@ -70,6 +90,7 @@ export function FieldShell({ el, name, label, required, children, before, after,
         {labelEl && <div className="min-w-32 pt-2">{labelEl}</div>}
         <div className="min-w-0 flex-1">
           {input}
+          {overlayNode}
           {helperText && (
             <p className="mt-1 text-xs text-muted-foreground">{helperText}</p>
           )}
@@ -82,6 +103,7 @@ export function FieldShell({ el, name, label, required, children, before, after,
     <div className="flex flex-col gap-1.5" {...wrapperAttrs}>
       {labelEl}
       {input}
+      {overlayNode}
       {helperText && (
         <p className="text-xs text-muted-foreground">{helperText}</p>
       )}
