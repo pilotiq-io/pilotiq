@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useRef } from 'react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { getIcon } from '../../icons/registry.js'
-import { usePendingSuggestionsForField, type PendingSuggestion } from '../PendingSuggestionsContext.js'
+import { usePendingSuggestions, usePendingSuggestionsForField, type PendingSuggestion } from '../PendingSuggestionsContext.js'
 import { getPendingSuggestionOverlay } from '../PendingSuggestionOverlayRegistry.js'
 import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 import { FormIdContext, useFieldState } from '../FormStateContext.js'
@@ -61,12 +61,18 @@ export function FieldShell({ el, name, label, required, children, before, after,
   // stays the winner.
   const ownsApplier = fieldType === 'select'
   const { list: pending, dismiss } = usePendingSuggestionsForField(name)
+  const { approve } = usePendingSuggestions()
   const Overlay = isRichText ? null : getPendingSuggestionOverlay()
   const overlaySuggestion = pending[0] ?? null
+  // Approve routes through the cross-tree applier registry (Phase 8.5)
+  // so field types that own their visible state (Select / Toggle / Slider /
+  // Color / etc.) get their registered applier — not the overlay's
+  // hardcoded `field.setValue` + DOM-write fallback, which would silently
+  // miss the React state of those custom components. Reject just dismisses.
   const overlayNode = Overlay && overlaySuggestion ? (
     <Overlay
       suggestion={overlaySuggestion}
-      onApprove={() => dismiss(overlaySuggestion.id)}
+      onApprove={() => approve(overlaySuggestion.id)}
       onReject={() => dismiss(overlaySuggestion.id)}
     />
   ) : null
