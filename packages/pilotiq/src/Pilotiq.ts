@@ -1,3 +1,4 @@
+import type * as React from 'react'
 import type { Router } from '@rudderjs/router'
 import type { ResourceClass } from './Resource.js'
 import type { GlobalClass } from './Global.js'
@@ -228,9 +229,31 @@ export interface PilotiqConfig {
    * absent and the chrome doesn't mount.
    */
   rightPanels?:  RightPanelContribution[]
+  /**
+   * Layout-level provider components registered via
+   * `Pilotiq.layoutProvider(C)` / `Pilotiq.layoutProviders([…])`. Plugins
+   * register React providers (e.g. an AI chat queue context, a tenant
+   * theme switcher) that wrap the panel's `<AppShell>` children — so
+   * the providers are in scope for every page in the panel, not just
+   * specific component slots. Order matters: the first registered
+   * provider sits closest to the root (outermost wrap); the last sits
+   * closest to the page tree (innermost wrap).
+   */
+  layoutProviders?: LayoutProviderComponent[]
   /** @internal Runtime theme overrides from DB. */
   _themeOverrides?: Partial<ThemeConfig>
 }
+
+/**
+ * Shape a layout-provider component must implement. Receives the
+ * standard layout context (`basePath`, panel children) so providers can
+ * thread panel-aware values into their context — e.g. an AI chat
+ * provider needs `basePath` to know where to POST chat requests.
+ */
+export type LayoutProviderComponent = React.ComponentType<{
+  children: React.ReactNode
+  basePath?: string
+}>
 
 export class Pilotiq {
   private config: PilotiqConfig
@@ -686,6 +709,57 @@ export class Pilotiq {
   /** @internal — `panelInfo()` reads this to build `RightSidebarMeta`. */
   getRightPanels(): readonly RightPanelContribution[] {
     return this.config.rightPanels ?? []
+  }
+
+  /**
+   * Register a component that wraps the panel's `<AppShell>` children at
+   * the layout root. Plugins use this to mount React providers (AI chat
+   * queue context, tenant theme switcher, feature-flag overlay, …) so
+   * they're in scope for every page in the panel without consumers
+   * having to manually wrap their `+Layout.tsx`.
+   *
+   * Adapter packages typically call this from inside their plugin's
+   * `register(panel)` so consumers wire everything via `.plugins([…])`.
+   *
+   * Provider components receive `{ children, basePath? }` props.
+   * Registration order is preservation order: the first registered
+   * provider sits OUTERMOST (closest to the layout root); the last sits
+   * INNERMOST (closest to the page tree). When two providers depend on
+   * each other, register the producer first.
+   *
+   * @example
+   * ```ts
+   * // In a plugin's register(panel):
+   * panel.layoutProvider(({ children, basePath }) =>
+   *   <AiUiProvider panelPath={basePath}>{children}</AiUiProvider>
+   * )
+   * ```
+   *
+   * @throws when `provider` isn't a function (component).
+   */
+  layoutProvider(provider: LayoutProviderComponent): this {
+    if (typeof provider !== 'function') {
+      throw new Error(
+        `[Pilotiq] layoutProvider: expected a React component, got ${typeof provider}.`,
+      )
+    }
+    const existing = this.config.layoutProviders ?? []
+    this.config.layoutProviders = [...existing, provider]
+    return this
+  }
+
+  /**
+   * Bulk variant of {@link layoutProvider}. Registers each provider in
+   * array order.
+   */
+  layoutProviders(list: LayoutProviderComponent[]): this {
+    for (const c of list) this.layoutProvider(c)
+    return this
+  }
+
+  /** @internal — read by the Vite plugin's `_components.ts` emitter. */
+  getLayoutProviders(): readonly LayoutProviderComponent[] {
+    return this.config.layoutProviders ?? []
   }
 
   /** @internal */

@@ -632,6 +632,7 @@ export function clusterOffset(parts: string[]): number {
   lines.push('const _all: Record<string, unknown> = {}')
   lines.push('const _clusters: Record<string, string[]> = {}')
   lines.push('const _rightPanels: Record<string, unknown> = {}')
+  lines.push('const _layoutProviders: unknown[] = []')
   lines.push('function _add(c: any) { if (typeof c === \'function\' && c.name) _all[c.name] = c }')
   lines.push('function _walk(p: any) {')
   lines.push('  const cfg = p?.getConfig?.()')
@@ -641,6 +642,11 @@ export function clusterOffset(parts: string[]): number {
   lines.push('  if (Array.isArray(cfg?.rightPanels)) {')
   lines.push('    for (const _c of cfg.rightPanels) {')
   lines.push('      if (_c && typeof _c.id === \'string\' && _c.render) _rightPanels[_c.id] = _c.render')
+  lines.push('    }')
+  lines.push('  }')
+  lines.push('  if (Array.isArray(cfg?.layoutProviders)) {')
+  lines.push('    for (const _C of cfg.layoutProviders) {')
+  lines.push('      if (typeof _C === \'function\') _layoutProviders.push(_C)')
   lines.push('    }')
   lines.push('  }')
   lines.push('  if (cfg?.path && Array.isArray(cfg?.clusters)) {')
@@ -653,6 +659,7 @@ export function clusterOffset(parts: string[]): number {
   lines.push('export const componentRegistry: Record<string, unknown> = _all')
   lines.push('export const clusterSlugsByBasePath: Record<string, string[]> = _clusters')
   lines.push('export const rightPanelRegistry: Record<string, unknown> = _rightPanels')
+  lines.push('export const layoutProviderRegistry: unknown[] = _layoutProviders')
   lines.push('')
 
   writeIfChanged(path.join(outDir, '_components.ts'), lines.join('\n'))
@@ -668,7 +675,7 @@ function writeLayoutWithManifest(pagesRoot: string): void {
 import { usePageContext } from 'vike-react/usePageContext'
 import { AppShell, ThemeProvider, generateThemeCSS, NavigateProvider } from '@pilotiq/pilotiq/react'
 import { navigate as vikeNavigate } from 'vike/client/router'
-import { componentRegistry, rightPanelRegistry } from './_components.js'
+import { componentRegistry, rightPanelRegistry, layoutProviderRegistry } from './_components.js'
 import type { ReactNode } from 'react'
 
 // Wrap vike's async navigate so the NavigateProvider's fire-and-forget
@@ -691,7 +698,7 @@ export default function PilotiqLayout({ children }: { children: ReactNode }) {
     <NavigateProvider navigate={navigate}>
       <ThemeProvider theme={panel.theme}>
         {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
-        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} currentPath={currentPath} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any}>
+        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} currentPath={currentPath} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any} layoutProviderRegistry={layoutProviderRegistry as any}>
           {children}
         </AppShell>
       </ThemeProvider>

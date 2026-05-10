@@ -60,10 +60,18 @@ export interface AppShellProps {
    * chrome simply doesn't mount.
    */
   rightPanelRegistry?: RightPanelRegistry
+  /**
+   * Build-time layout-provider registry from the Vite plugin. Each entry
+   * is a React component that wraps the panel's layout tree at the
+   * root. Plugins register via `Pilotiq.layoutProvider(C)`; the Vite
+   * plugin harvests refs into this array. Empty `[]` is the no-op
+   * default — chrome renders without any extra wrapping.
+   */
+  layoutProviderRegistry?: ReadonlyArray<React.ComponentType<{ children: React.ReactNode; basePath?: string }>>
   children: React.ReactNode
 }
 
-export function AppShell({ layout = 'sidebar', notifications, componentRegistry, rightPanelRegistry, ...props }: AppShellProps) {
+export function AppShell({ layout = 'sidebar', notifications, componentRegistry, rightPanelRegistry, layoutProviderRegistry, ...props }: AppShellProps) {
   const Layout = layout === 'topbar' ? TopbarLayout : SidebarLayout
   // exactOptionalPropertyTypes: only spread `initialNotifications` when set.
   const toasterProps = notifications ? { initialNotifications: notifications } : {}
@@ -106,7 +114,11 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
     </ToasterProvider>
   )
 
-  return (
+  // Plugin-registered layout providers (e.g. AI chat queue, tenant
+  // theme switcher). Wraps in registration order: the FIRST registered
+  // provider sits OUTERMOST (closest to the layout root); LAST sits
+  // INNERMOST (closest to the page tree). Empty / unset → no wrap.
+  const wrapped = wrapInLayoutProviders(
     <ComponentRegistryProvider value={componentRegistry}>
       <RightPanelRegistryProvider value={rightPanelRegistry}>
         {rightSidebarMeta ? (
@@ -117,8 +129,32 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
           inner
         )}
       </RightPanelRegistryProvider>
-    </ComponentRegistryProvider>
+    </ComponentRegistryProvider>,
+    layoutProviderRegistry,
+    props.basePath,
   )
+
+  return wrapped
+}
+
+/**
+ * Fold registered layout providers around `tree` from last to first so
+ * the first-registered provider ends up outermost in the React tree
+ * (closest to the layout root) — matches the registration-order
+ * intuition documented on `Pilotiq.layoutProvider`.
+ */
+function wrapInLayoutProviders(
+  tree:     React.ReactElement,
+  registry: ReadonlyArray<React.ComponentType<{ children: React.ReactNode; basePath?: string }>> | undefined,
+  basePath: string,
+): React.ReactElement {
+  if (!registry || registry.length === 0) return tree
+  let acc: React.ReactElement = tree
+  for (let i = registry.length - 1; i >= 0; i--) {
+    const Provider = registry[i]!
+    acc = <Provider basePath={basePath}>{acc}</Provider>
+  }
+  return acc
 }
 
 /**
