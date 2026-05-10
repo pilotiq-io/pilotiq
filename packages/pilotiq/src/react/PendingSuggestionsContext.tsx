@@ -21,6 +21,29 @@ import React, { createContext, useContext, useMemo } from 'react'
  * `@pilotiq-pro/ai`); core just owns the type, context, and hooks so any
  * field renderer can subscribe through one open-core seam.
  */
+/**
+ * Where a suggestion came from. Lets aggregate consumers (pill UIs)
+ * filter the shared queue by surface — e.g. a popover-chat scoped pill
+ * shows only suggestions produced by its own session, while the
+ * sidebar pill shows everything. Sparse on push; consumers treat
+ * absence as "unknown origin, include in unfiltered views".
+ */
+export interface PendingSuggestionOrigin {
+  /**
+   * Which UI surface initiated the agent run that produced this
+   * suggestion. `'field-action'` covers the `✦` per-field dropdown.
+   */
+  surface:    'sidebar' | 'popover' | 'field-action'
+  /**
+   * Stable id of the agent run / chat turn that produced this
+   * suggestion. Popover pills filter on this so they only see their
+   * own session's output even when the panel-wide queue holds many.
+   */
+  runId?:     string
+  /** Slug of the agent whose tool call produced the suggestion. */
+  agentSlug?: string
+}
+
 export interface PendingSuggestion {
   /** Stable id; the producer is responsible for uniqueness. */
   id:              string
@@ -42,6 +65,14 @@ export interface PendingSuggestion {
     agentSlug?:  string
     agentLabel?: string
   }
+  /**
+   * Provenance hint for cross-surface filtering. Sparse — pushed when
+   * the producer knows which agent run / chat surface it's running
+   * inside (e.g. the popover-chat tagging its turn id so its scoped
+   * pill can filter the shared queue). Aggregate consumers that don't
+   * care just leave the field unread.
+   */
+  origin?:         PendingSuggestionOrigin
   /** Wallclock ms when produced. Producers fill this in on `push`. */
   createdAt:       number
   /** Field-type-specific extras (e.g. `editorRange: { from, to }`). Sparse. */

@@ -24,6 +24,7 @@ export {
   usePendingSuggestions,
   usePendingSuggestionsForField,
   type PendingSuggestion,
+  type PendingSuggestionOrigin,
   type PendingSuggestionsApi,
 } from './PendingSuggestionsContext.js'
 export {
