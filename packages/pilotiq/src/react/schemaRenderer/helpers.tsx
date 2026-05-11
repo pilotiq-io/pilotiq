@@ -2,6 +2,7 @@ import React from 'react'
 import type { ComponentType } from 'react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { getIcon } from '../../icons/registry.js'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip.js'
 
 /** Resolve an icon name through the user-extensible registry. Returns
  * `undefined` when the name isn't registered — callers fall back to
@@ -61,5 +62,20 @@ export function renderChildren(
     <div className={`flex flex-col ${gap}`}>
       {children.map((child, i) => renderElement(child, i))}
     </div>
+  )
+}
+
+/** Wrap a node in the standard hover tooltip. Returns the node as-is when
+ *  `tooltip` is falsy. Used wherever a button/affordance needs an
+ *  on-hover label without owning its own Popover. */
+export function withTooltip(node: React.ReactNode, tooltip: string | undefined): React.ReactNode {
+  if (!tooltip) return node
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger render={() => node as React.ReactElement} />
+        <TooltipContent>{tooltip}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
