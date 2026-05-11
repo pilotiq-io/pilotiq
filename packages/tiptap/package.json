@@ -39,7 +39,7 @@
   },
   "dependencies": {},
   "peerDependencies": {
-    "@pilotiq/pilotiq": "workspace:^",
+    "@pilotiq/pilotiq": ">=0.6.0 <1.0.0",
     "@base-ui/react": "^1",
     "@tiptap/core": "^3",
     "@tiptap/pm": "^3",
