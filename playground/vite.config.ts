@@ -78,6 +78,22 @@ export default defineConfig({
       'class-variance-authority',
       'zod',
       'vike/server',
+      // Pre-bundle pilotiq runtime peers + adapter deps. `@pilotiq/pilotiq`
+      // is in `optimizeDeps.exclude` below so Vite doesn't crawl its
+      // imports during the initial scan; without these listed explicitly,
+      // each gets discovered the first time a page renders something that
+      // uses it, triggering a "new dependencies optimized" reload mid-nav.
+      '@rudderjs/core',
+      '@rudderjs/router',
+      '@rudderjs/orm',
+      'sanitize-html',
+      'react-image-crop',
+      'recharts',
+      '@uiw/react-codemirror',
+      '@codemirror/language',
+      '@codemirror/state',
+      '@codemirror/lang-json',
+      '@codemirror/lang-sql',
     ],
     exclude: [
       // Keep as workspace-link runtime imports so a single instance is shared
