@@ -390,7 +390,7 @@ export const route: RouteSync = (pageContext) => {
   if (parts[5 + off] === 'edit') return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
   return { routeParams: {
-    basePath:      parts[0],
+    basePath:      parts[0]!,
     slug:          parts[1 + off]!,
     id:            parts[2 + off]!,
     relationship:  parts[3 + off]!,
@@ -413,7 +413,7 @@ export const route: RouteSync = (pageContext) => {
   if (parts.length !== 7 + off || parts[6 + off] !== 'create') return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
   return { routeParams: {
-    basePath:      parts[0],
+    basePath:      parts[0]!,
     slug:          parts[1 + off]!,
     id:            parts[2 + off]!,
     relationship:  parts[3 + off]!,
@@ -437,7 +437,7 @@ export const route: RouteSync = (pageContext) => {
   if (parts[6 + off] === 'create') return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
   return { routeParams: {
-    basePath:      parts[0],
+    basePath:      parts[0]!,
     slug:          parts[1 + off]!,
     id:            parts[2 + off]!,
     relationship:  parts[3 + off]!,
@@ -461,7 +461,7 @@ export const route: RouteSync = (pageContext) => {
   if (parts.length !== 8 + off || parts[7 + off] !== 'edit') return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
   return { routeParams: {
-    basePath:      parts[0],
+    basePath:      parts[0]!,
     slug:          parts[1 + off]!,
     id:            parts[2 + off]!,
     relationship:  parts[3 + off]!,
@@ -592,7 +592,7 @@ import { clusterSlugsByBasePath } from './_components.js'
 export function clusterOffset(parts: string[]): number {
   if (parts.length < 2) return 0
   const slugs = clusterSlugsByBasePath['/' + parts[0]]
-  return slugs && slugs.includes(parts[1]) ? 1 : 0
+  return slugs && slugs.includes(parts[1]!) ? 1 : 0
 }
 `)
 
@@ -698,7 +698,7 @@ export default function PilotiqLayout({ children }: { children: ReactNode }) {
     <NavigateProvider navigate={navigate}>
       <ThemeProvider theme={panel.theme}>
         {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
-        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} currentPath={currentPath} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any} layoutProviderRegistry={layoutProviderRegistry as any}>
+        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} currentPath={currentPath ?? ''} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any} layoutProviderRegistry={layoutProviderRegistry as any}>
           {children}
         </AppShell>
       </ThemeProvider>
