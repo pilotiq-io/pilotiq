@@ -98,7 +98,6 @@ import type {
 import { useIconFor } from './icon-context.js'
 import type { SerializedIcon } from '../icons/types.js'
 import { useToast } from './Toaster.js'
-import { getIcon } from '../icons/registry.js'
 import { pickEditableCell } from './cells/EditableCell.js'
 import { WidgetDataProvider } from './WidgetDataContext.js'
 import { StatsOverviewRenderer } from './widgets/StatsOverviewRenderer.js'
@@ -107,23 +106,21 @@ import { ViewRenderer } from './widgets/ViewRenderer.js'
 import { getEntryComponent } from '../entries/registry.js'
 import { getSlotComponent } from '../slot-components/registry.js'
 import { getWidgetRenderer } from './widgetRegistry.js'
-
-/** Resolve an icon name through the user-extensible registry. Returns
- * `undefined` when the name isn't registered — callers fall back to
- * their own default. Pilotiq's own chrome (this file's hardcoded
- * imports) never depends on the registry. */
-type IconCmp = ComponentType<{ className?: string; style?: React.CSSProperties; 'aria-hidden'?: boolean | 'true' | 'false'; 'aria-label'?: string }>
-function resolveIcon(name: string | undefined): IconCmp | undefined {
-  if (!name) return undefined
-  return getIcon(name) as IconCmp | undefined
-}
-
-const alertStyles: Record<string, string> = {
-  info:    'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200',
-  warning: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200',
-  success: 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200',
-  danger:  'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200',
-}
+import {
+  alertStyles,
+  BADGE_COLOR_CLASSES,
+  COLUMN_COLOR_CLASSES,
+  COLUMN_WEIGHT_CLASSES,
+  TEXT_COLOR_CLASSES,
+  TEXT_SIZE_CLASSES,
+  TEXT_WEIGHT_CLASSES,
+} from './schemaRenderer/constants.js'
+import {
+  layoutClasses,
+  renderChildren,
+  resolveIcon,
+} from './schemaRenderer/helpers.js'
+import { renderSimpleElement } from './schemaRenderer/SimpleElements.js'
 
 /**
  * Render a flat list of resolved field-meta as standalone form inputs,
@@ -1502,50 +1499,6 @@ function renderAction(
   )
 }
 
-// ─── Layout helpers ─────────────────────────────────────────
-
-/**
- * Map `meta._layout` (Plan #8 — `columnSpan / columnStart / columnOrder`)
- * onto Tailwind utility classes. Returns an empty string when the
- * element has no layout hints. Outside of a parent Grid/Split the
- * classes have no effect — Tailwind generates `col-span-*` /
- * `col-start-*` / `order-*` regardless of context.
- *
- * Tailwind's JIT only ships utilities up to a fixed range; clamp here
- * to the safe defaults (1..12 for col, 1..12 for order).
- */
-function layoutClasses(el: ElementMeta): string {
-  const layout = el['_layout'] as
-    | { columnSpan?: number; columnStart?: number; columnOrder?: number }
-    | undefined
-  if (!layout) return ''
-  const out: string[] = []
-  if (typeof layout.columnSpan  === 'number') {
-    const span = Math.max(1, Math.min(12, layout.columnSpan))
-    out.push(`col-span-${span}`)
-  }
-  if (typeof layout.columnStart === 'number') {
-    const start = Math.max(1, Math.min(12, layout.columnStart))
-    out.push(`col-start-${start}`)
-  }
-  if (typeof layout.columnOrder === 'number') {
-    const order = Math.max(1, Math.min(12, layout.columnOrder))
-    out.push(`order-${order}`)
-  }
-  return out.join(' ')
-}
-
-// ─── Container helpers ──────────────────────────────────────
-
-function renderChildren(children: ElementMeta[] | undefined, gap = 'gap-4'): React.ReactNode {
-  if (!children || children.length === 0) return null
-  return (
-    <div className={`flex flex-col ${gap}`}>
-      {children.map((child, i) => renderElement(child, i))}
-    </div>
-  )
-}
-
 // ─── Tabs (stateful — needs useState) ────────────────────────
 
 /**
@@ -1944,7 +1897,7 @@ function TabsRenderer({ el, index }: { el: ElementMeta; index: number }) {
       </TabsList>
       {tabs.map((tab, i) => (
         <TabsContent key={i} value={tabValues[i]!} className="pt-2">
-          {renderChildren(tab['children'] as ElementMeta[] | undefined)}
+          {renderChildren(tab['children'] as ElementMeta[] | undefined, 'gap-4', renderElement)}
         </TabsContent>
       ))}
     </Tabs>
@@ -2379,62 +2332,6 @@ function WizardNavButton({
 }
 
 // ─── Top-level dispatch ─────────────────────────────────────
-
-const TEXT_COLOR_CLASSES: Record<string, string> = {
-  default:     '',
-  muted:       'text-muted-foreground',
-  primary:     'text-primary',
-  destructive: 'text-destructive',
-  success:     'text-emerald-600 dark:text-emerald-400',
-  warning:     'text-amber-600 dark:text-amber-400',
-  info:        'text-blue-600 dark:text-blue-400',
-}
-
-const TEXT_SIZE_CLASSES: Record<string, string> = {
-  xs:   'text-xs',
-  sm:   'text-sm',
-  base: 'text-base',
-  lg:   'text-lg',
-  xl:   'text-xl',
-}
-
-const TEXT_WEIGHT_CLASSES: Record<string, string> = {
-  normal:   'font-normal',
-  medium:   'font-medium',
-  semibold: 'font-semibold',
-  bold:     'font-bold',
-}
-
-function renderText(el: ElementMeta, index: number): React.ReactNode {
-  const content = String(el['content'] ?? '')
-  const color   = el['color']  ? String(el['color'])  : undefined
-  const size    = el['size']   ? String(el['size'])   : undefined
-  const weight  = el['weight'] ? String(el['weight']) : undefined
-  const isBadge = el['badge'] === true
-
-  if (isBadge) {
-    const badgeKey = el['badgeColor'] ? String(el['badgeColor']) : 'gray'
-    const cls      = BADGE_COLOR_CLASSES[badgeKey] ?? BADGE_COLOR_CLASSES['gray']
-    return (
-      <span
-        key={index}
-        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}
-      >
-        {content}
-      </span>
-    )
-  }
-
-  // Defaults match the previous bare `<p>` for back-compat: text-sm + muted.
-  const sizeCls   = size   ? (TEXT_SIZE_CLASSES[size]     ?? '') : 'text-sm'
-  const colorCls  = color  ? (TEXT_COLOR_CLASSES[color]   ?? '') : 'text-muted-foreground'
-  const weightCls = weight ? (TEXT_WEIGHT_CLASSES[weight] ?? '') : ''
-  return (
-    <p key={index} className={`${sizeCls} ${colorCls} ${weightCls}`.trim()}>
-      {content}
-    </p>
-  )
-}
 
 /** Coerce a `KeyValueEntry` state value (object | JSON string | …) into a
  *  flat record. Returns `null` when the value is empty or non-decodable. */
@@ -3023,94 +2920,13 @@ function AlertRenderer(props: {
 }
 
 function renderElement(el: ElementMeta, index: number): React.ReactNode {
+  // Stateless leaves + layout primitives — text/image/icon/markdown/html/
+  // heading/emptyState/divider/unorderedList/card/grid/group/split/fieldset.
+  // Returns undefined for unhandled types so the switch below picks them up.
+  const simple = renderSimpleElement(el, index, { renderElement, renderActionLike })
+  if (simple !== undefined) return simple
+
   switch (el.type) {
-    case 'text':
-      return renderText(el, index)
-
-    case 'image': {
-      const url    = String(el['url'] ?? '')
-      const alt    = String(el['alt'] ?? '')
-      const width  = el['width']  as number | undefined
-      const height = el['height'] as number | undefined
-      const shape  = String(el['shape'] ?? 'square')
-      const shapeCls = shape === 'circle' ? 'rounded-full' : shape === 'rounded' ? 'rounded-md' : ''
-      return (
-        <img
-          key={index}
-          src={url}
-          alt={alt}
-          {...(width  !== undefined ? { width }  : {})}
-          {...(height !== undefined ? { height } : {})}
-          className={`inline-block object-cover ${shapeCls}`}
-        />
-      )
-    }
-
-    case 'icon': {
-      const name  = el['name'] ? String(el['name']) : undefined
-      const size  = (el['size'] as number | undefined) ?? 16
-      const color = String(el['color'] ?? 'default')
-      const label = el['label'] ? String(el['label']) : undefined
-      const Cmp = resolveIcon(name)
-      if (!Cmp) return null
-      const colorClass = COLUMN_COLOR_CLASSES[color] ?? ''
-      return (
-        <Cmp
-          key={index}
-          className={`inline ${colorClass}`}
-          {...(label ? { 'aria-label': label } : { 'aria-hidden': true })}
-          style={{ width: size, height: size }}
-        />
-      )
-    }
-
-    case 'markdown':
-    case 'html': {
-      const html  = String(el['html']  ?? '')
-      const prose = el['prose'] !== false
-      const size  = el['size'] ? String(el['size']) : undefined
-      const proseCls = prose
-        ? `prose max-w-none ${size === 'sm' ? 'prose-sm' : size === 'lg' ? 'prose-lg' : ''}`.trim()
-        : ''
-      return (
-        <div
-          key={index}
-          className={proseCls || undefined}
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      )
-    }
-
-    case 'heading': {
-      const level = (el['level'] as number) ?? 1
-      const content = String(el['content'] ?? '')
-      const description = el['description'] ? String(el['description']) : undefined
-      const headerActions = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup' || c.type === 'slotComponent')
-      const Tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3'
-      const sizes = { 1: 'text-2xl', 2: 'text-xl', 3: 'text-lg' } as const
-      const titleBlock = (
-        <div>
-          <Tag className={`${sizes[level as 1 | 2 | 3]} font-bold tracking-tight`}>
-            {content}
-          </Tag>
-          {description && (
-            <p className="text-sm text-muted-foreground mt-1">{description}</p>
-          )}
-        </div>
-      )
-      if (headerActions.length === 0) {
-        return <div key={index}>{titleBlock}</div>
-      }
-      return (
-        <div key={index} className="flex items-start justify-between gap-4">
-          {titleBlock}
-          <div className="flex items-center gap-2 shrink-0">
-            {headerActions.map((a, i) => renderActionLike(a, i))}
-          </div>
-        </div>
-      )
-    }
-
     case 'alert': {
       const footer = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup' || c.type === 'slotComponent')
       return (
@@ -3125,69 +2941,6 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
           {...(el['actionsAlignment']  !== undefined ? { actionsAlignment:  String(el['actionsAlignment'])  } : {})}
           footer={footer.map((a, i) => renderActionLike(a, i))}
         />
-      )
-    }
-
-    case 'emptyState': {
-      const heading     = String(el['heading'] ?? '')
-      const description = el['description'] ? String(el['description']) : undefined
-      const iconName    = el['icon']        ? String(el['icon'])        : undefined
-      const contained   = el['contained'] !== false
-      const Icon        = iconName ? resolveIcon(iconName) : undefined
-      const footer      = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup' || c.type === 'slotComponent')
-      const wrapper = contained
-        ? 'rounded-lg border border-border bg-card text-card-foreground py-12 px-6'
-        : 'py-8'
-      return (
-        <div key={index} className={`${wrapper} flex flex-col items-center text-center gap-3`}>
-          {Icon && <Icon className="size-10 text-muted-foreground" aria-hidden="true" />}
-          <h3 className="text-lg font-semibold">{heading}</h3>
-          {description && <p className="text-sm text-muted-foreground max-w-md">{description}</p>}
-          {footer.length > 0 && (
-            <div className="flex items-center gap-2 mt-2">
-              {footer.map((a, i) => renderActionLike(a, i))}
-            </div>
-          )}
-        </div>
-      )
-    }
-
-    case 'divider': {
-      const label = el['label'] ? String(el['label']) : undefined
-      return label
-        ? <div key={index} className="relative py-2">
-            <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
-            <div className="relative flex justify-center"><span className="bg-background px-2 text-xs text-muted-foreground">{label}</span></div>
-          </div>
-        : <hr key={index} className="border-border" />
-    }
-
-    case 'unorderedList': {
-      const items   = (el['items'] as unknown[] | undefined) ?? []
-      const color   = el['color']  ? String(el['color'])  : undefined
-      const size    = el['size']   ? String(el['size'])   : undefined
-      const weight  = el['weight'] ? String(el['weight']) : undefined
-      const sizeCls   = size   ? (TEXT_SIZE_CLASSES[size]     ?? '') : 'text-sm'
-      const colorCls  = color  ? (TEXT_COLOR_CLASSES[color]   ?? '') : ''
-      const weightCls = weight ? (TEXT_WEIGHT_CLASSES[weight] ?? '') : ''
-      return (
-        <ul key={index} className={`list-disc list-inside space-y-1 ${sizeCls} ${colorCls} ${weightCls}`.trim()}>
-          {items.map((item, i) => (
-            <li key={i}>{String(item)}</li>
-          ))}
-        </ul>
-      )
-    }
-
-    case 'card': {
-      const title = el['title'] ? String(el['title']) : undefined
-      const description = el['description'] ? String(el['description']) : undefined
-      return (
-        <div key={index} className="rounded-xl border bg-card p-6 shadow-sm">
-          {title && <h3 className="font-semibold mb-1">{title}</h3>}
-          {description && <p className="text-sm text-muted-foreground mb-4">{description}</p>}
-          {renderChildren(el.children)}
-        </div>
       )
     }
 
@@ -3213,83 +2966,6 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
     case 'listTab':
       // List tabs are rendered by their parent `listTabs` strip; standalone is a no-op.
       return null
-
-    case 'grid': {
-      const columns = Math.max(1, Math.min(12, Number(el['columns'] ?? 2)))
-      const gapPx   = el['gap'] !== undefined ? `${Number(el['gap'])}px` : undefined
-      return (
-        <div
-          key={index}
-          className={`grid gap-4 ${layoutClasses(el)}`.trim()}
-          style={{
-            gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-            ...(gapPx ? { gap: gapPx } : {}),
-          }}
-        >
-          {(el.children ?? []).map((c, i) => renderElement(c, i))}
-        </div>
-      )
-    }
-
-    case 'group': {
-      const layout = layoutClasses(el)
-      return (
-        <div key={index} className={layout || undefined}>
-          {renderChildren(el.children)}
-        </div>
-      )
-    }
-
-    case 'split': {
-      const from = el['from'] === 'left' ? 'left' : 'right'
-      const gap  = Math.max(0, Math.min(12, Number(el['gap'] ?? 6)))
-      const children = el.children ?? []
-      // Find the explicit aside child first; fall back to "second child is
-      // aside" so terse Split.make().schema([main, aside]) still works.
-      let asideIdx = children.findIndex(c => c['aside'] === true)
-      if (asideIdx === -1 && children.length >= 2) asideIdx = 1
-      const mainChildren  = children.filter((_, i) => i !== asideIdx)
-      const asideChild    = asideIdx >= 0 ? children[asideIdx] : undefined
-
-      const orderClasses  = from === 'left'
-        ? { aside: '@md:order-first', main: '@md:order-last' }
-        : { aside: '@md:order-last',  main: '@md:order-first' }
-
-      return (
-        <div
-          key={index}
-          className={`@container flex flex-col @md:flex-row gap-${gap} ${layoutClasses(el)}`.trim()}
-        >
-          <div className={`flex flex-col gap-4 flex-1 min-w-0 ${orderClasses.main}`}>
-            {mainChildren.map((c, i) => renderElement(c, i))}
-          </div>
-          {asideChild && (
-            <aside className={`flex flex-col gap-4 @md:w-80 @md:shrink-0 ${orderClasses.aside}`}>
-              {renderElement(asideChild, asideIdx)}
-            </aside>
-          )}
-        </div>
-      )
-    }
-
-    case 'fieldset': {
-      const label   = String(el['label'] ?? '')
-      const columns = Math.max(1, Math.min(3, Number(el['columns'] ?? 1)))
-      const gridStyle = columns > 1
-        ? { display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: '1rem' }
-        : undefined
-      return (
-        <fieldset
-          key={index}
-          className={`rounded-md border border-border px-4 pt-3 pb-4 ${layoutClasses(el)}`.trim()}
-        >
-          {label && <legend className="px-1 text-xs font-medium text-muted-foreground">{label}</legend>}
-          <div className={columns === 1 ? 'flex flex-col gap-3' : undefined} style={gridStyle}>
-            {(el.children ?? []).map((c, i) => renderElement(c, i))}
-          </div>
-        </fieldset>
-      )
-    }
 
     case 'wizard':
       return <WizardRenderer key={index} el={el} index={index} />
@@ -3704,34 +3380,6 @@ function nextSortDir(
   return { column, direction: 'asc' }
 }
 
-
-/** Map ColumnColor → tailwind text-color class. Used by TextColumn and
- * IconColumn alike. */
-const COLUMN_COLOR_CLASSES: Record<string, string> = {
-  default:     '',
-  muted:       'text-muted-foreground',
-  primary:     'text-primary',
-  destructive: 'text-destructive',
-  success:     'text-emerald-600 dark:text-emerald-400',
-  warning:     'text-amber-600 dark:text-amber-400',
-  info:        'text-blue-600 dark:text-blue-400',
-}
-
-const COLUMN_WEIGHT_CLASSES: Record<string, string> = {
-  normal:   'font-normal',
-  medium:   'font-medium',
-  semibold: 'font-semibold',
-  bold:     'font-bold',
-}
-
-const BADGE_COLOR_CLASSES: Record<string, string> = {
-  gray:        'bg-muted text-muted-foreground',
-  primary:     'bg-primary/10 text-primary',
-  success:     'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
-  warning:     'bg-amber-100  text-amber-800  dark:bg-amber-900/40  dark:text-amber-200',
-  destructive: 'bg-destructive/10 text-destructive',
-  info:        'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
-}
 
 /** Apply a built-in `ColumnFormat` to a raw value; returns a string. */
 function applyColumnFormat(value: unknown, format: { kind: string; [k: string]: unknown }): string {
