@@ -43,7 +43,7 @@ function writeIfChanged(filePath: string, contents: string): void {
   fs.writeFileSync(filePath, contents)
 }
 
-function generatePages(pagesRoot: string): void {
+export function generatePages(pagesRoot: string): void {
   const outDir = path.join(pagesRoot, '(pilotiq)')
 
   // Shared config
