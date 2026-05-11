@@ -926,6 +926,208 @@ describe('relation tabs auto-mount (Plan #11)', () => {
     const tabs = tabsMeta['tabs'] as Array<{ key: string }>
     assert.deepEqual(tabs.map(t => t.key), ['__view', 'posts'])
   })
+
+  // ── Per-tab canX gating ──────────────────────────────────
+
+  it('hides the View tab when R.canView returns false for this record', async () => {
+    const postRows: QueryRow[] = [{ id: 'p1', parentId: 'u1', title: 'Post One' }]
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = stubModel({ rows: [{ id: 'u1', name: 'Alice' }] })
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override detail() { return [] }
+      static override relations() { return [PostsManager] }
+      static override async canView(): Promise<boolean> { return false }
+    }
+    const panel = Pilotiq.make('NoCanView-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+
+    // Use resource-edit so the route doesn't 403 before we render — we
+    // want to see the strip itself drop the View tab.
+    const out = await resourceEditData(panel, 'users', 'u1')
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    const tabsMeta = schema.find(s => s['type'] === 'relation-tabs') as Record<string, unknown>
+    const tabs = tabsMeta['tabs'] as Array<{ key: string }>
+    assert.deepEqual(tabs.map(t => t.key), ['__edit', 'posts'])
+  })
+
+  it('hides the Edit tab when R.canEdit returns false for this record', async () => {
+    const postRows: QueryRow[] = []
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = stubModel({ rows: [{ id: 'u1', name: 'Alice' }] })
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override detail() { return [] }
+      static override relations() { return [PostsManager] }
+      static override async canEdit(): Promise<boolean> { return false }
+    }
+    const panel = Pilotiq.make('NoCanEdit-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+
+    const out = await resourceViewData(panel, 'users', 'u1')
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    const tabsMeta = schema.find(s => s['type'] === 'relation-tabs') as Record<string, unknown>
+    const tabs = tabsMeta['tabs'] as Array<{ key: string }>
+    assert.deepEqual(tabs.map(t => t.key), ['__view', 'posts'])
+  })
+
+  it('hides a manager tab when M.canViewAny returns false', async () => {
+    const postRows: QueryRow[] = []
+    const commentRows: QueryRow[] = []
+    const PostModel = stubModel({ rows: postRows })
+    const CommentModel = stubModel({ rows: commentRows })
+    const ParentModel: ModelLike = stubModel({ rows: [{ id: 'u1', name: 'Alice' }] })
+    Object.assign(ParentModel as object, { relations: {
+      posts:    { model: () => PostModel },
+      comments: { model: () => CommentModel },
+    } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+    }
+    class CommentResource extends Resource {
+      static override slug = 'comments'
+      static override get model() { return CommentModel }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+    }
+    class CommentsManager extends RelationManager {
+      static override relationship = 'comments'
+      static override async canViewAny(): Promise<boolean> { return false }
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override detail() { return [] }
+      static override relations() { return [PostsManager, CommentsManager] }
+    }
+    const panel = Pilotiq.make('GatedMgr-' + Math.random()).path('/admin').resources([UserResource, PostResource, CommentResource])
+
+    const out = await resourceViewData(panel, 'users', 'u1')
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    const tabsMeta = schema.find(s => s['type'] === 'relation-tabs') as Record<string, unknown>
+    const tabs = tabsMeta['tabs'] as Array<{ key: string }>
+    // CommentsManager is gone — Posts survives because it inherits the
+    // default `canViewAny → true`.
+    assert.deepEqual(tabs.map(t => t.key), ['__view', '__edit', 'posts'])
+  })
+
+  it('falls through to Related.canViewAny when manager has not overridden', async () => {
+    const postRows: QueryRow[] = []
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = stubModel({ rows: [{ id: 'u1', name: 'Alice' }] })
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+      // Related-side gate fires through safeManagerPolicy fall-through
+      // since PostsManager doesn't override canViewAny.
+      static override async canViewAny(): Promise<boolean> { return false }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship  = 'posts'
+      static override relatedResource = PostResource
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override detail() { return [] }
+      static override relations() { return [PostsManager] }
+    }
+    const panel = Pilotiq.make('RelatedGate-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+
+    const out = await resourceViewData(panel, 'users', 'u1')
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    const tabsMeta = schema.find(s => s['type'] === 'relation-tabs') as Record<string, unknown> | undefined
+    // With Posts gone, only the parent View+Edit tabs survive. The
+    // strip drops to under 2 manager-able entries so it stays mounted
+    // (View+Edit isn't worth-it; the depth-1 code path keeps the strip
+    // because the dropped tab was a manager, not a parent tab).
+    const tabs = (tabsMeta?.['tabs'] as Array<{ key: string }>) ?? []
+    assert.equal(tabs.find(t => t.key === 'posts'), undefined)
+  })
+
+  it('throwing canX predicate fails closed (tab hidden)', async () => {
+    const postRows: QueryRow[] = []
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = stubModel({ rows: [{ id: 'u1', name: 'Alice' }] })
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override detail() { return [] }
+      static override relations() { return [PostsManager] }
+      static override async canView(): Promise<boolean> { throw new Error('boom') }
+    }
+    const panel = Pilotiq.make('ThrowCanView-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+
+    const out = await resourceEditData(panel, 'users', 'u1')
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    const tabsMeta = schema.find(s => s['type'] === 'relation-tabs') as Record<string, unknown>
+    const tabs = tabsMeta['tabs'] as Array<{ key: string }>
+    // canView threw → fail closed (hidden). canEdit + Posts survive.
+    assert.deepEqual(tabs.map(t => t.key), ['__edit', 'posts'])
+  })
+
+  it('drops the strip entirely when every manager tab is gated away on the View page', async () => {
+    const postRows: QueryRow[] = []
+    const PostModel = stubModel({ rows: postRows })
+    const ParentModel: ModelLike = stubModel({ rows: [{ id: 'u1', name: 'Alice' }] })
+    Object.assign(ParentModel as object, { relations: { posts: { model: () => PostModel } } })
+
+    class PostResource extends Resource {
+      static override slug = 'posts'
+      static override get model() { return PostModel }
+    }
+    class PostsManager extends RelationManager {
+      static override relationship = 'posts'
+      static override async canViewAny(): Promise<boolean> { return false }
+    }
+    class UserResource extends Resource {
+      static override slug = 'users'
+      static override get model() { return ParentModel }
+      static override detail() { return [] }
+      static override relations() { return [PostsManager] }
+      static override async canView(): Promise<boolean> { return false }
+      static override async canEdit(): Promise<boolean> { return false }
+    }
+    const panel = Pilotiq.make('AllGated-' + Math.random()).path('/admin').resources([UserResource, PostResource])
+
+    const out = await resourceEditData(panel, 'users', 'u1')
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    const tabsMeta = schema.find(s => s['type'] === 'relation-tabs')
+    // No tabs survive — strip omitted entirely.
+    assert.equal(tabsMeta, undefined)
+  })
 })
 
 // ── Plan #11 — dispatchPageData wiring (Vike +data SPA path) ────────

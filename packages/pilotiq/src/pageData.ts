@@ -1879,7 +1879,7 @@ export async function resourceEditData(
   // navigation strip so users can drill into each manager's table
   // without leaving the parent record context. The "Edit" tab is
   // active here.
-  const relationTabsEl = buildRelationTabs(R, recordId, cfg.path, '__edit')
+  const relationTabsEl = await buildRelationTabs(R, recordId, cfg.path, '__edit', user, record)
   if (relationTabsEl) elements.unshift(relationTabsEl)
 
   const recordTitle = record !== undefined && record !== null
@@ -2244,7 +2244,7 @@ async function buildRelationListData(
   tagActionDispatch(elements, listUrl)
   await loadTableRecords(elements, scope.query ?? {}, listUrl, user)
 
-  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship)
+  const tabs = await buildRelationTabs(R, scope.recordId, base, scope.relationship, user, parentRecord)
   if (tabs) elements.unshift(tabs)
 
   const breadcrumbs = relationListBreadcrumbs(
@@ -2320,7 +2320,7 @@ async function buildRelationCreateData(
     if (scope.prefill.errors) form.withErrors(scope.prefill.errors)
   }
 
-  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship)
+  const tabs = await buildRelationTabs(R, scope.recordId, base, scope.relationship, user, parentRecord)
   if (tabs) elements.unshift(tabs)
 
   const breadcrumbs = relationCreateBreadcrumbs(
@@ -2413,15 +2413,16 @@ async function buildRelationViewData(
   // view straight into a grandchild list / create / view / edit page.
   // Active key `'__view'` because the user is currently viewing the
   // leaf parent record itself, not any nested manager.
-  const nestedTabs = buildNestedRelationTabs(
+  const nestedTabs = await buildNestedRelationTabs(
     R, M, base,
     { recordId: scope.recordId, relationship: scope.relationship },
     scope.childId,
     '__view',
+    user, child,
   )
   if (nestedTabs) elements.unshift(nestedTabs)
 
-  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship)
+  const tabs = await buildRelationTabs(R, scope.recordId, base, scope.relationship, user, parentRecord)
   if (tabs) elements.unshift(tabs)
 
   const breadcrumbs = relationViewBreadcrumbs(
@@ -2531,7 +2532,7 @@ async function buildRelationEditData(
     form.withValues(values)
   }
 
-  const tabs = buildRelationTabs(R, scope.recordId, base, scope.relationship)
+  const tabs = await buildRelationTabs(R, scope.recordId, base, scope.relationship, user, parentRecord)
   if (tabs) elements.unshift(tabs)
 
   const breadcrumbs = relationEditBreadcrumbs(
@@ -2851,7 +2852,7 @@ async function buildNestedRelationListData(
   tagActionDispatch(elements, listUrl)
   await loadTableRecords(elements, scope.query ?? {}, listUrl, user)
 
-  const tabs = buildNestedRelationTabs(resolved.R, resolved.M1, base, scope.chain[0], scope.chain[1].recordId, scope.chain[1].relationship)
+  const tabs = await buildNestedRelationTabs(resolved.R, resolved.M1, base, scope.chain[0], scope.chain[1].recordId, scope.chain[1].relationship, user, resolved.child1)
   if (tabs) elements.unshift(tabs)
 
   const breadcrumbs = nestedRelationListBreadcrumbs(
@@ -2905,7 +2906,7 @@ async function buildNestedRelationCreateData(
     if (scope.prefill.errors) form.withErrors(scope.prefill.errors)
   }
 
-  const tabs = buildNestedRelationTabs(resolved.R, resolved.M1, base, scope.chain[0], scope.chain[1].recordId, scope.chain[1].relationship)
+  const tabs = await buildNestedRelationTabs(resolved.R, resolved.M1, base, scope.chain[0], scope.chain[1].recordId, scope.chain[1].relationship, user, resolved.child1)
   if (tabs) elements.unshift(tabs)
 
   const breadcrumbs = nestedRelationCreateBreadcrumbs(
@@ -2970,7 +2971,7 @@ async function buildNestedRelationViewData(
 
   const elements: Element[] = M2.detail(child2, child1)
 
-  const tabs = buildNestedRelationTabs(resolved.R, resolved.M1, base, scope.chain[0], scope.chain[1].recordId, scope.chain[1].relationship)
+  const tabs = await buildNestedRelationTabs(resolved.R, resolved.M1, base, scope.chain[0], scope.chain[1].recordId, scope.chain[1].relationship, user, resolved.child1)
   if (tabs) elements.unshift(tabs)
 
   const breadcrumbs = nestedRelationViewBreadcrumbs(
@@ -3052,7 +3053,7 @@ async function buildNestedRelationEditData(
     form.withValues(values)
   }
 
-  const tabs = buildNestedRelationTabs(resolved.R, resolved.M1, base, scope.chain[0], scope.chain[1].recordId, scope.chain[1].relationship)
+  const tabs = await buildNestedRelationTabs(resolved.R, resolved.M1, base, scope.chain[0], scope.chain[1].recordId, scope.chain[1].relationship, user, resolved.child1)
   if (tabs) elements.unshift(tabs)
 
   const breadcrumbs = nestedRelationEditBreadcrumbs(
@@ -3099,20 +3100,37 @@ async function buildNestedRelationEditData(
  * absent that, callers skip the prepend so single-manager surfaces stay
  * clean. `activeKey` accepts the literal `'__view'` for the leaf
  * parent's view tab, or any sibling manager's relationship key.
+ *
+ * Per-tab `canX` gating (2026-05-11) — sibling nested-manager tabs run
+ * `N.canViewAny(user, child1Record)` (with fall-through to the related
+ * Resource via `safeManagerPolicy`) so the strip hides tabs the user
+ * couldn't reach anyway. The back-link `__view` stays unconditional
+ * since the user is already on a page scoped under `M.canViewAny` —
+ * they reached this strip, they can navigate back to it.
  */
-function buildNestedRelationTabs(
-  R:           ResourceClass,
-  M:           typeof RelationManager,
-  basePath:    string,
-  step0:       RelationChainStep,
-  child1Id:    string,
-  activeKey:   string,
-): RelationTabs | undefined {
+async function buildNestedRelationTabs(
+  R:             ResourceClass,
+  M:             typeof RelationManager,
+  basePath:      string,
+  step0:         RelationChainStep,
+  child1Id:      string,
+  activeKey:     string,
+  user:          unknown,
+  child1Record:  unknown,
+): Promise<RelationTabs | undefined> {
   const siblings = M.relations()
   if (siblings.length === 0) return undefined
 
   const resourceBase = resourceBasePath(basePath, R)
   const parentBase   = `${resourceBase}/${step0.recordId}/${step0.relationship}`
+
+  // Sibling gating runs in parallel — each predicate may hit auth /
+  // db, so don't serialize them.
+  const siblingGates = siblings.map(N => {
+    const Related = (N as unknown as { relatedResource?: ResourceClass }).relatedResource
+    return safeManagerPolicyImpl(N, 'canViewAny', Related, user, child1Record)
+  })
+  const siblingVisible = await Promise.all(siblingGates)
 
   const tabs: RelationTabMeta[] = []
 
@@ -3127,9 +3145,10 @@ function buildNestedRelationTabs(
     iconOwner: M.name,
   }))
 
-  for (const N of siblings) {
+  siblings.forEach((N, i) => {
+    if (!siblingVisible[i]) return
     let nestedRel = ''
-    try { nestedRel = N.getRelationship() } catch { continue }
+    try { nestedRel = N.getRelationship() } catch { return }
     const icon = N.getIcon()
     tabs.push(relationTab({
       key:    nestedRel,
@@ -3138,7 +3157,12 @@ function buildNestedRelationTabs(
       active: activeKey === nestedRel,
       ...(icon !== undefined ? { icon, iconOwner: N.name } : {}),
     }))
-  }
+  })
+
+  // After gating, only the back-link may remain — one tab isn't a
+  // useful sub-nav. Drop the strip in that case (consistent with
+  // depth-1's empty-tabs branch).
+  if (tabs.length <= 1) return undefined
 
   return RelationTabs.make(tabs)
 }
@@ -3151,11 +3175,25 @@ function buildNestedRelationTabs(
  * the manager's relationship key for a manager tab.
  *
  * Sub-nav follow-up (2026-05-03 cont'd) — emit BOTH `__view` and
- * `__edit` as sibling tabs (Filament-style record sub-navigation)
- * instead of one parent tab whose label depends on mode. Tabs are
- * dropped when the corresponding page role isn't registered (a
- * Resource overriding `pages()` to omit `view` or `edit` shouldn't
- * surface a tab that 404s).
+ * `__edit` as sibling tabs (record sub-navigation) instead of one
+ * parent tab whose label depends on mode. Tabs are dropped when the
+ * corresponding page role isn't registered (a Resource overriding
+ * `pages()` to omit `view` or `edit` shouldn't surface a tab that
+ * 404s).
+ *
+ * Per-tab `canX` gating (2026-05-11) — the strip now also evaluates
+ * the matching predicate for each tab and drops the entry when the
+ * user can't reach it. Routes still enforce; this is presentation
+ * polish so the chrome doesn't promise a link that 403s on click.
+ *
+ *   - `__view`  → `R.canView(user, parentRecord)` (skip gating when
+ *                 `parentRecord` is undefined — record load failed,
+ *                 so the route's own load+gate will surface a 404/403
+ *                 rather than the strip hiding silently).
+ *   - `__edit`  → `R.canEdit(user, parentRecord)` (same posture).
+ *   - manager  → `safeManagerPolicy(M, 'canViewAny', Related, user,
+ *                 parentRecord)` (falls through to Related's
+ *                 `canViewAny` when the manager hasn't overridden).
  *
  * Returns `undefined` when the resource has no relation managers — the
  * caller can then skip the prepend entirely so resources without
@@ -3163,23 +3201,44 @@ function buildNestedRelationTabs(
  * (View+Edit sub-nav alone isn't worth a tab strip; users navigate
  * those via headerActions or the back link.)
  */
-function buildRelationTabs(
-  R:         ResourceClass,
-  recordId:  string,
-  basePath:  string,
-  activeKey: string,
-): RelationTabs | undefined {
+async function buildRelationTabs(
+  R:            ResourceClass,
+  recordId:     string,
+  basePath:     string,
+  activeKey:    string,
+  user:         unknown,
+  parentRecord: unknown,
+): Promise<RelationTabs | undefined> {
   const managers = R.relations()
   if (managers.length === 0) return undefined
 
   const resourceBase = resourceBasePath(basePath, R)
   const pages = R.resolvePages()
+
+  // Evaluate every per-tab predicate in parallel. The arrays line up
+  // 1:1 with `pages.view` / `pages.edit` / `managers` below — we
+  // resolve all gates first so the tab-build loop stays straight-line.
+  // Record-aware predicates short-circuit to `true` when no parent
+  // record was loaded (presentation should never hide more aggressively
+  // than the route can enforce; a missing record means the route will
+  // 404/403 on click and the strip stays consistent with that).
+  const canViewPromise = pages.view && parentRecord !== undefined && parentRecord !== null
+    ? safeBool(() => R.canView(user, parentRecord))
+    : Promise.resolve(true)
+  const canEditPromise = pages.edit && parentRecord !== undefined && parentRecord !== null
+    ? safeBool(() => R.canEdit(user, parentRecord))
+    : Promise.resolve(true)
+  const managerGates   = managers.map(M => {
+    const Related = (M as unknown as { relatedResource?: ResourceClass }).relatedResource
+    return safeManagerPolicyImpl(M, 'canViewAny', Related, user, parentRecord)
+  })
+  const [canView, canEdit, ...managerVisible] = await Promise.all([
+    canViewPromise, canEditPromise, ...managerGates,
+  ])
+
   const tabs: RelationTabMeta[] = []
 
-  // View tab — only when the resource has a ViewPage registered.
-  // Defaults always include one; users who pruned ViewPage in their
-  // `static pages()` override get no broken link.
-  if (pages.view) {
+  if (pages.view && canView) {
     tabs.push(relationTab({
       key:       '__view',
       label:     'View',
@@ -3190,8 +3249,7 @@ function buildRelationTabs(
     }))
   }
 
-  // Edit tab — same defensive check.
-  if (pages.edit) {
+  if (pages.edit && canEdit) {
     tabs.push(relationTab({
       key:       '__edit',
       label:     'Edit',
@@ -3205,9 +3263,10 @@ function buildRelationTabs(
     }))
   }
 
-  for (const M of managers) {
+  managers.forEach((M, i) => {
+    if (!managerVisible[i]) return
     let rel = ''
-    try { rel = M.getRelationship() } catch { continue }
+    try { rel = M.getRelationship() } catch { return }
     const icon = M.getIcon()
     tabs.push(relationTab({
       key:    rel,
@@ -3216,9 +3275,23 @@ function buildRelationTabs(
       active: activeKey === rel,
       ...(icon !== undefined ? { icon, iconOwner: M.name } : {}),
     }))
-  }
+  })
+
+  // After gating, the strip may collapse to zero entries. Mirror the
+  // "no managers registered" branch above — no strip is friendlier
+  // than a one-tab strip with just the active page.
+  if (tabs.length === 0) return undefined
 
   return RelationTabs.make(tabs)
+}
+
+/**
+ * Tiny shim over `try { Boolean(await fn()) } catch { false }` so the
+ * relation-tabs builder stays straight-line — mirrors `checkPolicy`
+ * in `routes.ts` but kept local to avoid cross-module imports.
+ */
+async function safeBool(fn: () => boolean | Promise<boolean>): Promise<boolean> {
+  try { return Boolean(await fn()) } catch { return false }
 }
 
 /** Pull a human-readable title off a parent record for breadcrumb /
@@ -4185,7 +4258,7 @@ export async function resourceViewData(
 
   // Plan #11 — prepend the relation tabs strip with the "Details" tab
   // active when the resource has relation managers configured.
-  const relationTabsEl = buildRelationTabs(R, recordId, cfg.path, '__view')
+  const relationTabsEl = await buildRelationTabs(R, recordId, cfg.path, '__view', user, record)
   if (relationTabsEl) elements.unshift(relationTabsEl)
 
   const recordTitle = record !== undefined && record !== null

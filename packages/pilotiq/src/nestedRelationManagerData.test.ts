@@ -446,6 +446,27 @@ describe('Phase A relation-view — surfaces nested-manager tabs (Phase B polish
     const strips = schema.filter(s => s['type'] === 'relation-tabs')
     assert.equal(strips.length, 1, 'expected only the post-scope strip; the comment-scope strip should be absent')
   })
+
+  it('hides a nested sibling tab when N.canViewAny returns false', async () => {
+    const { panel } = buildNestedWorld({
+      nestedOverrides: {
+        async canViewAny() { return false },
+      } as unknown as Partial<typeof RelationManager>,
+    })
+    const out = await relationManagerData(panel, {
+      kind: 'relation-view', slug: 'posts',
+      recordId:    'po1',
+      relationship:'comments',
+      childId:     'c1',
+    })
+    const schema = (out as Record<string, unknown>)['schemaData'] as Array<Record<string, unknown>>
+    const strips = schema.filter(s => s['type'] === 'relation-tabs') as Array<Record<string, unknown>>
+    // Post-scope strip still here; comment-scope strip is gone because
+    // the only nested manager (CommentRepliesManager) was gated away,
+    // collapsing the strip to just the back-link `__view` — under the
+    // empty-strip drop threshold.
+    assert.equal(strips.length, 1, 'expected only the post-scope strip after sibling gating')
+  })
 })
 
 describe('nestedRelationManagerData (Phase B) — RelationTabs strip', () => {
