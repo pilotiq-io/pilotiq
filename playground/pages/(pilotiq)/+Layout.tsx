@@ -25,7 +25,7 @@ export default function PilotiqLayout({ children }: { children: ReactNode }) {
     <NavigateProvider navigate={navigate}>
       <ThemeProvider theme={panel.theme}>
         {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
-        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} currentPath={currentPath} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any} layoutProviderRegistry={layoutProviderRegistry as any}>
+        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} currentPath={currentPath ?? ''} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any} layoutProviderRegistry={layoutProviderRegistry as any}>
           {children}
         </AppShell>
       </ThemeProvider>

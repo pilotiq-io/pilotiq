@@ -553,6 +553,7 @@ async function discoverPanelExports(
       throw new Error(
         `[pilotiq vite plugin] Failed to import panel module "${userPath}" (resolved to "${resolved}"): ${msg}\n` +
           `Panel files must be import-safe — top-level code must not run server-only logic.`,
+        { cause: err },
       )
     }
   }

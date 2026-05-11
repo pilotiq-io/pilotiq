@@ -10,5 +10,5 @@ export const route: RouteSync = (pageContext) => {
   if (parts[2 + off] === 'create') return false
   if (parts[1 + off] === 'theme')  return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
-  return { routeParams: { basePath: parts[0], slug: parts[1 + off]!, id: parts[2 + off]! } }
+  return { routeParams: { basePath: parts[0]!, slug: parts[1 + off]!, id: parts[2 + off]! } }
 }

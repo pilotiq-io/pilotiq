@@ -795,7 +795,7 @@ export function registerPilotiqRoutes(
   // decide whether to mount `_cell`.
   const editableEnabled = new Set<string>()
   for (const R of cfg.resources) {
-    let hasEditable = false
+    let hasEditable: boolean
     try {
       hasEditable = (R.table(Table.make()).getChildren() ?? [])
         .some(c => c instanceof Column && c.isEditable())
@@ -2444,7 +2444,6 @@ export function registerPilotiqRoutes(
           const body = await readFormBody(req)
           const { values } = splitMeta(body)
 
-          const createUrl = `${nestedBase}/create`.replace(':id', id).replace(':childId', childId1)
           const listUrl   = nestedBase.replace(':id', id).replace(':childId', childId1)
 
           const nestedMode: RelationMode = Related1.model
@@ -2513,10 +2512,6 @@ export function registerPilotiqRoutes(
           }
           flashNotifications(req, result.notifications)
           return res.redirect(redirect, 303)
-          // `createUrl` referenced above is intentionally unused on
-          // success — kept for parity with the depth-1 path's prefill
-          // re-render shape if a future caller wants to redirect to it.
-          void createUrl
         })
 
         // ── View ──

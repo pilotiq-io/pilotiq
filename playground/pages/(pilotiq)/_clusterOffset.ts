@@ -4,5 +4,5 @@ import { clusterSlugsByBasePath } from './_components.js'
 export function clusterOffset(parts: string[]): number {
   if (parts.length < 2) return 0
   const slugs = clusterSlugsByBasePath['/' + parts[0]]
-  return slugs && slugs.includes(parts[1]) ? 1 : 0
+  return slugs && slugs.includes(parts[1]!) ? 1 : 0
 }

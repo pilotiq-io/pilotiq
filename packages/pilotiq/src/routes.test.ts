@@ -460,7 +460,7 @@ describe('registerPilotiqRoutes — POST submit lifecycle', () => {
     const formMeta = schemaData.find(s => s.type === 'form')
     assert.ok(formMeta, 'expected a form element')
     assert.deepEqual(formMeta!.values, { title: '' })
-    assert.deepEqual((formMeta!.errors as Record<string, string[]>)['title']?.length! > 0, true)
+    assert.deepEqual(((formMeta!.errors as Record<string, string[]>)['title']?.length ?? 0) > 0, true)
   })
 
   it('discriminates by submitted _formId on a multi-form page', async () => {

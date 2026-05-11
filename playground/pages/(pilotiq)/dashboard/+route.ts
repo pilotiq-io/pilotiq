@@ -6,5 +6,5 @@ export const route: RouteSync = (pageContext) => {
   const parts = pageContext.urlPathname.split('/').filter(Boolean)
   if (parts.length !== 1) return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
-  return { routeParams: { basePath: parts[0] } }
+  return { routeParams: { basePath: parts[0]! } }
 }

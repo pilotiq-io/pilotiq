@@ -3147,7 +3147,7 @@ async function buildNestedRelationTabs(
 
   siblings.forEach((N, i) => {
     if (!siblingVisible[i]) return
-    let nestedRel = ''
+    let nestedRel: string
     try { nestedRel = N.getRelationship() } catch { return }
     const icon = N.getIcon()
     tabs.push(relationTab({
@@ -3305,7 +3305,7 @@ async function buildRelationTabs(
 
   managers.forEach((M, i) => {
     if (!managerVisible[i]) return
-    let rel = ''
+    let rel: string
     try { rel = M.getRelationship() } catch { return }
     const icon = M.getIcon()
     tabs.push(relationTab({
