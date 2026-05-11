@@ -52,12 +52,15 @@ export class VideoResource extends Resource {
         const id = (r as { id?: string })?.id
         return id ? `${ADMIN}/videos/${id}` : undefined
       })
-      .cardSchema((video: { title?: string; url?: string; createdAt?: Date | string }) => [
-        Icon.make('video').size(32).color('primary'),
-        Heading.make(video.title ?? 'Untitled').level(3),
-        Text.make(video.url ?? '').size('sm').color('muted'),
-        Text.make(`Added ${formatRelative(video.createdAt)}`).size('xs').color('muted'),
-      ])
+      .cardSchema((record) => {
+        const video = record as { title?: string; url?: string; createdAt?: Date | string }
+        return [
+          Icon.make('video').size(32).color('primary'),
+          Heading.make(video.title ?? 'Untitled').level(3),
+          Text.make(video.url ?? '').size('sm').color('muted'),
+          Text.make(`Added ${formatRelative(video.createdAt)}`).size('xs').color('muted'),
+        ]
+      })
       .headerActions([
         Action.create(VideoResource, ADMIN),
       ])
