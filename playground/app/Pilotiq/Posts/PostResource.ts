@@ -3,6 +3,7 @@ import {
   TextInputColumn, SelectColumn,
   TextField, MarkdownField, SelectField, EmailField,
   TernaryFilter, DateRangeFilter,
+  TableGroup, orderByKeys,
   TextEntry, BadgeEntry, IconEntry, ComponentEntry,
   Section, Grid,
   email, minLength,
@@ -13,6 +14,7 @@ import { User } from '../../Models/User.js'
 import { PostsCommentsManager } from './relations/CommentsManager.js'
 import { PostsTagsManager }     from './relations/TagsManager.js'
 import { ContentCluster }       from '../Content/ContentCluster.js'
+import { PostAnalyticsPage }    from './AnalyticsPage.js'
 
 const ADMIN = '/new-admin'
 
@@ -109,6 +111,20 @@ export class PostResource extends Resource {
             return q
           }),
         DateRangeFilter.make('createdAt').label('Created'),
+      ])
+      // scopeQueryByKey demo — pick "Group by: Status" from the toolbar
+      // and rows band by status (draft/published). Click a heading
+      // ("Status: Draft") to drill into that bucket; banded layout
+      // collapses, a "Drilled into Status: Draft" chip mounts above
+      // the table, × to clear. The default scoper is exact-match
+      // `where('status', '=', key)` since we didn't override
+      // `.scopeQueryByKey(fn)`. `orderByKeys` pins Draft first.
+      .groups([
+        TableGroup.make('status')
+          .label('Status')
+          .collapsible()
+          .scopable()
+          .orderUsing(orderByKeys(['draft', 'published'])),
       ])
       .headerActions([
         Action.create(PostResource, ADMIN),
@@ -209,4 +225,16 @@ export class PostResource extends Resource {
    *  ORM stamps + filters `taggableType = 'Post'` on the shared pivot
    *  so the same Tag rows can attach to either a Post or a Video. */
   static override relations() { return [PostsCommentsManager, PostsTagsManager] }
+
+  /** Record sub-pages demo — `Analytics` mounts at
+   *  `/new-admin/content/posts/:id/analytics` and surfaces as a tab
+   *  on the post's sub-nav strip (between Edit and the Comments /
+   *  Tags managers). Receives the loaded post on `ctx.record`. */
+  static override pages() {
+    return {
+      record: {
+        analytics: PostAnalyticsPage,
+      },
+    }
+  }
 }
