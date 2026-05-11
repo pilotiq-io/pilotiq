@@ -1,5 +1,613 @@
 # @pilotiq/pilotiq
 
+## 0.7.0
+
+### Minor Changes
+
+- b6dffde: feat(columns): Column.toggleable() user-visibility chrome
+
+  `Column.toggleable()` lets users show / hide individual columns from a
+  new toolbar **Columns** dropdown. Preference persists per-table to
+  `localStorage` (key `pilotiq.table.<currentPath>.columns.<col>`), so the
+  choice sticks across reloads + SPA navigations. Pass `{ initiallyHidden:
+true }` to start the column off-screen — useful for technical / debug
+  columns that the typical viewer doesn't need.
+
+  ```ts
+  Resource.table = (t) =>
+    t.columns([
+      TextColumn.make("name"),
+      TextColumn.make("email").toggleable(),
+      TextColumn.make("internalId").toggleable({ initiallyHidden: true }),
+    ]);
+  ```
+
+  The dropdown trigger renders next to the existing Filters / Sort
+  controls; non-toggleable columns always render and never appear in the
+  dropdown. Hidden state is purely presentational — the column's data
+  still loads from the server so sorts / filters that reference a hidden
+  column keep working, and a re-toggle paints fresh values without a
+  roundtrip. Toggling multiple columns in one open: the dropdown stays
+  open between clicks (`closeOnClick={false}`).
+
+  `visibleColumns = columns.filter(c => !hidden.has(c.name))` flows
+  through the TableHead loop, body cells loop, per-group + footer summary
+  rows, and the empty-state colSpan.
+
+  The `toggleable` key is sparse on the wire — only set when a column
+  opts in.
+
+- 8845b90: feat(core): `@pilotiq/pilotiq/styles/file-upload.css` subpath
+
+  `FileUploadField`'s image-cropping UI ships its own stylesheet via the
+  `react-image-crop` package — a declared dep of `@pilotiq/pilotiq`.
+  Consumers no longer need to declare `react-image-crop` themselves;
+  import the new subpath from your app's Tailwind / global stylesheet:
+
+  ```css
+  @import "@pilotiq/pilotiq/styles/file-upload.css";
+  ```
+
+  The CSS file re-imports `react-image-crop/dist/ReactCrop.css`; the
+  @import resolves through pilotiq's own `node_modules`, so the consumer
+  side doesn't need a direct dep declaration. Mirrors the same pattern
+  as other UI peer deps that pilotiq ships through subpaths.
+
+  **Build side:** `pnpm build` now copies `src/styles/*.css` to
+  `dist/styles/` via a new `copy-assets` script. Watch-mode (`pnpm dev`)
+  runs the copy once at startup; per-CSS-edit re-copies aren't wired
+  (unusual in dev — the CSS file is essentially static).
+
+- 2c441b7: feat(core): `Form.inlineLabel()` / `Section.inlineLabel()` cascade
+
+  Set `inlineLabel` once at the top of a form (or any section) and every
+  descendant `Field` inherits it instead of repeating `.inlineLabel()`
+  on each one. Per-field calls still win.
+
+  ```ts
+  Form.make()
+    .inlineLabel()
+    .schema([
+      TextField.make("name"), // → inlineLabel: true
+      TextField.make("email"), // → inlineLabel: true
+      TextField.make("bio").inlineLabel(false), // explicit → label-above
+      Section.make("Address")
+        .inlineLabel(false)
+        .schema([
+          TextField.make("street"), // subtree resets → label-above
+          TextField.make("city"), // → label-above
+        ]),
+    ]);
+  ```
+
+  **Resolution chain (most-specific wins):**
+
+  1. Field-level `Field.inlineLabel(true|false)` — explicit setting on the
+     field itself.
+  2. Nearest ancestor `Section` with `.inlineLabel(true|false)` — overrides
+     any outer container for its subtree.
+  3. Outer `Form.inlineLabel(true|false)` — applies to the whole form.
+  4. Default — label-above.
+
+  **Implementation:**
+
+  - `RenderContext.inlineLabelDefault?: boolean` — pushed by
+    `resolveSchema.deriveChildContext` when a `Form` or `Section` calls
+    `.inlineLabel(...)`. Children inherit until another container resets
+    the flag.
+  - `Field._inlineLabel` widened from `boolean` (default `false`) to
+    `boolean | undefined`. `Field.buildMeta(ctx)` reads
+    `this._inlineLabel ?? ctx.inlineLabelDefault` to decide whether to
+    emit the meta key. No public-API change — the setter is unchanged
+    (`inlineLabel(v = true)`).
+  - New `Form.inlineLabel(v = true)` + `Form.getInlineLabel()` and the
+    parallel `Section.inlineLabel(v = true)` + `Section.getInlineLabel()`.
+
+  **No wire-shape change.** The on-the-wire `FieldMeta.inlineLabel` is
+  still emitted with `true` only — the cascade is server-side.
+
+  Closes the "Schema-wide `inlineLabel()` cascading default on
+  Form/Section. Easy but no consumer ask." item from the field
+  micro-additions audit (`docs/plans/admin-gap-audit.md`).
+
+- ae1450e: feat(core): `Pilotiq.layoutProvider(C)` — plugin-mounted layout-root providers
+
+  Adds an open-core registry where plugins can register React provider
+  components that wrap the panel's `<AppShell>` children at the layout
+  root. Removes the per-app requirement that consumers manually wrap
+  their `pages/+Layout.tsx` to make plugin contexts available outside
+  specific component slots.
+
+  ```ts
+  // In a plugin's register(panel) step:
+  panel.layoutProvider(({ children, basePath }) => (
+    <AiUiProvider panelPath={basePath}>{children}</AiUiProvider>
+  ));
+
+  // or bulk:
+  panel.layoutProviders([Provider1, Provider2]);
+  ```
+
+  Provider components receive `{ children, basePath? }` props.
+  Registration order is preserved — the first-registered provider sits
+  OUTERMOST (closest to the layout root); the last sits INNERMOST
+  (closest to the page tree). Use this when one provider depends on
+  another being in scope: register the producer first.
+
+  **Mirrors the `panel.rightPanel(...)` pattern** — Vite plugin
+  harvests the live component refs into `_components.ts` (alongside
+  `componentRegistry` + `rightPanelRegistry`) as `layoutProviderRegistry`,
+  the auto-gen `+Layout.tsx` template threads it as
+  `<AppShell layoutProviderRegistry={...}>`, and `AppShell` folds the
+  registry around its rendered tree from last to first so the first
+  provider ends up outermost. Empty / unset → no wrapping happens.
+
+  The first consumer is `@pilotiq-pro/ai` (≥ next minor), which uses
+  this to auto-mount `<AiUiProvider>` so the cross-package
+  `PendingSuggestionsContext` queue and `<AiClientToolBindings>`
+  handlers reach the form tree without a per-app `+Layout.tsx` edit.
+  Apps on this version of pilotiq core can drop the manual `<AiUiProvider>`
+  wrap they were carrying as a load-bearing requirement.
+
+- e1a79f6: feat(core+tiptap): cross-tree applier registry — Approve from anywhere
+
+  Phase 8.5 of the AI UX polish plan. Adds an open-core registry that
+  lets aggregate consumers — chat-sidebar pending-pills, bulk-action
+  menus, future "AI inbox" surfaces — apply a `PendingSuggestion` to its
+  target field without sharing the form's React tree.
+
+  ```ts
+  import { registerPendingSuggestionApplier } from "@pilotiq/pilotiq/react";
+
+  // Renderer-side (auto-wired by FieldShell + Tiptap bridge):
+  useEffect(
+    () =>
+      registerPendingSuggestionApplier(formId, fieldName, (suggestion) => {
+        /* apply to this field's underlying input or editor */
+      }),
+    [formId, fieldName]
+  );
+  ```
+
+  **Core (`@pilotiq/pilotiq`)**:
+
+  - New module `react/PendingSuggestionApplierRegistry.ts` — module-level
+    Map keyed by `(formId, fieldName)` (`formId` defaults to `'*'` for
+    global form scope; form-scoped registrations always win over the
+    wildcard for the same field). Exposes `registerPendingSuggestionApplier`
+    (returns unregister fn for `useEffect` cleanup) and
+    `getPendingSuggestionApplier`.
+  - `PendingSuggestionsApi` extended with `approve(id)` and
+    `approveAll(filter?)` — resolves the suggestion's `(formId,
+fieldName)` against the registry, runs the applier, then dismisses.
+    Falls through to plain `dismiss` when no applier is registered or
+    the applier throws (so a busted applier doesn't strand entries).
+    Default no-op context implements both as plain dismiss.
+  - `<FieldShell>` auto-registers a generic applier on mount for every
+    non-richtext, non-dotted-path field. Applier uses
+    `useFieldState.setValue` for controlled (live) forms and a DOM
+    fallback (React's internal value setter via
+    `Object.getOwnPropertyDescriptor(proto, 'value').set`) for
+    uncontrolled forms. Cleanup on unmount.
+
+  **Tiptap (`@pilotiq/tiptap`)**:
+
+  - `useAiSuggestionBridge` registers a richtext-aware applier that
+    calls `editor.chain().focus().approveAiSuggestion(id).run()` —
+    same path the inline chip click takes. The transaction listener
+    already mirrors the editor-side dismissal back to context, so a
+    pill-driven Approve flows: pill → applier → editor command →
+    editor `onTransaction` → context `dismiss`.
+
+  The registry is generic — not AI-specific. Future field-mutation
+  extensions (form-recovery, undo stacks, bulk imports) can register
+  through the same seam.
+
+  Default no-op context still ships, so trees without a real provider
+  mounted (e.g. headless tests, marketing-site previews) see no behavior
+  change.
+
+- df85886: feat(core): `PendingSuggestion.origin` for cross-surface filtering
+
+  Widen the `PendingSuggestion` type with an optional `origin` block so
+  aggregate UIs (pending-pills, overlays, etc.) can filter the shared
+  panel-wide queue down to the surface that produced each entry. Backward
+  compatible — existing producers that don't stamp `origin` keep working;
+  consumers that don't read it see the same flat queue they always did.
+
+  ```ts
+  export interface PendingSuggestionOrigin {
+    surface: "sidebar" | "popover" | "field-action";
+    runId?: string;
+    agentSlug?: string;
+  }
+
+  export interface PendingSuggestion {
+    // …existing fields…
+    origin?: PendingSuggestionOrigin;
+  }
+  ```
+
+  Plugin packages (`@pilotiq-pro/ai`) stamp `origin` when they push from a
+  known surface — the popover-chat scopes its `<PendingSuggestionsPill>`
+  filter to `o => o?.runId === currentRunId` so it only surfaces its own
+  session's output, even when sidebar-originated suggestions are still
+  visible in the same panel-wide queue.
+
+  No wire-shape break, no consumer code required.
+
+- 56a6f62: feat(core+tiptap): PendingSuggestionsContext seam + RichTextField AI bridge
+
+  Adds a cross-package, plugin-fillable queue of suggested field-value
+  changes that any field renderer can subscribe to. Open-core seam — core
+  defines the shape + provider, plugins like `@pilotiq-pro/ai` ship the
+  real implementation.
+
+  ```ts
+  import { usePendingSuggestionsForField } from "@pilotiq/pilotiq/react";
+
+  const { list, dismiss } = usePendingSuggestionsForField("body");
+  //      ↑ filtered to suggestions targeting this field+formId
+  ```
+
+  **`@pilotiq/pilotiq` exports** (`@pilotiq/pilotiq/react`):
+
+  - `PendingSuggestion` — `{ id, fieldName, formId?, currentValue,
+suggestedValue, source?, createdAt, meta? }`. The `meta` bag carries
+    field-type-specific extras (e.g. `editorRange: { from, to }` for
+    `richtext`).
+  - `PendingSuggestionsApi` — `{ list, push, dismiss, dismissAll }`. Core
+    ships a no-op default context so trees without a real provider never
+    throw.
+  - `PendingSuggestionsContext`, `usePendingSuggestions()`,
+    `usePendingSuggestionsForField(name, formId?)` — the subscription
+    surface.
+  - `registerPendingSuggestionOverlay(C)` — mirrors
+    `registerFieldLabelSlot()`. A plugin registers a single component
+    (`{ suggestion, onApprove, onReject }` props) that `<FieldShell>`
+    mounts below the input whenever a matching pending suggestion exists.
+    Skipped on `richtext` fields (those render the diff inline via the
+    Tiptap extension).
+
+  **`@pilotiq/tiptap` `RichTextField` bridge**:
+
+  The Tiptap renderer now subscribes to the queue and mirrors entries
+  into its `AiSuggestionExtension`. Producers push a `PendingSuggestion`
+  with `meta.editorRange = { from, to }` and a string `suggestedValue`;
+  the bridge calls `editor.commands.addAiSuggestion(...)` so the inline
+  diff + Approve / Reject chips appear. When the user clicks a chip,
+  the editor command runs (mutating the doc on Approve, leaving it on
+  Reject) and the bridge mirrors the removal back to the queue via
+  `dismiss(id)` so other surfaces (chat-sidebar pill, FieldShell
+  overlay registered by another plugin) clear in lock-step.
+
+  The bridge is no-op when no provider is mounted — pilotiq core ships
+  the default no-op context, so consumers without `@pilotiq-pro/ai` see
+  no behavior change.
+
+  Pure helpers + types are public; the bridge hook
+  `useAiSuggestionBridge` is exported from `@pilotiq/tiptap` for advanced
+  producers that want to drive their own editor instances.
+
+- e791f65: feat(core): per-tab `canX` gating on `RelationTabs`
+
+  The record sub-navigation strip (`[View, Edit, …managers]`) now runs the
+  matching authorization predicate for each tab and drops entries the
+  user can't reach. The routes always enforced — this is presentation
+  polish so the chrome doesn't promise a link that 403s on click.
+
+  **Gates evaluated per tab:**
+
+  - `__view` → `R.canView(user, parentRecord)`
+  - `__edit` → `R.canEdit(user, parentRecord)`
+  - manager → `safeManagerPolicy(M, 'canViewAny', Related, user,
+parentRecord)` (falls through to the related Resource's
+    `canViewAny` when the manager hasn't overridden — same shape as
+    everywhere else)
+
+  Throwing predicate fails closed (tab hidden). Record-aware predicates
+  short-circuit to "visible" when the record-load failed (so the route's
+  own gate surfaces the 404/403, not a silent hide).
+
+  **Empty-strip collapse:** if every gated tab drops, `buildRelationTabs`
+  returns `undefined` and the strip is omitted entirely (consistent with
+  the existing "no managers registered" branch). The depth-2
+  `buildNestedRelationTabs` mirrors the shape — sibling nested manager
+  tabs gate on `safeManagerPolicy(N, 'canViewAny', Related, user,
+child1Record)`; the back-link `__view` stays unconditional since the
+  user already passed `M.canViewAny` to reach that page; if all sibling
+  tabs drop the depth-2 strip is omitted (back-link alone isn't useful
+  sub-nav).
+
+  **No public API change.** Tab gating runs inside the existing
+  `buildRelationTabs` / `buildNestedRelationTabs` helpers — both private
+  to `pageData.ts`. Their callers (`resourceEditData` / `resourceViewData`
+  / relation data builders / nested relation data builders) already had
+  `user` and `parentRecord` (or `child1`) in scope so threading is a
+  one-line change at each site.
+
+  7 tests added (6 depth-1 + 1 depth-2).
+
+- cce4f52: feat(repeater): afterCreate / afterUpdate / afterDelete hooks for relationship-mode
+
+  `Repeater.relationship(...)` gains three per-row lifecycle hooks that
+  fire from `persistRelationshipRows` after each child operation:
+
+  ```ts
+  RepeaterField.make("attachments")
+    .relationship("attachments")
+    .schema([TextField.make("filename")])
+    .afterCreate(async (record, ctx) => {
+      /* ... */
+    })
+    .afterUpdate(async (record, ctx) => {
+      /* ... */
+    })
+    .afterDelete(async (removed, ctx) => {
+      if (ctx.mode === "hasMany" || ctx.mode === "morphMany") {
+        // child record was physically deleted
+      }
+      // For M2M only the pivot row was detached; the child may still exist.
+    });
+  ```
+
+  The handler receives the persisted child record and a `RepeaterRowContext`
+  carrying:
+
+  - `parent` — post-save parent record.
+  - `parentId` — `parent[primaryKey]`.
+  - `field` — the Repeater field's `name`.
+  - `index` — 0-based row index in the submitted set; `-1` for `afterDelete`.
+  - `mode` — the resolved `RepeaterRelationMode` (`'hasMany' | 'morphMany'
+| 'belongsToMany' | 'morphToMany' | 'morphedByMany'`).
+
+  Each setter is config-time guarded: calling on a Repeater that hasn't
+  declared `relationship(...)` throws with a clear message (mirrors the
+  existing `orderColumn() / pivotColumns()` guards). Throwing handlers
+  propagate and stop the rest of the persist diff — earlier rows have
+  already saved (v1 isn't transactional).
+
+- bd8229e: feat(core): `Resource.pages().record` — custom record sub-pages auto-mounted on the sub-nav strip
+
+  Declare custom pages that live under a single record. Each sub-page
+  gets its own URL (`${resourceBase}/:id/${subPageSlug}`), its own tab in
+  the record `RelationTabs` strip, receives the loaded record on
+  `ctx.record`, and runs its own `canAccess(user, record)` gate.
+
+  ```ts
+  class ActivityPage extends Page {
+    static override slug = "activity";
+    static override label = "Activity";
+    static override schema(ctx) {
+      return [
+        Heading.make(`Activity for ${(ctx.record as { name?: string })?.name}`),
+      ];
+    }
+    // Optional record-aware gate.
+    static override async canAccess(user, record) {
+      return (
+        (record as { ownerId: string })?.ownerId ===
+        (user as { id: string })?.id
+      );
+    }
+  }
+
+  class UserResource extends Resource {
+    static override slug = "users";
+    static override pages() {
+      return {
+        record: {
+          activity: ActivityPage,
+        },
+      };
+    }
+  }
+  ```
+
+  **Wiring:**
+
+  - `ResourcePages.record?: Record<string, typeof Page>` widening — keeps
+    the four standard roles (`index / create / edit / view`) cleanly
+    typed; the `record` slot signals "these are per-record sub-pages."
+  - `Resource.getRecordPages()` accessor (sugar over
+    `resolvePages().record ?? {}`).
+  - `PageMode` widened with `'record'`.
+  - `Page.canAccess(user, record?)` signature widened — second optional
+    arg, back-compat with existing custom-page subclasses that wrote
+    `canAccess(user)`.
+  - Routes: `GET ${resourceBase}/:id/${subPageSlug}` per registered
+    sub-page. The Vike `relation-list` route + `dispatchPageData` share
+    the URL slot — relation managers tried first, record sub-pages
+    second. Boot validation prevents slug collisions.
+  - New `resourceRecordPageData(pilotiq, slug, recordId, subPageSlug,
+req)` builder mirrors `resourceViewData`'s shape.
+  - `RelationTabs` strip inserts a tab per sub-page between `__edit` and
+    the managers, gated on `SubPage.canAccess(user, record)`. Strip now
+    also mounts when ONLY sub-pages exist (no relation managers needed).
+
+  **Boot validation:**
+
+  Sub-page slugs must match `[A-Za-z0-9_-]+` and must not collide with:
+
+  - Reserved relation-manager tokens (`edit`, `delete`, `restore`,
+    `force-delete`, `_form`, `_action`, `_search`, `_uploads`,
+    `_attach`, `_detach`, `_bulk-detach`).
+  - Any of the resource's relation-manager `relationship` slugs.
+
+  Boot fails with a clear error message — silent 404 at request time is
+  much harder to debug than a config-time throw.
+
+  **v1 limits:** depth-1 only (sub-pages live under `Resource`, not
+  under `RelationManager`); no automatic sidebar surface (sub-pages are
+  per-record); no tab badges on record sub-pages.
+
+  Plan + guide: `docs/plans/resource-record-sub-pages.md`,
+  `docs/guide/record-sub-pages.md`.
+
+- 2f42dcd: feat(columns): SelectColumn.options(record => …) per-row resolver
+
+  `SelectColumn.options()` now accepts a function form alongside the
+  existing static `{ key: label }` / `[{ value, label }]` shapes. The
+  resolver receives the raw record and may return a Promise; runs once
+  per visible row in `loadTableRecords` (gated behind the existing
+  `canEdit` hook so hidden cells skip the resolver cost).
+
+  ```ts
+  SelectColumn.make("assigneeId").options(async (row) => {
+    const team = await Team.find(row.teamId);
+    return team.members.map((m) => ({ value: String(m.id), label: m.name }));
+  });
+  ```
+
+  The resolved per-row option list is stamped on `row._cellSelectOptions[col.name]`;
+  the renderer's `<CellSelect>` reads it as `props.rowOptions` and falls
+  back to the column's static `selectOptions` when unset. Resolvers run
+  in parallel across columns within a row. A throwing resolver leaves
+  the slot unset on that row only — others still stamp, and the cell
+  falls back to the static fallback list so one bad row doesn't break
+  the whole table.
+
+- d7dbc80: feat(core): `TableGroup.scopeQueryByKey()` — click-a-group-heading-to-drill-in
+
+  Click a banded group's heading to drill the table into just that group's
+  rows. The banded layout disappears for that render, a "Drilled into
+  <Label>: <Value>" chip mounts above the table with an × to clear, and
+  the query has already been narrowed server-side via the registered scoper.
+
+  ```ts
+  Table.make()
+    .groups([
+      TableGroup.make("status")
+        .label("Status")
+        .scopeQueryByKey((q, key) => q.where("status", "=", key)),
+    ])
+    .defaultGroup("status");
+  ```
+
+  **Three new methods on `TableGroup`:**
+
+  - `scopeQueryByKey(fn)` — query scoper applied when the user clicks a
+    heading. Receives `(q, key)` and returns the narrowed query. **Default
+    (no override):** exact-match `(q, key) => q.where(column, '=', key)`.
+    Date groups (`.date()`) install a whole-day range default instead —
+    `(q, key) => q.where(col, '>=', '${key} 00:00:00').where(col, '<=', '${key} 23:59:59')`.
+    Auto-arms `.scopable(true)`.
+  - `getKeyFromRecordUsing(fn)` — override the per-record bucket key
+    resolver. Returned string round-trips through `?<prefix>groupKey=` and
+    lands as the second arg of `scopeQueryByKey`. Default = raw column
+    value cast to string (or the `YYYY-MM-DD` bucket when `.date()` is on).
+    Auto-arms `.scopable(true)`.
+  - `scopable(v = true)` — explicit opt-in toggle for the clickable
+    heading affordance. Use `.scopable(false)` to opt back out after a
+    setter has auto-armed it.
+
+  **URL state:** dedicated `?groupKey=<value>` key, prefix-aware via
+  `Table.queryStringIdentifier`. Pairs with `?group=<col>`. Clicking a
+  heading resets `?page` to 1 server-side so drill-in always lands on the
+  first page of the bucket. The × chip clears `?groupKey=` and restores
+  the banded view.
+
+  **Renderer:** group heading text wraps in a real `<a href>` when
+  `scopable` is true (cmd-click / right-click "open in new tab" works);
+  plain left-click SPA-navs via `useNavigate()`. The collapsible chevron
+  (when `.collapsible()` is also set) stays separate so users can fold
+  the group without drilling in.
+
+  **Persistence:** `<prefix>groupKey` is excluded from
+  `persistFiltersInSession`'s persisted slice (parallel to `<prefix>page`)
+  — drill-in is page-state, not filter-state. Bare-URL visits return to
+  the banded view; the user's last drill-in URL is shareable but not
+  auto-restored on revisit.
+
+  **Composition:**
+
+  - Chains on top of filters / `TrashedFilter` / active tab query — runs
+    after all of them via `ctx.groupScope` in the model adapter.
+  - Suppresses per-group summaries (`groupSummaries`) for the drilled-in
+    render; the global `tfoot` summary still computes over the visible
+    bucket.
+  - Composes with `queryStringIdentifier` — keys parse as
+    `<id>_groupKey` alongside `<id>_group`.
+  - Works on `RelationManager` tables — `modelRelationTableRecords`
+    reads the same `ctx.groupScope`.
+
+  **v1 limits:** one key at a time (multi-select drill-in deferred);
+  drill-in URLs survive bookmarking but not session-persistence; date
+  range default is whole-day (sub-day buckets need a custom scoper).
+
+  Plan: `docs/plans/table-group-scope-query-by-key.md`.
+
+- 8d92594: feat(wizard): nav-button customizers + URL-state persistence
+
+  `Wizard.submitAction(a => …) / .nextAction(...) / .previousAction(...)`
+  let consumers customize the chrome of the built-in nav buttons. The
+  customizer receives a framework-built default `Action` (Submit / Next /
+  Back) and returns a customized clone (or a fresh `Action` outright);
+  chrome (label / icon / color / size / outlined / iconOnly / tooltip /
+  disabled rules) carries through to the rendered button while click
+  behavior stays hardwired to advance / recede / submit-form.
+
+  `submitAction` is the opt-in case: by default the wizard renders a hint
+  pointing at the surrounding form's Save button. Setting `submitAction`
+  mounts a real `<button type="submit">` inside the wizard chrome on the
+  final step, making the wizard self-contained — pair with
+  `CreatePage.getFormActions(R) → []` to suppress the page-level Save when
+  you don't want two submits on the same page.
+
+  `Wizard.persistStepInQueryString(key='step' | true | false)` mirrors the
+  active step to the URL as `?<key>=N` (1-based for human-friendly URLs)
+  via `history.replaceState` — purely client-side state sync with no SSR
+  re-fetch. URL wins over localStorage on initial mount so deep-linking
+  to a specific step works. Multi-wizard pages should use distinct keys
+  to avoid collisions on the same query string.
+
+### Patch Changes
+
+- 425cf50: fix(core): register field-owned AI appliers on every React-driven input
+
+  Same hidden-input bug as `SelectField`, swept across nine more field
+  types. Each of these renders a `<input type="hidden" name={name}>`
+  mirror for native form submit but drives the visible widget from React
+  state — `FieldShell`'s generic applier writes to the hidden input and
+  dispatches `change`, but the widget has no listener wired to it, so AI
+  Review-mode Approve (and any other `PendingSuggestionApplierRegistry`
+  caller) silently no-ops.
+
+  Fixed by registering a field-owned applier inside each component and
+  adding the field's `fieldType` to the central
+  `SELF_APPLIER_FIELD_TYPES` set in `FieldShell.tsx` (single source of
+  truth — `FieldShell` skips its generic registration so the field's
+  applier stays last-write-wins):
+
+  - `ToggleFieldInput` — `'toggle'`; coerces to boolean
+  - `SliderInput` — `'slider'`; coerces to number (clamps to `min` on NaN)
+  - `ColorInput` — `'color'`; falls back to `#000000` for null/empty
+  - `KeyValueInput` — `'keyValue'`; rebuilds rows from the suggestion
+    object (preserves existing row IDs by index for input-focus stability)
+  - `FileUploadInput` — `'fileUpload'`; routes through `toUrls()`;
+    honors `multiple` (single-file persists `urls[0] ?? null`)
+  - `TagsInput` — `'tagsInput'`; routes through the existing `toArray()`
+    parser (tolerates `string[]`, JSON-encoded, single string)
+  - `DateTimeInput` — `'dateTime'`; coerces null/empty to `''`
+  - `RadioInput` — `'radio'`; coerces null to `''`
+  - `CheckboxListInput` — `'checkboxList'`; routes through the local
+    `toArray()` (also fixes a pre-existing latent corruption: per-option
+    hidden mirrors share the `[name]` attribute, so the generic applier
+    would have stamped every one with the same stringified value
+    instead of replacing the array)
+
+  All appliers follow the canonical `SelectFieldInput` shape:
+  `useRef(fs)` to hold latest field-state across re-registrations,
+  dotted-path skip (Repeater rows are inaccessible from outside the
+  form's React tree), and a controlled/uncontrolled split that mirrors
+  each component's existing `setValue` path.
+
+  After this sweep, AI Review-mode Approve correctly updates the visible
+  widget on every Filament-parity field type. Custom field renderers
+  that drive their state from React still need to follow the same
+  pattern — register inside the component, add `fieldType` to the
+  shared set.
+
 ## 0.6.2
 
 ### Patch Changes

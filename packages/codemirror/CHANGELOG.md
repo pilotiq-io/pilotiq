@@ -1,5 +1,25 @@
 # @pilotiq/codemirror
 
+## 4.0.0
+
+### Patch Changes
+
+- Updated dependencies [b6dffde]
+- Updated dependencies [8845b90]
+- Updated dependencies [2c441b7]
+- Updated dependencies [ae1450e]
+- Updated dependencies [e1a79f6]
+- Updated dependencies [df85886]
+- Updated dependencies [56a6f62]
+- Updated dependencies [e791f65]
+- Updated dependencies [cce4f52]
+- Updated dependencies [bd8229e]
+- Updated dependencies [2f42dcd]
+- Updated dependencies [425cf50]
+- Updated dependencies [d7dbc80]
+- Updated dependencies [8d92594]
+  - @pilotiq/pilotiq@0.7.0
+
 ## 3.0.0
 
 ### Patch Changes
