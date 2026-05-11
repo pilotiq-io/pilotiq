@@ -2,7 +2,7 @@
 @source "../../packages/pilotiq/src";
 @source "../../packages/tiptap/src";
 @import "tw-animate-css";
-@import "react-image-crop/dist/ReactCrop.css";
+@import "@pilotiq/pilotiq/styles/file-upload.css";
 @plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));

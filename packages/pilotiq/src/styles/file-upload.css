@@ -1,0 +1,13 @@
+/* Stylesheet for `FileUploadField`'s image-cropping affordance.
+ *
+ * `react-image-crop` is a declared dep of `@pilotiq/pilotiq` and its
+ * CSS is required for the crop UI to render correctly. Consumers
+ * pull in the styles by importing this subpath from their app's CSS
+ * (Tailwind / global stylesheet):
+ *
+ *   @import "@pilotiq/pilotiq/styles/file-upload.css";
+ *
+ * Importing through this subpath means consumers don't need to
+ * declare `react-image-crop` as a direct dep — the CSS @import below
+ * resolves through pilotiq's own node_modules. */
+@import "react-image-crop/dist/ReactCrop.css";

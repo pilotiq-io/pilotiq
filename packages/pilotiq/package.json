@@ -57,11 +57,13 @@
     "./richtext": {
       "import": "./dist/richtext/index.js",
       "types": "./dist/richtext/index.d.ts"
-    }
+    },
+    "./styles/file-upload.css": "./dist/styles/file-upload.css"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "dev": "tsc -p tsconfig.build.json --watch",
+    "build": "tsc -p tsconfig.build.json && pnpm run copy-assets",
+    "dev": "tsc -p tsconfig.build.json --watch & pnpm run copy-assets; wait",
+    "copy-assets": "mkdir -p dist/styles && cp -R src/styles/*.css dist/styles/",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\"; EXIT=$?; rm -rf dist-test; exit $EXIT"
