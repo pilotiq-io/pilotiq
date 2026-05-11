@@ -9,6 +9,7 @@
     "build": "vike build",
     "start": "node ./dist/server/index.mjs",
     "preview": "pids=$(lsof -ti :3003 2>/dev/null); if [ -n \"$pids\" ]; then kill -9 $pids; fi; node ./dist/server/index.mjs",
+    "pretypecheck": "node scripts/regen-pilotiq-stubs.mjs",
     "typecheck": "tsc --noEmit",
     "rudder": "tsx node_modules/@rudderjs/cli/src/index.ts"
   },

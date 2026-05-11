@@ -18,7 +18,8 @@ export default Application.configure({
     web:      () => import('../routes/web.ts'),
     api:      () => import('../routes/api.ts'),
     commands: () => import('../routes/console.ts'),
-    channels: () => import('../routes/channels.ts'),
+    // channels: broadcast not used in pilotiq playground — re-enable
+    //           by exporting Broadcast.channel(...) calls from routes/channels.ts
   })
   .withMiddleware((m) => {
     // Global middlewares
