@@ -610,5 +610,8 @@ export function defaultPages(R: ResourceClass): Required<ResourcePages> {
     create: defaultCreatePage(R),
     edit:   defaultEditPage(R),
     view:   defaultViewPage(R),
+    // Record sub-pages have no framework defaults — users register them
+    // explicitly via `static pages() { return { record: { … } } }`.
+    record: {},
   }
 }

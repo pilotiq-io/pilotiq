@@ -3209,15 +3209,23 @@ async function buildRelationTabs(
   user:         unknown,
   parentRecord: unknown,
 ): Promise<RelationTabs | undefined> {
-  const managers = R.relations()
-  if (managers.length === 0) return undefined
+  const managers       = R.relations()
+  const recordPageMap  = R.getRecordPages()
+  const recordPageSlugs = Object.keys(recordPageMap)
+  // No managers AND no record sub-pages → no strip. View+Edit alone
+  // isn't worth a tab strip; users navigate those via headerActions or
+  // the back link. (When either is non-empty, the strip is worth
+  // mounting even if all the dynamic tabs end up gated away — the
+  // post-gate emptiness check below catches that.)
+  if (managers.length === 0 && recordPageSlugs.length === 0) return undefined
 
   const resourceBase = resourceBasePath(basePath, R)
   const pages = R.resolvePages()
 
   // Evaluate every per-tab predicate in parallel. The arrays line up
-  // 1:1 with `pages.view` / `pages.edit` / `managers` below — we
-  // resolve all gates first so the tab-build loop stays straight-line.
+  // 1:1 with `pages.view` / `pages.edit` / `recordPageSlugs` /
+  // `managers` below — we resolve all gates first so the tab-build
+  // loop stays straight-line.
   // Record-aware predicates short-circuit to `true` when no parent
   // record was loaded (presentation should never hide more aggressively
   // than the route can enforce; a missing record means the route will
@@ -3228,13 +3236,26 @@ async function buildRelationTabs(
   const canEditPromise = pages.edit && parentRecord !== undefined && parentRecord !== null
     ? safeBool(() => R.canEdit(user, parentRecord))
     : Promise.resolve(true)
-  const managerGates   = managers.map(M => {
+  const recordPageGates = recordPageSlugs.map(subSlug => {
+    // Record sub-page gates run against the parent record verbatim —
+    // missing record still calls the predicate so a sub-page that
+    // gates on global user state (no record needed) still evaluates.
+    // safeBool fails closed for throwing predicates.
+    return safeBool(() => recordPageMap[subSlug]!.canAccess(user, parentRecord))
+  })
+  const managerGates    = managers.map(M => {
     const Related = (M as unknown as { relatedResource?: ResourceClass }).relatedResource
     return safeManagerPolicyImpl(M, 'canViewAny', Related, user, parentRecord)
   })
-  const [canView, canEdit, ...managerVisible] = await Promise.all([
-    canViewPromise, canEditPromise, ...managerGates,
+  const gateResults = await Promise.all([
+    canViewPromise, canEditPromise,
+    ...recordPageGates,
+    ...managerGates,
   ])
+  const canView         = gateResults[0] as boolean
+  const canEdit         = gateResults[1] as boolean
+  const recordPageVisible = gateResults.slice(2, 2 + recordPageSlugs.length) as boolean[]
+  const managerVisible    = gateResults.slice(2 + recordPageSlugs.length)    as boolean[]
 
   const tabs: RelationTabMeta[] = []
 
@@ -3263,6 +3284,25 @@ async function buildRelationTabs(
     }))
   }
 
+  // Record sub-page tabs — between Edit and the managers, in declaration
+  // order. Tab label inherits from the sub-page's class (`getLabel()`);
+  // icon picks up the sub-page's static `icon` when set. Slug doubles as
+  // the URL segment AND the `activeKey` discriminator the data builder
+  // passes when rendering the sub-page.
+  recordPageSlugs.forEach((subSlug, i) => {
+    if (!recordPageVisible[i]) return
+    const SubPage = recordPageMap[subSlug]!
+    tabs.push(relationTab({
+      key:       subSlug,
+      label:     SubPage.getLabel(),
+      url:       `${resourceBase}/${recordId}/${subSlug}`,
+      active:    activeKey === subSlug,
+      ...(SubPage.icon !== undefined
+        ? { icon: SubPage.icon, iconOwner: SubPage.name }
+        : {}),
+    }))
+  })
+
   managers.forEach((M, i) => {
     if (!managerVisible[i]) return
     let rel = ''
@@ -3278,7 +3318,7 @@ async function buildRelationTabs(
   })
 
   // After gating, the strip may collapse to zero entries. Mirror the
-  // "no managers registered" branch above — no strip is friendlier
+  // "no managers + no sub-pages" branch above — no strip is friendlier
   // than a one-tab strip with just the active page.
   if (tabs.length === 0) return undefined
 
@@ -4290,6 +4330,102 @@ export async function resourceViewData(
   }
 }
 
+/**
+ * Custom record sub-page data builder. Mounted at
+ * `${resourceBase}/${slug}/:id/${subPageSlug}` for each entry in
+ * `Resource.pages().record`. Mirrors `resourceViewData`'s shape: load
+ * the record, run R.canAccess + R.canView (parent-resource gates),
+ * then SubPage.canAccess(user, record) (sub-page-specific gate),
+ * then render the sub-page's schema with `ctx.record` set. Tab strip
+ * carries the sub-page slug as the active key so the matching record
+ * sub-page tab highlights.
+ *
+ * Returns:
+ *   - `null` — resource / sub-page slug not found (404 upstream).
+ *   - `{ ok: false, status: 403 }` — any gate fails or throws.
+ *   - resolved page data — on success.
+ */
+export async function resourceRecordPageData(
+  pilotiq:       Pilotiq,
+  slug:          string,
+  recordId:      string,
+  subPageSlug:   string,
+  req?:          unknown,
+): Promise<Record<string, unknown> | null | { ok: false; status: 403 }> {
+  const cfg = pilotiq.getConfig()
+  const R = cfg.resources.find(r => r.getSlug() === slug)
+  if (!R) return null
+  const recordPages = R.getRecordPages()
+  const PageClass = recordPages[subPageSlug]
+  if (!PageClass) return null
+
+  const user = await pilotiq.resolveUser(req)
+
+  // Load the parent record before gating so canView / SubPage.canAccess
+  // can branch on record state. Sub-pages without a Resource.model
+  // still get gated against an `undefined` record — the same posture as
+  // resourceViewData when no model is bound.
+  let record: unknown = undefined
+  if (R.model) {
+    try { record = await findRecord(R, recordId, { user }) } catch { /* ignore */ }
+  }
+  if (record === undefined || record === null) {
+    // Distinguish "model bound but record missing" (route should 404)
+    // from "no model bound" (treat record as `{ id: recordId }` so the
+    // page can still render — same convention as the edit page).
+    if (R.model) return null
+    record = { id: recordId }
+  }
+
+  // Three gates: parent resource access + view, then the sub-page's own
+  // canAccess. The route would have run R.canAccess upstream, but
+  // re-running here makes resourceRecordPageData safe to call from
+  // dispatchPageData (where the SPA path skips the route prelude).
+  if (!await safeBool(() => R.canAccess(user))) return { ok: false, status: 403 }
+  if (!await safeBool(() => R.canView(user, record))) return { ok: false, status: 403 }
+  if (!await safeBool(() => PageClass.canAccess(user, record))) return { ok: false, status: 403 }
+
+  const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'view', recordId, basePath: cfg.path }, user), cfg)
+  const elements = await callPageSchema(PageClass, ctx)
+
+  // Insert the relation-tabs strip with the sub-page slug active so the
+  // matching tab highlights. `buildRelationTabs` evaluates per-tab
+  // gating against `user + record` — record sub-page tabs are gated
+  // alongside __view/__edit/managers.
+  const relationTabsEl = await buildRelationTabs(R, recordId, cfg.path, subPageSlug, user, record)
+  if (relationTabsEl) elements.unshift(relationTabsEl)
+
+  const recordTitle = record !== undefined && record !== null
+    ? deriveParentTitle(R, record)
+    : recordId
+  const breadcrumbs = resourceViewBreadcrumbs(cfg, R, recordTitle)
+  if (breadcrumbs) elements.unshift(breadcrumbs)
+
+  const recordPageRoute: PanelInfoRoute = { resource: R, page: PageClass, recordId }
+  const schemaData = await applyRoleHooks(
+    pilotiq, user, 'view',
+    await resolveSchema(
+      elements,
+      record !== undefined ? { ...ctx, record } : ctx,
+    ),
+    recordPageRoute,
+  )
+
+  return {
+    pageType: 'record-page' as const,
+    panel:    await panelInfo(pilotiq, req, recordPageRoute),
+    page:     PageClass.toMeta(),
+    resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
+    mode:     'record' as const,
+    recordId,
+    subPage:  { slug: subPageSlug, label: PageClass.getLabel() },
+    basePath: cfg.path,
+    layout:   cfg.layout,
+    schemaData,
+    notifications: consumeFlashedNotifications(req),
+  }
+}
+
 export async function globalEditData(
   pilotiq: Pilotiq,
   slug:    string,
@@ -4686,9 +4822,13 @@ export async function dispatchPageData(pageContext: PageContextLike): Promise<un
       })
       // Tagged failure shapes (`{ ok: false, status: 403 }`) leak straight
       // through to the +Page renderer, which can branch on the shape.
-      // For Plan #11 we let null short-circuit the SPA render the same
-      // way the resource builders do.
-      return out === null ? null : (out as Record<string, unknown>)
+      // null = no manager named `relationship` on R; fall through to the
+      // record sub-page lookup so URLs like `/admin/users/u1/activity`
+      // (where `activity` is registered under `pages().record`) route
+      // through `resourceRecordPageData` rather than 404ing.
+      if (out !== null) return out as Record<string, unknown>
+      const recordOut = await resourceRecordPageData(panel, slug, id, relationship)
+      return recordOut === null ? null : (recordOut as Record<string, unknown>)
     }
 
     case '/pages/(pilotiq)/relation-create': {

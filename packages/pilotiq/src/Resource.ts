@@ -16,6 +16,25 @@ export interface ResourcePages {
   create?: typeof Page
   edit?:   typeof Page
   view?:   typeof Page
+  /**
+   * Record-scoped custom sub-pages. Each entry is a `Page` subclass
+   * mounted at `${resourceBase}/${slug}/:id/${subPageSlug}`. Tabs show
+   * up in the `RelationTabs` sub-nav strip between the `__edit` tab
+   * and the relation-manager tabs.
+   *
+   * Sub-page slugs are validated at panel boot:
+   *   - Must match `[A-Za-z0-9_-]+`.
+   *   - Must not collide with reserved tokens (`edit`, `delete`,
+   *     `restore`, `force-delete`, `_form`, `_action`, `_search`,
+   *     `_uploads`, `_attach`, `_detach`, `_bulk-detach`, `create`).
+   *   - Must not collide with any `RelationManager.relationship` on
+   *     the same resource.
+   *
+   * Each sub-page receives the loaded record in `ctx.record` and runs
+   * its own `Page.canAccess(user, record)` gate after the parent
+   * resource's `canAccess` + `canView` predicates have passed.
+   */
+  record?: Record<string, typeof Page>
 }
 
 /** Pill color tokens for `navigationBadgeColor`. Matches the shared color
@@ -404,6 +423,16 @@ export abstract class Resource {
     const defaults  = defaultPages(this as unknown as ResourceClass)
     const overrides = this.pages()
     return { ...defaults, ...overrides }
+  }
+
+  /**
+   * Sugar over `resolvePages().record ?? {}` for callers that only need
+   * the record-scoped sub-pages (route registration, tab insertion, boot
+   * validation). Returns an empty object when no record sub-pages are
+   * declared so callers can iterate without a defensive null check.
+   */
+  static getRecordPages(): Record<string, typeof Page> {
+    return this.resolvePages().record ?? {}
   }
 
   /**

@@ -19,7 +19,8 @@ import {
   panelInfo, callPageSchema, tagFormActions, tagActionDispatch,
   dashboardData, resourceIndexData, resourceTableData,
   resourceCreateData, resourceEditData,
-  resourceViewData, globalEditData, globalViewData, customPageData,
+  resourceViewData, resourceRecordPageData,
+  globalEditData, globalViewData, customPageData,
   formStateData, type FormStateScope,
   formWizardData,
   formCreateOptionData,
@@ -707,9 +708,44 @@ export function registerPilotiqRoutes(
         if (N.relations().length > 0) {
           throw new Error(
             `[Pilotiq] Nested RelationManager ${N.name} under ${M.name} on ${R.name} declares its own relations(). ` +
-            `Phase B caps nesting at depth 2 (Filament does too). Drop the nested relations() override.`,
+            `Phase B caps nesting at depth 2 (admin-table reference frameworks cap at depth 2 too). Drop the nested relations() override.`,
           )
         }
+      }
+    }
+  }
+
+  // Record sub-pages — boot-time validation of slugs declared under
+  // `Resource.pages().record`. The route URL is
+  // `${resourceBase}/${slug}/:id/${subPageSlug}`, so the sub-page slug
+  // shares the same URL slot as a relation-manager's relationship. We
+  // run the slug-pattern check, the reserved-token check, and the
+  // manager-collision check before mounting any routes — a misconfigured
+  // sub-page is a dev-time error, not a runtime 404.
+  const RECORD_PAGE_SLUG_PATTERN = /^[A-Za-z0-9_-]+$/
+  for (const R of cfg.resources) {
+    const recordPages = R.getRecordPages()
+    const subPageSlugs = Object.keys(recordPages)
+    if (subPageSlugs.length === 0) continue
+    const managerSlugs = new Set(R.relations().map(M => M.getRelationship()))
+    for (const subPageSlug of subPageSlugs) {
+      if (!RECORD_PAGE_SLUG_PATTERN.test(subPageSlug)) {
+        throw new Error(
+          `[Pilotiq] Record sub-page slug ${JSON.stringify(subPageSlug)} on ${R.name} ` +
+          `must match /^[A-Za-z0-9_-]+$/. Rename it.`,
+        )
+      }
+      if (RESERVED_RELATIONSHIP_TOKENS.has(subPageSlug)) {
+        throw new Error(
+          `[Pilotiq] Record sub-page slug "${subPageSlug}" on ${R.name} collides with a reserved URL token. ` +
+          `Reserved tokens: ${[...RESERVED_RELATIONSHIP_TOKENS].join(', ')}. Rename it.`,
+        )
+      }
+      if (managerSlugs.has(subPageSlug)) {
+        throw new Error(
+          `[Pilotiq] Record sub-page slug "${subPageSlug}" on ${R.name} collides with relation manager relationship "${subPageSlug}". ` +
+          `Sub-page slugs and relation slugs share the same URL slot — rename one.`,
+        )
       }
     }
   }
@@ -2951,6 +2987,26 @@ export function registerPilotiqRoutes(
           })
         }
       }
+    }
+
+    // ── Record sub-pages ───────────────────────────────
+    // `${resourceBase}/:id/${subSlug}` — same URL slot as a relation
+    // manager's `relationship`, distinguished by registry: the data
+    // builder tries the relation lookup first, then falls through to
+    // the record sub-page map. Boot-time validation ensures the slugs
+    // don't collide.
+    for (const [subPageSlug, SubPage] of Object.entries(R.getRecordPages())) {
+      void SubPage  // referenced inside `resourceRecordPageData` via the registry; the local binding is captured for closure-stable types only.
+      const recordPageUrl = `${resourceBase}/:id/${subPageSlug}`
+      router.get(recordPageUrl, async (req, res) => {
+        const user = await pilotiq.resolveUser(req)
+        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
+        const recordId = req.params['id']!
+        const data = await resourceRecordPageData(pilotiq, slug, recordId, subPageSlug, req)
+        if (data === null) { res.status(404); return res.send('Not found') }
+        if ('ok' in data && data.ok === false) return forbidden(res, wantsJson(req))
+        return view('pilotiq.slug', data)
+      })
     }
   }
 

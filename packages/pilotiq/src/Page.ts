@@ -7,9 +7,11 @@ import { type IconValue, serializeIcon } from './icons/types.js'
 /**
  * Discriminator the framework uses for default rendering, route generation,
  * and breadcrumbs. `'custom'` is for standalone Pages that don't belong to
- * a Resource. The other modes correspond to the four resource page roles.
+ * a Resource. `'record'` is for record-scoped sub-pages declared under a
+ * Resource's `pages().record` map. The other four modes correspond to the
+ * standard resource page roles.
  */
-export type PageMode = 'list' | 'create' | 'edit' | 'view' | 'custom'
+export type PageMode = 'list' | 'create' | 'edit' | 'view' | 'record' | 'custom'
 
 export interface PageMeta {
   slug:  string
@@ -108,8 +110,15 @@ export class Page {
   /** Plan #10: authorization. Custom pages get a single `canAccess` gate
    * (no per-record predicates — pages are too freeform to assume a
    * record concept). Resource-bound default page subclasses can still
-   * read their owning resource's predicates via `getResource()`. */
-  static async canAccess(_user: unknown): Promise<boolean> { return true }
+   * read their owning resource's predicates via `getResource()`.
+   *
+   * Record sub-pages (declared under `ResourcePages.record`) receive
+   * the loaded parent record as the second argument so subclasses can
+   * gate on record state in addition to user. The parameter is
+   * optional so existing custom-page subclasses with `canAccess(user)`
+   * keep type-checking. Record-aware sub-pages typically override as
+   * `canAccess(user, record)`. */
+  static async canAccess(_user: unknown, _record?: unknown): Promise<boolean> { return true }
 
   /**
    * Optional back-reference to the owning Resource. Auto-generated default
