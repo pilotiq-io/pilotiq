@@ -60,6 +60,22 @@ import { radiusMap } from './theme/radius.js'
 import { resourceBasePath, globalBasePath, pageBasePath } from './clusterPaths.js'
 import type { ClusterClass } from './Cluster.js'
 
+/** Minimal Prisma surface used by the theme editor — narrow enough to
+ *  keep the DI lookup type-safe without dragging in `PrismaClient`,
+ *  which would couple the package to a concrete schema. */
+type PanelGlobalRow = { data: string | object | null }
+type PanelGlobalDelegate = {
+  panelGlobal: {
+    findUnique(args: { where: { slug: string } }): Promise<PanelGlobalRow | null>
+    upsert(args: {
+      where:  { slug: string }
+      update: { data: string }
+      create: { slug: string; data: string }
+    }): Promise<unknown>
+    delete(args: { where: { slug: string } }): Promise<unknown>
+  }
+}
+
 /** True when the client wants a JSON response (modal-form action submitting
  * via fetch), false for a browser-style form post that wants a 303 redirect.
  * Both action endpoints honor this so confirm/handler buttons (form-post)
@@ -3312,7 +3328,7 @@ export function registerPilotiqRoutes(
       let overrides: Partial<ThemeConfig> | null = null
       try {
         const { app } = await import(/* @vite-ignore */ '@rudderjs/core') as { app(): { make(key: string): unknown } }
-        const prisma = app().make('prisma') as any
+        const prisma = app().make('prisma') as PanelGlobalDelegate
         const slug = `${cfg.name}__theme`
         const row = await prisma.panelGlobal.findUnique({ where: { slug } })
         if (row?.data) {
@@ -3339,7 +3355,7 @@ export function registerPilotiqRoutes(
       try {
         const overrides = req.body as Partial<ThemeConfig>
         const { app } = await import(/* @vite-ignore */ '@rudderjs/core') as { app(): { make(key: string): unknown } }
-        const prisma = app().make('prisma') as any
+        const prisma = app().make('prisma') as PanelGlobalDelegate
         const slug = `${cfg.name}__theme`
 
         await prisma.panelGlobal.upsert({
@@ -3358,7 +3374,7 @@ export function registerPilotiqRoutes(
     router.delete(`${base}/api/_theme`, async (_req, res) => {
       try {
         const { app } = await import(/* @vite-ignore */ '@rudderjs/core') as { app(): { make(key: string): unknown } }
-        const prisma = app().make('prisma') as any
+        const prisma = app().make('prisma') as PanelGlobalDelegate
         const slug = `${cfg.name}__theme`
         await prisma.panelGlobal.delete({ where: { slug } }).catch(() => {})
         pilotiq.setThemeOverrides(undefined)
