@@ -2,19 +2,17 @@ import React, { useEffect, useState } from 'react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { useFormState } from '../FormStateContext.js'
 import { layoutClasses, resolveIcon, withTooltip } from './helpers.js'
+import { actionButtonClass, renderActionBadge, renderActionIcon } from './action/buttons.js'
 
 // ─── Wizard (Plan #8) ───────────────────────────────────────
 
 /**
- * Action-layer helpers needed by the wizard nav buttons. These still
- * live in SchemaRenderer.tsx pending Phase 3 — passed in as deps so we
- * don't have to import upward.
+ * Deps injected from the top-level dispatch so the wizard body can
+ * recurse into the main element renderer without creating a cycle
+ * with SchemaRenderer.tsx.
  */
 export interface WizardRendererDeps {
-  renderElement:     (el: ElementMeta, index: number) => React.ReactNode
-  actionButtonClass: (el: ElementMeta, opts: Record<string, unknown>) => string
-  renderActionIcon:  (el: ElementMeta) => React.ReactNode
-  renderActionBadge: (el: ElementMeta) => React.ReactNode
+  renderElement: (el: ElementMeta, index: number) => React.ReactNode
 }
 
 /**
@@ -253,7 +251,6 @@ export function WizardRenderer({
           fallbackLabel="Back"
           disabled={isFirst || advancing}
           onClick={() => advance(active - 1)}
-          deps={deps}
         />
         {isLast
           ? (submitActionMeta
@@ -262,16 +259,14 @@ export function WizardRenderer({
                   fallbackLabel="Submit"
                   type="submit"
                   disabled={advancing}
-                  deps={deps}
-                />
+                        />
               : <span className="text-xs text-muted-foreground">Submit the form to finish.</span>)
           : <WizardNavButton
               actionMeta={nextActionMeta}
               fallbackLabel={advancing ? 'Validating…' : 'Next'}
               disabled={advancing}
               onClick={() => advance(active + 1)}
-              deps={deps}
-            />
+                />
         }
       </div>
     </div>
@@ -299,14 +294,12 @@ function WizardNavButton({
   type = 'button',
   disabled,
   onClick,
-  deps,
 }: {
   actionMeta:     ElementMeta | undefined
   fallbackLabel:  string
   type?:          'button' | 'submit'
   disabled?:      boolean
   onClick?:       () => void
-  deps:           WizardRendererDeps
 }) {
   // Bare default — keep historical chrome for back-compat (un-customized
   // wizards look identical to before this change).
@@ -330,7 +323,7 @@ function WizardNavButton({
   const label       = String(actionMeta['label'] ?? fallbackLabel)
   const tooltip     = actionMeta['tooltip'] ? String(actionMeta['tooltip']) : undefined
   const iconOnly    = Boolean(actionMeta['iconOnly'])
-  const className   = deps.actionButtonClass(actionMeta, {})
+  const className   = actionButtonClass(actionMeta, {})
   const node = (
     <button
       type={type}
@@ -339,9 +332,9 @@ function WizardNavButton({
       className={`${className} disabled:opacity-50 disabled:cursor-not-allowed`}
       aria-label={iconOnly ? label : undefined}
     >
-      {deps.renderActionIcon(actionMeta)}
+      {renderActionIcon(actionMeta)}
       {!iconOnly && <span>{label}</span>}
-      {deps.renderActionBadge(actionMeta)}
+      {renderActionBadge(actionMeta)}
     </button>
   )
   return <>{withTooltip(node, tooltip)}</>
