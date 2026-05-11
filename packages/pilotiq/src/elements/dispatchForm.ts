@@ -1646,7 +1646,7 @@ async function persistRelationshipRows(
       keptPks.add(submittedId!)
       if (afterUpdate) await afterUpdate(updatedRecord, buildRowCtx(idx))
     } else {
-      let createdRecord: unknown = undefined
+      let createdRecord: unknown
       if (attachment.kind === 'hasMany') {
         payload[attachment.foreignKey] = parentPk
         createdRecord = await model.create(payload)

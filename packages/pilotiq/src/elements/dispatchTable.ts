@@ -568,7 +568,7 @@ export async function loadTableRecords(
               // ONE auth call per row regardless of editable column count
               // — same record, same answer. Failures or false → no edit
               // affordance for any column.
-              let allowed = false
+              let allowed: boolean
               try { allowed = await hooks!.canEdit!(user, recordObj) }
               catch { allowed = false }
               if (allowed) {

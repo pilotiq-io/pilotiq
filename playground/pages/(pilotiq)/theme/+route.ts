@@ -11,5 +11,5 @@ export const route: RouteSync = (pageContext) => {
     // Only match if themeEditor is enabled
     if (!panel.getConfig().themeEditor) return false
   }
-  return { routeParams: { basePath: parts[0] } }
+  return { routeParams: { basePath: parts[0]! } }
 }

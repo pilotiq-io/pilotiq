@@ -296,7 +296,6 @@ export function MarkdownInput({
           <div
             className="prose prose-sm dark:prose-invert max-w-none px-3 py-2"
             style={taStyle}
-            // eslint-disable-next-line react/no-danger
             dangerouslySetInnerHTML={{ __html: previewHtml || '<p class="text-muted-foreground italic">Nothing to preview</p>' }}
           />
         </>

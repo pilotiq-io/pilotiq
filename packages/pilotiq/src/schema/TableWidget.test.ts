@@ -16,8 +16,8 @@ import type { ModelLike, ModelQuery } from '../orm/modelDefaults.js'
 class StubQuery implements ModelQuery {
   public readonly ops: Array<{ op: string; args: unknown[] }> = []
   constructor(private readonly rows: unknown[], private readonly total = rows.length) {}
-  where(): this { this.ops.push({ op: 'where', args: [...arguments] }); return this }
-  orWhere(): this { this.ops.push({ op: 'orWhere', args: [...arguments] }); return this }
+  where(...args: unknown[]): this { this.ops.push({ op: 'where', args }); return this }
+  orWhere(...args: unknown[]): this { this.ops.push({ op: 'orWhere', args }); return this }
   orderBy(column: string, direction?: 'ASC' | 'DESC'): this {
     this.ops.push({ op: 'orderBy', args: [column, direction] })
     return this

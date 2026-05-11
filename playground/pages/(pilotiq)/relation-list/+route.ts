@@ -9,5 +9,5 @@ export const route: RouteSync = (pageContext) => {
   if (parts.length !== 4 + off) return false
   if (parts[3 + off] === 'edit') return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
-  return { routeParams: { basePath: parts[0], slug: parts[1 + off]!, id: parts[2 + off]!, relationship: parts[3 + off]! } }
+  return { routeParams: { basePath: parts[0]!, slug: parts[1 + off]!, id: parts[2 + off]!, relationship: parts[3 + off]! } }
 }

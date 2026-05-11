@@ -135,7 +135,7 @@ describe('Chart.resolveServerData', () => {
   it('subclass-form static getData runs when no instance hook', async () => {
     class Posts extends Chart {
       static override label = 'Posts'
-      static override type:  'line' = 'line'
+      static override type = 'line' as const
       static override async getData() {
         return { labels: ['M'], datasets: [{ label: 'Posts', data: [1] }] }
       }
@@ -160,7 +160,7 @@ describe('Chart.resolveServerData', () => {
 describe('Chart subclass-form statics', () => {
   it('reads chartType / label / color / maxHeight from statics', () => {
     class Posts extends Chart {
-      static override type:      'doughnut' = 'doughnut'
+      static override type = 'doughnut' as const
       static override label    = 'Posts by category'
       static override color    = 'success' as const
       static override maxHeight = 280
