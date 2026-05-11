@@ -157,7 +157,7 @@ export const route: RouteSync = (pageContext) => {
   const parts = pageContext.urlPathname.split('/').filter(Boolean)
   if (parts.length !== 1) return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
-  return { routeParams: { basePath: parts[0] } }
+  return { routeParams: { basePath: parts[0]! } }
 }
 `)
   writeIfChanged(path.join(outDir, 'dashboard', '+data.ts'), dataStub)
@@ -206,7 +206,7 @@ export const route: RouteSync = (pageContext) => {
   // Don't match built-in slugs (theme editor, etc.)
   if (parts[1 + off] === 'theme') return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
-  return { routeParams: { basePath: parts[0], slug: parts[1 + off]! } }
+  return { routeParams: { basePath: parts[0]!, slug: parts[1 + off]! } }
 }
 `)
   writeIfChanged(path.join(outDir, 'slug', '+data.ts'), dataStub)
@@ -232,7 +232,7 @@ export const route: RouteSync = (pageContext) => {
   const off = clusterOffset(parts)
   if (parts.length !== 3 + off || parts[2 + off] !== 'create') return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
-  return { routeParams: { basePath: parts[0], slug: parts[1 + off]! } }
+  return { routeParams: { basePath: parts[0]!, slug: parts[1 + off]! } }
 }
 `)
   writeIfChanged(path.join(outDir, 'resource-create', '+data.ts'), dataStub)
@@ -248,7 +248,7 @@ export const route: RouteSync = (pageContext) => {
   const off = clusterOffset(parts)
   if (parts.length !== 4 + off || parts[3 + off] !== 'edit') return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
-  return { routeParams: { basePath: parts[0], slug: parts[1 + off]!, id: parts[2 + off]! } }
+  return { routeParams: { basePath: parts[0]!, slug: parts[1 + off]!, id: parts[2 + off]! } }
 }
 `)
   writeIfChanged(path.join(outDir, 'resource-edit', '+data.ts'), dataStub)
@@ -282,7 +282,7 @@ export const route: RouteSync = (pageContext) => {
   if (parts[2 + off] === 'create') return false
   if (parts[1 + off] === 'theme')  return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
-  return { routeParams: { basePath: parts[0], slug: parts[1 + off]!, id: parts[2 + off]! } }
+  return { routeParams: { basePath: parts[0]!, slug: parts[1 + off]!, id: parts[2 + off]! } }
 }
 `)
   writeIfChanged(path.join(outDir, 'resource-view', '+data.ts'), dataStub)
@@ -311,7 +311,7 @@ export const route: RouteSync = (pageContext) => {
   if (parts.length !== 4 + off) return false
   if (parts[3 + off] === 'edit') return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
-  return { routeParams: { basePath: parts[0], slug: parts[1 + off]!, id: parts[2 + off]!, relationship: parts[3 + off]! } }
+  return { routeParams: { basePath: parts[0]!, slug: parts[1 + off]!, id: parts[2 + off]!, relationship: parts[3 + off]! } }
 }
 `)
   writeIfChanged(path.join(outDir, 'relation-list', '+data.ts'), dataStub)
@@ -327,7 +327,7 @@ export const route: RouteSync = (pageContext) => {
   const off = clusterOffset(parts)
   if (parts.length !== 5 + off || parts[4 + off] !== 'create') return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
-  return { routeParams: { basePath: parts[0], slug: parts[1 + off]!, id: parts[2 + off]!, relationship: parts[3 + off]! } }
+  return { routeParams: { basePath: parts[0]!, slug: parts[1 + off]!, id: parts[2 + off]!, relationship: parts[3 + off]! } }
 }
 `)
   writeIfChanged(path.join(outDir, 'relation-create', '+data.ts'), dataStub)
@@ -344,7 +344,7 @@ export const route: RouteSync = (pageContext) => {
   if (parts.length !== 5 + off) return false
   if (parts[4 + off] === 'create') return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
-  return { routeParams: { basePath: parts[0], slug: parts[1 + off]!, id: parts[2 + off]!, relationship: parts[3 + off]!, childId: parts[4 + off]! } }
+  return { routeParams: { basePath: parts[0]!, slug: parts[1 + off]!, id: parts[2 + off]!, relationship: parts[3 + off]!, childId: parts[4 + off]! } }
 }
 `)
   writeIfChanged(path.join(outDir, 'relation-view', '+data.ts'), dataStub)
@@ -360,7 +360,7 @@ export const route: RouteSync = (pageContext) => {
   const off = clusterOffset(parts)
   if (parts.length !== 6 + off || parts[5 + off] !== 'edit') return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
-  return { routeParams: { basePath: parts[0], slug: parts[1 + off]!, id: parts[2 + off]!, relationship: parts[3 + off]!, childId: parts[4 + off]! } }
+  return { routeParams: { basePath: parts[0]!, slug: parts[1 + off]!, id: parts[2 + off]!, relationship: parts[3 + off]!, childId: parts[4 + off]! } }
 }
 `)
   writeIfChanged(path.join(outDir, 'relation-edit', '+data.ts'), dataStub)
@@ -488,7 +488,7 @@ export const route: RouteSync = (pageContext) => {
     // Only match if themeEditor is enabled
     if (!panel.getConfig().themeEditor) return false
   }
-  return { routeParams: { basePath: parts[0] } }
+  return { routeParams: { basePath: parts[0]! } }
 }
 `)
   writeIfChanged(path.join(outDir, 'theme', '+data.ts'), dataStub)
