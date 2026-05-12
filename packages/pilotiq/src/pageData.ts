@@ -72,6 +72,31 @@ import {
   type ModelLike, type ModelQuery,
 } from './orm/modelDefaults.js'
 import { normalizeRelationMode, type RelationMode } from './RelationManager.js'
+import {
+  buildBreadcrumbs,
+  clusterBreadcrumb,
+  customPageBreadcrumbs,
+  globalBreadcrumbs,
+  homeBreadcrumb,
+  nestedRelationCreateBreadcrumbs,
+  nestedRelationEditBreadcrumbs,
+  nestedRelationListBreadcrumbs,
+  nestedRelationViewBreadcrumbs,
+  relationBreadcrumbPrefix,
+  relationCreateBreadcrumbs,
+  relationEditBreadcrumbs,
+  relationListBreadcrumbs,
+  relationViewBreadcrumbs,
+  resourceCreateBreadcrumbs,
+  resourceEditBreadcrumbs,
+  resourceListBreadcrumbs,
+  resourceViewBreadcrumbs,
+  type RelationChainStep,
+} from './pageData/breadcrumbs.js'
+
+// Re-export `RelationChainStep` so external callsites importing it via
+// `./pageData.js` keep working.
+export type { RelationChainStep } from './pageData/breadcrumbs.js'
 
 // ─── Shared helpers ──────────────────────────────────────────
 
@@ -1945,10 +1970,10 @@ export type RelationManagerScope =
  *  of these identifies a path through the manager tree:
  *    `[ { recordId: '123', relationship: 'comments' } ]` picks comment
  *    "456 under post 123" when paired with `childId: '456'`. */
-export interface RelationChainStep {
-  recordId:     string
-  relationship: string
-}
+// `RelationChainStep` now lives in `./pageData/breadcrumbs.ts` since
+// both the breadcrumb builders and the depth-2 relation manager
+// builders consume it. Re-exported below for back-compat with any
+// external callsite that imports through `pageData.js`.
 
 /**
  * Failure outcomes the data builder discriminates back to the route
@@ -3360,276 +3385,6 @@ function deriveParentTitle(
   return 'Record'
 }
 
-// ─── Phase C breadcrumb builders ─────────────────────────────
-//
-// Server-resolved chain rendered above any other top-of-page chrome
-// (e.g. RelationTabs). The trailing item is always the current page,
-// emitted without a `url` so the renderer can paint it as plain text
-// + `aria-current="page"`. All earlier items link to their canonical
-// URL — clusters route through `clusterBasePath`, resources through
-// `resourceBasePath`, etc., so a clustered resource resolves to
-// `Home / Cluster / Resource / …` instead of skipping the cluster
-// rung.
-
-function homeBreadcrumb(cfg: PilotiqConfig): BreadcrumbItem {
-  return {
-    label: cfg.branding?.title ?? cfg.name ?? 'Home',
-    url:   cfg.path,
-  }
-}
-
-function clusterBreadcrumb(cfg: PilotiqConfig, child: { cluster?: ClusterClass }): BreadcrumbItem | undefined {
-  if (!child.cluster) return undefined
-  return {
-    label: child.cluster.label,
-    url:   clusterBasePath(cfg.path, child.cluster),
-  }
-}
-
-function buildBreadcrumbs(items: BreadcrumbItem[]): Breadcrumbs | undefined {
-  // A single "Home" rung carries no information beyond the dashboard
-  // link the layout already exposes — drop it. Every other length is
-  // worth rendering.
-  if (items.length < 2) return undefined
-  return Breadcrumbs.make(items)
-}
-
-function resourceListBreadcrumbs(cfg: PilotiqConfig, R: ResourceClass): Breadcrumbs | undefined {
-  const items: BreadcrumbItem[] = [homeBreadcrumb(cfg)]
-  const cluster = clusterBreadcrumb(cfg, R)
-  if (cluster) items.push(cluster)
-  items.push({ label: R.getBreadcrumb() })
-  return buildBreadcrumbs(items)
-}
-
-function resourceCreateBreadcrumbs(cfg: PilotiqConfig, R: ResourceClass): Breadcrumbs | undefined {
-  const items: BreadcrumbItem[] = [homeBreadcrumb(cfg)]
-  const cluster = clusterBreadcrumb(cfg, R)
-  if (cluster) items.push(cluster)
-  items.push({ label: R.getBreadcrumb(), url: resourceBasePath(cfg.path, R) })
-  items.push({ label: 'Create' })
-  return buildBreadcrumbs(items)
-}
-
-function resourceViewBreadcrumbs(cfg: PilotiqConfig, R: ResourceClass, recordTitle: string): Breadcrumbs | undefined {
-  const items: BreadcrumbItem[] = [homeBreadcrumb(cfg)]
-  const cluster = clusterBreadcrumb(cfg, R)
-  if (cluster) items.push(cluster)
-  items.push({ label: R.getBreadcrumb(), url: resourceBasePath(cfg.path, R) })
-  items.push({ label: recordTitle })
-  return buildBreadcrumbs(items)
-}
-
-function resourceEditBreadcrumbs(
-  cfg: PilotiqConfig,
-  R:   ResourceClass,
-  recordId:    string,
-  recordTitle: string,
-): Breadcrumbs | undefined {
-  const items: BreadcrumbItem[] = [homeBreadcrumb(cfg)]
-  const cluster = clusterBreadcrumb(cfg, R)
-  if (cluster) items.push(cluster)
-  const resourceBase = resourceBasePath(cfg.path, R)
-  items.push({ label: R.getBreadcrumb(), url: resourceBase })
-  // Link the record title to the View page when registered — falls
-  // back to plain text so users who pruned ViewPage don't hit a 404.
-  const hasView = R.resolvePages().view !== undefined
-  items.push(hasView
-    ? { label: recordTitle, url: `${resourceBase}/${recordId}` }
-    : { label: recordTitle })
-  items.push({ label: 'Edit' })
-  return buildBreadcrumbs(items)
-}
-
-function globalBreadcrumbs(cfg: PilotiqConfig, G: GlobalClass): Breadcrumbs | undefined {
-  // Globals don't have a list page — `Home > <Global Label>` is the
-  // shortest meaningful chain. Edit and View collapse to the same
-  // breadcrumb (both render the singleton).
-  const items: BreadcrumbItem[] = [homeBreadcrumb(cfg)]
-  const cluster = clusterBreadcrumb(cfg, G)
-  if (cluster) items.push(cluster)
-  items.push({ label: G.label })
-  return buildBreadcrumbs(items)
-}
-
-function customPageBreadcrumbs(cfg: PilotiqConfig, P: typeof Page): Breadcrumbs | undefined {
-  const items: BreadcrumbItem[] = [homeBreadcrumb(cfg)]
-  const cluster = clusterBreadcrumb(cfg, P)
-  if (cluster) items.push(cluster)
-  items.push({ label: P.getLabel() })
-  return buildBreadcrumbs(items)
-}
-
-/** Common "Home / cluster? / Resource / parent record" prefix used by
- *  every relation-* / nested-relation-* breadcrumb. The parent record
- *  links to its View page when registered; the resource list is the
- *  fallback so users still have a back-link out of the relation chain. */
-function relationBreadcrumbPrefix(
-  cfg: PilotiqConfig,
-  R:   ResourceClass,
-  parentId:    string,
-  parentTitle: string,
-): BreadcrumbItem[] {
-  const items: BreadcrumbItem[] = [homeBreadcrumb(cfg)]
-  const cluster = clusterBreadcrumb(cfg, R)
-  if (cluster) items.push(cluster)
-  const resourceBase = resourceBasePath(cfg.path, R)
-  items.push({ label: R.getBreadcrumb(), url: resourceBase })
-  const hasView = R.resolvePages().view !== undefined
-  items.push(hasView
-    ? { label: parentTitle, url: `${resourceBase}/${parentId}` }
-    : { label: parentTitle })
-  return items
-}
-
-function relationListBreadcrumbs(
-  cfg: PilotiqConfig,
-  R:   ResourceClass,
-  M:   typeof RelationManager,
-  parentId:    string,
-  parentTitle: string,
-): Breadcrumbs | undefined {
-  const items = relationBreadcrumbPrefix(cfg, R, parentId, parentTitle)
-  items.push({ label: M.getLabel() })
-  return buildBreadcrumbs(items)
-}
-
-function relationCreateBreadcrumbs(
-  cfg: PilotiqConfig,
-  R:   ResourceClass,
-  M:   typeof RelationManager,
-  parentId:    string,
-  parentTitle: string,
-): Breadcrumbs | undefined {
-  const items = relationBreadcrumbPrefix(cfg, R, parentId, parentTitle)
-  const relList = `${resourceBasePath(cfg.path, R)}/${parentId}/${M.getRelationship()}`
-  items.push({ label: M.getLabel(), url: relList })
-  items.push({ label: 'Create' })
-  return buildBreadcrumbs(items)
-}
-
-function relationViewBreadcrumbs(
-  cfg: PilotiqConfig,
-  R:   ResourceClass,
-  M:   typeof RelationManager,
-  parentId:    string,
-  parentTitle: string,
-  childTitle:  string,
-): Breadcrumbs | undefined {
-  const items = relationBreadcrumbPrefix(cfg, R, parentId, parentTitle)
-  const relList = `${resourceBasePath(cfg.path, R)}/${parentId}/${M.getRelationship()}`
-  items.push({ label: M.getLabel(), url: relList })
-  items.push({ label: childTitle })
-  return buildBreadcrumbs(items)
-}
-
-function relationEditBreadcrumbs(
-  cfg: PilotiqConfig,
-  R:   ResourceClass,
-  M:   typeof RelationManager,
-  parentId:    string,
-  parentTitle: string,
-  childId:     string,
-  childTitle:  string,
-): Breadcrumbs | undefined {
-  const items = relationBreadcrumbPrefix(cfg, R, parentId, parentTitle)
-  const relBase = `${resourceBasePath(cfg.path, R)}/${parentId}/${M.getRelationship()}`
-  items.push({ label: M.getLabel(), url: relBase })
-  // Phase A always mounts the relation-view page per (R, M), so the
-  // child title can always link back to it.
-  items.push({ label: childTitle, url: `${relBase}/${childId}` })
-  items.push({ label: 'Edit' })
-  return buildBreadcrumbs(items)
-}
-
-/** Phase B — depth-2 prefix shared by every nested-relation-* role.
- *  Returns "Home / cluster? / Resource / parent / M1 / child1". */
-function nestedRelationBreadcrumbPrefix(
-  cfg: PilotiqConfig,
-  R:   ResourceClass,
-  M1:  typeof RelationManager,
-  step0:       RelationChainStep,
-  parentTitle: string,
-  child1Id:    string,
-  child1Title: string,
-): BreadcrumbItem[] {
-  const items = relationBreadcrumbPrefix(cfg, R, step0.recordId, parentTitle)
-  const rel1Base = `${resourceBasePath(cfg.path, R)}/${step0.recordId}/${step0.relationship}`
-  items.push({ label: M1.getLabel(), url: rel1Base })
-  // Phase A relation-view always mounted, so child1 always links.
-  items.push({ label: child1Title, url: `${rel1Base}/${child1Id}` })
-  return items
-}
-
-function nestedRelationListBreadcrumbs(
-  cfg: PilotiqConfig,
-  R:   ResourceClass,
-  M1:  typeof RelationManager,
-  M2:  typeof RelationManager,
-  step0:       RelationChainStep,
-  parentTitle: string,
-  child1Id:    string,
-  child1Title: string,
-): Breadcrumbs | undefined {
-  const items = nestedRelationBreadcrumbPrefix(cfg, R, M1, step0, parentTitle, child1Id, child1Title)
-  items.push({ label: M2.getLabel() })
-  return buildBreadcrumbs(items)
-}
-
-function nestedRelationCreateBreadcrumbs(
-  cfg: PilotiqConfig,
-  R:   ResourceClass,
-  M1:  typeof RelationManager,
-  M2:  typeof RelationManager,
-  step0:       RelationChainStep,
-  parentTitle: string,
-  child1Id:    string,
-  child1Title: string,
-): Breadcrumbs | undefined {
-  const items = nestedRelationBreadcrumbPrefix(cfg, R, M1, step0, parentTitle, child1Id, child1Title)
-  const rel2Base = `${resourceBasePath(cfg.path, R)}/${step0.recordId}/${step0.relationship}/${child1Id}/${M2.getRelationship()}`
-  items.push({ label: M2.getLabel(), url: rel2Base })
-  items.push({ label: 'Create' })
-  return buildBreadcrumbs(items)
-}
-
-function nestedRelationViewBreadcrumbs(
-  cfg: PilotiqConfig,
-  R:   ResourceClass,
-  M1:  typeof RelationManager,
-  M2:  typeof RelationManager,
-  step0:       RelationChainStep,
-  parentTitle: string,
-  child1Id:    string,
-  child1Title: string,
-  child2Title: string,
-): Breadcrumbs | undefined {
-  const items = nestedRelationBreadcrumbPrefix(cfg, R, M1, step0, parentTitle, child1Id, child1Title)
-  const rel2Base = `${resourceBasePath(cfg.path, R)}/${step0.recordId}/${step0.relationship}/${child1Id}/${M2.getRelationship()}`
-  items.push({ label: M2.getLabel(), url: rel2Base })
-  items.push({ label: child2Title })
-  return buildBreadcrumbs(items)
-}
-
-function nestedRelationEditBreadcrumbs(
-  cfg: PilotiqConfig,
-  R:   ResourceClass,
-  M1:  typeof RelationManager,
-  M2:  typeof RelationManager,
-  step0:       RelationChainStep,
-  parentTitle: string,
-  child1Id:    string,
-  child1Title: string,
-  child2Id:    string,
-  child2Title: string,
-): Breadcrumbs | undefined {
-  const items = nestedRelationBreadcrumbPrefix(cfg, R, M1, step0, parentTitle, child1Id, child1Title)
-  const rel2Base = `${resourceBasePath(cfg.path, R)}/${step0.recordId}/${step0.relationship}/${child1Id}/${M2.getRelationship()}`
-  items.push({ label: M2.getLabel(), url: rel2Base })
-  items.push({ label: child2Title, url: `${rel2Base}/${child2Id}` })
-  items.push({ label: 'Edit' })
-  return buildBreadcrumbs(items)
-}
 
 // ─── Plan #5 partial-resolve data builder ────────────────────
 
