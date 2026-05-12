@@ -1,20 +1,39 @@
 import { Element, type ElementMeta } from '../schema/Element.js'
 import type { ValidationErrors } from '../validation/index.js'
 import type { Notification, NotificationMeta } from '../notifications/Notification.js'
-import {
-  safeManagerPolicy,
-  type RelationManager,
-  type RelationManagerContext,
-} from '../RelationManager.js'
-import {
-  computeMorphPayload,
-  getMorphRelationDescriptor,
-  getParentRelationDescriptor,
-  type ModelLike,
-} from '../orm/modelDefaults.js'
-import { resolveM2MAccessor } from '../orm/m2mAccessor.js'
+import type { RelationManager, RelationManagerContext } from '../RelationManager.js'
 import { buildImportSchema as buildImportModalSchema } from './importFactory.js'
-import { buildAttachModalSchema } from './attachFactory.js'
+import { callPredicate } from './factoryHelpers.js'
+import {
+  createAction,
+  deleteAction,
+  editAction,
+  forceDeleteAction,
+  markAsReadAction,
+  replicateAction,
+  restoreAction,
+  viewAction,
+} from './crudFactories.js'
+import {
+  bulkDeleteAction,
+  bulkForceDeleteAction,
+  bulkReplicateAction,
+  bulkRestoreAction,
+} from './bulkFactories.js'
+import {
+  relationBulkReplicateAction,
+  relationCreateAction,
+  relationDeleteAction,
+  relationEditAction,
+  relationForceDeleteAction,
+  relationReplicateAction,
+  relationRestoreAction,
+} from './relationFactories.js'
+import {
+  relationAttachAction,
+  relationBulkDetachAction,
+  relationDetachAction,
+} from './m2mFactories.js'
 
 /**
  * Where an Action renders. `inline` is the default — appears wherever the
@@ -244,7 +263,7 @@ export interface ReplicateOptions {
  * cycle. The optional fields are the Plan #10 policy predicates; their
  * defaults (return `true`) mean missing methods are equivalent to
  * "always allowed." */
-interface ResourceLike {
+export interface ResourceLike {
   labelSingular: string
   /** Plural label. When unset, factories fall back to
    *  `${labelSingular}s` (naive). Used by bulk-action notification
@@ -281,185 +300,6 @@ interface ResourceLike {
   table?(t: any): any
 }
 
-/** Cluster-aware resource base path. Mirrors `clusterPaths.resourceBasePath`
- *  but uses the structural `ResourceLike` shape so `Action.ts` stays
- *  cycle-free against `Resource.ts`. */
-function resourceBase(basePath: string, R: ResourceLike): string {
-  if (R.cluster) return `${basePath}/${R.cluster.getSlug()}/${R.getSlug()}`
-  return `${basePath}/${R.getSlug()}`
-}
-
-/** Pick the right label form for a count — `labelSingular` for 1,
- *  `label` (plural, lowercased) for any other count. Fall back to a
- *  naive `${labelSingular}s` when no plural label is set. Used by bulk
- *  notification copy so we don't ship "1 posts moved to trash". */
-function labelForCount(R: ResourceLike, n: number): string {
-  if (n === 1) return R.labelSingular.toLowerCase()
-  const plural = R.label?.toLowerCase()
-  return plural ?? `${R.labelSingular.toLowerCase()}s`
-}
-
-/** True when a `RelationManagerContext.mode` denotes a pivot-mutation
- *  shape — i.e. a many-to-many relation. All three modes share the
- *  `attach` / `detach` / `sync` accessor surface (the rudder ORM stamps
- *  + filters the polymorphic discriminator transparently for the morph
- *  variants). The `relationCreate / Edit / Delete` factories auto-hide
- *  under any of these modes because per-pivot-row create / edit / delete
- *  is meaningless — users create the related record via its own Resource,
- *  then attach via `relationAttach`. */
-function isM2MMode(mode: RelationManagerContext['mode']): boolean {
-  return mode === 'belongsToMany' || mode === 'morphToMany' || mode === 'morphedByMany'
-}
-
-/**
- * Phase B — build the URL prefix for a relation factory action. Without
- * a `chain` (depth-1 manager), this is the familiar
- * `${base}/${parentSlug}/${parentId}/${relationship}`. With a chain
- * (depth-2 nested manager), it threads the outer record + relationship
- * between the parent slug and the leaf parent id:
- *
- *   `${base}/${parentSlug}/${chain[0].recordId}/${chain[0].relationship}/${parentId}/${relationship}`
- *
- * Pure; takes a `RelationManagerContext` and emits a string. The leaf
- * record id (and trailing `/edit`, `/delete`, etc.) gets appended by
- * the caller.
- */
-function relationUrlPrefix(ctx: RelationManagerContext): string {
-  const head = `${ctx.basePath}/${ctx.parentSlug}`
-  const chain = ctx.chain ?? []
-  let mid = ''
-  for (const step of chain) {
-    mid += `/${step.recordId}/${step.relationship}`
-  }
-  return `${head}${mid}/${ctx.parentId}/${ctx.relationship}`
-}
-
-/**
- * Compute the parent-attachment payload to force-pin onto a relation
- * replica. For `hasMany`, returns `{ [foreignKey]: parentId }` from the
- * parent's `static relations[name]` descriptor. For `morphMany` /
- * `morphOne`, returns `{ <morphName>Id, <morphName>Type }` via
- * `computeMorphPayload(parentRecord)`. Returns `{}` when no descriptor
- * matches — the route dispatcher already auto-hides under M2M / morphTo,
- * so missing descriptors there are a no-op rather than an error. Pure;
- * exported for tests and re-used by both factories.
- */
-function computeRelationPin(
-  ctx: RelationManagerContext,
-): Record<string, unknown> {
-  const parentModel = (ctx.parentRecord as { constructor?: ModelLike } | null | undefined)?.constructor
-  if (!parentModel) return {}
-  const rel = ctx.relationship
-  // Polymorphic owner side first — `morphMany` carries no foreignKey
-  // and would fail the hasMany descriptor's gate.
-  if (ctx.mode === 'morphMany') {
-    const morph = getMorphRelationDescriptor(parentModel, rel)
-    if (!morph) return {}
-    try { return computeMorphPayload(ctx.parentRecord, morph) }
-    catch { return {} }
-  }
-  const desc = getParentRelationDescriptor(parentModel, rel)
-  if (!desc) return {}
-  return { [desc.foreignKey]: ctx.parentId }
-}
-
-/**
- * Build + persist a single relation replica. Runs the strip set
- * (PK + soft-delete column on the **related** Resource +
- * `opts.excludeAttributes`), force-pins the parent attachment columns,
- * runs the optional `beforeReplicaSaved` hook, and calls
- * `Related.model.create(...)`. Returns the model's create result so
- * callers can read its primary key for redirect targeting.
- *
- * Throws when the related Resource has no model — caller (single-row
- * factory) catches and surfaces an error notification; bulk caller
- * checks the model presence ahead of the loop.
- */
-async function persistRelationReplica(
-  _M:     typeof RelationManager,
-  ctx:    RelationManagerContext,
-  source: unknown,
-  opts:   ReplicateOptions,
-): Promise<unknown> {
-  const Related = ctx.related
-  if (!Related?.model || typeof Related.model.create !== 'function') {
-    throw new Error('Related Resource has no model.create')
-  }
-  const M2 = Related.model as ModelLike
-  const pkCol      = (M2 as { primaryKey?: string }).primaryKey ?? 'id'
-  const trashedCol = Related.deletedAtColumn ?? 'deletedAt'
-  const skip       = new Set<string>([pkCol, trashedCol, ...(opts.excludeAttributes ?? [])])
-  let replica: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(source as Record<string, unknown>)) {
-    if (skip.has(k)) continue
-    replica[k] = v
-  }
-  // Force-pin the parent attachment AFTER the strip but BEFORE the
-  // user mutator, so `beforeReplicaSaved` can read / override the FK
-  // if it really wants to (rare). Tampered source rows can't slip a
-  // different parent in by riding their own FK column — the pin
-  // overwrites whatever value was there.
-  Object.assign(replica, computeRelationPin(ctx))
-  if (opts.beforeReplicaSaved) {
-    replica = await opts.beforeReplicaSaved(replica, source)
-  }
-  return M2.create(replica)
-}
-
-/**
- * Single-row dispatch for `Action.relationReplicate`. Resolves
- * `ctx.record` (loaded by the route's resolveRecord hook), validates,
- * persists the replica, and shapes the success notification. Errors
- * are caught and surfaced as error toasts.
- */
-async function runRelationReplicateRow(
-  M:    typeof RelationManager,
-  ctx:  RelationManagerContext,
-  hctx: ActionContext,
-  opts: ReplicateOptions,
-): Promise<ActionResult> {
-  const source = hctx.record
-  if (!source || typeof source !== 'object') {
-    return { notify: { title: 'Replicate failed: source record missing', type: 'error' } as never }
-  }
-  const Related = ctx.related
-  if (!Related?.model || typeof Related.model.create !== 'function') {
-    return { notify: { title: 'Replicate not configured (related Resource has no model.create)', type: 'error' } as never }
-  }
-  let created: unknown
-  try {
-    created = await persistRelationReplica(M, ctx, source, opts)
-  } catch (err) {
-    return { notify: { title: `Replicate failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
-  }
-  const overrideTitle = opts.getCreatedNotificationTitle
-    ? await opts.getCreatedNotificationTitle({ replica: created, source })
-    : undefined
-  const title = overrideTitle !== undefined ? overrideTitle : `${M.getLabelSingular()} replicated`
-  // The manager-scoped `_action/:actionName` route falls back to the
-  // manager list URL when `result.redirect` is undefined, so we only
-  // emit `redirect` when the user override returned a string. That
-  // way default behavior (route owns the fallback) is unchanged.
-  const overrideRedirect = opts.getRedirectUrl
-    ? await opts.getRedirectUrl({ replica: created, source })
-    : undefined
-  return {
-    ...(overrideRedirect !== undefined ? { redirect: overrideRedirect } : {}),
-    notify: { title, type: 'success' } as never,
-  }
-}
-
-/** Read `record[R.deletedAtColumn ?? 'deletedAt']` and return true when
- *  the row is currently trashed (soft-deleted). Permissive on shape —
- *  bare `null` / `undefined` count as live; any other truthy value is
- *  trashed. */
-function isTrashed(record: unknown, R: ResourceLike): boolean {
-  if (!record || typeof record !== 'object') return false
-  const col = R.deletedAtColumn ?? 'deletedAt'
-  const v = (record as Record<string, unknown>)[col]
-  return v !== null && v !== undefined
-}
-
 /** Lazy-load the `Table` class for use inside Action handlers. Direct
  *  module-level import would cycle (Table → Action → Table); dynamic
  *  import inside a handler runs after both modules have finished
@@ -472,18 +312,6 @@ async function loadTableClass(): Promise<unknown> {
   const mod = await import('../elements/Table.js')
   _TableClass = mod.Table
   return _TableClass.make()
-}
-
-/** Call a (possibly undefined) Resource predicate. When unset, the
- * predicate is treated as "allowed" (returns true) so the factory
- * doesn't hide actions on Resources that haven't opted into Plan #10. */
-function callPredicate(
-  fn: ((user: unknown, record?: unknown) => boolean | Promise<boolean>) | undefined,
-  user: unknown,
-  record?: unknown,
-): boolean | Promise<boolean> {
-  if (!fn) return true
-  return fn(user, record)
 }
 
 /** Render-time meta for an action that opens a modal (with or without a
@@ -719,10 +547,7 @@ export class Action extends Element {
   /** Create-action factory — link to `${basePath}/${R.slug}/create`.
    * Auto-hides when `R.canCreate(user)` returns false. */
   static create(R: ResourceLike, basePath: string): Action {
-    return Action.make('create')
-      .label(`New ${R.labelSingular}`)
-      .href(`${resourceBase(basePath, R)}/create`)
-      .visible(({ user }) => callPredicate(R.canCreate, user))
+    return createAction(R, basePath)
   }
 
   /**
@@ -733,27 +558,16 @@ export class Action extends Element {
    * Omit `recordId` for row context (`Table.recordActions(...)`); the
    * URL keeps the `:id` template and the renderer substitutes per-row.
    *
-   * Auto-hides when `R.canEdit(user, record)` returns false. For row
-   * context the per-row record threads in via `loadTableRecords`'s
-   * per-row eval; for view-page context, `resolveSchema` provides the
-   * resolved record on the eval context.
+   * Auto-hides when `R.canEdit(user, record)` returns false.
    */
   static edit(R: ResourceLike, basePath: string, recordId?: string): Action {
-    const id = recordId ?? ':id'
-    return Action.make('edit')
-      .label('Edit')
-      .href(`${resourceBase(basePath, R)}/${id}/edit`)
-      .visible(({ user, record }) => callPredicate(R.canEdit, user, record))
+    return editAction(R, basePath, recordId)
   }
 
   /** View-action factory — link to the resource's view page. See `Action.edit` for the `recordId` semantics.
    * Auto-hides when `R.canView(user, record)` returns false. */
   static view(R: ResourceLike, basePath: string, recordId?: string): Action {
-    const id = recordId ?? ':id'
-    return Action.make('view')
-      .label('View')
-      .href(`${resourceBase(basePath, R)}/${id}`)
-      .visible(({ user, record }) => callPredicate(R.canView, user, record))
+    return viewAction(R, basePath, recordId)
   }
 
   /**
@@ -763,40 +577,18 @@ export class Action extends Element {
    * Auto-hides when `R.canDelete(user, record)` returns false.
    *
    * Plan #13 — when `R.softDeletes = true`, additionally hides on
-   * rows whose `deletedAtColumn` is set (already-trashed rows get the
-   * Restore + ForceDelete pair instead, surfaced via the matching
-   * factories below).
+   * already-trashed rows (Restore + ForceDelete take over).
    */
   static delete(R: ResourceLike, basePath: string, recordId?: string): Action {
-    const id = recordId ?? ':id'
-    return Action.make('delete')
-      .label('Delete')
-      .destructive()
-      .method('post')
-      .action(`${resourceBase(basePath, R)}/${id}/delete`)
-      .confirm(`Delete this ${R.labelSingular.toLowerCase()}?`)
-      .visible(async ({ user, record }) => {
-        if (R.softDeletes && isTrashed(record, R)) return false
-        return callPredicate(R.canDelete, user, record)
-      })
+    return deleteAction(R, basePath, recordId)
   }
 
   /**
-   * Replicate-action factory — handler-style. Loads the source record
-   * from `ctx.record` (the `_action/:actionName` route already resolves
-   * it through `R.query(ctx)` for row + single-target placements),
-   * strips PK + soft-delete column + any `opts.excludeAttributes`,
-   * optionally runs `opts.beforeReplicaSaved`, and creates a new row
-   * via `R.model.create(...)`. Redirects to the new record's edit page
-   * on success so the user can review + tweak before saving again.
-   *
-   * `recordId` kept in the signature for parity with `delete / edit /
-   * view` so users can swap factories without rewriting call sites; the
-   * dispatcher resolves the source record from the URL and hands it to
-   * the handler as `ctx.record`, so we don't reference `recordId` here.
-   *
-   * Auto-hides when `R.canCreate(user)` returns false — replicating
-   * writes a new row, so the gate is `canCreate`, not `canView`.
+   * Replicate-action factory — handler-style. Strips PK + soft-delete
+   * column + `opts.excludeAttributes` from `ctx.record`, optionally
+   * runs `opts.beforeReplicaSaved`, and creates a new row via
+   * `R.model.create(...)`. Redirects to the new record's edit page
+   * on success. Auto-hides when `R.canCreate(user)` returns false.
    */
   static replicate(
     R:        ResourceLike,
@@ -804,101 +596,25 @@ export class Action extends Element {
     recordId?: string,
     opts:     ReplicateOptions = {},
   ): Action {
-    void recordId
-    return Action.make('replicate')
-      .label('Replicate')
-      .handler(async (ctx) => {
-        const source = ctx.record
-        if (!source || typeof source !== 'object') {
-          return { notify: { title: 'Replicate failed: source record missing', type: 'error' } as never }
-        }
-        const M = R.model
-        if (!M || typeof M.create !== 'function') {
-          return { notify: { title: 'Replicate not configured (resource has no model.create)', type: 'error' } as never }
-        }
-
-        const pkCol      = (M as { primaryKey?: string }).primaryKey ?? 'id'
-        const trashedCol = R.deletedAtColumn ?? 'deletedAt'
-        const skip = new Set<string>([pkCol, trashedCol, ...(opts.excludeAttributes ?? [])])
-        let replica: Record<string, unknown> = {}
-        for (const [k, v] of Object.entries(source as Record<string, unknown>)) {
-          if (skip.has(k)) continue
-          replica[k] = v
-        }
-        if (opts.beforeReplicaSaved) {
-          try { replica = await opts.beforeReplicaSaved(replica, source) }
-          catch (err) {
-            return { notify: { title: `Replicate failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
-          }
-        }
-
-        let created: unknown
-        try {
-          created = await M.create(replica)
-        } catch (err) {
-          return { notify: { title: `Replicate failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
-        }
-
-        const newId = (created as Record<string, unknown> | null | undefined)?.[pkCol]
-        const defaultRedirect = newId !== undefined && newId !== null
-          ? `${resourceBase(basePath, R)}/${String(newId)}/edit`
-          : `${resourceBase(basePath, R)}`
-        // `!== undefined` rather than `??` so an override returning
-        // `null`/empty-string isn't silently swallowed (see
-        // feedback_nullish_swallows_explicit_null).
-        const overrideRedirect = opts.getRedirectUrl
-          ? await opts.getRedirectUrl({ replica: created, source })
-          : undefined
-        const redirect = overrideRedirect !== undefined ? overrideRedirect : defaultRedirect
-        const overrideTitle = opts.getCreatedNotificationTitle
-          ? await opts.getCreatedNotificationTitle({ replica: created, source })
-          : undefined
-        const title = overrideTitle !== undefined ? overrideTitle : `${R.labelSingular} replicated`
-        return {
-          redirect,
-          notify: { title, type: 'success' } as never,
-        }
-      })
-      .visible(({ user }) => callPredicate(R.canCreate, user))
+    return replicateAction(R, basePath, recordId, opts)
   }
 
   /**
    * Plan #13 — Restore factory. POSTs to the resource's restore route,
-   * success-styled, no confirm prompt (restoration is reversible).
-   * Auto-hides on live (non-trashed) rows AND when `R.canRestore(user,
-   * record)` returns false. Same `recordId` semantics as `Action.edit`.
+   * success-styled, no confirm prompt. Auto-hides on live (non-trashed)
+   * rows AND when `R.canRestore(user, record)` returns false.
    */
   static restore(R: ResourceLike, basePath: string, recordId?: string): Action {
-    const id = recordId ?? ':id'
-    return Action.make('restore')
-      .label('Restore')
-      .color('success')
-      .method('post')
-      .action(`${resourceBase(basePath, R)}/${id}/restore`)
-      .visible(async ({ user, record }) => {
-        if (!isTrashed(record, R)) return false
-        return callPredicate(R.canRestore, user, record)
-      })
+    return restoreAction(R, basePath, recordId)
   }
 
   /**
    * Plan #13 — Force-delete factory. POSTs to the resource's
    * force-delete route, destructive-styled, with a stricter confirm
-   * prompt referencing permanence. Auto-hides on live (non-trashed)
-   * rows AND when `R.canForceDelete(user, record)` returns false.
+   * prompt. Auto-hides on live rows + when `R.canForceDelete` denies.
    */
   static forceDelete(R: ResourceLike, basePath: string, recordId?: string): Action {
-    const id = recordId ?? ':id'
-    return Action.make('forceDelete')
-      .label('Delete forever')
-      .destructive()
-      .method('post')
-      .action(`${resourceBase(basePath, R)}/${id}/force-delete`)
-      .confirm(`Permanently delete this ${R.labelSingular.toLowerCase()}? This cannot be undone.`)
-      .visible(async ({ user, record }) => {
-        if (!isTrashed(record, R)) return false
-        return callPredicate(R.canForceDelete, user, record)
-      })
+    return forceDeleteAction(R, basePath, recordId)
   }
 
   // ─── Notification factories ───────────────────────────────────
@@ -930,11 +646,7 @@ export class Action extends Element {
    * to hide on already-read rows.
    */
   static markAsRead(basePath: string, notificationId?: string): Action {
-    const id = notificationId ?? ':id'
-    return Action.make('markAsRead')
-      .label('Mark as read')
-      .method('post')
-      .action(`${basePath}/_notifications/${id}/read`)
+    return markAsReadAction(basePath, notificationId)
   }
 
   // ─── Bulk factories (Plan #13) ────────────────────────────────
@@ -951,141 +663,32 @@ export class Action extends Element {
 
   /** Bulk delete — calls `R.deleteRecord(id)` per row. On a
    *  soft-delete resource that hits `Model.delete()` which writes
-   *  `deletedAt`. Notification: "N posts moved to trash" / "N posts
-   *  deleted" depending on `R.softDeletes`. */
+   *  `deletedAt`. */
   static bulkDelete(R: ResourceLike, _basePath: string): Action {
-    return Action.make('bulkDelete')
-      .label('Delete selected')
-      .destructive()
-      .bulk()
-      .confirm(`Delete the selected ${labelForCount(R, 0)}?`)
-      .handler(async (ctx) => {
-        const records = ctx.records ?? []
-        const Rfull = R as ResourceLike & { deleteRecord(id: string): Promise<void> }
-        let n = 0
-        for (const record of records) {
-          const id = String((record as { id?: unknown }).id ?? '')
-          if (!id) continue
-          const allowed = await callPredicate(R.canDelete, ctx.user, record)
-          if (!allowed) continue
-          try { await Rfull.deleteRecord(id); n++ } catch { /* skip — agg notify shows total */ }
-        }
-        const verb = R.softDeletes ? 'moved to trash' : 'deleted'
-        return { notify: { title: `${n} ${labelForCount(R, n)} ${verb}`, type: 'success' } as never }
-      })
+    return bulkDeleteAction(R, _basePath)
   }
 
-  /** Bulk restore — calls `R.model.restore(id)` per row. Visible only
-   *  on soft-delete resources (the entire bulk-restore concept is
-   *  specific to them). */
+  /** Bulk restore — calls `R.model.restore(id)` per row. */
   static bulkRestore(R: ResourceLike, _basePath: string): Action {
-    return Action.make('bulkRestore')
-      .label('Restore selected')
-      .color('success')
-      .bulk()
-      .confirm(`Restore the selected ${labelForCount(R, 0)}?`)
-      .handler(async (ctx) => {
-        const records = ctx.records ?? []
-        const Rfull = R as ResourceLike & { model?: { restore?(id: string | number): Promise<unknown> } }
-        const restore = Rfull.model?.restore
-        if (!restore) {
-          return { notify: { title: 'Restore not configured', type: 'error' } as never }
-        }
-        let n = 0
-        for (const record of records) {
-          const id = String((record as { id?: unknown }).id ?? '')
-          if (!id) continue
-          const allowed = await callPredicate(R.canRestore, ctx.user, record)
-          if (!allowed) continue
-          try { await restore(id); n++ } catch { /* skip */ }
-        }
-        return { notify: { title: `${n} ${labelForCount(R, n)} restored`, type: 'success' } as never }
-      })
+    return bulkRestoreAction(R, _basePath)
   }
 
-  /** Bulk force-delete — calls `R.model.forceDelete(id)` per row. Same
-   *  destructive confirm as the per-row variant. Visible only on
-   *  soft-delete resources. */
+  /** Bulk force-delete — calls `R.model.forceDelete(id)` per row. */
   static bulkForceDelete(R: ResourceLike, _basePath: string): Action {
-    return Action.make('bulkForceDelete')
-      .label('Delete forever')
-      .destructive()
-      .bulk()
-      .confirm(`Permanently delete the selected ${labelForCount(R, 0)}? This cannot be undone.`)
-      .handler(async (ctx) => {
-        const records = ctx.records ?? []
-        const Rfull = R as ResourceLike & { model?: { forceDelete?(id: string | number): Promise<void> } }
-        const forceDelete = Rfull.model?.forceDelete
-        if (!forceDelete) {
-          return { notify: { title: 'Force-delete not configured', type: 'error' } as never }
-        }
-        let n = 0
-        for (const record of records) {
-          const id = String((record as { id?: unknown }).id ?? '')
-          if (!id) continue
-          const allowed = await callPredicate(R.canForceDelete, ctx.user, record)
-          if (!allowed) continue
-          try { await forceDelete(id); n++ } catch { /* skip */ }
-        }
-        return { notify: { title: `${n} ${labelForCount(R, n)} permanently deleted`, type: 'success' } as never }
-      })
+    return bulkForceDeleteAction(R, _basePath)
   }
 
   /**
    * Bulk replicate — calls `R.model.create(...)` once per selected row
    * with the source row's attributes minus PK / soft-delete column /
-   * `opts.excludeAttributes`. Optional `opts.beforeReplicaSaved(replica,
-   * source)` runs per-row. Rows that throw during create are skipped
-   * silently so a single bad row doesn't abort the batch (the user sees
-   * the success count on the toast). Visibility delegates to
-   * `R.canCreate(user)`.
-   *
-   * Sibling of `Action.replicate` — same options bag, same strip set,
-   * same authorization gate. Stays on the list page (no per-row
-   * redirect possible for N rows).
+   * `opts.excludeAttributes`. Sibling of `Action.replicate`.
    */
   static bulkReplicate(
     R:        ResourceLike,
     _basePath: string,
     opts:     ReplicateOptions = {},
   ): Action {
-    return Action.make('bulkReplicate')
-      .label('Replicate selected')
-      .bulk()
-      .confirm(`Replicate the selected ${labelForCount(R, 0)}?`)
-      .handler(async (ctx) => {
-        const M = R.model
-        if (!M || typeof M.create !== 'function') {
-          return { notify: { title: 'Replicate not configured (resource has no model.create)', type: 'error' } as never }
-        }
-        const records = ctx.records ?? []
-        const pkCol      = (M as { primaryKey?: string }).primaryKey ?? 'id'
-        const trashedCol = R.deletedAtColumn ?? 'deletedAt'
-        const skip = new Set<string>([pkCol, trashedCol, ...(opts.excludeAttributes ?? [])])
-        let n = 0
-        for (const source of records) {
-          if (!source || typeof source !== 'object') continue
-          const allowed = await callPredicate(R.canCreate, ctx.user)
-          if (!allowed) continue
-          let replica: Record<string, unknown> = {}
-          for (const [k, v] of Object.entries(source as Record<string, unknown>)) {
-            if (skip.has(k)) continue
-            replica[k] = v
-          }
-          if (opts.beforeReplicaSaved) {
-            try { replica = await opts.beforeReplicaSaved(replica, source) }
-            catch { continue }
-          }
-          try { await M.create(replica); n++ } catch { /* skip — agg notify shows total */ }
-        }
-        const defaultTitle = `${n} ${labelForCount(R, n)} replicated`
-        const overrideTitle = opts.getCreatedNotificationTitle
-          ? await opts.getCreatedNotificationTitle({ count: n, records })
-          : undefined
-        const title = overrideTitle !== undefined ? overrideTitle : defaultTitle
-        return { notify: { title, type: 'success' } as never }
-      })
-      .visible(({ user }) => callPredicate(R.canCreate, user))
+    return bulkReplicateAction(R, _basePath, opts)
   }
 
   // ─── Import / Export factories ────────────────────────────────
@@ -1263,138 +866,59 @@ export class Action extends Element {
 
   /** Relation create-action factory — link to
    * `${base}/${parentSlug}/${parentId}/${relationship}/create`.
-   *
-   * Visibility delegates to `M.canCreate(user, parentRecord)` (or the
-   * related Resource's `canCreate(user)` when the manager hasn't
-   * overridden). Drop into `headerActions([...])` from inside
-   * `RelationManager.table(table, ctx)`.
+   * Visibility delegates to `M.canCreate(user, parentRecord)` with
+   * fall-through to the related Resource's `canCreate(user)`.
    */
   static relationCreate(
     M:   typeof RelationManager,
     ctx: RelationManagerContext,
   ): Action {
-    const labelSingular = M.getLabelSingular()
-    return Action.make('create')
-      .label(`New ${labelSingular}`)
-      .href(`${relationUrlPrefix(ctx)}/create`)
-      .visible(({ user }) => {
-        // M2M managers don't have a per-pivot-row create surface — the
-        // related record is created via its own Resource, then attached
-        // via `relationAttach`. Auto-hide so dropping this factory into
-        // any M2M manager (belongsToMany / morphToMany / morphedByMany)
-        // is a no-op (visible=false) instead of a 404-on-click foot-gun.
-        if (isM2MMode(ctx.mode)) return false
-        return safeManagerPolicy(M, 'canCreate', ctx.related, user, ctx.parentRecord)
-      })
+    return relationCreateAction(M, ctx)
   }
 
   /** Relation edit-action factory — link to
    * `${base}/${parentSlug}/${parentId}/${relationship}/${recordId ?? ':id'}/edit`.
-   *
-   * Same `recordId` semantics as `Action.edit`: omit for row context
-   * so the renderer substitutes `:id` per row; pass explicitly when
-   * building actions for a single-record context. Visibility delegates
-   * to `M.canEdit(user, child, parentRecord)` with fall-through to the
-   * related Resource's `canEdit(user, record)`.
    */
   static relationEdit(
     M:        typeof RelationManager,
     ctx:      RelationManagerContext,
     recordId?: string,
   ): Action {
-    const id = recordId ?? ':id'
-    return Action.make('edit')
-      .label('Edit')
-      .href(`${relationUrlPrefix(ctx)}/${id}/edit`)
-      .visible(({ user, record }) => {
-        // M2M: per-pivot-row "edit" doesn't exist; users edit the
-        // related record via its own Resource. Auto-hide for every M2M
-        // mode (belongsToMany / morphToMany / morphedByMany).
-        if (isM2MMode(ctx.mode)) return false
-        return safeManagerPolicy(M, 'canEdit', ctx.related, user, ctx.parentRecord, record)
-      })
+    return relationEditAction(M, ctx, recordId)
   }
 
   /** Relation delete-action factory — POST to
-   * `${base}/${parentSlug}/${parentId}/${relationship}/${recordId ?? ':id'}/delete`,
-   * destructive style with a labeled confirmation. Visibility delegates
-   * to `M.canDelete(user, child, parentRecord)` with fall-through to the
-   * related Resource's `canDelete(user, record)`.
+   * `${base}/${parentSlug}/${parentId}/${relationship}/${recordId ?? ':id'}/delete`.
    */
   static relationDelete(
     M:        typeof RelationManager,
     ctx:      RelationManagerContext,
     recordId?: string,
   ): Action {
-    const id = recordId ?? ':id'
-    const singular = M.getLabelSingular().toLowerCase()
-    return Action.make('delete')
-      .label('Delete')
-      .destructive()
-      .method('post')
-      .action(`${relationUrlPrefix(ctx)}/${id}/delete`)
-      .confirm(`Delete this ${singular}?`)
-      .visible(async ({ user, record }) => {
-        // M2M: "delete" of the related record is destructive in a way
-        // that "detach" isn't — surface only `relationDetach` on every
-        // M2M manager (belongsToMany / morphToMany / morphedByMany).
-        // Users who genuinely want to delete the related record reach
-        // for `Action.delete(R)` on the related Resource instead.
-        if (isM2MMode(ctx.mode)) return false
-        if (ctx.related?.softDeletes && isTrashed(record, ctx.related as ResourceLike)) return false
-        return safeManagerPolicy(M, 'canDelete', ctx.related, user, ctx.parentRecord, record)
-      })
+    return relationDeleteAction(M, ctx, recordId)
   }
 
   /**
    * Plan #13 polish — Restore factory for relation managers. POSTs to
-   * `${base}/${parentSlug}/${parentId}/${relationship}/${recordId ?? ':id'}/restore`,
-   * success-styled, no confirm prompt. Auto-hides on live (non-trashed)
-   * rows AND when `M.canRestore` (or related Resource fall-through)
-   * denies. Drop into `recordActions([...])` from `RelationManager.table(table, ctx)`.
+   * the relation-restore route. Auto-hides on live rows + policy denies.
    */
   static relationRestore(
     M:        typeof RelationManager,
     ctx:      RelationManagerContext,
     recordId?: string,
   ): Action {
-    const id = recordId ?? ':id'
-    return Action.make('restore')
-      .label('Restore')
-      .color('success')
-      .method('post')
-      .action(`${relationUrlPrefix(ctx)}/${id}/restore`)
-      .visible(async ({ user, record }) => {
-        if (!ctx.related?.softDeletes) return false
-        if (!isTrashed(record, ctx.related as ResourceLike)) return false
-        return safeManagerPolicy(M, 'canRestore', ctx.related, user, ctx.parentRecord, record)
-      })
+    return relationRestoreAction(M, ctx, recordId)
   }
 
   /**
-   * Plan #13 polish — Force-delete factory for relation managers. POSTs
-   * to `${base}/${parentSlug}/${parentId}/${relationship}/${recordId ?? ':id'}/force-delete`,
-   * destructive style with a permanence-aware confirmation. Auto-hides on
-   * live (non-trashed) rows and when policy denies.
+   * Plan #13 polish — Force-delete factory for relation managers.
    */
   static relationForceDelete(
     M:        typeof RelationManager,
     ctx:      RelationManagerContext,
     recordId?: string,
   ): Action {
-    const id = recordId ?? ':id'
-    const singular = M.getLabelSingular().toLowerCase()
-    return Action.make('forceDelete')
-      .label('Delete forever')
-      .destructive()
-      .method('post')
-      .action(`${relationUrlPrefix(ctx)}/${id}/force-delete`)
-      .confirm(`Permanently delete this ${singular}? This cannot be undone.`)
-      .visible(async ({ user, record }) => {
-        if (!ctx.related?.softDeletes) return false
-        if (!isTrashed(record, ctx.related as ResourceLike)) return false
-        return safeManagerPolicy(M, 'canForceDelete', ctx.related, user, ctx.parentRecord, record)
-      })
+    return relationForceDeleteAction(M, ctx, recordId)
   }
 
   // ─── Relation-manager replicate factories ─────────────────
@@ -1431,22 +955,9 @@ export class Action extends Element {
 
   /**
    * Relation row-replicate factory. Clones the row's child record
-   * inside the manager's parent scope.
-   *
-   * Strips the related model's primary key, soft-delete column, and
-   * `opts.excludeAttributes`. Re-applies the parent attachment columns
-   * after the strip + before the optional `beforeReplicaSaved` hook,
-   * so user code can still mutate non-FK fields without accidentally
-   * unlinking the replica.
-   *
-   * On success the manager-scoped route falls back to the manager
-   * list URL (`${base}/${parentSlug}/${parentId}/${relationship}`)
-   * because no explicit `redirect` is returned — same default as the
-   * other handler-style relation factories.
-   *
-   * `recordId` kept in the signature for parity with the rest of the
-   * relation factory family. The dispatcher resolves the source row
-   * from the request body, so it isn't referenced here.
+   * inside the manager's parent scope. Strips PK + soft-delete column
+   * + `opts.excludeAttributes`, then force-pins the parent attachment
+   * columns before optional `beforeReplicaSaved` runs.
    */
   static relationReplicate(
     M:        typeof RelationManager,
@@ -1454,68 +965,19 @@ export class Action extends Element {
     recordId?: string,
     opts:     ReplicateOptions = {},
   ): Action {
-    void recordId
-    return Action.make('relationReplicate')
-      .label('Replicate')
-      .row()
-      .handler(async (hctx) => {
-        const result = await runRelationReplicateRow(M, ctx, hctx, opts)
-        return result
-      })
-      .visible(({ user }) => {
-        if (isM2MMode(ctx.mode) || ctx.mode === 'morphTo') return false
-        return safeManagerPolicy(M, 'canCreate', ctx.related, user, ctx.parentRecord)
-      })
+    return relationReplicateAction(M, ctx, recordId, opts)
   }
 
   /**
    * Bulk sibling — replicates every selected child row inside the
-   * manager's parent scope. Same strip + force-pin pipeline applied
-   * per row. Per-row `safeManagerPolicy(M, 'canCreate', …)` runs
-   * inside the loop so a partially-permitted selection still proceeds
-   * for the rows that pass. Rows that throw are skipped silently —
-   * the toast count reflects only successful creates.
+   * manager's parent scope. Same strip + force-pin pipeline per row.
    */
   static relationBulkReplicate(
     M:    typeof RelationManager,
     ctx:  RelationManagerContext,
     opts: ReplicateOptions = {},
   ): Action {
-    return Action.make('relationBulkReplicate')
-      .label('Replicate selected')
-      .bulk()
-      .confirm(`Replicate the selected ${M.getLabel().toLowerCase()}?`)
-      .handler(async (hctx) => {
-        const Related = ctx.related
-        if (!Related?.model || typeof Related.model.create !== 'function') {
-          return { notify: { title: 'Replicate not configured (related Resource has no model.create)', type: 'error' } as never }
-        }
-        const records = hctx.records ?? []
-        let n = 0
-        for (const source of records) {
-          if (!source || typeof source !== 'object') continue
-          const allowed = await safeManagerPolicy(M, 'canCreate', Related, hctx.user, ctx.parentRecord)
-          if (!allowed) continue
-          try {
-            await persistRelationReplica(M, ctx, source, opts)
-            n++
-          } catch { /* skip — agg notify shows total */ }
-        }
-        const labelPlural = M.getLabel().toLowerCase()
-        const labelSingular = M.getLabelSingular().toLowerCase()
-        const defaultTitle = `${n} ${n === 1 ? labelSingular : labelPlural} replicated`
-        const overrideTitle = opts.getCreatedNotificationTitle
-          ? await opts.getCreatedNotificationTitle({ count: n, records })
-          : undefined
-        const title = overrideTitle !== undefined ? overrideTitle : defaultTitle
-        return {
-          notify: { title, type: 'success' } as never,
-        }
-      })
-      .visible(({ user }) => {
-        if (isM2MMode(ctx.mode) || ctx.mode === 'morphTo') return false
-        return safeManagerPolicy(M, 'canCreate', ctx.related, user, ctx.parentRecord)
-      })
+    return relationBulkReplicateAction(M, ctx, opts)
   }
 
   // ─── M2M relation factories ───────────────────────────────
@@ -1542,139 +1004,33 @@ export class Action extends Element {
   /** Header-placement attach factory — opens a modal with a SelectField
    *  listing related records that aren't already attached, and POSTs the
    *  selected id to the manager's `_action/relationAttach` endpoint.
-   *
    *  Visibility delegates to `M.canAttach(user, parentRecord)` AND
    *  guards against being dropped into a non-M2M manager. */
   static relationAttach(
     M:   typeof RelationManager,
     ctx: RelationManagerContext,
   ): Action {
-    const labelSingular = M.getLabelSingular()
-    const a = Action.make('relationAttach')
-      .label(`Attach ${labelSingular}`)
-      .header()
-      .modalHeading(`Attach ${labelSingular}`)
-      .modalSubmitLabel('Attach')
-      .modalCancelLabel('Cancel')
-      .handler(async (hctx) => {
-        const rel = hctx.relation
-        if (!rel) {
-          return { notify: { title: 'Attach handler missing parent context — manager-scoped _action route not wired', type: 'error' } as never }
-        }
-        const Related = ctx.related
-        if (!Related?.model) {
-          return { notify: { title: 'Cannot attach: related Resource has no model', type: 'error' } as never }
-        }
-        const idStr = String((hctx.values?.['_attachId'] as unknown) ?? '')
-        if (idStr.length === 0) {
-          return { notify: { title: 'Pick a record to attach', type: 'error' } as never }
-        }
-        const accessor = resolveM2MAccessor(rel.parent, rel.relationship)
-        if (!accessor || typeof accessor.attach !== 'function') {
-          return { notify: { title: `Pivot accessor missing on ${rel.relationship} — wrong relation type or ORM version?`, type: 'error' } as never }
-        }
-        try {
-          await accessor.attach([idStr])
-        } catch (err) {
-          return { notify: { title: `Attach failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
-        }
-        return { notify: { title: `${labelSingular} attached`, type: 'success' } as never }
-      })
-      .visible(({ user }) => {
-        if (!isM2MMode(ctx.mode)) return false
-        return safeManagerPolicy(M, 'canAttach', ctx.related, user, ctx.parentRecord)
-      })
-
-    // Build the modal-form schema only when this is actually an M2M
-    // manager — non-M2M drops keep the action hidden via the visibility
-    // predicate, but still need a schema-less Action so the meta walker
-    // doesn't blow up. Static import is fine: `attachFactory` only
-    // depends on `SelectField` + ORM helpers, no cycle back to Action.
-    if (isM2MMode(ctx.mode) && ctx.related?.model) {
-      a.schema(buildAttachModalSchema({
-        Related:         ctx.related,
-        relationship:    ctx.relationship,
-        recordTitleAttr: M.getRecordTitleAttribute() ?? ctx.related.recordTitleAttribute,
-        labelSingular,
-      }))
-    }
-    return a
+    return relationAttachAction(M, ctx)
   }
 
   /** Row-placement detach factory — POSTs to
    *  `${base}/${parentSlug}/${parentId}/${relationship}/${recordId ?? ':id'}/_detach`,
-   *  destructive style with a confirmation prompt that says "Detach"
-   *  (not "Delete") so users understand the target record stays.
-   *  Visibility delegates to `M.canDetach`. */
+   *  destructive style with a "Detach" confirmation. */
   static relationDetach(
     M:        typeof RelationManager,
     ctx:      RelationManagerContext,
     recordId?: string,
   ): Action {
-    const id = recordId ?? ':id'
-    const singular = M.getLabelSingular().toLowerCase()
-    return Action.make('relationDetach')
-      .label('Detach')
-      .destructive()
-      .method('post')
-      .action(`${relationUrlPrefix(ctx)}/${id}/_detach`)
-      .confirm(`Detach this ${singular}? The ${singular} record stays in place; only the link is removed.`)
-      .visible(async ({ user, record }) => {
-        if (!isM2MMode(ctx.mode)) return false
-        return safeManagerPolicy(M, 'canDetach', ctx.related, user, ctx.parentRecord, record)
-      })
+    return relationDetachAction(M, ctx, recordId)
   }
 
   /** Bulk-placement bulk-detach factory — handler-dispatched. Calls
-   *  `parent.related(rel).detach(ids)` for the selected rows. Visibility
-   *  delegates to `M.canAttach` (acts like a "manager admin" gate; we
-   *  intentionally don't enforce per-row `canDetach` on the visibility
-   *  side because the bulk button needs to be visible before the user
-   *  has selected anything — per-row gating happens inside the handler). */
+   *  `parent.related(rel).detach(ids)` for the selected rows. */
   static relationBulkDetach(
     M:   typeof RelationManager,
     ctx: RelationManagerContext,
   ): Action {
-    const labelPlural = M.getLabel().toLowerCase()
-    return Action.make('relationBulkDetach')
-      .label('Detach selected')
-      .destructive()
-      .bulk()
-      .confirm(`Detach the selected ${labelPlural}? The records stay in place; only the links are removed.`)
-      .handler(async (hctx) => {
-        const rel = hctx.relation
-        if (!rel) {
-          return { notify: { title: 'Bulk-detach handler missing parent context — manager-scoped _action route not wired', type: 'error' } as never }
-        }
-        const records = hctx.records ?? []
-        const ids: string[] = []
-        for (const r of records) {
-          const id = String((r as { id?: unknown }).id ?? '')
-          if (!id) continue
-          const allowed = await safeManagerPolicy(M, 'canDetach', ctx.related, hctx.user, ctx.parentRecord, r)
-          if (!allowed) continue
-          ids.push(id)
-        }
-        if (ids.length === 0) {
-          return { notify: { title: 'Nothing to detach (no permitted rows)', type: 'warning' } as never }
-        }
-        const accessor = resolveM2MAccessor(rel.parent, rel.relationship)
-        if (!accessor || typeof accessor.detach !== 'function') {
-          return { notify: { title: `Pivot accessor missing on ${rel.relationship} — wrong relation type or ORM version?`, type: 'error' } as never }
-        }
-        try {
-          await accessor.detach(ids)
-        } catch (err) {
-          return { notify: { title: `Bulk detach failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
-        }
-        return { notify: { title: `${ids.length} ${labelPlural} detached`, type: 'success' } as never }
-      })
-      .visible(({ user }) => {
-        if (!isM2MMode(ctx.mode)) return false
-        // Bulk gate uses canAttach as a stand-in for "manager admin" —
-        // per-row canDetach is enforced inside the handler.
-        return safeManagerPolicy(M, 'canAttach', ctx.related, user, ctx.parentRecord)
-      })
+    return relationBulkDetachAction(M, ctx)
   }
 
   label(l: string): this { this._label = l; return this }
