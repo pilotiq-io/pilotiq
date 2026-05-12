@@ -118,14 +118,13 @@ export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Re
 
   const widgetData = await resolveServerDataElements(elements, ctx)
   const dashRoute: PanelInfoRoute = cfg.dashboardPage ? { page: cfg.dashboardPage } : {}
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'dashboard',
-    await resolveSchema(elements, ctx),
-    dashRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, dashRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'dashboard', metas, dashRoute)),
+  ])
 
   return {
-    panel:    await panelInfo(pilotiq, req, dashRoute),
+    panel,
     page:     cfg.dashboardPage ? cfg.dashboardPage.toMeta() : undefined,
     basePath: cfg.path,
     layout:   cfg.layout,
@@ -164,15 +163,14 @@ export async function resourceIndexData(
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
   const listRoute: PanelInfoRoute = { resource: R, page: PageClass }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'list',
-    await resolveSchema(elements, ctx),
-    listRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, listRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'list', metas, listRoute)),
+  ])
 
   return {
     pageType: 'resource',
-    panel:    await panelInfo(pilotiq, req, listRoute),
+    panel,
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.label, labelSingular: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     basePath: cfg.path,
@@ -348,14 +346,13 @@ export async function resourceCreateData(
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
   const createRoute: PanelInfoRoute = { resource: R, page: PageClass }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'create',
-    await resolveSchema(elements, ctx),
-    createRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, createRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'create', metas, createRoute)),
+  ])
 
   return {
-    panel:    await panelInfo(pilotiq, req, createRoute),
+    panel,
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'create' as const,
@@ -424,19 +421,16 @@ export async function resourceEditData(
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
   const editRoute: PanelInfoRoute = { resource: R, page: PageClass, recordId }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'edit',
-    await resolveSchema(
-      elements,
-      record !== undefined ? { ...ctx, record } : ctx,
-    ),
-    editRoute,
-  )
+  const editCtx = record !== undefined ? { ...ctx, record } : ctx
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, editRoute),
+    resolveSchema(elements, editCtx).then(metas => applyRoleHooks(pilotiq, user, 'edit', metas, editRoute)),
+  ])
 
   tagFieldAiUrls(schemaData as Record<string, unknown>[], `${resourceBase}/${recordId}/_agents`)
 
   return {
-    panel:    await panelInfo(pilotiq, req, editRoute),
+    panel,
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'edit' as const,
@@ -486,17 +480,14 @@ export async function resourceViewData(
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
   const viewRoute: PanelInfoRoute = { resource: R, page: PageClass, recordId }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'view',
-    await resolveSchema(
-      elements,
-      record !== undefined ? { ...ctx, record } : ctx,
-    ),
-    viewRoute,
-  )
+  const viewCtx = record !== undefined ? { ...ctx, record } : ctx
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, viewRoute),
+    resolveSchema(elements, viewCtx).then(metas => applyRoleHooks(pilotiq, user, 'view', metas, viewRoute)),
+  ])
 
   return {
-    panel:    await panelInfo(pilotiq, req, viewRoute),
+    panel,
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'view' as const,
@@ -580,18 +571,15 @@ export async function resourceRecordPageData(
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
   const recordPageRoute: PanelInfoRoute = { resource: R, page: PageClass, recordId }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'view',
-    await resolveSchema(
-      elements,
-      record !== undefined ? { ...ctx, record } : ctx,
-    ),
-    recordPageRoute,
-  )
+  const recordCtx = record !== undefined ? { ...ctx, record } : ctx
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, recordPageRoute),
+    resolveSchema(elements, recordCtx).then(metas => applyRoleHooks(pilotiq, user, 'view', metas, recordPageRoute)),
+  ])
 
   return {
     pageType: 'record-page' as const,
-    panel:    await panelInfo(pilotiq, req, recordPageRoute),
+    panel,
     page:     PageClass.toMeta(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'record' as const,

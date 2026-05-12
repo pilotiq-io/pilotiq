@@ -307,8 +307,11 @@ export async function relationManagerData(
   // surfaces — read-only inline views opt in by overriding the
   // manager's can*). Cluster gate composes with R.canAccess — both
   // must pass when the parent resource is inside a cluster.
-  if (R.cluster && !await safeBool(() => R.cluster!.canAccess(user))) return { ok: false, status: 403 }
-  if (!await safeBool(() => R.canAccess(user))) return { ok: false, status: 403 }
+  const [clusterOk, accessOk] = await Promise.all([
+    R.cluster ? safeBool(() => R.cluster!.canAccess(user)) : Promise.resolve(true),
+    safeBool(() => R.canAccess(user)),
+  ])
+  if (!clusterOk || !accessOk) return { ok: false, status: 403 }
 
   if (!R.model) {
     // Without a model on the parent we can't load the parent record,
@@ -397,9 +400,13 @@ async function buildRelationListData(
 
   const elements: Element[] = [table]
   tagActionDispatch(elements, listUrl)
-  await loadTableRecords(elements, scope.query ?? {}, listUrl, user)
-
-  const tabs = await buildRelationTabs(R, scope.recordId, base, scope.relationship, user, parentRecord)
+  // Independent work — records load against the parent's relation
+  // accessor; tabs probe per-tab `safeManagerPolicy` predicates that
+  // don't touch the records pipeline.
+  const [, tabs] = await Promise.all([
+    loadTableRecords(elements, scope.query ?? {}, listUrl, user),
+    buildRelationTabs(R, scope.recordId, base, scope.relationship, user, parentRecord),
+  ])
   if (tabs) elements.unshift(tabs)
 
   const breadcrumbs = relationListBreadcrumbs(
@@ -408,15 +415,14 @@ async function buildRelationListData(
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
   const relationListRoute: PanelInfoRoute = { resource: R, recordId: scope.recordId }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'relation-list',
-    await resolveSchema(elements, ctx),
-    relationListRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, relationListRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'relation-list', metas, relationListRoute)),
+  ])
 
   return {
     pageType: 'relation-list',
-    panel:    await panelInfo(pilotiq, req, relationListRoute),
+    panel,
     resource: { name: R.name, label: R.label, labelSingular: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -482,15 +488,14 @@ async function buildRelationCreateData(
   }, user), cfg)
 
   const relationCreateRoute: PanelInfoRoute = { resource: R, recordId: scope.recordId }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'relation-create',
-    await resolveSchema(elements, ctx),
-    relationCreateRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, relationCreateRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'relation-create', metas, relationCreateRoute)),
+  ])
 
   return {
     pageType: 'relation-create',
-    panel:    await panelInfo(pilotiq, req, relationCreateRoute),
+    panel,
     resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -539,13 +544,11 @@ async function buildRelationViewData(
   }
   const childPk = getPrimaryKey(Related.model)
 
-  const belongs = await childBelongsToParent(
-    R.model as ModelLike, parentRecord, scope.relationship, childPk, scope.childId,
-  )
-  if (!belongs) return null
-
-  const child = await findRecord(Related, scope.childId, { user }).catch(() => undefined)
-  if (!child) return null
+  const [belongs, child] = await Promise.all([
+    childBelongsToParent(R.model as ModelLike, parentRecord, scope.relationship, childPk, scope.childId),
+    findRecord(Related, scope.childId, { user }).catch(() => undefined),
+  ])
+  if (!belongs || !child) return null
 
   if (!await safeManagerPolicy(M, 'canView', Related, user, parentRecord, child)) return { ok: false, status: 403 }
 
@@ -587,15 +590,14 @@ async function buildRelationViewData(
   }, user), cfg)
 
   const relationViewRoute: PanelInfoRoute = { resource: R, recordId: scope.childId }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'relation-view',
-    await resolveSchema(elements, ctx),
-    relationViewRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, relationViewRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'relation-view', metas, relationViewRoute)),
+  ])
 
   return {
     pageType: 'relation-view',
-    panel:    await panelInfo(pilotiq, req, relationViewRoute),
+    panel,
     resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -636,16 +638,15 @@ async function buildRelationEditData(
   }
   const childPk = getPrimaryKey(Related.model)
 
-  // IDOR check first — confirm the child actually belongs to the
-  // parent under this relationship before doing anything else. Guards
-  // against URL tampering swapping `:childId`.
-  const belongs = await childBelongsToParent(
-    R.model as ModelLike, parentRecord, scope.relationship, childPk, scope.childId,
-  )
-  if (!belongs) return null
-
-  const child = await findRecord(Related, scope.childId, { user }).catch(() => undefined)
-  if (!child) return null
+  // IDOR check + child load in parallel. Both fail-paths collapse to
+  // the same `return null` so behavior matches the serial version; the
+  // independent queries (parent's relation accessor vs related model's
+  // find) save one RTT on every relation-edit request.
+  const [belongs, child] = await Promise.all([
+    childBelongsToParent(R.model as ModelLike, parentRecord, scope.relationship, childPk, scope.childId),
+    findRecord(Related, scope.childId, { user }).catch(() => undefined),
+  ])
+  if (!belongs || !child) return null
 
   if (!await safeManagerPolicy(M, 'canEdit', Related, user, parentRecord, child)) return { ok: false, status: 403 }
 
@@ -690,15 +691,14 @@ async function buildRelationEditData(
   }, user), cfg)
 
   const relationEditRoute: PanelInfoRoute = { resource: R, recordId: scope.childId }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'relation-edit',
-    await resolveSchema(elements, ctx),
-    relationEditRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, relationEditRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'relation-edit', metas, relationEditRoute)),
+  ])
 
   return {
     pageType: 'relation-edit',
-    panel:    await panelInfo(pilotiq, req, relationEditRoute),
+    panel,
     resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -773,8 +773,11 @@ export async function resolveRelationChain(
   if (!R) return null
 
   // Layer 0 — same gates as the depth-1 pipeline.
-  if (R.cluster && !await safeBool(() => R.cluster!.canAccess(user))) return { ok: false, status: 403 }
-  if (!await safeBool(() => R.canAccess(user))) return { ok: false, status: 403 }
+  const [clusterOk, accessOk] = await Promise.all([
+    R.cluster ? safeBool(() => R.cluster!.canAccess(user)) : Promise.resolve(true),
+    safeBool(() => R.canAccess(user)),
+  ])
+  if (!clusterOk || !accessOk) return { ok: false, status: 403 }
 
   if (!R.model) {
     throw new Error(
@@ -808,16 +811,15 @@ export async function resolveRelationChain(
   }
   const child1Mode: RelationMode = normalizeRelationMode(getRelationType(R.model, step0.relationship))
 
-  // IDOR #1 — confirm the leaf parent (`step1.recordId`) actually
-  // belongs to the top parent under the first relationship key.
+  // IDOR #1 + child1 load in parallel — confirm the leaf parent
+  // (`step1.recordId`) actually belongs to the top parent under the
+  // first relationship key. Independent queries.
   const child1Pk = getPrimaryKey(Related1.model)
-  const belongs1 = await childBelongsToParent(
-    R.model as ModelLike, parentRecord, step0.relationship, child1Pk, step1.recordId,
-  )
-  if (!belongs1) return null
-
-  const child1 = await findRecord(Related1, step1.recordId, { user }).catch(() => undefined)
-  if (!child1) return null
+  const [belongs1, child1] = await Promise.all([
+    childBelongsToParent(R.model as ModelLike, parentRecord, step0.relationship, child1Pk, step1.recordId),
+    findRecord(Related1, step1.recordId, { user }).catch(() => undefined),
+  ])
+  if (!belongs1 || !child1) return null
 
   // Layer 3 — M1.canView(child1, parent) gate. Filament-style: viewing
   // the child is the prerequisite for entering its nested manager strip.
@@ -1010,9 +1012,10 @@ async function buildNestedRelationListData(
 
   const elements: Element[] = [table]
   tagActionDispatch(elements, listUrl)
-  await loadTableRecords(elements, scope.query ?? {}, listUrl, user)
-
-  const tabs = await buildNestedRelationTabs(resolved.R, resolved.M1, base, scope.chain[0], scope.chain[1].recordId, scope.chain[1].relationship, user, resolved.child1)
+  const [, tabs] = await Promise.all([
+    loadTableRecords(elements, scope.query ?? {}, listUrl, user),
+    buildNestedRelationTabs(resolved.R, resolved.M1, base, scope.chain[0], scope.chain[1].recordId, scope.chain[1].relationship, user, resolved.child1),
+  ])
   if (tabs) elements.unshift(tabs)
 
   const breadcrumbs = nestedRelationListBreadcrumbs(
@@ -1024,15 +1027,14 @@ async function buildNestedRelationListData(
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
   const nestedListRoute: PanelInfoRoute = { resource: resolved.R, recordId: scope.chain[1].recordId }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'relation-list',
-    await resolveSchema(elements, ctx),
-    nestedListRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, nestedListRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'relation-list', metas, nestedListRoute)),
+  ])
 
   return {
     ...nestedResponseEnvelope('nested-relation-list', pilotiq, base, scope, resolved, req),
-    panel:    await panelInfo(pilotiq, req, nestedListRoute),
+    panel,
     schemaData,
   }
 }
@@ -1084,15 +1086,14 @@ async function buildNestedRelationCreateData(
   }, user), cfg)
 
   const nestedCreateRoute: PanelInfoRoute = { resource: resolved.R, recordId: scope.chain[1].recordId }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'relation-create',
-    await resolveSchema(elements, ctx),
-    nestedCreateRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, nestedCreateRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'relation-create', metas, nestedCreateRoute)),
+  ])
 
   return {
     ...nestedResponseEnvelope('nested-relation-create', pilotiq, base, scope, resolved, req),
-    panel:    await panelInfo(pilotiq, req, nestedCreateRoute),
+    panel,
     mode:     'create' as const,
     schemaData,
     ...(scope.prefill?.errors ? { hasErrors: true } : {}),
@@ -1116,13 +1117,11 @@ async function buildNestedRelationViewData(
   const [, step1] = scope.chain
   const child2Pk = getPrimaryKey(Related2.model)
 
-  const belongs2 = await childBelongsToParent(
-    Related1.model as ModelLike, child1, step1.relationship, child2Pk, scope.childId,
-  )
-  if (!belongs2) return null
-
-  const child2 = await findRecord(Related2, scope.childId, { user }).catch(() => undefined)
-  if (!child2) return null
+  const [belongs2, child2] = await Promise.all([
+    childBelongsToParent(Related1.model as ModelLike, child1, step1.relationship, child2Pk, scope.childId),
+    findRecord(Related2, scope.childId, { user }).catch(() => undefined),
+  ])
+  if (!belongs2 || !child2) return null
 
   if (!await safeManagerPolicy(M2, 'canView', Related2, user, child1, child2)) return { ok: false, status: 403 }
 
@@ -1151,15 +1150,14 @@ async function buildNestedRelationViewData(
   }, user), cfg)
 
   const nestedViewRoute: PanelInfoRoute = { resource: resolved.R, recordId: scope.childId }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'relation-view',
-    await resolveSchema(elements, ctx),
-    nestedViewRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, nestedViewRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'relation-view', metas, nestedViewRoute)),
+  ])
 
   return {
     ...nestedResponseEnvelope('nested-relation-view', pilotiq, base, scope, resolved, req),
-    panel:    await panelInfo(pilotiq, req, nestedViewRoute),
+    panel,
     mode:     'view' as const,
     childId:  scope.childId,
     schemaData,
@@ -1183,13 +1181,11 @@ async function buildNestedRelationEditData(
   const [step0, step1] = scope.chain
   const child2Pk = getPrimaryKey(Related2.model)
 
-  const belongs2 = await childBelongsToParent(
-    Related1.model as ModelLike, child1, step1.relationship, child2Pk, scope.childId,
-  )
-  if (!belongs2) return null
-
-  const child2 = await findRecord(Related2, scope.childId, { user }).catch(() => undefined)
-  if (!child2) return null
+  const [belongs2, child2] = await Promise.all([
+    childBelongsToParent(Related1.model as ModelLike, child1, step1.relationship, child2Pk, scope.childId),
+    findRecord(Related2, scope.childId, { user }).catch(() => undefined),
+  ])
+  if (!belongs2 || !child2) return null
 
   if (!await safeManagerPolicy(M2, 'canEdit', Related2, user, child1, child2)) return { ok: false, status: 403 }
 
@@ -1234,15 +1230,14 @@ async function buildNestedRelationEditData(
   }, user), cfg)
 
   const nestedEditRoute: PanelInfoRoute = { resource: resolved.R, recordId: scope.childId }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'relation-edit',
-    await resolveSchema(elements, ctx),
-    nestedEditRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, nestedEditRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'relation-edit', metas, nestedEditRoute)),
+  ])
 
   return {
     ...nestedResponseEnvelope('nested-relation-edit', pilotiq, base, scope, resolved, req),
-    panel:    await panelInfo(pilotiq, req, nestedEditRoute),
+    panel,
     mode:     'edit' as const,
     childId:  scope.childId,
     schemaData,

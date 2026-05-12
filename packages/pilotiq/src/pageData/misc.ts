@@ -73,18 +73,15 @@ export async function globalEditData(
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
   const globalEditRoute: PanelInfoRoute = { global: G, page: PageClass }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'global-edit',
-    await resolveSchema(
-      elements,
-      record !== undefined ? { ...ctx, record } : ctx,
-    ),
-    globalEditRoute,
-  )
+  const globalEditCtx = record !== undefined ? { ...ctx, record } : ctx
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, globalEditRoute),
+    resolveSchema(elements, globalEditCtx).then(metas => applyRoleHooks(pilotiq, user, 'global-edit', metas, globalEditRoute)),
+  ])
 
   return {
     pageType: 'global',
-    panel:    await panelInfo(pilotiq, req, globalEditRoute),
+    panel,
     page:     PageClass.toMeta(),
     global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
@@ -115,14 +112,13 @@ export async function globalViewData(
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
   const globalViewRoute: PanelInfoRoute = { global: G, page: PageClass }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'global-view',
-    await resolveSchema(elements, ctx),
-    globalViewRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, globalViewRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'global-view', metas, globalViewRoute)),
+  ])
 
   return {
-    panel:    await panelInfo(pilotiq, req, globalViewRoute),
+    panel,
     page:     PageClass.toMeta(),
     global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
@@ -157,15 +153,14 @@ export async function customPageData(
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
   const customRoute: PanelInfoRoute = { page: PageClass }
-  const schemaData = await applyRoleHooks(
-    pilotiq, user, 'page',
-    await resolveSchema(elements, ctx),
-    customRoute,
-  )
+  const [panel, schemaData] = await Promise.all([
+    panelInfo(pilotiq, req, customRoute),
+    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'page', metas, customRoute)),
+  ])
 
   return {
     pageType: 'page',
-    panel:    await panelInfo(pilotiq, req, customRoute),
+    panel,
     page:     PageClass.toMeta(),
     schemaData,
     _widgetData: resolvedWidgets,
