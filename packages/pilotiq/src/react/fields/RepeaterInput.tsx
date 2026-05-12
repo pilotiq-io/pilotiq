@@ -20,6 +20,18 @@ import {
   DEFAULT_DELETE,
 } from './rowChromeButton.js'
 import { syncRowGates } from './syncRowGates.js'
+import {
+  generateRowId, makeAccordionStorage, makeCollapsedStorage,
+} from './rowState.js'
+import { useRowReorderDnd } from './useRowReorderDnd.js'
+
+const collapsedStorage = makeCollapsedStorage('repeater')
+const accordionStorage = makeAccordionStorage('repeater')
+const initSeedCollapsed          = collapsedStorage.seed
+const writeCollapsedToStorage    = collapsedStorage.write
+const deleteCollapsedFromStorage = collapsedStorage.remove
+const readAccordionFromStorage   = accordionStorage.read
+const writeAccordionToStorage    = accordionStorage.write
 
 /**
  * Pure reorder helper — used by both the HTML5 DnD path and the
@@ -324,49 +336,22 @@ export function RepeaterInput({
   }
 
   // ── DnD state ───────────────────────────────────────────
-  // dragId  — the row being dragged, or null when no drag is active.
-  // dropAt  — the boundary slot the cursor is currently over
-  //           (range 0..rows.length); null when not over a valid drop target.
-  const [dragId, setDragId] = useState<string | null>(null)
-  const [dropAt, setDropAt] = useState<number | null>(null)
-
-  // Generic on `HTMLElement` so the same handlers wire onto a `<div>`
-  // row (card / grid layouts) AND a `<tr>` row (table layout). Concrete
-  // refinement happens at the consumer's prop boundary.
-  const onRowDragStart = (id: string) => (e: React.DragEvent<HTMLElement>): void => {
-    if (!reorderable || disabled) return
-    setDragId(id)
-    // dataTransfer needs *something* to register the drag in Firefox.
-    e.dataTransfer.effectAllowed = 'move'
-    try { e.dataTransfer.setData('text/plain', id) } catch { /* IE quirk; ignore */ }
-  }
-
-  const onRowDragOver = (idx: number) => (e: React.DragEvent<HTMLElement>): void => {
-    if (!reorderable || disabled || dragId === null) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    // Drop above this row when cursor is in its top half, below when in its bottom half.
-    const rect      = e.currentTarget.getBoundingClientRect()
-    const aboveHalf = e.clientY < rect.top + rect.height / 2
-    setDropAt(aboveHalf ? idx : idx + 1)
-  }
-
-  const onRowDrop = (e: React.DragEvent<HTMLElement>): void => {
-    if (!reorderable || disabled || dragId === null || dropAt === null) {
-      setDragId(null); setDropAt(null); return
-    }
-    e.preventDefault()
-    setRows(prev => {
-      const fromIdx = prev.findIndex(r => r.id === dragId)
-      if (fromIdx < 0) return prev
-      return reorderRows(prev, fromIdx, dropAt)
-    })
-    setDragId(null); setDropAt(null)
-  }
-
-  const onRowDragEnd = (): void => {
-    setDragId(null); setDropAt(null)
-  }
+  const {
+    dragId, dropAt,
+    onDragStart: onRowDragStart,
+    onDragOver:  onRowDragOver,
+    onDrop:      onRowDrop,
+    onDragEnd:   onRowDragEnd,
+  } = useRowReorderDnd({
+    enabled: reorderable && !disabled,
+    onDrop: (fromId, at) => {
+      setRows(prev => {
+        const fromIdx = prev.findIndex(r => r.id === fromId)
+        if (fromIdx < 0) return prev
+        return reorderRows(prev, fromIdx, at)
+      })
+    },
+  })
 
   // ── Inner-field live re-resolve (Plan #14 v1.1) ─────────────
   // Inner Repeater inputs are uncontrolled (so reorder/clone preserves
@@ -487,7 +472,6 @@ export function RepeaterInput({
       <RepeaterTableLayout
         rows={rows}
         name={name}
-        formId={formId}
         disabled={disabled}
         columns={tableColumns}
         addLabel={addLabel}
@@ -939,7 +923,7 @@ function DropIndicator(): React.ReactElement {
  * stays stable across rows even when individual buttons disable.
  */
 function RepeaterTableLayout({
-  rows, name, formId: _formId, disabled, columns, addLabel, buttons, atMin, atMax,
+  rows, name, disabled, columns, addLabel, buttons, atMin, atMax,
   reorderable, cloneable,
   firstVisibleIdx, lastVisibleIdx, hasVisibleRow,
   dragId,
@@ -949,7 +933,6 @@ function RepeaterTableLayout({
 }: {
   rows:              RowState[]
   name:              string
-  formId:            string
   disabled:          boolean
   columns:           TableColumnShape[]
   addLabel:          string
@@ -1265,88 +1248,4 @@ function prefixFieldNames(el: ElementMeta, prefix: string): ElementMeta {
   return el
 }
 
-let _rowSeqFallback = 0
-function generateRowId(): string {
-  type CryptoLike = { randomUUID?: () => string }
-  const c = (globalThis as { crypto?: CryptoLike }).crypto
-  if (c?.randomUUID) return c.randomUUID()
-  return `row-${Date.now()}-${++_rowSeqFallback}`
-}
-
-function collapsedStorageKey(formId: string, name: string, rowId: string): string {
-  return `pilotiq.repeater.${formId}.${name}.${rowId}`
-}
-
-function initSeedCollapsed(
-  rows:         RowState[],
-  formId:       string,
-  name:         string,
-  defaultValue: boolean,
-  collapsible:  boolean,
-): Record<string, boolean> {
-  if (!collapsible) return {}
-  const out: Record<string, boolean> = {}
-  for (const row of rows) {
-    out[row.id] = readCollapsedFromStorage(formId, name, row.id, defaultValue)
-  }
-  return out
-}
-
-function readCollapsedFromStorage(
-  formId:       string,
-  name:         string,
-  rowId:        string,
-  defaultValue: boolean,
-): boolean {
-  if (typeof window === 'undefined') return defaultValue
-  try {
-    const raw = window.localStorage.getItem(collapsedStorageKey(formId, name, rowId))
-    if (raw === null) return defaultValue
-    return raw === 'true'
-  } catch { return defaultValue }
-}
-
-function writeCollapsedToStorage(
-  formId: string,
-  name:   string,
-  rowId:  string,
-  value:  boolean,
-): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(collapsedStorageKey(formId, name, rowId), String(value))
-  } catch { /* quota exceeded — fall back to in-memory only */ }
-}
-
-function deleteCollapsedFromStorage(formId: string, name: string, rowId: string): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.removeItem(collapsedStorageKey(formId, name, rowId))
-  } catch { /* ignore */ }
-}
-
-function accordionStorageKey(formId: string, name: string): string {
-  return `pilotiq.repeater.${formId}.${name}.accordion`
-}
-
-/**
- * Read the persisted accordion-open row id. Returns `undefined` when no
- * value is stored (so the caller can fall back to the default-open
- * heuristic). Returns `''` when the user explicitly closed every row —
- * the caller maps that to `null` openId.
- */
-function readAccordionFromStorage(formId: string, name: string): string | undefined {
-  if (typeof window === 'undefined') return undefined
-  try {
-    const raw = window.localStorage.getItem(accordionStorageKey(formId, name))
-    return raw === null ? undefined : raw
-  } catch { return undefined }
-}
-
-function writeAccordionToStorage(formId: string, name: string, openId: string | null): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(accordionStorageKey(formId, name), openId ?? '')
-  } catch { /* quota exceeded — fall back to in-memory only */ }
-}
 

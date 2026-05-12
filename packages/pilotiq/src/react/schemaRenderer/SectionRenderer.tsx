@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import type { ElementMeta } from '../../schema/Element.js'
+import { readStoredFlag, writeStoredFlag } from '../persistedState.js'
 import { layoutClasses, resolveIcon } from './helpers.js'
 
 // ─── Section (stateful when collapsible) ────────────────────
@@ -38,26 +39,20 @@ export function SectionRenderer({
       ? `pilotiq.section.${title.toLowerCase().replace(/\s+/g, '-')}`
       : undefined
 
-  const [collapsed, setCollapsed] = useState(Boolean(el['defaultCollapsed']))
+  const defaultCollapsed = Boolean(el['defaultCollapsed'])
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
 
   // Plan #8 — persist open/closed state to localStorage. Hydration-safe:
   // initial render uses `defaultCollapsed`; effect overrides from storage
   // after mount so server + client first paint agree.
   useEffect(() => {
     if (!persist || !persistKey) return
-    if (typeof window === 'undefined') return
-    try {
-      const stored = window.localStorage.getItem(persistKey)
-      if (stored === '0') setCollapsed(false)
-      if (stored === '1') setCollapsed(true)
-    } catch { /* localStorage may be unavailable (private mode) */ }
-  }, [persist, persistKey])
+    setCollapsed(readStoredFlag(persistKey, defaultCollapsed))
+  }, [persist, persistKey, defaultCollapsed])
 
   useEffect(() => {
     if (!persist || !persistKey) return
-    if (typeof window === 'undefined') return
-    try { window.localStorage.setItem(persistKey, collapsed ? '1' : '0') }
-    catch { /* ignore */ }
+    writeStoredFlag(persistKey, collapsed)
   }, [persist, persistKey, collapsed])
 
   // `dense` tightens the inner spacing between the section's children

@@ -491,8 +491,8 @@ function renderFieldInput(
       )
     }
 
-    case 'slug':
-    case 'text':
+    // `text` / `slug` short-circuit through `TextFieldShell` above; the
+    // bare default covers unknown fieldType strings.
     default: {
       const textExtra: Record<string, unknown> = {}
       if (el['maxLength'] !== undefined) textExtra['maxLength'] = Number(el['maxLength'])

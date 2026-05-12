@@ -1,12 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  CalendarIcon, FilterIcon, MoreHorizontalIcon,
-  CircleIcon, InboxIcon, GripVerticalIcon,
-  ChevronDownIcon, CopyIcon, CheckIcon, XIcon,
-  Columns3Icon,
-} from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { ChevronDownIcon, GripVerticalIcon, InboxIcon } from 'lucide-react'
 import type { ElementMeta } from '../../../schema/Element.js'
-import { useNavigate, type NavigateFn } from '../../navigate.js'
+import { useNavigate } from '../../navigate.js'
+import { readStoredFlag, writeStoredFlag } from '../../persistedState.js'
 import { useToast } from '../../Toaster.js'
 import { Checkbox } from '../../ui/checkbox.js'
 import { Input } from '../../ui/input.js'
@@ -14,22 +10,11 @@ import {
   Table as DataTable, TableBody, TableCell, TableFooter,
   TableHead, TableHeader, TableRow,
 } from '../../ui/table.js'
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from '../../ui/dropdown-menu.js'
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '../../ui/dialog.js'
 import { pickEditableCell } from '../../cells/EditableCell.js'
-import {
-  BADGE_COLOR_CLASSES, COLUMN_COLOR_CLASSES, COLUMN_WEIGHT_CLASSES,
-} from '../constants.js'
 import { resolveIcon } from '../helpers.js'
-import { ConfirmActionDialog } from '../action/ConfirmActionDialog.js'
-import { dispatchHandlerAction } from '../action/helpers.js'
 import type { RenderActionOptions } from '../action/buttons.js'
 import {
-  buildTableQuery, getCurrentSearchParams, nextSortDir, prefixK, SearchFormHiddenInputs,
+  buildTableQuery, nextSortDir, prefixK, SearchFormHiddenInputs,
   type TableUrlState,
 } from './url.js'
 import { formatCell, rowId } from './formatCell.js'
@@ -40,6 +25,7 @@ import {
 import { ActiveGroupKeyChip, GroupHeadingLink, RecordCellLink } from './links.js'
 import { CardsLayoutBody } from './CardsLayoutBody.js'
 import { renderRowActions } from './renderRowActions.js'
+import { useRowReorderDnd } from '../../fields/useRowReorderDnd.js'
 
 // ─── Table body ─────────────────────────────────────────────
 //
@@ -171,19 +157,13 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
   }
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(initialHidden)
   useEffect(() => {
-    if (typeof window === 'undefined') return
     if (toggleableColumns.length === 0) return
     const next = new Set<string>()
     for (const col of toggleableColumns) {
       const name = String(col['name'])
       const cfg  = col['toggleable'] as { initiallyHidden?: boolean } | undefined
-      try {
-        const stored = window.localStorage.getItem(columnsVisibilityKey(name))
-        if (stored === '1') next.add(name)
-        else if (stored === '0') { /* visible */ }
-        else if (cfg?.initiallyHidden) next.add(name)
-      } catch {
-        if (cfg?.initiallyHidden) next.add(name)
+      if (readStoredFlag(columnsVisibilityKey(name), Boolean(cfg?.initiallyHidden))) {
+        next.add(name)
       }
     }
     setHiddenColumns(next)
@@ -194,10 +174,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
       const next = new Set(prev)
       if (nextHidden) next.add(name)
       else            next.delete(name)
-      if (typeof window !== 'undefined') {
-        try { window.localStorage.setItem(columnsVisibilityKey(name), nextHidden ? '1' : '0') }
-        catch { /* private mode / quota — silent */ }
-      }
+      writeStoredFlag(columnsVisibilityKey(name), nextHidden)
       return next
     })
   }
@@ -248,7 +225,6 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   useEffect(() => {
     if (!groupCollapsible || !defaultGroup) return
-    if (typeof window === 'undefined') return
     // Walk the rendered rows once on mount, picking up persisted state.
     const next: Record<string, boolean> = {}
     const seen = new Set<string>()
@@ -256,12 +232,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
       const v = String((row as Record<string, unknown>)['_groupValue'] ?? '')
       if (seen.has(v)) continue
       seen.add(v)
-      try {
-        const stored = window.localStorage.getItem(groupStorageKey(v))
-        next[v] = stored === null ? groupDefaultCollapsed : stored === '1'
-      } catch {
-        next[v] = groupDefaultCollapsed
-      }
+      next[v] = readStoredFlag(groupStorageKey(v), groupDefaultCollapsed)
     }
     setCollapsedGroups(next)
     // Re-run if the active group changes — different values, different
@@ -272,11 +243,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
     setCollapsedGroups(prev => {
       const nextOpen = !prev[groupValue]
       const next = { ...prev, [groupValue]: nextOpen }
-      if (typeof window !== 'undefined') {
-        try {
-          window.localStorage.setItem(groupStorageKey(groupValue), nextOpen ? '1' : '0')
-        } catch { /* private mode / quota — silent */ }
-      }
+      writeStoredFlag(groupStorageKey(groupValue), nextOpen)
       return next
     })
   }
@@ -337,62 +304,6 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
     })
   }
 
-  // ── Reorder DnD state + handlers ──────────────────────
-  // dragId — the row currently being dragged (string id), or null.
-  // dropAt — the boundary the cursor is hovering (0..rows.length), or null.
-  const [dragId, setDragId] = useState<string | null>(null)
-  const [dropAt, setDropAt] = useState<number | null>(null)
-  const onRowDragStart = (id: string) => (e: React.DragEvent<HTMLTableRowElement>): void => {
-    if (!reorderEnabled) return
-    setDragId(id)
-    e.dataTransfer.effectAllowed = 'move'
-    try { e.dataTransfer.setData('text/plain', id) } catch { /* IE quirk */ }
-  }
-  const onRowDragOver = (idx: number) => (e: React.DragEvent<HTMLTableRowElement>): void => {
-    if (!reorderEnabled || dragId === null) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    const rect      = e.currentTarget.getBoundingClientRect()
-    const aboveHalf = e.clientY < rect.top + rect.height / 2
-    setDropAt(aboveHalf ? idx : idx + 1)
-  }
-  const onRowDrop = async (e: React.DragEvent<HTMLTableRowElement>): Promise<void> => {
-    if (!reorderEnabled || dragId === null || dropAt === null || !reorderUrl) {
-      setDragId(null); setDropAt(null); return
-    }
-    e.preventDefault()
-    const fromIdx = visibleIds.findIndex(id => id === dragId)
-    setDragId(null); setDropAt(null)
-    if (fromIdx < 0) return
-    const target = dropAt > fromIdx ? dropAt - 1 : dropAt
-    if (target === fromIdx) return
-    const reordered = rows.slice()
-    const moved = reordered.splice(fromIdx, 1)[0]
-    reordered.splice(target, 0, moved)
-    const newIds = reordered.map((row, i) => rowId(row, i))
-    const previousLocal = reorderRowsLocal
-    setReorderRowsLocal(reordered)
-    try {
-      const res = await fetch(reorderUrl, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body:    JSON.stringify({ ids: newIds }),
-      })
-      if (!res.ok) throw new Error(`Reorder failed (${res.status})`)
-    } catch (err) {
-      // Roll back to server order. The toast surfaces the failure;
-      // next page render fetches the persisted column.
-      setReorderRowsLocal(previousLocal)
-      notify({
-        type:  'error',
-        title: 'Could not save new order',
-        body:  err instanceof Error ? err.message : 'Reorder failed',
-      })
-    }
-  }
-  const onRowDragEnd = (): void => {
-    setDragId(null); setDropAt(null)
-  }
 
   if (columns.length === 0) {
     return (
@@ -424,23 +335,15 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
   const filtersStripStorageKey = `pilotiq.table.${currentPath}.filters.open`
   const [filtersOpen, setFiltersOpen] = useState<boolean>(() => {
     if (!filtersCollapsible) return true
-    if (typeof window === 'undefined') return false
-    try {
-      const stored = window.localStorage.getItem(filtersStripStorageKey)
-      // Default to OPEN when filters are active (URL carried filter values
-      // in) so the user can see what's filtering — same UX cue as the
-      // active-filters pill row.
-      if (stored === null) return Object.keys(activeFilters).length > 0
-      return stored === '1'
-    } catch { return false }
+    // Default to OPEN when filters are active (URL carried filter values
+    // in) so the user can see what's filtering — same UX cue as the
+    // active-filters pill row.
+    return readStoredFlag(filtersStripStorageKey, Object.keys(activeFilters).length > 0)
   })
   const toggleFiltersOpen = (): void => {
     setFiltersOpen(prev => {
       const next = !prev
-      if (typeof window !== 'undefined') {
-        try { window.localStorage.setItem(filtersStripStorageKey, next ? '1' : '0') }
-        catch { /* private mode / quota — silent */ }
-      }
+      writeStoredFlag(filtersStripStorageKey, next)
       return next
     })
   }
@@ -483,6 +386,47 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
     !searchActive                   &&
     currentPage === 1
   const reorderColumnVisible = reorderableColumn !== undefined
+
+  // ── Reorder DnD state + handlers ──────────────────────
+  const {
+    dragId, dropAt,
+    onDragStart: onRowDragStart,
+    onDragOver:  onRowDragOver,
+    onDrop:      onRowDrop,
+    onDragEnd:   onRowDragEnd,
+  } = useRowReorderDnd({
+    enabled: reorderEnabled,
+    onDrop: async (fromId, at) => {
+      if (!reorderUrl) return
+      const fromIdx = visibleIds.findIndex(id => id === fromId)
+      if (fromIdx < 0) return
+      const target = at > fromIdx ? at - 1 : at
+      if (target === fromIdx) return
+      const reordered = rows.slice()
+      const moved = reordered.splice(fromIdx, 1)[0]
+      reordered.splice(target, 0, moved)
+      const newIds = reordered.map((row, i) => rowId(row, i))
+      const previousLocal = reorderRowsLocal
+      setReorderRowsLocal(reordered)
+      try {
+        const res = await fetch(reorderUrl, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body:    JSON.stringify({ ids: newIds }),
+        })
+        if (!res.ok) throw new Error(`Reorder failed (${res.status})`)
+      } catch (err) {
+        // Roll back to server order. The toast surfaces the failure;
+        // next page render fetches the persisted column.
+        setReorderRowsLocal(previousLocal)
+        notify({
+          type:  'error',
+          title: 'Could not save new order',
+          body:  err instanceof Error ? err.message : 'Reorder failed',
+        })
+      }
+    },
+  })
   const totalCols = visibleColumns.length
                   + (hasBulkActions      ? 1 : 0)
                   + (hasRowActions       ? 1 : 0)
@@ -643,8 +587,6 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
       )}
       {isCardsLayout ? (
         <CardsLayoutBody
-          el={el}
-          columns={columns}
           rows={rows}
           visibleIds={visibleIds}
           selected={selected}
@@ -654,7 +596,6 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
           rowActions={rowActions}
           hasRecordUrl={hasRecordUrl}
           hasRecordClasses={hasRecordClasses}
-          striped={striped}
           activeEmpty={activeEmpty}
           EmptyIcon={EmptyIcon}
           hasFilterOrSearch={hasFilterOrSearch}

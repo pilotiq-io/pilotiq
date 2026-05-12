@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { useFormState } from '../FormStateContext.js'
+import { readStoredString, writeStoredString } from '../persistedState.js'
 import { layoutClasses, resolveIcon, withTooltip } from './helpers.js'
 import { actionButtonClass, renderActionBadge, renderActionIcon } from './action/buttons.js'
 
@@ -41,13 +42,11 @@ function readInitialWizardStep(
     } catch { /* ignore */ }
   }
   if (storageKey) {
-    try {
-      const stored = window.localStorage.getItem(storageKey)
-      if (stored !== null) {
-        const n = Number(stored)
-        if (Number.isFinite(n) && n >= 0 && n < total) return n
-      }
-    } catch { /* ignore */ }
+    const stored = readStoredString(storageKey)
+    if (stored !== null) {
+      const n = Number(stored)
+      if (Number.isFinite(n) && n >= 0 && n < total) return n
+    }
   }
   return startOnStep
 }
@@ -107,9 +106,7 @@ export function WizardRenderer({
   // Persist active step changes to localStorage (when enabled).
   useEffect(() => {
     if (!storageKey) return
-    if (typeof window === 'undefined') return
-    try { window.localStorage.setItem(storageKey, String(active)) }
-    catch { /* ignore */ }
+    writeStoredString(storageKey, String(active))
   }, [storageKey, active])
 
   // Mirror active step to the URL via replaceState — purely client-side state

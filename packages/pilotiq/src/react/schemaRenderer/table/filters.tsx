@@ -1,7 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react'
-import {
-  CheckIcon, ChevronDownIcon, Columns3Icon, FilterIcon, XIcon,
-} from 'lucide-react'
+import React, { useRef, useState } from 'react'
+import { CheckIcon, Columns3Icon, FilterIcon } from 'lucide-react'
 import type { ElementMeta } from '../../../schema/Element.js'
 import { Checkbox } from '../../ui/checkbox.js'
 import { Input } from '../../ui/input.js'
@@ -12,7 +10,7 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../../ui/dropdown-menu.js'
-import { useNavigate, type NavigateFn } from '../../navigate.js'
+import { useNavigate } from '../../navigate.js'
 import {
   parseDateRangeValue, encodeDateRangeValue,
 } from '../../../filters/DateRangeFilter.js'
@@ -31,7 +29,7 @@ import {
   COLUMN_COLOR_CLASSES,
 } from '../constants.js'
 import { resolveIcon } from '../helpers.js'
-import { prefixK } from './url.js'
+import { patchFilterUrl } from './url.js'
 
 // ─── Filter chrome + table-toolbar dropdowns ────────────────
 //
@@ -57,19 +55,13 @@ export function ActiveFiltersBar({ filters, prefix }: { filters: ElementMeta[]; 
   if (active.length === 0) return null
 
   const clear = (name: string): void => {
-    if (typeof window === 'undefined') return
-    const url = new URL(window.location.href)
-    url.searchParams.delete(prefixK(prefix, name))
-    url.searchParams.delete(prefixK(prefix, 'page'))
-    void navigate(url.pathname + url.search)
+    patchFilterUrl(navigate, prefix, { [name]: null })
   }
 
   const clearAll = (): void => {
-    if (typeof window === 'undefined') return
-    const url = new URL(window.location.href)
-    for (const f of active) url.searchParams.delete(prefixK(prefix, String(f['name'] ?? '')))
-    url.searchParams.delete(prefixK(prefix, 'page'))
-    void navigate(url.pathname + url.search)
+    const patches: Record<string, string | null> = {}
+    for (const f of active) patches[String(f['name'] ?? '')] = null
+    patchFilterUrl(navigate, prefix, patches)
   }
 
   return (
@@ -219,19 +211,6 @@ export function FilterStripToggle({
 }
 
 /**
- * Render row actions inline. Each Action becomes a small button next to
- * the others; an `ActionGroup` placed in row position keeps its dropdown
- * via `ActionGroupTrigger` (the dropdown UX is opt-in via grouping, not
- * a default). Per-row visibility and disabled state come from the
- * server-side eval inside `dispatchTable` (`_visibleActions` /
- * `_disabledActions` keys on the row).
- *
- * Each Action's dispatch (link / fetch+JSON / modal / confirm) is handled
- * by `renderActionLike` → `renderAction`, same path as header / inline /
- * bulk placements. The `:id` substitution comes from `opts.ids = [rowId]`.
- */
-
-/**
  * Filter dropdown that updates the URL directly on change. We don't rely
  * on a wrapping `<form>` because filters now live inside a portaled
  * Popover (the search input keeps its own form for Enter-to-submit).
@@ -255,16 +234,7 @@ export function FilterSelect({
   const onChange = (next: unknown) => {
     const v = typeof next === 'string' ? next : ''
     setValue(v)
-    if (typeof window === 'undefined') return
-    const url = new URL(window.location.href)
-    const k   = prefixK(prefix, name)
-    if (v === '') url.searchParams.delete(k)
-    else          url.searchParams.set(k, v)
-    // Filter changes reset pagination — first page of the new result set.
-    url.searchParams.delete(prefixK(prefix, 'page'))
-    // SPA navigate via context (vike's navigate when mounted under the
-    // Vike-generated +Layout). Fallback is full reload — see useNavigate.
-    void navigate(url.pathname + url.search)
+    patchFilterUrl(navigate, prefix, { [name]: v })
   }
 
   return (
@@ -370,14 +340,9 @@ export function FilterDateRange({
   const inputType = includesTime ? 'datetime-local' : 'date'
 
   const navigateTo = (nextFrom: string, nextTo: string): void => {
-    if (typeof window === 'undefined') return
-    const url     = new URL(window.location.href)
-    const encoded = encodeDateRangeValue({ from: nextFrom, to: nextTo })
-    const k       = prefixK(prefix, name)
-    if (encoded === '') url.searchParams.delete(k)
-    else                url.searchParams.set(k, encoded)
-    url.searchParams.delete(prefixK(prefix, 'page'))
-    void navigate(url.pathname + url.search)
+    patchFilterUrl(navigate, prefix, {
+      [name]: encodeDateRangeValue({ from: nextFrom, to: nextTo }),
+    })
   }
 
   const onFromChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
@@ -457,14 +422,7 @@ export function FilterMultiSelect({
 
   const apply = (next: string[]): void => {
     setSelected(next)
-    if (typeof window === 'undefined') return
-    const url     = new URL(window.location.href)
-    const encoded = encodeMultiSelectValue(next)
-    const k       = prefixK(prefix, name)
-    if (encoded === '') url.searchParams.delete(k)
-    else                url.searchParams.set(k, encoded)
-    url.searchParams.delete(prefixK(prefix, 'page'))
-    void navigate(url.pathname + url.search)
+    patchFilterUrl(navigate, prefix, { [name]: encodeMultiSelectValue(next) })
   }
 
   const toggle = (value: string, checked: boolean): void => {
@@ -543,22 +501,11 @@ export function FilterForm({
         values[key] = [existing, val]
       }
     }
-    if (typeof window === 'undefined') return
-    const url     = new URL(window.location.href)
-    const encoded = encodeFormFilterValue(values)
-    const k       = prefixK(prefix, name)
-    if (encoded === '') url.searchParams.delete(k)
-    else                url.searchParams.set(k, encoded)
-    url.searchParams.delete(prefixK(prefix, 'page'))
-    void navigate(url.pathname + url.search)
+    patchFilterUrl(navigate, prefix, { [name]: encodeFormFilterValue(values) })
   }
 
   const onClear = (): void => {
-    if (typeof window === 'undefined') return
-    const url = new URL(window.location.href)
-    url.searchParams.delete(prefixK(prefix, name))
-    url.searchParams.delete(prefixK(prefix, 'page'))
-    void navigate(url.pathname + url.search)
+    patchFilterUrl(navigate, prefix, { [name]: null })
   }
 
   return (
@@ -614,23 +561,12 @@ export function FilterQueryBuilder({
 
   const onApply = (e?: React.FormEvent | React.MouseEvent): void => {
     e?.preventDefault()
-    if (typeof window === 'undefined') return
-    const encoded = encodeQueryBuilderValue(tree)
-    const url = new URL(window.location.href)
-    const k = prefixK(prefix, name)
-    if (encoded === '') url.searchParams.delete(k)
-    else                url.searchParams.set(k, encoded)
-    url.searchParams.delete(prefixK(prefix, 'page'))
-    void navigate(url.pathname + url.search)
+    patchFilterUrl(navigate, prefix, { [name]: encodeQueryBuilderValue(tree) })
   }
 
   const onClear = (): void => {
     setTree({ operator: 'and', rules: [] })
-    if (typeof window === 'undefined') return
-    const url = new URL(window.location.href)
-    url.searchParams.delete(prefixK(prefix, name))
-    url.searchParams.delete(prefixK(prefix, 'page'))
-    void navigate(url.pathname + url.search)
+    patchFilterUrl(navigate, prefix, { [name]: null })
   }
 
   if (constraints.length === 0) {

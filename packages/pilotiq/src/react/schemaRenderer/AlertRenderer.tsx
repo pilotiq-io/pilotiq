@@ -7,6 +7,7 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from 'lucide-react'
+import { readStoredString, writeStoredString } from '../persistedState.js'
 import { alertStyles, TEXT_COLOR_CLASSES } from './constants.js'
 
 // ─── Alert renderer ─────────────────────────────────────────
@@ -63,12 +64,9 @@ export function AlertRenderer(props: {
   // flips to dismissed if localStorage has the flag set.
   useEffect(() => {
     if (!persistDismissal) return
-    if (typeof window === 'undefined') return
-    try {
-      if (window.localStorage.getItem(alertPersistKey(persistDismissal)) === '1') {
-        setDismissed(true)
-      }
-    } catch { /* localStorage blocked (Safari ITP / SSR) — render visible */ }
+    if (readStoredString(alertPersistKey(persistDismissal)) === '1') {
+      setDismissed(true)
+    }
   }, [persistDismissal])
 
   if (dismissed) return null
@@ -81,11 +79,7 @@ export function AlertRenderer(props: {
 
   const handleDismiss = (): void => {
     setDismissed(true)
-    if (persistDismissal && typeof window !== 'undefined') {
-      try {
-        window.localStorage.setItem(alertPersistKey(persistDismissal), '1')
-      } catch { /* localStorage blocked — dismiss is per-mount only */ }
-    }
+    if (persistDismissal) writeStoredString(alertPersistKey(persistDismissal), '1')
   }
 
   return (

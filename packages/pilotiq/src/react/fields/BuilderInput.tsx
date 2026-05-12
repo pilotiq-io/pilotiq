@@ -20,6 +20,18 @@ import {
   DEFAULT_CLONE,
   DEFAULT_DELETE,
 } from './rowChromeButton.js'
+import {
+  generateRowId, makeAccordionStorage, makeCollapsedStorage,
+} from './rowState.js'
+import { useRowReorderDnd } from './useRowReorderDnd.js'
+
+const collapsedStorage = makeCollapsedStorage('builder')
+const accordionStorage = makeAccordionStorage('builder')
+const initSeedCollapsed          = collapsedStorage.seed
+const writeCollapsedToStorage    = collapsedStorage.write
+const deleteCollapsedFromStorage = collapsedStorage.remove
+const readAccordionFromStorage   = accordionStorage.read
+const writeAccordionToStorage    = accordionStorage.write
 
 interface BlockShape {
   name:      string
@@ -288,42 +300,23 @@ export function BuilderInput({
   }
 
   // ── DnD state (skipped when buttonsOnly) ────────────────
-  const [dragId, setDragId] = useState<string | null>(null)
-  const [dropAt, setDropAt] = useState<number | null>(null)
-  const dndEnabled = reorderable && !buttonsOnly
-
-  const onRowDragStart = (id: string) => (e: React.DragEvent<HTMLDivElement>): void => {
-    if (!dndEnabled || disabled) return
-    setDragId(id)
-    e.dataTransfer.effectAllowed = 'move'
-    try { e.dataTransfer.setData('text/plain', id) } catch { /* IE quirk */ }
-  }
-
-  const onRowDragOver = (idx: number) => (e: React.DragEvent<HTMLDivElement>): void => {
-    if (!dndEnabled || disabled || dragId === null) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    const rect      = e.currentTarget.getBoundingClientRect()
-    const aboveHalf = e.clientY < rect.top + rect.height / 2
-    setDropAt(aboveHalf ? idx : idx + 1)
-  }
-
-  const onRowDrop = (e: React.DragEvent<HTMLDivElement>): void => {
-    if (!dndEnabled || disabled || dragId === null || dropAt === null) {
-      setDragId(null); setDropAt(null); return
-    }
-    e.preventDefault()
-    setRows(prev => {
-      const fromIdx = prev.findIndex(r => r.id === dragId)
-      if (fromIdx < 0) return prev
-      return reorderRows(prev, fromIdx, dropAt)
-    })
-    setDragId(null); setDropAt(null)
-  }
-
-  const onRowDragEnd = (): void => {
-    setDragId(null); setDropAt(null)
-  }
+  const dndEnabled = reorderable && !buttonsOnly && !disabled
+  const {
+    dragId, dropAt,
+    onDragStart: onRowDragStart,
+    onDragOver:  onRowDragOver,
+    onDrop:      onRowDrop,
+    onDragEnd:   onRowDragEnd,
+  } = useRowReorderDnd({
+    enabled: dndEnabled,
+    onDrop: (fromId, at) => {
+      setRows(prev => {
+        const fromIdx = prev.findIndex(r => r.id === fromId)
+        if (fromIdx < 0) return prev
+        return reorderRows(prev, fromIdx, at)
+      })
+    },
+  })
 
   // ── Inner-field live re-resolve (mirrors RepeaterInput) ─
   const formState = useFormState()
@@ -949,84 +942,3 @@ function prefixFieldNames(el: ElementMeta, prefix: string): ElementMeta {
   return el
 }
 
-let _rowSeqFallback = 0
-function generateRowId(): string {
-  type CryptoLike = { randomUUID?: () => string }
-  const c = (globalThis as { crypto?: CryptoLike }).crypto
-  if (c?.randomUUID) return c.randomUUID()
-  return `row-${Date.now()}-${++_rowSeqFallback}`
-}
-
-function collapsedStorageKey(formId: string, name: string, rowId: string): string {
-  return `pilotiq.builder.${formId}.${name}.${rowId}`
-}
-
-function initSeedCollapsed(
-  rows:         RowState[],
-  formId:       string,
-  name:         string,
-  defaultValue: boolean,
-  collapsible:  boolean,
-): Record<string, boolean> {
-  if (!collapsible) return {}
-  const out: Record<string, boolean> = {}
-  for (const row of rows) {
-    out[row.id] = readCollapsedFromStorage(formId, name, row.id, defaultValue)
-  }
-  return out
-}
-
-function readCollapsedFromStorage(
-  formId:       string,
-  name:         string,
-  rowId:        string,
-  defaultValue: boolean,
-): boolean {
-  if (typeof window === 'undefined') return defaultValue
-  try {
-    const raw = window.localStorage.getItem(collapsedStorageKey(formId, name, rowId))
-    if (raw === null) return defaultValue
-    return raw === 'true'
-  } catch { return defaultValue }
-}
-
-function writeCollapsedToStorage(
-  formId: string,
-  name:   string,
-  rowId:  string,
-  value:  boolean,
-): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(collapsedStorageKey(formId, name, rowId), String(value))
-  } catch { /* quota exceeded; silent */ }
-}
-
-function deleteCollapsedFromStorage(formId: string, name: string, rowId: string): void {
-  if (typeof window === 'undefined') return
-  try { window.localStorage.removeItem(collapsedStorageKey(formId, name, rowId)) } catch { /* */ }
-}
-
-function accordionStorageKey(formId: string, name: string): string {
-  return `pilotiq.builder.${formId}.${name}.accordion`
-}
-
-/**
- * Read the persisted accordion-open row id. Mirror of
- * `RepeaterInput.readAccordionFromStorage` — `undefined` = no value
- * stored, `''` = explicitly all-collapsed, anything else = open row id.
- */
-function readAccordionFromStorage(formId: string, name: string): string | undefined {
-  if (typeof window === 'undefined') return undefined
-  try {
-    const raw = window.localStorage.getItem(accordionStorageKey(formId, name))
-    return raw === null ? undefined : raw
-  } catch { return undefined }
-}
-
-function writeAccordionToStorage(formId: string, name: string, openId: string | null): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(accordionStorageKey(formId, name), openId ?? '')
-  } catch { /* quota exceeded — fall back to in-memory only */ }
-}

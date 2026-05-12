@@ -1,4 +1,5 @@
 import React from 'react'
+import type { NavigateFn } from '../../navigate.js'
 
 // ─── Table URL helpers ──────────────────────────────────────
 //
@@ -104,6 +105,31 @@ export function buildTableQuery(
   // to the dashboard and blanks the page during SPA navigation.
   const base = pathname || (typeof window !== 'undefined' ? window.location.pathname : '')
   return qs ? `${base}?${qs}` : (base || '#')
+}
+
+/**
+ * SPA-navigate to the current URL with the filter slice patched in
+ * place. `null` or empty-string values delete the key; non-empty values
+ * set it. The accompanying `?page` is always cleared so users land on
+ * the first page of the relaxed / tightened set. No-op on SSR.
+ *
+ * Used by every filter widget's "apply" / "clear" path (FilterSelect /
+ * MultiSelect / DateRange / Form / QueryBuilder + ActiveFiltersBar).
+ */
+export function patchFilterUrl(
+  navigate: NavigateFn,
+  prefix:   string | undefined,
+  patches:  Record<string, string | null>,
+): void {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  for (const [name, value] of Object.entries(patches)) {
+    const k = prefixK(prefix, name)
+    if (value === null || value === '') url.searchParams.delete(k)
+    else                                 url.searchParams.set(k, value)
+  }
+  url.searchParams.delete(prefixK(prefix, 'page'))
+  void navigate(url.pathname + url.search)
 }
 
 export function nextSortDir(

@@ -2,8 +2,7 @@ import React from 'react'
 import { ChevronDownIcon, InboxIcon } from 'lucide-react'
 import type { ElementMeta } from '../../../schema/Element.js'
 import { Checkbox } from '../../ui/checkbox.js'
-import { GroupHeadingLink, RecordCellLink } from './links.js'
-import { rowId } from './formatCell.js'
+import { GroupHeadingLink, useSpaNavClick } from './links.js'
 import { GroupHeaderText } from './filters.js'
 import type { NavigateFn } from '../../navigate.js'
 
@@ -108,16 +107,14 @@ export function cardsPerRowClasses(opts: Record<string, number> | undefined): st
  * section so the column count stays consistent.
  */
 export function CardsLayoutBody({
-  el, columns, rows, visibleIds, selected, toggleRow,
+  rows, visibleIds, selected, toggleRow,
   hasBulkActions, hasRowActions, rowActions, hasRecordUrl, hasRecordClasses,
-  striped, activeEmpty, EmptyIcon, hasFilterOrSearch,
+  activeEmpty, EmptyIcon, hasFilterOrSearch,
   defaultGroup, groupColumnLabel, groupCollapsible, collapsedGroups, toggleGroupCollapsed,
   cardsPerRow, navigate,
   groupHeadingScopable, buildGroupKeyHref,
   renderElement, renderRowActions,
 }: {
-  el:                ElementMeta
-  columns:           ElementMeta[]
   rows:              unknown[]
   visibleIds:        string[]
   selected:          Set<string>
@@ -127,7 +124,6 @@ export function CardsLayoutBody({
   rowActions:        ElementMeta[]
   hasRecordUrl:      boolean
   hasRecordClasses:  boolean
-  striped:           boolean
   activeEmpty:       { heading?: string; description?: string; icon?: string } | undefined
   EmptyIcon:         React.ComponentType<{ className?: string }>
   hasFilterOrSearch: boolean
@@ -147,10 +143,6 @@ export function CardsLayoutBody({
   renderElement:     RenderElement
   renderRowActions:  RenderRowActions
 }) {
-  void el // keep prop for future telemetry; silences unused-prop lint
-  void columns
-  void striped // visual stripes don't apply to cards (each card has its own surface)
-
   const gridClass = `grid gap-4 ${cardsPerRowClasses(cardsPerRow)}`
 
   if (rows.length === 0) {
@@ -269,19 +261,12 @@ export function CardsLayoutBody({
                     customRowClasses,
                   ].filter(Boolean).join(' ')
 
-                  const onLinkClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-                    if (e.button !== 0) return
-                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-                    e.preventDefault()
-                    if (recordUrl) void navigate(recordUrl)
-                  }
-
                   return (
                     <div key={id} className={cardClassName}>
                       {recordUrl !== undefined && (
                         <a
                           href={recordUrl}
-                          onClick={onLinkClick}
+                          onClick={useSpaNavClick(recordUrl, navigate)}
                           aria-label="Open record"
                           className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >

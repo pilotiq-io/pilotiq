@@ -1,7 +1,5 @@
 import React from 'react'
-import { XIcon } from 'lucide-react'
-import { useNavigate, type NavigateFn } from '../../navigate.js'
-import { buildTableQuery, type TableUrlState } from './url.js'
+import type { NavigateFn } from '../../navigate.js'
 
 // ─── Inline link chrome ─────────────────────────────────────
 //
@@ -14,6 +12,23 @@ import { buildTableQuery, type TableUrlState } from './url.js'
 //   - GroupHeadingLink turns a banded group's heading into a clickable
 //     drill-in trigger when the group is scopable.
 
+/**
+ * Modifier-aware SPA-nav click handler. Plain left-click intercepts to
+ * `navigate(href)`; cmd / ctrl / shift / alt-click and middle-click
+ * fall through to the browser so "open in new tab" / "save link as"
+ * semantics keep working on every real `<a href>` in the table body.
+ */
+export function useSpaNavClick(
+  href:     string,
+  navigate: NavigateFn,
+): (e: React.MouseEvent<HTMLAnchorElement>) => void {
+  return (e) => {
+    if (e.button !== 0) return
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    e.preventDefault()
+    void navigate(href)
+  }
+}
 
 export function RecordCellLink({
   href, navigate, children,
@@ -22,12 +37,7 @@ export function RecordCellLink({
   navigate: NavigateFn
   children: React.ReactNode
 }) {
-  const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    if (e.button !== 0) return
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-    e.preventDefault()
-    void navigate(href)
-  }
+  const onClick = useSpaNavClick(href, navigate)
   return (
     <a
       href={href}
@@ -55,12 +65,7 @@ export function ActiveGroupKeyChip({
   clearHref:    string
   navigate:     NavigateFn
 }) {
-  const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    if (e.button !== 0) return
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-    e.preventDefault()
-    void navigate(clearHref)
-  }
+  const onClick = useSpaNavClick(clearHref, navigate)
   return (
     <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
       <span className="text-muted-foreground">Drilled into</span>
@@ -94,12 +99,7 @@ export function GroupHeadingLink({
   navigate: NavigateFn
   children: React.ReactNode
 }) {
-  const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    if (e.button !== 0) return
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-    e.preventDefault()
-    void navigate(href)
-  }
+  const onClick = useSpaNavClick(href, navigate)
   return (
     <a
       href={href}

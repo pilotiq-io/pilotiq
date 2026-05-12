@@ -31,7 +31,7 @@ export interface SimpleElementDeps {
 
 /** Render the `text` element. Hot path — pulled out so the `case 'text'`
  *  branch in the main switch stays a one-liner. */
-export function renderText(el: ElementMeta, index: number): React.ReactNode {
+function renderText(el: ElementMeta, index: number): React.ReactNode {
   const content = String(el['content'] ?? '')
   const color   = el['color']  ? String(el['color'])  : undefined
   const size    = el['size']   ? String(el['size'])   : undefined
