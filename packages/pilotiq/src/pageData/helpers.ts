@@ -35,6 +35,18 @@ export function userCtx<C extends SchemaContext>(ctx: C, user: unknown): C {
   return { ...ctx, user: user as NonNullable<SchemaContext['user']> }
 }
 
+/**
+ * Run a (possibly async) boolean predicate; fail closed when it throws.
+ *
+ * Every page-builder pre-flight that consults `canX(user, …)` needs this
+ * shape — predicates may be sync booleans, Promises, or throw at the
+ * remote-auth layer; a throw must never propagate to the wire as an
+ * unhandled 500.
+ */
+export async function safeBool(fn: () => boolean | Promise<boolean>): Promise<boolean> {
+  try { return Boolean(await fn()) } catch { return false }
+}
+
 /** Plan #6 — stamp the panel-wide upload URL so `FileUpload` fields
  *  emit it on their meta. Single URL for the whole panel; no per-field
  *  variation. The route is always registered (see `_uploads` in
@@ -283,14 +295,12 @@ export function tagRichTextMentionUrls(
 ): void {
   for (const form of findForms(elements)) {
     const url = urlBuilder(form.getFormId())
-    let stampedAny = false
     const visit = (els: ReadonlyArray<Element>): void => {
       for (const el of els) {
         // Don't cross into nested forms — each form gets its own URL.
         if (el !== form && el.getType() === 'form') continue
         if (isAsyncMentionField(el) && el.hasAsyncMentions()) {
           el.withMentionsUrl(url)
-          stampedAny = true
         }
         // Builder.getChildren() returns undefined to keep the field-level
         // walkers from treating heterogeneous rows as flat children. Manual
@@ -306,7 +316,6 @@ export function tagRichTextMentionUrls(
     }
     const children = form.getChildren()
     if (children) visit(children)
-    void stampedAny // silence unused — kept locally for readability
   }
 }
 
@@ -712,6 +721,26 @@ export function tagWidgetUrls(
     if (widget.getWidgetUrl()) continue // user-set wins
     widget.withWidgetUrl(urlBuilder(widget.getId()))
   }
+}
+
+/**
+ * Stamp every form-subresource URL the page might need in one pass:
+ *  - `_form/${formId}/state`         (Plan #5 partial-resolve)
+ *  - `_form/${formId}/wizard`        (Plan #8 step-validate)
+ *  - `_form/${formId}/mentions`      (async-mention typeahead)
+ *  - `_form/${formId}/create-option/${fieldName}` (SelectField inline-create)
+ *
+ * Every page-builder that mounts a form (dashboard / resource create+edit /
+ * global edit / custom page) needs all four — the underlying taggers skip
+ * forms that don't carry the matching feature, so this is always safe to
+ * call. `base` is the route prefix (e.g. `${cfg.path}` / `${resourceBase}` /
+ * `${resourceBase}/${recordId}` / `${pageUrl}`).
+ */
+export function tagFormSubresourceUrls(elements: ReadonlyArray<Element>, base: string): void {
+  tagFormStateUrls(elements,          formId             => `${base}/_form/${formId}/state`)
+  tagFormWizardUrls(elements,         formId             => `${base}/_form/${formId}/wizard`)
+  tagRichTextMentionUrls(elements,    formId             => `${base}/_form/${formId}/mentions`)
+  tagSelectCreateOptionUrls(elements, (formId, fieldName) => `${base}/_form/${formId}/create-option/${fieldName}`)
 }
 
 /** Stamp dispatchUrl on every handler-style Action so the client knows where to POST. */

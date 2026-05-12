@@ -1,21 +1,19 @@
-import type { Pilotiq, PilotiqConfig } from '../Pilotiq.js'
+import type { Pilotiq } from '../Pilotiq.js'
 import { PilotiqRegistry } from '../PilotiqRegistry.js'
 import type { Page } from '../Page.js'
 import type { ResourceClass } from '../Resource.js'
 import { resourceBasePath } from '../clusterPaths.js'
-import { Element, type ElementMeta } from '../schema/Element.js'
+import { Element } from '../schema/Element.js'
 import { resolveSchema, type SchemaContext } from '../schema/resolveSchema.js'
 import { Form } from '../elements/Form.js'
 import { Table } from '../elements/Table.js'
 import { Column } from '../Column.js'
-import { coerceFormValues } from '../elements/dispatchForm.js'
 import { ListTabs } from '../elements/ListTabs.js'
 import { ListTab } from '../Tab.js'
 import { TrashedFilter } from '../filters/TrashedFilter.js'
-import { loadTableRecords, type QueryParams } from '../elements/dispatchTable.js'
+import { loadTableRecords } from '../elements/dispatchTable.js'
 import { consumeFlashedNotifications } from '../notifications/flash.js'
 import { serializeIcon } from '../icons/types.js'
-import { applyPageHooks, pageHooksFor } from '../applyPageHooks.js'
 import {
   findRecord, getPrimaryKey, modelLoadRecord, modelSave,
   type ModelLike,
@@ -36,17 +34,14 @@ import {
   tagCellEditUrls,
   tagFieldAiUrls,
   tagFormActions,
-  tagFormStateUrls,
-  tagFormWizardUrls,
-  tagRichTextMentionUrls,
-  tagSelectCreateOptionUrls,
+  tagFormSubresourceUrls,
   tagTableDeferred,
   tagTableReorderUrls,
   tagWidgetUrls,
   uploadCtx,
   userCtx,
 } from './helpers.js'
-import { applyRoleHooks, panelInfo, resolvePageHooks, type PanelInfoRoute } from './navigation.js'
+import { applyRoleHooks, panelInfo, type PanelInfoRoute } from './navigation.js'
 import { findForms } from '../elements/dispatchForm.js'
 import { buildRelationTabs, deriveParentTitle, safeBool } from './relationTabs.js'
 
@@ -60,6 +55,38 @@ import { buildRelationTabs, deriveParentTitle, safeBool } from './relationTabs.j
 // the page renderer consumes.
 
 
+/**
+ * Per-row stamping spine shared by SSR `resourceIndexData` and the
+ * deferred-load JSON endpoint `resourceTableData`. Both walk the same
+ * Table tree and need the same dispatch / active-tab / reorder / cell-edit
+ * URL stamps in the same order — running them through one helper keeps
+ * the two paths in lock-step so any future addition (per-row chrome
+ * stamp, etc.) lands on both surfaces.
+ *
+ * Widget URL stamping + the `tagTableDeferred` flag stay outside the
+ * helper since only `resourceIndexData` mounts widgets / the deferred
+ * skeleton — the JSON endpoint re-runs without the flag and never
+ * collects widget metas.
+ */
+async function prepareResourceTable(
+  elements: Element[],
+  R:        ResourceClass,
+  indexUrl: string,
+  query:    Record<string, string>,
+  user:     unknown,
+): Promise<void> {
+  tagActionDispatch(elements, indexUrl)
+  // Mark the active tab + parallel-eval badges + stamp per-tab URLs
+  // before the table records run — `loadTableRecords` walks the schema
+  // for the active tab and splices its `modifyQuery` predicate into the
+  // ORM chain alongside filters.
+  await resolveActiveTab(elements, query, indexUrl)
+  await loadTableRecords(elements, query, indexUrl, user, {
+    canEdit: (u, record) => R.canEdit(u, record),
+  })
+  tagTableReorderUrls(elements, `${indexUrl}/_reorder`)
+  tagCellEditUrls(elements, indexUrl)
+}
 
 export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Record<string, unknown>> {
   const cfg = pilotiq.getConfig()
@@ -74,10 +101,7 @@ export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Re
   if (cfg.dashboardPage) {
     elements = await callPageSchema(cfg.dashboardPage, ctx)
     tagFormActions(elements, cfg.path)
-    tagFormStateUrls(elements, formId => `${cfg.path}/_form/${formId}/state`)
-    tagFormWizardUrls(elements, formId => `${cfg.path}/_form/${formId}/wizard`)
-    tagRichTextMentionUrls(elements, formId => `${cfg.path}/_form/${formId}/mentions`)
-    tagSelectCreateOptionUrls(elements, (formId, fieldName) => `${cfg.path}/_form/${formId}/create-option/${fieldName}`)
+    tagFormSubresourceUrls(elements, cfg.path)
     tagActionDispatch(elements, cfg.path)
   } else {
     elements = []
@@ -129,21 +153,11 @@ export async function resourceIndexData(
   const user = await pilotiq.resolveUser(req)
   const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'table', basePath: cfg.path }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
-  tagActionDispatch(elements, indexUrl)
   // Plan #15 — resource-scope widget polling URL. Stamped before the
   // schema resolves so each widget's meta carries its endpoint.
   tagWidgetUrls(elements, id => `${indexUrl}/_widget/${id}`)
-  // Mark the active tab + parallel-eval badges + stamp per-tab URLs
-  // before the table records run — `loadTableRecords` walks the schema
-  // for the active tab and splices its `modifyQuery` predicate into the
-  // ORM chain alongside filters.
-  await resolveActiveTab(elements, query, indexUrl)
   if (R.deferLoading) tagTableDeferred(elements, `${indexUrl}/_table`)
-  await loadTableRecords(elements, query, indexUrl, user, {
-    canEdit: (u, record) => R.canEdit(u, record),
-  })
-  tagTableReorderUrls(elements, `${indexUrl}/_reorder`)
-  tagCellEditUrls(elements, indexUrl)
+  await prepareResourceTable(elements, R, indexUrl, query, user)
   const widgetData = await resolveServerDataElements(elements, ctx)
 
   const breadcrumbs = resourceListBreadcrumbs(cfg, R)
@@ -191,13 +205,7 @@ export async function resourceTableData(
   const user = await pilotiq.resolveUser(req)
   const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'table', basePath: cfg.path }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
-  tagActionDispatch(elements, indexUrl)
-  await resolveActiveTab(elements, query, indexUrl)
-  await loadTableRecords(elements, query, indexUrl, user, {
-    canEdit: (u, record) => R.canEdit(u, record),
-  })
-  tagTableReorderUrls(elements, `${indexUrl}/_reorder`)
-  tagCellEditUrls(elements, indexUrl)
+  await prepareResourceTable(elements, R, indexUrl, query, user)
   const schemaData = await resolveSchema(elements, ctx)
 
   const tables = collectTableMetas(schemaData)
@@ -327,10 +335,7 @@ export async function resourceCreateData(
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, createUrl)
   tagActionDispatch(elements, createUrl)
-  tagFormStateUrls(elements, formId => `${resourceBase}/_form/${formId}/state`)
-  tagFormWizardUrls(elements, formId => `${resourceBase}/_form/${formId}/wizard`)
-  tagRichTextMentionUrls(elements, formId => `${resourceBase}/_form/${formId}/mentions`)
-  tagSelectCreateOptionUrls(elements, (formId, fieldName) => `${resourceBase}/_form/${formId}/create-option/${fieldName}`)
+  tagFormSubresourceUrls(elements, resourceBase)
   if (prefill) {
     const form = findForms(elements)[0]
     if (form) {
@@ -383,10 +388,7 @@ export async function resourceEditData(
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
   tagActionDispatch(elements, editUrl)
-  tagFormStateUrls(elements, formId => `${resourceBase}/${recordId}/_form/${formId}/state`)
-  tagFormWizardUrls(elements, formId => `${resourceBase}/${recordId}/_form/${formId}/wizard`)
-  tagRichTextMentionUrls(elements, formId => `${resourceBase}/${recordId}/_form/${formId}/mentions`)
-  tagSelectCreateOptionUrls(elements, (formId, fieldName) => `${resourceBase}/${recordId}/_form/${formId}/create-option/${fieldName}`)
+  tagFormSubresourceUrls(elements, `${resourceBase}/${recordId}`)
 
   // Locate the primary form, load the record, fill values.
   const form = findForms(elements)[0]

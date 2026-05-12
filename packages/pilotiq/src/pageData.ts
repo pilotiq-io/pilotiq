@@ -9,116 +9,11 @@
  * data needs to come from the same builder. Routing both paths through a
  * single builder keeps them in sync.
  */
-import type { Pilotiq, PilotiqConfig } from './Pilotiq.js'
 import { PilotiqRegistry } from './PilotiqRegistry.js'
-import type { Page } from './Page.js'
-import type { ResourceClass, NavigationBadgeColor } from './Resource.js'
-import type { GlobalClass } from './Global.js'
-import { resourceBasePath, globalBasePath, pageBasePath, clusterBasePath } from './clusterPaths.js'
-import type { ClusterClass } from './Cluster.js'
-import { Element, type ElementMeta } from './schema/Element.js'
-import { Field } from './fields/Field.js'
-import { resolveSchema, type RenderContext, type SchemaContext } from './schema/resolveSchema.js'
-import { isServerDataElement, type ServerDataElement } from './schema/ServerDataElement.js'
-import { Form } from './elements/Form.js'
-import { Table } from './elements/Table.js'
-import { Column } from './Column.js'
-import { applyStateUpdate, coerceFormValues, findForms, findWizardStep, loadRelationRows, selectFormById } from './elements/dispatchForm.js'
-import { isRepeaterField, RepeaterField } from './fields/RepeaterField.js'
-import { isBuilderField, BuilderField } from './fields/BuilderField.js'
-import { SelectField } from './fields/SelectField.js'
-import { validateSchema } from './validation/index.js'
-import { searchAllResources, type GlobalSearchResult } from './search.js'
-import { loadTableRecords, findTables, type QueryParams } from './elements/dispatchTable.js'
-import { findActions, findRowExtraActions } from './elements/dispatchAction.js'
-import { Filter } from './filters/Filter.js'
-import { TrashedFilter } from './filters/TrashedFilter.js'
-import { ListTabs } from './elements/ListTabs.js'
-import { ListTab } from './Tab.js'
-import { resolveTheme } from './theme/resolve.js'
-import type { ThemeMeta } from './theme/types.js'
-import { consumeFlashedNotifications } from './notifications/flash.js'
-import {
-  notificationChannel,
-  NOTIFICATION_CREATED_EVENT,
-} from './notifications/broadcast.js'
-import { serializeIcon, type SerializedIcon, type IconValue } from './icons/types.js'
-import {
-  RIGHT_PANEL_DEFAULT_WIDTH,
-  RIGHT_PANEL_MIN_WIDTH,
-  RIGHT_PANEL_MAX_WIDTH,
-} from './RightPanel.js'
-import type { UserMenuItemMeta } from './UserMenuItem.js'
-import {
-  RelationManager,
-  safeManagerPolicy as safeManagerPolicyImpl,
-  type ManagerCanMethod as ManagerCanMethodType,
-  type RelationManagerContext,
-} from './RelationManager.js'
-import { RelationTabs, relationTab, type RelationTabMeta } from './schema/RelationTabs.js'
-import { Breadcrumbs, type BreadcrumbItem } from './schema/Breadcrumbs.js'
-import {
-  resolveRenderHooks,
-  CHROME_HOOK_NAMES,
-  type RenderHookContext,
-  type RenderHookMap,
-  type RenderHookName,
-} from './RenderHook.js'
-import { applyPageHooks, pageHooksFor, type PageRole } from './applyPageHooks.js'
-import {
-  modelSave, modelLoadRecord, modelRelationTableRecords, findRecord, getPrimaryKey,
-  getRelationType,
-  getMorphRelationDescriptor,
-  type ModelLike, type ModelQuery,
-} from './orm/modelDefaults.js'
-import { normalizeRelationMode, type RelationMode } from './RelationManager.js'
-import {
-  buildBreadcrumbs,
-  clusterBreadcrumb,
-  customPageBreadcrumbs,
-  globalBreadcrumbs,
-  homeBreadcrumb,
-  nestedRelationCreateBreadcrumbs,
-  nestedRelationEditBreadcrumbs,
-  nestedRelationListBreadcrumbs,
-  nestedRelationViewBreadcrumbs,
-  relationBreadcrumbPrefix,
-  relationCreateBreadcrumbs,
-  relationEditBreadcrumbs,
-  relationListBreadcrumbs,
-  relationViewBreadcrumbs,
-  resourceCreateBreadcrumbs,
-  resourceEditBreadcrumbs,
-  resourceListBreadcrumbs,
-  resourceViewBreadcrumbs,
-  type RelationChainStep,
-} from './pageData/breadcrumbs.js'
 
 // Re-export `RelationChainStep` so external callsites importing it via
 // `./pageData.js` keep working.
 export type { RelationChainStep } from './pageData/breadcrumbs.js'
-
-import {
-  applyFillPipeline,
-  applyRelationshipBuilderFill,
-  applyRelationshipRepeaterFill,
-  callPageSchema,
-  resolveServerDataElements,
-  tagActionDispatch,
-  tagCellEditUrls,
-  tagFieldAiUrls,
-  tagFormActions,
-  tagFormStateUrls,
-  tagFormWizardUrls,
-  tagRichTextMentionUrls,
-  tagSelectCreateOptionUrls,
-  tagTableDeferred,
-  tagTableReorderUrls,
-  tagWidgetUrls,
-  uploadCtx,
-  userCtx,
-  type ServerDataMap,
-} from './pageData/helpers.js'
 
 // Re-export `ServerDataMap` so external imports via `./pageData.js` keep
 // working — the type is also surfaced from `packages/pilotiq/src/index.ts`.
@@ -145,18 +40,6 @@ export {
   tagWidgetUrls,
 } from './pageData/helpers.js'
 
-import {
-  applyRoleHooks,
-  panelInfo,
-  resolvePageHooks,
-  type DatabaseNotificationsMeta,
-  type NavItem,
-  type PanelInfoRoute,
-  type RightPanelMeta,
-  type RightSidebarMeta,
-  type UserMenuMeta,
-} from './pageData/navigation.js'
-
 // Re-export navigation chrome surface so external callsites importing
 // it via `./pageData.js` keep working (e.g. routes/test harnesses).
 export type {
@@ -179,7 +62,6 @@ import {
   resourceEditData,
   resourceIndexData,
   resourceRecordPageData,
-  resourceTableData,
   resourceViewData,
 } from './pageData/resourcePages.js'
 
@@ -196,22 +78,7 @@ export {
   resourceViewData,
 } from './pageData/resourcePages.js'
 
-import {
-  buildNestedRelationTabs,
-  buildRelationTabs,
-  deriveParentTitle,
-  safeBool,
-} from './pageData/relationTabs.js'
-
-import {
-  findRelatedResource,
-  relationManagerData,
-  resolveRelationChain,
-  safeManagerPolicy,
-  type RelationManagerResult,
-  type RelationManagerScope,
-  type ResolvedChain,
-} from './pageData/relationPages.js'
+import { relationManagerData } from './pageData/relationPages.js'
 
 // Re-export relation manager builder surface for external consumers
 // (routes.ts dispatches every relation-* role through these).
@@ -226,13 +93,6 @@ export {
   resolveRelationChain,
   safeManagerPolicy,
 } from './pageData/relationPages.js'
-
-import {
-  formCreateOptionData,
-  formStateData,
-  formWizardData,
-  mentionResolveData,
-} from './pageData/forms.js'
 
 // Re-export form-related builders + types for external callsites.
 export type {
@@ -258,8 +118,6 @@ import {
   customPageData,
   globalEditData,
   globalViewData,
-  searchData,
-  widgetData,
 } from './pageData/misc.js'
 
 // Re-export the misc page builders for external callsites (routes.ts

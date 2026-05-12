@@ -1,11 +1,6 @@
-import type { Pilotiq, PilotiqConfig } from '../Pilotiq.js'
-import { PilotiqRegistry } from '../PilotiqRegistry.js'
+import type { Pilotiq } from '../Pilotiq.js'
 import type { Page } from '../Page.js'
-import type { ResourceClass } from '../Resource.js'
-import type { GlobalClass } from '../Global.js'
-import { resourceBasePath, globalBasePath, pageBasePath } from '../clusterPaths.js'
-import { Element, type ElementMeta } from '../schema/Element.js'
-import { Field } from '../fields/Field.js'
+import { Element } from '../schema/Element.js'
 import { resolveSchema, type SchemaContext, type RenderContext } from '../schema/resolveSchema.js'
 import { Form } from '../elements/Form.js'
 import { applyStateUpdate, coerceFormValues, findForms, findWizardStep, selectFormById } from '../elements/dispatchForm.js'
@@ -14,17 +9,97 @@ import { isRepeaterField, RepeaterField } from '../fields/RepeaterField.js'
 import { isBuilderField, BuilderField } from '../fields/BuilderField.js'
 import { SelectField } from '../fields/SelectField.js'
 import { validateSchema } from '../validation/index.js'
-import { consumeFlashedNotifications } from '../notifications/flash.js'
-import { applyPageHooks, pageHooksFor } from '../applyPageHooks.js'
-import {
-  applyFillPipeline,
-  applyRelationshipBuilderFill,
-  applyRelationshipRepeaterFill,
-  callPageSchema,
-  tagFormStateUrls,
-  uploadCtx,
-  userCtx,
-} from './helpers.js'
+import { callPageSchema, uploadCtx, userCtx } from './helpers.js'
+
+// ─── Shared scope → page+form+record resolver ────────────────
+//
+// Every form-subresource builder (`formStateData / formWizardData /
+// formCreateOptionData / mentionResolveData`) needs to: resolve the
+// `FormStateScope` to a concrete `PageClass`, build the upload/user-aware
+// `SchemaContext`, call the page's `schema()`, and pick the requested form
+// by id. `resolveScopeForm` does that whole prelude in one async step.
+
+interface ResolveScopeFormSuccess {
+  ok:        true
+  PageClass: typeof Page
+  baseCtx:   SchemaContext
+  elements:  Element[]
+  form:      Form
+  record:    unknown
+  mode:      'create' | 'edit'
+}
+
+interface ResolveScopeFormFormMissing {
+  ok:     false
+  status: 404
+  error:  string
+}
+
+/**
+ * Resolve `FormStateScope` → `{ PageClass, baseCtx, elements, form, record, mode }`.
+ *
+ * Returns `null` when the scope's slug doesn't resolve to a real
+ * resource/global/page or the matching page-role (`create`/`edit`) isn't
+ * registered — caller returns 404 to the client. Returns
+ * `{ ok: false, status: 404, error }` when the page resolves but the
+ * requested `formId` isn't on it.
+ */
+async function resolveScopeForm(
+  pilotiq: Pilotiq,
+  scope:   FormStateScope,
+  formId:  string,
+  user:    unknown,
+): Promise<ResolveScopeFormSuccess | ResolveScopeFormFormMissing | null> {
+  const cfg = pilotiq.getConfig()
+
+  let PageClass: typeof Page | undefined
+  let mode: 'create' | 'edit'
+  let record: unknown = undefined
+  let baseCtxExtras: Record<string, unknown> = {}
+
+  if (scope.kind === 'resource-create' || scope.kind === 'resource-edit') {
+    const R = cfg.resources.find(r => r.getSlug() === scope.slug)
+    if (!R) return null
+    const pages = R.resolvePages()
+    if (scope.kind === 'resource-create') {
+      if (!pages.create) return null
+      PageClass = pages.create
+      mode = 'create'
+    } else {
+      if (!pages.edit) return null
+      PageClass = pages.edit
+      mode = 'edit'
+      baseCtxExtras = { recordId: scope.recordId }
+      if (R.model) {
+        try { record = await findRecord(R, scope.recordId, { user }) } catch { /* ignore */ }
+      } else {
+        record = { id: scope.recordId }
+      }
+    }
+  } else if (scope.kind === 'global-edit') {
+    const G = cfg.globals.find(g => g.getSlug() === scope.slug)
+    if (!G) return null
+    const pages = G.resolvePages()
+    if (!pages.edit) return null
+    PageClass = pages.edit
+    mode = 'edit'
+  } else {
+    const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
+    if (!P) return null
+    PageClass = P
+    // Custom pages don't have a record/edit-mode concept — pass mode
+    // 'edit' so resolveSchema treats fields as form inputs (not table
+    // cells / view-mode read-only).
+    mode = 'edit'
+  }
+
+  const baseCtx: SchemaContext = uploadCtx(userCtx({ mode, basePath: cfg.path, ...baseCtxExtras }, user), cfg)
+  const elements = await callPageSchema(PageClass, baseCtx)
+  const form = selectFormById(findForms(elements), formId)
+  if (!form) return { ok: false, status: 404, error: `Form "${formId}" not found on page` }
+
+  return { ok: true, PageClass, baseCtx, elements, form, record, mode }
+}
 
 // ─── Form-related data builders ─────────────────────────────
 //
@@ -82,58 +157,11 @@ export async function formStateData(
   body:    FormStateRequest,
   req?:    unknown,
 ): Promise<FormStateResult | FormStateError | null> {
-  const cfg = pilotiq.getConfig()
   const user = await pilotiq.resolveUser(req)
-
-  let PageClass: typeof Page | undefined
-  let mode: 'create' | 'edit'
-  let record: unknown = undefined
-  let recordId: string | undefined
-  let baseCtxExtras: Record<string, unknown> = {}
-
-  if (scope.kind === 'resource-create' || scope.kind === 'resource-edit') {
-    const R = cfg.resources.find(r => r.getSlug() === scope.slug)
-    if (!R) return null
-    const pages = R.resolvePages()
-    if (scope.kind === 'resource-create') {
-      if (!pages.create) return null
-      PageClass = pages.create
-      mode = 'create'
-    } else {
-      if (!pages.edit) return null
-      PageClass = pages.edit
-      mode = 'edit'
-      recordId = scope.recordId
-      baseCtxExtras = { recordId }
-      if (R.model) {
-        try { record = await findRecord(R, scope.recordId, { user }) } catch { /* ignore */ }
-      } else if (recordId) {
-        record = { id: recordId }
-      }
-    }
-  } else if (scope.kind === 'global-edit') {
-    const G = cfg.globals.find(g => g.getSlug() === scope.slug)
-    if (!G) return null
-    const pages = G.resolvePages()
-    if (!pages.edit) return null
-    PageClass = pages.edit
-    mode = 'edit'
-  } else {
-    const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
-    if (!P) return null
-    PageClass = P
-    // Custom pages don't have a record/edit-mode concept — pass mode
-    // 'edit' so resolveSchema treats fields as form inputs (not table
-    // cells / view-mode read-only).
-    mode = 'edit'
-  }
-
-  if (!PageClass) return null
-
-  const baseCtx: SchemaContext = uploadCtx(userCtx({ mode, basePath: cfg.path, ...baseCtxExtras }, user), cfg)
-  const elements = await callPageSchema(PageClass, baseCtx)
-  const form = selectFormById(findForms(elements), body.formId)
-  if (!form) return { ok: false, status: 404, error: `Form "${body.formId}" not found on page` }
+  const loaded = await resolveScopeForm(pilotiq, scope, body.formId, user)
+  if (!loaded)     return null
+  if (!loaded.ok)  return loaded
+  const { baseCtx, form, record } = loaded
 
   const update = await applyStateUpdate(form, body.values, body.changed, {
     ...(record  !== undefined ? { record } : {}),
@@ -207,53 +235,11 @@ export async function formWizardData(
   body:    FormWizardRequest,
   req?:    unknown,
 ): Promise<FormWizardSuccess | FormWizardFailure | null> {
-  const cfg = pilotiq.getConfig()
   const user = await pilotiq.resolveUser(req)
-
-  let PageClass: typeof Page | undefined
-  let mode: 'create' | 'edit'
-  let record: unknown = undefined
-  let baseCtxExtras: Record<string, unknown> = {}
-
-  if (scope.kind === 'resource-create' || scope.kind === 'resource-edit') {
-    const R = cfg.resources.find(r => r.getSlug() === scope.slug)
-    if (!R) return null
-    const pages = R.resolvePages()
-    if (scope.kind === 'resource-create') {
-      if (!pages.create) return null
-      PageClass = pages.create
-      mode = 'create'
-    } else {
-      if (!pages.edit) return null
-      PageClass = pages.edit
-      mode = 'edit'
-      baseCtxExtras = { recordId: scope.recordId }
-      if (R.model) {
-        try { record = await findRecord(R, scope.recordId, { user }) } catch { /* ignore */ }
-      } else {
-        record = { id: scope.recordId }
-      }
-    }
-  } else if (scope.kind === 'global-edit') {
-    const G = cfg.globals.find(g => g.getSlug() === scope.slug)
-    if (!G) return null
-    const pages = G.resolvePages()
-    if (!pages.edit) return null
-    PageClass = pages.edit
-    mode = 'edit'
-  } else {
-    const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
-    if (!P) return null
-    PageClass = P
-    mode = 'edit'
-  }
-
-  if (!PageClass) return null
-
-  const baseCtx: SchemaContext = uploadCtx(userCtx({ mode, basePath: cfg.path, ...baseCtxExtras }, user), cfg)
-  const elements = await callPageSchema(PageClass, baseCtx)
-  const form = selectFormById(findForms(elements), body.formId)
-  if (!form) return { ok: false, status: 404, error: `Form "${body.formId}" not found on page` }
+  const loaded = await resolveScopeForm(pilotiq, scope, body.formId, user)
+  if (!loaded)     return null
+  if (!loaded.ok)  return loaded
+  const { form, record } = loaded
 
   const formChildren = form.getChildren() ?? []
   const step = findWizardStep(formChildren, body.step)
@@ -357,53 +343,11 @@ export async function formCreateOptionData(
   body:    FormCreateOptionRequest,
   req?:    unknown,
 ): Promise<FormCreateOptionSuccess | FormCreateOptionFailure | null> {
-  const cfg = pilotiq.getConfig()
   const user = await pilotiq.resolveUser(req)
-
-  let PageClass: typeof Page | undefined
-  let mode: 'create' | 'edit'
-  let record: unknown = undefined
-  let baseCtxExtras: Record<string, unknown> = {}
-
-  if (scope.kind === 'resource-create' || scope.kind === 'resource-edit') {
-    const R = cfg.resources.find(r => r.getSlug() === scope.slug)
-    if (!R) return null
-    const pages = R.resolvePages()
-    if (scope.kind === 'resource-create') {
-      if (!pages.create) return null
-      PageClass = pages.create
-      mode = 'create'
-    } else {
-      if (!pages.edit) return null
-      PageClass = pages.edit
-      mode = 'edit'
-      baseCtxExtras = { recordId: scope.recordId }
-      if (R.model) {
-        try { record = await findRecord(R, scope.recordId, { user }) } catch { /* ignore */ }
-      } else {
-        record = { id: scope.recordId }
-      }
-    }
-  } else if (scope.kind === 'global-edit') {
-    const G = cfg.globals.find(g => g.getSlug() === scope.slug)
-    if (!G) return null
-    const pages = G.resolvePages()
-    if (!pages.edit) return null
-    PageClass = pages.edit
-    mode = 'edit'
-  } else {
-    const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
-    if (!P) return null
-    PageClass = P
-    mode = 'edit'
-  }
-
-  if (!PageClass) return null
-
-  const baseCtx: SchemaContext = uploadCtx(userCtx({ mode, basePath: cfg.path, ...baseCtxExtras }, user), cfg)
-  const elements = await callPageSchema(PageClass, baseCtx)
-  const form = selectFormById(findForms(elements), body.formId)
-  if (!form) return { ok: false, status: 404, error: `Form "${body.formId}" not found on page` }
+  const loaded = await resolveScopeForm(pilotiq, scope, body.formId, user)
+  if (!loaded)     return null
+  if (!loaded.ok)  return loaded
+  const { baseCtx, form, record } = loaded
 
   const field = findSelectFieldByName(form.getChildren() as Element[] ?? [], body.fieldName)
   if (!field) return { ok: false, status: 404, error: `SelectField "${body.fieldName}" not found on form "${body.formId}"` }
@@ -600,53 +544,11 @@ export async function mentionResolveData(
   body:    MentionResolveRequest,
   req?:    unknown,
 ): Promise<MentionResolveSuccess | MentionResolveError | null> {
-  const cfg = pilotiq.getConfig()
   const user = await pilotiq.resolveUser(req)
-
-  let PageClass: typeof Page | undefined
-  let mode: 'create' | 'edit'
-  let record: unknown = undefined
-  let baseCtxExtras: Record<string, unknown> = {}
-
-  if (scope.kind === 'resource-create' || scope.kind === 'resource-edit') {
-    const R = cfg.resources.find(r => r.getSlug() === scope.slug)
-    if (!R) return null
-    const pages = R.resolvePages()
-    if (scope.kind === 'resource-create') {
-      if (!pages.create) return null
-      PageClass = pages.create
-      mode = 'create'
-    } else {
-      if (!pages.edit) return null
-      PageClass = pages.edit
-      mode = 'edit'
-      baseCtxExtras = { recordId: scope.recordId }
-      if (R.model) {
-        try { record = await findRecord(R, scope.recordId, { user }) } catch { /* ignore */ }
-      } else {
-        record = { id: scope.recordId }
-      }
-    }
-  } else if (scope.kind === 'global-edit') {
-    const G = cfg.globals.find(g => g.getSlug() === scope.slug)
-    if (!G) return null
-    const pages = G.resolvePages()
-    if (!pages.edit) return null
-    PageClass = pages.edit
-    mode = 'edit'
-  } else {
-    const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
-    if (!P) return null
-    PageClass = P
-    mode = 'edit'
-  }
-
-  if (!PageClass) return null
-
-  const baseCtx: SchemaContext = uploadCtx(userCtx({ mode, basePath: cfg.path, ...baseCtxExtras }, user), cfg)
-  const elements = await callPageSchema(PageClass, baseCtx)
-  const form = selectFormById(findForms(elements), body.formId)
-  if (!form) return { ok: false, status: 404, error: `Form "${body.formId}" not found on page` }
+  const loaded = await resolveScopeForm(pilotiq, scope, body.formId, user)
+  if (!loaded)     return null
+  if (!loaded.ok)  return loaded
+  const { form, record } = loaded
 
   const field = findRichTextFieldByName(form.getChildren() ?? [], body.field)
   if (!field) {

@@ -27,6 +27,7 @@ import {
   notificationChannel,
   NOTIFICATION_CREATED_EVENT,
 } from '../notifications/broadcast.js'
+import { safeBool } from './helpers.js'
 
 // ─── Navigation chrome ──────────────────────────────────────
 //
@@ -513,7 +514,7 @@ export async function buildProfileMenuItem(
 ): Promise<UserMenuItemMeta | null> {
   const P = cfg.profilePage
   if (!P) return null
-  if (!(await safeAccess(() => P.canAccess(user)))) return null
+  if (!(await safeBool(() => P.canAccess(user)))) return null
   const url  = pageBasePath(cfg.path, P)
   const icon = serializeIcon(P.icon ?? 'user-circle', P.name)
   const meta: UserMenuItemMeta = {
@@ -551,17 +552,6 @@ interface RawNavItem extends NavItem {
   _idx: number
 }
 
-/** Run a `canAccess` check, swallowing throws as `false`. Used by
- *  `buildNavigation` to fail-closed on flaky auth predicates without
- *  blanking the page. */
-export async function safeAccess(fn: () => boolean | Promise<boolean>): Promise<boolean> {
-  try {
-    return Boolean(await fn())
-  } catch {
-    return false
-  }
-}
-
 /** Plan #10 — stamp the resolved user onto a SchemaContext so action
  *  visibility predicates can see it during `resolveSchema`. The `user`
  *  field is opaque (whatever `Pilotiq.user(req => …)` returns); skipped
@@ -585,10 +575,10 @@ export async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<
   // cluster's `canAccess` returning false drops the child even when the
   // child's own predicate would have passed.
   const [resourceAccess, globalAccess, pageAccess, clusterAccess] = await Promise.all([
-    Promise.all(cfg.resources.map(R => safeAccess(() => R.canAccess(user)))),
-    Promise.all(cfg.globals.map(G => safeAccess(() => G.canAccess(user)))),
-    Promise.all(cfg.pages.map(P => safeAccess(() => P.canAccess(user)))),
-    Promise.all(cfg.clusters.map(C => safeAccess(() => C.canAccess(user)))),
+    Promise.all(cfg.resources.map(R => safeBool(() => R.canAccess(user)))),
+    Promise.all(cfg.globals.map(G => safeBool(() => G.canAccess(user)))),
+    Promise.all(cfg.pages.map(P => safeBool(() => P.canAccess(user)))),
+    Promise.all(cfg.clusters.map(C => safeBool(() => C.canAccess(user)))),
   ])
 
   // Identity-keyed so two clusters that happen to share a `.name`

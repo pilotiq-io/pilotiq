@@ -1,21 +1,17 @@
 import type { Pilotiq, PilotiqConfig } from '../Pilotiq.js'
-import type { Page } from '../Page.js'
 import type { ResourceClass } from '../Resource.js'
 import { resourceBasePath } from '../clusterPaths.js'
-import { Element, type ElementMeta } from '../schema/Element.js'
+import { Element } from '../schema/Element.js'
 import { resolveSchema, type SchemaContext } from '../schema/resolveSchema.js'
 import { Form } from '../elements/Form.js'
 import { Table } from '../elements/Table.js'
 import { Column } from '../Column.js'
-import { coerceFormValues, findForms } from '../elements/dispatchForm.js'
-import { ListTabs } from '../elements/ListTabs.js'
-import { ListTab } from '../Tab.js'
+import { findForms } from '../elements/dispatchForm.js'
 import { Filter } from '../filters/Filter.js'
 import { TrashedFilter } from '../filters/TrashedFilter.js'
-import { loadTableRecords, type QueryParams } from '../elements/dispatchTable.js'
+import { loadTableRecords } from '../elements/dispatchTable.js'
 import { consumeFlashedNotifications } from '../notifications/flash.js'
 import { serializeIcon, type SerializedIcon } from '../icons/types.js'
-import { applyPageHooks, pageHooksFor } from '../applyPageHooks.js'
 import {
   RelationManager,
   safeManagerPolicy as safeManagerPolicyImpl,
@@ -54,12 +50,7 @@ import {
   resolveServerDataElements,
   tagActionDispatch,
   tagCellEditUrls,
-  tagFieldAiUrls,
   tagFormActions,
-  tagFormStateUrls,
-  tagFormWizardUrls,
-  tagRichTextMentionUrls,
-  tagSelectCreateOptionUrls,
   tagTableDeferred,
   tagTableReorderUrls,
   tagWidgetUrls,
@@ -69,7 +60,6 @@ import {
 import {
   applyRoleHooks,
   panelInfo,
-  resolvePageHooks,
   type PanelInfoRoute,
 } from './navigation.js'
 import {
@@ -265,10 +255,6 @@ function autoWireManagerForm(form: Form, Related: ResourceClass): void {
   if (!form.getLoadRecord()) form.loadRecord(modelLoadRecord(Related))
 }
 
-async function safePolicy(fn: () => Promise<boolean> | boolean): Promise<boolean> {
-  try { return Boolean(await fn()) } catch { return false }
-}
-
 /** Plan #11 — authorization predicate names a `RelationManager` carries.
  *  Re-exported from `RelationManager.ts`. */
 export type ManagerCanMethod = ManagerCanMethodType
@@ -321,8 +307,8 @@ export async function relationManagerData(
   // surfaces — read-only inline views opt in by overriding the
   // manager's can*). Cluster gate composes with R.canAccess — both
   // must pass when the parent resource is inside a cluster.
-  if (R.cluster && !await safePolicy(() => R.cluster!.canAccess(user))) return { ok: false, status: 403 }
-  if (!await safePolicy(() => R.canAccess(user))) return { ok: false, status: 403 }
+  if (R.cluster && !await safeBool(() => R.cluster!.canAccess(user))) return { ok: false, status: 403 }
+  if (!await safeBool(() => R.canAccess(user))) return { ok: false, status: 403 }
 
   if (!R.model) {
     // Without a model on the parent we can't load the parent record,
@@ -337,7 +323,7 @@ export async function relationManagerData(
   const parentRecord = await findRecord(R, scope.recordId, { user }).catch(() => undefined)
   if (!parentRecord) return null
 
-  if (!await safePolicy(() => R.canEdit(user, parentRecord))) return { ok: false, status: 403 }
+  if (!await safeBool(() => R.canEdit(user, parentRecord))) return { ok: false, status: 403 }
 
   // Read the relation type off the parent's relations map once,
   // normalize to the six-way `RelationMode` the manager-side logic
@@ -398,15 +384,7 @@ async function buildRelationListData(
   // Context lets the user wire `Action.relationCreate / relationEdit /
   // relationDelete(M, ctx)` factories inside `static table()` to template
   // URLs without threading basePath / parentId by hand.
-  const managerCtx: RelationManagerContext = {
-    basePath:     base,
-    parentSlug:   scope.slug,
-    parentId:     scope.recordId,
-    relationship: scope.relationship,
-    parentRecord,
-    related:      Related,
-    mode,
-  }
+  const managerCtx = buildRelationManagerCtx(base, scope, parentRecord, Related, mode)
   const table = M.table(Table.make(), managerCtx)
   autoWireManagerTable(table, R.model as ModelLike, parentRecord, scope.relationship)
   injectManagerTrashedFilter(table, Related)
@@ -477,15 +455,7 @@ async function buildRelationCreateData(
   const resourceBase = resourceBasePath(base, R)
   const createUrl = `${resourceBase}/${scope.recordId}/${scope.relationship}/create`
 
-  const managerCtx: RelationManagerContext = {
-    basePath:     base,
-    parentSlug:   scope.slug,
-    parentId:     scope.recordId,
-    relationship: scope.relationship,
-    parentRecord,
-    related:      Related,
-    mode,
-  }
+  const managerCtx = buildRelationManagerCtx(base, scope, parentRecord, Related, mode)
   const form = M.form(Form.make(), managerCtx)
   if (Related.model) autoWireManagerForm(form, Related)
 
@@ -684,15 +654,7 @@ async function buildRelationEditData(
   const resourceBase = resourceBasePath(base, R)
   const editUrl = `${resourceBase}/${scope.recordId}/${scope.relationship}/${scope.childId}/edit`
 
-  const managerCtx: RelationManagerContext = {
-    basePath:     base,
-    parentSlug:   scope.slug,
-    parentId:     scope.recordId,
-    relationship: scope.relationship,
-    parentRecord,
-    related:      Related,
-    mode,
-  }
+  const managerCtx = buildRelationManagerCtx(base, scope, parentRecord, Related, mode)
   const form = M.form(Form.make(), managerCtx)
   autoWireManagerForm(form, Related)
 
@@ -811,8 +773,8 @@ export async function resolveRelationChain(
   if (!R) return null
 
   // Layer 0 — same gates as the depth-1 pipeline.
-  if (R.cluster && !await safePolicy(() => R.cluster!.canAccess(user))) return { ok: false, status: 403 }
-  if (!await safePolicy(() => R.canAccess(user))) return { ok: false, status: 403 }
+  if (R.cluster && !await safeBool(() => R.cluster!.canAccess(user))) return { ok: false, status: 403 }
+  if (!await safeBool(() => R.canAccess(user))) return { ok: false, status: 403 }
 
   if (!R.model) {
     throw new Error(
@@ -826,7 +788,7 @@ export async function resolveRelationChain(
   if (!parentRecord) return null
 
   // Layer 1 — parent record gate.
-  if (!await safePolicy(() => R.canEdit(user, parentRecord))) return { ok: false, status: 403 }
+  if (!await safeBool(() => R.canEdit(user, parentRecord))) return { ok: false, status: 403 }
 
   // Layer 2 — first manager M1.
   const M1 = findManager(R, step0.relationship)
@@ -915,6 +877,27 @@ async function nestedRelationManagerData(
  *  parent here is `child1` (the chain's leaf parent record); the URL
  *  prefix comes from `scope.chain[0]` via `Action.relation*` factories
  *  reading `ctx.chain`. */
+/** Depth-1 manager context constructor — mirror of `nestedManagerCtx` for
+ *  the four `relation-*` page roles. Three call sites (list / create / edit)
+ *  build identical shapes; the helper keeps them in lock-step. */
+function buildRelationManagerCtx(
+  base:         string,
+  scope:        { slug: string; recordId: string; relationship: string },
+  parentRecord: unknown,
+  Related:      ResourceClass | undefined,
+  mode:         RelationMode,
+): RelationManagerContext {
+  return {
+    basePath:     base,
+    parentSlug:   scope.slug,
+    parentId:     scope.recordId,
+    relationship: scope.relationship,
+    parentRecord,
+    related:      Related,
+    mode,
+  }
+}
+
 function nestedManagerCtx(
   base:     string,
   scope:    NestedRelationScope,

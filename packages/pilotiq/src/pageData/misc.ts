@@ -1,17 +1,14 @@
-import type { Pilotiq, PilotiqConfig } from '../Pilotiq.js'
-import { PilotiqRegistry } from '../PilotiqRegistry.js'
+import type { Pilotiq } from '../Pilotiq.js'
 import type { Page } from '../Page.js'
-import type { ResourceClass } from '../Resource.js'
-import type { GlobalClass } from '../Global.js'
-import { resourceBasePath, globalBasePath, pageBasePath } from '../clusterPaths.js'
-import { Element, type ElementMeta } from '../schema/Element.js'
+import { globalBasePath, pageBasePath } from '../clusterPaths.js'
+import { Element } from '../schema/Element.js'
 import { resolveSchema, type SchemaContext, type RenderContext } from '../schema/resolveSchema.js'
 import { isServerDataElement, type ServerDataElement } from '../schema/ServerDataElement.js'
 import { findForms } from '../elements/dispatchForm.js'
 import { searchAllResources, type GlobalSearchResult } from '../search.js'
 import { consumeFlashedNotifications } from '../notifications/flash.js'
 import { serializeIcon } from '../icons/types.js'
-import { applyPageHooks, pageHooksFor } from '../applyPageHooks.js'
+import { pageHooksFor } from '../applyPageHooks.js'
 import type { RenderHookMap } from '../RenderHook.js'
 import {
   customPageBreadcrumbs,
@@ -22,15 +19,8 @@ import {
   callPageSchema,
   resolveServerDataElements,
   tagActionDispatch,
-  tagCellEditUrls,
-  tagFieldAiUrls,
   tagFormActions,
-  tagFormStateUrls,
-  tagFormWizardUrls,
-  tagRichTextMentionUrls,
-  tagSelectCreateOptionUrls,
-  tagTableDeferred,
-  tagTableReorderUrls,
+  tagFormSubresourceUrls,
   tagWidgetUrls,
   uploadCtx,
   userCtx,
@@ -64,10 +54,7 @@ export async function globalEditData(
   const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'edit', basePath: cfg.path }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, editUrl)
-  tagFormStateUrls(elements, formId => `${editUrl}/_form/${formId}/state`)
-  tagFormWizardUrls(elements, formId => `${editUrl}/_form/${formId}/wizard`)
-  tagRichTextMentionUrls(elements, formId => `${editUrl}/_form/${formId}/mentions`)
-  tagSelectCreateOptionUrls(elements, (formId, fieldName) => `${editUrl}/_form/${formId}/create-option/${fieldName}`)
+  tagFormSubresourceUrls(elements, editUrl)
 
   const form = findForms(elements)[0]
   let record: unknown = undefined
@@ -159,15 +146,12 @@ export async function customPageData(
   const ctx: SchemaContext = uploadCtx(userCtx({}, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
   tagFormActions(elements, pageUrl)
-  tagFormStateUrls(elements, formId => `${pageUrl}/_form/${formId}/state`)
-  tagFormWizardUrls(elements, formId => `${pageUrl}/_form/${formId}/wizard`)
-  tagRichTextMentionUrls(elements, formId => `${pageUrl}/_form/${formId}/mentions`)
-  tagSelectCreateOptionUrls(elements, (formId, fieldName) => `${pageUrl}/_form/${formId}/create-option/${fieldName}`)
+  tagFormSubresourceUrls(elements, pageUrl)
   tagActionDispatch(elements, pageUrl)
   // Page-scope polling URL (mirrors `${base}/${pageSlug}/_widget/:id`
   // route registered in routes.ts).
   tagWidgetUrls(elements, id => `${pageUrl}/_widget/${id}`)
-  const widgetData = await resolveServerDataElements(elements, ctx)
+  const resolvedWidgets = await resolveServerDataElements(elements, ctx)
 
   const breadcrumbs = customPageBreadcrumbs(cfg, PageClass)
   if (breadcrumbs) elements.unshift(breadcrumbs)
@@ -184,7 +168,7 @@ export async function customPageData(
     panel:    await panelInfo(pilotiq, req, customRoute),
     page:     PageClass.toMeta(),
     schemaData,
-    _widgetData: widgetData,
+    _widgetData: resolvedWidgets,
     basePath: cfg.path,
     layout:   cfg.layout,
     notifications: consumeFlashedNotifications(req),

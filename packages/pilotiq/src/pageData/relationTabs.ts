@@ -11,6 +11,7 @@ import { resourceBasePath } from '../clusterPaths.js'
 import type { IconValue } from '../icons/types.js'
 import { getPrimaryKey } from '../orm/modelDefaults.js'
 import type { RelationChainStep } from './breadcrumbs.js'
+import { safeBool } from './helpers.js'
 
 // ─── RelationTabs strip helpers ─────────────────────────────
 //
@@ -256,14 +257,7 @@ export async function buildRelationTabs(
   return RelationTabs.make(tabs)
 }
 
-/**
- * Tiny shim over `try { Boolean(await fn()) } catch { false }` so the
- * relation-tabs builder stays straight-line — mirrors `checkPolicy`
- * in `routes.ts` but kept local to avoid cross-module imports.
- */
-export async function safeBool(fn: () => boolean | Promise<boolean>): Promise<boolean> {
-  try { return Boolean(await fn()) } catch { return false }
-}
+export { safeBool }
 
 /** Pull a human-readable title off a parent record for breadcrumb /
  *  page-title use. Falls back through `recordTitleAttribute` →
