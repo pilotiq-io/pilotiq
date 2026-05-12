@@ -78,3 +78,100 @@ export function relationUrlPrefix(ctx: RelationManagerContext): string {
   }
   return `${head}${mid}/${ctx.parentId}/${ctx.relationship}`
 }
+
+/** Options bag for `buildReplica`. Optional fields explicitly accept
+ *  `undefined` so call sites can pass `opts.excludeAttributes` through
+ *  unconditionally under `exactOptionalPropertyTypes: true`. */
+export interface BuildReplicaOptions {
+  /** Attribute keys to drop from the replicated payload IN ADDITION TO
+   *  the model's primary key and soft-delete column. */
+  excludeAttributes?: readonly string[] | undefined
+  /** Soft-delete column name on the source Resource. Defaults to
+   *  `'deletedAt'`. Read separately from the model because the column
+   *  lives on the Resource shape (`R.deletedAtColumn`) rather than on
+   *  the model itself. */
+  deletedAtColumn?: string | undefined
+  /** Force-pinned columns applied AFTER the strip and BEFORE the user
+   *  `beforeReplicaSaved` mutator. Used by the relation replicate
+   *  factories to re-stamp the parent attachment FK / morph columns
+   *  so a tampered source row can't slip a different parent in. */
+  pin?: Record<string, unknown> | undefined
+  /** Optional user mutator. Runs after the strip + pin. */
+  beforeReplicaSaved?: ((
+    replica: Record<string, unknown>,
+    source:  unknown,
+  ) => Record<string, unknown> | Promise<Record<string, unknown>>) | undefined
+}
+
+/**
+ * Build a replica payload from a source record. Used by every replicate
+ * factory (`replicateAction / bulkReplicateAction / relationReplicateAction
+ * / relationBulkReplicateAction`).
+ *
+ * Strips the model's primary key (`model.primaryKey`, defaulting to
+ * `'id'`), the soft-delete column (defaulting to `'deletedAt'`), and any
+ * `excludeAttributes` keys. Applies `pin` columns (parent attachment
+ * for relation factories), then runs the optional `beforeReplicaSaved`
+ * user mutator. Returns the replica AND the resolved primary-key column
+ * name (callers need it to read `created[pkCol]` for redirect URLs).
+ *
+ * Does NOT call `model.create` — callers wrap their own create + error
+ * handling around the returned replica.
+ */
+export async function buildReplica(
+  source: unknown,
+  model:  { primaryKey?: string },
+  opts:   BuildReplicaOptions = {},
+): Promise<{ replica: Record<string, unknown>; pkCol: string }> {
+  const pkCol      = model.primaryKey ?? 'id'
+  const trashedCol = opts.deletedAtColumn ?? 'deletedAt'
+  const skip       = new Set<string>([pkCol, trashedCol, ...(opts.excludeAttributes ?? [])])
+  let replica: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(source as Record<string, unknown>)) {
+    if (skip.has(k)) continue
+    replica[k] = v
+  }
+  if (opts.pin) Object.assign(replica, opts.pin)
+  if (opts.beforeReplicaSaved) {
+    replica = await opts.beforeReplicaSaved(replica, source)
+  }
+  return { replica, pkCol }
+}
+
+/**
+ * Iterate `records`, run the policy probe in parallel up-front (only
+ * allowed rows enter the serial work loop), call `op(id, record)` per
+ * allowed row, swallow per-row throws (the aggregate notification shows
+ * the count succeeded). Returns the success count.
+ *
+ * Used by every bulk handler (`bulkDeleteAction / bulkRestoreAction /
+ * bulkForceDeleteAction / bulkReplicateAction / relationBulkReplicateAction
+ * / relationBulkDetachAction`-style pattern).
+ *
+ * Rows whose `record.id` coerces to an empty string are skipped without
+ * counting them as an attempt. The policy probe runs via `Promise.all`
+ * so backend round-trips parallelize, but the write loop stays serial
+ * (no transaction in v1 — concurrent writes would muddy failure
+ * semantics).
+ */
+export async function forEachAllowed(
+  records:   readonly unknown[],
+  isAllowed: (record: unknown, index: number) => boolean | Promise<boolean>,
+  op:        (id: string, record: unknown, index: number) => Promise<void>,
+): Promise<number> {
+  const allowedFlags = await Promise.all(
+    records.map((r, i) => isAllowed(r, i)),
+  )
+  let n = 0
+  for (let i = 0; i < records.length; i++) {
+    if (!allowedFlags[i]) continue
+    const record = records[i]
+    const id = String((record as { id?: unknown } | null | undefined)?.id ?? '')
+    if (!id) continue
+    try {
+      await op(id, record, i)
+      n++
+    } catch { /* skip — agg notify shows total */ }
+  }
+  return n
+}

@@ -12,7 +12,7 @@
  */
 
 import { Action, type ReplicateOptions, type ResourceLike } from './Action.js'
-import { callPredicate, isTrashed, resourceBase } from './factoryHelpers.js'
+import { buildReplica, callPredicate, isTrashed, resourceBase } from './factoryHelpers.js'
 
 /** Create-action factory — link to `${basePath}/${R.slug}/create`.
  * Auto-hides when `R.canCreate(user)` returns false. */
@@ -115,19 +115,16 @@ export function replicateAction(
         return { notify: { title: 'Replicate not configured (resource has no model.create)', type: 'error' } as never }
       }
 
-      const pkCol      = (M as { primaryKey?: string }).primaryKey ?? 'id'
-      const trashedCol = R.deletedAtColumn ?? 'deletedAt'
-      const skip = new Set<string>([pkCol, trashedCol, ...(opts.excludeAttributes ?? [])])
-      let replica: Record<string, unknown> = {}
-      for (const [k, v] of Object.entries(source as Record<string, unknown>)) {
-        if (skip.has(k)) continue
-        replica[k] = v
-      }
-      if (opts.beforeReplicaSaved) {
-        try { replica = await opts.beforeReplicaSaved(replica, source) }
-        catch (err) {
-          return { notify: { title: `Replicate failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
-        }
+      let replica: Record<string, unknown>
+      let pkCol: string
+      try {
+        ({ replica, pkCol } = await buildReplica(source, M, {
+          excludeAttributes: opts.excludeAttributes,
+          deletedAtColumn:   R.deletedAtColumn,
+          beforeReplicaSaved: opts.beforeReplicaSaved,
+        }))
+      } catch (err) {
+        return { notify: { title: `Replicate failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
       }
 
       let created: unknown

@@ -23,7 +23,7 @@
  * See `docs/plans/action-split.md` for the split plan.
  */
 
-import { Action } from './Action.js'
+import { Action, type ActionResult } from './Action.js'
 import {
   safeManagerPolicy,
   type RelationManager,
@@ -32,6 +32,39 @@ import {
 import { resolveM2MAccessor } from '../orm/m2mAccessor.js'
 import { buildAttachModalSchema } from './attachFactory.js'
 import { isM2MMode, relationUrlPrefix } from './factoryHelpers.js'
+
+/** Resolve the M2M accessor on `rel.parent`, null-check the requested
+ *  method, run it, and shape the per-failure-mode error envelope.
+ *  Used by `relationAttachAction` and `relationBulkDetachAction` —
+ *  both follow the same pattern (resolve → null-check method →
+ *  try/catch). Keeps the "Pivot accessor missing on …" error string
+ *  consistent across both call sites. */
+async function callM2MAccessor(
+  rel:         { parent: unknown; relationship: string },
+  method:      'attach' | 'detach',
+  ids:         string[],
+  failureLabel: string,
+): Promise<{ ok: true } | { ok: false; result: ActionResult }> {
+  const accessor = resolveM2MAccessor(rel.parent, rel.relationship) as
+    | { attach?: (ids: string[]) => Promise<unknown>; detach?: (ids: string[]) => Promise<unknown> }
+    | null
+  const fn = accessor?.[method]
+  if (typeof fn !== 'function') {
+    return {
+      ok:     false,
+      result: { notify: { title: `Pivot accessor missing on ${rel.relationship} — wrong relation type or ORM version?`, type: 'error' } as never },
+    }
+  }
+  try {
+    await fn(ids)
+    return { ok: true }
+  } catch (err) {
+    return {
+      ok:     false,
+      result: { notify: { title: `${failureLabel}: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never },
+    }
+  }
+}
 
 /** Header-placement attach factory — opens a modal with a SelectField
  *  listing related records that aren't already attached, and POSTs the
@@ -63,15 +96,8 @@ export function relationAttachAction(
       if (idStr.length === 0) {
         return { notify: { title: 'Pick a record to attach', type: 'error' } as never }
       }
-      const accessor = resolveM2MAccessor(rel.parent, rel.relationship)
-      if (!accessor || typeof accessor.attach !== 'function') {
-        return { notify: { title: `Pivot accessor missing on ${rel.relationship} — wrong relation type or ORM version?`, type: 'error' } as never }
-      }
-      try {
-        await accessor.attach([idStr])
-      } catch (err) {
-        return { notify: { title: `Attach failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
-      }
+      const call = await callM2MAccessor(rel, 'attach', [idStr], 'Attach failed')
+      if (!call.ok) return call.result
       return { notify: { title: `${labelSingular} attached`, type: 'success' } as never }
     })
     .visible(({ user }) => {
@@ -141,26 +167,21 @@ export function relationBulkDetachAction(
         return { notify: { title: 'Bulk-detach handler missing parent context — manager-scoped _action route not wired', type: 'error' } as never }
       }
       const records = hctx.records ?? []
+      // Parallelize the per-row policy probes; the accessor call itself stays a single batched op.
+      const allowedFlags = await Promise.all(
+        records.map(r => safeManagerPolicy(M, 'canDetach', ctx.related, hctx.user, ctx.parentRecord, r)),
+      )
       const ids: string[] = []
-      for (const r of records) {
-        const id = String((r as { id?: unknown }).id ?? '')
-        if (!id) continue
-        const allowed = await safeManagerPolicy(M, 'canDetach', ctx.related, hctx.user, ctx.parentRecord, r)
-        if (!allowed) continue
-        ids.push(id)
+      for (let i = 0; i < records.length; i++) {
+        if (!allowedFlags[i]) continue
+        const id = String((records[i] as { id?: unknown }).id ?? '')
+        if (id) ids.push(id)
       }
       if (ids.length === 0) {
         return { notify: { title: 'Nothing to detach (no permitted rows)', type: 'warning' } as never }
       }
-      const accessor = resolveM2MAccessor(rel.parent, rel.relationship)
-      if (!accessor || typeof accessor.detach !== 'function') {
-        return { notify: { title: `Pivot accessor missing on ${rel.relationship} — wrong relation type or ORM version?`, type: 'error' } as never }
-      }
-      try {
-        await accessor.detach(ids)
-      } catch (err) {
-        return { notify: { title: `Bulk detach failed: ${err instanceof Error ? err.message : String(err)}`, type: 'error' } as never }
-      }
+      const call = await callM2MAccessor(rel, 'detach', ids, 'Bulk detach failed')
+      if (!call.ok) return call.result
       return { notify: { title: `${ids.length} ${labelPlural} detached`, type: 'success' } as never }
     })
     .visible(({ user }) => {

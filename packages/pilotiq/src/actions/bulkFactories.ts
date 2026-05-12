@@ -1,20 +1,23 @@
 /**
  * Bulk-placement Action factories — `bulkDelete / bulkRestore /
  * bulkForceDelete / bulkReplicate`. Handler-style: iterate
- * `ctx.records`, run policy per-row, call the matching Resource /
- * Model method. No new routes — the existing `/_action/:actionName`
- * dispatcher already handles bulk via `ctx.records`.
+ * `ctx.records`, run policy per-row (parallelized via
+ * `forEachAllowed`), call the matching Resource / Model method. No new
+ * routes — the existing `/_action/:actionName` dispatcher already
+ * handles bulk via `ctx.records`.
  *
  * Drop into `bulkActions([...])` from inside `Resource.table()`. Each
  * returns a notification with the count succeeded; rows whose policy
  * denied (or whose call threw) are silently skipped — surface them
- * via your own logging if needed.
+ * via your own logging if needed. When no rows succeed (empty
+ * selection, all denied, all threw) the handler emits a `'warning'`
+ * toast instead of misleading "0 X deleted" success.
  *
  * See `docs/plans/action-split.md` for the split plan.
  */
 
 import { Action, type ReplicateOptions, type ResourceLike } from './Action.js'
-import { callPredicate } from './factoryHelpers.js'
+import { buildReplica, callPredicate, forEachAllowed } from './factoryHelpers.js'
 
 /** Pick the right label form for a count — `labelSingular` for 1,
  *  `label` (plural, lowercased) for any other count. Fall back to a
@@ -39,15 +42,15 @@ export function bulkDeleteAction(R: ResourceLike, _basePath: string): Action {
     .handler(async (ctx) => {
       const records = ctx.records ?? []
       const Rfull = R as ResourceLike & { deleteRecord(id: string): Promise<void> }
-      let n = 0
-      for (const record of records) {
-        const id = String((record as { id?: unknown }).id ?? '')
-        if (!id) continue
-        const allowed = await callPredicate(R.canDelete, ctx.user, record)
-        if (!allowed) continue
-        try { await Rfull.deleteRecord(id); n++ } catch { /* skip — agg notify shows total */ }
-      }
       const verb = R.softDeletes ? 'moved to trash' : 'deleted'
+      const n = await forEachAllowed(
+        records,
+        (record) => callPredicate(R.canDelete, ctx.user, record),
+        async (id) => { await Rfull.deleteRecord(id) },
+      )
+      if (n === 0) {
+        return { notify: { title: `Nothing to delete (no permitted rows)`, type: 'warning' } as never }
+      }
       return { notify: { title: `${n} ${labelForCount(R, n)} ${verb}`, type: 'success' } as never }
     })
 }
@@ -62,19 +65,19 @@ export function bulkRestoreAction(R: ResourceLike, _basePath: string): Action {
     .bulk()
     .confirm(`Restore the selected ${labelForCount(R, 0)}?`)
     .handler(async (ctx) => {
-      const records = ctx.records ?? []
       const Rfull = R as ResourceLike & { model?: { restore?(id: string | number): Promise<unknown> } }
       const restore = Rfull.model?.restore
       if (!restore) {
         return { notify: { title: 'Restore not configured', type: 'error' } as never }
       }
-      let n = 0
-      for (const record of records) {
-        const id = String((record as { id?: unknown }).id ?? '')
-        if (!id) continue
-        const allowed = await callPredicate(R.canRestore, ctx.user, record)
-        if (!allowed) continue
-        try { await restore(id); n++ } catch { /* skip */ }
+      const records = ctx.records ?? []
+      const n = await forEachAllowed(
+        records,
+        (record) => callPredicate(R.canRestore, ctx.user, record),
+        async (id) => { await restore(id) },
+      )
+      if (n === 0) {
+        return { notify: { title: `Nothing to restore (no permitted rows)`, type: 'warning' } as never }
       }
       return { notify: { title: `${n} ${labelForCount(R, n)} restored`, type: 'success' } as never }
     })
@@ -90,19 +93,19 @@ export function bulkForceDeleteAction(R: ResourceLike, _basePath: string): Actio
     .bulk()
     .confirm(`Permanently delete the selected ${labelForCount(R, 0)}? This cannot be undone.`)
     .handler(async (ctx) => {
-      const records = ctx.records ?? []
       const Rfull = R as ResourceLike & { model?: { forceDelete?(id: string | number): Promise<void> } }
       const forceDelete = Rfull.model?.forceDelete
       if (!forceDelete) {
         return { notify: { title: 'Force-delete not configured', type: 'error' } as never }
       }
-      let n = 0
-      for (const record of records) {
-        const id = String((record as { id?: unknown }).id ?? '')
-        if (!id) continue
-        const allowed = await callPredicate(R.canForceDelete, ctx.user, record)
-        if (!allowed) continue
-        try { await forceDelete(id); n++ } catch { /* skip */ }
+      const records = ctx.records ?? []
+      const n = await forEachAllowed(
+        records,
+        (record) => callPredicate(R.canForceDelete, ctx.user, record),
+        async (id) => { await forceDelete(id) },
+      )
+      if (n === 0) {
+        return { notify: { title: `Nothing to delete (no permitted rows)`, type: 'warning' } as never }
       }
       return { notify: { title: `${n} ${labelForCount(R, n)} permanently deleted`, type: 'success' } as never }
     })
@@ -136,24 +139,23 @@ export function bulkReplicateAction(
         return { notify: { title: 'Replicate not configured (resource has no model.create)', type: 'error' } as never }
       }
       const records = ctx.records ?? []
-      const pkCol      = (M as { primaryKey?: string }).primaryKey ?? 'id'
-      const trashedCol = R.deletedAtColumn ?? 'deletedAt'
-      const skip = new Set<string>([pkCol, trashedCol, ...(opts.excludeAttributes ?? [])])
-      let n = 0
-      for (const source of records) {
-        if (!source || typeof source !== 'object') continue
-        const allowed = await callPredicate(R.canCreate, ctx.user)
-        if (!allowed) continue
-        let replica: Record<string, unknown> = {}
-        for (const [k, v] of Object.entries(source as Record<string, unknown>)) {
-          if (skip.has(k)) continue
-          replica[k] = v
-        }
-        if (opts.beforeReplicaSaved) {
-          try { replica = await opts.beforeReplicaSaved(replica, source) }
-          catch { continue }
-        }
-        try { await M.create(replica); n++ } catch { /* skip — agg notify shows total */ }
+      // Per-row predicate eval preserved — `canCreate` ignores the record
+      // in the common case, but users may write stateful predicates that
+      // gate per-attempt.
+      const n = await forEachAllowed(
+        records,
+        () => callPredicate(R.canCreate, ctx.user),
+        async (_id, source) => {
+          const { replica } = await buildReplica(source, M, {
+            excludeAttributes:  opts.excludeAttributes,
+            deletedAtColumn:    R.deletedAtColumn,
+            beforeReplicaSaved: opts.beforeReplicaSaved,
+          })
+          await M.create(replica)
+        },
+      )
+      if (n === 0) {
+        return { notify: { title: `Nothing to replicate (no permitted rows)`, type: 'warning' } as never }
       }
       const defaultTitle = `${n} ${labelForCount(R, n)} replicated`
       const overrideTitle = opts.getCreatedNotificationTitle

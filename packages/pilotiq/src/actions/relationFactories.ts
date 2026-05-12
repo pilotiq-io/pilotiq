@@ -37,7 +37,7 @@ import {
   getParentRelationDescriptor,
   type ModelLike,
 } from '../orm/modelDefaults.js'
-import { isM2MMode, isTrashed, relationUrlPrefix } from './factoryHelpers.js'
+import { buildReplica, forEachAllowed, isM2MMode, isTrashed, relationUrlPrefix } from './factoryHelpers.js'
 
 /**
  * Compute the parent-attachment payload to force-pin onto a relation
@@ -91,23 +91,16 @@ async function persistRelationReplica(
     throw new Error('Related Resource has no model.create')
   }
   const M2 = Related.model as ModelLike
-  const pkCol      = (M2 as { primaryKey?: string }).primaryKey ?? 'id'
-  const trashedCol = Related.deletedAtColumn ?? 'deletedAt'
-  const skip       = new Set<string>([pkCol, trashedCol, ...(opts.excludeAttributes ?? [])])
-  let replica: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(source as Record<string, unknown>)) {
-    if (skip.has(k)) continue
-    replica[k] = v
-  }
-  // Force-pin the parent attachment AFTER the strip but BEFORE the
-  // user mutator, so `beforeReplicaSaved` can read / override the FK
-  // if it really wants to (rare). Tampered source rows can't slip a
-  // different parent in by riding their own FK column — the pin
-  // overwrites whatever value was there.
-  Object.assign(replica, computeRelationPin(ctx))
-  if (opts.beforeReplicaSaved) {
-    replica = await opts.beforeReplicaSaved(replica, source)
-  }
+  // Force-pin the parent attachment via `pin` so `beforeReplicaSaved` can
+  // still read / override the FK if it really wants to (rare); tampered
+  // source rows can't slip a different parent in by riding their own FK
+  // column — the pin overwrites whatever value was there.
+  const { replica } = await buildReplica(source, M2, {
+    excludeAttributes:  opts.excludeAttributes,
+    deletedAtColumn:    Related.deletedAtColumn,
+    pin:                computeRelationPin(ctx),
+    beforeReplicaSaved: opts.beforeReplicaSaved,
+  })
   return M2.create(replica)
 }
 
@@ -342,28 +335,27 @@ export function relationBulkReplicateAction(
   ctx:  RelationManagerContext,
   opts: ReplicateOptions = {},
 ): Action {
+  const labelPlural = M.getLabel().toLowerCase()
+  const labelSingular = M.getLabelSingular().toLowerCase()
   return Action.make('relationBulkReplicate')
     .label('Replicate selected')
     .bulk()
-    .confirm(`Replicate the selected ${M.getLabel().toLowerCase()}?`)
+    .confirm(`Replicate the selected ${labelPlural}?`)
     .handler(async (hctx) => {
       const Related = ctx.related
       if (!Related?.model || typeof Related.model.create !== 'function') {
         return { notify: { title: 'Replicate not configured (related Resource has no model.create)', type: 'error' } as never }
       }
       const records = hctx.records ?? []
-      let n = 0
-      for (const source of records) {
-        if (!source || typeof source !== 'object') continue
-        const allowed = await safeManagerPolicy(M, 'canCreate', Related, hctx.user, ctx.parentRecord)
-        if (!allowed) continue
-        try {
-          await persistRelationReplica(M, ctx, source, opts)
-          n++
-        } catch { /* skip — agg notify shows total */ }
+      // Per-row predicate eval preserved — users may write stateful predicates that gate per-attempt.
+      const n = await forEachAllowed(
+        records,
+        () => safeManagerPolicy(M, 'canCreate', Related, hctx.user, ctx.parentRecord),
+        async (_id, source) => { await persistRelationReplica(M, ctx, source, opts) },
+      )
+      if (n === 0) {
+        return { notify: { title: `Nothing to replicate (no permitted rows)`, type: 'warning' } as never }
       }
-      const labelPlural = M.getLabel().toLowerCase()
-      const labelSingular = M.getLabelSingular().toLowerCase()
       const defaultTitle = `${n} ${n === 1 ? labelSingular : labelPlural} replicated`
       const overrideTitle = opts.getCreatedNotificationTitle
         ? await opts.getCreatedNotificationTitle({ count: n, records })
