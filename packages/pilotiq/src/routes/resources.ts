@@ -6,7 +6,6 @@ import type { ResourceClass } from '../Resource.js'
 import { resolveSchema, type SchemaContext } from '../schema/resolveSchema.js'
 import { dispatchFormSubmit, findForms, selectForm } from '../elements/dispatchForm.js'
 import { dispatchAction, parseActionBody, type ResolveRecord } from '../elements/dispatchAction.js'
-import { flashNotifications } from '../notifications/flash.js'
 import {
   listFiltersKey,
   readPersistedListQuery,
@@ -32,7 +31,6 @@ import {
   readFormBody,
   normalizeRedirect,
   splitMeta,
-  sendDownload,
   forbidden,
   cellHookErrorMessage,
   checkPolicy,
@@ -43,6 +41,10 @@ import {
   handleFormCreateOption,
   handleFormMentions,
   handleWidgetData,
+  sendActionResult,
+  sendMutationSuccess,
+  sendRedirectResponse,
+  findInQueryWithTrashed,
 } from './helpers.js'
 
 /**
@@ -157,29 +159,7 @@ export function registerResourceRoutes(
           ...(target.rowField   ? { rowField:   target.rowField   } : {}),
           ...(target.formSchema ? { formSchema: target.formSchema } : {}),
         }, resolveRecord)
-        if (!result.ok) {
-          if (json) {
-            res.status(result.errors ? 422 : 500)
-            return res.json({ ok: false, error: result.error, ...(result.errors ? { errors: result.errors } : {}) })
-          }
-          res.status(500)
-          return res.send(result.error)
-        }
-        // Download envelope wins over redirect — `Action.export` and friends
-        // return the file body inline. Notifications dropped on this branch
-        // because the binary response has no JSON envelope to carry them;
-        // the file itself is the success signal.
-        if (result.download) return sendDownload(res, result.download)
-        const redirect = normalizeRedirect(result.redirect, base) ?? indexUrl
-        if (json) {
-          return res.json({
-            ok: true,
-            redirect,
-            ...(result.notifications ? { notifications: result.notifications } : {}),
-          })
-        }
-        flashNotifications(req, result.notifications)
-        return res.redirect(redirect, 303)
+        return sendActionResult(req, res, json, result, base, indexUrl)
       })
 
       // Reorderable rows — POST ${resourceBase}/_reorder { ids: [] }
@@ -470,16 +450,7 @@ export function registerResourceRoutes(
         const redirect = continueCreate
           ? createUrl
           : normalizeRedirect(result.redirect, base) ?? fallback
-        if (json) {
-          return res.json({
-            ok: true,
-            redirect,
-            ...(continueCreate ? { force: true } : {}),
-            ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
-          })
-        }
-        flashNotifications(req, result.notifications)
-        return res.redirect(redirect, 303)
+        return sendRedirectResponse(req, res, json, redirect, result.notifications, continueCreate ? { force: true } : undefined)
       })
 
       // Action dispatch — POST ${createUrl}/_action/:actionName
@@ -514,25 +485,7 @@ export function registerResourceRoutes(
           ...(target.rowField   ? { rowField:   target.rowField   } : {}),
           ...(target.formSchema ? { formSchema: target.formSchema } : {}),
         })
-        if (!result.ok) {
-          if (json) {
-            res.status(result.errors ? 422 : 500)
-            return res.json({ ok: false, error: result.error, ...(result.errors ? { errors: result.errors } : {}) })
-          }
-          res.status(500)
-          return res.send(result.error)
-        }
-        if (result.download) return sendDownload(res, result.download)
-        const redirect = normalizeRedirect(result.redirect, base) ?? createUrl
-        if (json) {
-          return res.json({
-            ok: true,
-            redirect,
-            ...(result.notifications ? { notifications: result.notifications } : {}),
-          })
-        }
-        flashNotifications(req, result.notifications)
-        return res.redirect(redirect, 303)
+        return sendActionResult(req, res, json, result, base, createUrl)
       })
     }
 
@@ -579,22 +532,12 @@ export function registerResourceRoutes(
           res.status(500)
           return res.send(message)
         }
-        if (json) {
-          // Build a synthetic deletion notification so the SPA path gets
-          // the same toast UX as a JSON-dispatched action handler. The
-          // form-method 303 path doesn't have the form-lifecycle toast
-          // pipeline, so we surface confirmation here. Plan #13: use
-          // "moved to trash" framing on soft-delete resources so users
-          // know the row is recoverable.
-          const title = R.softDeletes
-            ? `${R.labelSingular} moved to trash`
-            : `${R.labelSingular} deleted`
-          const notifications = [
-            { id: `n-delete-${recordId}-${Date.now()}`, type: 'success', title },
-          ]
-          return res.json({ ok: true, redirect: indexUrl, notifications })
-        }
-        return res.redirect(indexUrl, 303)
+        // Plan #13: use "moved to trash" framing on soft-delete resources
+        // so users know the row is recoverable.
+        const title = R.softDeletes
+          ? `${R.labelSingular} moved to trash`
+          : `${R.labelSingular} deleted`
+        return sendMutationSuccess(req, res, json, { id: recordId, kind: 'delete', title, redirect: indexUrl })
       })
     }
 
@@ -624,17 +567,14 @@ export function registerResourceRoutes(
       const M = R.model
       const pk = (M.primaryKey ?? 'id') as string
 
-      // Helper — load a row through `withTrashed` so currently-trashed
-      // records resolve. Returns undefined when the lookup misses (route
-      // converts to 404).
+      // Load a row through `withTrashed` so currently-trashed records
+      // resolve. Falls back to `M.find` when the query doesn't expose
+      // `withTrashed()` (older ORM versions). Returns undefined when
+      // the lookup misses (route converts to 404).
       const loadTrashable = async (id: string): Promise<unknown> => {
-        const q = M.query()
-        if (typeof q.withTrashed !== 'function') return M.find(id).catch(() => undefined)
-        const result = await q.withTrashed()
-          .where(pk, '=', id)
-          .paginate(1, 1)
-          .catch(() => ({ data: [] as unknown[] }))
-        return Array.isArray(result.data) ? result.data[0] : undefined
+        const found = await findInQueryWithTrashed(M.query(), pk, id)
+        if (found !== undefined) return found
+        return M.find(id).catch(() => undefined)
       }
 
       // Restore — POST ${resourceBase}/:id/restore
@@ -660,13 +600,9 @@ export function registerResourceRoutes(
           return json ? res.json({ ok: false, error: message }) : res.send(message)
         }
 
-        if (json) {
-          const notifications = [
-            { id: `n-restore-${recordId}-${Date.now()}`, type: 'success', title: `${R.labelSingular} restored` },
-          ]
-          return res.json({ ok: true, redirect: indexUrl, notifications })
-        }
-        return res.redirect(indexUrl, 303)
+        return sendMutationSuccess(req, res, json, {
+          id: recordId, kind: 'restore', title: `${R.labelSingular} restored`, redirect: indexUrl,
+        })
       })
 
       // Force-delete — POST ${resourceBase}/:id/force-delete
@@ -692,13 +628,9 @@ export function registerResourceRoutes(
           return json ? res.json({ ok: false, error: message }) : res.send(message)
         }
 
-        if (json) {
-          const notifications = [
-            { id: `n-fdelete-${recordId}-${Date.now()}`, type: 'success', title: `${R.labelSingular} permanently deleted` },
-          ]
-          return res.json({ ok: true, redirect: indexUrl, notifications })
-        }
-        return res.redirect(indexUrl, 303)
+        return sendMutationSuccess(req, res, json, {
+          id: recordId, kind: 'fdelete', title: `${R.labelSingular} permanently deleted`, redirect: indexUrl,
+        })
       })
     }
 
@@ -768,15 +700,7 @@ export function registerResourceRoutes(
         }
 
         const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
-        if (json) {
-          return res.json({
-            ok: true,
-            redirect,
-            ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
-          })
-        }
-        flashNotifications(req, result.notifications)
-        return res.redirect(redirect, 303)
+        return sendRedirectResponse(req, res, json, redirect, result.notifications)
       })
 
       // Action dispatch — POST ${editUrl}/_action/:actionName
@@ -822,25 +746,7 @@ export function registerResourceRoutes(
           ...(target.rowField   ? { rowField:   target.rowField   } : {}),
           ...(target.formSchema ? { formSchema: target.formSchema } : {}),
         }, resolveRecord)
-        if (!result.ok) {
-          if (json) {
-            res.status(result.errors ? 422 : 500)
-            return res.json({ ok: false, error: result.error, ...(result.errors ? { errors: result.errors } : {}) })
-          }
-          res.status(500)
-          return res.send(result.error)
-        }
-        if (result.download) return sendDownload(res, result.download)
-        const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
-        if (json) {
-          return res.json({
-            ok: true,
-            redirect,
-            ...(result.notifications ? { notifications: result.notifications } : {}),
-          })
-        }
-        flashNotifications(req, result.notifications)
-        return res.redirect(redirect, 303)
+        return sendActionResult(req, res, json, result, base, editUrl)
       })
     }
 

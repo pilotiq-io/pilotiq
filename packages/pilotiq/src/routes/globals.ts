@@ -4,7 +4,6 @@ import type { Pilotiq } from '../Pilotiq.js'
 import type { GlobalClass } from '../Global.js'
 import { type SchemaContext } from '../schema/resolveSchema.js'
 import { dispatchFormSubmit, findForms, selectForm } from '../elements/dispatchForm.js'
-import { flashNotifications } from '../notifications/flash.js'
 import { globalBasePath } from '../clusterPaths.js'
 import {
   callPageSchema, tagFormActions,
@@ -22,6 +21,7 @@ import {
   handleFormWizard,
   handleFormCreateOption,
   handleFormMentions,
+  sendRedirectResponse,
 } from './helpers.js'
 
 /**
@@ -137,15 +137,7 @@ export function registerGlobalRoutes(
       }
 
       const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
-      if (json) {
-        return res.json({
-          ok: true,
-          redirect,
-          ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
-        })
-      }
-      flashNotifications(req, result.notifications)
-      return res.redirect(redirect, 303)
+      return sendRedirectResponse(req, res, json, redirect, result.notifications)
     })
   }
 

@@ -8,7 +8,6 @@ import { type SchemaContext } from '../schema/resolveSchema.js'
 import { dispatchFormSubmit, findForms, selectForm } from '../elements/dispatchForm.js'
 import { dispatchAction, parseActionBody, type ResolveRecord } from '../elements/dispatchAction.js'
 import { Table } from '../elements/Table.js'
-import { flashNotifications } from '../notifications/flash.js'
 import {
   tagActionDispatch,
   relationManagerData, findRelatedResource, safeManagerPolicy,
@@ -29,11 +28,14 @@ import {
   readFormBody,
   normalizeRedirect,
   splitMeta,
-  sendDownload,
   forbidden,
   checkPolicy,
   policyAccess,
   resolveDispatchTarget,
+  sendActionResult,
+  sendMutationSuccess,
+  sendRedirectResponse,
+  findInQueryWithTrashed,
 } from './helpers.js'
 
 /**
@@ -204,14 +206,7 @@ export function registerRelationRoutes(
         }
 
         const redirect = normalizeRedirect(result.redirect, base) ?? listUrl
-        if (json) {
-          return res.json({
-            ok: true, redirect,
-            ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
-          })
-        }
-        flashNotifications(req, result.notifications)
-        return res.redirect(redirect, 303)
+        return sendRedirectResponse(req, res, json, redirect, result.notifications)
       })
 
       // View — GET ${resourceBase}/:id/${rel}/:childId  (Phase A nested
@@ -329,14 +324,7 @@ export function registerRelationRoutes(
         }
 
         const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
-        if (json) {
-          return res.json({
-            ok: true, redirect,
-            ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
-          })
-        }
-        flashNotifications(req, result.notifications)
-        return res.redirect(redirect, 303)
+        return sendRedirectResponse(req, res, json, redirect, result.notifications)
       })
 
       // Delete — POST ${resourceBase}/:id/${rel}/:childId/delete
@@ -374,13 +362,9 @@ export function registerRelationRoutes(
           return json ? res.json({ ok: false, error: message }) : res.send(message)
         }
 
-        if (json) {
-          const notifications = [
-            { id: `n-rdelete-${childId}-${Date.now()}`, type: 'success', title: `${M.getLabelSingular()} deleted` },
-          ]
-          return res.json({ ok: true, redirect: listUrl, notifications })
-        }
-        return res.redirect(listUrl, 303)
+        return sendMutationSuccess(req, res, json, {
+          id: childId, kind: 'rdelete', title: `${M.getLabelSingular()} deleted`, redirect: listUrl,
+        })
       })
 
       // ── Plan #13 polish — relation restore / force-delete ─────
@@ -414,16 +398,10 @@ export function registerRelationRoutes(
         const loadTrashableChild = async (parent: unknown, childId: string): Promise<unknown> => {
           if (!R.model) return undefined
           const pk = (RM.primaryKey ?? 'id') as string
-          try {
-            const q: import('../orm/modelDefaults.js').ModelQuery = R.model.relatedQuery
-              ? R.model.relatedQuery(parent, rel)
-              : (parent as { related: (n: string) => import('../orm/modelDefaults.js').ModelQuery }).related(rel)
-            const broadened = typeof q.withTrashed === 'function' ? q.withTrashed() : q
-            const result = await broadened.where(pk, '=', childId).paginate(1, 1)
-            return Array.isArray(result.data) ? result.data[0] : undefined
-          } catch {
-            return undefined
-          }
+          const q: import('../orm/modelDefaults.js').ModelQuery = R.model.relatedQuery
+            ? R.model.relatedQuery(parent, rel)
+            : (parent as { related: (n: string) => import('../orm/modelDefaults.js').ModelQuery }).related(rel)
+          return findInQueryWithTrashed(q, pk, childId)
         }
 
         // Restore — POST ${resourceBase}/:id/${rel}/:childId/restore
@@ -447,13 +425,9 @@ export function registerRelationRoutes(
             return json ? res.json({ ok: false, error: message }) : res.send(message)
           }
 
-          if (json) {
-            const notifications = [
-              { id: `n-rrestore-${childId}-${Date.now()}`, type: 'success', title: `${M.getLabelSingular()} restored` },
-            ]
-            return res.json({ ok: true, redirect: listUrl, notifications })
-          }
-          return res.redirect(listUrl, 303)
+          return sendMutationSuccess(req, res, json, {
+            id: childId, kind: 'rrestore', title: `${M.getLabelSingular()} restored`, redirect: listUrl,
+          })
         })
 
         // Force-delete — POST ${resourceBase}/:id/${rel}/:childId/force-delete
@@ -477,13 +451,9 @@ export function registerRelationRoutes(
             return json ? res.json({ ok: false, error: message }) : res.send(message)
           }
 
-          if (json) {
-            const notifications = [
-              { id: `n-rforce-${childId}-${Date.now()}`, type: 'success', title: `${M.getLabelSingular()} permanently deleted` },
-            ]
-            return res.json({ ok: true, redirect: listUrl, notifications })
-          }
-          return res.redirect(listUrl, 303)
+          return sendMutationSuccess(req, res, json, {
+            id: childId, kind: 'rforce', title: `${M.getLabelSingular()} permanently deleted`, redirect: listUrl,
+          })
         })
       }
 
@@ -552,25 +522,7 @@ export function registerRelationRoutes(
           ...(target.rowField   ? { rowField:   target.rowField   } : {}),
           ...(target.formSchema ? { formSchema: target.formSchema } : {}),
         }, resolveRecord)
-
-        if (!result.ok) {
-          if (json) {
-            res.status(result.errors ? 422 : 500)
-            return res.json({ ok: false, error: result.error, ...(result.errors ? { errors: result.errors } : {}) })
-          }
-          res.status(500)
-          return res.send(result.error)
-        }
-        const redirect = normalizeRedirect(result.redirect, base) ?? listUrl
-        if (json) {
-          return res.json({
-            ok: true,
-            redirect,
-            ...(result.notifications ? { notifications: result.notifications } : {}),
-          })
-        }
-        flashNotifications(req, result.notifications)
-        return res.redirect(redirect, 303)
+        return sendActionResult(req, res, json, result, base, listUrl)
       })
 
       // Detach — POST ${parentBase}/:childId/_detach
@@ -660,13 +612,9 @@ export function registerRelationRoutes(
         }
 
         const listUrl = parentBase.replace(':id', pre.recordId)
-        if (json) {
-          const notifications = [
-            { id: `n-rdetach-${childId}-${Date.now()}`, type: 'success', title: `${M.getLabelSingular()} detached` },
-          ]
-          return res.json({ ok: true, redirect: listUrl, notifications })
-        }
-        return res.redirect(listUrl, 303)
+        return sendMutationSuccess(req, res, json, {
+          id: childId, kind: 'rdetach', title: `${M.getLabelSingular()} detached`, redirect: listUrl,
+        })
       })
 
       // ── Phase B nested relation routes ──────────────────
@@ -815,14 +763,7 @@ export function registerRelationRoutes(
           }
 
           const redirect = normalizeRedirect(result.redirect, base) ?? listUrl
-          if (json) {
-            return res.json({
-              ok: true, redirect,
-              ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
-            })
-          }
-          flashNotifications(req, result.notifications)
-          return res.redirect(redirect, 303)
+          return sendRedirectResponse(req, res, json, redirect, result.notifications)
         })
 
         // ── View ──
@@ -950,14 +891,7 @@ export function registerRelationRoutes(
           }
 
           const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
-          if (json) {
-            return res.json({
-              ok: true, redirect,
-              ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
-            })
-          }
-          flashNotifications(req, result.notifications)
-          return res.redirect(redirect, 303)
+          return sendRedirectResponse(req, res, json, redirect, result.notifications)
         })
 
         // ── Delete ──
@@ -1009,13 +943,9 @@ export function registerRelationRoutes(
             return json ? res.json({ ok: false, error: message }) : res.send(message)
           }
 
-          if (json) {
-            const notifications = [
-              { id: `n-nrdelete-${childId2}-${Date.now()}`, type: 'success', title: `${N.getLabelSingular()} deleted` },
-            ]
-            return res.json({ ok: true, redirect: listUrl, notifications })
-          }
-          return res.redirect(listUrl, 303)
+          return sendMutationSuccess(req, res, json, {
+            id: childId2, kind: 'nrdelete', title: `${N.getLabelSingular()} deleted`, redirect: listUrl,
+          })
         })
 
         // ── Phase B follow-up — nested action / detach / soft-delete ──
@@ -1113,25 +1043,7 @@ export function registerRelationRoutes(
             ...(target.rowField   ? { rowField:   target.rowField   } : {}),
             ...(target.formSchema ? { formSchema: target.formSchema } : {}),
           }, resolveRecord)
-
-          if (!result.ok) {
-            if (json) {
-              res.status(result.errors ? 422 : 500)
-              return res.json({ ok: false, error: result.error, ...(result.errors ? { errors: result.errors } : {}) })
-            }
-            res.status(500)
-            return res.send(result.error)
-          }
-          const redirect = normalizeRedirect(result.redirect, base) ?? listUrl
-          if (json) {
-            return res.json({
-              ok: true,
-              redirect,
-              ...(result.notifications ? { notifications: result.notifications } : {}),
-            })
-          }
-          flashNotifications(req, result.notifications)
-          return res.redirect(redirect, 303)
+          return sendActionResult(req, res, json, result, base, listUrl)
         })
 
         // ── Detach — POST ${nestedBase}/:childId2/_detach ──
@@ -1203,13 +1115,9 @@ export function registerRelationRoutes(
           }
 
           const listUrl = nestedListUrlFor(pre.parentId, pre.child1Id)
-          if (json) {
-            const notifications = [
-              { id: `n-nrdetach-${childId2}-${Date.now()}`, type: 'success', title: `${M2.getLabelSingular()} detached` },
-            ]
-            return res.json({ ok: true, redirect: listUrl, notifications })
-          }
-          return res.redirect(listUrl, 303)
+          return sendMutationSuccess(req, res, json, {
+            id: childId2, kind: 'nrdetach', title: `${M2.getLabelSingular()} detached`, redirect: listUrl,
+          })
         })
 
         // ── Soft-delete: restore + force-delete ───────────────────────
@@ -1240,14 +1148,8 @@ export function registerRelationRoutes(
           // belong to child1 under nestedRel.
           const loadTrashableGrandchild = async (parentChild: unknown, child2Id: string): Promise<unknown> => {
             const pk = (RM2.primaryKey ?? 'id') as string
-            try {
-              const q: import('../orm/modelDefaults.js').ModelQuery = (parentChild as { related: (n: string) => import('../orm/modelDefaults.js').ModelQuery }).related(nestedRel)
-              const broadened = typeof q.withTrashed === 'function' ? q.withTrashed() : q
-              const result = await broadened.where(pk, '=', child2Id).paginate(1, 1)
-              return Array.isArray(result.data) ? result.data[0] : undefined
-            } catch {
-              return undefined
-            }
+            const q: import('../orm/modelDefaults.js').ModelQuery = (parentChild as { related: (n: string) => import('../orm/modelDefaults.js').ModelQuery }).related(nestedRel)
+            return findInQueryWithTrashed(q, pk, child2Id)
           }
 
           // Restore — POST ${nestedBase}/:childId2/restore
@@ -1270,13 +1172,9 @@ export function registerRelationRoutes(
               return json ? res.json({ ok: false, error: message }) : res.send(message)
             }
 
-            if (json) {
-              const notifications = [
-                { id: `n-nrrestore-${childId2}-${Date.now()}`, type: 'success', title: `${N.getLabelSingular()} restored` },
-              ]
-              return res.json({ ok: true, redirect: listUrl, notifications })
-            }
-            return res.redirect(listUrl, 303)
+            return sendMutationSuccess(req, res, json, {
+              id: childId2, kind: 'nrrestore', title: `${N.getLabelSingular()} restored`, redirect: listUrl,
+            })
           })
 
           // Force-delete — POST ${nestedBase}/:childId2/force-delete
@@ -1299,13 +1197,9 @@ export function registerRelationRoutes(
               return json ? res.json({ ok: false, error: message }) : res.send(message)
             }
 
-            if (json) {
-              const notifications = [
-                { id: `n-nrforce-${childId2}-${Date.now()}`, type: 'success', title: `${N.getLabelSingular()} permanently deleted` },
-              ]
-              return res.json({ ok: true, redirect: listUrl, notifications })
-            }
-            return res.redirect(listUrl, 303)
+            return sendMutationSuccess(req, res, json, {
+              id: childId2, kind: 'nrforce', title: `${N.getLabelSingular()} permanently deleted`, redirect: listUrl,
+            })
           })
         }
       }

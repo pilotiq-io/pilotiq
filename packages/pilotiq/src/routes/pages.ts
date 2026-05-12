@@ -5,7 +5,6 @@ import type { Page } from '../Page.js'
 import { resolveSchema, type SchemaContext } from '../schema/resolveSchema.js'
 import { dispatchFormSubmit, findForms, selectForm } from '../elements/dispatchForm.js'
 import { dispatchAction, parseActionBody } from '../elements/dispatchAction.js'
-import { flashNotifications } from '../notifications/flash.js'
 import { pageBasePath } from '../clusterPaths.js'
 import {
   panelInfo, callPageSchema, tagFormActions, tagActionDispatch,
@@ -16,7 +15,6 @@ import {
   readFormBody,
   normalizeRedirect,
   splitMeta,
-  sendDownload,
   forbidden,
   policyAccess,
   resolveDispatchTarget,
@@ -25,6 +23,8 @@ import {
   handleFormCreateOption,
   handleFormMentions,
   handleWidgetData,
+  sendActionResult,
+  sendRedirectResponse,
 } from './helpers.js'
 
 /**
@@ -124,25 +124,7 @@ export function registerCustomPageRoutes(
       ...(target.rowField   ? { rowField:   target.rowField   } : {}),
       ...(target.formSchema ? { formSchema: target.formSchema } : {}),
     })
-    if (!result.ok) {
-      if (json) {
-        res.status(result.errors ? 422 : 500)
-        return res.json({ ok: false, error: result.error, ...(result.errors ? { errors: result.errors } : {}) })
-      }
-      res.status(500)
-      return res.send(result.error)
-    }
-    if (result.download) return sendDownload(res, result.download)
-    const redirect = normalizeRedirect(result.redirect, base) ?? pageUrl
-    if (json) {
-      return res.json({
-        ok: true,
-        redirect,
-        ...(result.notifications ? { notifications: result.notifications } : {}),
-      })
-    }
-    flashNotifications(req, result.notifications)
-    return res.redirect(redirect, 303)
+    return sendActionResult(req, res, json, result, base, pageUrl)
   })
 
   // Custom pages can also accept submits when their schema includes a Form.
@@ -186,14 +168,6 @@ export function registerCustomPageRoutes(
     }
 
     const redirect = normalizeRedirect(result.redirect, base) ?? pageUrl
-    if (json) {
-      return res.json({
-        ok: true,
-        redirect,
-        ...(result.notifications && result.notifications.length > 0 ? { notifications: result.notifications } : {}),
-      })
-    }
-    flashNotifications(req, result.notifications)
-    return res.redirect(redirect, 303)
+    return sendRedirectResponse(req, res, json, redirect, result.notifications)
   })
 }

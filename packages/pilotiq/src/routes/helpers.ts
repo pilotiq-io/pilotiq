@@ -1,6 +1,9 @@
 import type { AppRequest, AppResponse } from '@rudderjs/contracts'
 import type { Pilotiq } from '../Pilotiq.js'
-import { findActions, findRowExtraActions } from '../elements/dispatchAction.js'
+import { findActions, findRowExtraActions, type DispatchActionResult } from '../elements/dispatchAction.js'
+import { flashNotifications } from '../notifications/flash.js'
+import type { NotificationMeta } from '../notifications/Notification.js'
+import type { ModelQuery } from '../orm/modelDefaults.js'
 import {
   formStateData, type FormStateScope,
   formWizardData,
@@ -98,6 +101,105 @@ export function sendDownload(
   res.header('Content-Type', env.contentType)
   res.header('Content-Disposition', `attachment; filename="${sanitizeFilename(env.filename)}"`)
   res.send(env.body)
+}
+
+/** Low-level success-or-redirect responder. Either emits a JSON envelope
+ *  (`{ ok: true, redirect, notifications?, force? }`) when the client
+ *  asked for JSON, or flashes notifications to the next request and
+ *  issues a 303 redirect. Shared by `sendActionResult`,
+ *  `sendMutationSuccess`, and the form-submit success branches in
+ *  resources / globals / pages / relations. */
+export function sendRedirectResponse(
+  req:           AppRequest,
+  res:           AppResponse,
+  json:          boolean,
+  redirect:      string,
+  notifications: ReadonlyArray<NotificationMeta> | undefined,
+  extras?:       { force?: boolean },
+): unknown {
+  if (json) {
+    return res.json({
+      ok: true,
+      redirect,
+      ...(extras?.force ? { force: true } : {}),
+      ...(notifications && notifications.length > 0 ? { notifications } : {}),
+    })
+  }
+  flashNotifications(req, notifications)
+  return res.redirect(redirect, 303)
+}
+
+/** Action-dispatch result responder. Branches on `result.ok` / download
+ *  envelope / redirect. Consumed by every `_action/:actionName` endpoint
+ *  in resources / pages / relations.
+ *
+ *  - `!result.ok` → 422 (with `errors`) or 500 (`error` only). JSON path
+ *    returns `{ ok: false, error, errors? }`; HTML path sends `error`.
+ *  - `result.download` → calls `sendDownload` (mutually exclusive with
+ *    `redirect`; binary response has no JSON envelope to carry
+ *    notifications).
+ *  - otherwise → `sendRedirectResponse` with the normalized redirect
+ *    (defaulting to `fallbackUrl`) and `result.notifications`. */
+export function sendActionResult(
+  req:         AppRequest,
+  res:         AppResponse,
+  json:        boolean,
+  result:      DispatchActionResult,
+  base:        string,
+  fallbackUrl: string,
+): unknown {
+  if (!result.ok) {
+    if (json) {
+      res.status(result.errors ? 422 : 500)
+      return res.json({
+        ok:    false,
+        error: result.error,
+        ...(result.errors ? { errors: result.errors } : {}),
+      })
+    }
+    res.status(500)
+    return res.send(result.error)
+  }
+  if (result.download) return sendDownload(res, result.download)
+  const redirect = normalizeRedirect(result.redirect, base) ?? fallbackUrl
+  return sendRedirectResponse(req, res, json, redirect, result.notifications)
+}
+
+/** Synthetic-notification mutation responder for delete / restore /
+ *  force-delete / detach routes. The form-method 303 path doesn't have
+ *  the form-lifecycle toast pipeline; this synthesizes one
+ *  notification so the SPA path gets the same toast UX as a JSON-
+ *  dispatched action handler. `kind` becomes part of the notification
+ *  id (`n-${kind}-${id}-${Date.now()}`) so the client can dedupe. */
+export function sendMutationSuccess(
+  req:  AppRequest,
+  res:  AppResponse,
+  json: boolean,
+  opts: { id: string; kind: string; title: string; redirect: string },
+): unknown {
+  const notifications: NotificationMeta[] = [
+    { id: `n-${opts.kind}-${opts.id}-${Date.now()}`, type: 'success', title: opts.title } as never,
+  ]
+  return sendRedirectResponse(req, res, json, opts.redirect, notifications)
+}
+
+/** Soft-delete record lookup. Runs `q.withTrashed().where(pk, '=', id)
+ *  .paginate(1, 1)` and returns the first row, or `undefined` when the
+ *  query has no `withTrashed()` method (caller falls back to a normal
+ *  `M.find(id)` or returns 404). `.catch(...)` swallows the paginate
+ *  error so a bad query shape surfaces as "not found" rather than a
+ *  500. */
+export async function findInQueryWithTrashed(
+  q:  ModelQuery,
+  pk: string,
+  id: string,
+): Promise<unknown> {
+  if (typeof q.withTrashed !== 'function') return undefined
+  const result = await q.withTrashed()
+    .where(pk, '=', id)
+    .paginate(1, 1)
+    .catch(() => ({ data: [] as unknown[] }))
+  return Array.isArray(result.data) ? result.data[0] : undefined
 }
 
 /** Plan #10 — send a 403 response. Branches on `Accept: application/json`
