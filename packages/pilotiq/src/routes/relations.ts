@@ -30,12 +30,12 @@ import {
   splitMeta,
   forbidden,
   checkPolicy,
-  policyAccess,
   resolveDispatchTarget,
   sendActionResult,
   sendMutationSuccess,
   sendRedirectResponse,
   findInQueryWithTrashed,
+  loadAccessGated,
 } from './helpers.js'
 
 /**
@@ -78,21 +78,31 @@ export function registerRelationRoutes(
       // M2M / polymorphic mappings.
       const relationType = R.model ? getRelationType(R.model, rel) : 'hasMany'
       const mode: RelationMode = normalizeRelationMode(relationType)
+      // Hoist out of the per-handler closures: `findRelatedResource` does
+      // a linear scan over `cfg.resources` and the result is invariant
+      // per (R, M) pair. Compute once at registration so each request
+      // skips the scan.
+      const Related = findRelatedResource(M, R, cfg)
 
       // Common policy prelude: load parent, gate access. Returns the
       // parent record on success or a thrown 403/404 response. Returns
       // `undefined` when the route should bail out (response already sent).
       const requireParent = async (req: AppRequest, res: AppResponse, json: boolean): Promise<{ user: unknown; parent: unknown; recordId: string } | undefined> => {
         const recordId = req.params['id']!
-        const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) { forbidden(res, json); return undefined }
         if (!R.model) {
+          // Async resolve is still needed to keep error-shape identical.
+          await pilotiq.resolveUser(req)
           res.status(500)
           if (json) res.json({ ok: false, error: `Resource "${R.name}" has relations but no static model` })
           else      res.send(`Resource "${R.name}" has relations but no static model`)
           return undefined
         }
-        const parent = await findRecord(R, recordId, { user }).catch(() => undefined)
+        const user = await pilotiq.resolveUser(req)
+        // Parallelize the access probe and the parent load — both depend
+        // only on `user`, and the access check + parent existence check
+        // happen on parallel round-trips instead of sequential.
+        const { access, record: parent } = await loadAccessGated(R, recordId, user)
+        if (!access) { forbidden(res, json); return undefined }
         if (!parent) { res.status(404); if (json) res.json({ ok: false, error: 'Parent not found' }); else res.send('Parent not found'); return undefined }
         if (!await checkPolicy(() => R.canEdit(user, parent))) { forbidden(res, json); return undefined }
         return { user, parent, recordId }
@@ -133,7 +143,6 @@ export function registerRelationRoutes(
         const pre = await requireParent(req, res, json)
         if (!pre) return
 
-        const Related = findRelatedResource(M, R, cfg)
         if (!Related) {
           res.status(500)
           const msg = `RelationManager ${M.name}: cannot resolve related Resource for create`
@@ -249,7 +258,6 @@ export function registerRelationRoutes(
         if (!pre) return
         const childId = req.params['childId']!
 
-        const Related = findRelatedResource(M, R, cfg)
         if (!Related?.model) {
           res.status(500)
           const msg = `RelationManager ${M.name}: cannot resolve related Resource for edit`
@@ -334,7 +342,6 @@ export function registerRelationRoutes(
         if (!pre) return
         const childId = req.params['childId']!
 
-        const Related = findRelatedResource(M, R, cfg)
         if (!Related?.model) {
           res.status(500)
           const msg = `RelationManager ${M.name}: cannot resolve related Resource for delete`
@@ -375,7 +382,7 @@ export function registerRelationRoutes(
       // manager `canRestore / canForceDelete` (with related-Resource
       // fall-through). IDOR check re-runs the parent's relation query
       // through `withTrashed()` so trashed children still resolve.
-      const RelatedForSoft = findRelatedResource(M, R, cfg)
+      const RelatedForSoft = Related
       if (RelatedForSoft?.softDeletes) {
         const RM = RelatedForSoft.model
         if (!RM) {
@@ -477,7 +484,6 @@ export function registerRelationRoutes(
         const pre = await requireParent(req, res, json)
         if (!pre) return
 
-        const Related = findRelatedResource(M, R, cfg)
         const actionName = req.params['actionName']!
         const body  = await readFormBody(req)
         const input = parseActionBody(body)
@@ -570,7 +576,6 @@ export function registerRelationRoutes(
         try {
           // IDOR: confirm the child is currently attached.
           if (typeof readSide.paginate === 'function') {
-            const Related = findRelatedResource(M, R, cfg)
             const pk = Related?.model ? getPrimaryKey(Related.model) : 'id'
             const out = await (readSide as unknown as { where: (col: string, op: string, val: unknown) => { paginate: (p: number, pp: number) => Promise<{ data: unknown[] }> } }).where(pk, '=', childId).paginate(1, 1)
             child = Array.isArray(out.data) ? out.data[0] : undefined
@@ -629,6 +634,13 @@ export function registerRelationRoutes(
         const nestedRel  = N.getRelationship()
         const nestedBase = `${parentBase}/:childId/${nestedRel}`
 
+        // Hoist the depth-2 related-resource lookups out of per-handler
+        // closures — same rationale as the depth-1 `Related` hoist above.
+        // `Related1` is the (M-side) related Resource (already hoisted as
+        // `Related`); `Related2` is the (N-side) related Resource.
+        const Related1 = Related
+        const Related2 = Related1 ? findRelatedResource(N, Related1, cfg) : undefined
+
         // Build a `chain` tuple from the URL params for relayed calls
         // into `relationManagerData`. The childId of the *outer* manager
         // is the recordId of the leaf step.
@@ -684,13 +696,11 @@ export function registerRelationRoutes(
           // the leaf parent record (`child1`) and the related class for
           // save/loadRecord wiring. Reuse `findRelatedResource` against
           // the chain walk's intermediate Resource (Related1).
-          const Related1 = findRelatedResource(M, R, cfg)
           if (!Related1) {
             res.status(500)
             const msg = `Nested manager ${N.name}: cannot resolve middle Resource for create`
             return json ? res.json({ ok: false, error: msg }) : res.send(msg)
           }
-          const Related2 = findRelatedResource(N, Related1, cfg)
           if (!Related2?.model) {
             res.status(500)
             const msg = `Nested manager ${N.name}: cannot resolve related Resource for create`
@@ -815,13 +825,11 @@ export function registerRelationRoutes(
           if (pre === null)                             { res.status(404); return res.send('Not found') }
           if ('ok' in pre && pre.ok === false)          return forbidden(res, json)
 
-          const Related1 = findRelatedResource(M, R, cfg)
           if (!Related1) {
             res.status(500)
             const msg = `Nested manager ${N.name}: cannot resolve middle Resource for edit`
             return json ? res.json({ ok: false, error: msg }) : res.send(msg)
           }
-          const Related2 = findRelatedResource(N, Related1, cfg)
           if (!Related2?.model) {
             res.status(500)
             const msg = `Nested manager ${N.name}: cannot resolve related Resource for edit`
@@ -829,9 +837,12 @@ export function registerRelationRoutes(
           }
 
           const user   = await pilotiq.resolveUser(req)
-          const child1 = await findRecord(Related1, childId1, { user }).catch(() => undefined)
+          // Parallelize child1 + child2 loads — both depend only on `user`.
+          const [child1, child2] = await Promise.all([
+            findRecord(Related1, childId1, { user }).catch(() => undefined),
+            findRecord(Related2, childId2, { user }).catch(() => undefined),
+          ])
           if (!child1) { res.status(404); return res.send('Not found') }
-          const child2 = await findRecord(Related2, childId2, { user }).catch(() => undefined)
           if (!child2) { res.status(404); return res.send('Not found') }
 
           const body = await readFormBody(req)
@@ -913,13 +924,11 @@ export function registerRelationRoutes(
           if (pre === null)                             { res.status(404); return res.send('Not found') }
           if ('ok' in pre && pre.ok === false)          return forbidden(res, json)
 
-          const Related1 = findRelatedResource(M, R, cfg)
           if (!Related1) {
             res.status(500)
             const msg = `Nested manager ${N.name}: cannot resolve middle Resource for delete`
             return json ? res.json({ ok: false, error: msg }) : res.send(msg)
           }
-          const Related2 = findRelatedResource(N, Related1, cfg)
           if (!Related2?.model) {
             res.status(500)
             const msg = `Nested manager ${N.name}: cannot resolve related Resource for delete`
@@ -927,9 +936,12 @@ export function registerRelationRoutes(
           }
 
           const user   = await pilotiq.resolveUser(req)
-          const child1 = await findRecord(Related1, childId1, { user }).catch(() => undefined)
+          // Parallelize child1 + child2 loads — both depend only on `user`.
+          const [child1, child2] = await Promise.all([
+            findRecord(Related1, childId1, { user }).catch(() => undefined),
+            findRecord(Related2, childId2, { user }).catch(() => undefined),
+          ])
           if (!child1) { res.status(404); return res.send('Not found') }
-          const child2 = await findRecord(Related2, childId2, { user }).catch(() => undefined)
           if (!child2) { res.status(404); return res.send('Not found') }
 
           if (!await safeManagerPolicy(N, 'canDelete', Related2, user, child1, child2)) return forbidden(res, json)
@@ -1125,8 +1137,8 @@ export function registerRelationRoutes(
         // model carries `restore` / `forceDelete`. Mirrors the depth-1
         // routes at line 1804+. IDOR runs against child1.related(nestedRel)
         // broadened with `withTrashed()` so trashed grandchildren resolve.
-        const Related1ForSoft = findRelatedResource(M, R, cfg)
-        const Related2ForSoft = Related1ForSoft ? findRelatedResource(N, Related1ForSoft, cfg) : undefined
+        const Related1ForSoft = Related1
+        const Related2ForSoft = Related2
         if (Related2ForSoft?.softDeletes) {
           const RM2 = Related2ForSoft.model
           if (!RM2) {

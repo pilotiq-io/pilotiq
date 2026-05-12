@@ -173,50 +173,45 @@ export function registerPilotiqRoutes(
     }
   }
 
-  // Reorderable rows — fail fast at boot when a Resource declares
-  // `Table.reorderable()` but the bound model can't actually persist a
-  // new order. We invoke `R.table(Table.make())` once per resource (the
-  // same call shape `defaultPages` uses at request time) and inspect
-  // `_reorderableColumn`. The model.reorder check is symmetric with
-  // Plan #13's restore/forceDelete guards. Result is cached per-resource
-  // so the route loop below can decide whether to mount `_reorder`.
+  // Reorderable rows + editable cell columns — fail fast at boot when a
+  // Resource declares either capability but its bound model can't
+  // persist. We invoke `R.table(Table.make())` once per resource (same
+  // call shape `defaultPages` uses at request time) and inspect both
+  // markers in a single pass. The model.reorder / model.update checks
+  // are symmetric with Plan #13's restore/forceDelete guards. Results
+  // cached per-resource so the route loop below can decide whether to
+  // mount `_reorder` / `_cell`.
   const reorderEnabled = new Map<string, string>() // slug → column
-  for (const R of cfg.resources) {
-    let probeColumn: string | undefined
-    try { probeColumn = R.table(Table.make()).getReorderableColumn() }
-    catch { continue }   // user-side throw — not a reorder concern
-    if (probeColumn === undefined) continue
-    if (!R.model || typeof R.model.reorder !== 'function') {
-      throw new Error(
-        `[Pilotiq] ${R.name}.table() calls reorderable("${probeColumn}") but the bound model has no reorder(ids) method. ` +
-        `Implement \`async reorder(ids)\` on the rudder Model (or remove the .reorderable() call).`,
-      )
-    }
-    reorderEnabled.set(R.getSlug(), probeColumn)
-  }
-
-  // Editable cell columns — fail fast at boot when a Resource declares
-  // at least one TextInput/Toggle/SelectColumn but the bound model
-  // can't persist a single-column update. Mirrors the reorder guard
-  // above. Result is cached per-resource so the route loop below can
-  // decide whether to mount `_cell`.
   const editableEnabled = new Set<string>()
   for (const R of cfg.resources) {
-    let hasEditable: boolean
-    try {
-      hasEditable = (R.table(Table.make()).getChildren() ?? [])
-        .some(c => c instanceof Column && c.isEditable())
-    } catch { continue }
-    if (!hasEditable) continue
-    if (!R.model || typeof R.model.update !== 'function') {
-      throw new Error(
-        `[Pilotiq] ${R.name}.table() declares an editable cell column ` +
-        `(TextInputColumn / ToggleColumn / SelectColumn) but the bound ` +
-        `model has no update(id, data) method. Set Resource.model = M ` +
-        `(rudder ORM convention) or drop the editable column.`,
-      )
+    let probe: ReturnType<typeof Table.make> | undefined
+    try { probe = R.table(Table.make()) }
+    catch { continue }   // user-side throw — neither flag applies
+
+    const probeColumn = probe.getReorderableColumn()
+    if (probeColumn !== undefined) {
+      if (!R.model || typeof R.model.reorder !== 'function') {
+        throw new Error(
+          `[Pilotiq] ${R.name}.table() calls reorderable("${probeColumn}") but the bound model has no reorder(ids) method. ` +
+          `Implement \`async reorder(ids)\` on the rudder Model (or remove the .reorderable() call).`,
+        )
+      }
+      reorderEnabled.set(R.getSlug(), probeColumn)
     }
-    editableEnabled.add(R.getSlug())
+
+    const hasEditable = (probe.getChildren() ?? [])
+      .some(c => c instanceof Column && c.isEditable())
+    if (hasEditable) {
+      if (!R.model || typeof R.model.update !== 'function') {
+        throw new Error(
+          `[Pilotiq] ${R.name}.table() declares an editable cell column ` +
+          `(TextInputColumn / ToggleColumn / SelectColumn) but the bound ` +
+          `model has no update(id, data) method. Set Resource.model = M ` +
+          `(rudder ORM convention) or drop the editable column.`,
+        )
+      }
+      editableEnabled.add(R.getSlug())
+    }
   }
 
   // ── Panel-level sibling routes ────────────────────────

@@ -45,6 +45,7 @@ import {
   sendMutationSuccess,
   sendRedirectResponse,
   findInQueryWithTrashed,
+  loadAccessGated,
 } from './helpers.js'
 
 /**
@@ -343,8 +344,8 @@ export function registerResourceRoutes(
         const recordId = req.params['id']!
         const formId   = req.params['formId']!
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, true)
-        const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
+        const { access, record: policyRecord } = await loadAccessGated(R, recordId, user)
+        if (!access) return forbidden(res, true)
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormState(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
       })
@@ -354,8 +355,8 @@ export function registerResourceRoutes(
         const recordId = req.params['id']!
         const formId   = req.params['formId']!
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, true)
-        const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
+        const { access, record: policyRecord } = await loadAccessGated(R, recordId, user)
+        if (!access) return forbidden(res, true)
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormWizard(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
       })
@@ -365,8 +366,8 @@ export function registerResourceRoutes(
         const recordId = req.params['id']!
         const formId   = req.params['formId']!
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, true)
-        const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
+        const { access, record: policyRecord } = await loadAccessGated(R, recordId, user)
+        if (!access) return forbidden(res, true)
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormMentions(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId)
       })
@@ -377,8 +378,8 @@ export function registerResourceRoutes(
         const formId    = req.params['formId']!
         const fieldName = req.params['fieldName']!
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, true)
-        const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
+        const { access, record: policyRecord } = await loadAccessGated(R, recordId, user)
+        if (!access) return forbidden(res, true)
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, true)
         return handleFormCreateOption(req, res, pilotiq, { kind: 'resource-edit', slug, recordId }, formId, fieldName)
       })
@@ -499,11 +500,12 @@ export function registerResourceRoutes(
         if (recordId === 'create') return // handled by create route
 
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
-        // Load the record once so canView can inspect it. Stub `{ id }`
-        // when the resource has no model wired — the user-authored
-        // predicate gets to decide what to do with it.
-        const record = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
+        // Load the record in parallel with the access probe so canView
+        // can inspect it. Stub `{ id }` when the resource has no model
+        // wired — the user-authored predicate gets to decide what to
+        // do with it.
+        const { access, record } = await loadAccessGated(R, recordId, user)
+        if (!access) return forbidden(res, wantsJson(req))
         if (!await checkPolicy(() => R.canView(user, record))) return forbidden(res, wantsJson(req))
 
         const data = await resourceViewData(pilotiq, slug, recordId, req)
@@ -517,8 +519,8 @@ export function registerResourceRoutes(
         const indexUrl = `${resourceBase}`
 
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, json)
-        const record = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
+        const { access, record } = await loadAccessGated(R, recordId, user)
+        if (!access) return forbidden(res, json)
         if (!await checkPolicy(() => R.canDelete(user, record))) return forbidden(res, json)
 
         try {
@@ -641,8 +643,8 @@ export function registerResourceRoutes(
       router.get(`${resourceBase}/:id/edit`, async (req, res) => {
         const recordId = req.params['id']!
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
-        const record = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
+        const { access, record } = await loadAccessGated(R, recordId, user)
+        if (!access) return forbidden(res, wantsJson(req))
         if (!await checkPolicy(() => R.canEdit(user, record))) return forbidden(res, wantsJson(req))
 
         const data = await resourceEditData(pilotiq, slug, recordId, undefined, req)
@@ -658,8 +660,8 @@ export function registerResourceRoutes(
         const json = wantsJson(req)
 
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, json)
-        const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
+        const { access, record: policyRecord } = await loadAccessGated(R, recordId, user)
+        if (!access) return forbidden(res, json)
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, json)
 
         const ctx: SchemaContext = { mode: 'edit', recordId, basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
@@ -716,8 +718,8 @@ export function registerResourceRoutes(
         const actionName = req.params['actionName']!
 
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
-        const policyRecord = R.model ? await findRecord(R, recordId, { user }).catch(() => undefined) : { id: recordId }
+        const { access, record: policyRecord } = await loadAccessGated(R, recordId, user)
+        if (!access) return forbidden(res, wantsJson(req))
         if (!await checkPolicy(() => R.canEdit(user, policyRecord))) return forbidden(res, wantsJson(req))
 
         const json = wantsJson(req)

@@ -3,7 +3,8 @@ import type { Pilotiq } from '../Pilotiq.js'
 import { findActions, findRowExtraActions, type DispatchActionResult } from '../elements/dispatchAction.js'
 import { flashNotifications } from '../notifications/flash.js'
 import type { NotificationMeta } from '../notifications/Notification.js'
-import type { ModelQuery } from '../orm/modelDefaults.js'
+import { findRecord, type ModelQuery } from '../orm/modelDefaults.js'
+import type { ResourceClass } from '../Resource.js'
 import {
   formStateData, type FormStateScope,
   formWizardData,
@@ -243,6 +244,27 @@ export async function policyAccess(
       : Promise.resolve(true),
   ])
   return ownerOk && clusterOk
+}
+
+/** Run `policyAccess(R, user)` and `findRecord(R, recordId, { user })`
+ *  in parallel. Both depend only on `user`, so the two round-trips
+ *  overlap instead of waiting on each other. When `R.model` isn't set
+ *  the record falls back to a stub `{ id: recordId }` so record-aware
+ *  predicates can still pattern-match. Throws are caught — a failed
+ *  record load resolves to `undefined`, mirroring the pre-helper inline
+ *  shape `findRecord(...).catch(() => undefined)`. */
+export async function loadAccessGated(
+  R:        ResourceClass,
+  recordId: string,
+  user:     unknown,
+): Promise<{ access: boolean; record: unknown }> {
+  const [access, record] = await Promise.all([
+    policyAccess(R, user),
+    R.model
+      ? findRecord(R, recordId, { user }).catch(() => undefined)
+      : Promise.resolve({ id: recordId }),
+  ])
+  return { access, record }
 }
 
 /**
