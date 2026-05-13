@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseRecordEditUrl } from './parseRecordEditUrl.js'
+import { parseRecordEditUrl, parseRecordPageUrl } from './parseRecordEditUrl.js'
 
 test('parseRecordEditUrl: bare resource edit', () => {
   assert.deepEqual(
@@ -72,4 +72,51 @@ test('parseRecordEditUrl: slug-only edit (no record id) returns null', () => {
   // 'edit' last and '123' as recordId — but with empty slug after the
   // slice. Defensive: reject when slugParts is empty.
   assert.equal(parseRecordEditUrl('/admin/edit', '/admin'), null)
+})
+
+// ─── parseRecordPageUrl (role-aware) ─────────────────────────
+
+test('parseRecordPageUrl: edit URL returns role=edit', () => {
+  assert.deepEqual(
+    parseRecordPageUrl('/admin/articles/123/edit', '/admin'),
+    { resourceSlug: 'articles', recordId: '123', role: 'edit' },
+  )
+})
+
+test('parseRecordPageUrl: view URL returns role=view', () => {
+  assert.deepEqual(
+    parseRecordPageUrl('/admin/articles/123/view', '/admin'),
+    { resourceSlug: 'articles', recordId: '123', role: 'view' },
+  )
+})
+
+test('parseRecordPageUrl: cluster-prefixed view URL', () => {
+  assert.deepEqual(
+    parseRecordPageUrl('/admin/blog/articles/123/view', '/admin'),
+    { resourceSlug: 'blog/articles', recordId: '123', role: 'view' },
+  )
+})
+
+test('parseRecordPageUrl: terminal token other than edit|view returns null', () => {
+  // 'delete' / 'restore' / 'force-delete' are POST handlers, not pages.
+  assert.equal(parseRecordPageUrl('/admin/articles/123/delete', '/admin'), null)
+  assert.equal(parseRecordPageUrl('/admin/articles/123/restore', '/admin'), null)
+  // Custom record sub-pages also fall through here — they have their own
+  // gate path (not record-bound for collab purposes in v1).
+  assert.equal(parseRecordPageUrl('/admin/articles/123/history', '/admin'), null)
+})
+
+test('parseRecordPageUrl: view URL in nested-relation form', () => {
+  assert.deepEqual(
+    parseRecordPageUrl('/admin/articles/123/comments/456/view', '/admin'),
+    { resourceSlug: 'articles/123/comments', recordId: '456', role: 'view' },
+  )
+})
+
+// ─── Legacy alias: parseRecordEditUrl filters view URLs ──────
+
+test('parseRecordEditUrl: view URL returns null (back-compat: edit-only)', () => {
+  // A consumer still calling the legacy `parseRecordEditUrl` should
+  // continue to see view URLs filtered out — only edit URLs round-trip.
+  assert.equal(parseRecordEditUrl('/admin/articles/123/view', '/admin'), null)
 })

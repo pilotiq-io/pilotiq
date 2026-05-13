@@ -1,6 +1,6 @@
 import type { Pilotiq, PilotiqConfig } from '../Pilotiq.js'
 import type { Page } from '../Page.js'
-import type { ResourceClass, NavigationBadgeColor } from '../Resource.js'
+import type { ResourceClass, NavigationBadgeColor, ResourceCollabConfig } from '../Resource.js'
 import type { GlobalClass } from '../Global.js'
 import type { ClusterClass } from '../Cluster.js'
 import { resourceBasePath, globalBasePath, pageBasePath } from '../clusterPaths.js'
@@ -194,6 +194,35 @@ export interface PanelInfoRoute {
   url?:      string
 }
 
+/**
+ * Per-resource collab opt-in map, keyed by the URL slug
+ * `parseRecordPageUrl` produces. Non-clustered resource → `getSlug()`;
+ * clustered resource → `${cluster.getSlug()}/${R.getSlug()}`.
+ *
+ * `RecordWrapperGate` reads this map to decide whether the page tree
+ * needs the plugin-registered RecordWrapper (collab room, audit, …)
+ * mounted around the record view/edit content area.
+ *
+ * Nested-relation edit URLs (`/articles/123/comments/456/edit`) have a
+ * dynamic-id segment in the gate's URL slug and don't match here in v1.
+ * Collab on nested-relation edits is a follow-up — top-level resource
+ * edits are the common case and ship now.
+ */
+export type RecordCollabMap = Record<string, ResourceCollabConfig>
+
+function resourceSlugForGate(R: ResourceClass): string {
+  return R.cluster ? `${R.cluster.getSlug()}/${R.getSlug()}` : R.getSlug()
+}
+
+function buildRecordCollabMap(cfg: Readonly<PilotiqConfig>): RecordCollabMap | undefined {
+  const map: RecordCollabMap = {}
+  for (const R of cfg.resources) {
+    const collab = R.getResolvedCollabConfig()
+    if (collab) map[resourceSlugForGate(R)] = collab
+  }
+  return Object.keys(map).length > 0 ? map : undefined
+}
+
 export async function panelInfo(
   pilotiq: Pilotiq,
   req?:    unknown,
@@ -210,6 +239,7 @@ export async function panelInfo(
     buildRightSidebarMeta(cfg, user),
   ])
   const databaseNotifications = buildDatabaseNotificationsMeta(cfg, user)
+  const recordCollab = buildRecordCollabMap(cfg)
   // AI suggestion mode — sparse: omit when 'auto' (the default) so the
   // wire shape stays minimal for panels that don't opt into review mode.
   // Plugin clients (e.g. @pilotiq-pro/ai's `AiClientToolBindings`) read
@@ -225,6 +255,7 @@ export async function panelInfo(
     ...(userMenu ? { userMenu } : {}),
     ...(databaseNotifications ? { databaseNotifications } : {}),
     ...(rightSidebar ? { rightSidebar } : {}),
+    ...(recordCollab ? { recordCollab } : {}),
     ...(Object.keys(renderHooks).length > 0 ? { renderHooks } : {}),
     ...(aiSuggestionsMode !== 'auto' ? { aiSuggestionsMode } : {}),
   }

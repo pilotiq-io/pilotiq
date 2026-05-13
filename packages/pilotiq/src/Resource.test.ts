@@ -237,4 +237,48 @@ describe('Resource (static API)', () => {
       assert.equal(await R.canRestore(null, { ownedBy: 'other' }), false)
     })
   })
+
+  describe('collab opt-in', () => {
+    it('omitted static collab → getResolvedCollabConfig returns null', () => {
+      class R extends Resource {}
+      assert.equal(R.getResolvedCollabConfig(), null)
+    })
+
+    it('static collab = false → null (explicit opt-out)', () => {
+      class R extends Resource {
+        static override collab = false as const
+      }
+      assert.equal(R.getResolvedCollabConfig(), null)
+    })
+
+    it('static collab = true → defaults to { pages: [edit], presence: true }', () => {
+      class R extends Resource {
+        static override collab = true as const
+      }
+      assert.deepEqual(R.getResolvedCollabConfig(), {
+        pages:    ['edit'],
+        presence: true,
+      })
+    })
+
+    it('object form merges with defaults', () => {
+      class R extends Resource {
+        static override collab = { pages: ['edit', 'view'] as const }
+      }
+      assert.deepEqual(R.getResolvedCollabConfig(), {
+        pages:    ['edit', 'view'],
+        presence: true,   // default preserved
+      })
+    })
+
+    it('object form can suppress presence', () => {
+      class R extends Resource {
+        static override collab = { presence: false }
+      }
+      assert.deepEqual(R.getResolvedCollabConfig(), {
+        pages:    ['edit'],   // default preserved
+        presence: false,
+      })
+    })
+  })
 })

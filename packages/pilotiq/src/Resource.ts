@@ -51,6 +51,33 @@ export type NavigationBadgeHandler =
   () => string | number | undefined | Promise<string | number | undefined>
 
 /**
+ * Per-resource collab configuration. Set via `static collab = true` (the
+ * 90% case — opts the edit page in with presence) or via the object form
+ * for finer control. Omitting `static collab` entirely keeps the resource
+ * collab-free even when the `@pilotiq-pro/collab` plugin is registered.
+ *
+ *   pages    — page roles where collab activates. `'edit'` syncs values +
+ *              presence; `'view'` is presence-only (the page is read-only,
+ *              value-sync would be moot). Defaults to `['edit']`.
+ *   presence — when false, suppress the awareness layer (focus chips,
+ *              cursor positions) while keeping value-sync. Defaults to true.
+ *
+ * Field-level `.collab(false)` always wins over this setting — opting the
+ * resource in then opting individual fields out is the supported shape.
+ */
+export interface ResourceCollabConfig {
+  pages:    ReadonlyArray<'edit' | 'view'>
+  presence: boolean
+}
+
+/** Raw shape accepted by `static collab` before normalization. `true` is a
+ * shorthand for `{ pages: ['edit'], presence: true }`. */
+export type ResourceCollabInput = boolean | {
+  pages?:    ReadonlyArray<'edit' | 'view'>
+  presence?: boolean
+}
+
+/**
  * Abstract Resource base class. **All methods are static** — resources are
  * registered by class, not by instance. Routes look up the class and call
  * statics directly.
@@ -295,6 +322,37 @@ export abstract class Resource {
    */
   static getGlobalSearchQuery(_needle: string): ModelQuery | undefined {
     return undefined
+  }
+
+  // ─── Realtime collab opt-in ────────────────────────────────
+  // Opt-in per resource. The `@pilotiq-pro/collab` plugin registers the
+  // global singletons (transport, Tiptap extension factory, RecordWrapper
+  // factory); resources with `static collab` unset stay collab-free even
+  // when the plugin is installed. Field-level `.collab(false)` overrides
+  // this setting per field.
+
+  /** Enable collab on this resource. `true` is the 90% case — shorthand
+   * for `{ pages: ['edit'], presence: true }`. Use the object form to
+   * narrow which page roles activate or to suppress presence. Default
+   * `false` (collab off — the WS room is never opened for this resource). */
+  static collab: ResourceCollabInput = false
+
+  /**
+   * Normalize `static collab` into the canonical wire shape, or return
+   * `null` when the resource has opted out. Centralizes the `true` →
+   * defaults expansion and the `{ pages?: … }` merge.
+   *
+   * Result lands on `panelInfo().recordCollab[slug]`; the gate reads it
+   * to decide whether to mount the record wrapper.
+   */
+  static getResolvedCollabConfig(): ResourceCollabConfig | null {
+    const raw = this.collab
+    if (raw === false || raw == null) return null
+    if (raw === true) return { pages: ['edit'], presence: true }
+    return {
+      pages:    raw.pages    ?? ['edit'],
+      presence: raw.presence ?? true,
+    }
   }
 
   // ─── Plan #10: authorization predicates ────────────────────

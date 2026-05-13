@@ -1202,3 +1202,39 @@ describe('tagRichTextMentionUrls — nested Repeater + Builder rows', () => {
     assert.equal(inner.stamped, '/admin/_form/art/mentions')
   })
 })
+
+describe('panelInfo — recordCollab map (resource collab opt-in)', () => {
+  it('absent when no resource opts in', async () => {
+    class Posts extends Resource { static override label = 'Posts' }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Posts]))
+    assert.equal((info as { recordCollab?: unknown }).recordCollab, undefined)
+  })
+
+  it('emits an entry for each opted-in resource keyed by URL slug', async () => {
+    class Posts extends Resource {
+      static override label  = 'Posts'
+      static override collab = true as const
+    }
+    class Users extends Resource {
+      static override label  = 'Users'
+      // No collab — should NOT appear in the map.
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Posts, Users]))
+    const map = (info as { recordCollab?: Record<string, unknown> }).recordCollab
+    assert.deepEqual(map, {
+      posts: { pages: ['edit'], presence: true },
+    })
+  })
+
+  it('honors object form of static collab (pages + presence override defaults)', async () => {
+    class Posts extends Resource {
+      static override label  = 'Posts'
+      static override collab = { pages: ['edit', 'view'] as const, presence: false }
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Posts]))
+    const map = (info as { recordCollab?: Record<string, unknown> }).recordCollab
+    assert.deepEqual(map, {
+      posts: { pages: ['edit', 'view'], presence: false },
+    })
+  })
+})

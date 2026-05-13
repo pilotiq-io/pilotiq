@@ -72,7 +72,13 @@ export {
   RecordWrapperGate,
   type RecordWrapperGateProps,
 } from './RecordWrapperGate.js'
-export { parseRecordEditUrl, type RecordEditIdentity } from './parseRecordEditUrl.js'
+export {
+  parseRecordPageUrl,
+  parseRecordEditUrl,
+  type RecordPageIdentity,
+  type RecordPageRole,
+  type RecordEditIdentity,
+} from './parseRecordEditUrl.js'
 export {
   registerWidgetRenderer,
   getWidgetRenderer,
