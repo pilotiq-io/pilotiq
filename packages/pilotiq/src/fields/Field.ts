@@ -111,6 +111,18 @@ export interface FieldMeta extends ElementMeta {
    * `Column.formatStateUsing` from Plan #2).
    */
   formattedValue?: string
+  /**
+   * Per-field collab override. Absent = inherit the panel-wide default
+   * (collab on every record-edit page when `@pilotiq-pro/collab` is
+   * registered). Explicit `false` opts THIS field out of the collab
+   * layer entirely — no value sync AND no presence chip — so the field
+   * stays device-local inside an otherwise collab-on form. Useful for
+   * sensitive scratch space or fields whose LWW semantics would
+   * surprise users (rapid typing in plain-text inputs). Forward-compat
+   * for `true` (opt in even when panel default is off) once
+   * panel-level disable lands.
+   */
+  collab?: boolean
 }
 
 /**
@@ -277,6 +289,10 @@ export abstract class Field extends Element {
   protected _disabledOn?: ReadonlyArray<'table' | 'create' | 'edit' | 'view'>
   protected _hiddenOn?:   ReadonlyArray<'table' | 'create' | 'edit' | 'view'>
   protected _visibleOn?:  ReadonlyArray<'table' | 'create' | 'edit' | 'view'>
+
+  // Per-field collab override. `undefined` = inherit panel default;
+  // explicit `false` = opt out of value sync AND presence entirely.
+  protected _collab?: boolean
 
   constructor(name: string, type: FieldType) {
     super()
@@ -476,6 +492,28 @@ export abstract class Field extends Element {
    * `coerceFormValues` before validation runs.
    */
   dehydrated(value: boolean = true): this { this._dehydrated = value; return this }
+
+  /**
+   * Per-field realtime-collab override.
+   *
+   * - `.collab(false)` — opts THIS field out of the collab layer
+   *   entirely (no value sync via the form-level CRDT, no presence
+   *   chip rendered next to the label). The field stays device-local
+   *   inside an otherwise collab-on form. Useful for private scratch
+   *   space or fields whose LWW semantics would surprise users
+   *   (rapid typing in plain-text inputs hit the v1 last-writer-wins
+   *   footgun — `.collab(false)` is the v1 escape hatch).
+   * - `.collab(true)` (default of the bare call) — explicit opt-in.
+   *   Forward-compat for a future panel-level disable; today it
+   *   behaves the same as not calling the setter when collab is
+   *   already on at the panel level.
+   * - Not calling the setter — inherits the panel-wide default
+   *   (collab on whenever `.plugins([collab()])` is registered).
+   */
+  collab(enabled = true): this {
+    this._collab = enabled
+    return this
+  }
 
   /**
    * Display-time transform — receives `(value, { record })` and returns
@@ -769,6 +807,7 @@ export abstract class Field extends Element {
       ...(this._extraAttributes !== undefined ? { extraAttributes: this._extraAttributes } : {}),
       ...(this._extraInputAttributes !== undefined ? { extraInputAttributes: this._extraInputAttributes } : {}),
       ...(this._extraFieldWrapperAttributes !== undefined ? { extraFieldWrapperAttributes: this._extraFieldWrapperAttributes } : {}),
+      ...(this._collab    !== undefined ? { collab:    this._collab }    : {}),
     }
   }
 

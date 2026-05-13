@@ -10,6 +10,7 @@ import type { RightPanelRegistry } from './right-panel-registry.js'
 import { RightPanelRegistryProvider } from './right-panel-registry.js'
 import { RightSidebarProvider, useRightSidebarOptional } from './RightSidebarContext.js'
 import { RightSidebar } from './RightSidebar.js'
+import { RecordWrapperGate } from './RecordWrapperGate.js'
 import { useIsMobile } from './hooks/use-mobile.js'
 import type { NavItem, UserMenuMeta, DatabaseNotificationsMeta, RightSidebarMeta } from '../pageData.js'
 import type { RenderHookMap } from '../RenderHook.js'
@@ -118,12 +119,29 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
   const hooks = props.panel.renderHooks
   const rightSidebarMeta = props.panel.rightSidebar
 
+  // Record-scoped wrapper (collab room, audit trail, …) — pass-through
+  // when no plugin registered a wrapper or when the URL isn't a
+  // record-edit page. Wrapping `children` before forwarding to `Layout`
+  // mounts the wrapper around the page content area only, leaving the
+  // sidebar / topbar chrome outside.
+  const layoutProps = {
+    ...props,
+    children: (
+      <RecordWrapperGate
+        basePath={props.basePath}
+        {...(props.currentPath !== undefined ? { currentPath: props.currentPath } : {})}
+      >
+        {props.children}
+      </RecordWrapperGate>
+    ),
+  }
+
   const inner = (
     <ToasterProvider {...toasterProps}>
       <CommandPaletteProvider setOpen={setPaletteOpen}>
         <RenderHookSlot name="panels::body.start" hooks={hooks} />
         <RightSidebarLayoutFrame>
-          <Layout {...props} />
+          <Layout {...layoutProps} />
         </RightSidebarLayoutFrame>
         <RenderHookSlot name="panels::body.end" hooks={hooks} />
         <CommandPalette {...paletteProps} />

@@ -33,6 +33,34 @@ export {
   type PendingSuggestionApplier,
 } from './PendingSuggestionApplierRegistry.js'
 export {
+  CollabRoomContext,
+  useCollabRoom,
+  type CollabRoom,
+} from './CollabRoomContext.js'
+export {
+  registerCollabExtensions,
+  getCollabExtensions,
+  type CollabExtensionFactory,
+  type CollabExtensionFactoryArgs,
+} from './CollabExtensionFactoryRegistry.js'
+export {
+  registerFormCollabBinding,
+  getFormCollabBinding,
+  type FormCollabBinding,
+  type FormCollabBindingFactory,
+  type FormCollabBindingFactoryArgs,
+} from './FormCollabBindingRegistry.js'
+export {
+  registerRecordWrapper,
+  getRecordWrapper,
+  type RecordWrapperProps,
+} from './RecordWrapperRegistry.js'
+export {
+  RecordWrapperGate,
+  type RecordWrapperGateProps,
+} from './RecordWrapperGate.js'
+export { parseRecordEditUrl, type RecordEditIdentity } from './parseRecordEditUrl.js'
+export {
   registerWidgetRenderer,
   getWidgetRenderer,
   type WidgetRendererProps,
