@@ -147,8 +147,10 @@ export function SidebarLayout({ panel, basePath, currentPath, children, componen
   const dn = panel.databaseNotifications
   const bellInTopbar  = dn && dn.position === 'topbar'
   const bellInSidebar = dn && dn.position === 'sidebar'
-  const NavSlot = componentSlotRegistry?.nav
-  const navProps = currentPath !== undefined ? { currentPath } : {}
+  const NavSlot    = componentSlotRegistry?.nav
+  const HeaderSlot = componentSlotRegistry?.header
+  const FooterSlot = componentSlotRegistry?.footer
+  const slotProps = currentPath !== undefined ? { currentPath } : {}
 
   return (
     <SidebarProvider>
@@ -175,7 +177,7 @@ export function SidebarLayout({ panel, basePath, currentPath, children, componen
         <SidebarContent>
           <RenderHookSlot name="panels::sidebar.nav.start" hooks={hooks} />
           {NavSlot
-            ? <NavSlot navigation={panel.navigation ?? []} basePath={basePath} {...navProps} />
+            ? <NavSlot navigation={panel.navigation ?? []} basePath={basePath} {...slotProps} />
             : groups.map((g, idx) => (
                 <SidebarGroup key={g.group ?? `__top__${idx}`}>
                   {g.group !== undefined && <SidebarGroupLabel>{g.group}</SidebarGroupLabel>}
@@ -215,29 +217,33 @@ export function SidebarLayout({ panel, basePath, currentPath, children, componen
       </Sidebar>
 
       <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2">
-          <div className="flex flex-1 items-center gap-2 px-3">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="me-2 data-[orientation=vertical]:h-4" />
-            <RenderHookSlot name="panels::topbar.start" hooks={hooks} />
-            <SearchTrigger />
-          </div>
-          <div className="flex items-center gap-1 px-3">
-            <ThemeToggle />
-            {bellInTopbar && <NotificationBell meta={dn} />}
-            <RightSidebarTrigger />
-            <UserMenu
-              userMenu={panel.userMenu}
-              before={<RenderHookSlot name="panels::user-menu.before" hooks={hooks} />}
-              after={<RenderHookSlot name="panels::user-menu.after"  hooks={hooks} />}
-            />
-            <RenderHookSlot name="panels::topbar.end" hooks={hooks} />
-          </div>
-        </header>
+        {HeaderSlot
+          ? <HeaderSlot navigation={panel.navigation ?? []} basePath={basePath} {...slotProps} />
+          : <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2">
+              <div className="flex flex-1 items-center gap-2 px-3">
+                <SidebarTrigger />
+                <Separator orientation="vertical" className="me-2 data-[orientation=vertical]:h-4" />
+                <RenderHookSlot name="panels::topbar.start" hooks={hooks} />
+                <SearchTrigger />
+              </div>
+              <div className="flex items-center gap-1 px-3">
+                <ThemeToggle />
+                {bellInTopbar && <NotificationBell meta={dn} />}
+                <RightSidebarTrigger />
+                <UserMenu
+                  userMenu={panel.userMenu}
+                  before={<RenderHookSlot name="panels::user-menu.before" hooks={hooks} />}
+                  after={<RenderHookSlot name="panels::user-menu.after"  hooks={hooks} />}
+                />
+                <RenderHookSlot name="panels::topbar.end" hooks={hooks} />
+              </div>
+            </header>
+        }
         <div className="flex flex-1 flex-col px-4 pb-4">
           {children}
           <RenderHookSlot name="panels::footer" hooks={hooks} />
         </div>
+        {FooterSlot && <FooterSlot basePath={basePath} {...slotProps} />}
       </SidebarInset>
     </SidebarProvider>
   )

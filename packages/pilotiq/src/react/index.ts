@@ -81,6 +81,7 @@ export {
   type RightSidebarProps,
 } from './RightSidebar.js'
 export { RightSidebarTrigger } from './RightSidebarTrigger.js'
+export { SearchTrigger }       from './SearchTrigger.js'
 export {
   useResizableWidth,
   clampPanelWidth,
@@ -99,6 +100,8 @@ export { HeadHooks }      from './HeadHooks.js'
 export {
   isNavItemActive,
   type NavComponentProps,
+  type HeaderComponentProps,
+  type FooterComponentProps,
   type ComponentSlotRegistry,
 } from './component-slots.js'
 export type { NavItem } from '../pageData.js'

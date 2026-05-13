@@ -5,40 +5,92 @@ custom React component instead of patching around it. Use a slot when
 [render hooks](./render-hooks.md) can't reach far enough — render hooks
 *splice* into named positions, while slots *replace* a whole region.
 
-v1 ships the **`nav`** slot. Other slots (`header`, `footer`) will land
-when a real consumer asks; the API shape is stable so additions don't
-break this surface.
+Three slots ship today:
+
+| Slot | Replaces |
+|---|---|
+| `nav` | The default nav tree (`<SidebarMenu>` body in `SidebarLayout`, the `<nav>` cluster in `TopbarLayout`). Surrounding chrome (branding header, render-hook splices, footer, sign-out menu) stays. |
+| `header` | The entire `<header>` chrome bar. In `SidebarLayout` that's the top bar with search / theme / bell / user menu; in `TopbarLayout` it's the *whole* top region including the brand cluster AND the nav (the `nav` slot becomes irrelevant when you set `header` on TopbarLayout). |
+| `footer` | Mounts a `<footer>` element below the main content area in both layouts. Separate from the `panels::footer` render hook, which keeps firing inside the content area for per-page trailing chrome. |
+
+The API shape is open-ended so additional slots can land without
+breaking this surface when a concrete consumer asks for them.
 
 ## Quick start
 
 ```ts
 import { Pilotiq } from '@pilotiq/pilotiq'
-// `.tsx` extension is intentional — see "Authoring `.tsx` inside the
+// `.tsx` extensions are intentional — see "Authoring `.tsx` inside the
 // panel module" below for why.
 import { MyCustomSidebar } from './MyCustomSidebar.tsx'
+import { MyTopBar }        from './MyTopBar.tsx'
+import { MyFooter }        from './MyFooter.tsx'
 
-Pilotiq.make('admin').components({ nav: MyCustomSidebar })
+Pilotiq.make('admin').components({
+  nav:    MyCustomSidebar,
+  header: MyTopBar,
+  footer: MyFooter,
+})
 ```
 
-The supplied component replaces:
+### `nav`
 
-- **`SidebarLayout`** — the entire `<SidebarMenu>` tree (the body of
-  `<SidebarContent>`). The branding header, footer chrome, and sign-out
-  menu stay.
-- **`TopbarLayout`** — the `<nav>` cluster between the brand and the
-  right-side controls (search, theme toggle, bell, user menu). When
-  you replace the topbar nav, your component also owns the Dashboard
-  link and theme-editor link the default cluster renders.
+Replaces the default nav tree. Surrounding chrome (branding header,
+sign-out menu, render hooks above and below the nav) stays. Use this
+when you want a bespoke navigation tree but the rest of the panel
+chrome is fine as-is.
 
-`render-hooks` (e.g. `panels::sidebar.nav.start` / `panels::sidebar.nav.end`)
-still fire whether the nav is the framework default OR a custom slot
-component — so plugins that just want to inject a header banner above
-the nav don't fight with consumers that swap the whole nav.
+### `header`
 
-## Component contract
+Replaces the entire `<header>` chrome bar. The consumer reimplements
+whatever controls they want from inside it. Pilotiq's existing chrome
+components are exported so you can drop them back in à la carte:
+
+```tsx
+import {
+  SearchTrigger,
+  ThemeToggle,
+  NotificationBell,
+  RightSidebarTrigger,
+  UserMenu,
+} from '@pilotiq/pilotiq/react'
+```
+
+> **Render hooks inside the default header do NOT fire when the header
+> is replaced.** `panels::topbar.start`, `panels::topbar.end`,
+> `panels::user-menu.before`, and `panels::user-menu.after` splice into
+> the default header — once the header is gone, there's nowhere for
+> them to splice into. If a plugin author relies on those splices, they
+> can call `RenderHookSlot` themselves from inside the custom header:
+>
+> ```tsx
+> import { RenderHookSlot } from '@pilotiq/pilotiq/react'
+> // …
+> <RenderHookSlot name="panels::topbar.start" hooks={panel.renderHooks} />
+> ```
+
+Hooks rooted outside the header (`panels::sidebar.start` / `.footer`,
+`panels::sidebar.nav.start` / `.end`, `panels::footer`) keep firing
+regardless.
+
+### `footer`
+
+Mounts a `<footer>` element below the main content area in both
+layouts. Use this for site-chrome that frames every page — a status
+bar, a copyright row, a build-version stamp. For per-page trailing
+chrome (a "next steps" callout under one resource's list page),
+prefer the `panels::footer` render hook — it fires *inside* the
+scroll region.
+
+## Component contracts
 
 ```ts
-import type { NavComponentProps, NavItem } from '@pilotiq/pilotiq/react'
+import type {
+  NavComponentProps,
+  HeaderComponentProps,
+  FooterComponentProps,
+  NavItem,
+} from '@pilotiq/pilotiq/react'
 
 export function MyCustomSidebar({ navigation, basePath, currentPath }: NavComponentProps) {
   // navigation: NavItem[] — pre-grouped, pre-sorted by panelInfo()
@@ -46,11 +98,23 @@ export function MyCustomSidebar({ navigation, basePath, currentPath }: NavCompon
   // currentPath?: string  — current request pathname (undefined in unit-test contexts)
   return (/* … */)
 }
+
+export function MyTopBar({ navigation, basePath, currentPath }: HeaderComponentProps) {
+  // Same shape as NavComponentProps so a topbar header that wants to
+  // render the nav inline can do so without juggling two slots.
+  return (/* … */)
+}
+
+export function MyFooter({ basePath, currentPath }: FooterComponentProps) {
+  // Minimal shape — footers rarely need the nav tree. Compose with
+  // page-aware UI by reading currentPath.
+  return (/* … */)
+}
 ```
 
-`NavComponentProps`, `NavItem`, and `ComponentSlotRegistry` are
-re-exported from `@pilotiq/pilotiq/react` alongside `isNavItemActive`
-(see below).
+`NavComponentProps`, `HeaderComponentProps`, `FooterComponentProps`,
+`NavItem`, and `ComponentSlotRegistry` are re-exported from
+`@pilotiq/pilotiq/react` alongside `isNavItemActive` (see below).
 
 ### Active-link state
 
@@ -96,14 +160,13 @@ per slot; unset keys preserve the prior value:
 
 ```ts
 Pilotiq.make('admin')
-  .components({ nav: A })
+  .components({ nav: A, header: H })
   .components({})          // empty object keeps existing
-  .components({ nav: B })  // overrides — final nav is B
+  .components({ nav: B })  // overrides nav; header stays as H
 ```
 
-This makes it safe for a plugin's `register(panel)` to set the `nav`
-slot without clobbering whatever the host app set previously on a
-different (future) slot.
+This makes it safe for a plugin's `register(panel)` to set one slot
+without clobbering whatever the host app set previously on the others.
 
 ## Render hooks vs. slots
 
@@ -112,16 +175,24 @@ different (future) slot.
 | Inject UI above / below / inside the nav region | Render hooks (`panels::sidebar.nav.start`, etc.) |
 | Wrap the entire layout tree in a React provider | `Pilotiq.layoutProvider(C)` |
 | Replace the whole nav body with your own component | `Pilotiq.components({ nav })` |
-| Add chrome inside the topbar / sidebar but keep the default nav | Render hooks (`panels::topbar.start` / `panels::sidebar.footer` / …) |
+| Replace the whole `<header>` chrome bar | `Pilotiq.components({ header })` |
+| Add a panel-wide footer below the content area | `Pilotiq.components({ footer })` |
+| Append per-page trailing chrome inside content | `panels::footer` render hook |
+| Add chrome inside the topbar / sidebar but keep the default chrome | Render hooks (`panels::topbar.start` / `panels::sidebar.footer` / …) |
 
-A custom nav slot composes with render hooks — the surrounding
+A custom `nav` slot composes with render hooks — the surrounding
 `panels::sidebar.start` / `panels::sidebar.footer` / `panels::topbar.start`
-hooks all keep firing.
+hooks all keep firing. The `header` slot is the exception: render
+hooks that splice *inside* the default header no longer fire (the
+container is gone). Call `<RenderHookSlot name="…" hooks={panel.renderHooks} />`
+yourself from inside a custom header if you want to preserve that
+contract for plugin authors.
 
 ## Reference
 
 - `Pilotiq.components(slots)` — `src/Pilotiq.ts`
-- `NavComponentProps`, `isNavItemActive` — `@pilotiq/pilotiq/react`
+- `NavComponentProps`, `HeaderComponentProps`, `FooterComponentProps`,
+  `isNavItemActive` — `@pilotiq/pilotiq/react`
 - `componentSlotRegistry` build-time manifest — emitted by the Vite
   plugin alongside `componentRegistry` and `rightPanelRegistry`
 - See also: [Render hooks](./render-hooks.md), [Right sidebar](./right-sidebar.md)

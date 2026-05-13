@@ -21,7 +21,11 @@ import {
   findDuplicateRightPanelId,
   type RightPanelContribution,
 } from './RightPanel.js'
-import type { NavComponentProps } from './react/component-slots.js'
+import type {
+  NavComponentProps,
+  HeaderComponentProps,
+  FooterComponentProps,
+} from './react/component-slots.js'
 
 export type PilotiqLayout = 'sidebar' | 'topbar'
 
@@ -286,16 +290,37 @@ export type LayoutProviderComponent = React.ComponentType<{
 /**
  * Chrome-slot overrides registered through `Pilotiq.components({ … })`.
  *
- * v1 only ships `nav`. When set, the default `<SidebarMenu>` tree in
- * `SidebarLayout` (and the topbar nav cluster in `TopbarLayout`) is
- * replaced by the supplied component; the surrounding chrome — branding
- * header, sign-out menu, footer, render-hook slots — is preserved so
- * splice-style customization (`renderHook(...)`) keeps working
- * alongside a replaced nav.
+ * Three slots ship today:
+ *
+ * - `nav` — replaces the default nav tree (`<SidebarMenu>` body in
+ *   `SidebarLayout`, the `<nav>` cluster in `TopbarLayout`). Surrounding
+ *   chrome (branding header, render-hook splices, footer, sign-out
+ *   menu) stays.
+ * - `header` — replaces the whole `<header>` chrome bar. In
+ *   `SidebarLayout` that's the top bar with search / theme / bell /
+ *   user menu; in `TopbarLayout` that's the whole top region including
+ *   the brand cluster AND the nav (setting `header` makes `nav`
+ *   irrelevant in `TopbarLayout`). Render hooks that splice INSIDE the
+ *   default header (`panels::topbar.*`, `panels::user-menu.*`) don't
+ *   fire when the header is replaced — the surrounding container is
+ *   gone. The consumer reimplements the chrome controls they want
+ *   (import `<SearchTrigger>`, `<ThemeToggle>`, `<NotificationBell>`,
+ *   `<RightSidebarTrigger>`, `<UserMenu>` from `@pilotiq/pilotiq/react`).
+ * - `footer` — mounts a `<footer>` element BELOW the main content area
+ *   in both layouts (outside the scroll region). Separate from the
+ *   `panels::footer` render hook, which keeps firing inside the content
+ *   area for per-page trailing chrome.
+ *
+ * The shape is open-ended so additional slots can land without a
+ * breaking change when a concrete consumer asks for them.
  */
 export interface ComponentSlots {
   /** Component rendered in place of the default nav tree. */
-  nav?: React.ComponentType<NavComponentProps>
+  nav?:    React.ComponentType<NavComponentProps>
+  /** Component rendered in place of the default `<header>` chrome. */
+  header?: React.ComponentType<HeaderComponentProps>
+  /** Component rendered as the panel footer, below the main content. */
+  footer?: React.ComponentType<FooterComponentProps>
 }
 
 export class Pilotiq {
@@ -809,12 +834,14 @@ export class Pilotiq {
    * Override one of pilotiq's built-in chrome slots with a custom React
    * component. Calling twice merges — the latest registration wins per
    * slot; unset keys preserve the prior value (so a plugin can override
-   * `nav` without clearing a host app's `header` once that slot lands).
+   * `nav` without clearing a host app's `footer`).
    *
-   * v1 ships only the `nav` slot — full replacement of the default nav
-   * tree (`<SidebarMenu>` in `SidebarLayout`, the `<nav>` cluster in
-   * `TopbarLayout`). Other slots will land as concrete consumers ask;
-   * the API shape is stable.
+   * Three slots ship today: `nav` (replaces the default nav tree),
+   * `header` (replaces the whole `<header>` chrome bar in both
+   * layouts — in `TopbarLayout` this subsumes the nav), and `footer`
+   * (mounts a `<footer>` below the main content area in both layouts).
+   * See {@link ComponentSlots} for the per-slot semantics and which
+   * render hooks compose vs. stop firing under each replacement.
    *
    * Component refs are harvested by the Vite plugin into
    * `pages/(pilotiq)/_components.ts` — they never travel over the wire,

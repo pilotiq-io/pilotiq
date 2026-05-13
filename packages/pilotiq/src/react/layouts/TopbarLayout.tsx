@@ -174,79 +174,85 @@ export function TopbarLayout({ panel, basePath, currentPath, children, component
   // no sidebar exists in this layout, so the bell rides in the topbar
   // chrome regardless of the configured position.
   const dn = panel.databaseNotifications
-  const NavSlot = componentSlotRegistry?.nav
-  const navProps = currentPath !== undefined ? { currentPath } : {}
+  const NavSlot    = componentSlotRegistry?.nav
+  const HeaderSlot = componentSlotRegistry?.header
+  const FooterSlot = componentSlotRegistry?.footer
+  const slotProps = currentPath !== undefined ? { currentPath } : {}
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
-      <header className="h-14 shrink-0 border-b bg-card flex items-center gap-4 px-6">
-        <div className="flex items-center gap-2 me-2">
-          {panel.branding?.logo
-            ? <>
-                <img src={panel.branding.logo} alt={title} className="h-6 w-6" />
-                <span className="text-sm font-semibold">{title}</span>
-              </>
-            : <span className="text-sm font-semibold">{title}</span>
-          }
-        </div>
-        <Separator orientation="vertical" className="h-4" />
-        <RenderHookSlot name="panels::topbar.start" hooks={hooks} />
-        {NavSlot
-          ? <div className="flex items-center gap-1 flex-1 overflow-x-auto">
-              <NavSlot navigation={panel.navigation ?? []} basePath={basePath} {...navProps} />
+      {HeaderSlot
+        ? <HeaderSlot navigation={panel.navigation ?? []} basePath={basePath} {...slotProps} />
+        : <header className="h-14 shrink-0 border-b bg-card flex items-center gap-4 px-6">
+            <div className="flex items-center gap-2 me-2">
+              {panel.branding?.logo
+                ? <>
+                    <img src={panel.branding.logo} alt={title} className="h-6 w-6" />
+                    <span className="text-sm font-semibold">{title}</span>
+                  </>
+                : <span className="text-sm font-semibold">{title}</span>
+              }
             </div>
-          : <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
-              <a
-                href={basePath}
-                className={cn(linkBase, currentPath === basePath ? linkActive : linkIdle)}
-              >
-                Dashboard
-              </a>
-              {groups.map((g, idx) => {
-                if (g.group === undefined) {
-                  return g.items.map(it => (
-                    it.children && it.children.length > 0
-                      ? <ParentDropdown key={it.name} item={it} pathname={currentPath} basePath={basePath} />
-                      : <FlatLink     key={it.name} item={it} pathname={currentPath} basePath={basePath} />
-                  ))
-                }
-                return (
-                  <GroupDropdown
-                    key={`${g.group}__${idx}`}
-                    label={g.group}
-                    items={g.items}
-                    pathname={currentPath}
-                    basePath={basePath}
-                  />
-                )
-              })}
-              {panel.themeEditor && (
-                <a
-                  href={`${basePath}/theme`}
-                  className={cn(linkBase, currentPath === `${basePath}/theme` ? linkActive : linkIdle)}
-                >
-                  Theme
-                </a>
-              )}
-            </nav>
-        }
-        <SearchTrigger />
-        <ThemeToggle />
-        {dn && <NotificationBell meta={dn} />}
-        <RightSidebarTrigger />
-        <UserMenu
-          userMenu={panel.userMenu}
-          before={<RenderHookSlot name="panels::user-menu.before" hooks={hooks} />}
-          after={<RenderHookSlot name="panels::user-menu.after"  hooks={hooks} />}
-        />
-        <RenderHookSlot name="panels::topbar.end" hooks={hooks} />
-      </header>
+            <Separator orientation="vertical" className="h-4" />
+            <RenderHookSlot name="panels::topbar.start" hooks={hooks} />
+            {NavSlot
+              ? <div className="flex items-center gap-1 flex-1 overflow-x-auto">
+                  <NavSlot navigation={panel.navigation ?? []} basePath={basePath} {...slotProps} />
+                </div>
+              : <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
+                  <a
+                    href={basePath}
+                    className={cn(linkBase, currentPath === basePath ? linkActive : linkIdle)}
+                  >
+                    Dashboard
+                  </a>
+                  {groups.map((g, idx) => {
+                    if (g.group === undefined) {
+                      return g.items.map(it => (
+                        it.children && it.children.length > 0
+                          ? <ParentDropdown key={it.name} item={it} pathname={currentPath} basePath={basePath} />
+                          : <FlatLink     key={it.name} item={it} pathname={currentPath} basePath={basePath} />
+                      ))
+                    }
+                    return (
+                      <GroupDropdown
+                        key={`${g.group}__${idx}`}
+                        label={g.group}
+                        items={g.items}
+                        pathname={currentPath}
+                        basePath={basePath}
+                      />
+                    )
+                  })}
+                  {panel.themeEditor && (
+                    <a
+                      href={`${basePath}/theme`}
+                      className={cn(linkBase, currentPath === `${basePath}/theme` ? linkActive : linkIdle)}
+                    >
+                      Theme
+                    </a>
+                  )}
+                </nav>
+            }
+            <SearchTrigger />
+            <ThemeToggle />
+            {dn && <NotificationBell meta={dn} />}
+            <RightSidebarTrigger />
+            <UserMenu
+              userMenu={panel.userMenu}
+              before={<RenderHookSlot name="panels::user-menu.before" hooks={hooks} />}
+              after={<RenderHookSlot name="panels::user-menu.after"  hooks={hooks} />}
+            />
+            <RenderHookSlot name="panels::topbar.end" hooks={hooks} />
+          </header>
+      }
       <div className="flex flex-1 overflow-hidden">
         <main className="flex-1 overflow-y-auto p-6">
           {children}
           <RenderHookSlot name="panels::footer" hooks={hooks} />
         </main>
       </div>
+      {FooterSlot && <FooterSlot basePath={basePath} {...slotProps} />}
     </div>
   )
 }

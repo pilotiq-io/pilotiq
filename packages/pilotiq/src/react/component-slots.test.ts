@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { Pilotiq } from '../Pilotiq.js'
 import { isNavItemActive } from './component-slots.js'
 
-describe('Pilotiq.components({ nav })', () => {
+describe('Pilotiq.components({ nav, header, footer })', () => {
   it('starts empty', () => {
     const panel = Pilotiq.make('Admin')
     assert.deepEqual(panel.getComponentSlots(), {})
@@ -16,6 +16,18 @@ describe('Pilotiq.components({ nav })', () => {
     assert.equal(slots.nav, Nav)
   })
 
+  it('stores a registered header slot', () => {
+    const Header = () => null
+    const panel = Pilotiq.make('Admin').components({ header: Header })
+    assert.equal(panel.getComponentSlots().header, Header)
+  })
+
+  it('stores a registered footer slot', () => {
+    const Footer = () => null
+    const panel = Pilotiq.make('Admin').components({ footer: Footer })
+    assert.equal(panel.getComponentSlots().footer, Footer)
+  })
+
   it('merges across multiple calls — later wins per slot, unset keys preserved', () => {
     const A = () => null
     const B = () => null
@@ -24,6 +36,32 @@ describe('Pilotiq.components({ nav })', () => {
       .components({})            // empty object keeps existing
       .components({ nav: B })    // overrides
     assert.equal(panel.getComponentSlots().nav, B)
+  })
+
+  it('preserves unset slots when overriding only one slot', () => {
+    const Nav    = () => null
+    const Header = () => null
+    const Footer = () => null
+    const Nav2   = () => null
+    const panel = Pilotiq.make('Admin')
+      .components({ nav: Nav, header: Header, footer: Footer })
+      .components({ nav: Nav2 })     // only nav changes
+    const slots = panel.getComponentSlots()
+    assert.equal(slots.nav,    Nav2)
+    assert.equal(slots.header, Header)
+    assert.equal(slots.footer, Footer)
+  })
+
+  it('allows registering all three slots together', () => {
+    const Nav    = () => null
+    const Header = () => null
+    const Footer = () => null
+    const panel = Pilotiq.make('Admin')
+      .components({ nav: Nav, header: Header, footer: Footer })
+    const slots = panel.getComponentSlots()
+    assert.equal(slots.nav,    Nav)
+    assert.equal(slots.header, Header)
+    assert.equal(slots.footer, Footer)
   })
 
   it('survives plugin registration without interference', () => {

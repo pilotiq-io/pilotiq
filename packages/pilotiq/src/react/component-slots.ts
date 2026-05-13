@@ -30,17 +30,70 @@ export interface NavComponentProps {
 }
 
 /**
- * Registry of build-time component overrides registered through
- * `Pilotiq.components({ nav, … })`. The Vite plugin harvests the
- * actual React refs into `pages/(pilotiq)/_components.ts` and forwards
- * them to `<AppShell>`; component refs never travel over the wire.
+ * Props passed to a component registered at `Pilotiq.components({ header })`.
  *
- * v1 ships only `nav`. The shape is open-ended so additional slots
- * (`header`, `footer`, …) can land without a breaking change when a
- * concrete consumer asks for them.
+ * The component owns the entire `<header>` chrome bar — in `SidebarLayout`
+ * that's the top bar above the main content (sidebar trigger, search,
+ * theme toggle, bell, user menu); in `TopbarLayout` that's the *whole*
+ * topbar including the brand cluster and the nav region. Setting `header`
+ * on `TopbarLayout` makes the `nav` slot irrelevant for that layout —
+ * the consumer's header owns everything between page edges.
+ *
+ * Render hooks that splice INSIDE the default header
+ * (`panels::topbar.start`, `panels::topbar.end`, `panels::user-menu.before`,
+ * `panels::user-menu.after`) don't fire when the header is replaced —
+ * the surrounding container is gone, so there's nowhere to splice into.
+ * Hooks rooted outside the header (`panels::sidebar.start` / `.footer`,
+ * `panels::sidebar.nav.start` / `.end`, `panels::footer`) keep firing.
+ *
+ * Shape mirrors `NavComponentProps` so a header that wants to render
+ * the nav inline (the TopbarLayout case) can do so without juggling a
+ * second slot.
+ */
+export interface HeaderComponentProps {
+  /**
+   * Pre-grouped navigation items — same tree the `nav` slot receives.
+   * Header consumers that want to mount the topbar nav inline read
+   * this; sidebar-layout consumers can ignore it.
+   */
+  navigation: NavItem[]
+  /** Panel base path (e.g. `/admin`). */
+  basePath:   string
+  /** Current request pathname — undefined when not in a request scope. */
+  currentPath?: string
+}
+
+/**
+ * Props passed to a component registered at `Pilotiq.components({ footer })`.
+ *
+ * The component mounts as a `<footer>` element BELOW the main content
+ * area — outside the scrolling region in both layouts. It is a separate
+ * surface from the `panels::footer` render hook, which continues to
+ * fire INSIDE the main content area (use the hook to append per-page
+ * trailing chrome; use this slot for site-chrome that frames every
+ * page like a status bar or copyright row).
+ */
+export interface FooterComponentProps {
+  /** Panel base path (e.g. `/admin`). */
+  basePath:   string
+  /** Current request pathname — undefined when not in a request scope. */
+  currentPath?: string
+}
+
+/**
+ * Registry of build-time component overrides registered through
+ * `Pilotiq.components({ nav, header, footer, … })`. The Vite plugin
+ * harvests the actual React refs into `pages/(pilotiq)/_components.ts`
+ * and forwards them to `<AppShell>`; component refs never travel over
+ * the wire.
+ *
+ * The shape is open-ended so additional slots can land without a
+ * breaking change when a concrete consumer asks for them.
  */
 export interface ComponentSlotRegistry {
-  nav?: React.ComponentType<NavComponentProps>
+  nav?:    React.ComponentType<NavComponentProps>
+  header?: React.ComponentType<HeaderComponentProps>
+  footer?: React.ComponentType<FooterComponentProps>
 }
 
 /**
