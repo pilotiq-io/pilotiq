@@ -17,6 +17,8 @@ import {
 } from './formStateHelpers.js'
 import { runJsHandler } from './fieldJsHandler.js'
 import { useToast } from './Toaster.js'
+import { useCollabRoom } from './CollabRoomContext.js'
+import { getFormCollabBinding, type FormCollabBinding } from './FormCollabBindingRegistry.js'
 
 export type FieldStatus = 'idle' | 'pending'
 
@@ -57,6 +59,19 @@ export function useFormState(): FormStateApi | null {
  * `useContext(FormIdContext)` and fall back to a sentinel when missing.
  */
 export const FormIdContext = createContext<string>('')
+
+/**
+ * Phase F2 — returns `true` iff the named field has explicitly opted out
+ * of realtime collab via `Field.collab(false)`. Sparse meta — absent =
+ * inherit the panel default (collab on). Walks the form meta tree the
+ * same way `findFieldMeta` does; cheap because it only runs on the
+ * per-write path (already a hot path, but every check is one map
+ * lookup + one boolean compare).
+ */
+function fieldOptsOutOfCollab(formMeta: ElementMeta, name: string): boolean {
+  const meta = findFieldMeta(formMeta, name) as { collab?: boolean } | undefined
+  return meta?.collab === false
+}
 
 export interface UseFieldStateResult {
   /** True when the field is inside a controlled form (live fields enabled).
@@ -184,6 +199,62 @@ export function FormStateProvider({
   useEffect(() => { formMetaRef.current = formMeta }, [formMeta])
 
   const stateUrl = (formMeta as { stateUrl?: string })['stateUrl']
+  const formId   = (formMeta as { formId?: string })['formId'] ?? ''
+
+  // Phase F2 — collab binding. When `<RecordCollabRoom>` is mounted up-tree
+  // AND `@pilotiq-pro/collab` registered a `FormCollabBinding` factory, we
+  // construct a binding for this form, lift any already-synced state on
+  // top of the SSR-rendered defaults, and proxy every local write through
+  // it. Remote writes flow back via `subscribe`. Outside a room (or with
+  // no factory registered), `bindingRef` stays null and the plain
+  // local-state path runs unchanged.
+  const collabRoom     = useCollabRoom()
+  const bindingFactory = getFormCollabBinding()
+  const bindingRef     = useRef<FormCollabBinding | null>(null)
+
+  useEffect(() => {
+    if (!collabRoom || !bindingFactory || !formId) return
+
+    const binding = bindingFactory({ room: collabRoom, formId, initial: valuesRef.current })
+    bindingRef.current = binding
+
+    // Lift any state already in the room (subsequent joiners — first
+    // mover sees an empty snapshot here and the local SSR defaults
+    // stay authoritative). Shallow merge so fields the binding doesn't
+    // know about (defaults the seed skipped, dotted-path Repeater rows
+    // we don't sync in F2) survive.
+    const synced = binding.get()
+    if (Object.keys(synced).length > 0) {
+      setValuesState((prev) => ({ ...prev, ...synced }))
+    }
+
+    // Subscribe to remote changes. Local writes ALSO trigger this
+    // (Yjs observers fire on local transactions too) — the per-key
+    // Object.is short-circuit below collapses them into no-op renders.
+    const unsubscribe = binding.subscribe((snapshot) => {
+      setValuesState((prev) => {
+        let changed = false
+        const next: Record<string, unknown> = { ...prev }
+        for (const [k, v] of Object.entries(snapshot)) {
+          if (!Object.is(prev[k], v)) {
+            next[k] = v
+            changed = true
+          }
+        }
+        return changed ? next : prev
+      })
+    })
+
+    return () => {
+      unsubscribe()
+      binding.destroy()
+      bindingRef.current = null
+    }
+    // `valuesRef.current` is intentionally read once at mount — initial
+    // values seed the binding; subsequent edits flow through `setValue`
+    // and remote changes flow through `subscribe`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collabRoom, bindingFactory, formId])
 
   /**
    * Tier-2 follow-up to Plan #5 — fire `Field.afterStateUpdatedJs(body)`
@@ -238,6 +309,14 @@ export function FormStateProvider({
       if (Object.is(prev[name], value)) return prev
       return { ...prev, [name]: value }
     })
+    // Phase F2 — proxy the write through the collab binding when active
+    // AND the field hasn't opted out via `.collab(false)`. Dotted-path
+    // names (Repeater / Builder row leaves) stay local-only in v1; their
+    // syncing belongs to Phase F.5 (`Y.Array<Y.Map>` row identity).
+    const binding = bindingRef.current
+    if (binding && !name.includes('.') && !fieldOptsOutOfCollab(formMetaRef.current, name)) {
+      binding.set(name, value)
+    }
     // Fire the client-side JS hook synchronously after the state write.
     // Dotted-name fields don't go through here (their setter is a no-op
     // in `useFieldState`); they fire JS via `triggerLive` instead so we
@@ -311,6 +390,18 @@ export function FormStateProvider({
         const serverValues = (data.form as { values?: Record<string, unknown> }).values
         if (serverValues) {
           setValuesState((prev) => ({ ...prev, ...serverValues }))
+          // Phase F2 (Q2) — derived fields propagate to peers via the
+          // collab binding so every client sees the auto-`slug` / etc.
+          // without each peer roundtripping the server. Skip dotted-path
+          // names + fields that opted out.
+          const binding = bindingRef.current
+          if (binding) {
+            for (const [k, v] of Object.entries(serverValues)) {
+              if (k.includes('.')) continue
+              if (fieldOptsOutOfCollab(data.form, k)) continue
+              binding.set(k, v)
+            }
+          }
         }
         setErrors({})
       }

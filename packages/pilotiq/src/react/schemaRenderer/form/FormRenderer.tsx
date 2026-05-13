@@ -2,6 +2,8 @@ import React, { useRef, useState } from 'react'
 import type { ElementMeta } from '../../../schema/Element.js'
 import type { NotificationMeta } from '../../../notifications/Notification.js'
 import { FormIdContext, FormStateProvider, useFormState } from '../../FormStateContext.js'
+import { useCollabRoom } from '../../CollabRoomContext.js'
+import { getFormCollabBinding } from '../../FormCollabBindingRegistry.js'
 import { useNavigate } from '../../navigate.js'
 import { useToast } from '../../Toaster.js'
 import { renderField } from './renderField.js'
@@ -35,6 +37,16 @@ export function FormRenderer({
   const stateUrl = el['stateUrl'] ? String(el['stateUrl']) : undefined
   const serverValues = (el['values'] as Record<string, unknown> | undefined) ?? {}
   const serverErrors = (el['errors'] as Record<string, string[]> | undefined) ?? {}
+
+  // Phase F2 — the controlled-form path also activates when we're
+  // inside a `<RecordCollabRoom>` AND a plugin (e.g.
+  // `@pilotiq-pro/collab`) registered a `FormCollabBinding` factory.
+  // Without this, forms with no `live()` fields stayed uncontrolled
+  // and the collab binding never wired up.
+  const collabRoom    = useCollabRoom()
+  const collabFactory = getFormCollabBinding()
+  const collabActive  = !!(collabRoom && collabFactory && formId)
+  const useControlled = !!stateUrl || collabActive
 
   // Methods other than GET/POST are spoofed via _method, mirroring Laravel.
   const httpMethod = method === 'get' ? 'get' : 'post'
@@ -148,7 +160,7 @@ export function FormRenderer({
         </div>
       )}
       <FormIdContext.Provider value={formId}>
-        {stateUrl ? (
+        {useControlled ? (
           <FormStateProvider initialMeta={el} initialErrors={errors} formRef={formRef}>
             <FormBody
               fallbackChildren={el.children ?? []}
