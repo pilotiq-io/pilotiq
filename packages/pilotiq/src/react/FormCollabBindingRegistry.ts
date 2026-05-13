@@ -1,3 +1,4 @@
+import type { ElementMeta } from '../schema/Element.js'
 import type { CollabRoom } from './CollabRoomContext.js'
 
 /**
@@ -101,6 +102,17 @@ export interface FormCollabBindingFactoryArgs {
    * map already populated and skip.
    */
   initial: Record<string, unknown>
+  /**
+   * Phase F.6 — initial form meta from the server. The binding walks
+   * this once at construction to decide which fields are text-shaped
+   * (`fieldType ∈ { text, textarea, email, slug, markdown }`) and
+   * which have opted out via `.collab(false)`. Text fields get a
+   * dedicated `Y.Text` and route through `getTextBinding`; non-text
+   * fields stay on the `Y.Map`. The meta is captured at mount; later
+   * structural changes from `live()` re-resolves aren't re-walked
+   * (rare in practice — dynamic field add/remove is an F-followup).
+   */
+  formMeta: ElementMeta
 }
 
 export type FormCollabBindingFactory = (args: FormCollabBindingFactoryArgs) => FormCollabBinding

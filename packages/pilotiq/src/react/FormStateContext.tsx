@@ -248,7 +248,12 @@ export function FormStateProvider({
   useEffect(() => {
     if (!collabRoom || !bindingFactory || !formId) return
 
-    const binding = bindingFactory({ room: collabRoom, formId, initial: valuesRef.current })
+    const binding = bindingFactory({
+      room:     collabRoom,
+      formId,
+      initial:  valuesRef.current,
+      formMeta: formMetaRef.current,
+    })
     bindingRef.current = binding
 
     // Lift any state already in the room (subsequent joiners — first
