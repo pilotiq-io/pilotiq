@@ -1,5 +1,147 @@
 # @pilotiq/pilotiq
 
+## 0.8.0
+
+### Minor Changes
+
+- 92b99a1: feat(pilotiq): collab open-core wiring + `Field.collab()` opt-out
+
+  Three new module-singleton registries + a URL gate + a `.collab()` setter
+  on the `Field` base — the open-core scaffolding pro collab plugins (e.g.
+  `@pilotiq-pro/collab`) plug into. Pilotiq core stays Yjs-free; the
+  registries hand opaque values back and forth.
+
+  ### Registries (all exported from `@pilotiq/pilotiq/react`)
+
+  - **`CollabRoomContext`** — React context exposing the active record's
+    `{ ydoc, provider, user? }` triplet. `useCollabRoom()` returns `null`
+    when no `<RecordCollabRoom>` is mounted up-tree.
+  - **`registerCollabExtensions(factory)`** / **`getCollabExtensions()`** —
+    module slot for a `CollabExtensionFactory` that returns Tiptap-style
+    collab extensions for a given `{ ydoc, provider, fieldName, user }`.
+    Pilotiq treats the returned values as opaque `unknown[]`; the consumer
+    (typically `@pilotiq/tiptap`) spreads them into its editor.
+  - **`registerRecordWrapper(C)`** / **`getRecordWrapper()`** — module
+    slot for a record-scoped React wrapper. `AppShell` wraps every
+    record-edit page's children with the registered wrapper, scoped to
+    `{ resourceSlug, recordId }`.
+  - **`registerFormCollabBinding(factory)`** / **`getFormCollabBinding()`** —
+    module slot for a form-level CRDT binding (form-data `Y.Map` proxy);
+    consumed by `FormStateProvider` in Phase F2.
+
+  ### URL gate
+
+  - **`RecordWrapperGate`** — internal component AppShell mounts around
+    `props.children`. Parses the current path against `basePath`; when it
+    matches a `/.../:id/edit` URL AND a wrapper is registered, wraps with
+    `<Wrapper resourceSlug={slug} recordId={id}>{children}</Wrapper>`.
+    Pass-through otherwise.
+  - **`parseRecordEditUrl(currentPath, basePath)`** — pure helper exported
+    alongside. Handles bare resource edit, cluster-prefixed edits, and
+    nested-relation edits (slash-joined slug-path picks up the parent +
+    relation chain so two URLs that target different records always
+    produce different rooms downstream).
+
+  ### `Field.collab(enabled = true)`
+
+  New setter on the base class — every subclass (Text, Toggle, Select,
+  Date, Slider, …, RichText) inherits. `.collab(false)` stamps
+  `meta.collab === false`; the renderer is expected to skip the collab
+  layer entirely (no value sync, no presence chip). Absent = inherit the
+  panel default.
+
+  ### Acceptance
+
+  - Pilotiq builds + 2938 tests pass (12 new for `parseRecordEditUrl`).
+  - Consumers (e.g. `@pilotiq-pro/collab`) wire collab through these
+    registries; pilotiq core carries no Yjs / Tiptap dep.
+
+- fd06c0d: feat(pilotiq): `Pilotiq.components({ nav, header, footer })` chrome slots
+
+  Three new chrome-slot overrides let a panel swap an entire region of
+  the default layout for a custom React component, alongside the
+  existing render-hook splicing surface. Use slots when render hooks
+  can't reach far enough — slots _replace_ a whole region; hooks
+  _splice_ at named positions.
+
+  ```ts
+  import { Pilotiq } from "@pilotiq/pilotiq";
+  import { MyCustomSidebar } from "./MyCustomSidebar.tsx";
+  import { MyTopBar } from "./MyTopBar.tsx";
+  import { MyFooter } from "./MyFooter.tsx";
+
+  Pilotiq.make("admin").components({
+    nav: MyCustomSidebar,
+    header: MyTopBar,
+    footer: MyFooter,
+  });
+  ```
+
+  ### Slots
+
+  - **`nav`** — replaces the default nav tree. In `SidebarLayout`
+    that's the `<SidebarContent>` body (`<SidebarMenu>` tree); in
+    `TopbarLayout` it's the `<nav>` cluster between the brand and
+    the right-side controls. Surrounding chrome (branding header,
+    render-hook splices, footer, sign-out menu) stays.
+  - **`header`** — replaces the whole `<header>` chrome bar. In
+    `SidebarLayout` that's the top bar with search / theme / bell /
+    user menu; in `TopbarLayout` it's the whole top region including
+    the brand cluster AND the nav (setting `header` makes the `nav`
+    slot irrelevant there).
+  - **`footer`** — mounts a `<footer>` element below the main content
+    area in both layouts. Separate from the `panels::footer` render
+    hook, which keeps firing INSIDE the content area for per-page
+    trailing chrome.
+
+  ### Prop contracts
+
+  `nav` and `header` both receive `{ navigation, basePath, currentPath? }`
+  (matching `NavComponentProps` / `HeaderComponentProps`) — same
+  pre-grouped, pre-sorted nav tree the default renderers consume, so a
+  custom topbar can render its own nav inline without juggling two
+  slots. `footer` receives the minimal `{ basePath, currentPath? }`.
+
+  ### Render-hook caveat for `header`
+
+  Hooks rooted _inside_ the default header — `panels::topbar.start`,
+  `panels::topbar.end`, `panels::user-menu.before`,
+  `panels::user-menu.after` — do NOT fire when the header is replaced
+  (the surrounding container is gone). Hooks rooted outside
+  (`panels::sidebar.*`, `panels::footer`, `panels::sidebar.nav.*`) keep
+  firing. Consumers rebuilding the header can mount
+  `<RenderHookSlot name="…" hooks={panel.renderHooks} />` themselves
+  from inside the custom component to preserve the splice contract for
+  plugins.
+
+  ### Chrome components exported for rebuilding headers
+
+  `SearchTrigger`, `ThemeToggle`, `NotificationBell`,
+  `RightSidebarTrigger`, and `UserMenu` are all re-exported from
+  `@pilotiq/pilotiq/react` so a `header` slot consumer can drop the
+  default controls back in à la carte rather than reimplementing every
+  one. `HeaderComponentProps`, `FooterComponentProps`, and
+  `isNavItemActive` are also re-exported alongside the existing
+  `NavComponentProps` and `ComponentSlotRegistry`.
+
+  ### Authoring `.tsx` inside the panel module
+
+  The Vite plugin loads `app/Pilotiq/AdminPanel.ts` through `jiti` at
+  boot to harvest `cfg.components` into the build-time
+  `_components.ts` manifest. To make this play nicely with `.tsx`
+  component files alongside the panel module, the jiti loader now
+  enables JSX support (`jsx: { runtime: 'automatic' }`). Two gotchas to
+  know:
+
+  1. JSX support is enabled by default — no per-file `import React from 'react'`
+     needed when authoring `.tsx` panel-adjacent files.
+  2. jiti's resolver falls through `.js` → `.ts` but NOT `.js` → `.tsx`.
+     The import in the panel module must use the literal `.tsx`
+     extension: `import { MyCustomSidebar } from './MyCustomSidebar.tsx'`.
+     `allowImportingTsExtensions: true` in your tsconfig keeps TS happy.
+
+  See `docs/guide/component-slots.md` for the full guide.
+
 ## 0.7.2
 
 ### Patch Changes
