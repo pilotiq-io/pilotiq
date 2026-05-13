@@ -13,7 +13,12 @@ import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table
 import { Details, DetailsSummary, DetailsContent } from '@tiptap/extension-details'
 import { Grid, GridColumn } from '../extensions/GridExtension.js'
 import { Popover } from '@base-ui/react/popover'
-import type { FieldRendererProps } from '@pilotiq/pilotiq/react'
+import type {
+  FieldRendererProps,
+  CollabRoom,
+  CollabExtensionFactory,
+} from '@pilotiq/pilotiq/react'
+import { useCollabRoom, getCollabExtensions } from '@pilotiq/pilotiq/react'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 import type { BlockMeta } from '../Block.js'
 import type { ToolbarGroups, RichTextStorage, ColorSwatch } from '../RichTextField.js'
@@ -66,7 +71,7 @@ export function TiptapEditor(props: FieldRendererProps) {
     const storage = (props.el['storage'] as RichTextStorage | undefined) ?? 'json'
     const initialValue = serializeForHidden(props.defaultValue, storage)
     return (
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col">
         <input type="hidden" name={props.name} value={initialValue} />
         <div className="prose prose-sm max-w-none min-h-[180px] rounded-md border border-input bg-transparent px-10 py-3 text-sm text-muted-foreground">
           {props.placeholder ?? 'Start writing…'}
@@ -75,11 +80,51 @@ export function TiptapEditor(props: FieldRendererProps) {
     )
   }
 
-  return <ClientEditor {...props} />
+  return <CollabAwareTiptap {...props} />
 }
 
-function ClientEditor(props: FieldRendererProps) {
-  const { el, name, defaultValue, placeholder, disabled } = props
+/**
+ * Bridges pilotiq's open-core `CollabRoomContext` + `CollabExtensionFactory`
+ * registry into the Tiptap renderer. When `@pilotiq-pro/collab` is wired
+ * AND a `<RecordCollabRoom>` is mounted up-tree, the room flips non-null;
+ * keying `ClientEditor` on that toggle remounts the editor cleanly so the
+ * `Collaboration` extension can install (Tiptap can't swap it at runtime).
+ *
+ * No-op shell when collab isn't installed — `room` stays `null`,
+ * `getCollabExtensions()` returns `null`, and `ClientEditor` runs its
+ * plain Tiptap path with the same shape as before.
+ */
+function CollabAwareTiptap(props: FieldRendererProps) {
+  const room    = useCollabRoom()
+  const factory = getCollabExtensions()
+  // Per-field opt-out — `RichTextField.collab(false)` stamps `meta.collab`
+  // explicitly false, overriding the panel-wide auto-on default. Useful for
+  // fields that should stay device-local (private notes, draft scratch
+  // space, etc.) inside an otherwise collab-on form.
+  const fieldCollab  = props.el['collab'] as boolean | undefined
+  const collabActive = !!(room && factory) && fieldCollab !== false
+  return (
+    <ClientEditor
+      key={collabActive ? 'collab' : 'local'}
+      {...props}
+      room={collabActive ? room : null}
+      factory={collabActive ? factory : null}
+      collabActive={collabActive}
+    />
+  )
+}
+
+interface ClientEditorProps extends FieldRendererProps {
+  /** Active record room, or `null` when no `<RecordCollabRoom>` is mounted. */
+  room:         CollabRoom | null
+  /** Registered collab extension factory, or `null` when no plugin registered. */
+  factory:      CollabExtensionFactory | null
+  /** Convenience flag — `true` iff both `room` AND `factory` are non-null. */
+  collabActive: boolean
+}
+
+function ClientEditor(props: ClientEditorProps) {
+  const { el, name, defaultValue, placeholder, disabled, room, factory, collabActive } = props
 
   const blocks            = (el['blocks']           as BlockMeta[]     | undefined) ?? []
   const slashEnabled      = (el['slashCommand']     as boolean         | undefined) ?? true
@@ -165,13 +210,35 @@ function ClientEditor(props: FieldRendererProps) {
   // the extension config to re-evaluate, triggering a full editor reset).
   const editorRef = useRef<Editor | null>(null)
 
+  // Resolve the collab-attached extensions once per editor build.
+  // `Collaboration` is constructed eagerly here (during `useEditor`'s
+  // first call); the keyed remount above guarantees we never swap it.
+  const collabExtensions = useMemo(() => {
+    if (!collabActive || !room || !factory) return [] as unknown[]
+    return factory({
+      ydoc:      room.ydoc,
+      provider:  room.provider,
+      fieldName: name,
+      ...(room.user ? { user: room.user } : {}),
+    })
+    // Intentionally deps-stable across renders within the same collab
+    // mount — the keyed wrapper above remounts us when collab toggles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collabActive])
+
   const editor = useEditor({
     editable: !disabled,
     extensions: [
       // StarterKit 3.22+ ships Link AND Underline; configure through the
       // kit rather than re-adding (else "Duplicate extension names" warns).
+      // `Collaboration` brings its own Yjs-backed history — disable
+      // StarterKit's local `undoRedo` extension when collab is active
+      // (renamed from `history` in Tiptap v3.x; passing `history: false`
+      // silently no-ops and produces a runtime "not compatible with
+      // @tiptap/extension-undo-redo" warning).
       StarterKit.configure({
         link: { openOnClick: false, autolink: true },
+        ...(collabActive ? { undoRedo: false } : {}),
       }),
       Subscript,
       Superscript,
@@ -252,8 +319,21 @@ function ClientEditor(props: FieldRendererProps) {
       // inline strikethrough + Approve/Reject chip widgets. Idle until the
       // host calls `editor.commands.addAiSuggestion(...)`.
       AiSuggestionExtension,
+      // Realtime-collab extensions (Yjs `Collaboration` + cursor) — empty
+      // when no `<RecordCollabRoom>` is mounted up-tree, or when no plugin
+      // registered a factory via `registerCollabExtensions`.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...(collabExtensions as any[]),
     ],
-    content: initialContent ?? '',
+    // Collaboration takes ownership of the document — `content` would race
+    // the Y.XmlFragment sync. Seed instead via the post-`synced` effect
+    // below so existing DB content lands once and only once. The non-collab
+    // branch also gates on `isTiptapShapedContent` so leftover content from
+    // a previous editor (e.g. Lexical's `{ root: {...} }`) doesn't crash
+    // the schema-strict node parser on first paint.
+    content: collabActive
+      ? ''
+      : (initialContent !== undefined && isTiptapShapedContent(initialContent) ? initialContent : ''),
     onUpdate: ({ editor: ed }) => {
       // Debounce serialization — every keystroke fires onUpdate.
       if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -338,6 +418,55 @@ function ClientEditor(props: FieldRendererProps) {
   // scratch on every keystroke.
   useEffect(() => { editorRef.current = editor ?? null }, [editor])
 
+  // First-load seed when collab is active. Collaboration starts the
+  // editor empty regardless of `defaultValue`; once the WebsocketProvider
+  // syncs the room state from the server we check whether the field's
+  // Y.XmlFragment was ever written. Empty + we have an initial value =
+  // first session for this record — push the DB content into the ydoc
+  // exactly once. Non-empty = the room already has authoritative state;
+  // don't overwrite.
+  useEffect(() => {
+    if (!editor || !collabActive || !room) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const provider = room.provider as any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ydoc     = room.ydoc as any
+    if (!provider || !ydoc) return
+
+    const trySeed = () => {
+      try {
+        const fragment = ydoc.getXmlFragment(name)
+        if (
+          fragment &&
+          fragment.length === 0 &&
+          initialContent !== undefined &&
+          initialContent !== null &&
+          initialContent !== '' &&
+          isTiptapShapedContent(initialContent)
+        ) {
+          // setContent dispatches a Tiptap transaction; the bound
+          // y-prosemirror binding (inside Collaboration) mirrors it
+          // into the fragment so every peer sees the seeded state.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          editor.commands.setContent(initialContent as any)
+        }
+      } catch { /* ignore — seed is best-effort */ }
+    }
+
+    if (provider.synced) {
+      trySeed()
+      return
+    }
+    provider.once('synced', trySeed)
+    return () => {
+      try { provider.off?.('synced', trySeed) } catch { /* ignore */ }
+    }
+    // `initialContent` resolves once per mount (parsed from defaultValue
+    // at the top of this body). The keyed remount above guarantees we
+    // get a fresh closure per collab session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, collabActive, room, name])
+
   // Cross-package suggestion bridge — sync the host's
   // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
   // extension. No-op when no provider is mounted (default no-op context).
@@ -348,7 +477,7 @@ function ClientEditor(props: FieldRendererProps) {
   const tick = useEditorTick(editor)
 
   return (
-    <div className="relative flex flex-col gap-1">
+    <div className="relative flex flex-col">
       <input type="hidden" name={name} value={serialized} />
       {editor && toolbarGroups && toolbarGroups.length > 0 && (
         <Toolbar
@@ -511,6 +640,25 @@ function SlashPopover({
       </Popover.Portal>
     </Popover.Root>
   )
+}
+
+/**
+ * Loose shape check — returns `true` only when the value looks like a Tiptap
+ * (ProseMirror JSON) document: either an HTML string or an object that opens
+ * with `{ type: 'doc' }` at the top level. Used by the collab seed effect to
+ * skip leftover content from previous editors (notably Lexical's
+ * `{ root: {...} }` envelope) without crashing Tiptap's strict node parser.
+ *
+ * The conservative posture: if we can't recognise the shape we don't seed.
+ * Worst case the user sees an empty editor on the first collab session and
+ * types fresh — better than the editor showing nothing because a parse threw.
+ */
+function isTiptapShapedContent(raw: unknown): boolean {
+  if (typeof raw === 'string') return true            // HTML or raw text — Tiptap parses both.
+  if (raw === null || typeof raw !== 'object') return false
+  const obj = raw as { type?: unknown; content?: unknown; root?: unknown }
+  if (obj.root !== undefined) return false            // Lexical state envelope — never Tiptap.
+  return obj.type === 'doc'                           // ProseMirror JSON always opens with `type:'doc'`.
 }
 
 function parseInitialContent(raw: unknown): object | string | undefined {
