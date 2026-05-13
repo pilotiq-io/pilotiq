@@ -538,7 +538,18 @@ async function discoverPanelExports(
   // jiti gives us a Node-compatible loader that handles .ts/.tsx, ESM,
   // and TypeScript syntax. `fsCache: false` + a fresh instance per
   // call ensures HMR-style regeneration picks up edits.
-  const jiti = createJiti(projectRoot, { fsCache: false, moduleCache: false })
+  //
+  // `jsx: true` enables `@babel/plugin-transform-react-jsx` so panel
+  // modules can import `.tsx` files directly (e.g. a custom nav
+  // component registered via `Pilotiq.components({ nav })`). Default
+  // automatic runtime — matches what the playground's tsconfig assumes
+  // (`"jsx": "react-jsx"`) so authors don't need to manually import
+  // React in every component.
+  const jiti = createJiti(projectRoot, {
+    fsCache:     false,
+    moduleCache: false,
+    jsx:         { runtime: 'automatic' },
+  })
   const out: PanelExport[] = []
   for (const userPath of panelPaths) {
     const resolved = await resolvePanelPath(userPath, projectRoot)
