@@ -22,6 +22,7 @@ export type { ServerDataMap } from './pageData/helpers.js'
 // Re-export the URL-tag helpers + fill pipeline + server-data resolver
 // for consumers that import them through `./pageData.js`.
 export {
+  applyEditPageHydrators,
   applyFillPipeline,
   applyRelationshipBuilderFill,
   applyRelationshipRepeaterFill,

@@ -25,6 +25,7 @@ import {
   resourceViewBreadcrumbs,
 } from './breadcrumbs.js'
 import {
+  applyEditPageHydrators,
   applyFillPipeline,
   applyRelationshipBuilderFill,
   applyRelationshipRepeaterFill,
@@ -400,7 +401,22 @@ export async function resourceEditData(
       const values = await applyFillPipeline(form, record)
       const withRelations  = await applyRelationshipRepeaterFill(form, values, record, R.model)
       const withBuilders   = await applyRelationshipBuilderFill(form, withRelations, record, R.model)
-      form.withValues(withBuilders)
+      // Hydrators run AFTER the standard fill pipeline so they overlay
+      // on top of DB-row + relationship-row values. Skipped on the
+      // prefill branch (validation-error round-trip) — overlaying there
+      // would clobber the user's just-submitted input that the page is
+      // re-displaying for them to fix.
+      const hydrators = cfg.editPageHydrators ?? []
+      const overlay = hydrators.length > 0
+        ? await applyEditPageHydrators(hydrators, {
+            resource:      R,
+            recordId,
+            currentValues: withBuilders,
+          })
+        : {}
+      form.withValues(Object.keys(overlay).length > 0
+        ? { ...withBuilders, ...overlay }
+        : withBuilders)
     } else if (prefill?.values) {
       form.withValues(prefill.values)
     }

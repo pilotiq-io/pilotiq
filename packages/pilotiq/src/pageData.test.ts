@@ -5,6 +5,7 @@ import { Form } from './elements/Form.js'
 import { ListTab } from './Tab.js'
 import { ListTabs } from './elements/ListTabs.js'
 import {
+  applyEditPageHydrators,
   applyFillPipeline,
   formCreateOptionData,
   formStateData,
@@ -1200,6 +1201,106 @@ describe('tagRichTextMentionUrls — nested Repeater + Builder rows', () => {
     ])
     tagRichTextMentionUrls([form], (id) => `/admin/_form/${id}/mentions`)
     assert.equal(inner.stamped, '/admin/_form/art/mentions')
+  })
+})
+
+describe('applyEditPageHydrators (Pilotiq.editPageHydrator)', () => {
+  class Posts extends Resource { static override label = 'Posts' }
+  const ctx = (currentValues: Record<string, unknown> = {}) => ({
+    resource:      Posts,
+    recordId:      '42',
+    currentValues,
+  })
+
+  it('empty hydrators array → empty overlay', async () => {
+    const overlay = await applyEditPageHydrators([], ctx())
+    assert.deepEqual(overlay, {})
+  })
+
+  it('hydrator returning null → empty overlay', async () => {
+    const overlay = await applyEditPageHydrators([
+      async () => null,
+    ], ctx())
+    assert.deepEqual(overlay, {})
+  })
+
+  it('hydrator returning a partial → overlay carries the keys', async () => {
+    const overlay = await applyEditPageHydrators([
+      async () => ({ title: 'Y-Title', body: 'Y-Body' }),
+    ], ctx({ title: 'DB-Title', body: 'DB-Body', author: 'DB-Author' }))
+    assert.deepEqual(overlay, { title: 'Y-Title', body: 'Y-Body' })
+  })
+
+  it('two hydrators merge in registration order (later wins on conflict)', async () => {
+    const overlay = await applyEditPageHydrators([
+      async () => ({ title: 'first',  shared: 'first-shared' }),
+      async () => ({ body:  'second', shared: 'second-shared' }),
+    ], ctx())
+    assert.deepEqual(overlay, {
+      title:  'first',
+      body:   'second',
+      shared: 'second-shared',
+    })
+  })
+
+  it('hydrator that throws is swallowed; siblings still contribute', async () => {
+    // Stub console.warn so the test output stays clean; restore after.
+    const originalWarn = console.warn
+    let warned = false
+    console.warn = (..._args: unknown[]) => { warned = true }
+    try {
+      const overlay = await applyEditPageHydrators([
+        async () => { throw new Error('boom') },
+        async () => ({ title: 'sibling-survived' }),
+      ], ctx())
+      assert.deepEqual(overlay, { title: 'sibling-survived' })
+      assert.equal(warned, true, 'console.warn should fire for thrown hydrators')
+    } finally {
+      console.warn = originalWarn
+    }
+  })
+
+  it('hydrator returning a non-object is skipped', async () => {
+    const overlay = await applyEditPageHydrators([
+      // @ts-expect-error — deliberately exercising the runtime guard
+      async () => 'not-an-object',
+      async () => ({ title: 'real-result' }),
+    ], ctx())
+    assert.deepEqual(overlay, { title: 'real-result' })
+  })
+
+  it('hydrator receives current fill-pipeline values via ctx.currentValues', async () => {
+    let seen: Record<string, unknown> | undefined
+    await applyEditPageHydrators([
+      async (ctx) => { seen = ctx.currentValues; return null },
+    ], ctx({ title: 'DB-Title', body: 'DB-Body' }))
+    assert.deepEqual(seen, { title: 'DB-Title', body: 'DB-Body' })
+  })
+
+  it('hydrator receives resource class + recordId in ctx', async () => {
+    let seenResource: unknown
+    let seenRecordId: unknown
+    await applyEditPageHydrators([
+      async (ctx) => { seenResource = ctx.resource; seenRecordId = ctx.recordId; return null },
+    ], ctx())
+    assert.equal(seenResource, Posts)
+    assert.equal(seenRecordId, '42')
+  })
+})
+
+describe('Pilotiq.editPageHydrator builder method', () => {
+  it('stores hydrators on the config in registration order', () => {
+    const fn1 = async () => ({ a: 1 })
+    const fn2 = async () => ({ b: 2 })
+    const panel = Pilotiq.make('Admin')
+      .editPageHydrator(fn1)
+      .editPageHydrator(fn2)
+    assert.deepEqual(panel.getConfig().editPageHydrators, [fn1, fn2])
+  })
+
+  it('absent when no hydrator registered', () => {
+    const panel = Pilotiq.make('Admin')
+    assert.equal(panel.getConfig().editPageHydrators, undefined)
   })
 })
 

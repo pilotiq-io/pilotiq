@@ -68,6 +68,44 @@ export interface PilotiqPlugin {
 export type UserResolver = (req: unknown) => unknown | null | Promise<unknown | null>
 
 /**
+ * Server-side hook handed to `Pilotiq.editPageHydrator(fn)`. The
+ * resource-edit data builder calls every registered hydrator after the
+ * standard fill pipeline (`loadRecord` → `mutateFormDataBeforeFill` →
+ * `fillFromRecord` → `mutateFormDataAfterFill` →
+ * `applyRelationshipRepeaterFill` → `applyRelationshipBuilderFill`) and
+ * merges each non-null return onto the form's default values.
+ *
+ * Multiple hydrators are walked in registration order; later hydrators
+ * override keys produced by earlier ones. A hydrator returning `null`
+ * (or throwing) is a pass-through — the DB row values survive intact.
+ *
+ * Designed for the SSR-from-Y.Doc consumer in `@pilotiq-pro/collab`:
+ * read persisted Y.Text + Y.Map values for the record and override the
+ * matching field defaults, killing the DB → Y.Doc value flicker on
+ * hydration. Other consumers (per-tenant overrides, A/B experiments,
+ * draft-snapshot resume) compose the same way.
+ *
+ * Pilotiq core stays Yjs-free — the hook's `Record<string, unknown>`
+ * return is opaque, so the collab consumer's Yjs imports stay confined
+ * to its own `/server` subpath.
+ */
+export interface EditPageHydratorContext {
+  /** The Resource class being edited (server-side reference, not the
+   *  serialized meta — gives access to `model`, `getSlug()`, etc.). */
+  resource:      ResourceClass
+  /** Record id from the URL, stringified. */
+  recordId:      string
+  /** Values produced by the fill pipeline so far — DB row → hooks →
+   *  relationship fills. Hydrators read this to make merge decisions
+   *  (e.g. "only override fields that have content in Y.Doc"). */
+  currentValues: Record<string, unknown>
+}
+
+export type EditPageHydrator = (
+  ctx: EditPageHydratorContext,
+) => Record<string, unknown> | null | Promise<Record<string, unknown> | null>
+
+/**
  * Upload configuration. Apps register an adapter via `Pilotiq.uploads({
  * adapter })`; the `_uploads` route hands every incoming file to it.
  * Without an adapter, `FileUpload` fields render but the upload POST
@@ -203,6 +241,11 @@ export interface PilotiqConfig {
    *  separator + Sign-out entry. Without this, the menu shows custom
    *  items (if any) and the user identity, but no sign-out affordance. */
   signOut?:      SignOutConfig
+  /** Server-side hydrators applied after the fill pipeline on every
+   *  resource edit page. Empty / unset → behaviour unchanged. See
+   *  `EditPageHydrator` for the contract; plugins register via
+   *  `panel.editPageHydrator(fn)`. */
+  editPageHydrators?: EditPageHydrator[]
   /** Database notifications — opt-in. Mounts the bell + 4 endpoints
    *  (`_notifications` list / `:id/read` / `:id/unread` / `read-all`).
    *  Reads rows from `@rudderjs/notification`'s `notification` table via
@@ -518,6 +561,27 @@ export class Pilotiq {
    */
   signOut(config: string | SignOutConfig): this {
     this.config.signOut = typeof config === 'string' ? { url: config } : config
+    return this
+  }
+
+  /**
+   * Register a server-side hydrator that runs after the fill pipeline
+   * on every resource edit page. Each registered hydrator's non-null
+   * return merges onto the form's default values; multiple registrations
+   * are walked in registration order (later wins on key conflicts).
+   *
+   *   panel.editPageHydrator(async ({ resource, recordId }) => {
+   *     // override defaults for this record from your alt source
+   *     return { title: await draftStore.read(resource.getSlug(), recordId) }
+   *   })
+   *
+   * Plugins typically register from inside their `register(panel)` hook.
+   * Throwing or returning `null` is a pass-through — the DB row values
+   * survive. See `EditPageHydrator` for the full contract.
+   */
+  editPageHydrator(fn: EditPageHydrator): this {
+    if (!this.config.editPageHydrators) this.config.editPageHydrators = []
+    this.config.editPageHydrators.push(fn)
     return this
   }
 

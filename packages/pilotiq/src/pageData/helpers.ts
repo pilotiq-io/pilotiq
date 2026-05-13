@@ -1,4 +1,9 @@
-import type { Pilotiq, PilotiqConfig } from '../Pilotiq.js'
+import type {
+  Pilotiq,
+  PilotiqConfig,
+  EditPageHydrator,
+  EditPageHydratorContext,
+} from '../Pilotiq.js'
 import type { Page } from '../Page.js'
 import { Element } from '../schema/Element.js'
 import { Field } from '../fields/Field.js'
@@ -384,6 +389,40 @@ export async function applyFillPipeline<R>(
   if (after) values = await after(values, { values, record })
 
   return values
+}
+
+/**
+ * Walk every hydrator registered via `Pilotiq.editPageHydrator(fn)` and
+ * merge non-null returns onto `currentValues`. Hydrators run sequentially
+ * in registration order; later returns override keys from earlier ones.
+ *
+ * Failure mode is permissive: a hydrator that throws or returns `null`
+ * contributes nothing; the page still renders against the fill-pipeline
+ * values it received. Errors emit a `console.warn` so the page isn't
+ * silently relying on missing data.
+ *
+ * Returns the merged overlay (NOT the final values). The caller composes
+ * the overlay onto the form via `form.withValues({ ...current, ...overlay })`
+ * — keeps the merge order explicit at the call site (overlay wins).
+ *
+ * Empty hydrators array / no overrides → returns `{}` so callers can
+ * skip the `withValues` call cheaply.
+ */
+export async function applyEditPageHydrators(
+  hydrators: ReadonlyArray<EditPageHydrator>,
+  ctx:       EditPageHydratorContext,
+): Promise<Record<string, unknown>> {
+  if (hydrators.length === 0) return {}
+  let overlay: Record<string, unknown> = {}
+  for (const fn of hydrators) {
+    try {
+      const result = await fn(ctx)
+      if (result && typeof result === 'object') overlay = { ...overlay, ...result }
+    } catch (err) {
+      console.warn('[pilotiq] editPageHydrator threw — falling back to fill-pipeline values', err)
+    }
+  }
+  return overlay
 }
 
 /**
