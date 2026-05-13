@@ -1,5 +1,170 @@
 # @pilotiq/pilotiq
 
+## 0.9.0
+
+### Minor Changes
+
+- 41157ef: feat(pilotiq): per-Resource collab opt-in — `Resource.collab` declarative config
+
+  Flips collab activation from "register the `@pilotiq-pro/collab` plugin
+  and every edit page collaborates" to "register the plugin and nothing
+  activates until a resource opts in." Today's `@pilotiq-pro/collab` keeps
+  working unchanged — only the gate that decides whether to mount the
+  record wrapper now consults per-resource opt-in.
+
+  ### BREAKING — migration
+
+  Resources that currently get collab via the plugin's panel-wide
+  activation must add an explicit opt-in:
+
+  ```diff
+   class Post extends Resource {
+  +  static override collab = true
+     // ...
+   }
+  ```
+
+  Two-line per resource. Without the flag, the record wrapper is not
+  mounted — collab fields render as plain inputs and presence chips do not
+  appear.
+
+  ### New `static collab` field on `Resource`
+
+  ```ts
+  class Post extends Resource {
+    static override collab = true; // shorthand
+    // or:
+    static override collab = { pages: ["edit", "view"], presence: false }; // explicit
+    // or:
+    static override collab = false; // explicit opt-out
+  }
+  ```
+
+  - `true` → defaults `{ pages: ['edit'], presence: true }` (the 90% case).
+  - Object form merges with defaults; only override what you need.
+  - Omitted / `false` → collab is off for the resource regardless of
+    whether the plugin is registered.
+
+  `Resource.getResolvedCollabConfig()` normalizes the raw setting to
+  `ResourceCollabConfig | null` and is the function consumed by
+  `panelInfo()`. Override only if you need to compute the config
+  dynamically (rare).
+
+  ### Field-level `.collab(false)` still wins
+
+  A resource opting in then opting individual fields out is the supported
+  shape — the field-level setting always overrides the resource-level
+  default.
+
+  ### Wire-shape addition
+
+  `panelInfo()` now emits an optional `recordCollab: Record<URLSlug,
+ResourceCollabConfig>` map (sparse — absent when no resource opted in).
+  Built from `cfg.resources` filtered by `R.getResolvedCollabConfig()`.
+  Keys are the same slug `parseRecordPageUrl` produces:
+  `${cluster.slug}/${R.slug}` for clustered resources, `${R.slug}` for
+  non-clustered.
+
+  ### URL parser widened
+
+  - New `parseRecordPageUrl(path, base)` returns `{ resourceSlug,
+recordId, role: 'edit' | 'view' }`. Recognizes both `/edit` and
+    `/view` terminal segments.
+  - `parseRecordEditUrl` kept as a thin back-compat wrapper that filters
+    `role !== 'edit'` — existing consumers calling the legacy function see
+    the same edit-only behavior.
+  - New `RecordPageRole` type exported alongside the existing
+    `RecordEditIdentity`.
+
+  ### `RecordWrapperGate` resource-aware
+
+  The gate now accepts an optional `recordCollab` map prop. Mount logic:
+
+  1. Resolve URL via `parseRecordPageUrl`.
+  2. Look up the slug in `recordCollab`.
+  3. If found AND the URL role is in `cfg.pages`, mount the
+     plugin-registered wrapper.
+  4. Otherwise render `children` directly.
+
+  `AppShell` threads `panel.recordCollab` (from `panelInfo()`) through to
+  the gate. Existing plugins that registered via `registerRecordWrapper`
+  need no changes — the wrapper component contract is unchanged.
+
+  ### v1 limitations (documented, not blocked)
+
+  - **Nested-relation edit URLs** (`/articles/:parentId/comments/:childId/edit`)
+    carry a dynamic-id segment in the URL slug, so they don't match the
+    resource-keyed `recordCollab` map. Collab on nested-relation edits is
+    a follow-up.
+  - **Custom panel pages** (Dashboard / Settings / etc. registered via
+    `Pilotiq.pages(...)`) have no per-page collab opt-in yet. Filed as a
+    follow-up — needs a separate wrapper shape (literal `room` instead of
+    `(slug, recordId)`) and URL-pattern disambiguation.
+
+  ### Tested
+
+  - 2971/2971 pilotiq tests pass (was 2957; +14 new: `Resource.collab`
+    normalization, `parseRecordPageUrl` view-URL coverage, `panelInfo`
+    `recordCollab` emit).
+
+- db2c540: feat(pilotiq): character-level CRDT contract for plain-text inputs (Phase F.6 a + b)
+
+  Open-core scaffolding for `@pilotiq-pro/collab@0.1.x`'s `Y.Text`-per-field
+  binding. Pilotiq core stays Yjs-free — the contract hands opaque
+  `TextBinding` handles through. F.6 fully ships when a collab plugin
+  implements the new optional `getTextBinding` method (today's
+  `@pilotiq-pro/collab@0.1.0` does); F1-era plugins continue to work
+  unchanged because the method is optional.
+
+  ### New exports from `@pilotiq/pilotiq/react`
+
+  - **`TextBinding`** — per-field text-CRDT handle: `read() / applyDelta /
+observe(fn) / destroy`. Issued by `FormCollabBinding.getTextBinding(name)`.
+  - **`TextDelta`** — `insert | delete | replace` op union emitted by
+    text renderers.
+  - **`useFieldState().textBinding: TextBinding | null`** — non-null inside
+    a `<RecordCollabRoom>` when the binding has allocated a Y.Text for
+    the field; renderers branch on this to take the character-level path.
+
+  ### `FormCollabBinding` contract
+
+  - **`getTextBinding?(name): TextBinding | null`** — new optional method.
+    Returns a Y.Text-backed handle for text-shaped fields (the binding
+    impl owns the allowlist), or `null` for non-text fields and text
+    fields opted out via `.collab(false)`.
+  - **`FormCollabBindingFactoryArgs.formMeta`** — initial form meta passed
+    to the factory so the binding can partition text vs non-text fields
+    at construction time. F1-era plugins that destructure `{ room, formId,
+initial }` continue to type-check; the new field is just available
+    for plugins that need it.
+
+  ### `TextLikeInput` / `MarkdownInput` rendering
+
+  - When `fs.textBinding` is non-null AND no `TextField.mask(...)` is
+    set, the renderer takes a character-level path: initial value from
+    `binding.read()`, observer for remote updates with best-effort
+    cursor preservation, local edits → `computeDelta(before, after)` →
+    `binding.applyDelta`. IME composition is gated until
+    `compositionend` so non-Latin input methods don't emit ops for
+    intermediate composing characters.
+  - Masked inputs fall through to today's LWW path — mask + character
+    CRDT is incompatible (peers would see raw keystrokes diverged from
+    the local mask render).
+  - `MarkdownInput` gets the same wiring inline — toolbar splices (bold,
+    italic, list, …) and paste-uploads ride the same `setValue` pipe
+    which routes through the binding when active.
+
+  ### Helpers (internal)
+
+  - `react/fields/textDelta.ts` — pure `computeDelta(before, after)` +
+    `preserveCursor(before, after, cursor)`. 19 unit tests.
+
+  ### Tested
+
+  - 2957/2957 pilotiq tests pass (was 2938; +19 textDelta tests).
+  - `@pilotiq-pro/collab@0.1.x` is the consumer that ships F.6c (the
+    Y.Text impl) on top of this contract.
+
 ## 0.8.2
 
 ### Patch Changes
