@@ -5,6 +5,8 @@ import { usePendingSuggestions, usePendingSuggestionsForField, type PendingSugge
 import { getPendingSuggestionOverlay } from '../PendingSuggestionOverlayRegistry.js'
 import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 import { FormIdContext, useFieldState } from '../FormStateContext.js'
+import { getFieldPresenceComponent } from '../FieldPresenceRegistry.js'
+import { getFieldFocusReporter } from '../FieldFocusReporterRegistry.js'
 
 /**
  * Field types whose visible state is driven by React (not by a matching
@@ -140,10 +142,25 @@ export function FieldShell({ el, name, label, required, children, before, after,
   const labelClass = hiddenLabel
     ? 'sr-only'
     : 'text-sm font-medium leading-none'
+  // Phase F4 — presence chip + focus reporter slots. The chip mounts
+  // alongside the label so remote-focus indicators don't shift the
+  // input geometry; the focus reporter sits on the outer wrapper using
+  // capture-phase listeners so any inner-input focus event flows
+  // through. Both slots are gated on `meta.collab !== false` (Q3 from
+  // the F-plan — opted-out fields are fully invisible to the collab
+  // layer) AND on the field having a stable top-level name (dotted-path
+  // Repeater rows skip presence in v1 — Phase F.5).
+  const collabOptedOut = (el as { collab?: boolean })['collab'] === false
+  const dottedName     = name.includes('.')
+  const presenceSlotEligible = !collabOptedOut && !dottedName
+  const PresenceChip = presenceSlotEligible ? getFieldPresenceComponent() : null
+  const focusReporter = presenceSlotEligible ? getFieldFocusReporter() : null
+
   const labelEl = label !== '' ? (
     <label htmlFor={name} className={labelClass}>
       {label}{required && <span className="text-destructive ml-0.5">*</span>}
       {labelSlot}
+      {PresenceChip && <PresenceChip fieldName={name} formId={formId ?? ''} />}
     </label>
   ) : null
 
@@ -177,9 +194,24 @@ export function FieldShell({ el, name, label, required, children, before, after,
     </>
   )
 
+  // Capture-phase focus / blur dispatch — runs even when the inner
+  // input is wrapped in custom NodeViews (Select / Date / Slider). One
+  // wrapper-level handler covers every controlled input in the tree.
+  const onFocusCapture = focusReporter
+    ? () => focusReporter.onFocus({ fieldName: name, formId: formId ?? '' })
+    : undefined
+  const onBlurCapture = focusReporter
+    ? () => focusReporter.onBlur({ fieldName: name, formId: formId ?? '' })
+    : undefined
+
   if (inline) {
     return (
-      <div className="flex items-baseline gap-3" {...wrapperAttrs}>
+      <div
+        className="flex items-baseline gap-3"
+        {...wrapperAttrs}
+        {...(onFocusCapture ? { onFocusCapture } : {})}
+        {...(onBlurCapture  ? { onBlurCapture  } : {})}
+      >
         {labelEl && <div className="min-w-32 pt-2">{labelEl}</div>}
         <div className="min-w-0 flex-1">
           {inputBlock}
@@ -192,7 +224,12 @@ export function FieldShell({ el, name, label, required, children, before, after,
   }
 
   return (
-    <div className="flex flex-col gap-1.5" {...wrapperAttrs}>
+    <div
+      className="flex flex-col gap-1.5"
+      {...wrapperAttrs}
+      {...(onFocusCapture ? { onFocusCapture } : {})}
+      {...(onBlurCapture  ? { onBlurCapture  } : {})}
+    >
       {labelEl}
       {inputBlock}
       {helperText && (

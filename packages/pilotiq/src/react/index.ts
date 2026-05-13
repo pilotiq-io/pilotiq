@@ -51,6 +51,17 @@ export {
   type FormCollabBindingFactoryArgs,
 } from './FormCollabBindingRegistry.js'
 export {
+  registerFieldPresenceComponent,
+  getFieldPresenceComponent,
+  type FieldPresenceProps,
+} from './FieldPresenceRegistry.js'
+export {
+  registerFieldFocusReporter,
+  getFieldFocusReporter,
+  type FieldFocusReporter,
+  type FieldFocusEvent,
+} from './FieldFocusReporterRegistry.js'
+export {
   registerRecordWrapper,
   getRecordWrapper,
   type RecordWrapperProps,
