@@ -69,13 +69,20 @@ export function MarkdownInput({
   const boundValueRef = useRef<string>(boundValue)
   useEffect(() => { boundValueRef.current = boundValue }, [boundValue])
 
-  // Seed local + form-map state from the binding on mount / binding swap.
+  // On binding swap: read current Y.Text state. If non-empty, lift it
+  // into local + form-map state. If empty (no peer has typed yet), leave
+  // the SSR-default-derived `boundValue` showing — first edit will
+  // emit a replace-from-empty delta that atomically populates Y.Text.
+  // No client-side seed: Y.Text isn't safe to seed under concurrent
+  // first-mounters (see @pilotiq-pro/collab `formCollabBinding.ts`).
   useEffect(() => {
     if (!binding) return
     const next = binding.read()
-    setBoundValue(next)
-    boundValueRef.current = next
-    fs.setValue(next)
+    if (next.length > 0) {
+      setBoundValue(next)
+      boundValueRef.current = next
+      fs.setValue(next)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [binding])
 
@@ -108,7 +115,13 @@ export function MarkdownInput({
 
   const setValue = (next: string): void => {
     if (binding) {
-      const before = boundValueRef.current
+      // Compute against current Y.Text contents (not the local ref) so:
+      //  - first edit against empty Y.Text → `insert@0 <whole>` atomic
+      //    populate (no separate seed op needed);
+      //  - after a remote-applied update or server-resolve replace, the
+      //    delta reflects the actual current shared state, not stale
+      //    local bookkeeping.
+      const before = binding.read()
       if (next !== before) {
         const delta = computeDelta(before, next)
         if (delta) binding.applyDelta(delta)

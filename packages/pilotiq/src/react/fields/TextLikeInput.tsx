@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ElementMeta } from '../../schema/Element.js'
 import type { TextBinding } from '../FormCollabBindingRegistry.js'
 import { useFieldState } from '../FormStateContext.js'
@@ -48,7 +48,11 @@ export function TextLikeInput({
   // Phase F.6 — character-level CRDT path. Masking is mutually exclusive
   // with character-level CRDT (peers would see raw keystrokes diverged
   // from the local mask render); masked fields fall through to LWW.
-  if (fs.textBinding && !applyMask) {
+  // We read the mask from the field meta directly — `applyMask` is a
+  // `useCallback`-wrapped fn that's *always* defined (identity when no
+  // mask), so its truthiness can't gate the branch.
+  const hasMask = typeof el['mask'] === 'string'
+  if (fs.textBinding && !hasMask) {
     return (
       <BoundTextInput
         binding={fs.textBinding}
@@ -137,7 +141,15 @@ function BoundTextInput({
   multiline:   boolean
 }): React.ReactElement {
   const fs = useFieldState(name)
-  const [value, setValueLocal] = useState<string>(() => binding.read())
+  // SSR-rendered default. Captured once at mount; used as display
+  // fallback while the room's `Y.Text` is still empty (the seed race
+  // for Y.Text isn't safe across concurrent first-mounters, so no peer
+  // populates it client-side — see `@pilotiq-pro/collab` for the
+  // rationale). First user edit emits a replace-from-empty delta that
+  // atomically lifts the displayed value into the CRDT.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const fallback    = useMemo(() => stringValue(fs.value), [])
+  const [value, setValueLocal] = useState<string>(() => binding.read() || fallback)
   const valueRef    = useRef<string>(value)
   const isComposing = useRef<boolean>(false)
   const inputRef    = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
@@ -152,13 +164,17 @@ function BoundTextInput({
     mirrorRef.current = (v: string): void => { fs.setValue(v) }
   })
 
-  // Seed the form's values map from the binding on mount + whenever the
-  // binding swaps (collab room re-mount). Runs once per binding identity.
+  // On mount / binding swap: read the binding's current state. If
+  // non-empty (i.e. someone else has already typed), display it and
+  // mirror into the form values map. If empty, leave the fallback
+  // showing — no client-side seed (see file-header comment).
   useEffect(() => {
     const initial = binding.read()
-    setValueLocal(initial)
-    valueRef.current = initial
-    mirrorRef.current(initial)
+    if (initial.length > 0) {
+      setValueLocal(initial)
+      valueRef.current = initial
+      mirrorRef.current(initial)
+    }
   }, [binding])
 
   // Subscribe to text-CRDT changes. Yjs fires this for BOTH local and
@@ -187,7 +203,17 @@ function BoundTextInput({
   }, [binding])
 
   const commitDelta = useCallback((after: string): void => {
-    const before = valueRef.current
+    // Compute the delta against the binding's *current* Y.Text contents
+    // — not the renderer's `before` ref. The two can diverge in three
+    // cases that all converge correctly under this approach:
+    //   1. First edit when Y.Text is empty: delta = `insert@0 <whole>`,
+    //      which atomically lifts the displayed fallback into the CRDT
+    //      without a separate seed op.
+    //   2. After a remote-applied update: Y.Text holds the peer's value;
+    //      computing against it avoids "ghost" deltas that re-emit ops
+    //      against a stale local ref.
+    //   3. After a server-resolve `triggerLive` replace: same as (2).
+    const before = binding.read()
     if (after === before) return
     const delta = computeDelta(before, after)
     if (!delta) return
@@ -242,3 +268,9 @@ function BoundTextInput({
 }
 
 function identity(v: string): string { return v }
+
+function stringValue(v: unknown): string {
+  if (v === undefined || v === null) return ''
+  if (typeof v === 'string') return v
+  return String(v)
+}
