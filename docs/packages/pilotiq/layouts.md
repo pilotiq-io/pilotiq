@@ -140,3 +140,26 @@ initial mount, so deep-linking to a specific step works. Bare wizards
 keep `localStorage` as the only persistence — toggle with `.persist(false)`
 to disable that. Multi-wizard pages should use distinct keys to avoid
 collisions on the same query string.
+
+## Panel-level chrome
+
+The page-level layouts above run *inside* the panel chrome (sidebar
+or topbar). Customizing the chrome itself is a separate surface:
+
+- **Splice into named positions** — [render hooks](../../guide/render-hooks.md)
+  inject `Element[]` at `panels::sidebar.start`, `panels::topbar.end`,
+  `panels::user-menu.before`, etc. Use these for banners, badges, and
+  per-page widgets that sit alongside the framework defaults.
+- **Replace a whole region** — [component slots](../../guide/component-slots.md)
+  swap an entire chrome region with your own React component.
+  `Pilotiq.components({ nav: MyCustomSidebar })` is the v1 slot — full
+  replacement of the sidebar nav body (and the topbar nav cluster
+  under `.layout('topbar')`). Surrounding chrome (branding header,
+  user menu, footer) stays.
+- **Wrap with a React provider** — `Pilotiq.layoutProvider(C)` mounts
+  a context provider around `<AppShell>` so a plugin's React context
+  is in scope for every page. See
+  [Extending pilotiq → Layout providers](../../guide/extending-pilotiq.md#layout-providers).
+- **User menu** — `Pilotiq.userMenuItems([...])` / `.signOut(...)` /
+  `.profile(P)` configure the top-right dropdown. See
+  [User menu](../../guide/user-menu.md).

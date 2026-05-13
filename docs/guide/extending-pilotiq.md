@@ -573,6 +573,68 @@ and lets the schema travel through SSR / SPA-nav `viewProps` without
 ever shipping the renderer reference itself. Same model as `View`
 widgets and `ComponentEntry` infolist leaves.
 
+## Layout providers
+
+`Pilotiq.layoutProvider(C)` registers a React component that wraps the
+panel's `<AppShell>` children at the layout root. Use this when a
+plugin needs to install a React context / provider that should be in
+scope for every page in the panel — an AI chat queue context, a
+tenant theme switcher, a feature-flag overlay, etc — without forcing
+consumers to edit their `+Layout.tsx`.
+
+```ts
+// Inside a plugin's register(panel):
+panel.layoutProvider(({ children, basePath }) =>
+  <AiUiProvider panelPath={basePath}>{children}</AiUiProvider>
+)
+```
+
+The provider receives `{ children, basePath? }` props. Registration
+order is preservation order: the first provider sits **outermost**
+(closest to the layout root); the last sits **innermost** (closest to
+the page tree). When two providers depend on each other, register the
+producer first.
+
+Bulk variant:
+
+```ts
+panel.layoutProviders([ProviderA, ProviderB])
+```
+
+Layout-provider components are harvested into the build-time
+`layoutProviderRegistry` (parallel to `componentRegistry` /
+`rightPanelRegistry`) — the refs never travel over the wire.
+
+> Want to *replace* a region of the panel chrome instead of wrapping
+> it? Use [`Pilotiq.components({ nav })`](./component-slots.md) for
+> full nav replacement, or [render hooks](./render-hooks.md) to
+> splice into named positions.
+
+## AI suggestion mode
+
+`Pilotiq.aiSuggestionsMode(mode)` sets the panel-wide policy for what
+happens when an AI agent calls a write tool against a form field.
+
+```ts
+Pilotiq.make('admin').aiSuggestionsMode('review')
+```
+
+| Mode | Effect |
+|---|---|
+| `'auto'` (default) | Agent writes apply immediately to the form state. Existing behavior. |
+| `'review'` | Writes stage as `PendingSuggestion`s. Text fields show an inline diff; other field types show a current → suggested comparison with Approve / Reject buttons. Approve runs the field's registered applier (`registerPendingSuggestionApplier`); Reject discards. |
+
+Field types can also override the panel mode per-field — see the
+`afterStateUpdated` / `PendingSuggestionApplier` registries in
+`@pilotiq/pilotiq/react` for the per-applier wire-up. Most consumers
+just set the panel-level mode and rely on the bundled appliers shipped
+by each field type.
+
+The mode rides through `panelInfo()` onto a window global
+(`__pilotiqAiSuggestionsMode`) so the AI plugin's client-side write
+tool can read it without context plumbing. Singleton — doesn't change
+between pages within the same panel.
+
 ## Related
 
 - Reference: [`docs/packages/pilotiq/schema.md`](../packages/pilotiq/schema.md) — the `Element`
