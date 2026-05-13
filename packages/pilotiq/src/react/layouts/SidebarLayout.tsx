@@ -140,13 +140,15 @@ function NavTree({
   )
 }
 
-export function SidebarLayout({ panel, basePath, currentPath, children }: AppShellProps) {
+export function SidebarLayout({ panel, basePath, currentPath, children, componentSlotRegistry }: AppShellProps) {
   const title = panel.branding?.title ?? panel.name
   const groups = groupItems(panel.navigation ?? [])
   const hooks = panel.renderHooks
   const dn = panel.databaseNotifications
   const bellInTopbar  = dn && dn.position === 'topbar'
   const bellInSidebar = dn && dn.position === 'sidebar'
+  const NavSlot = componentSlotRegistry?.nav
+  const navProps = currentPath !== undefined ? { currentPath } : {}
 
   return (
     <SidebarProvider>
@@ -172,14 +174,17 @@ export function SidebarLayout({ panel, basePath, currentPath, children }: AppShe
 
         <SidebarContent>
           <RenderHookSlot name="panels::sidebar.nav.start" hooks={hooks} />
-          {groups.map((g, idx) => (
-            <SidebarGroup key={g.group ?? `__top__${idx}`}>
-              {g.group !== undefined && <SidebarGroupLabel>{g.group}</SidebarGroupLabel>}
-              <SidebarGroupContent>
-                <NavTree items={g.items} pathname={currentPath} basePath={basePath} />
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ))}
+          {NavSlot
+            ? <NavSlot navigation={panel.navigation ?? []} basePath={basePath} {...navProps} />
+            : groups.map((g, idx) => (
+                <SidebarGroup key={g.group ?? `__top__${idx}`}>
+                  {g.group !== undefined && <SidebarGroupLabel>{g.group}</SidebarGroupLabel>}
+                  <SidebarGroupContent>
+                    <NavTree items={g.items} pathname={currentPath} basePath={basePath} />
+                  </SidebarGroupContent>
+                </SidebarGroup>
+              ))
+          }
           <RenderHookSlot name="panels::sidebar.nav.end" hooks={hooks} />
         </SidebarContent>
 

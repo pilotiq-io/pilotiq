@@ -9,6 +9,7 @@ const _all: Record<string, unknown> = {}
 const _clusters: Record<string, string[]> = {}
 const _rightPanels: Record<string, unknown> = {}
 const _layoutProviders: unknown[] = []
+const _slots: Record<string, unknown> = {}
 function _add(c: any) { if (typeof c === 'function' && c.name) _all[c.name] = c }
 function _walk(p: any) {
   const cfg = p?.getConfig?.()
@@ -25,6 +26,12 @@ function _walk(p: any) {
       if (typeof _C === 'function') _layoutProviders.push(_C)
     }
   }
+  if (cfg?.components && typeof cfg.components === 'object') {
+    for (const _k of Object.keys(cfg.components)) {
+      const _v = cfg.components[_k]
+      if (typeof _v === 'function' || (typeof _v === 'object' && _v !== null)) _slots[_k] = _v
+    }
+  }
   if (cfg?.path && Array.isArray(cfg?.clusters)) {
     const slugs = cfg.clusters.map((C: any) => (typeof C?.getSlug === 'function' ? C.getSlug() : '')).filter(Boolean)
     if (slugs.length > 0) _clusters[cfg.path] = slugs
@@ -36,3 +43,4 @@ export const componentRegistry: Record<string, unknown> = _all
 export const clusterSlugsByBasePath: Record<string, string[]> = _clusters
 export const rightPanelRegistry: Record<string, unknown> = _rightPanels
 export const layoutProviderRegistry: unknown[] = _layoutProviders
+export const componentSlotRegistry: Record<string, unknown> = _slots

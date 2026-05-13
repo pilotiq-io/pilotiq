@@ -214,6 +214,13 @@ Deep notes for many of these also live in `~/.claude/projects/-Users-sleman-Proj
 - Plugin authors expose factories: `panel.rightPanel(...)` from inside their `register(panel)` so consumers wire via `.plugins([…])`.
 - Plan: `docs/plans/right-sidebar.md`. Guide: `docs/guide/right-sidebar.md`.
 
+### Component slots
+
+- `Pilotiq.components({ nav })` registers a build-time chrome-slot override. v1 only ships the `nav` slot — full replacement of the default nav tree (`<SidebarMenu>` body in `SidebarLayout`; `<nav>` cluster in `TopbarLayout`). Other slots will land as concrete consumers ask; the shape is open-ended so additions don't break this surface. `.components()` is order-independent and merges across calls (later call wins per slot; unset keys preserved).
+- Build-time wiring mirrors `rightPanels` — the Vite plugin's `_components.ts` emitter walks `cfg.components` and stamps `componentSlotRegistry: { [slot]: Component }` parallel to `componentRegistry` + `rightPanelRegistry`. The component ref never travels over the wire; the auto-gen `+Layout.tsx` imports the registry and forwards it to `<AppShell componentSlotRegistry=…>`, which threads it through to the layout via `AppShellProps`.
+- Render-hooks vs slots: render-hooks (`panels::sidebar.nav.start` / `panels::sidebar.nav.end`) *splice* around the nav region — they still fire whether the nav is the framework default OR a custom slot component, so plugins that just want to inject a header banner above the nav don't fight with consumers that swap the whole nav.
+- Public surface: `NavComponentProps` + `isNavItemActive` re-exported from `@pilotiq/pilotiq/react`. `NavItem` is also re-exported there for convenience (it already exists on the main barrel). Prop contract: `{ navigation: NavItem[]; basePath: string; currentPath?: string }`. The supplied component is mounted between the existing render-hook slots — keep the chrome (branding header, sign-out menu, footer) intact, just replace the nav body. Authoring example: a user-defined `MyCustomSidebar` lives in `app/Pilotiq/` next to the panel module, gets registered via `Pilotiq.make('Admin').components({ nav: MyCustomSidebar })`.
+
 ---
 
 ## Theme system

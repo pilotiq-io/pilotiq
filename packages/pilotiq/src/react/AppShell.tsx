@@ -14,6 +14,7 @@ import { useIsMobile } from './hooks/use-mobile.js'
 import type { NavItem, UserMenuMeta, DatabaseNotificationsMeta, RightSidebarMeta } from '../pageData.js'
 import type { RenderHookMap } from '../RenderHook.js'
 import { RenderHookSlot } from './RenderHookSlot.js'
+import type { ComponentSlotRegistry } from './component-slots.js'
 
 export interface AppShellProps {
   panel: {
@@ -73,6 +74,13 @@ export interface AppShellProps {
    * default — chrome renders without any extra wrapping.
    */
   layoutProviderRegistry?: ReadonlyArray<React.ComponentType<{ children: React.ReactNode; basePath?: string }>>
+  /**
+   * Build-time chrome-slot overrides from the Vite plugin. Populated
+   * when the panel module calls `Pilotiq.components({ nav, … })`.
+   * Sparse `{}` is the no-op default. Currently only `nav` is honored;
+   * additional slots will land as concrete consumers ask.
+   */
+  componentSlotRegistry?: ComponentSlotRegistry
   children: React.ReactNode
 }
 

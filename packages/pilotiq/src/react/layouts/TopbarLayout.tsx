@@ -166,7 +166,7 @@ function groupItems(items: NavItem[]): Array<{ group: string | undefined; items:
   return order.map(g => ({ group: g, items: buckets.get(g)! }))
 }
 
-export function TopbarLayout({ panel, basePath, currentPath, children }: AppShellProps) {
+export function TopbarLayout({ panel, basePath, currentPath, children, componentSlotRegistry }: AppShellProps) {
   const title = panel.branding?.title ?? panel.name
   const groups = groupItems(panel.navigation ?? [])
   const hooks = panel.renderHooks
@@ -174,6 +174,8 @@ export function TopbarLayout({ panel, basePath, currentPath, children }: AppShel
   // no sidebar exists in this layout, so the bell rides in the topbar
   // chrome regardless of the configured position.
   const dn = panel.databaseNotifications
+  const NavSlot = componentSlotRegistry?.nav
+  const navProps = currentPath !== undefined ? { currentPath } : {}
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
@@ -189,40 +191,45 @@ export function TopbarLayout({ panel, basePath, currentPath, children }: AppShel
         </div>
         <Separator orientation="vertical" className="h-4" />
         <RenderHookSlot name="panels::topbar.start" hooks={hooks} />
-        <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
-          <a
-            href={basePath}
-            className={cn(linkBase, currentPath === basePath ? linkActive : linkIdle)}
-          >
-            Dashboard
-          </a>
-          {groups.map((g, idx) => {
-            if (g.group === undefined) {
-              return g.items.map(it => (
-                it.children && it.children.length > 0
-                  ? <ParentDropdown key={it.name} item={it} pathname={currentPath} basePath={basePath} />
-                  : <FlatLink     key={it.name} item={it} pathname={currentPath} basePath={basePath} />
-              ))
-            }
-            return (
-              <GroupDropdown
-                key={`${g.group}__${idx}`}
-                label={g.group}
-                items={g.items}
-                pathname={currentPath}
-                basePath={basePath}
-              />
-            )
-          })}
-          {panel.themeEditor && (
-            <a
-              href={`${basePath}/theme`}
-              className={cn(linkBase, currentPath === `${basePath}/theme` ? linkActive : linkIdle)}
-            >
-              Theme
-            </a>
-          )}
-        </nav>
+        {NavSlot
+          ? <div className="flex items-center gap-1 flex-1 overflow-x-auto">
+              <NavSlot navigation={panel.navigation ?? []} basePath={basePath} {...navProps} />
+            </div>
+          : <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
+              <a
+                href={basePath}
+                className={cn(linkBase, currentPath === basePath ? linkActive : linkIdle)}
+              >
+                Dashboard
+              </a>
+              {groups.map((g, idx) => {
+                if (g.group === undefined) {
+                  return g.items.map(it => (
+                    it.children && it.children.length > 0
+                      ? <ParentDropdown key={it.name} item={it} pathname={currentPath} basePath={basePath} />
+                      : <FlatLink     key={it.name} item={it} pathname={currentPath} basePath={basePath} />
+                  ))
+                }
+                return (
+                  <GroupDropdown
+                    key={`${g.group}__${idx}`}
+                    label={g.group}
+                    items={g.items}
+                    pathname={currentPath}
+                    basePath={basePath}
+                  />
+                )
+              })}
+              {panel.themeEditor && (
+                <a
+                  href={`${basePath}/theme`}
+                  className={cn(linkBase, currentPath === `${basePath}/theme` ? linkActive : linkIdle)}
+                >
+                  Theme
+                </a>
+              )}
+            </nav>
+        }
         <SearchTrigger />
         <ThemeToggle />
         {dn && <NotificationBell meta={dn} />}

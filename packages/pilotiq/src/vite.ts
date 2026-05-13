@@ -610,6 +610,8 @@ export function clusterOffset(parts: string[]): number {
     lines.push('export const componentRegistry: Record<string, unknown> = {}')
     lines.push('export const clusterSlugsByBasePath: Record<string, string[]> = {}')
     lines.push('export const rightPanelRegistry: Record<string, unknown> = {}')
+    lines.push('export const layoutProviderRegistry: unknown[] = []')
+    lines.push('export const componentSlotRegistry: Record<string, unknown> = {}')
     lines.push('')
     writeIfChanged(path.join(outDir, '_components.ts'), lines.join('\n'))
     return
@@ -634,6 +636,7 @@ export function clusterOffset(parts: string[]): number {
   lines.push('const _clusters: Record<string, string[]> = {}')
   lines.push('const _rightPanels: Record<string, unknown> = {}')
   lines.push('const _layoutProviders: unknown[] = []')
+  lines.push('const _slots: Record<string, unknown> = {}')
   lines.push('function _add(c: any) { if (typeof c === \'function\' && c.name) _all[c.name] = c }')
   lines.push('function _walk(p: any) {')
   lines.push('  const cfg = p?.getConfig?.()')
@@ -650,6 +653,12 @@ export function clusterOffset(parts: string[]): number {
   lines.push('      if (typeof _C === \'function\') _layoutProviders.push(_C)')
   lines.push('    }')
   lines.push('  }')
+  lines.push('  if (cfg?.components && typeof cfg.components === \'object\') {')
+  lines.push('    for (const _k of Object.keys(cfg.components)) {')
+  lines.push('      const _v = cfg.components[_k]')
+  lines.push('      if (typeof _v === \'function\' || (typeof _v === \'object\' && _v !== null)) _slots[_k] = _v')
+  lines.push('    }')
+  lines.push('  }')
   lines.push('  if (cfg?.path && Array.isArray(cfg?.clusters)) {')
   lines.push('    const slugs = cfg.clusters.map((C: any) => (typeof C?.getSlug === \'function\' ? C.getSlug() : \'\')).filter(Boolean)')
   lines.push('    if (slugs.length > 0) _clusters[cfg.path] = slugs')
@@ -661,6 +670,7 @@ export function clusterOffset(parts: string[]): number {
   lines.push('export const clusterSlugsByBasePath: Record<string, string[]> = _clusters')
   lines.push('export const rightPanelRegistry: Record<string, unknown> = _rightPanels')
   lines.push('export const layoutProviderRegistry: unknown[] = _layoutProviders')
+  lines.push('export const componentSlotRegistry: Record<string, unknown> = _slots')
   lines.push('')
 
   writeIfChanged(path.join(outDir, '_components.ts'), lines.join('\n'))
@@ -676,7 +686,7 @@ function writeLayoutWithManifest(pagesRoot: string): void {
 import { usePageContext } from 'vike-react/usePageContext'
 import { AppShell, ThemeProvider, generateThemeCSS, NavigateProvider } from '@pilotiq/pilotiq/react'
 import { navigate as vikeNavigate } from 'vike/client/router'
-import { componentRegistry, rightPanelRegistry, layoutProviderRegistry } from './_components.js'
+import { componentRegistry, rightPanelRegistry, layoutProviderRegistry, componentSlotRegistry } from './_components.js'
 import type { ReactNode } from 'react'
 
 // Wrap vike's async navigate so the NavigateProvider's fire-and-forget
@@ -699,7 +709,7 @@ export default function PilotiqLayout({ children }: { children: ReactNode }) {
     <NavigateProvider navigate={navigate}>
       <ThemeProvider theme={panel.theme}>
         {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
-        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} currentPath={currentPath ?? ''} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any} layoutProviderRegistry={layoutProviderRegistry as any}>
+        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} currentPath={currentPath ?? ''} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any} layoutProviderRegistry={layoutProviderRegistry as any} componentSlotRegistry={componentSlotRegistry as any}>
           {children}
         </AppShell>
       </ThemeProvider>

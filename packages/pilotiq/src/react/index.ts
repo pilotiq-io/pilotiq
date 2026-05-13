@@ -96,6 +96,13 @@ export { NotificationBell } from './NotificationBell.js'
 export { RenderHookSlot } from './RenderHookSlot.js'
 export { HeadHooks }      from './HeadHooks.js'
 
+export {
+  isNavItemActive,
+  type NavComponentProps,
+  type ComponentSlotRegistry,
+} from './component-slots.js'
+export type { NavItem } from '../pageData.js'
+
 // Re-export pure theme functions for client-safe usage (avoids importing main barrel which has server-only code)
 export { generateThemeCSS } from '../theme/generate-css.js'
 export { resolveTheme } from '../theme/resolve.js'

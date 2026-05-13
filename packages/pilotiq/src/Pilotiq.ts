@@ -21,6 +21,7 @@ import {
   findDuplicateRightPanelId,
   type RightPanelContribution,
 } from './RightPanel.js'
+import type { NavComponentProps } from './react/component-slots.js'
 
 export type PilotiqLayout = 'sidebar' | 'topbar'
 
@@ -241,6 +242,19 @@ export interface PilotiqConfig {
    */
   layoutProviders?: LayoutProviderComponent[]
   /**
+   * Build-time component overrides for panel chrome slots. Registered
+   * via `Pilotiq.components({ nav })`. The Vite plugin harvests the
+   * actual React refs into `pages/(pilotiq)/_components.ts`; component
+   * refs never travel over the wire.
+   *
+   * v1 ships only the `nav` slot — full replacement of the sidebar's
+   * `<SidebarContent>` body and the topbar's `<nav>` element. Other
+   * slots (`header`, `footer`, …) will land when a concrete consumer
+   * asks; the shape is open-ended so additions don't break this
+   * surface.
+   */
+  components?:      ComponentSlots
+  /**
    * AI suggestion mode — controls what happens when an AI agent calls a
    * write tool against a form field.
    *
@@ -268,6 +282,21 @@ export type LayoutProviderComponent = React.ComponentType<{
   children: React.ReactNode
   basePath?: string
 }>
+
+/**
+ * Chrome-slot overrides registered through `Pilotiq.components({ … })`.
+ *
+ * v1 only ships `nav`. When set, the default `<SidebarMenu>` tree in
+ * `SidebarLayout` (and the topbar nav cluster in `TopbarLayout`) is
+ * replaced by the supplied component; the surrounding chrome — branding
+ * header, sign-out menu, footer, render-hook slots — is preserved so
+ * splice-style customization (`renderHook(...)`) keeps working
+ * alongside a replaced nav.
+ */
+export interface ComponentSlots {
+  /** Component rendered in place of the default nav tree. */
+  nav?: React.ComponentType<NavComponentProps>
+}
 
 export class Pilotiq {
   private config: PilotiqConfig
@@ -774,6 +803,45 @@ export class Pilotiq {
   /** @internal — read by the Vite plugin's `_components.ts` emitter. */
   getLayoutProviders(): readonly LayoutProviderComponent[] {
     return this.config.layoutProviders ?? []
+  }
+
+  /**
+   * Override one of pilotiq's built-in chrome slots with a custom React
+   * component. Calling twice merges — the latest registration wins per
+   * slot; unset keys preserve the prior value (so a plugin can override
+   * `nav` without clearing a host app's `header` once that slot lands).
+   *
+   * v1 ships only the `nav` slot — full replacement of the default nav
+   * tree (`<SidebarMenu>` in `SidebarLayout`, the `<nav>` cluster in
+   * `TopbarLayout`). Other slots will land as concrete consumers ask;
+   * the API shape is stable.
+   *
+   * Component refs are harvested by the Vite plugin into
+   * `pages/(pilotiq)/_components.ts` — they never travel over the wire,
+   * so authoring inside the panel module (which is import-safe on both
+   * server and client) is the supported entry point.
+   *
+   * @example
+   * ```ts
+   * import { MyCustomSidebar } from './MyCustomSidebar.js'
+   *
+   * Pilotiq.make('Admin').components({ nav: MyCustomSidebar })
+   * ```
+   *
+   * The supplied component receives `{ navigation, basePath, currentPath }`
+   * — the same shape `panelInfo()` produces for the default renderers.
+   * Import `NavComponentProps` and `isNavItemActive` from
+   * `@pilotiq/pilotiq/react` to author a typed component that reuses
+   * the framework's longest-prefix active-link semantics.
+   */
+  components(slots: ComponentSlots): this {
+    this.config.components = { ...(this.config.components ?? {}), ...slots }
+    return this
+  }
+
+  /** @internal — read by the Vite plugin's `_components.ts` emitter. */
+  getComponentSlots(): Readonly<ComponentSlots> {
+    return this.config.components ?? {}
   }
 
   /**
