@@ -606,8 +606,8 @@ Layout-provider components are harvested into the build-time
 `rightPanelRegistry`) — the refs never travel over the wire.
 
 > Want to *replace* a region of the panel chrome instead of wrapping
-> it? Use [`Pilotiq.components({ nav })`](./component-slots.md) for
-> full nav replacement, or [render hooks](./render-hooks.md) to
+> it? Use [`Pilotiq.components({ nav, header, footer })`](./component-slots.md)
+> for full region replacement, or [render hooks](./render-hooks.md) to
 > splice into named positions.
 
 ## AI suggestion mode

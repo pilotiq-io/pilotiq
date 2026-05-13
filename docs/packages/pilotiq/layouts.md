@@ -151,11 +151,20 @@ or topbar). Customizing the chrome itself is a separate surface:
   `panels::user-menu.before`, etc. Use these for banners, badges, and
   per-page widgets that sit alongside the framework defaults.
 - **Replace a whole region** — [component slots](../../guide/component-slots.md)
-  swap an entire chrome region with your own React component.
-  `Pilotiq.components({ nav: MyCustomSidebar })` is the v1 slot — full
-  replacement of the sidebar nav body (and the topbar nav cluster
-  under `.layout('topbar')`). Surrounding chrome (branding header,
-  user menu, footer) stays.
+  swap an entire chrome region with your own React component. Three
+  slots ship: `nav` (replaces the sidebar nav body / topbar nav
+  cluster — surrounding chrome stays), `header` (replaces the whole
+  `<header>` chrome bar — search / theme / bell / user menu in
+  `SidebarLayout`, the entire top region including the brand + nav
+  in `TopbarLayout`), `footer` (mounts a `<footer>` element below
+  the main content area in both layouts).
+  ```ts
+  Pilotiq.make('admin').components({
+    nav:    MyCustomSidebar,
+    header: MyTopBar,
+    footer: MyFooter,
+  })
+  ```
 - **Wrap with a React provider** — `Pilotiq.layoutProvider(C)` mounts
   a context provider around `<AppShell>` so a plugin's React context
   is in scope for every page. See
