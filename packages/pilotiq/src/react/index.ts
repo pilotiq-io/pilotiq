@@ -49,6 +49,8 @@ export {
   type FormCollabBinding,
   type FormCollabBindingFactory,
   type FormCollabBindingFactoryArgs,
+  type TextBinding,
+  type TextDelta,
 } from './FormCollabBindingRegistry.js'
 export {
   registerFieldPresenceComponent,

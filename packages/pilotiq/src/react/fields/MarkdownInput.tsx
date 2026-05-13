@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
 import {
   BoldIcon, ItalicIcon, StrikethroughIcon, LinkIcon,
@@ -8,6 +8,7 @@ import {
 import { useFieldState } from '../FormStateContext.js'
 import { useToast } from '../Toaster.js'
 import { Button } from '../ui/button.js'
+import { computeDelta, preserveCursor } from './textDelta.js'
 
 type ToolbarButton =
   | 'bold' | 'italic' | 'strike' | 'link'
@@ -47,14 +48,77 @@ export function MarkdownInput({
   const fs = useFieldState(name)
   const { notify } = useToast()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  // Phase F.6 — IME composition gate. Set between `compositionstart` /
+  // `compositionend`; the textarea's onChange skips `applyDelta` while
+  // composing so intermediate chars don't emit ops. Lives at the
+  // component scope so the onChange and composition handlers share it.
+  const isComposingRef = useRef<boolean>(false)
 
   const initial = useMemo(() => stringValue(defaultValue), [])
   const [localValue, setLocalValue] = useState<string>(initial)
   const [tab, setTab] = useState<'write' | 'preview'>('write')
   const [busy, setBusy] = useState(false)
 
-  const value = fs.controlled ? stringValue(fs.value) : localValue
+  // Phase F.6 — when a `<RecordCollabRoom>` is mounted and the field has
+  // a `TextBinding`, the textarea is bound to a `Y.Text` and edits emit
+  // `TextDelta`s. Mirrors the architecture in `TextLikeInput.tsx` but
+  // wired in-line because MarkdownInput has its own toolbar + Preview
+  // tab that also need to flow through the binding.
+  const binding = fs.textBinding
+  const [boundValue, setBoundValue] = useState<string>(() => binding?.read() ?? initial)
+  const boundValueRef = useRef<string>(boundValue)
+  useEffect(() => { boundValueRef.current = boundValue }, [boundValue])
+
+  // Seed local + form-map state from the binding on mount / binding swap.
+  useEffect(() => {
+    if (!binding) return
+    const next = binding.read()
+    setBoundValue(next)
+    boundValueRef.current = next
+    fs.setValue(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [binding])
+
+  // Subscribe to remote changes. Local-echoes are filtered by the
+  // `next === prev` guard. Cursor preserved via the same heuristic
+  // used in `TextLikeInput.BoundTextInput`.
+  useEffect(() => {
+    if (!binding) return
+    return binding.observe((next) => {
+      const prev = boundValueRef.current
+      if (next === prev) return
+      const ta = textareaRef.current
+      const cursor = ta?.selectionStart ?? next.length
+      const restored = preserveCursor(prev, next, cursor)
+      setBoundValue(next)
+      boundValueRef.current = next
+      fs.setValue(next)
+      requestAnimationFrame(() => {
+        if (!ta) return
+        if (document.activeElement !== ta) return
+        try { ta.setSelectionRange(restored, restored) } catch { /* defensive */ }
+      })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [binding])
+
+  const value = binding
+    ? boundValue
+    : (fs.controlled ? stringValue(fs.value) : localValue)
+
   const setValue = (next: string): void => {
+    if (binding) {
+      const before = boundValueRef.current
+      if (next !== before) {
+        const delta = computeDelta(before, next)
+        if (delta) binding.applyDelta(delta)
+        setBoundValue(next)
+        boundValueRef.current = next
+      }
+      fs.setValue(next)
+      fs.triggerLive(next)
+      return
+    }
     if (fs.controlled) { fs.setValue(next); fs.triggerLive(next) }
     else                { setLocalValue(next); fs.triggerLive(next) }
   }
@@ -285,7 +349,27 @@ export function MarkdownInput({
           placeholder={placeholder}
           disabled={disabled}
           {...(fs.controlled
-            ? { value, onChange: (e) => setValue(e.target.value) }
+            ? {
+                value,
+                onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+                  // Phase F.6 — when the binding is active and the user
+                  // is mid-IME, paint locally and hold the delta until
+                  // compositionend so we never emit ops for the
+                  // intermediate composing chars.
+                  if (binding && isComposingRef.current) {
+                    setBoundValue(e.target.value)
+                    return
+                  }
+                  setValue(e.target.value)
+                },
+                ...(binding ? {
+                  onCompositionStart: () => { isComposingRef.current = true },
+                  onCompositionEnd:   (e: React.CompositionEvent<HTMLTextAreaElement>) => {
+                    isComposingRef.current = false
+                    setValue(e.currentTarget.value)
+                  },
+                } : {}),
+              }
             : { defaultValue: initial, onChange: (e) => setLocalValue(e.target.value) })}
           onPaste={onPaste}
           onKeyDown={onKeyDown}

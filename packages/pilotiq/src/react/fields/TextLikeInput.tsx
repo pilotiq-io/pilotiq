@@ -1,8 +1,10 @@
-import React from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type { ElementMeta } from '../../schema/Element.js'
+import type { TextBinding } from '../FormCollabBindingRegistry.js'
 import { useFieldState } from '../FormStateContext.js'
 import { Input } from '../ui/input.js'
 import { Textarea } from '../ui/textarea.js'
+import { computeDelta, preserveCursor } from './textDelta.js'
 
 /**
  * Bridge between controlled (FormStateProvider) and uncontrolled
@@ -10,6 +12,16 @@ import { Textarea } from '../ui/textarea.js'
  * `live()` fields, the input is bound to the context's values map and
  * fires the live trigger on change/blur according to the field's `live`
  * config. Outside a controlled form, falls back to plain `defaultValue`.
+ *
+ * **Phase F.6 — character-level CRDT branch.** When a `<RecordCollabRoom>`
+ * is mounted up-tree AND `@pilotiq-pro/collab`'s binding registered a
+ * `TextBinding` for this field (text-shaped fieldType + `.collab() !== false`),
+ * the input takes the `BoundTextInput` path: edits emit `TextDelta`s to
+ * the binding's `Y.Text`, remote changes flow back via `observe`, and
+ * cursor position survives both. The legacy whole-string LWW path
+ * still runs for non-text fields, non-collab forms, and masked inputs
+ * (mask + character-level CRDT is incompatible — peers would see raw
+ * keystrokes desynced from the rendered mask).
  */
 export function TextLikeInput({
   el, name, common, type, extraProps, multiline, applyMask,
@@ -32,6 +44,24 @@ export function TextLikeInput({
     : {})
   const onBlurMode = liveOpts.onBlur === true
   const mask = applyMask ?? identity
+
+  // Phase F.6 — character-level CRDT path. Masking is mutually exclusive
+  // with character-level CRDT (peers would see raw keystrokes diverged
+  // from the local mask render); masked fields fall through to LWW.
+  if (fs.textBinding && !applyMask) {
+    return (
+      <BoundTextInput
+        binding={fs.textBinding}
+        name={name}
+        triggerLive={fs.triggerLive}
+        onBlurMode={onBlurMode}
+        common={common}
+        extraProps={extraProps}
+        type={type}
+        multiline={multiline}
+      />
+    )
+  }
 
   if (fs.controlled) {
     const ctxValue = fs.value !== undefined && fs.value !== null ? String(fs.value) : ''
@@ -69,6 +99,146 @@ export function TextLikeInput({
 
   if (multiline) return <Textarea {...(common as React.ComponentProps<typeof Textarea>)} {...extraProps} />
   return <Input {...(common as React.ComponentProps<typeof Input>)} type={type} {...extraProps} />
+}
+
+/**
+ * Phase F.6 — CRDT-bound text input. Owns its own controlled state
+ * because the binding's `Y.Text` is the source of truth (not the
+ * form's `values` map). Mirrors every committed value back into the
+ * form context via `fs.setValue` so submission / live re-resolve see
+ * the latest string.
+ *
+ * Lifecycle:
+ *   - Mount: seed local state from `binding.read()`; mirror it into
+ *     the form's `values` map.
+ *   - Local edit: compute a `TextDelta` (insert / delete / replace)
+ *     from the before/after strings and `applyDelta` to the binding.
+ *     Eagerly update local state in the same React render so the
+ *     controlled input doesn't lag the keystroke.
+ *   - Remote edit: `binding.observe` fires with the post-change
+ *     string; we replace local state and best-effort preserve the
+ *     local cursor via `preserveCursor`. The local-echo of our own
+ *     `applyDelta` is collapsed by the value-equality check.
+ *   - IME composition: `applyDelta` is deferred to `compositionend`
+ *     so the binding never sees intermediate composing chars (which
+ *     would emit one delta per keystroke and confuse downstream
+ *     observers).
+ */
+function BoundTextInput({
+  binding, name, triggerLive, onBlurMode, common, extraProps, type, multiline,
+}: {
+  binding:     TextBinding
+  name:        string
+  triggerLive: (valueOverride?: unknown) => void
+  onBlurMode:  boolean
+  common:      Record<string, unknown>
+  extraProps:  Record<string, unknown>
+  type:        string
+  multiline:   boolean
+}): React.ReactElement {
+  const fs = useFieldState(name)
+  const [value, setValueLocal] = useState<string>(() => binding.read())
+  const valueRef    = useRef<string>(value)
+  const isComposing = useRef<boolean>(false)
+  const inputRef    = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
+
+  useEffect(() => { valueRef.current = value }, [value])
+
+  // Stable ref to the form-mirror writer so the observer effect below
+  // doesn't tear down on every render (fs.setValue is a fresh arrow on
+  // every useFieldState call).
+  const mirrorRef = useRef<(v: string) => void>(() => {})
+  useEffect(() => {
+    mirrorRef.current = (v: string): void => { fs.setValue(v) }
+  })
+
+  // Seed the form's values map from the binding on mount + whenever the
+  // binding swaps (collab room re-mount). Runs once per binding identity.
+  useEffect(() => {
+    const initial = binding.read()
+    setValueLocal(initial)
+    valueRef.current = initial
+    mirrorRef.current(initial)
+  }, [binding])
+
+  // Subscribe to text-CRDT changes. Yjs fires this for BOTH local and
+  // remote transactions — local echoes are collapsed by the
+  // `next === prev` guard.
+  useEffect(() => {
+    const unsubscribe = binding.observe((next) => {
+      const prev = valueRef.current
+      if (next === prev) return
+      const el = inputRef.current
+      const cursor = el?.selectionStart ?? next.length
+      const restored = preserveCursor(prev, next, cursor)
+      setValueLocal(next)
+      valueRef.current = next
+      mirrorRef.current(next)
+      // Defer cursor restore until after React commits. Only reapply
+      // when the input is still focused — yanking the selection on a
+      // blurred field would steal focus across the page.
+      requestAnimationFrame(() => {
+        if (!el) return
+        if (document.activeElement !== el) return
+        try { el.setSelectionRange(restored, restored) } catch { /* setSelectionRange unsupported on some input types — defensive */ }
+      })
+    })
+    return unsubscribe
+  }, [binding])
+
+  const commitDelta = useCallback((after: string): void => {
+    const before = valueRef.current
+    if (after === before) return
+    const delta = computeDelta(before, after)
+    if (!delta) return
+    binding.applyDelta(delta)
+    // Eager local + form-map update so the controlled input doesn't
+    // wait on the observer echo to render the new keystroke. Observer
+    // will fire with the same string and short-circuit via the equality
+    // check above.
+    setValueLocal(after)
+    valueRef.current = after
+    mirrorRef.current(after)
+    if (!onBlurMode) triggerLive(after)
+  }, [binding, onBlurMode, triggerLive])
+
+  const onChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
+    if (isComposing.current) {
+      // IME mid-composition — paint locally, hold the delta until commit.
+      setValueLocal(e.target.value)
+      return
+    }
+    commitDelta(e.target.value)
+  }
+
+  const onCompositionStart = (): void => { isComposing.current = true }
+  const onCompositionEnd   = (e: React.CompositionEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
+    isComposing.current = false
+    commitDelta(e.currentTarget.value)
+  }
+
+  const onBlur = (): void => {
+    if (onBlurMode) triggerLive(valueRef.current)
+  }
+
+  const setRef = (el: HTMLInputElement | HTMLTextAreaElement | null): void => {
+    inputRef.current = el
+  }
+
+  const props = {
+    ...common,
+    ...extraProps,
+    defaultValue: undefined,
+    value,
+    onChange,
+    onBlur,
+    onCompositionStart,
+    onCompositionEnd,
+    ref: setRef,
+  }
+
+  if (multiline) return <Textarea {...(props as React.ComponentProps<typeof Textarea>)} />
+  return <Input {...(props as React.ComponentProps<typeof Input>)} type={type} />
 }
 
 function identity(v: string): string { return v }

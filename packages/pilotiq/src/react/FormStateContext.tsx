@@ -18,7 +18,11 @@ import {
 import { runJsHandler } from './fieldJsHandler.js'
 import { useToast } from './Toaster.js'
 import { useCollabRoom } from './CollabRoomContext.js'
-import { getFormCollabBinding, type FormCollabBinding } from './FormCollabBindingRegistry.js'
+import {
+  getFormCollabBinding,
+  type FormCollabBinding,
+  type TextBinding,
+} from './FormCollabBindingRegistry.js'
 
 export type FieldStatus = 'idle' | 'pending'
 
@@ -40,6 +44,13 @@ export interface FormStateApi {
   formMeta:      ElementMeta
   inFlight:      boolean
   fieldStatus:   (name: string) => FieldStatus
+  /** Phase F.6 — per-field text-CRDT handles stashed at collab-room mount.
+   *  `null` outside a room or before the binding effect has populated the
+   *  map. The text/non-text allowlist lives in the binding impl —
+   *  `FormStateProvider` asks for every top-level field and only stashes
+   *  non-null answers, so a `Map.get()` hit means the binding has opted
+   *  this field into the character-level path. */
+  textBindings:  ReadonlyMap<string, TextBinding> | null
 }
 
 const FormStateContext = createContext<FormStateApi | null>(null)
@@ -93,6 +104,15 @@ export interface UseFieldStateResult {
   /** True while a live re-resolve POST is in flight for this field. */
   pending:     boolean
   errors:      string[]
+  /** Phase F.6 — character-level CRDT handle for text-shaped fields when
+   *  a collab room is mounted up-tree AND the binding strategy applies
+   *  (allowlist + `.collab() !== false`). Null in every other case —
+   *  outside a `FormStateProvider`, outside a `<RecordCollabRoom>`, on
+   *  non-text fields, on dotted-path inner-Repeater rows (deferred to
+   *  F.5), and on text fields opted out via `.collab(false)`. Text input
+   *  renderers branch on this: non-null → character-level path with
+   *  `applyDelta + observe`; null → today's whole-string LWW path. */
+  textBinding: TextBinding | null
 }
 
 /** Per-field accessor. Inside a `FormStateProvider` it returns the controlled
@@ -108,6 +128,7 @@ export function useFieldState(name: string): UseFieldStateResult {
       triggerLive: () => {},
       pending:     false,
       errors:      [],
+      textBinding: null,
     }
   }
   // Dotted-path fields (inner Repeater rows) always render uncontrolled
@@ -120,6 +141,11 @@ export function useFieldState(name: string): UseFieldStateResult {
     triggerLive: (valueOverride?: unknown) => ctx.triggerLive(name, valueOverride),
     pending:     ctx.fieldStatus(name) === 'pending',
     errors:      ctx.errors[name] ?? [],
+    // Phase F.6 — dotted-path inner-Repeater rows skipped in v1 (deferred
+    // to F.5 alongside Y.Array row identity). Outside a collab room or
+    // for non-text fields, the stash returns null and the renderer falls
+    // back to today's whole-string LWW path.
+    textBinding: dotted ? null : (ctx.textBindings?.get(name) ?? null),
   }
 }
 
@@ -170,6 +196,13 @@ export function FormStateProvider({
   const [errors,   setErrors] = useState<Record<string, string[]>>(initialErrors)
   const [pendingNames, setPendingNames] = useState<Set<string>>(() => new Set())
   const [inFlight, setInFlight] = useState(false)
+  // Phase F.6 — per-field text-CRDT stash. `null` until the collab effect
+  // populates it; stays `null` outside a collab room. Stored in state (not
+  // a ref) so consumers of `useFieldState` re-render once the bindings
+  // land. One extra render after collab-mount; acceptable since the
+  // existing `setValuesState` overlay below already triggers one when the
+  // room has pre-existing state.
+  const [textBindings, setTextBindings] = useState<ReadonlyMap<string, TextBinding> | null>(null)
 
   const { notify } = useToast()
 
@@ -228,6 +261,25 @@ export function FormStateProvider({
       setValuesState((prev) => ({ ...prev, ...synced }))
     }
 
+    // Phase F.6 — ask the binding for a `TextBinding` on every top-level
+    // field name. The text/non-text allowlist lives in the binding impl,
+    // not in core: the binding returns `null` for non-text fields and
+    // text fields opted out via `.collab(false)`. `getTextBinding` is
+    // optional on the contract — F1-era plugins that haven't implemented
+    // it short-circuit the whole stash and every text field stays on the
+    // LWW path. We stash only the non-null answers. Cleanup is owned by
+    // `binding.destroy()` (expected to cascade into every issued
+    // `TextBinding`).
+    if (binding.getTextBinding) {
+      const textStash = new Map<string, TextBinding>()
+      for (const fieldName of Object.keys(valuesRef.current)) {
+        if (fieldName.includes('.')) continue
+        const tb = binding.getTextBinding(fieldName)
+        if (tb) textStash.set(fieldName, tb)
+      }
+      if (textStash.size > 0) setTextBindings(textStash)
+    }
+
     // Subscribe to remote changes. Local writes ALSO trigger this
     // (Yjs observers fire on local transactions too) — the per-key
     // Object.is short-circuit below collapses them into no-op renders.
@@ -249,6 +301,7 @@ export function FormStateProvider({
       unsubscribe()
       binding.destroy()
       bindingRef.current = null
+      setTextBindings(null)
     }
     // `valuesRef.current` is intentionally read once at mount — initial
     // values seed the binding; subsequent edits flow through `setValue`
@@ -479,7 +532,8 @@ export function FormStateProvider({
     formMeta,
     inFlight,
     fieldStatus,
-  }), [values, setValue, triggerLive, errors, applyErrors, formMeta, inFlight, fieldStatus])
+    textBindings,
+  }), [values, setValue, triggerLive, errors, applyErrors, formMeta, inFlight, fieldStatus, textBindings])
 
   return (
     <FormStateContext.Provider value={api}>
