@@ -243,6 +243,26 @@ export function RepeaterInput({
   // it when present so peers see the same lifecycle events; absent =
   // today's local-only behaviour, unchanged.
   const rowBinding = useRowBinding(name)
+  // Phase F.5c — mirror row identities into the form's values map so dotted
+  // row-leaf consumers (`useFieldState('${name}.${i}.heading').textBinding`)
+  // can resolve the row's `__id` via `rowIdAtIndex(ctx.values, name, i)`.
+  // The renderer is the only source of truth for `(index → rowId)`; without
+  // this stamp the F.5c per-row Y.Text path stays null and row text fields
+  // never sync. Setting a `__id` key routes through `routeBindingWrite` →
+  // `parseRowFieldPath` which filters `__id` → no-op on the binding side
+  // (no Y.Text writes), so the only effect is a row in `valuesState`.
+  // `formStateForIds` mirrors `formState` below; we read via `useFormState()`
+  // here too instead of forward-referencing the later binding.
+  const formStateForIds = useFormState()
+  const ctxSetValue = formStateForIds?.setValue
+  useEffect(() => {
+    if (!ctxSetValue) return
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]
+      if (!row) continue
+      ctxSetValue(`${name}.${i}.__id`, row.id)
+    }
+  }, [rows, name, ctxSetValue])
   // Phase F.5 — reconcile remote row events into the local `rows` state
   // by `__id`. Local mutations also surface here (Yjs observers fire on
   // local transactions); we dedupe by checking whether the rowId is

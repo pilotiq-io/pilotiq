@@ -503,14 +503,17 @@ describe('collectRowTextLeavesByArray', () => {
     ...(collab === false ? { collab: false } : {}),
   } as ElementMeta)
 
-  const repeater = (name: string, children: ElementMeta[], collab?: boolean): ElementMeta => ({
+  // Repeater meta carries the row schema under `template` (`children` is
+  // the per-resolved-row child list, not the field-level template). Tests
+  // must mirror what `RepeaterField.toMeta()` actually emits.
+  const repeater = (name: string, template: ElementMeta[], collab?: boolean): ElementMeta => ({
     type:      'field',
     fieldType: 'repeater',
     name,
     label:     name,
     required:  false,
     disabled:  false,
-    children,
+    template,
     ...(collab === false ? { collab: false } : {}),
   } as ElementMeta)
 

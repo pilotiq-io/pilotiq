@@ -418,7 +418,11 @@ export function collectRowTextLeavesByArray(formMeta: ElementMeta): Map<string, 
         const name = String(node['name'] ?? '')
         if (!name) return
         const set = new Set<string>()
-        if (fieldType === 'repeater') walkRow((node as { children?: unknown }).children, set)
+        // Repeater's `toMeta()` emits the row schema under `template` (not
+        // `children` — that's per-resolved-row). Builder nests row schemas
+        // under `blocks[i].template`. Reading `children` here pre-fix gave
+        // every Repeater an empty text-leaf set → row text never CRDT'd.
+        if (fieldType === 'repeater') walkRow((node as { template?: unknown }).template, set)
         else                          walkBlocks((node as { blocks?: unknown }).blocks, set)
         if (set.size > 0) out.set(name, set)
         return
