@@ -1,5 +1,125 @@
 # @pilotiq/pilotiq
 
+## 0.11.0
+
+### Minor Changes
+
+- d36902d: feat(pilotiq): F.5a — Repeater/Builder row-identity contract for collab
+
+  Widens `FormCollabBinding` with five optional row-array methods plus a
+  `RowsEvent` type so the upcoming `Y.Array<Y.Map>` impl in
+  `@pilotiq-pro/collab` (F.5b) has a stable surface to hook into. Renderer
+  side wiring is live in this release — `RepeaterInput` + `BuilderInput`
+  already dispatch `add` / `remove` / `reorder` / `subscribe` through the
+  binding when one is registered and reconcile remote row events into
+  their local state by `__id`. No behaviour change for non-collab forms
+  or bindings that pre-date F.5; pre-F.5 bindings keep typechecking
+  because every new method is optional.
+
+  ### New public surface
+
+  - **`useRowBinding(arrayName)`** — returns a `RowBindingApi` pre-bound
+    to a Repeater/Builder field name, or `null` when no F.5 binding is
+    active (outside a collab room, pre-F.5 plugin, opted out via
+    `.collab(false)`, or non-array field).
+  - **`RowBindingApi`** — `{ add, remove, reorder, subscribe }`. Each
+    method's `arrayName` arg is pre-bound; `subscribe(fn)` returns an
+    unsubscribe function for `useEffect` cleanup.
+  - **`RowsEvent`** — `add | remove | move` discriminated union with
+    `rowId` + indices for the renderer to reconcile against its current
+    `rows` state.
+  - **`FormCollabBinding.addRow / removeRow / reorderRows / setRow /
+getRowTextBinding / subscribeRows`** — all optional. Bindings opt
+    into F.5 by implementing the trio `addRow + removeRow + reorderRows`;
+    `subscribeRows` and `setRow` layer on for remote-event + dotted-path
+    routing; `getRowTextBinding` is reserved for F.5c (per-row `Y.Text`).
+
+  ### `FormStateProvider` routing
+
+  - `setValue` and the live-resolve overlay both route through
+    `routeBindingWrite` — top-level names go to `binding.set`, row leaves
+    (matching `parseRowFieldPath`) go to `binding.setRow` when available.
+    Pre-F.5 row leaves continue to stay local-only.
+  - The provider walks `formMeta` for top-level Repeater/Builder field
+    names at binding mount and builds a per-array `RowBindingApi` map
+    exposed via `useRowBinding`.
+
+  ### Known v1 limitations (kept from the F.5 plan)
+
+  - Nested Repeaters (e.g. `articles.0.comments.0.body`) stay local-only
+    — `parseRowFieldPath` returns `null` and the binding never sees them.
+  - Server-derived row values now propagate through `setRow` when
+    available; without an F.5 binding they continue to be dropped.
+  - F.5c (`getRowTextBinding`) — character-level `Y.Text` per row text
+    field — lands in a follow-up; row leaves stay on row-level LWW until
+    then.
+
+- b70cb49: feat(pilotiq): F.5c — per-row Y.Text composition with F.6
+
+  Wires `useFieldState(dottedName).textBinding` to resolve through
+  `FormCollabBinding.getRowTextBinding(arrayName, rowId, fieldName)` so
+  Repeater/Builder row text fields ride character-level CRDT when the
+  plugin implements F.5c. Previously dotted-name `textBinding` always
+  returned `null`; now it returns a stable handle when:
+
+  - the row's `__id` is already stamped in the values map,
+  - the inner field's `fieldType` is in the F.6 allowlist
+    (`text / textarea / email / slug / markdown`),
+  - the field isn't opted out via `.collab(false)`,
+  - the active binding implements `getRowTextBinding`.
+
+  ### Walker
+
+  A new `collectRowTextLeavesByArray(formMeta)` helper walks each
+  Repeater's inner schema + each Builder block's template once at
+  binding mount and stashes the per-array text-leaf names on
+  `FormStateApi.rowTextLeaves`. Nested Repeater/Builder boundaries stop
+  the walk — 5-segment dotted paths remain out of scope.
+
+  ### Renderer surface unchanged
+
+  `BoundTextInput` already branches on `textBinding != null` from F.6,
+  so rows pick up the character-level path automatically once an F.5c-
+  capable binding is registered. No new renderer wiring beyond the
+  walker + `useFieldState` resolver.
+
+### Patch Changes
+
+- 08ab5bb: fix(pilotiq): F.5c row-text integration — stamp row `__id` and walk `template` not `children`
+
+  Two integration gaps in the just-shipped F.5c per-row Y.Text path made
+  character-level CRDT silently fall back to LWW for every Repeater /
+  Builder row text leaf. Both green-CI / broken-at-render bugs.
+
+  ### `collectRowTextLeavesByArray` walked the wrong meta key
+
+  The walker read `meta.children` for the Repeater's inner row schema,
+  but `RepeaterField.toMeta()` emits the row schema under `meta.template`
+  (`meta.children` is the per-resolved-row child list, not the field-
+  level template). Walker always returned empty → `FormStateApi.rowTextLeaves`
+  stayed `null` → `useFieldState(dottedName).textBinding` short-circuited
+  on every dotted row-leaf name. The unit-test fixture mirrored the same
+  wrong shape, so CI passed while the renderer was inert.
+
+  ### `RepeaterInput` / `BuilderInput` never stamped row `__id` in `ctx.values`
+
+  `resolveRowTextBinding` looks up `rowIdAtIndex(ctx.values, name, i)` which
+  reads `values['${name}.${i}.__id']`. The renderer maintained row identity
+  in local component state but never mirrored it into `ctx.values`, so the
+  lookup returned `null` and the binding chain never fired — even for
+  locally-added rows.
+
+  Both renderers now mirror `rows` into `ctx.values` via a single
+  `useEffect` keyed on the rows array. Pre-existing server-seeded rows
+  were unaffected because the seed wasn't a renderer concern; only
+  locally-added or remote-reconciled rows hit the gap.
+
+  ### Tests
+
+  `formStateHelpers.test.ts`'s hand-built `repeater()` helper now emits
+  `template:` instead of `children:` to match `RepeaterField.toMeta()`.
+  Catches future drift between meta producers and walkers.
+
 ## 0.10.0
 
 ### Minor Changes
