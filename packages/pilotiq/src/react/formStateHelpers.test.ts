@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   collectFieldDefaults,
   collectRowArrayFieldNames,
+  collectRowTextLeavesByArray,
   fieldOptsOutOfCollab,
   findFieldMeta,
   parseFormDataToNested,
@@ -488,6 +489,101 @@ describe('routeBindingWrite', () => {
     const values = { 'blocks.0.__id': 'blk-1' }
     routeBindingWrite(binding, builderMeta, values, 'blocks.0.data.body', 'Lorem')
     assert.deepEqual(calls, [{ kind: 'setRow', args: ['blocks', 'blk-1', 'body', 'Lorem'] }])
+  })
+})
+
+describe('collectRowTextLeavesByArray', () => {
+  const textField = (name: string, fieldType: string = 'text', collab?: boolean): ElementMeta => ({
+    type:      'field',
+    fieldType,
+    name,
+    label:     name,
+    required:  false,
+    disabled:  false,
+    ...(collab === false ? { collab: false } : {}),
+  } as ElementMeta)
+
+  const repeater = (name: string, children: ElementMeta[], collab?: boolean): ElementMeta => ({
+    type:      'field',
+    fieldType: 'repeater',
+    name,
+    label:     name,
+    required:  false,
+    disabled:  false,
+    children,
+    ...(collab === false ? { collab: false } : {}),
+  } as ElementMeta)
+
+  it('collects text-shaped inner-field names per Repeater', () => {
+    const meta = formMeta([
+      repeater('tags', [
+        textField('label', 'text'),
+        textField('summary', 'textarea'),
+        textField('count', 'number'),
+      ]),
+    ])
+    const out = collectRowTextLeavesByArray(meta)
+    assert.equal(out.size, 1)
+    assert.deepEqual([...out.get('tags')!].sort(), ['label', 'summary'])
+  })
+
+  it('walks Builder block templates', () => {
+    const meta = formMeta([
+      {
+        type:      'field',
+        fieldType: 'builder',
+        name:      'blocks',
+        children:  [],
+        blocks: [
+          { name: 'heading',   template: [textField('text', 'text')] },
+          { name: 'paragraph', template: [textField('body', 'markdown')] },
+        ],
+      } as unknown as ElementMeta,
+    ])
+    const out = collectRowTextLeavesByArray(meta)
+    assert.deepEqual([...out.get('blocks')!].sort(), ['body', 'text'])
+  })
+
+  it('skips opted-out inner fields', () => {
+    const meta = formMeta([
+      repeater('tags', [
+        textField('label',  'text'),
+        textField('private', 'text', false),   // .collab(false)
+      ]),
+    ])
+    const out = collectRowTextLeavesByArray(meta)
+    assert.deepEqual([...out.get('tags')!], ['label'])
+  })
+
+  it('omits opted-out top-level arrays', () => {
+    const meta = formMeta([
+      repeater('public',  [textField('a', 'text')]),
+      repeater('private', [textField('b', 'text')], false),
+    ])
+    const out = collectRowTextLeavesByArray(meta)
+    assert.equal(out.has('public'),  true)
+    assert.equal(out.has('private'), false)
+  })
+
+  it('stops at nested array boundaries (no 5+ segment dotted paths)', () => {
+    const meta = formMeta([
+      repeater('outer', [
+        textField('outerLabel', 'text'),
+        repeater('inner', [textField('innerLabel', 'text')]),
+      ]),
+    ])
+    const out = collectRowTextLeavesByArray(meta)
+    assert.deepEqual([...out.get('outer')!], ['outerLabel'])
+    assert.equal(out.has('inner'), false, 'nested Repeater not surfaced as a top-level array')
+  })
+
+  it('returns empty map when no Repeater/Builder has text leaves', () => {
+    const meta = formMeta([
+      textField('top', 'text'),
+      repeater('numbers', [textField('count', 'number')]),
+    ])
+    const out = collectRowTextLeavesByArray(meta)
+    assert.equal(out.size, 0)
   })
 })
 

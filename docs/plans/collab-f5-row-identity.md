@@ -58,22 +58,42 @@ Three load-bearing facts to anchor the design:
 
 ### CRDT shape per Repeater field
 
-Per Repeater (or Builder) field, the binding maintains:
+**Implementation note (2026-05-14, F.5b):** The plan initially specified
+`Y.Array<Y.Map>` with a "single `move(from, to)` op" for reorder, but
+Yjs's `Y.Array` has no native move primitive and the delete+insert
+workaround destroys the row's CRDT identity (every reorder would clobber
+any `Y.Text` content nested inside the row's `Y.Map`, breaking F.5c
+character-level CRDT on the same field). Switched to a hybrid shape
+during F.5b implementation:
 
 ```
-ydoc.getArray(<arrayName>)   // Y.Array<Y.Map>
-└── Y.Map (row 0)
-│   ├── '__id': <string>         // mirror of renderer's row.id
-│   ├── 'label': <scalar>          // LWW field value
-│   ├── 'body':  Y.Text            // text field — character-level CRDT (F.5c only)
-│   └── (Builder only) 'type': <string>, 'data': Y.Map<...>
-├── Y.Map (row 1)
-└── …
+ydoc.getMap('row-data')         // Y.Map<arrayName, Y.Map<rowId, Y.Map<fieldName, value>>>
+└── 'tags'
+│   └── 'row-uuid-1' → Y.Map { '__id': 'row-uuid-1', 'label': 'first' }
+│   └── 'row-uuid-2' → Y.Map { '__id': 'row-uuid-2', 'label': 'second' }
+ydoc.getMap('row-order')        // Y.Map<arrayName, Y.Array<rowId>>
+└── 'tags' → Y.Array<['row-uuid-1', 'row-uuid-2']>
 ```
 
-- **Y.Array** because Yjs's array semantics handle concurrent insert/remove correctly. Reorder is a single `move(from, to)` op.
-- **Y.Map per row** because row-internal field writes are per-key LWW (booleans, enums, dates, etc.) — same as the top-level form Y.Map.
-- **Y.Text per row text field** is allocated lazily under the row's Y.Map when the renderer requests `getRowTextBinding(arrayName, rowId, fieldName)`.
+- **Row Y.Maps are stable** — they live in the `row-data` Y.Map keyed
+  by stable `rowId` and never move. Field writes inside a row land via
+  `rowMap.set(fieldName, value)`; F.5c will hang `Y.Text` slots off the
+  same `rowMap` and they'll survive any reorder.
+- **Order is decoupled** — the `row-order` Y.Array carries `rowId`
+  strings only. Reorder = `delete + insert` on bare string entries; no
+  identity is at stake. Concurrent inserts on the order array both
+  survive via Yjs's array semantics.
+- **`addRow` writes both** — new row Y.Map into `row-data`, rowId
+  string into `row-order`. Inside one `ydoc.transact` so peers observe
+  one merged update.
+- **`removeRow` deletes from both** — same transact.
+- **`reorderRows` only touches the order array** — row data Y.Maps are
+  untouched. Y.Text content per row therefore survives reorders cleanly.
+
+The hybrid shape adds one level of nesting (top-level `row-data` /
+`row-order` Y.Maps) but eliminates the reorder-vs-row-identity
+contradiction entirely. Liveblocks / Loro use similar shapes for the
+same reason.
 
 ### Dotted-path ↔ row-Y.Map translation
 

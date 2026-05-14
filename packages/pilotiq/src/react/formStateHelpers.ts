@@ -378,3 +378,83 @@ export function collectRowArrayFieldNames(formMeta: ElementMeta): string[] {
     }
   }
 }
+
+/**
+ * Phase F.5c — text-shaped fieldTypes whose row-leaf values should be
+ * routed through `Y.Text` instead of `Y.Map` LWW. Mirrors the same
+ * allowlist `@pilotiq-pro/collab`'s top-level binding uses; consumers
+ * registering character-level CRDT for additional plain-text-shaped
+ * fields update both copies in lockstep until a cross-repo shared
+ * constants module exists.
+ */
+const ROW_TEXT_FIELD_TYPES: ReadonlySet<string> = new Set([
+  'text', 'textarea', 'email', 'slug', 'markdown',
+])
+
+/**
+ * Phase F.5c — per-Repeater/Builder set of inner-field names that
+ * carry text-shaped leaves eligible for character-level CRDT. Drives
+ * `useFieldState(dottedName).textBinding` resolution: only fields in
+ * the per-array set go through `binding.getRowTextBinding`; everything
+ * else stays on row-level Y.Map LWW.
+ *
+ * Repeater rows expose their schema directly under `meta.children`;
+ * Builder rows nest schemas under `meta.blocks[i].template`. The
+ * walker descends through every block's template so a `markdown` leaf
+ * inside any block-type lands in the array's allowlist. Nested
+ * Repeaters / Builders inside row schemas are out of scope v1 (their
+ * dotted paths are 5+ segments and `parseRowFieldPath` rejects them).
+ */
+export function collectRowTextLeavesByArray(formMeta: ElementMeta): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>()
+  walkTop(formMeta)
+  return out
+
+  function walkTop(node: ElementMeta): void {
+    if (node.type === 'field') {
+      const fieldType = String(node['fieldType'] ?? '')
+      if (fieldType === 'repeater' || fieldType === 'builder') {
+        if ((node as { collab?: boolean }).collab === false) return
+        const name = String(node['name'] ?? '')
+        if (!name) return
+        const set = new Set<string>()
+        if (fieldType === 'repeater') walkRow((node as { children?: unknown }).children, set)
+        else                          walkBlocks((node as { blocks?: unknown }).blocks, set)
+        if (set.size > 0) out.set(name, set)
+        return
+      }
+    }
+    const children = node.children
+    if (Array.isArray(children)) {
+      for (const child of children) walkTop(child as ElementMeta)
+    }
+  }
+
+  function walkRow(children: unknown, set: Set<string>): void {
+    if (!Array.isArray(children)) return
+    for (const child of children) walkRowEl(child as ElementMeta, set)
+  }
+
+  function walkRowEl(node: ElementMeta, set: Set<string>): void {
+    if (node.type === 'field') {
+      const fieldType = String(node['fieldType'] ?? '')
+      if (fieldType === 'repeater' || fieldType === 'builder') return   // nested array
+      if ((node as { collab?: boolean }).collab === false) return
+      const name = String(node['name'] ?? '')
+      if (name && ROW_TEXT_FIELD_TYPES.has(fieldType)) set.add(name)
+      return
+    }
+    const children = node.children
+    if (Array.isArray(children)) {
+      for (const child of children) walkRowEl(child as ElementMeta, set)
+    }
+  }
+
+  function walkBlocks(blocks: unknown, set: Set<string>): void {
+    if (!Array.isArray(blocks)) return
+    for (const block of blocks) {
+      const tpl = (block as { template?: unknown }).template
+      walkRow(tpl, set)
+    }
+  }
+}
