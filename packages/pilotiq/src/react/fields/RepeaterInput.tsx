@@ -3,7 +3,7 @@ import { PlusIcon } from 'lucide-react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { Button } from '../ui/button.js'
 import { SchemaRenderer, dispatchHandlerAction } from '../SchemaRenderer.js'
-import { FormIdContext, useFormState } from '../FormStateContext.js'
+import { FormIdContext, useFormState, useRowBinding } from '../FormStateContext.js'
 import { findFieldMeta } from '../formStateHelpers.js'
 import { useNavigate } from '../navigate.js'
 import { useToast } from '../Toaster.js'
@@ -236,6 +236,55 @@ export function RepeaterInput({
     if (!metaRows) return
     setRows(prev => syncRowGates(prev, metaRows))
   }, [metaRows])
+  // Phase F.5 — row-array CRDT binding. `null` outside a collab room
+  // OR when the active binding doesn't implement F.5 row methods OR when
+  // this Repeater opted out via `.collab(false)`. The four row mutations
+  // (`addRow / cloneRow / removeRow / moveRow + DnD drop`) below call into
+  // it when present so peers see the same lifecycle events; absent =
+  // today's local-only behaviour, unchanged.
+  const rowBinding = useRowBinding(name)
+  // Phase F.5 — reconcile remote row events into the local `rows` state
+  // by `__id`. Local mutations also surface here (Yjs observers fire on
+  // local transactions); we dedupe by checking whether the rowId is
+  // already present in the current state. `template` seeds new rows so
+  // remote-added rows render with the same inner schema as locally-added
+  // ones.
+  useEffect(() => {
+    if (!rowBinding) return
+    const tpl = meta.template ?? []
+    return rowBinding.subscribe((event) => {
+      if (event.kind === 'add') {
+        setRows((prev) => {
+          if (prev.some(r => r.id === event.rowId)) return prev
+          const incoming: RowState = { id: event.rowId, children: tpl }
+          const next = prev.slice()
+          const at = Math.max(0, Math.min(event.index, next.length))
+          next.splice(at, 0, incoming)
+          return next
+        })
+        return
+      }
+      if (event.kind === 'remove') {
+        setRows((prev) => {
+          if (!prev.some(r => r.id === event.rowId)) return prev
+          return prev.filter(r => r.id !== event.rowId)
+        })
+        return
+      }
+      // move — recompute the local row order by lifting the row at `from`
+      // and re-inserting at `to`. No-op when local already matches.
+      setRows((prev) => {
+        const fromIdx = prev.findIndex(r => r.id === event.rowId)
+        if (fromIdx < 0) return prev
+        if (fromIdx === event.to) return prev
+        const next  = prev.slice()
+        const [moved] = next.splice(fromIdx, 1)
+        if (!moved) return prev
+        next.splice(event.to, 0, moved)
+        return next
+      })
+    })
+  }, [rowBinding, meta.template])
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
     accordion ? {} : initSeedCollapsed(initialRows, formId, name, defaultCollapsed, collapsible),
   )
@@ -269,6 +318,7 @@ export function RepeaterInput({
       children: meta.template ?? [],
     }
     setRows(prev => [...prev, newRow])
+    rowBinding?.add(newRow.id, {})
     if (accordion) {
       // New row should be the only one open — the user just asked for it.
       setAccordionOpenId(newRow.id)
@@ -284,6 +334,7 @@ export function RepeaterInput({
   const removeRow = (id: string): void => {
     if (atMin) return
     setRows(prev => prev.filter(r => r.id !== id))
+    rowBinding?.remove(id)
     if (accordion) {
       if (accordionOpenId === id) {
         setAccordionOpenId(null)
@@ -300,12 +351,14 @@ export function RepeaterInput({
 
   const cloneRow = (id: string): void => {
     if (atMax) return
+    let cloneId: string | null = null
     setRows(prev => {
       const idx = prev.findIndex(r => r.id === id)
       if (idx < 0) return prev
       const source = prev[idx]!
+      cloneId = generateRowId()
       const clone: RowState = {
-        id:       generateRowId(),
+        id:       cloneId,
         children: source.children,
         ...(source.itemLabel !== undefined ? { itemLabel: source.itemLabel } : {}),
       }
@@ -313,26 +366,38 @@ export function RepeaterInput({
       next.splice(idx + 1, 0, clone)
       return next
     })
+    // F.5 — register the clone's stable id on the binding. Per-field
+    // clone-of-source values flow through `setRow` on the user's next
+    // edit; v1 doesn't lift the source row's values onto the clone (the
+    // binding's empty seed combined with the DOM's defaultValue-copied
+    // inputs gives the local user the right visual state).
+    if (cloneId !== null) rowBinding?.add(cloneId, {})
   }
 
   const moveRow = (id: string, dir: -1 | 1): void => {
+    let newOrder: string[] | null = null
     setRows(prev => {
       const idx = prev.findIndex(r => r.id === id)
       if (idx < 0) return prev
       // Skip past hidden neighbours so reorder operates between visible
       // rows. Hidden rows hold their absolute slot — the visible row hops
       // over them.
+      let next: RowState[]
       if (dir === -1) {
         let target = idx - 1
         while (target >= 0 && prev[target]?.hidden) target--
         if (target < 0) return prev
-        return reorderRows(prev, idx, target)
+        next = reorderRows(prev, idx, target)
+      } else {
+        let target = idx + 1
+        while (target < prev.length && prev[target]?.hidden) target++
+        if (target >= prev.length) return prev
+        next = reorderRows(prev, idx, target + 1)
       }
-      let target = idx + 1
-      while (target < prev.length && prev[target]?.hidden) target++
-      if (target >= prev.length) return prev
-      return reorderRows(prev, idx, target + 1)
+      if (next !== prev) newOrder = next.map(r => r.id)
+      return next
     })
+    if (newOrder !== null) rowBinding?.reorder(newOrder)
   }
 
   // ── DnD state ───────────────────────────────────────────
@@ -345,11 +410,15 @@ export function RepeaterInput({
   } = useRowReorderDnd({
     enabled: reorderable && !disabled,
     onDrop: (fromId, at) => {
+      let newOrder: string[] | null = null
       setRows(prev => {
         const fromIdx = prev.findIndex(r => r.id === fromId)
         if (fromIdx < 0) return prev
-        return reorderRows(prev, fromIdx, at)
+        const next = reorderRows(prev, fromIdx, at)
+        if (next !== prev) newOrder = next.map(r => r.id)
+        return next
       })
+      if (newOrder !== null) rowBinding?.reorder(newOrder)
     },
   })
 

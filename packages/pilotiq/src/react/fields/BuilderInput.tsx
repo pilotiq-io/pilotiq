@@ -3,7 +3,7 @@ import { ChevronDownIcon, PlusIcon } from 'lucide-react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { Button } from '../ui/button.js'
 import { SchemaRenderer } from '../SchemaRenderer.js'
-import { FormIdContext, useFormState } from '../FormStateContext.js'
+import { FormIdContext, useFormState, useRowBinding } from '../FormStateContext.js'
 import { findFieldMeta } from '../formStateHelpers.js'
 import { useIconFor } from '../icon-context.js'
 import { reorderRows, ExtraActionStrip, buildGridContainer } from './RepeaterInput.js'
@@ -185,6 +185,59 @@ export function BuilderInput({
     if (!metaRows) return
     setRows(prev => syncRowGates(prev, metaRows))
   }, [metaRows])
+  // Phase F.5 — row-array CRDT binding (mirrors `RepeaterInput`). The
+  // initial-row payload that lands on `add()` carries the block's `type`
+  // alongside the empty field map so peers see the discriminator from
+  // the first event — without it, the picker dropdown choice doesn't
+  // propagate until the user makes their first inner-field edit.
+  const rowBinding = useRowBinding(name)
+  // Phase F.5 — reconcile remote row events. Builder mirrors
+  // RepeaterInput but reads `event.values.type` to pick the block whose
+  // template seeds the new row's children. Falls back to the first
+  // registered block when the remote `type` doesn't match a known one;
+  // the row still mounts so the user sees the change rather than a
+  // silent drop (matches the server-side `unknownType` fallback).
+  useEffect(() => {
+    if (!rowBinding) return
+    return rowBinding.subscribe((event) => {
+      if (event.kind === 'add') {
+        setRows((prev) => {
+          if (prev.some(r => r.id === event.rowId)) return prev
+          const blockType = typeof event.values['type'] === 'string'
+            ? event.values['type'] as string
+            : (meta.blocks?.[0]?.name ?? '')
+          const block = blocksByName.get(blockType)
+          const incoming: RowState = {
+            id:       event.rowId,
+            type:     blockType,
+            children: block?.template ?? [],
+          }
+          const next = prev.slice()
+          const at = Math.max(0, Math.min(event.index, next.length))
+          next.splice(at, 0, incoming)
+          return next
+        })
+        return
+      }
+      if (event.kind === 'remove') {
+        setRows((prev) => {
+          if (!prev.some(r => r.id === event.rowId)) return prev
+          return prev.filter(r => r.id !== event.rowId)
+        })
+        return
+      }
+      setRows((prev) => {
+        const fromIdx = prev.findIndex(r => r.id === event.rowId)
+        if (fromIdx < 0) return prev
+        if (fromIdx === event.to) return prev
+        const next  = prev.slice()
+        const [moved] = next.splice(fromIdx, 1)
+        if (!moved) return prev
+        next.splice(event.to, 0, moved)
+        return next
+      })
+    })
+  }, [rowBinding, blocksByName, meta.blocks])
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
     accordion ? {} : initSeedCollapsed(initialRows, formId, name, defaultCollapsed, collapsible),
   )
@@ -232,6 +285,9 @@ export function BuilderInput({
       const i = Math.max(0, Math.min(atIndex, prev.length))
       return [...prev.slice(0, i), newRow, ...prev.slice(i)]
     })
+    // F.5 — seed the new block's discriminator on the CRDT side so peers
+    // pick the right inner schema without waiting for the user's first edit.
+    rowBinding?.add(newRow.id, { type: block.name })
     if (accordion) {
       setAccordionOpenId(newRow.id)
       writeAccordionToStorage(formId, name, newRow.id)
@@ -246,6 +302,7 @@ export function BuilderInput({
   const removeRow = (id: string): void => {
     if (atMin) return
     setRows(prev => prev.filter(r => r.id !== id))
+    rowBinding?.remove(id)
     if (accordion) {
       if (accordionOpenId === id) {
         setAccordionOpenId(null)
@@ -262,6 +319,8 @@ export function BuilderInput({
 
   const cloneRow = (id: string): void => {
     if (atMax) return
+    let cloneId:   string | null = null
+    let cloneType: string | null = null
     setRows(prev => {
       const idx = prev.findIndex(r => r.id === id)
       if (idx < 0) return prev
@@ -270,8 +329,10 @@ export function BuilderInput({
       const block = blocksByName.get(source.type)
       const cap   = block?.maxItems
       if (cap !== undefined && (typeCounts.get(source.type) ?? 0) >= cap) return prev
+      cloneId   = generateRowId()
+      cloneType = source.type
       const clone: RowState = {
-        id:       generateRowId(),
+        id:       cloneId,
         type:     source.type,
         children: source.children,
         ...(source.itemLabel !== undefined ? { itemLabel: source.itemLabel } : {}),
@@ -280,23 +341,32 @@ export function BuilderInput({
       next.splice(idx + 1, 0, clone)
       return next
     })
+    if (cloneId !== null && cloneType !== null) {
+      rowBinding?.add(cloneId, { type: cloneType })
+    }
   }
 
   const moveRow = (id: string, dir: -1 | 1): void => {
+    let newOrder: string[] | null = null
     setRows(prev => {
       const idx = prev.findIndex(r => r.id === id)
       if (idx < 0) return prev
+      let next: RowState[]
       if (dir === -1) {
         let target = idx - 1
         while (target >= 0 && prev[target]?.hidden) target--
         if (target < 0) return prev
-        return reorderRows(prev, idx, target)
+        next = reorderRows(prev, idx, target)
+      } else {
+        let target = idx + 1
+        while (target < prev.length && prev[target]?.hidden) target++
+        if (target >= prev.length) return prev
+        next = reorderRows(prev, idx, target + 1)
       }
-      let target = idx + 1
-      while (target < prev.length && prev[target]?.hidden) target++
-      if (target >= prev.length) return prev
-      return reorderRows(prev, idx, target + 1)
+      if (next !== prev) newOrder = next.map(r => r.id)
+      return next
     })
+    if (newOrder !== null) rowBinding?.reorder(newOrder)
   }
 
   // ── DnD state (skipped when buttonsOnly) ────────────────
@@ -310,11 +380,15 @@ export function BuilderInput({
   } = useRowReorderDnd({
     enabled: dndEnabled,
     onDrop: (fromId, at) => {
+      let newOrder: string[] | null = null
       setRows(prev => {
         const fromIdx = prev.findIndex(r => r.id === fromId)
         if (fromIdx < 0) return prev
-        return reorderRows(prev, fromIdx, at)
+        const next = reorderRows(prev, fromIdx, at)
+        if (next !== prev) newOrder = next.map(r => r.id)
+        return next
       })
+      if (newOrder !== null) rowBinding?.reorder(newOrder)
     },
   })
 

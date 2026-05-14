@@ -51,6 +51,8 @@ export {
   type FormCollabBindingFactoryArgs,
   type TextBinding,
   type TextDelta,
+  type RowsEvent,
+  type RowBindingApi,
 } from './FormCollabBindingRegistry.js'
 export {
   registerFieldPresenceComponent,
@@ -89,6 +91,7 @@ export {
   FormStateProvider,
   useFieldState,
   useFormState,
+  useRowBinding,
   type FormStateApi,
   type FormStateProviderProps,
   type UseFieldStateResult,

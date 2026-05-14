@@ -82,7 +82,136 @@ export interface FormCollabBinding {
   getTextBinding?(name: string): TextBinding | null
   /** Cleanup hook called when the form unmounts. */
   destroy():    void
+
+  // ── Phase F.5 — Repeater / Builder row-identity surface (all optional) ──
+
+  /**
+   * Add a row to a Repeater or Builder field. `rowId` is the stable
+   * `__id` the renderer already mints (UUID for new rows / DB PK for
+   * relationship-backed rows) — the binding indexes the row's CRDT
+   * surface by this id so concurrent inserts from peers both survive.
+   *
+   * Idempotent — calling with a `rowId` that already exists in the
+   * Repeater's array is a no-op. `initial` may carry pre-filled values
+   * for the new row (e.g. the inner fields' `default()` from schema
+   * resolution); the binding seeds them onto the row's storage under
+   * the same idempotent posture as top-level `set` (first writer wins
+   * across concurrent first-mounters).
+   *
+   * Renderer call sites: `RepeaterInput.addRow()` + `BuilderInput.addBlock()`.
+   * When absent, F.5 row-level CRDT degrades to v1 behaviour (whole-array
+   * LWW under the top-level Y.Map).
+   */
+  addRow?(arrayName: string, rowId: string, initial: Record<string, unknown>): void
+
+  /**
+   * Remove a row from a Repeater/Builder field by stable id. Idempotent
+   * — a missing `rowId` is a no-op. Triggered by the renderer's row
+   * delete button.
+   */
+  removeRow?(arrayName: string, rowId: string): void
+
+  /**
+   * Apply a new row order. `newOrder` is the full list of row ids in
+   * their final positions; the binding computes the minimal CRDT move
+   * sequence and applies it inside a single transaction (peers see one
+   * coalesced update, not N intermediate states).
+   *
+   * Called by drag-and-drop / up-down move handlers in
+   * `RepeaterInput` + `BuilderInput`.
+   */
+  reorderRows?(arrayName: string, newOrder: string[]): void
+
+  /**
+   * Write a single field on a row. Replaces the dotted-path `set` for
+   * row leaves (`tags.0.label` → `setRow('tags', rowId, 'label', value)`).
+   *
+   * Binding routes by allowlist same as top-level `set`: text-shaped
+   * fields go through the row's `TextBinding` when a `Y.Text` exists
+   * (see `getRowTextBinding`); non-text fields land on the row's
+   * scalar field-map under LWW.
+   *
+   * `FormStateProvider` calls this on every local edit when both a
+   * dotted-path name is being written AND `setRow` is implemented;
+   * otherwise the v1 skip-on-dot path runs.
+   */
+  setRow?(arrayName: string, rowId: string, fieldName: string, value: unknown): void
+
+  /**
+   * Per-row text-CRDT handle. Composes with F.6's `BoundTextInput`:
+   * the renderer asks for one of these when a row leaf is text-shaped
+   * AND not opted out via `.collab(false)`, then threads it through
+   * the existing `TextBinding` plumbing inside the row.
+   *
+   * Returns `null` for non-text fields, fields opted out via collab,
+   * rows not yet present in the binding's index (e.g. before
+   * `addRow` has propagated), or when the binding doesn't yet
+   * implement per-row text CRDT (deferred to F.5c).
+   */
+  getRowTextBinding?(arrayName: string, rowId: string, fieldName: string): TextBinding | null
+
+  /**
+   * Subscribe to row-lifecycle events for a Repeater/Builder array.
+   * Fires on remote add / remove / move; the renderer reconciles its
+   * `rows` state by `__id`. Local mutations fire too — the renderer
+   * deduplicates by checking whether the event's `rowId` matches one
+   * it just dispatched itself (the binding's roundtrip + the
+   * renderer's optimistic update converge).
+   */
+  subscribeRows?(arrayName: string, fn: (event: RowsEvent) => void): () => void
 }
+
+/**
+ * Phase F.5 — array-scoped imperative API exposed to Repeater / Builder
+ * renderers through `useRowBinding(arrayName)`. Each method's first arg
+ * (`arrayName`) is pre-bound by the hook so call sites read naturally.
+ *
+ * Returned by the hook only when the active binding implements all four
+ * F.5 row methods (`addRow + removeRow + reorderRows`); partial impls
+ * read as null so renderers can do a single existence check before
+ * proceeding. `setRow` is intentionally NOT exposed here — it's invoked
+ * implicitly via `FormStateProvider.setValue`'s dotted-path routing,
+ * so renderers never need to touch it directly.
+ */
+export interface RowBindingApi {
+  /** Register a new row in the array's CRDT surface. `initial` may
+   *  carry pre-seeded values (e.g. clone of a sibling); pass `{}` (or
+   *  omit) for empty rows. Idempotent under existing rowId. */
+  add(rowId: string, initial?: Record<string, unknown>): void
+  /** Remove the row with the given id. Idempotent for unknown ids. */
+  remove(rowId: string): void
+  /** Replace the array's row order. `newOrder` is the full list of row
+   *  ids in their post-reorder positions; the binding emits the minimal
+   *  CRDT move sequence in one transaction so peers observe a single
+   *  coalesced update. */
+  reorder(newOrder: string[]): void
+  /** Subscribe to remote row-lifecycle events on this array. Returns
+   *  an unsubscribe fn the renderer's `useEffect` cleanup hangs on.
+   *  Local mutations may also surface here (Yjs observers fire on
+   *  local transactions); the renderer is expected to dedupe by
+   *  rowId presence in its current state. Optional on the underlying
+   *  contract — `null` when the binding lacks `subscribeRows`. */
+  subscribe(fn: (event: RowsEvent) => void): () => void
+}
+
+/**
+ * Phase F.5 — row-lifecycle event surfaced through `subscribeRows`.
+ *
+ *   - `add`    — a new row was inserted at `index`. `values` carries
+ *                the row's seeded field values (mirrors `addRow.initial`).
+ *   - `remove` — a row was removed; `index` is its position at the
+ *                moment of removal.
+ *   - `move`   — a row shifted positions. `from` and `to` are 0-based
+ *                indices in the post-reorder layout (i.e. the row at
+ *                position `from` ended up at `to`).
+ *
+ * Pilotiq core stays Yjs-free — the binding impl in `@pilotiq-pro/collab`
+ * translates `Y.Array<Y.Map>` `observe` deltas into these events.
+ */
+export type RowsEvent =
+  | { kind: 'add';    rowId: string; index: number; values: Record<string, unknown> }
+  | { kind: 'remove'; rowId: string; index: number }
+  | { kind: 'move';   rowId: string; from: number; to: number }
 
 export interface FormCollabBindingFactoryArgs {
   /** Active collab room — provides `ydoc`, `provider`, `user`. Opaque to pilotiq core. */

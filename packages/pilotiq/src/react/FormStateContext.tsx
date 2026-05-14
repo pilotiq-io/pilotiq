@@ -10,9 +10,11 @@ import React, {
 import type { ElementMeta } from '../schema/Element.js'
 import {
   collectFieldDefaults,
+  collectRowArrayFieldNames,
   findFieldMeta,
   parseFormDataToNested,
   readNestedValue,
+  routeBindingWrite,
   writeNestedValue,
 } from './formStateHelpers.js'
 import { runJsHandler } from './fieldJsHandler.js'
@@ -21,6 +23,7 @@ import { useCollabRoom } from './CollabRoomContext.js'
 import {
   getFormCollabBinding,
   type FormCollabBinding,
+  type RowBindingApi,
   type TextBinding,
 } from './FormCollabBindingRegistry.js'
 
@@ -51,6 +54,11 @@ export interface FormStateApi {
    *  non-null answers, so a `Map.get()` hit means the binding has opted
    *  this field into the character-level path. */
   textBindings:  ReadonlyMap<string, TextBinding> | null
+  /** Phase F.5 — per-Repeater/Builder row-array bindings. `null` outside a
+   *  collab room or when the binding doesn't implement F.5 row methods.
+   *  Each entry's API methods are pre-bound to the array name so renderers
+   *  call `.add(rowId, initial)` rather than `binding.addRow(name, …)`. */
+  rowBindings:   ReadonlyMap<string, RowBindingApi> | null
 }
 
 const FormStateContext = createContext<FormStateApi | null>(null)
@@ -70,19 +78,6 @@ export function useFormState(): FormStateApi | null {
  * `useContext(FormIdContext)` and fall back to a sentinel when missing.
  */
 export const FormIdContext = createContext<string>('')
-
-/**
- * Phase F2 — returns `true` iff the named field has explicitly opted out
- * of realtime collab via `Field.collab(false)`. Sparse meta — absent =
- * inherit the panel default (collab on). Walks the form meta tree the
- * same way `findFieldMeta` does; cheap because it only runs on the
- * per-write path (already a hot path, but every check is one map
- * lookup + one boolean compare).
- */
-function fieldOptsOutOfCollab(formMeta: ElementMeta, name: string): boolean {
-  const meta = findFieldMeta(formMeta, name) as { collab?: boolean } | undefined
-  return meta?.collab === false
-}
 
 export interface UseFieldStateResult {
   /** True when the field is inside a controlled form (live fields enabled).
@@ -113,6 +108,26 @@ export interface UseFieldStateResult {
    *  renderers branch on this: non-null → character-level path with
    *  `applyDelta + observe`; null → today's whole-string LWW path. */
   textBinding: TextBinding | null
+}
+
+/**
+ * Phase F.5 — return the row-array CRDT API for a Repeater/Builder field.
+ * Returns `null` when:
+ *
+ *   - No `FormStateProvider` is mounted (e.g. uncontrolled form path).
+ *   - No `<RecordCollabRoom>` is up-tree (no binding registered).
+ *   - The active binding doesn't implement F.5's row methods.
+ *   - The named field opted out via `.collab(false)` (skipped at meta walk).
+ *   - The named field isn't a Repeater/Builder.
+ *
+ * RepeaterInput + BuilderInput call this once per render and proceed
+ * with the v1 local-only behaviour when null. The returned API methods
+ * are pre-bound to the array name so consumers don't repeat it.
+ */
+export function useRowBinding(arrayName: string): RowBindingApi | null {
+  const ctx = useContext(FormStateContext)
+  if (!ctx?.rowBindings) return null
+  return ctx.rowBindings.get(arrayName) ?? null
 }
 
 /** Per-field accessor. Inside a `FormStateProvider` it returns the controlled
@@ -203,6 +218,10 @@ export function FormStateProvider({
   // existing `setValuesState` overlay below already triggers one when the
   // room has pre-existing state.
   const [textBindings, setTextBindings] = useState<ReadonlyMap<string, TextBinding> | null>(null)
+  // Phase F.5 — per-Repeater/Builder row-array stash. Same lifecycle as
+  // `textBindings`: populated on collab mount when the binding implements
+  // F.5 row methods, cleared on unmount.
+  const [rowBindings, setRowBindings] = useState<ReadonlyMap<string, RowBindingApi> | null>(null)
 
   const { notify } = useToast()
 
@@ -285,6 +304,38 @@ export function FormStateProvider({
       if (textStash.size > 0) setTextBindings(textStash)
     }
 
+    // Phase F.5 — build a `RowBindingApi` per top-level Repeater/Builder
+    // field when the binding implements all three lifecycle methods. The
+    // walk reads from formMeta (structural — fields exist regardless of
+    // whether the form has any rows yet); the API is then pre-bound to
+    // the array name so `RepeaterInput` calls `rb.add(rowId, …)` rather
+    // than `binding.addRow(name, rowId, …)`. Partial F.5 impls (e.g. a
+    // binding that has addRow but not reorderRows) skip the stash — the
+    // contract says all three or nothing. F.5c's per-row text path is
+    // exposed separately via `getRowTextBinding` and stays optional.
+    if (binding.addRow && binding.removeRow && binding.reorderRows) {
+      const { addRow, removeRow, reorderRows, subscribeRows } = binding
+      const arrayNames = collectRowArrayFieldNames(formMetaRef.current)
+      if (arrayNames.length > 0) {
+        const rowStash = new Map<string, RowBindingApi>()
+        for (const arrayName of arrayNames) {
+          rowStash.set(arrayName, {
+            add:     (rowId, initial = {}) => addRow.call(binding, arrayName, rowId, initial),
+            remove:  (rowId)               => removeRow.call(binding, arrayName, rowId),
+            reorder: (newOrder)            => reorderRows.call(binding, arrayName, newOrder),
+            // Partial F.5 impl: a binding may ship add/remove/reorder
+            // without `subscribeRows` (e.g. tests). Substitute a no-op
+            // subscription so renderer code stays uniform — the cleanup
+            // fn is still called on unmount but no events ever arrive.
+            subscribe: subscribeRows
+              ? (fn) => subscribeRows.call(binding, arrayName, fn)
+              : () => () => {},
+          })
+        }
+        setRowBindings(rowStash)
+      }
+    }
+
     // Subscribe to remote changes. Local writes ALSO trigger this
     // (Yjs observers fire on local transactions too) — the per-key
     // Object.is short-circuit below collapses them into no-op renders.
@@ -307,6 +358,7 @@ export function FormStateProvider({
       binding.destroy()
       bindingRef.current = null
       setTextBindings(null)
+      setRowBindings(null)
     }
     // `valuesRef.current` is intentionally read once at mount — initial
     // values seed the binding; subsequent edits flow through `setValue`
@@ -367,14 +419,13 @@ export function FormStateProvider({
       if (Object.is(prev[name], value)) return prev
       return { ...prev, [name]: value }
     })
-    // Phase F2 — proxy the write through the collab binding when active
-    // AND the field hasn't opted out via `.collab(false)`. Dotted-path
-    // names (Repeater / Builder row leaves) stay local-only in v1; their
-    // syncing belongs to Phase F.5 (`Y.Array<Y.Map>` row identity).
-    const binding = bindingRef.current
-    if (binding && !name.includes('.') && !fieldOptsOutOfCollab(formMetaRef.current, name)) {
-      binding.set(name, value)
-    }
+    // Phase F2 / F.5 — proxy the write through the collab binding when
+    // active AND the field hasn't opted out via `.collab(false)`. Top-level
+    // fields ride `binding.set`. Row leaves (dotted paths matching
+    // `parseRowFieldPath`) route through `binding.setRow` when the
+    // binding implements F.5 — otherwise stay local-only (same posture
+    // as pre-F.5).
+    routeBindingWrite(bindingRef.current, formMetaRef.current, valuesRef.current, name, value)
     // Fire the client-side JS hook synchronously after the state write.
     // Dotted-name fields don't go through here (their setter is a no-op
     // in `useFieldState`); they fire JS via `triggerLive` instead so we
@@ -448,16 +499,19 @@ export function FormStateProvider({
         const serverValues = (data.form as { values?: Record<string, unknown> }).values
         if (serverValues) {
           setValuesState((prev) => ({ ...prev, ...serverValues }))
-          // Phase F2 (Q2) — derived fields propagate to peers via the
-          // collab binding so every client sees the auto-`slug` / etc.
-          // without each peer roundtripping the server. Skip dotted-path
-          // names + fields that opted out.
+          // Phase F2 (Q2) / F.5 — derived fields propagate to peers via the
+          // collab binding so every client sees the auto-`slug` / etc. without
+          // each peer roundtripping the server. Row leaves route through
+          // `setRow` when the binding implements F.5; top-level fields ride
+          // `set`. The rowId lookup needs the freshest values — merge
+          // `valuesRef.current` with the server overlay so a row-id stamped
+          // by this very server-resolve response is visible to `rowIdAtIndex`.
           const binding = bindingRef.current
           if (binding) {
+            const lookupValues = { ...valuesRef.current, ...serverValues }
             for (const [k, v] of Object.entries(serverValues)) {
-              if (k.includes('.')) continue
-              if (fieldOptsOutOfCollab(data.form, k)) continue
-              binding.set(k, v)
+              // routeBindingWrite handles `.collab(false)` opt-out internally.
+              routeBindingWrite(binding, data.form, lookupValues, k, v)
             }
           }
         }
@@ -538,7 +592,8 @@ export function FormStateProvider({
     inFlight,
     fieldStatus,
     textBindings,
-  }), [values, setValue, triggerLive, errors, applyErrors, formMeta, inFlight, fieldStatus, textBindings])
+    rowBindings,
+  }), [values, setValue, triggerLive, errors, applyErrors, formMeta, inFlight, fieldStatus, textBindings, rowBindings])
 
   return (
     <FormStateContext.Provider value={api}>

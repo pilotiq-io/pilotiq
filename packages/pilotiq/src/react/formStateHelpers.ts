@@ -1,4 +1,5 @@
 import type { ElementMeta } from '../schema/Element.js'
+import type { FormCollabBinding } from './FormCollabBindingRegistry.js'
 
 /** Walk a form's child tree and collect every Field's `defaultValue` into
  *  a flat values map keyed by field name. Used by `FormStateProvider` to
@@ -215,4 +216,165 @@ export function readNestedValue(
     return undefined
   }
   return cursor
+}
+
+/**
+ * Phase F.5 — parsed row-field coordinates.
+ *
+ * `fieldName` is the leaf field's name as declared in the inner schema
+ * (e.g. the `TextField.make('label')` inside a `Repeater.schema([...])`).
+ * Builder rows wrap their inner schema under a literal `data` segment;
+ * `parseRowFieldPath` strips that segment so consumers don't need to
+ * know which row-array dialect they're addressing.
+ */
+export interface ParsedRowFieldPath {
+  arrayName: string
+  index:     number
+  fieldName: string
+}
+
+/**
+ * Phase F.5 — parse a dotted form-field name into row-array coordinates
+ * when it matches a Repeater or Builder row-leaf shape; return `null`
+ * otherwise. Used by `FormStateProvider` to route row-leaf writes
+ * through `FormCollabBinding.setRow` instead of skipping them.
+ *
+ *   `tags.0.label`        → { arrayName: 'tags',   index: 0, fieldName: 'label' }  (Repeater)
+ *   `blocks.0.data.body`  → { arrayName: 'blocks', index: 0, fieldName: 'body'  }  (Builder)
+ *   `tags.0.__id`         → null   (row identity — handled by addRow / reorderRows)
+ *   `blocks.0.type`       → null   (Builder block discriminator — not a user field)
+ *   `foo`                 → null   (top-level field — top-level binding.set path)
+ *   `tags.notnum.label`   → null   (malformed)
+ *
+ * Nested Repeaters / Builders (e.g. `articles.0.comments.1.body`) are
+ * out of scope v1 — they return `null` here too. F.5b's binding impl
+ * therefore never sees them and they continue to ride the local-state
+ * path until a future phase opens the door.
+ */
+export function parseRowFieldPath(path: string): ParsedRowFieldPath | null {
+  const segments = path.split('.')
+  if (segments.length === 3) {
+    const [arrayName, idxRaw, fieldName] = segments as [string, string, string]
+    if (!/^\d+$/.test(idxRaw)) return null
+    if (!arrayName || !fieldName) return null
+    if (fieldName === '__id' || fieldName === 'type') return null
+    return { arrayName, index: Number(idxRaw), fieldName }
+  }
+  if (segments.length === 4 && segments[2] === 'data') {
+    const [arrayName, idxRaw, , fieldName] = segments as [string, string, string, string]
+    if (!/^\d+$/.test(idxRaw)) return null
+    if (!arrayName || !fieldName) return null
+    return { arrayName, index: Number(idxRaw), fieldName }
+  }
+  return null
+}
+
+/**
+ * Phase F.5 — resolve the stable `__id` of the row at `arrayName[index]`
+ * from a flat dotted-path values map. The renderer mints `__id` on every
+ * row insert (UUID for new / DB PK for relationship-backed) so callers
+ * here are looking up an id that already exists; returns `null` only
+ * when the row hasn't been registered yet (e.g. the binding observed a
+ * remote insert before the local renderer rebuilt its row map).
+ *
+ * The lookup always reads from the flat shape (`${arrayName}.${index}.__id`)
+ * since both `FormStateProvider`'s `valuesRef` and server-resolve responses
+ * use flat dotted-path keys.
+ */
+export function rowIdAtIndex(
+  values:    Record<string, unknown>,
+  arrayName: string,
+  index:     number,
+): string | null {
+  const flat = values[`${arrayName}.${index}.__id`]
+  if (typeof flat === 'string' && flat.length > 0) return flat
+  return null
+}
+
+/**
+ * Phase F2 — returns `true` iff the named field has explicitly opted out
+ * of realtime collab via `Field.collab(false)`. Sparse meta — absent =
+ * inherit the panel default (collab on). Walks the form meta tree the
+ * same way `findFieldMeta` does. Cheap (one map lookup per write).
+ *
+ * Exposed so `routeBindingWrite` can compose against it from this
+ * module instead of FormStateContext's private helper.
+ */
+export function fieldOptsOutOfCollab(formMeta: ElementMeta, name: string): boolean {
+  const meta = findFieldMeta(formMeta, name) as { collab?: boolean } | undefined
+  return meta?.collab === false
+}
+
+/**
+ * Phase F.5 — route a single (name, value) write through the collab
+ * binding by name shape:
+ *
+ *   - top-level name  → `binding.set(name, value)`           (F2 path)
+ *   - row leaf        → `binding.setRow(arrayName, rowId, fieldName, value)`
+ *                       when the binding implements F.5; falls through
+ *                       to no-op otherwise (v1 skip-on-dot behaviour).
+ *
+ * Skips when no binding is registered or the field opted out via
+ * `.collab(false)`. `valuesForLookup` supplies the rowId map — pass the
+ * latest snapshot the caller has access to (`valuesRef.current` for
+ * local writes; merged `valuesRef + serverValues` for server-resolve).
+ *
+ * Shared between `setValue` (local edits) and the server-resolve overlay
+ * inside `performLivePost` so both routing decisions stay in lockstep.
+ */
+export function routeBindingWrite(
+  binding:         FormCollabBinding | null,
+  formMeta:        ElementMeta | undefined,
+  valuesForLookup: Record<string, unknown>,
+  name:            string,
+  value:           unknown,
+): void {
+  if (!binding) return
+  if (formMeta && fieldOptsOutOfCollab(formMeta, name)) return
+  if (!name.includes('.')) {
+    binding.set(name, value)
+    return
+  }
+  if (!binding.setRow) return   // pre-F.5 binding — row leaves stay local
+  const parsed = parseRowFieldPath(name)
+  if (!parsed) return           // nested-Repeater / malformed — out of scope v1
+  const rowId = rowIdAtIndex(valuesForLookup, parsed.arrayName, parsed.index)
+  if (!rowId) return            // row not yet stamped — local-only until id lands
+  binding.setRow(parsed.arrayName, rowId, parsed.fieldName, value)
+}
+
+/**
+ * Phase F.5 — walk a form's meta tree for top-level Repeater / Builder
+ * field names. Used by `FormStateProvider` to build the per-array
+ * `RowBindingApi` map from a single meta walk at binding mount.
+ *
+ * Stops at the array boundary itself — we want the array's own field
+ * name, not the inner-row fields inside it (which address through
+ * `setRow`'s dotted-path routing, not through their own row bindings).
+ * Skips fields opted out via `.collab(false)` so the array is left on
+ * the v1 local-state path.
+ */
+export function collectRowArrayFieldNames(formMeta: ElementMeta): string[] {
+  const out: string[] = []
+  walk(formMeta)
+  return out
+
+  function walk(node: ElementMeta): void {
+    if (node.type === 'field') {
+      const fieldType = node['fieldType']
+      if (fieldType === 'repeater' || fieldType === 'builder') {
+        if ((node as { collab?: boolean }).collab !== false) {
+          const name = String(node['name'] ?? '')
+          if (name) out.push(name)
+        }
+        // Don't descend — inner row fields address through dotted-path
+        // routing, not their own row bindings.
+        return
+      }
+    }
+    const children = node.children
+    if (Array.isArray(children)) {
+      for (const child of children) walk(child as ElementMeta)
+    }
+  }
 }
