@@ -6,6 +6,8 @@ export {
   type UserResolver,
   type UploadConfig,
   type SignOutConfig,
+  type EditPageHydrator,
+  type EditPageHydratorContext,
 } from './Pilotiq.js'
 export {
   UserMenuItem,
