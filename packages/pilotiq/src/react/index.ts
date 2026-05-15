@@ -55,8 +55,6 @@ export {
   type FormCollabBinding,
   type FormCollabBindingFactory,
   type FormCollabBindingFactoryArgs,
-  type TextBinding,
-  type TextDelta,
   type RowsEvent,
   type RowBindingApi,
 } from './FormCollabBindingRegistry.js'

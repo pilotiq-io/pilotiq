@@ -11,13 +11,10 @@ import type { ElementMeta } from '../schema/Element.js'
 import {
   collectFieldDefaults,
   collectRowArrayFieldNames,
-  collectRowTextLeavesByArray,
   findFieldMeta,
   parseFormDataToNested,
-  parseRowFieldPath,
   readNestedValue,
   routeBindingWrite,
-  rowIdAtIndex,
   writeNestedValue,
 } from './formStateHelpers.js'
 import { runJsHandler } from './fieldJsHandler.js'
@@ -27,7 +24,6 @@ import {
   getFormCollabBinding,
   type FormCollabBinding,
   type RowBindingApi,
-  type TextBinding,
 } from './FormCollabBindingRegistry.js'
 
 export type FieldStatus = 'idle' | 'pending'
@@ -50,36 +46,11 @@ export interface FormStateApi {
   formMeta:      ElementMeta
   inFlight:      boolean
   fieldStatus:   (name: string) => FieldStatus
-  /** Phase F.6 — per-field text-CRDT handles stashed at collab-room mount.
-   *  `null` outside a room or before the binding effect has populated the
-   *  map. The text/non-text allowlist lives in the binding impl —
-   *  `FormStateProvider` asks for every top-level field and only stashes
-   *  non-null answers, so a `Map.get()` hit means the binding has opted
-   *  this field into the character-level path. */
-  textBindings:  ReadonlyMap<string, TextBinding> | null
   /** Phase F.5 — per-Repeater/Builder row-array bindings. `null` outside a
    *  collab room or when the binding doesn't implement F.5 row methods.
    *  Each entry's API methods are pre-bound to the array name so renderers
    *  call `.add(rowId, initial)` rather than `binding.addRow(name, …)`. */
   rowBindings:   ReadonlyMap<string, RowBindingApi> | null
-  /**
-   * Phase F.5c — per-array set of inner-field names that should route
-   * through `Y.Text` (character-level CRDT) instead of row-level Y.Map
-   * LWW. Built from a single meta walk at binding mount. Read by
-   * `useFieldState(dottedName).textBinding` to decide whether to call
-   * `getRowTextBinding`. Sparse — only arrays with at least one
-   * text-shaped row leaf appear; absence on a key means "no text leaves
-   * in this Repeater/Builder".
-   */
-  rowTextLeaves: ReadonlyMap<string, ReadonlySet<string>> | null
-  /**
-   * Phase F.5c — resolve a per-row `TextBinding`. Pre-bound to the
-   * active F.5 binding so consumers don't reach for `bindingRef`
-   * directly. Returns `null` when no binding implements F.5c OR the
-   * row+field doesn't qualify (renderer caller should fall back to
-   * `defaultValue` like a non-collab form).
-   */
-  getRowTextBinding: ((arrayName: string, rowId: string, fieldName: string) => TextBinding | null) | null
 }
 
 const FormStateContext = createContext<FormStateApi | null>(null)
@@ -120,15 +91,6 @@ export interface UseFieldStateResult {
   /** True while a live re-resolve POST is in flight for this field. */
   pending:     boolean
   errors:      string[]
-  /** Phase F.6 — character-level CRDT handle for text-shaped fields when
-   *  a collab room is mounted up-tree AND the binding strategy applies
-   *  (allowlist + `.collab() !== false`). Null in every other case —
-   *  outside a `FormStateProvider`, outside a `<RecordCollabRoom>`, on
-   *  non-text fields, on dotted-path inner-Repeater rows (deferred to
-   *  F.5), and on text fields opted out via `.collab(false)`. Text input
-   *  renderers branch on this: non-null → character-level path with
-   *  `applyDelta + observe`; null → today's whole-string LWW path. */
-  textBinding: TextBinding | null
 }
 
 /**
@@ -164,7 +126,6 @@ export function useFieldState(name: string): UseFieldStateResult {
       triggerLive: () => {},
       pending:     false,
       errors:      [],
-      textBinding: null,
     }
   }
   // Dotted-path fields (inner Repeater rows) always render uncontrolled
@@ -177,33 +138,7 @@ export function useFieldState(name: string): UseFieldStateResult {
     triggerLive: (valueOverride?: unknown) => ctx.triggerLive(name, valueOverride),
     pending:     ctx.fieldStatus(name) === 'pending',
     errors:      ctx.errors[name] ?? [],
-    // Phase F.6 — top-level text fields resolve from the binding-mount
-    // text stash. Phase F.5c — dotted-path row leaves resolve through
-    // `getRowTextBinding` when the field is text-shaped AND the row's
-    // `__id` is already stamped in the values map. Outside a collab
-    // room, for non-text fields, or before `addRow` has settled the
-    // row's id, the lookup returns null and `BoundTextInput` falls
-    // back to today's uncontrolled-input path.
-    textBinding: dotted
-      ? resolveRowTextBinding(ctx, name)
-      : (ctx.textBindings?.get(name) ?? null),
   }
-}
-
-/**
- * Phase F.5c — dotted-name `TextBinding` resolver. Returns `null`
- * whenever any precondition fails so the caller's renderer can take a
- * single branch on null vs non-null.
- */
-function resolveRowTextBinding(ctx: FormStateApi, dottedName: string): TextBinding | null {
-  if (!ctx.rowTextLeaves || !ctx.getRowTextBinding) return null
-  const parsed = parseRowFieldPath(dottedName)
-  if (!parsed) return null
-  const set = ctx.rowTextLeaves.get(parsed.arrayName)
-  if (!set?.has(parsed.fieldName)) return null
-  const rowId = rowIdAtIndex(ctx.values, parsed.arrayName, parsed.index)
-  if (!rowId) return null
-  return ctx.getRowTextBinding(parsed.arrayName, rowId, parsed.fieldName)
 }
 
 /** Response shape from `POST {base}/.../_form/:formId/state`. */
@@ -253,22 +188,11 @@ export function FormStateProvider({
   const [errors,   setErrors] = useState<Record<string, string[]>>(initialErrors)
   const [pendingNames, setPendingNames] = useState<Set<string>>(() => new Set())
   const [inFlight, setInFlight] = useState(false)
-  // Phase F.6 — per-field text-CRDT stash. `null` until the collab effect
-  // populates it; stays `null` outside a collab room. Stored in state (not
-  // a ref) so consumers of `useFieldState` re-render once the bindings
-  // land. One extra render after collab-mount; acceptable since the
-  // existing `setValuesState` overlay below already triggers one when the
-  // room has pre-existing state.
-  const [textBindings, setTextBindings] = useState<ReadonlyMap<string, TextBinding> | null>(null)
-  // Phase F.5 — per-Repeater/Builder row-array stash. Same lifecycle as
-  // `textBindings`: populated on collab mount when the binding implements
-  // F.5 row methods, cleared on unmount.
+  // Phase F.5 — per-Repeater/Builder row-array stash. Populated on
+  // collab mount when the binding implements F.5 row methods, cleared
+  // on unmount. Stored in state (not a ref) so consumers of
+  // `useRowBinding` re-render once the bindings land.
   const [rowBindings, setRowBindings] = useState<ReadonlyMap<string, RowBindingApi> | null>(null)
-  // Phase F.5c — per-array set of text-shaped row leaves + a pre-bound
-  // resolver. Both populated at binding mount when the active binding
-  // implements `getRowTextBinding`; cleared on unmount.
-  const [rowTextLeaves,     setRowTextLeaves]     = useState<ReadonlyMap<string, ReadonlySet<string>> | null>(null)
-  const [getRowTextBinding, setGetRowTextBinding] = useState<((arrayName: string, rowId: string, fieldName: string) => TextBinding | null) | null>(null)
 
   const { notify } = useToast()
 
@@ -332,25 +256,6 @@ export function FormStateProvider({
       setValuesState((prev) => ({ ...prev, ...synced }))
     }
 
-    // Phase F.6 — ask the binding for a `TextBinding` on every top-level
-    // field name. The text/non-text allowlist lives in the binding impl,
-    // not in core: the binding returns `null` for non-text fields and
-    // text fields opted out via `.collab(false)`. `getTextBinding` is
-    // optional on the contract — F1-era plugins that haven't implemented
-    // it short-circuit the whole stash and every text field stays on the
-    // LWW path. We stash only the non-null answers. Cleanup is owned by
-    // `binding.destroy()` (expected to cascade into every issued
-    // `TextBinding`).
-    if (binding.getTextBinding) {
-      const textStash = new Map<string, TextBinding>()
-      for (const fieldName of Object.keys(valuesRef.current)) {
-        if (fieldName.includes('.')) continue
-        const tb = binding.getTextBinding(fieldName)
-        if (tb) textStash.set(fieldName, tb)
-      }
-      if (textStash.size > 0) setTextBindings(textStash)
-    }
-
     // Phase F.5 — build a `RowBindingApi` per top-level Repeater/Builder
     // field when the binding implements all three lifecycle methods. The
     // walk reads from formMeta (structural — fields exist regardless of
@@ -358,8 +263,7 @@ export function FormStateProvider({
     // the array name so `RepeaterInput` calls `rb.add(rowId, …)` rather
     // than `binding.addRow(name, rowId, …)`. Partial F.5 impls (e.g. a
     // binding that has addRow but not reorderRows) skip the stash — the
-    // contract says all three or nothing. F.5c's per-row text path is
-    // exposed separately via `getRowTextBinding` and stays optional.
+    // contract says all three or nothing.
     if (binding.addRow && binding.removeRow && binding.reorderRows) {
       const { addRow, removeRow, reorderRows, subscribeRows } = binding
       const arrayNames = collectRowArrayFieldNames(formMetaRef.current)
@@ -380,23 +284,6 @@ export function FormStateProvider({
           })
         }
         setRowBindings(rowStash)
-      }
-    }
-
-    // Phase F.5c — capture the per-array text-leaf allowlist + bind the
-    // row-text resolver to the active binding. `getRowTextBinding` may
-    // be absent on partial F.5 impls; we expose the resolver as null in
-    // that case so `useFieldState` short-circuits cleanly.
-    if (binding.getRowTextBinding) {
-      const leaves = collectRowTextLeavesByArray(formMetaRef.current)
-      if (leaves.size > 0) {
-        setRowTextLeaves(leaves)
-        const bound = binding.getRowTextBinding
-        // useState's functional-updater overload would invoke the
-        // stored function during set; wrapping in a fresh closure keeps
-        // React's setState path from confusing it for an updater fn.
-        setGetRowTextBinding(() => (arrayName: string, rowId: string, fieldName: string) =>
-          bound.call(binding, arrayName, rowId, fieldName))
       }
     }
 
@@ -421,10 +308,7 @@ export function FormStateProvider({
       unsubscribe()
       binding.destroy()
       bindingRef.current = null
-      setTextBindings(null)
       setRowBindings(null)
-      setRowTextLeaves(null)
-      setGetRowTextBinding(null)
     }
     // `valuesRef.current` is intentionally read once at mount — initial
     // values seed the binding; subsequent edits flow through `setValue`
@@ -657,11 +541,8 @@ export function FormStateProvider({
     formMeta,
     inFlight,
     fieldStatus,
-    textBindings,
     rowBindings,
-    rowTextLeaves,
-    getRowTextBinding,
-  }), [values, setValue, triggerLive, errors, applyErrors, formMeta, inFlight, fieldStatus, textBindings, rowBindings, rowTextLeaves, getRowTextBinding])
+  }), [values, setValue, triggerLive, errors, applyErrors, formMeta, inFlight, fieldStatus, rowBindings])
 
   return (
     <FormStateContext.Provider value={api}>

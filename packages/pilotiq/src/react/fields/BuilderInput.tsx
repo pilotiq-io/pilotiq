@@ -192,11 +192,9 @@ export function BuilderInput({
   // the first event — without it, the picker dropdown choice doesn't
   // propagate until the user makes their first inner-field edit.
   const rowBinding = useRowBinding(name)
-  // Phase F.5c — mirror row identities into the form's values map so dotted
-  // row-leaf consumers (`useFieldState('${name}.${i}.data.text').textBinding`)
-  // can resolve the row's `__id` via `rowIdAtIndex(ctx.values, name, i)`.
-  // Without this stamp the F.5c per-row Y.Text path stays null on Builder
-  // and inner text fields never sync. Mirrors the same fix in RepeaterInput.
+  // Mirror row identities into the form's values map so dotted row-leaf
+  // consumers can resolve the row's `__id` via `rowIdAtIndex(ctx.values,
+  // name, i)`. Mirrors the same plumbing in RepeaterInput.
   const formStateForIds = useFormState()
   const ctxSetValue = formStateForIds?.setValue
   useEffect(() => {

@@ -2,44 +2,6 @@ import type { ElementMeta } from '../schema/Element.js'
 import type { CollabRoom } from './CollabRoomContext.js'
 
 /**
- * Phase F.6 — character-level edit op emitted by `TextLikeInput` and
- * applied through `TextBinding.applyDelta`. `replace` covers IME / paste
- * / multi-char selections; `insert` and `delete` cover the single-key
- * common path. Pilotiq core stays Yjs-free — the binding impl in
- * `@pilotiq-pro/collab` translates these into `Y.Text.insert / delete`
- * inside a transaction.
- */
-export type TextDelta =
-  | { kind: 'insert',  index: number,  text: string }
-  | { kind: 'delete',  index: number,  length: number }
-  | { kind: 'replace', from:  number,  to: number, text: string }
-
-/**
- * Phase F.6 — per-field character-level CRDT handle. Issued by
- * `FormCollabBinding.getTextBinding(name)` for text-shaped fields
- * (`TextField / TextareaField / EmailField / SlugField / MarkdownField`);
- * returns `null` for non-text fields or text fields opted out via
- * `.collab(false)`. The surface stays intentionally narrow so pilotiq
- * core never touches Yjs directly — same posture as `FormCollabBinding`.
- *
- *   - `read()` returns the current full string. `TextLikeInput` calls
- *     this once on mount to seed its controlled value.
- *   - `applyDelta(delta)` is called from `onInput` events with a single
- *     `insert / delete / replace` op derived from the input's selection.
- *   - `observe(fn)` registers a remote-change listener; `fn(next)`
- *     receives the post-change string. Returns an unsubscribe function.
- *   - `destroy()` cleans up everything the handle holds. The owning
- *     `FormCollabBinding.destroy()` is expected to cascade — consumers
- *     don't need to call this directly.
- */
-export interface TextBinding {
-  read():     string
-  applyDelta(delta: TextDelta): void
-  observe(fn: (next: string) => void): () => void
-  destroy():  void
-}
-
-/**
  * Binding contract that a collab plugin returns from
  * `registerFormCollabBinding` — wraps a single form's value map in a
  * shared CRDT type (typically a `Y.Map` on the surrounding record's
@@ -55,21 +17,14 @@ export interface TextBinding {
  *   - `subscribe(fn)` registers a listener that fires when REMOTE
  *     changes land; `fn(snapshot)` receives the full updated map.
  *     The provider re-applies this snapshot onto its React state.
- *   - `getTextBinding(name)` (Phase F.6) was the per-field `Y.Text`
- *     handle for character-level CRDT on top-level text inputs. After
- *     the Tiptap-backed text-collab swap (Phase D, 2026-05), bindings
- *     are expected to return `null` for every top-level field —
- *     character-level CRDT now lives in the Tiptap renderer's
- *     `Collaboration` extension (`Y.XmlFragment` per field). Returning
- *     a non-null `TextBinding` here is still supported for legacy
- *     bindings, but the active `@pilotiq-pro/collab` impl no longer
- *     allocates `Y.Text` for top-level fields. Row-text leaves under
- *     Repeater / Builder continue to route through Y.Text via
- *     `getRowTextBinding` — the Tiptap-backed renderer only handles
- *     top-level (non-dotted-path) field names today.
  *   - `destroy()` is called on unmount — gives the plugin a chance to
- *     remove its CRDT observer. Implementations are expected to cascade
- *     into every `TextBinding` they issued.
+ *     remove its CRDT observer.
+ *
+ * Text-field character-level CRDT lives in `@pilotiq/tiptap`'s
+ * `CollabTextRenderer` (`Y.XmlFragment` per field, keyed by bare name
+ * for top-level + `${arrayName}.${rowId}.${fieldName}` composite for
+ * row leaves) — pilotiq core no longer mediates per-field text CRDT,
+ * so this binding only handles non-text values + row lifecycle.
  *
  * `unknown` payloads keep pilotiq core Yjs-free; the binding owns its
  * own type knowledge. Same posture as `CollabExtensionFactory`.
@@ -81,17 +36,6 @@ export interface FormCollabBinding {
   set(name: string, value: unknown): void
   /** Subscribe to remote changes. Returns an unsubscribe function. */
   subscribe(fn: (snapshot: Record<string, unknown>) => void): () => void
-  /** Phase F.6 / Phase D — per-field text-CRDT handle. Post Phase D,
-   *  `@pilotiq-pro/collab` returns `null` for every top-level text
-   *  field (character-level CRDT moved into `@pilotiq/tiptap`'s
-   *  `CollabTextRenderer`, which mounts its own `Y.XmlFragment` per
-   *  field via the `Collaboration` extension). The method is preserved
-   *  on the contract for legacy bindings and for the row-text leaves
-   *  routed through `getRowTextBinding` (under Repeater / Builder).
-   *  Optional so existing F1-era plugins keep type-checking without a
-   *  no-op stub; absent reads as "binding has no top-level text CRDT
-   *  surface," same as returning `null` for every field. */
-  getTextBinding?(name: string): TextBinding | null
   /** Cleanup hook called when the form unmounts. */
   destroy():    void
 
@@ -137,30 +81,16 @@ export interface FormCollabBinding {
   /**
    * Write a single field on a row. Replaces the dotted-path `set` for
    * row leaves (`tags.0.label` → `setRow('tags', rowId, 'label', value)`).
-   *
-   * Binding routes by allowlist same as top-level `set`: text-shaped
-   * fields go through the row's `TextBinding` when a `Y.Text` exists
-   * (see `getRowTextBinding`); non-text fields land on the row's
-   * scalar field-map under LWW.
+   * Non-text row fields land on the row's scalar field-map under LWW;
+   * text row fields don't flow through here — the Tiptap renderer
+   * writes them directly to a `Y.XmlFragment` at the doc root keyed by
+   * `${arrayName}.${rowId}.${fieldName}`.
    *
    * `FormStateProvider` calls this on every local edit when both a
    * dotted-path name is being written AND `setRow` is implemented;
    * otherwise the v1 skip-on-dot path runs.
    */
   setRow?(arrayName: string, rowId: string, fieldName: string, value: unknown): void
-
-  /**
-   * Per-row text-CRDT handle. Composes with F.6's `BoundTextInput`:
-   * the renderer asks for one of these when a row leaf is text-shaped
-   * AND not opted out via `.collab(false)`, then threads it through
-   * the existing `TextBinding` plumbing inside the row.
-   *
-   * Returns `null` for non-text fields, fields opted out via collab,
-   * rows not yet present in the binding's index (e.g. before
-   * `addRow` has propagated), or when the binding doesn't yet
-   * implement per-row text CRDT (deferred to F.5c).
-   */
-  getRowTextBinding?(arrayName: string, rowId: string, fieldName: string): TextBinding | null
 
   /**
    * Subscribe to row-lifecycle events for a Repeater/Builder array.
@@ -244,16 +174,12 @@ export interface FormCollabBindingFactoryArgs {
    */
   initial: Record<string, unknown>
   /**
-   * Phase F.6 — initial form meta from the server. The binding walks
-   * this once at construction to index Repeater / Builder array names
-   * for row-level CRDT and to identify which row leaves are text-shaped
-   * (`fieldType ∈ { text, textarea, email, slug, markdown }` and not
-   * `.collab(false)`). Post Phase D, top-level text fields no longer
-   * need to be partitioned here — their character-level CRDT lives in
-   * the Tiptap renderer's `Y.XmlFragment`, not in a binding-allocated
-   * `Y.Text`. The meta is captured at mount; later structural changes
-   * from `live()` re-resolves aren't re-walked (rare in practice —
-   * dynamic field add/remove is an F-followup).
+   * Initial form meta from the server. The binding walks this once at
+   * construction to index Repeater / Builder array names for row-level
+   * CRDT. Text fields (top-level and row leaves alike) don't need to be
+   * partitioned here — the Tiptap renderer owns their `Y.XmlFragment`s
+   * at the doc root. The meta is captured at mount; later structural
+   * changes from `live()` re-resolves aren't re-walked.
    */
   formMeta: ElementMeta
 }

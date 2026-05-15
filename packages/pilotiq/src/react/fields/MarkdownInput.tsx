@@ -8,9 +8,10 @@ import {
 import { useFieldState } from '../FormStateContext.js'
 import { useCollabRoom } from '../CollabRoomContext.js'
 import { getCollabTextRenderer, type CollabTextRenderer } from '../CollabTextRendererRegistry.js'
+import { useRowCoords } from '../RowCoordsContext.js'
+import { parseRowFieldPath } from '../formStateHelpers.js'
 import { useToast } from '../Toaster.js'
 import { Button } from '../ui/button.js'
-import { computeDelta, preserveCursor } from './textDelta.js'
 
 type ToolbarButton =
   | 'bold' | 'italic' | 'strike' | 'link'
@@ -50,24 +51,37 @@ export function MarkdownInput({
   const fs = useFieldState(name)
   const room = useCollabRoom()
   const collabRenderer = getCollabTextRenderer()
+  const rowCoords = useRowCoords()
 
-  // Phase B follow-up — Tiptap-backed plain-text editor for markdown source
-  // when collab is on. Same architectural fix as `TextLikeInput`'s
-  // CollabTextField: y-prosemirror's `RelativePosition` cursor anchoring
-  // replaces the broken `Y.Text` + `computeDelta` + `preserveCursor` heuristic.
+  // Tiptap-backed plain-text editor for markdown source when collab is on.
+  // Same architectural fix as `TextLikeInput`'s `CollabTextField`:
+  // y-prosemirror's `RelativePosition` cursor anchoring against a
+  // `Y.XmlFragment` replaces whole-string LWW. Row leaves get the
+  // composite-key transform via `useRowCoords()` + `parseRowFieldPath`
+  // (same shape as TextLikeInput) so the fragment survives row reorders.
   //
-  // Tradeoff: the markdown toolbar + Cmd-shortcuts + paste-image upload all
-  // operate on a `<textarea>`'s DOM selection — they don't have a way to
-  // reach into the Tiptap editor's selection without exposing the editor
-  // instance, which would widen the renderer seam. For now those features
+  // Tradeoff: the markdown toolbar + Cmd-shortcuts + paste-image upload
+  // all operate on a `<textarea>`'s DOM selection — they don't have a
+  // way to reach into the Tiptap editor's selection without exposing the
+  // editor instance, which would widen the renderer seam. Those features
   // are write-mode-only on the native path; collab users type markdown
   // syntax directly (`**bold**`, `## heading`). The preview tab keeps
-  // working since it reads `value` from local state.
-  if (room && collabRenderer) {
+  // working since `MarkdownCollabInput` maintains a local mirror.
+  const fragmentKey: string | null = (() => {
+    if (!name.includes('.')) return name
+    if (!rowCoords) return null
+    const parsed = parseRowFieldPath(name)
+    if (!parsed) return null
+    if (parsed.arrayName !== rowCoords.arrayName) return null
+    if (parsed.index     !== rowCoords.rowIndex)  return null
+    return `${rowCoords.arrayName}.${rowCoords.rowId}.${parsed.fieldName}`
+  })()
+  if (room && collabRenderer && fragmentKey !== null) {
     return (
       <MarkdownCollabInput
         Renderer={collabRenderer}
-        name={name}
+        fragmentKey={fragmentKey}
+        hiddenInputName={name}
         defaultValue={defaultValue}
         disabled={disabled}
         {...(placeholder !== undefined ? { placeholder } : {})}
@@ -79,100 +93,15 @@ export function MarkdownInput({
 
   const { notify } = useToast()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  // Phase F.6 — IME composition gate. Set between `compositionstart` /
-  // `compositionend`; the textarea's onChange skips `applyDelta` while
-  // composing so intermediate chars don't emit ops. Lives at the
-  // component scope so the onChange and composition handlers share it.
-  const isComposingRef = useRef<boolean>(false)
 
   const initial = useMemo(() => stringValue(defaultValue), [])
   const [localValue, setLocalValue] = useState<string>(initial)
   const [tab, setTab] = useState<'write' | 'preview'>('write')
   const [busy, setBusy] = useState(false)
 
-  // Phase F.6 — when a `<RecordCollabRoom>` is mounted and the field has
-  // a `TextBinding`, the textarea is bound to a `Y.Text` and edits emit
-  // `TextDelta`s. Mirrors the architecture in `TextLikeInput.tsx` but
-  // wired in-line because MarkdownInput has its own toolbar + Preview
-  // tab that also need to flow through the binding.
-  const binding = fs.textBinding
-  const [boundValue, setBoundValue] = useState<string>(() => binding?.read() ?? initial)
-  const boundValueRef = useRef<string>(boundValue)
-  useEffect(() => { boundValueRef.current = boundValue }, [boundValue])
-
-  // On binding swap: read current Y.Text state. If non-empty, lift it
-  // into local + form-map state. If empty (no peer has typed yet), leave
-  // the SSR-default-derived `boundValue` showing — first edit will
-  // emit a replace-from-empty delta that atomically populates Y.Text.
-  // No client-side seed: Y.Text isn't safe to seed under concurrent
-  // first-mounters (see @pilotiq-pro/collab `formCollabBinding.ts`).
-  useEffect(() => {
-    if (!binding) return
-    const next = binding.read()
-    if (next.length > 0) {
-      setBoundValue(next)
-      boundValueRef.current = next
-      fs.setValue(next)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [binding])
-
-  // Subscribe to remote changes. Local-echoes are filtered by the
-  // `next === prev` guard. Cursor preserved via the same heuristic
-  // used in `TextLikeInput.BoundTextInput`.
-  useEffect(() => {
-    if (!binding) return
-    return binding.observe((next) => {
-      const prev = boundValueRef.current
-      if (next === prev) return
-      const ta = textareaRef.current
-      const cursor = ta?.selectionStart ?? next.length
-      const restored = preserveCursor(prev, next, cursor)
-      setBoundValue(next)
-      boundValueRef.current = next
-      fs.setValue(next)
-      requestAnimationFrame(() => {
-        if (!ta) return
-        if (document.activeElement !== ta) return
-        try { ta.setSelectionRange(restored, restored) } catch { /* defensive */ }
-      })
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [binding])
-
-  const value = binding
-    ? boundValue
-    : (fs.controlled ? stringValue(fs.value) : localValue)
+  const value = fs.controlled ? stringValue(fs.value) : localValue
 
   const setValue = (next: string): void => {
-    if (binding) {
-      // Compute against current Y.Text contents (not the local ref) so:
-      //  - first edit against empty Y.Text → `insert@0 <whole>` atomic
-      //    populate (no separate seed op needed);
-      //  - after a remote-applied update or server-resolve replace, the
-      //    delta reflects the actual current shared state, not stale
-      //    local bookkeeping.
-      const before = binding.read()
-      if (next !== before) {
-        const delta = computeDelta(before, next)
-        // Pre-stamp `boundValueRef.current = next` BEFORE `applyDelta`.
-        // Y.Text's `observe` fires synchronously inside `applyDelta` for
-        // our own write; without this the observer would see
-        // `prev=before, next=after` and run `preserveCursor` — designed
-        // for *remote* edits — which clobbers the user's caret on local
-        // typing (scrambled output on mid-string inserts). With
-        // `boundValueRef` already at `next`, the observer's
-        // `next === prev` short-circuit fires and the cursor is left
-        // alone for local echoes. Mirror of the same fix in
-        // `BoundTextInput.commitDelta`.
-        boundValueRef.current = next
-        if (delta) binding.applyDelta(delta)
-        setBoundValue(next)
-      }
-      fs.setValue(next)
-      fs.triggerLive(next)
-      return
-    }
     if (fs.controlled) { fs.setValue(next); fs.triggerLive(next) }
     else                { setLocalValue(next); fs.triggerLive(next) }
   }
@@ -405,24 +334,7 @@ export function MarkdownInput({
           {...(fs.controlled
             ? {
                 value,
-                onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-                  // Phase F.6 — when the binding is active and the user
-                  // is mid-IME, paint locally and hold the delta until
-                  // compositionend so we never emit ops for the
-                  // intermediate composing chars.
-                  if (binding && isComposingRef.current) {
-                    setBoundValue(e.target.value)
-                    return
-                  }
-                  setValue(e.target.value)
-                },
-                ...(binding ? {
-                  onCompositionStart: () => { isComposingRef.current = true },
-                  onCompositionEnd:   (e: React.CompositionEvent<HTMLTextAreaElement>) => {
-                    isComposingRef.current = false
-                    setValue(e.currentTarget.value)
-                  },
-                } : {}),
+                onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => setValue(e.target.value),
               }
             : { defaultValue: initial, onChange: (e) => setLocalValue(e.target.value) })}
           onPaste={onPaste}
@@ -472,17 +384,18 @@ function TabButton({ active, onClick, children }: {
  * load-bearing change; markdown-syntax authors keep typing as before.
  */
 function MarkdownCollabInput({
-  Renderer, name, defaultValue, disabled, placeholder, minHeight, maxHeight,
+  Renderer, fragmentKey, hiddenInputName, defaultValue, disabled, placeholder, minHeight, maxHeight,
 }: {
-  Renderer:     CollabTextRenderer
-  name:         string
-  defaultValue: unknown
-  disabled:     boolean
-  placeholder?: string
-  minHeight?:   string
-  maxHeight?:   string
+  Renderer:        CollabTextRenderer
+  fragmentKey:     string
+  hiddenInputName: string
+  defaultValue:    unknown
+  disabled:        boolean
+  placeholder?:    string
+  minHeight?:      string
+  maxHeight?:      string
 }): React.ReactElement {
-  const fs = useFieldState(name)
+  const fs = useFieldState(hiddenInputName)
   const initial = useMemo(() => stringValue(defaultValue), [])
   const [text, setText] = useState<string>(initial)
   const [tab, setTab] = useState<'write' | 'preview'>('write')
@@ -513,9 +426,9 @@ function MarkdownCollabInput({
       </div>
       {tab === 'write' ? (
         <div style={wrapperStyle} className="overflow-auto">
-          <input type="hidden" name={name} value={text} />
+          <input type="hidden" name={hiddenInputName} value={text} />
           <Renderer
-            name={name}
+            name={fragmentKey}
             multiline={true}
             defaultValue={initial}
             {...(placeholder !== undefined ? { placeholder } : {})}
@@ -527,7 +440,7 @@ function MarkdownCollabInput({
         </div>
       ) : (
         <>
-          <input type="hidden" name={name} value={text} readOnly />
+          <input type="hidden" name={hiddenInputName} value={text} readOnly />
           <div
             className="prose prose-sm dark:prose-invert max-w-none px-3 py-2"
             style={wrapperStyle}

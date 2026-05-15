@@ -244,16 +244,14 @@ export function RepeaterInput({
   // it when present so peers see the same lifecycle events; absent =
   // today's local-only behaviour, unchanged.
   const rowBinding = useRowBinding(name)
-  // Phase F.5c — mirror row identities into the form's values map so dotted
-  // row-leaf consumers (`useFieldState('${name}.${i}.heading').textBinding`)
-  // can resolve the row's `__id` via `rowIdAtIndex(ctx.values, name, i)`.
-  // The renderer is the only source of truth for `(index → rowId)`; without
-  // this stamp the F.5c per-row Y.Text path stays null and row text fields
-  // never sync. Setting a `__id` key routes through `routeBindingWrite` →
-  // `parseRowFieldPath` which filters `__id` → no-op on the binding side
-  // (no Y.Text writes), so the only effect is a row in `valuesState`.
-  // `formStateForIds` mirrors `formState` below; we read via `useFormState()`
-  // here too instead of forward-referencing the later binding.
+  // Mirror row identities into the form's values map so dotted row-leaf
+  // consumers can resolve the row's `__id` via `rowIdAtIndex(ctx.values,
+  // name, i)`. Setting a `__id` key routes through `routeBindingWrite` →
+  // `parseRowFieldPath` which filters `__id` → no-op on the binding side,
+  // so the only effect is a row entry landing in `valuesState`.
+  // `formStateForIds` mirrors `formState` below; we read via
+  // `useFormState()` here too instead of forward-referencing the later
+  // binding.
   const formStateForIds = useFormState()
   const ctxSetValue = formStateForIds?.setValue
   useEffect(() => {
