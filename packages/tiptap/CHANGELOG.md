@@ -1,5 +1,15 @@
 # @pilotiq/tiptap
 
+## 3.2.1
+
+### Patch Changes
+
+- Phase D — drop the `_pt:` field-name prefix from `CollabTextRenderer`. The `Y.XmlFragment` now lives under the natural field name. The prefix was a temporary workaround during the Tiptap-backed text-collab swap to dodge a `Y.Text` / `Y.XmlFragment` constructor collision against the legacy form-binding allocation in `@pilotiq-pro/collab`.
+
+  **Coordination requirement when using `@pilotiq-pro/collab`:** ship the matching `@pilotiq-pro/collab` Phase D update (drops the per-field `Y.Text` allocation) at the same time. Without it, the natural-key `Y.XmlFragment` collides with the legacy `Y.Text(name)` slot and the binding throws on mount. Standalone `@pilotiq/tiptap` consumers (no collab) are unaffected — there's no `Y.Text` allocation in play.
+
+  Migration note: records that were edited under the pre-Phase-D code carry a stale `Y.Text(name)` in their IndexedDB / server-persisted ydoc state. The new code ignores it (no consumer touches that slot anymore); the persisted record value is unaffected, only per-keystroke CRDT history from active sessions during the migration is silently dropped.
+
 ## 3.2.0
 
 ### Minor Changes

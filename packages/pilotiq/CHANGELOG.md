@@ -1,5 +1,13 @@
 # @pilotiq/pilotiq
 
+## 0.12.0
+
+### Minor Changes
+
+- Add `CurrentUserContext` exported from `@pilotiq/pilotiq/react` so plugins can read the active user (driven by `Pilotiq.user(req => …)`) without prop-drilling through `panel`. `AppShell` mounts the provider around the layout-provider chain seeded from `panel.userMenu?.user`; plugins call `useCurrentUser()` from inside any layout provider or descendant component.
+
+  Also fixes collab text field chrome: the single-line `TextLikeInput.tsx` chrome now uses `overflow-x-clip` instead of `overflow-x-auto` so `CollaborationCaret` user-name labels can escape the input upward (CSS spec: `auto` on either axis forces the other axis to non-visible too; `clip` is the one non-visible value that allows the orthogonal axis to remain `visible`). Trade-off: long text gets clipped on the right rather than horizontally scrollable inside a collab field — acceptable for plain-text fields where the presence label is the higher-value affordance.
+
 ## 0.11.0
 
 ### Minor Changes
