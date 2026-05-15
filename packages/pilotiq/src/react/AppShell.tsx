@@ -16,6 +16,7 @@ import type { NavItem, UserMenuMeta, DatabaseNotificationsMeta, RightSidebarMeta
 import type { RenderHookMap } from '../RenderHook.js'
 import { RenderHookSlot } from './RenderHookSlot.js'
 import type { ComponentSlotRegistry } from './component-slots.js'
+import { CurrentUserProvider } from './CurrentUserContext.js'
 
 export interface AppShellProps {
   panel: {
@@ -180,7 +181,16 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
     props.basePath,
   )
 
-  return wrapped
+  // `CurrentUserProvider` sits OUTSIDE the layout-provider chain so
+  // plugin-registered providers (e.g. `@pilotiq-pro/collab`'s
+  // CollabProvider, which threads the user into CollaborationCaret
+  // presence labels) can read the active user via `useCurrentUser()`.
+  // Value source mirrors what the top-right user dropdown renders.
+  return (
+    <CurrentUserProvider value={props.panel.userMenu?.user ?? null}>
+      {wrapped}
+    </CurrentUserProvider>
+  )
 }
 
 /**

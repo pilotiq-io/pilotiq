@@ -145,6 +145,12 @@ export {
   type UseResizableWidthApi,
 } from './useResizableWidth.js'
 
+export {
+  CurrentUserProvider,
+  useCurrentUser,
+  type CurrentUser,
+} from './CurrentUserContext.js'
+
 export { ThemeProvider, useTheme } from './ThemeProvider.js'
 export { ThemeToggle } from './ThemeToggle.js'
 export { ThemeSettingsPage } from './ThemeSettingsPage.js'
