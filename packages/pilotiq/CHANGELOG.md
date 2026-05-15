@@ -1,5 +1,18 @@
 # @pilotiq/pilotiq
 
+## 0.13.0
+
+### Minor Changes
+
+- Row-text Tiptap-backed collab — extends Phase D's Y.XmlFragment text-CRDT path to Repeater / Builder row leaves.
+
+  - **New:** `RowCoordsContext` + `useRowCoords()` (`@pilotiq/pilotiq/react`). `RepeaterInput` and `BuilderInput` wrap each row in the provider so dotted-path text leaves can compose a stable fragment key `${arrayName}.${rowId}.${fieldName}` that survives reorders. `TextLikeInput` + `MarkdownInput` collab branches both consume the coords.
+  - **Breaking — `FormCollabBinding` contract:** removed `getTextBinding?(name)` and `getRowTextBinding?(arrayName, rowId, fieldName)`. Text CRDT (top-level and row leaves) now lives exclusively in `@pilotiq/tiptap`'s `CollabTextRenderer` (`Y.XmlFragment`-backed via y-prosemirror). Bindings that implemented these methods can simply drop them; the renderer no longer asks.
+  - **Breaking — public exports:** removed `TextBinding` and `TextDelta` from `@pilotiq/pilotiq/react`. Internal-only types `BoundTextInput`, `textDelta.ts` deleted alongside.
+  - **Breaking — `FormStateApi`:** removed `textBindings`, `rowTextLeaves`, `getRowTextBinding`. `useFieldState(...).textBinding` is gone too; row-text consumers don't need to branch on it anymore (the Tiptap path is the only path).
+
+  Migration: pair this release with `@pilotiq-pro/collab` ≥ the matching cut. Pre-fix installs of `@pilotiq-pro/collab` will hit a TS error against the new contract; the matching collab release removes the dead methods.
+
 ## 0.12.0
 
 ### Minor Changes
