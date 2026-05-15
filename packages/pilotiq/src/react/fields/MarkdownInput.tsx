@@ -6,6 +6,8 @@ import {
   CodeIcon, PaperclipIcon, Loader2Icon,
 } from 'lucide-react'
 import { useFieldState } from '../FormStateContext.js'
+import { useCollabRoom } from '../CollabRoomContext.js'
+import { getCollabTextRenderer, type CollabTextRenderer } from '../CollabTextRendererRegistry.js'
 import { useToast } from '../Toaster.js'
 import { Button } from '../ui/button.js'
 import { computeDelta, preserveCursor } from './textDelta.js'
@@ -46,6 +48,35 @@ export function MarkdownInput({
   uploadUrl:                  string | undefined
 }): React.ReactElement {
   const fs = useFieldState(name)
+  const room = useCollabRoom()
+  const collabRenderer = getCollabTextRenderer()
+
+  // Phase B follow-up — Tiptap-backed plain-text editor for markdown source
+  // when collab is on. Same architectural fix as `TextLikeInput`'s
+  // CollabTextField: y-prosemirror's `RelativePosition` cursor anchoring
+  // replaces the broken `Y.Text` + `computeDelta` + `preserveCursor` heuristic.
+  //
+  // Tradeoff: the markdown toolbar + Cmd-shortcuts + paste-image upload all
+  // operate on a `<textarea>`'s DOM selection — they don't have a way to
+  // reach into the Tiptap editor's selection without exposing the editor
+  // instance, which would widen the renderer seam. For now those features
+  // are write-mode-only on the native path; collab users type markdown
+  // syntax directly (`**bold**`, `## heading`). The preview tab keeps
+  // working since it reads `value` from local state.
+  if (room && collabRenderer) {
+    return (
+      <MarkdownCollabInput
+        Renderer={collabRenderer}
+        name={name}
+        defaultValue={defaultValue}
+        disabled={disabled}
+        {...(placeholder !== undefined ? { placeholder } : {})}
+        {...(minHeight !== undefined ? { minHeight } : {})}
+        {...(maxHeight !== undefined ? { maxHeight } : {})}
+      />
+    )
+  }
+
   const { notify } = useToast()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   // Phase F.6 — IME composition gate. Set between `compositionstart` /
@@ -429,6 +460,82 @@ function TabButton({ active, onClick, children }: {
     >
       {children}
     </button>
+  )
+}
+
+/**
+ * Phase B follow-up — collab-aware markdown editor. Mounts the registered
+ * Tiptap-backed plain-text renderer for the Write pane and reuses the
+ * existing `marked` pipeline for Preview. No toolbar, no Cmd-shortcuts, no
+ * paste-image upload — those features depend on textarea-DOM splicing that
+ * doesn't translate to Tiptap's selection model. The cursor-bug fix is the
+ * load-bearing change; markdown-syntax authors keep typing as before.
+ */
+function MarkdownCollabInput({
+  Renderer, name, defaultValue, disabled, placeholder, minHeight, maxHeight,
+}: {
+  Renderer:     CollabTextRenderer
+  name:         string
+  defaultValue: unknown
+  disabled:     boolean
+  placeholder?: string
+  minHeight?:   string
+  maxHeight?:   string
+}): React.ReactElement {
+  const fs = useFieldState(name)
+  const initial = useMemo(() => stringValue(defaultValue), [])
+  const [text, setText] = useState<string>(initial)
+  const [tab, setTab] = useState<'write' | 'preview'>('write')
+  const textRef = useRef(text)
+  useEffect(() => { textRef.current = text }, [text])
+
+  const handleChange = (next: string): void => {
+    setText(next)
+    if (fs.controlled) fs.setValue(next)
+    fs.triggerLive(next)
+  }
+  const handleBlur = (): void => { /* fire-and-forget — live trigger already ran on change */ }
+
+  const previewHtml = useMemo(
+    () => tab === 'preview' ? marked.parse(text, { gfm: true, breaks: false, async: false }) as string : '',
+    [tab, text],
+  )
+
+  const wrapperStyle: React.CSSProperties = {}
+  if (minHeight) wrapperStyle.minHeight = minHeight
+  if (maxHeight) wrapperStyle.maxHeight = maxHeight
+
+  return (
+    <div className="flex flex-col rounded-md border bg-background">
+      <div className="flex items-center border-b px-2 py-1">
+        <TabButton active={tab === 'write'}   onClick={() => setTab('write')}>Write</TabButton>
+        <TabButton active={tab === 'preview'} onClick={() => setTab('preview')}>Preview</TabButton>
+      </div>
+      {tab === 'write' ? (
+        <div style={wrapperStyle} className="overflow-auto">
+          <input type="hidden" name={name} value={text} />
+          <Renderer
+            name={name}
+            multiline={true}
+            defaultValue={initial}
+            {...(placeholder !== undefined ? { placeholder } : {})}
+            disabled={disabled}
+            onChange={handleChange}
+            onBlur={handleBlur}
+            className="w-full bg-transparent px-3 py-2 text-sm font-mono leading-relaxed outline-none disabled:opacity-50 whitespace-pre-wrap break-words"
+          />
+        </div>
+      ) : (
+        <>
+          <input type="hidden" name={name} value={text} readOnly />
+          <div
+            className="prose prose-sm dark:prose-invert max-w-none px-3 py-2"
+            style={wrapperStyle}
+            dangerouslySetInnerHTML={{ __html: previewHtml || '<p class="text-muted-foreground italic">Nothing to preview</p>' }}
+          />
+        </>
+      )}
+    </div>
   )
 }
 
