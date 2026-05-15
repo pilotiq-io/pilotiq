@@ -361,26 +361,23 @@ export function BuilderInput({
   }
 
   const moveRow = (id: string, dir: -1 | 1): void => {
-    let newOrder: string[] | null = null
-    setRows(prev => {
-      const idx = prev.findIndex(r => r.id === id)
-      if (idx < 0) return prev
-      let next: RowState[]
-      if (dir === -1) {
-        let target = idx - 1
-        while (target >= 0 && prev[target]?.hidden) target--
-        if (target < 0) return prev
-        next = reorderRows(prev, idx, target)
-      } else {
-        let target = idx + 1
-        while (target < prev.length && prev[target]?.hidden) target++
-        if (target >= prev.length) return prev
-        next = reorderRows(prev, idx, target + 1)
-      }
-      if (next !== prev) newOrder = next.map(r => r.id)
-      return next
-    })
-    if (newOrder !== null) rowBinding?.reorder(newOrder)
+    const idx = rows.findIndex(r => r.id === id)
+    if (idx < 0) return
+    let next: RowState[]
+    if (dir === -1) {
+      let target = idx - 1
+      while (target >= 0 && rows[target]?.hidden) target--
+      if (target < 0) return
+      next = reorderRows(rows, idx, target)
+    } else {
+      let target = idx + 1
+      while (target < rows.length && rows[target]?.hidden) target++
+      if (target >= rows.length) return
+      next = reorderRows(rows, idx, target + 1)
+    }
+    if (next === rows) return
+    setRows(next)
+    rowBinding?.reorder(next.map(r => r.id))
   }
 
   // ── DnD state (skipped when buttonsOnly) ────────────────
@@ -394,15 +391,16 @@ export function BuilderInput({
   } = useRowReorderDnd({
     enabled: dndEnabled,
     onDrop: (fromId, at) => {
-      let newOrder: string[] | null = null
-      setRows(prev => {
-        const fromIdx = prev.findIndex(r => r.id === fromId)
-        if (fromIdx < 0) return prev
-        const next = reorderRows(prev, fromIdx, at)
-        if (next !== prev) newOrder = next.map(r => r.id)
-        return next
-      })
-      if (newOrder !== null) rowBinding?.reorder(newOrder)
+      // See RepeaterInput's matching onDrop comment — closure-mutation
+      // through setRows's updater is unreliable when other state updates
+      // are batched (useRowReorderDnd nulls dragId/dropAt right before
+      // calling this).
+      const fromIdx = rows.findIndex(r => r.id === fromId)
+      if (fromIdx < 0) return
+      const next = reorderRows(rows, fromIdx, at)
+      if (next === rows) return
+      setRows(next)
+      rowBinding?.reorder(next.map(r => r.id))
     },
   })
 

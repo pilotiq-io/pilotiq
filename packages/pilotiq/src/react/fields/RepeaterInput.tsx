@@ -394,29 +394,26 @@ export function RepeaterInput({
   }
 
   const moveRow = (id: string, dir: -1 | 1): void => {
-    let newOrder: string[] | null = null
-    setRows(prev => {
-      const idx = prev.findIndex(r => r.id === id)
-      if (idx < 0) return prev
-      // Skip past hidden neighbours so reorder operates between visible
-      // rows. Hidden rows hold their absolute slot — the visible row hops
-      // over them.
-      let next: RowState[]
-      if (dir === -1) {
-        let target = idx - 1
-        while (target >= 0 && prev[target]?.hidden) target--
-        if (target < 0) return prev
-        next = reorderRows(prev, idx, target)
-      } else {
-        let target = idx + 1
-        while (target < prev.length && prev[target]?.hidden) target++
-        if (target >= prev.length) return prev
-        next = reorderRows(prev, idx, target + 1)
-      }
-      if (next !== prev) newOrder = next.map(r => r.id)
-      return next
-    })
-    if (newOrder !== null) rowBinding?.reorder(newOrder)
+    const idx = rows.findIndex(r => r.id === id)
+    if (idx < 0) return
+    // Skip past hidden neighbours so reorder operates between visible
+    // rows. Hidden rows hold their absolute slot — the visible row hops
+    // over them.
+    let next: RowState[]
+    if (dir === -1) {
+      let target = idx - 1
+      while (target >= 0 && rows[target]?.hidden) target--
+      if (target < 0) return
+      next = reorderRows(rows, idx, target)
+    } else {
+      let target = idx + 1
+      while (target < rows.length && rows[target]?.hidden) target++
+      if (target >= rows.length) return
+      next = reorderRows(rows, idx, target + 1)
+    }
+    if (next === rows) return
+    setRows(next)
+    rowBinding?.reorder(next.map(r => r.id))
   }
 
   // ── DnD state ───────────────────────────────────────────
@@ -429,15 +426,20 @@ export function RepeaterInput({
   } = useRowReorderDnd({
     enabled: reorderable && !disabled,
     onDrop: (fromId, at) => {
-      let newOrder: string[] | null = null
-      setRows(prev => {
-        const fromIdx = prev.findIndex(r => r.id === fromId)
-        if (fromIdx < 0) return prev
-        const next = reorderRows(prev, fromIdx, at)
-        if (next !== prev) newOrder = next.map(r => r.id)
-        return next
-      })
-      if (newOrder !== null) rowBinding?.reorder(newOrder)
+      // Compute next from the current `rows` directly. The previous
+      // setRows(updater) + closure-mutation pattern relied on React
+      // running the updater synchronously inside setState — which only
+      // happens when no other update is queued. `useRowReorderDnd`'s
+      // handleDrop sets dragId/dropAt to null right before calling
+      // this callback, so the updater runs in commit phase and the
+      // outer `newOrder` stayed null past the `if` check, silently
+      // skipping the rowBinding.reorder broadcast.
+      const fromIdx = rows.findIndex(r => r.id === fromId)
+      if (fromIdx < 0) return
+      const next = reorderRows(rows, fromIdx, at)
+      if (next === rows) return
+      setRows(next)
+      rowBinding?.reorder(next.map(r => r.id))
     },
   })
 
