@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import rudderjs from '@rudderjs/vite'
+import vike from 'vike/plugin'
 import { pilotiq } from '@pilotiq/pilotiq/vite'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
@@ -8,6 +9,7 @@ export default defineConfig({
   plugins: [
     pilotiq(),
     rudderjs(),
+    vike(),
     tailwindcss(),
     react(),
   ],
