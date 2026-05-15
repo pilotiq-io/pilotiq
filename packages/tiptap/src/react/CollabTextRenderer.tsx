@@ -47,18 +47,6 @@ export function CollabTextRenderer({
   const factory = getCollabExtensions()
   const collabActive = !!(room && factory)
 
-  // Field-name versioning to dodge Yjs's "same name, different constructor"
-  // crash. The legacy `@pilotiq-pro/collab` `formCollabBinding` calls
-  // `ydoc.getText(name)` for text-shaped fields (allocating a `Y.Text`);
-  // our `Collaboration` extension would then call `ydoc.getXmlFragment(name)`
-  // on the same key and Yjs throws because one key can't be both types.
-  // Prefixing with `_pt:` (plain-text) keeps the XmlFragment on a separate
-  // top-level key. Trade-off: any pre-existing `Y.Text(name)` collab state
-  // is orphaned (harmless — the record's persisted value still round-trips
-  // through pilotiq's form submission path). Cleanup is Phase D's job —
-  // once the legacy `Y.Text` allocation is gone we can drop the prefix.
-  const fragmentName = `_pt:${name}`
-
   // Built once per editor mount. The factory closes over the room's `ydoc`
   // + `provider` and the field name to produce a `Collaboration` (and
   // optional `CollaborationCursor`) extension targeting the field's
@@ -68,7 +56,7 @@ export function CollabTextRenderer({
     return factory({
       ydoc:      room.ydoc,
       provider:  room.provider,
-      fieldName: fragmentName,
+      fieldName: name,
       ...(room.user ? { user: room.user } : {}),
     }) as Extension[]
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -130,7 +118,7 @@ export function CollabTextRenderer({
 
     const trySeed = (): void => {
       try {
-        const fragment = ydoc.getXmlFragment(fragmentName)
+        const fragment = ydoc.getXmlFragment(name)
         if (fragment && fragment.length === 0 && defaultValue) {
           editor.commands.setContent(plainTextToDoc(defaultValue, multiline))
         }

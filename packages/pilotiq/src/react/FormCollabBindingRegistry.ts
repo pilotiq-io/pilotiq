@@ -55,11 +55,18 @@ export interface TextBinding {
  *   - `subscribe(fn)` registers a listener that fires when REMOTE
  *     changes land; `fn(snapshot)` receives the full updated map.
  *     The provider re-applies this snapshot onto its React state.
- *   - `getTextBinding(name)` (Phase F.6) returns a `Y.Text`-backed
- *     handle for text-shaped fields, or `null` for non-text fields and
- *     text fields opted out via `.collab(false)`. The text/non-text
- *     allowlist lives in the binding impl — `FormStateProvider` asks
- *     for every field and routes per-field on the answer.
+ *   - `getTextBinding(name)` (Phase F.6) was the per-field `Y.Text`
+ *     handle for character-level CRDT on top-level text inputs. After
+ *     the Tiptap-backed text-collab swap (Phase D, 2026-05), bindings
+ *     are expected to return `null` for every top-level field —
+ *     character-level CRDT now lives in the Tiptap renderer's
+ *     `Collaboration` extension (`Y.XmlFragment` per field). Returning
+ *     a non-null `TextBinding` here is still supported for legacy
+ *     bindings, but the active `@pilotiq-pro/collab` impl no longer
+ *     allocates `Y.Text` for top-level fields. Row-text leaves under
+ *     Repeater / Builder continue to route through Y.Text via
+ *     `getRowTextBinding` — the Tiptap-backed renderer only handles
+ *     top-level (non-dotted-path) field names today.
  *   - `destroy()` is called on unmount — gives the plugin a chance to
  *     remove its CRDT observer. Implementations are expected to cascade
  *     into every `TextBinding` they issued.
@@ -74,11 +81,16 @@ export interface FormCollabBinding {
   set(name: string, value: unknown): void
   /** Subscribe to remote changes. Returns an unsubscribe function. */
   subscribe(fn: (snapshot: Record<string, unknown>) => void): () => void
-  /** Phase F.6 — per-field text-CRDT handle. Returns `null` for non-text
-   *  fields or text fields opted out via `.collab(false)`. Optional so
-   *  existing F1-era plugins keep type-checking without a no-op stub;
-   *  when absent, every text field stays on today's whole-string LWW
-   *  path (i.e. F.6 character-level CRDT is opt-in by impl). */
+  /** Phase F.6 / Phase D — per-field text-CRDT handle. Post Phase D,
+   *  `@pilotiq-pro/collab` returns `null` for every top-level text
+   *  field (character-level CRDT moved into `@pilotiq/tiptap`'s
+   *  `CollabTextRenderer`, which mounts its own `Y.XmlFragment` per
+   *  field via the `Collaboration` extension). The method is preserved
+   *  on the contract for legacy bindings and for the row-text leaves
+   *  routed through `getRowTextBinding` (under Repeater / Builder).
+   *  Optional so existing F1-era plugins keep type-checking without a
+   *  no-op stub; absent reads as "binding has no top-level text CRDT
+   *  surface," same as returning `null` for every field. */
   getTextBinding?(name: string): TextBinding | null
   /** Cleanup hook called when the form unmounts. */
   destroy():    void
@@ -233,13 +245,15 @@ export interface FormCollabBindingFactoryArgs {
   initial: Record<string, unknown>
   /**
    * Phase F.6 — initial form meta from the server. The binding walks
-   * this once at construction to decide which fields are text-shaped
-   * (`fieldType ∈ { text, textarea, email, slug, markdown }`) and
-   * which have opted out via `.collab(false)`. Text fields get a
-   * dedicated `Y.Text` and route through `getTextBinding`; non-text
-   * fields stay on the `Y.Map`. The meta is captured at mount; later
-   * structural changes from `live()` re-resolves aren't re-walked
-   * (rare in practice — dynamic field add/remove is an F-followup).
+   * this once at construction to index Repeater / Builder array names
+   * for row-level CRDT and to identify which row leaves are text-shaped
+   * (`fieldType ∈ { text, textarea, email, slug, markdown }` and not
+   * `.collab(false)`). Post Phase D, top-level text fields no longer
+   * need to be partitioned here — their character-level CRDT lives in
+   * the Tiptap renderer's `Y.XmlFragment`, not in a binding-allocated
+   * `Y.Text`. The meta is captured at mount; later structural changes
+   * from `live()` re-resolves aren't re-walked (rare in practice —
+   * dynamic field add/remove is an F-followup).
    */
   formMeta: ElementMeta
 }
