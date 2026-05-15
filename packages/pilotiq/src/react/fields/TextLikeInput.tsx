@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ElementMeta } from '../../schema/Element.js'
 import type { TextBinding } from '../FormCollabBindingRegistry.js'
 import { useFieldState } from '../FormStateContext.js'
+import { useCollabRoom } from '../CollabRoomContext.js'
+import { getCollabTextRenderer, type CollabTextRenderer } from '../CollabTextRendererRegistry.js'
 import { Input } from '../ui/input.js'
 import { Textarea } from '../ui/textarea.js'
 import { computeDelta, preserveCursor } from './textDelta.js'
@@ -38,6 +40,8 @@ export function TextLikeInput({
   applyMask?: (value: string) => string
 }): React.ReactElement {
   const fs = useFieldState(name)
+  const room = useCollabRoom()
+  const collabRenderer = getCollabTextRenderer()
   const liveCfg = el['live']
   const liveOpts = (typeof liveCfg === 'object' && liveCfg !== null
     ? liveCfg as { onBlur?: boolean; debounce?: number }
@@ -52,6 +56,40 @@ export function TextLikeInput({
   // `useCallback`-wrapped fn that's *always* defined (identity when no
   // mask), so its truthiness can't gate the branch.
   const hasMask = typeof el['mask'] === 'string'
+
+  // Phase B — Tiptap-backed plain-text editor for collab text fields.
+  // When a `<RecordCollabRoom>` is mounted up-tree AND `@pilotiq/tiptap`'s
+  // `registerTiptap()` registered a collab text renderer, take the new path:
+  // the editor anchors selections to Yjs `RelativePosition` (via y-prosemirror)
+  // instead of integer string offsets, fixing the cursor-jump + two-peer
+  // concurrent-insert races that the legacy `Y.Text` + `computeDelta` path
+  // can't resolve. Dotted-path row leaves (Repeater / Builder) stay on the
+  // legacy `fs.textBinding` path — per-row collab editor support is a
+  // separate follow-up.
+  const fieldCollab = el['collab'] as boolean | undefined
+  if (
+    room &&
+    collabRenderer &&
+    fieldCollab !== false &&
+    !hasMask &&
+    !name.includes('.')
+  ) {
+    return (
+      <CollabTextField
+        Renderer={collabRenderer}
+        name={name}
+        multiline={multiline}
+        defaultValue={stringValue(common['defaultValue'])}
+        {...(common['placeholder'] !== undefined ? { placeholder: String(common['placeholder']) } : {})}
+        disabled={Boolean(common['disabled'])}
+        triggerLive={fs.triggerLive}
+        setValue={fs.setValue}
+        controlled={fs.controlled}
+        onBlurMode={onBlurMode}
+      />
+    )
+  }
+
   if (fs.textBinding && !hasMask) {
     return (
       <BoundTextInput
@@ -270,6 +308,74 @@ function BoundTextInput({
 
   if (multiline) return <Textarea {...(props as React.ComponentProps<typeof Textarea>)} />
   return <Input {...(props as React.ComponentProps<typeof Input>)} type={type} />
+}
+
+/**
+ * Phase B — wrapper around the registered Tiptap-backed collab editor.
+ * Owns the local text mirror so the hidden `<input>` always carries the
+ * editor's current value for FormData submission. When `FormStateProvider`
+ * is mounted up-tree, also mirrors every update into the values map via
+ * `fs.setValue` so `$get/$set` computations and any Y.Map LWW path (kept
+ * for non-text consumers) stay in sync.
+ *
+ * No IME / cursor-preservation gymnastics in here — the underlying Tiptap
+ * editor handles composition natively and y-prosemirror anchors selections
+ * to `Yjs.RelativePosition`, so the cursor survives concurrent + mid-word
+ * remote edits without any client-side bookkeeping.
+ */
+function CollabTextField({
+  Renderer, name, multiline, defaultValue, placeholder, disabled,
+  triggerLive, setValue, controlled, onBlurMode,
+}: {
+  Renderer:     CollabTextRenderer
+  name:         string
+  multiline:    boolean
+  defaultValue: string
+  placeholder?: string
+  disabled:     boolean
+  triggerLive:  (valueOverride?: unknown) => void
+  setValue:     (v: unknown) => void
+  controlled:   boolean
+  onBlurMode:   boolean
+}): React.ReactElement {
+  const [text, setText] = useState<string>(defaultValue)
+  const textRef = useRef(text)
+  useEffect(() => { textRef.current = text }, [text])
+
+  const handleChange = useCallback((next: string): void => {
+    setText(next)
+    if (controlled) setValue(next)
+    if (!onBlurMode) triggerLive(next)
+  }, [controlled, onBlurMode, setValue, triggerLive])
+
+  const handleBlur = useCallback((): void => {
+    if (onBlurMode) triggerLive(textRef.current)
+  }, [onBlurMode, triggerLive])
+
+  // Match the visual chrome of `<Input>` / `<Textarea>` so the editor reads
+  // as a drop-in replacement. The adapter forwards this class to its
+  // contenteditable wrapper; `whitespace-nowrap` on the single-line variant
+  // keeps the editor from wrapping into a second line if a stray paragraph
+  // split somehow makes it through.
+  const className = multiline
+    ? 'flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm whitespace-pre-wrap break-words'
+    : 'flex h-9 w-full items-center rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm whitespace-nowrap overflow-x-auto'
+
+  return (
+    <>
+      <input type="hidden" name={name} value={text} />
+      <Renderer
+        name={name}
+        multiline={multiline}
+        defaultValue={defaultValue}
+        {...(placeholder !== undefined ? { placeholder } : {})}
+        disabled={disabled}
+        onChange={handleChange}
+        onBlur={handleBlur}
+        className={className}
+      />
+    </>
+  )
 }
 
 function identity(v: string): string { return v }

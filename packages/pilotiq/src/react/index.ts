@@ -44,6 +44,12 @@ export {
   type CollabExtensionFactoryArgs,
 } from './CollabExtensionFactoryRegistry.js'
 export {
+  registerCollabTextRenderer,
+  getCollabTextRenderer,
+  type CollabTextRenderer,
+  type CollabTextRendererProps,
+} from './CollabTextRendererRegistry.js'
+export {
   registerFormCollabBinding,
   getFormCollabBinding,
   type FormCollabBinding,
