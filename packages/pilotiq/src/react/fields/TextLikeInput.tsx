@@ -357,9 +357,22 @@ function CollabTextField({
   // contenteditable wrapper; `whitespace-nowrap` on the single-line variant
   // keeps the editor from wrapping into a second line if a stray paragraph
   // split somehow makes it through.
+  //
+  // `overflow-x-clip` (not `auto`) on the single-line variant matters for
+  // `CollaborationCaret` presence labels: per the CSS overflow spec, setting
+  // either axis to a non-visible / non-clip value (`auto` / `scroll` /
+  // `hidden`) forces the other axis to compute as `auto` too — so
+  // `overflow-x-auto` would clip the caret's user-name label, which renders
+  // `-1.4em` above the line. `clip` is the one non-visible value that does
+  // NOT force the other axis, so `overflow-y` stays `visible` and the label
+  // escapes the chrome upward as designed. Trade-off: long text gets clipped
+  // on the right rather than horizontally scrollable (native `<input>`
+  // semantics) — acceptable for plain-text fields, where typing past the
+  // visible width is rare and the caret presence label is the higher-value
+  // affordance.
   const className = multiline
     ? 'flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm whitespace-pre-wrap break-words'
-    : 'flex h-9 w-full items-center rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm whitespace-nowrap overflow-x-auto'
+    : 'flex h-9 w-full items-center rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm whitespace-nowrap overflow-x-clip'
 
   return (
     <>
