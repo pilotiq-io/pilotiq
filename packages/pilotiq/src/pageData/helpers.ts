@@ -388,7 +388,61 @@ export async function applyFillPipeline<R>(
   const after = form.getMutateFormDataAfterFill()
   if (after) values = await after(values, { values, record })
 
-  return values
+  return normalizeArrayFieldStrings(form, values)
+}
+
+/**
+ * Walk the form for Repeater / Builder field names whose value on `values`
+ * is a JSON string (the shape a `String?` column produces when records are
+ * seeded outside the pilotiq save path — raw SQL, migrations, imports).
+ * Pilotiq's save path stringifies these arrays via `coerceFormValues`, but
+ * the load path doesn't auto-parse — so a fresh `String?` column lands here
+ * as a string, then `resolveRepeaterRows` sees `Array.isArray(string) === false`
+ * and falls through to empty rows on first paint. The collab path is
+ * symmetric: the string lands in the form-data Y.Map, `migrateLegacyArrays`
+ * sees `Array.isArray(string) === false`, and silently skips migration.
+ *
+ * Parse defensively — anything that doesn't deserialize to an array is left
+ * verbatim so a stray non-JSON string doesn't get clobbered. Non-string
+ * values pass through untouched (already-array, null, undefined, number).
+ */
+export function normalizeArrayFieldStrings<R>(
+  form:   Form<R>,
+  values: Record<string, unknown>,
+): Record<string, unknown> {
+  const arrayFieldNames = collectArrayFieldNames(form.getChildren() ?? [])
+  if (arrayFieldNames.length === 0) return values
+  let out: Record<string, unknown> | null = null
+  for (const name of arrayFieldNames) {
+    const raw = values[name]
+    if (typeof raw !== 'string') continue
+    let parsed: unknown
+    try { parsed = JSON.parse(raw) } catch { continue }
+    if (!Array.isArray(parsed)) continue
+    if (!out) out = { ...values }
+    out[name] = parsed
+  }
+  return out ?? values
+}
+
+/** Walk the form's children for top-level Repeater + Builder field names.
+ *  Stops at array-row boundaries — nested Repeater/Builder fields live
+ *  inside their parent's inner schema and aren't top-level form fields. */
+function collectArrayFieldNames(elements: ReadonlyArray<Element>): string[] {
+  const out: string[] = []
+  const walk = (els: ReadonlyArray<Element>): void => {
+    for (const el of els) {
+      if (isRepeaterField(el) || isBuilderField(el)) {
+        const name = (el as RepeaterField | BuilderField).name
+        if (name) out.push(name)
+        continue
+      }
+      const children = el.getChildren()
+      if (children && children.length > 0) walk(children)
+    }
+  }
+  walk(elements)
+  return out
 }
 
 /**

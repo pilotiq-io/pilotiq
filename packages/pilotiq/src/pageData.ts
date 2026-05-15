@@ -27,6 +27,7 @@ export {
   applyRelationshipBuilderFill,
   applyRelationshipRepeaterFill,
   callPageSchema,
+  normalizeArrayFieldStrings,
   resolveServerDataElements,
   tagActionDispatch,
   tagCellEditUrls,

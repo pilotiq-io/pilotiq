@@ -83,6 +83,73 @@ describe('applyFillPipeline', () => {
     const values = await applyFillPipeline(form, { id: 1 })
     assert.deepEqual(values, { id: 1, async: true })
   })
+
+  it('parses JSON-string values on Repeater slots into arrays', async () => {
+    const form = Form.make().schema([
+      TextField.make('title'),
+      Repeater.make('metadata').schema([TextField.make('heading')]),
+    ])
+    const record = {
+      id: 1,
+      title: 'Hello',
+      metadata: '[{"__id":"row-1","heading":"a"},{"__id":"row-2","heading":"b"}]',
+    }
+    const values = await applyFillPipeline(form, record)
+    assert.deepEqual(values['metadata'], [
+      { __id: 'row-1', heading: 'a' },
+      { __id: 'row-2', heading: 'b' },
+    ])
+    assert.equal(values['title'], 'Hello')
+  })
+
+  it('parses JSON-string values on Builder slots into arrays', async () => {
+    const form = Form.make().schema([
+      Builder.make('content').blocks([
+        Block.make('heading').schema([TextField.make('text')]),
+      ]),
+    ])
+    const record = {
+      content: '[{"__id":"row-1","type":"heading","data":{"text":"hi"}}]',
+    }
+    const values = await applyFillPipeline(form, record)
+    assert.deepEqual(values['content'], [
+      { __id: 'row-1', type: 'heading', data: { text: 'hi' } },
+    ])
+  })
+
+  it('leaves non-JSON strings on array-field slots untouched', async () => {
+    const form = Form.make().schema([
+      Repeater.make('tags').schema([TextField.make('label')]),
+    ])
+    const record = { tags: 'not-json' }
+    const values = await applyFillPipeline(form, record)
+    assert.equal(values['tags'], 'not-json')
+  })
+
+  it('leaves JSON strings that deserialize to non-arrays untouched', async () => {
+    const form = Form.make().schema([
+      Repeater.make('tags').schema([TextField.make('label')]),
+    ])
+    const record = { tags: '{"not":"an-array"}' }
+    const values = await applyFillPipeline(form, record)
+    assert.equal(values['tags'], '{"not":"an-array"}')
+  })
+
+  it('passes through already-parsed arrays unchanged', async () => {
+    const form = Form.make().schema([
+      Repeater.make('metadata').schema([TextField.make('heading')]),
+    ])
+    const rows = [{ __id: 'row-1', heading: 'a' }]
+    const values = await applyFillPipeline(form, { metadata: rows })
+    assert.equal(values['metadata'], rows)
+  })
+
+  it('ignores top-level non-array fields whose value happens to be a JSON-string', async () => {
+    const form = Form.make().schema([TextField.make('title')])
+    const record = { title: '[1,2,3]' }
+    const values = await applyFillPipeline(form, record)
+    assert.equal(values['title'], '[1,2,3]')
+  })
 })
 
 describe('resolveActiveTab', () => {
