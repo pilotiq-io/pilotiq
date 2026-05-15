@@ -5,6 +5,7 @@ import { Button } from '../ui/button.js'
 import { SchemaRenderer } from '../SchemaRenderer.js'
 import { FormIdContext, useFormState, useRowBinding } from '../FormStateContext.js'
 import { findFieldMeta } from '../formStateHelpers.js'
+import { RowCoordsContext } from '../RowCoordsContext.js'
 import { useIconFor } from '../icon-context.js'
 import { reorderRows, ExtraActionStrip, buildGridContainer } from './RepeaterInput.js'
 import { syncRowGates } from './syncRowGates.js'
@@ -870,6 +871,15 @@ function BuilderRow({
     () => row.children.map(c => prefixFieldNames(c, dataPrefix)),
     [row.children, dataPrefix],
   )
+  // Row coords for dotted-path text leaves under this row — composes
+  // fragment-key `${arrayName}.${rowId}.${fieldName}` (Phase 1 of
+  // collab-row-text-tiptap-backed.md). `parseRowFieldPath` strips the
+  // Builder-specific `data` segment, so the coords use the array name +
+  // the row's stable id without referencing the dialect.
+  const rowCoords = useMemo(
+    () => ({ arrayName: name, rowIndex: index, rowId: row.id }),
+    [name, index, row.id],
+  )
 
   const RowIcon = useIconFor(showIcons ? block?.icon : undefined)
   const blockLabel = block?.label ?? row.type ?? 'Block'
@@ -878,11 +888,13 @@ function BuilderRow({
 
   if (row.hidden) {
     return (
-      <div style={{ display: 'none' }} data-pilotiq-builder-row="hidden">
-        <input type="hidden" name={`${name}.${index}.__id`} value={row.id} readOnly />
-        <input type="hidden" name={`${name}.${index}.type`} value={row.type} readOnly />
-        <SchemaRenderer elements={namespaced} />
-      </div>
+      <RowCoordsContext.Provider value={rowCoords}>
+        <div style={{ display: 'none' }} data-pilotiq-builder-row="hidden">
+          <input type="hidden" name={`${name}.${index}.__id`} value={row.id} readOnly />
+          <input type="hidden" name={`${name}.${index}.type`} value={row.type} readOnly />
+          <SchemaRenderer elements={namespaced} />
+        </div>
+      </RowCoordsContext.Provider>
     )
   }
 
@@ -921,6 +933,7 @@ function BuilderRow({
   const innerColumns = block.columns && block.columns > 1 ? block.columns : 1
 
   return (
+    <RowCoordsContext.Provider value={rowCoords}>
     <div
       className={`rounded-md border bg-card transition-opacity ${isDragging ? 'opacity-50' : ''}`}
       data-pilotiq-builder-row=""
@@ -999,6 +1012,7 @@ function BuilderRow({
           : <SchemaRenderer elements={namespaced} />}
       </div>
     </div>
+    </RowCoordsContext.Provider>
   )
 }
 

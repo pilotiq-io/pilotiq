@@ -4,6 +4,8 @@ import type { TextBinding } from '../FormCollabBindingRegistry.js'
 import { useFieldState } from '../FormStateContext.js'
 import { useCollabRoom } from '../CollabRoomContext.js'
 import { getCollabTextRenderer, type CollabTextRenderer } from '../CollabTextRendererRegistry.js'
+import { useRowCoords } from '../RowCoordsContext.js'
+import { parseRowFieldPath } from '../formStateHelpers.js'
 import { Input } from '../ui/input.js'
 import { Textarea } from '../ui/textarea.js'
 import { computeDelta, preserveCursor } from './textDelta.js'
@@ -42,6 +44,7 @@ export function TextLikeInput({
   const fs = useFieldState(name)
   const room = useCollabRoom()
   const collabRenderer = getCollabTextRenderer()
+  const rowCoords = useRowCoords()
   const liveCfg = el['live']
   const liveOpts = (typeof liveCfg === 'object' && liveCfg !== null
     ? liveCfg as { onBlur?: boolean; debounce?: number }
@@ -63,21 +66,43 @@ export function TextLikeInput({
   // the editor anchors selections to Yjs `RelativePosition` (via y-prosemirror)
   // instead of integer string offsets, fixing the cursor-jump + two-peer
   // concurrent-insert races that the legacy `Y.Text` + `computeDelta` path
-  // can't resolve. Dotted-path row leaves (Repeater / Builder) stay on the
-  // legacy `fs.textBinding` path — per-row collab editor support is a
-  // separate follow-up.
+  // can't resolve.
+  //
+  // Row-text widening (Phase 1 of collab-row-text-tiptap-backed.md):
+  // dotted-path leaves under a Repeater / Builder row now also take this
+  // path. `useRowCoords()` resolves `{ arrayName, rowIndex, rowId }` from
+  // the provider mounted by `RepeaterInput` / `BuilderInput`; the
+  // fragment-key is composed as `${arrayName}.${rowId}.${fieldName}` so
+  // the Y.XmlFragment survives row reorders (keyed by the stable rowId,
+  // not the array index). The hidden FormData input keeps the original
+  // dotted path so submission lands on the server at the right slot.
+  //
+  // Top-level fields keep `fragmentKey = name`. Dotted paths that don't
+  // match a row shape (no rowCoords OR `parseRowFieldPath` returns null —
+  // nested row arrays, malformed names) fall through to the legacy
+  // `BoundTextInput` branch until Phase 3 deletes it.
   const fieldCollab = el['collab'] as boolean | undefined
+  const fragmentKey: string | null = (() => {
+    if (!name.includes('.')) return name
+    if (!rowCoords) return null
+    const parsed = parseRowFieldPath(name)
+    if (!parsed) return null
+    if (parsed.arrayName !== rowCoords.arrayName) return null
+    if (parsed.index     !== rowCoords.rowIndex)  return null
+    return `${rowCoords.arrayName}.${rowCoords.rowId}.${parsed.fieldName}`
+  })()
   if (
     room &&
     collabRenderer &&
     fieldCollab !== false &&
     !hasMask &&
-    !name.includes('.')
+    fragmentKey !== null
   ) {
     return (
       <CollabTextField
         Renderer={collabRenderer}
-        name={name}
+        fragmentKey={fragmentKey}
+        hiddenInputName={name}
         multiline={multiline}
         defaultValue={stringValue(common['defaultValue'])}
         {...(common['placeholder'] !== undefined ? { placeholder: String(common['placeholder']) } : {})}
@@ -322,21 +347,29 @@ function BoundTextInput({
  * editor handles composition natively and y-prosemirror anchors selections
  * to `Yjs.RelativePosition`, so the cursor survives concurrent + mid-word
  * remote edits without any client-side bookkeeping.
+ *
+ * `fragmentKey` and `hiddenInputName` diverge for row-text leaves (Phase
+ * 1 of collab-row-text-tiptap-backed.md): the renderer's Y.XmlFragment is
+ * keyed by `${arrayName}.${rowId}.${fieldName}` so it survives row
+ * reorders, while the hidden FormData input keeps the dotted path
+ * (`items.0.title`) so submission lands at the right server-side slot.
+ * For top-level fields the two are identical.
  */
 function CollabTextField({
-  Renderer, name, multiline, defaultValue, placeholder, disabled,
+  Renderer, fragmentKey, hiddenInputName, multiline, defaultValue, placeholder, disabled,
   triggerLive, setValue, controlled, onBlurMode,
 }: {
-  Renderer:     CollabTextRenderer
-  name:         string
-  multiline:    boolean
-  defaultValue: string
-  placeholder?: string
-  disabled:     boolean
-  triggerLive:  (valueOverride?: unknown) => void
-  setValue:     (v: unknown) => void
-  controlled:   boolean
-  onBlurMode:   boolean
+  Renderer:        CollabTextRenderer
+  fragmentKey:     string
+  hiddenInputName: string
+  multiline:       boolean
+  defaultValue:    string
+  placeholder?:    string
+  disabled:        boolean
+  triggerLive:     (valueOverride?: unknown) => void
+  setValue:        (v: unknown) => void
+  controlled:      boolean
+  onBlurMode:      boolean
 }): React.ReactElement {
   const [text, setText] = useState<string>(defaultValue)
   const textRef = useRef(text)
@@ -376,9 +409,9 @@ function CollabTextField({
 
   return (
     <>
-      <input type="hidden" name={name} value={text} />
+      <input type="hidden" name={hiddenInputName} value={text} />
       <Renderer
-        name={name}
+        name={fragmentKey}
         multiline={multiline}
         defaultValue={defaultValue}
         {...(placeholder !== undefined ? { placeholder } : {})}

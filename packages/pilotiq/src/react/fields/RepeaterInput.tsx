@@ -5,6 +5,7 @@ import { Button } from '../ui/button.js'
 import { SchemaRenderer, dispatchHandlerAction } from '../SchemaRenderer.js'
 import { FormIdContext, useFormState, useRowBinding } from '../FormStateContext.js'
 import { findFieldMeta } from '../formStateHelpers.js'
+import { RowCoordsContext } from '../RowCoordsContext.js'
 import { useNavigate } from '../navigate.js'
 import { useToast } from '../Toaster.js'
 import type { RowButtonsMeta } from '../../fields/RowButton.js'
@@ -749,16 +750,25 @@ function RepeaterRow({
     [row.children, prefix],
   )
   const headerLabel = row.itemLabel ?? `Item ${index + 1}`
+  // Row coords for dotted-path text leaves — composes fragment-key
+  // `${arrayName}.${rowId}.${fieldName}` for the Tiptap-backed collab
+  // renderer (see collab-row-text-tiptap-backed.md Phase 1).
+  const rowCoords = useMemo(
+    () => ({ arrayName: name, rowIndex: index, rowId: row.id }),
+    [name, index, row.id],
+  )
 
   // Hidden rows: render only the inputs (and __id) inside a display:none
   // wrapper so their values round-trip through FormData on submit. No
   // chrome, no drag wiring, no labels — `itemHidden` is purely UX.
   if (row.hidden) {
     return (
-      <div style={{ display: 'none' }} data-pilotiq-repeater-row="hidden">
-        <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
-        <SchemaRenderer elements={namespaced} />
-      </div>
+      <RowCoordsContext.Provider value={rowCoords}>
+        <div style={{ display: 'none' }} data-pilotiq-repeater-row="hidden">
+          <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
+          <SchemaRenderer elements={namespaced} />
+        </div>
+      </RowCoordsContext.Provider>
     )
   }
 
@@ -795,6 +805,7 @@ function RepeaterRow({
   // wrapping in a class that hides the FieldShell's label slot.
   if (simple) {
     return (
+      <RowCoordsContext.Provider value={rowCoords}>
       <div
         className={`flex items-center gap-2 transition-opacity ${isDragging ? 'opacity-50' : ''}`}
         data-pilotiq-repeater-row="simple"
@@ -830,10 +841,12 @@ function RepeaterRow({
           />
         )}
       </div>
+      </RowCoordsContext.Provider>
     )
   }
 
   return (
+    <RowCoordsContext.Provider value={rowCoords}>
     <div
       className={`rounded-md border bg-card transition-opacity ${isDragging ? 'opacity-50' : ''}`}
       data-pilotiq-repeater-row=""
@@ -910,6 +923,7 @@ function RepeaterRow({
           : <SchemaRenderer elements={namespaced} />}
       </div>
     </div>
+    </RowCoordsContext.Provider>
   )
 }
 
@@ -1168,6 +1182,10 @@ function RepeaterTableRow({
     () => row.children.map(c => prefixFieldNames(c, prefix)),
     [row.children, prefix],
   )
+  const rowCoords = useMemo(
+    () => ({ arrayName: name, rowIndex: index, rowId: row.id }),
+    [name, index, row.id],
+  )
 
   if (row.hidden) {
     // Render the hidden envelope as a single full-span cell so column
@@ -1175,11 +1193,18 @@ function RepeaterTableRow({
     // still in the form's submit. Using `<tr style="display:none">`
     // would warn under React strict-mode in Firefox; the wrapping cell
     // keeps the markup HTML-valid.
+    //
+    // The provider wraps the cell rather than the `<tr>` because React's
+    // table-row whitelisting only accepts `<th>/<td>` children, not a
+    // context provider; the provider is a no-DOM wrapper so it sits
+    // inside the cell fine.
     return (
       <tr style={{ display: 'none' }} data-pilotiq-repeater-row="hidden">
         <td colSpan={columns.length + 1}>
-          <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
-          <SchemaRenderer elements={namespaced} />
+          <RowCoordsContext.Provider value={rowCoords}>
+            <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
+            <SchemaRenderer elements={namespaced} />
+          </RowCoordsContext.Provider>
         </td>
       </tr>
     )
@@ -1209,6 +1234,7 @@ function RepeaterTableRow({
     : {}
 
   return (
+    <RowCoordsContext.Provider value={rowCoords}>
     <tr
       className={`border-t align-top ${isDragging ? 'opacity-50' : ''}`}
       data-pilotiq-repeater-row=""
@@ -1265,6 +1291,7 @@ function RepeaterTableRow({
         </div>
       </td>
     </tr>
+    </RowCoordsContext.Provider>
   )
 }
 
