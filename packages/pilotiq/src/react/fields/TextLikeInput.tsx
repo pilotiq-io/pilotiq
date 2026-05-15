@@ -217,13 +217,18 @@ function BoundTextInput({
     if (after === before) return
     const delta = computeDelta(before, after)
     if (!delta) return
-    binding.applyDelta(delta)
-    // Eager local + form-map update so the controlled input doesn't
-    // wait on the observer echo to render the new keystroke. Observer
-    // will fire with the same string and short-circuit via the equality
-    // check above.
-    setValueLocal(after)
+    // Pre-stamp `valueRef.current = after` BEFORE `applyDelta`. Y.Text's
+    // observe fires synchronously inside `applyDelta` for our own write,
+    // so without this the observer would see `prev=before, next=after`
+    // and run `preserveCursor` — which is designed for *remote* edits
+    // and clobbers the user's caret on local typing (typed '1' at pos 0
+    // would jump cursor forward by delta-length and the next keystroke
+    // would insert at the wrong index, producing scrambled output).
+    // With `valueRef` already at `after`, the observer's `next === prev`
+    // short-circuit fires and the cursor is left alone for local echoes.
     valueRef.current = after
+    binding.applyDelta(delta)
+    setValueLocal(after)
     mirrorRef.current(after)
     if (!onBlurMode) triggerLive(after)
   }, [binding, onBlurMode, triggerLive])

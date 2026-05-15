@@ -124,9 +124,19 @@ export function MarkdownInput({
       const before = binding.read()
       if (next !== before) {
         const delta = computeDelta(before, next)
+        // Pre-stamp `boundValueRef.current = next` BEFORE `applyDelta`.
+        // Y.Text's `observe` fires synchronously inside `applyDelta` for
+        // our own write; without this the observer would see
+        // `prev=before, next=after` and run `preserveCursor` — designed
+        // for *remote* edits — which clobbers the user's caret on local
+        // typing (scrambled output on mid-string inserts). With
+        // `boundValueRef` already at `next`, the observer's
+        // `next === prev` short-circuit fires and the cursor is left
+        // alone for local echoes. Mirror of the same fix in
+        // `BoundTextInput.commitDelta`.
+        boundValueRef.current = next
         if (delta) binding.applyDelta(delta)
         setBoundValue(next)
-        boundValueRef.current = next
       }
       fs.setValue(next)
       fs.triggerLive(next)
