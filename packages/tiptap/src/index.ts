@@ -17,6 +17,12 @@ export {
   type MentionProviderMeta,
 } from './MentionProvider.js'
 export { registerTiptap } from './register.js'
+export {
+  createPlainTextEditor,
+  plainTextOf,
+  plainTextToDoc,
+  type PlainTextEditorOptions,
+} from './PlainTextEditor.js'
 export { tiptap } from './plugin.js'
 export { TiptapEditor } from './react/TiptapEditor.js'
 export {
