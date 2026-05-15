@@ -94,17 +94,17 @@ importers:
         specifier: ^1
         version: 1.3.0(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@rudderjs/contracts':
-        specifier: ^1.3.0
-        version: 1.3.0
+        specifier: ^1.6.0
+        version: 1.6.0
       '@rudderjs/core':
-        specifier: ^1.1.2
-        version: 1.1.2
+        specifier: ^1.1.4
+        version: 1.1.4
       '@rudderjs/router':
-        specifier: ^1.1.2
-        version: 1.1.2
+        specifier: ^1.2.0
+        version: 1.2.0
       '@rudderjs/view':
-        specifier: ^1.0.1
-        version: 1.0.1(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
+        specifier: ^1.1.0
+        version: 1.1.0(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
       '@types/node':
         specifier: ^20
         version: 20.19.39
@@ -292,8 +292,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@rudderjs/contracts':
-        specifier: ^1.3.0
-        version: 1.3.0
+        specifier: ^1.6.0
+        version: 1.6.0
       '@rudderjs/core':
         specifier: ^1.1.4
         version: 1.1.4
@@ -313,8 +313,8 @@ importers:
         specifier: ^1.5.0
         version: 1.5.0(@prisma/client@7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3))
       '@rudderjs/router':
-        specifier: ^1.1.2
-        version: 1.1.2
+        specifier: ^1.2.0
+        version: 1.2.0
       '@rudderjs/server-hono':
         specifier: ^1.0.5
         version: 1.0.5(srvx@0.11.15)(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
@@ -322,8 +322,8 @@ importers:
         specifier: ^1.0.4
         version: 1.0.4
       '@rudderjs/view':
-        specifier: ^1.0.1
-        version: 1.0.1(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
+        specifier: ^1.1.0
+        version: 1.1.0(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
       '@rudderjs/vite':
         specifier: ^2.0.0
         version: 2.0.0(@rudderjs/core@1.1.4)(@vitejs/plugin-react@4.7.0(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
@@ -453,7 +453,7 @@ importers:
     devDependencies:
       '@rudderjs/cli':
         specifier: ^4.1.0
-        version: 4.1.0(@rudderjs/router@1.1.2)
+        version: 4.1.0(@rudderjs/router@1.2.0)
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.39
@@ -1381,14 +1381,8 @@ packages:
   '@rudderjs/console@1.0.1':
     resolution: {integrity: sha512-iQ6Uf95jI24P/noc8y3Oh6WwNQmLjRkuZr9xl3/OVJrCYFZYnV/ffhPT/FsAdwwpUDJbZPrI2XeQchs5uZhdBA==}
 
-  '@rudderjs/contracts@1.3.0':
-    resolution: {integrity: sha512-4qXhwX+PXQU6pZtpmRTlYd0xWeAHfv+iyjoRsIfdh2QtXg6Z2Cqaq4pDcYVz2jRYxwwasuiRbjLICusUYmJ4Hw==}
-
   '@rudderjs/contracts@1.6.0':
     resolution: {integrity: sha512-d+82y1IfqhA8LlCmnYGbvanz09zdNHT9sOvLVx8b7jApfJnL9gpHm4AJWc9wu+CZ68hYE65ZRNf4IosBD17URg==}
-
-  '@rudderjs/core@1.1.2':
-    resolution: {integrity: sha512-7XRUTO93U5dM961s9Cjm+d8mpGWittckuDkJ78KypJtxaYW+kjBFVGMWD4akiu5ehkI/l62j4kdTZXl1tgfZJw==}
 
   '@rudderjs/core@1.1.4':
     resolution: {integrity: sha512-rqgvPJBZRAshHMxQem338sLNiZm5e8NdaHD123lP5vMRJHRZ0UPK9tHTkR6wRr9Y0vDNe3VAMiKbDqIqA2JFuw==}
@@ -1413,9 +1407,6 @@ packages:
   '@rudderjs/orm@1.8.0':
     resolution: {integrity: sha512-Ge8pBUmbNp4yW6KGnOe0ANj2hKTPs5jd8PfMd9DXrcohlcFc0xyoJwsQxhQmGXBDzblZ2hOgKhCZpWZWmqy6Yg==}
 
-  '@rudderjs/router@1.1.2':
-    resolution: {integrity: sha512-I3jp8h9GabkJxRh0lGGMblROYdkSyPApjOKSKxdoBXQCumX4NyD/N8fjiLLRTrkVTlrO4R49XjLaNWu4BYVx8g==}
-
   '@rudderjs/router@1.2.0':
     resolution: {integrity: sha512-HdAIrLzN4BlwtIDlHwWX+DAu64/6rmHnSvtHMn5VfAqF3AX3JxJaF2dXGQ6q52np+q43HFtbVVKgD1XaVjuwpw==}
 
@@ -1425,14 +1416,11 @@ packages:
   '@rudderjs/session@1.0.4':
     resolution: {integrity: sha512-EqqFiBsPBKpSJMuA1Y2Ssmfc2liHQr4yEZSgNZaV5CnMlUzgPUdNHj8yK2CBnKYYs8y4d04pQQE7feuMJO3YxA==}
 
-  '@rudderjs/support@1.1.1':
-    resolution: {integrity: sha512-A5WHnKNMZHvVQNrPb7Gw73MA6ig0fEiCdhwjOCFSKaCl4zp2dsPTulYYDomd2LmL6cb2eiy8dtO4FiDVYWdhwA==}
-
   '@rudderjs/support@1.2.1':
     resolution: {integrity: sha512-wlEyVzz5kMembrwDr+RyNKxTjbLzo5f8FRf9HDwtFm7blCrxJCmShfV2tuxiP9hNbDvuzhhEb6uTyt6lErjAFw==}
 
-  '@rudderjs/view@1.0.1':
-    resolution: {integrity: sha512-1kQLPuq4GTz3h8c2Nms0445HmZfyNkO0htu5b5Z11SvSa3YHHCKBtPc8rf9fZTlSNGVV7zouXMfbF+KrWb6reQ==}
+  '@rudderjs/view@1.1.0':
+    resolution: {integrity: sha512-OK99ZYiK9nVOn+5B7xh1fiLRal3mUycNgEh2DGSKW73wcBELzvmjm6bDfaERc7WwI7sLrfrJbO00J9fijN/fNA==}
     peerDependencies:
       vike: '>=0.4.0'
 
@@ -4588,7 +4576,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@rudderjs/cli@4.1.0(@rudderjs/router@1.1.2)':
+  '@rudderjs/cli@4.1.0(@rudderjs/router@1.2.0)':
     dependencies:
       '@clack/prompts': 1.3.0
       '@rudderjs/console': 1.0.0
@@ -4596,7 +4584,7 @@ snapshots:
       chalk: 5.6.2
       commander: 12.1.0
     optionalDependencies:
-      '@rudderjs/router': 1.1.2
+      '@rudderjs/router': 1.2.0
 
   '@rudderjs/console@1.0.0':
     dependencies:
@@ -4606,18 +4594,7 @@ snapshots:
     dependencies:
       '@clack/prompts': 1.3.0
 
-  '@rudderjs/contracts@1.3.0': {}
-
   '@rudderjs/contracts@1.6.0': {}
-
-  '@rudderjs/core@1.1.2':
-    dependencies:
-      '@rudderjs/console': 1.0.0
-      '@rudderjs/contracts': 1.3.0
-      '@rudderjs/router': 1.1.2
-      '@rudderjs/support': 1.1.1
-      reflect-metadata: 0.2.2
-      zod: 4.3.6
 
   '@rudderjs/core@1.1.4':
     dependencies:
@@ -4639,13 +4616,13 @@ snapshots:
   '@rudderjs/middleware@1.0.1':
     dependencies:
       '@rudderjs/cache': 1.1.1
-      '@rudderjs/contracts': 1.3.0
+      '@rudderjs/contracts': 1.6.0
     transitivePeerDependencies:
       - supports-color
 
   '@rudderjs/orm-prisma@1.5.0(@prisma/client@7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3))':
     dependencies:
-      '@rudderjs/contracts': 1.3.0
+      '@rudderjs/contracts': 1.6.0
       '@rudderjs/core': 1.1.4
       '@rudderjs/orm': 1.8.0
     optionalDependencies:
@@ -4663,12 +4640,7 @@ snapshots:
 
   '@rudderjs/orm@1.8.0':
     dependencies:
-      '@rudderjs/contracts': 1.3.0
-
-  '@rudderjs/router@1.1.2':
-    dependencies:
-      '@rudderjs/contracts': 1.3.0
-      reflect-metadata: 0.2.2
+      '@rudderjs/contracts': 1.6.0
 
   '@rudderjs/router@1.2.0':
     dependencies:
@@ -4678,7 +4650,7 @@ snapshots:
   '@rudderjs/server-hono@1.0.5(srvx@0.11.15)(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))':
     dependencies:
       '@hono/node-server': 1.19.11(hono@4.12.12)
-      '@rudderjs/contracts': 1.3.0
+      '@rudderjs/contracts': 1.6.0
       '@vikejs/hono': 0.2.0(hono@4.12.12)(srvx@0.11.15)(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
       hono: 4.12.12
     transitivePeerDependencies:
@@ -4694,22 +4666,18 @@ snapshots:
 
   '@rudderjs/session@1.0.4':
     dependencies:
-      '@rudderjs/contracts': 1.3.0
+      '@rudderjs/contracts': 1.6.0
       '@rudderjs/core': 1.1.4
     optionalDependencies:
       ioredis: 5.10.1
     transitivePeerDependencies:
       - supports-color
 
-  '@rudderjs/support@1.1.1':
-    dependencies:
-      zod: 4.3.6
-
   '@rudderjs/support@1.2.1':
     dependencies:
       zod: 4.3.6
 
-  '@rudderjs/view@1.0.1(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))':
+  '@rudderjs/view@1.1.0(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))':
     dependencies:
       vike: 0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
 
