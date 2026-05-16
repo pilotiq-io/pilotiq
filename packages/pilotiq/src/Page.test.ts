@@ -47,4 +47,68 @@ describe('Page (extension hooks)', () => {
     assert.equal(meta.slug, 'analytics')
     assert.equal(meta.mode, 'custom')
   })
+
+  describe('collab opt-in', () => {
+    it('omitted static collab → getResolvedCollabConfig returns null', () => {
+      class MyPage extends Page {}
+      assert.equal(MyPage.getResolvedCollabConfig(), null)
+    })
+
+    it('static collab = null → null (explicit opt-out)', () => {
+      class MyPage extends Page {
+        static override collab = null
+      }
+      assert.equal(MyPage.getResolvedCollabConfig(), null)
+    })
+
+    it('static collab = { room } → defaults presence to true', () => {
+      class Settings extends Page {
+        static override collab = { room: 'settings-general' }
+      }
+      assert.deepEqual(Settings.getResolvedCollabConfig(), {
+        room:     'settings-general',
+        presence: true,
+      })
+    })
+
+    it('object form can suppress presence', () => {
+      class Settings extends Page {
+        static override collab = { room: 'settings', presence: false }
+      }
+      assert.deepEqual(Settings.getResolvedCollabConfig(), {
+        room:     'settings',
+        presence: false,
+      })
+    })
+
+    it('returns null when room is empty or missing', () => {
+      // Defensive runtime checks — TS rejects `room: ''` and missing-`room`
+      // at config time; force the bad shapes through `as never` so the
+      // resolver path is still covered.
+      class A extends Page {
+        static override collab = { room: '' } as never
+      }
+      class B extends Page {
+        static override collab = {} as never
+      }
+      assert.equal(A.getResolvedCollabConfig(), null)
+      assert.equal(B.getResolvedCollabConfig(), null)
+    })
+
+    it('resource-bound default pages ignore collab even when set', () => {
+      class ArticleResource extends Resource {
+        static override label = 'Articles'
+      }
+      class EditArticle extends Page {
+        static override slug  = 'articles/edit'
+        static override label = 'Edit Article'
+        static override collab = { room: 'should-be-ignored' }
+        static override getResource() { return ArticleResource }
+        static override getMode() { return 'edit' as const }
+      }
+      // Resource-bound pages must route collab through Resource.collab,
+      // not Page.collab — otherwise both gates would fire on the same URL.
+      assert.equal(EditArticle.getResolvedCollabConfig(), null)
+    })
+  })
 })

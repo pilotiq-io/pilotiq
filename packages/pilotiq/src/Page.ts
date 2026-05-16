@@ -5,6 +5,34 @@ import type { ClusterClass } from './Cluster.js'
 import { type IconValue, serializeIcon } from './icons/types.js'
 
 /**
+ * Per-custom-page collab configuration. Custom pages have no record id
+ * to derive a room from, so `room` is required and must be supplied as
+ * a literal string (e.g. `'team-settings'`). The plugin reads this off
+ * the panel-level `pageCollab` map and uses it to seed the page's
+ * Y.Doc.
+ *
+ *   room     — literal room identifier; namespaced internally so two
+ *              pages with the same `room` literal collide deliberately.
+ *   presence — when false, suppress the awareness layer (focus chips,
+ *              cursor positions) while keeping value-sync. Defaults to true.
+ *
+ * Field-level `.collab(false)` always wins per field. Resource-bound
+ * default pages (List/Create/Edit/View) ignore this — record-scoped
+ * collab is governed by `Resource.collab`.
+ */
+export interface PageCollabConfig {
+  room:     string
+  presence: boolean
+}
+
+/** Raw shape accepted by `static collab` before normalization. Unlike
+ * `Resource.collab` there is no `true` shorthand — `room` is required. */
+export type PageCollabInput = {
+  room:      string
+  presence?: boolean
+}
+
+/**
  * Discriminator the framework uses for default rendering, route generation,
  * and breadcrumbs. `'custom'` is for standalone Pages that don't belong to
  * a Resource. `'record'` is for record-scoped sub-pages declared under a
@@ -105,6 +133,38 @@ export class Page {
 
   static hasSchema(): boolean {
     return this._schemaDef !== undefined || this.schema !== Page.schema
+  }
+
+  // ─── Realtime collab opt-in ────────────────────────────────
+  // Per-page opt-in for custom Pages. Resource-bound default pages
+  // (List/Create/Edit/View) ignore this — record-scoped collab is
+  // governed by `Resource.collab`. Set on a custom Page subclass to
+  // mount the plugin-registered custom-page wrapper around its content
+  // area at runtime.
+
+  /** Enable collab on this custom page. `room` is required (no recordId
+   * to derive one from). Omitting `static collab` keeps the page
+   * collab-free even when the `@pilotiq-pro/collab` plugin is installed. */
+  static collab: PageCollabInput | null = null
+
+  /**
+   * Normalize `static collab` into the canonical wire shape, or return
+   * `null` when the page has not opted in. Centralizes the `presence`
+   * default. Resource-bound default pages always return `null` here —
+   * use `Resource.collab` for those.
+   *
+   * Result lands on `panelInfo().pageCollab[slug]`; the gate reads it to
+   * decide whether to mount the custom-page wrapper.
+   */
+  static getResolvedCollabConfig(): PageCollabConfig | null {
+    if (this.getMode() !== 'custom') return null
+    const raw = this.collab
+    if (raw === null || raw === undefined) return null
+    if (typeof raw.room !== 'string' || raw.room.length === 0) return null
+    return {
+      room:     raw.room,
+      presence: raw.presence ?? true,
+    }
   }
 
   /** Plan #10: authorization. Custom pages get a single `canAccess` gate

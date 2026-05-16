@@ -11,6 +11,7 @@ import { RightPanelRegistryProvider } from './right-panel-registry.js'
 import { RightSidebarProvider, useRightSidebarOptional } from './RightSidebarContext.js'
 import { RightSidebar } from './RightSidebar.js'
 import { RecordWrapperGate, type RecordCollabMap } from './RecordWrapperGate.js'
+import { CustomPageWrapperGate, type PageCollabMap } from './CustomPageWrapperGate.js'
 import { useIsMobile } from './hooks/use-mobile.js'
 import type { NavItem, UserMenuMeta, DatabaseNotificationsMeta, RightSidebarMeta } from '../pageData.js'
 import type { RenderHookMap } from '../RenderHook.js'
@@ -39,6 +40,10 @@ export interface AppShellProps {
      *  decide whether to mount the plugin-registered RecordWrapper on
      *  a record edit/view URL. Absent when no resource opted in. */
     recordCollab?: RecordCollabMap
+    /** Per-custom-page collab opt-in map — read by `CustomPageWrapperGate`
+     *  to decide whether to mount the plugin-registered CustomPageWrapper
+     *  on a custom-page URL. Absent when no page opted in. */
+    pageCollab?: PageCollabMap
     /** Pre-resolved render-hook slots for the panel chrome (body /
      *  topbar / sidebar / user-menu / footer / head). Sparse map —
      *  slots with no registered entries are absent. Built by
@@ -137,7 +142,13 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
         {...(props.currentPath !== undefined ? { currentPath: props.currentPath } : {})}
         {...(props.panel.recordCollab !== undefined ? { recordCollab: props.panel.recordCollab } : {})}
       >
-        {props.children}
+        <CustomPageWrapperGate
+          basePath={props.basePath}
+          {...(props.currentPath !== undefined ? { currentPath: props.currentPath } : {})}
+          {...(props.panel.pageCollab !== undefined ? { pageCollab: props.panel.pageCollab } : {})}
+        >
+          {props.children}
+        </CustomPageWrapperGate>
       </RecordWrapperGate>
     ),
   }

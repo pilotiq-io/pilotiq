@@ -79,6 +79,16 @@ export {
   type RecordWrapperGateProps,
 } from './RecordWrapperGate.js'
 export {
+  registerCustomPageWrapper,
+  getCustomPageWrapper,
+  type CustomPageWrapperProps,
+} from './CustomPageWrapperRegistry.js'
+export {
+  CustomPageWrapperGate,
+  type CustomPageWrapperGateProps,
+  type PageCollabMap,
+} from './CustomPageWrapperGate.js'
+export {
   parseRecordPageUrl,
   parseRecordEditUrl,
   type RecordPageIdentity,

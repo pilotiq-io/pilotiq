@@ -1,5 +1,5 @@
 import type { Pilotiq, PilotiqConfig } from '../Pilotiq.js'
-import type { Page } from '../Page.js'
+import type { Page, PageCollabConfig } from '../Page.js'
 import type { ResourceClass, NavigationBadgeColor, ResourceCollabConfig } from '../Resource.js'
 import type { GlobalClass } from '../Global.js'
 import type { ClusterClass } from '../Cluster.js'
@@ -223,6 +223,34 @@ function buildRecordCollabMap(cfg: Readonly<PilotiqConfig>): RecordCollabMap | u
   return Object.keys(map).length > 0 ? map : undefined
 }
 
+/**
+ * Per-custom-page collab opt-in map, keyed by the page's URL slug
+ * (cluster-prefixed for clustered pages). `CustomPageWrapperGate`
+ * reads this to decide whether to mount the plugin-registered
+ * custom-page wrapper (collab room, audit trail, …) around the page
+ * content area.
+ *
+ * Resource-bound default pages (List/Create/Edit/View) never appear
+ * here — `Page.getResolvedCollabConfig()` returns `null` for them.
+ * Record-scoped collab is governed by `Resource.collab` and lands on
+ * `recordCollab`.
+ */
+export type PageCollabMap = Record<string, PageCollabConfig>
+
+function pageSlugForGate(P: typeof Page): string {
+  const slug = P.getSlug()
+  return P.cluster ? `${P.cluster.getSlug()}/${slug}` : slug
+}
+
+function buildPageCollabMap(cfg: Readonly<PilotiqConfig>): PageCollabMap | undefined {
+  const map: PageCollabMap = {}
+  for (const P of cfg.pages) {
+    const collab = P.getResolvedCollabConfig()
+    if (collab) map[pageSlugForGate(P)] = collab
+  }
+  return Object.keys(map).length > 0 ? map : undefined
+}
+
 export async function panelInfo(
   pilotiq: Pilotiq,
   req?:    unknown,
@@ -240,6 +268,7 @@ export async function panelInfo(
   ])
   const databaseNotifications = buildDatabaseNotificationsMeta(cfg, user)
   const recordCollab = buildRecordCollabMap(cfg)
+  const pageCollab = buildPageCollabMap(cfg)
   // AI suggestion mode — sparse: omit when 'auto' (the default) so the
   // wire shape stays minimal for panels that don't opt into review mode.
   // Plugin clients (e.g. @pilotiq-pro/ai's `AiClientToolBindings`) read
@@ -256,6 +285,7 @@ export async function panelInfo(
     ...(databaseNotifications ? { databaseNotifications } : {}),
     ...(rightSidebar ? { rightSidebar } : {}),
     ...(recordCollab ? { recordCollab } : {}),
+    ...(pageCollab ? { pageCollab } : {}),
     ...(Object.keys(renderHooks).length > 0 ? { renderHooks } : {}),
     ...(aiSuggestionsMode !== 'auto' ? { aiSuggestionsMode } : {}),
   }

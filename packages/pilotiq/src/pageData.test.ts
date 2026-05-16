@@ -1406,3 +1406,45 @@ describe('panelInfo — recordCollab map (resource collab opt-in)', () => {
     })
   })
 })
+
+describe('panelInfo — pageCollab map (custom-page collab opt-in)', () => {
+  it('absent when no page opts in', async () => {
+    class Analytics extends Page {
+      static override slug  = 'analytics'
+      static override label = 'Analytics'
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').pages([Analytics]))
+    assert.equal((info as { pageCollab?: unknown }).pageCollab, undefined)
+  })
+
+  it('emits an entry per opted-in custom page keyed by URL slug', async () => {
+    class Settings extends Page {
+      static override slug   = 'settings'
+      static override label  = 'Settings'
+      static override collab = { room: 'settings-general' }
+    }
+    class Analytics extends Page {
+      static override slug  = 'analytics'
+      static override label = 'Analytics'
+      // No collab — should NOT appear in the map.
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').pages([Settings, Analytics]))
+    const map = (info as { pageCollab?: Record<string, unknown> }).pageCollab
+    assert.deepEqual(map, {
+      settings: { room: 'settings-general', presence: true },
+    })
+  })
+
+  it('object form can suppress presence', async () => {
+    class Settings extends Page {
+      static override slug   = 'settings'
+      static override label  = 'Settings'
+      static override collab = { room: 'settings', presence: false }
+    }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').pages([Settings]))
+    const map = (info as { pageCollab?: Record<string, unknown> }).pageCollab
+    assert.deepEqual(map, {
+      settings: { room: 'settings', presence: false },
+    })
+  })
+})

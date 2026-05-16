@@ -83,7 +83,7 @@ export {
 } from './RelationManager.js'
 export { Global, type GlobalPages, type GlobalClass } from './Global.js'
 export { Cluster, type ClusterClass } from './Cluster.js'
-export { Page, type PageMeta, type PageMode } from './Page.js'
+export { Page, type PageMeta, type PageMode, type PageCollabConfig, type PageCollabInput } from './Page.js'
 export {
   // Page base classes — extend these to bind a Page to a Resource.
   ListPage, CreatePage, EditPage, ViewPage,
