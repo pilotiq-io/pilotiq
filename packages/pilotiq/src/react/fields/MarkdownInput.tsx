@@ -56,21 +56,35 @@ export function MarkdownInput({
   const markdownEditor = getMarkdownEditor()
   const rowCoords = useRowCoords()
 
+  // Row-leaf fields ride a composite `arrayName.rowId.fieldName` key for
+  // collab anchoring so the Y.XmlFragment survives row reorders (the raw
+  // dotted `items.<index>.body` would follow the wrong row after a swap).
+  // Top-level fields pass through unchanged.
+  const fragmentKey: string | null = (() => {
+    if (!name.includes('.')) return name
+    if (!rowCoords) return null
+    const parsed = parseRowFieldPath(name)
+    if (!parsed) return null
+    if (parsed.arrayName !== rowCoords.arrayName) return null
+    if (parsed.index     !== rowCoords.rowIndex)  return null
+    return `${rowCoords.arrayName}.${rowCoords.rowId}.${parsed.fieldName}`
+  })()
+
   // Plug-supplied WYSIWYG markdown editor (typically `@pilotiq/tiptap`'s
   // Tiptap + tiptap-markdown integration). When registered, it replaces
   // BOTH the legacy non-collab textarea path AND the prior collab plain-text
   // path with a single rich editor that handles WYSIWYG editing, markdown
   // serialization, and collab binding (via its own `useCollabRoom()` read)
-  // internally. Repeater/Builder row leaves still bypass it — dotted-path
-  // field names don't have a stable Y.XmlFragment key today; see
-  // `MarkdownCollabInput` below for the prior row-aware path that stays as
-  // the fallback inside Repeater/Builder rows.
-  const isRowLeaf = name.includes('.')
-  if (markdownEditor && !isRowLeaf) {
+  // internally. Row leaves pass the composite key as `collabKey` so the
+  // editor's collab factory anchors against the stable name while the
+  // hidden input + form-state keep using the original dotted path for
+  // submit routing.
+  if (markdownEditor && fragmentKey !== null) {
     return (
       <MarkdownEditorHost
         Editor={markdownEditor}
         name={name}
+        {...(fragmentKey !== name ? { collabKey: fragmentKey } : {})}
         defaultValue={defaultValue}
         disabled={disabled}
         {...(placeholder !== undefined ? { placeholder } : {})}
@@ -84,12 +98,10 @@ export function MarkdownInput({
     )
   }
 
-  // Tiptap-backed plain-text editor for markdown source when collab is on.
-  // Same architectural fix as `TextLikeInput`'s `CollabTextField`:
-  // y-prosemirror's `RelativePosition` cursor anchoring against a
-  // `Y.XmlFragment` replaces whole-string LWW. Row leaves get the
-  // composite-key transform via `useRowCoords()` + `parseRowFieldPath`
-  // (same shape as TextLikeInput) so the fragment survives row reorders.
+  // Tiptap-backed plain-text editor for markdown source when collab is on
+  // but no WYSIWYG adapter is registered. Same architectural fix as
+  // `TextLikeInput`'s `CollabTextField`: y-prosemirror's `RelativePosition`
+  // cursor anchoring against a `Y.XmlFragment` replaces whole-string LWW.
   //
   // Tradeoff: the markdown toolbar + Cmd-shortcuts + paste-image upload
   // all operate on a `<textarea>`'s DOM selection — they don't have a
@@ -98,15 +110,6 @@ export function MarkdownInput({
   // are write-mode-only on the native path; collab users type markdown
   // syntax directly (`**bold**`, `## heading`). The preview tab keeps
   // working since `MarkdownCollabInput` maintains a local mirror.
-  const fragmentKey: string | null = (() => {
-    if (!name.includes('.')) return name
-    if (!rowCoords) return null
-    const parsed = parseRowFieldPath(name)
-    if (!parsed) return null
-    if (parsed.arrayName !== rowCoords.arrayName) return null
-    if (parsed.index     !== rowCoords.rowIndex)  return null
-    return `${rowCoords.arrayName}.${rowCoords.rowId}.${parsed.fieldName}`
-  })()
   if (room && collabRenderer && fragmentKey !== null) {
     return (
       <MarkdownCollabInput
@@ -498,12 +501,17 @@ function stringValue(v: unknown): string {
  * input so submit picks it up unchanged.
  */
 function MarkdownEditorHost({
-  Editor, name, defaultValue, disabled, placeholder,
+  Editor, name, collabKey, defaultValue, disabled, placeholder,
   toolbarButtons, minHeight, maxHeight,
   fileAttachmentsDirectory, fileAttachmentsVisibility, uploadUrl,
 }: {
   Editor:                     MarkdownEditorComponent
   name:                       string
+  // Distinct from `name` only inside Repeater/Builder rows: the dotted
+  // form-input name (`items.0.body`) is unstable across reorders, so the
+  // editor's collab factory needs a row-id-anchored key. Defaults to
+  // `name` when unset (top-level fields).
+  collabKey?:                 string
   defaultValue:               unknown
   disabled:                   boolean
   placeholder?:               string
@@ -529,7 +537,7 @@ function MarkdownEditorHost({
     <>
       <input type="hidden" name={name} value={text} readOnly />
       <Editor
-        name={name}
+        name={collabKey ?? name}
         defaultValue={initial}
         disabled={disabled}
         {...(placeholder !== undefined ? { placeholder } : {})}
