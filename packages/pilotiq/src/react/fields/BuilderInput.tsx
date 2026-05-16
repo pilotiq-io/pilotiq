@@ -9,6 +9,7 @@ import { RowCoordsContext } from '../RowCoordsContext.js'
 import { useIconFor } from '../icon-context.js'
 import { reorderRows, ExtraActionStrip, buildGridContainer } from './RepeaterInput.js'
 import { syncRowGates } from './syncRowGates.js'
+import { consumeReconcileFlag, computeReconcilePlan } from './repeaterReconcile.js'
 import type { RowButtonsMeta } from '../../fields/RowButton.js'
 import {
   RowChromeIconButton,
@@ -252,6 +253,31 @@ export function BuilderInput({
       })
     })
   }, [rowBinding, blocksByName, meta.blocks])
+
+  // Phase A reconciliation for `Builder.relationship` PK-switch — mirrors
+  // the effect in `RepeaterInput`. See its comment + the plan doc:
+  // `pilotiq-pro/docs/plans/repeater-relationship-pk-switch.md`.
+  useEffect(() => {
+    if (!rowBinding) return
+    if (!consumeReconcileFlag(formId)) return
+    const timer = setTimeout(() => {
+      const plan = computeReconcilePlan({
+        current:       rowBinding.current(),
+        authoritative: initialRows.map(r => r.id),
+      })
+      for (const id of plan.toRemove) rowBinding.remove(id)
+      // For Builder, the row carries a block `type` discriminator; seed
+      // it on the add path so peers' picker dropdowns see the right
+      // block (matches the existing add path in `addBlock`). The block
+      // type comes from initialRows when the row is server-rendered.
+      for (const id of plan.toAdd) {
+        const row = initialRows.find(r => r.id === id)
+        rowBinding.add(id, row?.type ? { type: row.type } : {})
+      }
+    }, 1500)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowBinding, formId])
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
     accordion ? {} : initSeedCollapsed(initialRows, formId, name, defaultCollapsed, collapsible),
   )

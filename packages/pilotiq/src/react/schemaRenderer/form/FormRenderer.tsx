@@ -6,6 +6,7 @@ import { useCollabRoom } from '../../CollabRoomContext.js'
 import { getFormCollabBinding } from '../../FormCollabBindingRegistry.js'
 import { useNavigate } from '../../navigate.js'
 import { useToast } from '../../Toaster.js'
+import { markSubmitForReconcile } from '../../fields/repeaterReconcile.js'
 import { renderField } from './renderField.js'
 
 // ─── Form ───────────────────────────────────────────────────
@@ -111,6 +112,15 @@ export function FormRenderer({
       }
 
       // Success — drain notifications and SPA-navigate to the redirect.
+      //
+      // Before navigating, mark this tab for the relationship-backed
+      // Repeater/Builder PK-switch reconciler. The next mount of any
+      // child Repeater/Builder under this formId will run a one-shot
+      // CRDT reconcile to drop orphan UUIDs whose rows just persisted
+      // under a fresh DB PK. See
+      // `pilotiq-pro/docs/plans/repeater-relationship-pk-switch.md`
+      // (Phase A).
+      markSubmitForReconcile(formId)
       const notifs = (data as { notifications?: NotificationMeta[] }).notifications
       if (notifs && notifs.length > 0) for (const n of notifs) notify(n)
       const redirect = String((data as { redirect?: string }).redirect ?? '')

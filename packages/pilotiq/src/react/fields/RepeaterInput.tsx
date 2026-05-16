@@ -21,6 +21,7 @@ import {
   DEFAULT_DELETE,
 } from './rowChromeButton.js'
 import { syncRowGates } from './syncRowGates.js'
+import { consumeReconcileFlag, computeReconcilePlan } from './repeaterReconcile.js'
 import {
   generateRowId, makeAccordionStorage, makeCollapsedStorage,
 } from './rowState.js'
@@ -304,6 +305,37 @@ export function RepeaterInput({
       })
     })
   }, [rowBinding, meta.template])
+
+  // Phase A reconciliation for `Repeater.relationship` PK-switch — when
+  // the surrounding form just submitted in this tab AND we're inside a
+  // collab room with a row binding, snapshot the CRDT order after a
+  // short settle (long enough for WS sync to deliver any persisted
+  // state) and reconcile against `initialRows`. Drops orphan UUIDs
+  // whose rows just persisted under a fresh DB PK; idempotent + no-op
+  // for non-relationship Repeaters where `__id` stays UUID across
+  // save+reload. Plan:
+  // `pilotiq-pro/docs/plans/repeater-relationship-pk-switch.md`.
+  useEffect(() => {
+    if (!rowBinding) return
+    if (!consumeReconcileFlag(formId)) return
+    // Give WS sync time to deliver any persisted rows before reading
+    // current(). 1500ms is conservative; typical sync settles in <300ms.
+    // The reconciler is one-shot per submit, so we accept the brief
+    // visual flicker over a tighter timer that might fire pre-sync.
+    const timer = setTimeout(() => {
+      const plan = computeReconcilePlan({
+        current:       rowBinding.current(),
+        authoritative: initialRows.map(r => r.id),
+      })
+      for (const id of plan.toRemove) rowBinding.remove(id)
+      for (const id of plan.toAdd)    rowBinding.add(id, {})
+    }, 1500)
+    return () => clearTimeout(timer)
+    // initialRows is a stable useMemo([]) ref so it's safe to omit. We
+    // intentionally key only on rowBinding + formId — the reconciler is
+    // tied to the submit lifecycle, not to row-state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowBinding, formId])
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
     accordion ? {} : initSeedCollapsed(initialRows, formId, name, defaultCollapsed, collapsible),
   )

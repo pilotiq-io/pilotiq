@@ -265,7 +265,7 @@ export function FormStateProvider({
     // binding that has addRow but not reorderRows) skip the stash — the
     // contract says all three or nothing.
     if (binding.addRow && binding.removeRow && binding.reorderRows) {
-      const { addRow, removeRow, reorderRows, subscribeRows } = binding
+      const { addRow, removeRow, reorderRows, subscribeRows, getRowOrder } = binding
       const arrayNames = collectRowArrayFieldNames(formMetaRef.current)
       if (arrayNames.length > 0) {
         const rowStash = new Map<string, RowBindingApi>()
@@ -281,6 +281,13 @@ export function FormStateProvider({
             subscribe: subscribeRows
               ? (fn) => subscribeRows.call(binding, arrayName, fn)
               : () => () => {},
+            // `getRowOrder` is optional — bindings that ship row CRUD
+            // without a snapshot read (test stubs, older plugins) get a
+            // `[]` substitute. The renderer's reconciler treats empty as
+            // "no orphans known" and no-ops, which is the safest fallback.
+            current: getRowOrder
+              ? () => getRowOrder.call(binding, arrayName)
+              : () => [],
           })
         }
         setRowBindings(rowStash)

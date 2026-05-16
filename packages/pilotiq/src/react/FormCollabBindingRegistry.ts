@@ -101,6 +101,18 @@ export interface FormCollabBinding {
    * renderer's optimistic update converge).
    */
   subscribeRows?(arrayName: string, fn: (event: RowsEvent) => void): () => void
+
+  /**
+   * Snapshot the current row id order for an array. Unlike `subscribeRows`,
+   * which only fires on delta events, this returns whatever is in the CRDT
+   * right now — used by the renderer's mount-time reconciler to detect
+   * orphaned rows (CRDT carries a UUID forward after the parent save
+   * switched the row's `__id` to a DB PK; see
+   * `docs/plans/repeater-relationship-pk-switch.md` Phase A).
+   *
+   * Empty array when the binding has no state for `arrayName` yet.
+   */
+  getRowOrder?(arrayName: string): string[]
 }
 
 /**
@@ -134,6 +146,11 @@ export interface RowBindingApi {
    *  rowId presence in its current state. Optional on the underlying
    *  contract — `null` when the binding lacks `subscribeRows`. */
   subscribe(fn: (event: RowsEvent) => void): () => void
+  /** Snapshot the array's current row id order. Empty array when the
+   *  binding has no state yet OR when the underlying binding doesn't
+   *  implement `getRowOrder` (in which case mount-time reconciliation
+   *  no-ops). */
+  current(): string[]
 }
 
 /**
