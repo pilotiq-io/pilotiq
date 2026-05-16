@@ -1,5 +1,11 @@
 # @pilotiq/pilotiq
 
+## 0.13.1
+
+### Patch Changes
+
+- 35f1a59: `Repeater.relationship` / `Builder.relationship` PK-switch reconciliation (Phase A). After a parent form submit creates new relationship-backed rows, the submitting tab now drops the orphan UUID rows the row CRDT carried forward — they were causing duplicate-row visual bugs on reload. New optional method `FormCollabBinding.getRowOrder?(arrayName)` + `RowBindingApi.current()`; the renderer uses a one-shot reconciler on next mount after submit success. Other peers still need to reload to converge — Phase B (server-side rename) addresses that. Plan: `pilotiq-pro/docs/plans/repeater-relationship-pk-switch.md`.
+
 ## 0.13.0
 
 ### Minor Changes
