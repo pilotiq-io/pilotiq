@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
+import type { MarkdownEditor as MarkdownEditorComponent } from '../MarkdownEditorRegistry.js'
 import {
   BoldIcon, ItalicIcon, StrikethroughIcon, LinkIcon,
   HeadingIcon, ListIcon, ListOrderedIcon, QuoteIcon,
@@ -8,6 +9,7 @@ import {
 import { useFieldState } from '../FormStateContext.js'
 import { useCollabRoom } from '../CollabRoomContext.js'
 import { getCollabTextRenderer, type CollabTextRenderer } from '../CollabTextRendererRegistry.js'
+import { getMarkdownEditor } from '../MarkdownEditorRegistry.js'
 import { useRowCoords } from '../RowCoordsContext.js'
 import { parseRowFieldPath } from '../formStateHelpers.js'
 import { useToast } from '../Toaster.js'
@@ -51,7 +53,36 @@ export function MarkdownInput({
   const fs = useFieldState(name)
   const room = useCollabRoom()
   const collabRenderer = getCollabTextRenderer()
+  const markdownEditor = getMarkdownEditor()
   const rowCoords = useRowCoords()
+
+  // Plug-supplied WYSIWYG markdown editor (typically `@pilotiq/tiptap`'s
+  // Tiptap + tiptap-markdown integration). When registered, it replaces
+  // BOTH the legacy non-collab textarea path AND the prior collab plain-text
+  // path with a single rich editor that handles WYSIWYG editing, markdown
+  // serialization, and collab binding (via its own `useCollabRoom()` read)
+  // internally. Repeater/Builder row leaves still bypass it — dotted-path
+  // field names don't have a stable Y.XmlFragment key today; see
+  // `MarkdownCollabInput` below for the prior row-aware path that stays as
+  // the fallback inside Repeater/Builder rows.
+  const isRowLeaf = name.includes('.')
+  if (markdownEditor && !isRowLeaf) {
+    return (
+      <MarkdownEditorHost
+        Editor={markdownEditor}
+        name={name}
+        defaultValue={defaultValue}
+        disabled={disabled}
+        {...(placeholder !== undefined ? { placeholder } : {})}
+        toolbarButtons={toolbarButtons}
+        {...(minHeight !== undefined ? { minHeight } : {})}
+        {...(maxHeight !== undefined ? { maxHeight } : {})}
+        {...(fileAttachmentsDirectory !== undefined ? { fileAttachmentsDirectory } : {})}
+        {...(fileAttachmentsVisibility !== undefined ? { fileAttachmentsVisibility } : {})}
+        {...(uploadUrl !== undefined ? { uploadUrl } : {})}
+      />
+    )
+  }
 
   // Tiptap-backed plain-text editor for markdown source when collab is on.
   // Same architectural fix as `TextLikeInput`'s `CollabTextField`:
@@ -456,4 +487,61 @@ function stringValue(v: unknown): string {
   if (v === undefined || v === null) return ''
   if (typeof v === 'string') return v
   return String(v)
+}
+
+/**
+ * Bridges the registered adapter editor (`@pilotiq/tiptap`'s `MarkdownEditor`)
+ * to pilotiq's form-state + form-submit wire shape. The adapter owns the
+ * editor surface (WYSIWYG, toolbar, paste-image, optional source / preview
+ * tabs) and its own collab binding via `useCollabRoom()`; this host just
+ * threads form-state updates and writes the current markdown to a hidden
+ * input so submit picks it up unchanged.
+ */
+function MarkdownEditorHost({
+  Editor, name, defaultValue, disabled, placeholder,
+  toolbarButtons, minHeight, maxHeight,
+  fileAttachmentsDirectory, fileAttachmentsVisibility, uploadUrl,
+}: {
+  Editor:                     MarkdownEditorComponent
+  name:                       string
+  defaultValue:               unknown
+  disabled:                   boolean
+  placeholder?:               string
+  toolbarButtons:             ReadonlyArray<string>
+  minHeight?:                 string
+  maxHeight?:                 string
+  fileAttachmentsDirectory?:  string
+  fileAttachmentsVisibility?: string
+  uploadUrl?:                 string
+}): React.ReactElement {
+  const fs = useFieldState(name)
+  const initial = useMemo(() => stringValue(defaultValue), [])
+  const [text, setText] = useState<string>(initial)
+
+  const handleChange = (next: string): void => {
+    setText(next)
+    if (fs.controlled) fs.setValue(next)
+    fs.triggerLive(next)
+  }
+  const handleBlur = (): void => { /* live trigger already ran on change */ }
+
+  return (
+    <>
+      <input type="hidden" name={name} value={text} readOnly />
+      <Editor
+        name={name}
+        defaultValue={initial}
+        disabled={disabled}
+        {...(placeholder !== undefined ? { placeholder } : {})}
+        toolbarButtons={toolbarButtons}
+        {...(minHeight !== undefined ? { minHeight } : {})}
+        {...(maxHeight !== undefined ? { maxHeight } : {})}
+        {...(fileAttachmentsDirectory !== undefined ? { fileAttachmentsDirectory } : {})}
+        {...(fileAttachmentsVisibility !== undefined ? { fileAttachmentsVisibility } : {})}
+        {...(uploadUrl !== undefined ? { uploadUrl } : {})}
+        onChange={handleChange}
+        onBlur={handleBlur}
+      />
+    </>
+  )
 }

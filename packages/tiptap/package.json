@@ -59,6 +59,7 @@
     "@tiptap/extension-table": "3.22.4",
     "@tiptap/extension-details": "3.22.4",
     "@tiptap/suggestion": "^3",
+    "tiptap-markdown": "^0.9",
     "react": "^18 || ^19",
     "react-dom": "^18 || ^19"
   },
@@ -82,6 +83,7 @@
     "@tiptap/extension-table": "3.22.4",
     "@tiptap/extension-details": "3.22.4",
     "@tiptap/suggestion": "^3",
+    "tiptap-markdown": "^0.9",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

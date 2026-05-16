@@ -36,20 +36,31 @@ export const DEFAULT_MARKDOWN_TOOLBAR: readonly MarkdownToolbarButton[] = [
 ] as const
 
 /**
- * Plain-markdown editor. The wire format is identical to `TextareaField` —
- * a single string under the field name — so no new coerce branch is
- * needed. The client mounts a `<textarea>` plus a formatting toolbar and
- * a live HTML preview pane (rendered via `marked`).
+ * Markdown editor. The wire format is a plain markdown string under the
+ * field name — same shape as `TextareaField`, so no new coerce branch
+ * is needed.
+ *
+ * **Renderer is pluggable.** When `@pilotiq/tiptap` is installed, its
+ * `registerTiptap()` hook wires a WYSIWYG editor that parses the
+ * markdown into a Tiptap document, exposes a rich-text toolbar, and
+ * serializes back to markdown on every change via `tiptap-markdown`.
+ * Editor / Source / Preview tabs let users switch between the WYSIWYG
+ * view, raw markdown, and a rendered preview without leaving the form.
+ * Collab is automatic — when a `<RecordCollabRoom>` is mounted up-tree
+ * the editor binds to the shared `Y.XmlFragment` and all peers see live
+ * edits, the same way `RichTextField` does. Without `@pilotiq/tiptap`,
+ * `MarkdownInput` falls back to a textarea with a formatting toolbar +
+ * a preview tab — works fine for panels that don't install the adapter.
  *
  * The toolbar is configurable via `toolbarButtons([…])` /
- * `disableToolbarButtons([…])`; pass `[]` to ship a chrome-less textarea
- * with just a preview tab.
+ * `disableToolbarButtons([…])`; pass `[]` to hide the toolbar entirely.
  *
- * `attachFiles` integrates with the panel's `UploadAdapter` (the same one
- * `FileUpload` uses) — the toolbar button + paste-image handler upload
- * the file via `POST {base}/_uploads` and splice an `![alt](url)` reference
- * at the cursor. When no adapter is registered, the button is stripped
- * server-side so apps without uploads never see a broken affordance.
+ * `attachFiles` integrates with the panel's `UploadAdapter` (the same
+ * one `FileUpload` uses) — the toolbar button uploads the file via
+ * `POST {base}/_uploads` and inserts an `![alt](url)` image (or a
+ * `[name](url)` link for non-images). When no adapter is registered,
+ * the button is stripped server-side so apps without uploads never see
+ * a broken affordance.
  *
  * @example
  * ```ts

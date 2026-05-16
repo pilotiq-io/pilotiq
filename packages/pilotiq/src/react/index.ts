@@ -50,6 +50,12 @@ export {
   type CollabTextRendererProps,
 } from './CollabTextRendererRegistry.js'
 export {
+  registerMarkdownEditor,
+  getMarkdownEditor,
+  type MarkdownEditor,
+  type MarkdownEditorProps,
+} from './MarkdownEditorRegistry.js'
+export {
   registerFormCollabBinding,
   getFormCollabBinding,
   type FormCollabBinding,
