@@ -178,6 +178,13 @@ export function MarkdownEditor({
 
   const editor = useEditor(
     {
+      // Tiptap v3 SSR guard. With `immediatelyRender: true` (default)
+      // `useEditor` touches the DOM during construction; under Vike's
+      // `onRenderHtml` that throws "SSR has been detected, please set
+      // `immediatelyRender` explicitly to `false` to avoid hydration
+      // mismatches." Deferring until the first React effect lets SSR
+      // produce an empty shell + hydration mount the live editor.
+      immediatelyRender: false,
       editable: !disabled,
       extensions: [
         StarterKit.configure({
