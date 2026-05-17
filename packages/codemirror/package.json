@@ -1,6 +1,6 @@
 {
   "name": "@pilotiq/codemirror",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "CodeMirror 6 code-editor field adapter for @pilotiq/pilotiq — syntax highlight, line numbers, language registry",
   "license": "MIT",
   "repository": {
@@ -49,8 +49,12 @@
     "yjs": "^13"
   },
   "peerDependenciesMeta": {
-    "y-codemirror.next": { "optional": true },
-    "yjs": { "optional": true }
+    "y-codemirror.next": {
+      "optional": true
+    },
+    "yjs": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@pilotiq/pilotiq": "workspace:^",
