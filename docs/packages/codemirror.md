@@ -119,6 +119,36 @@ CodeEditorField.make('query')
   })
 ```
 
+## Collaborative editing
+
+When `@pilotiq-pro/collab` is installed and a `<RecordCollabRoom>` is mounted up-tree (the standard pilotiq-pro form chrome), every `CodeEditorField` in the form automatically binds to a per-field `Y.Text` via [`y-codemirror.next`](https://github.com/yjs/y-codemirror.next). Two peers editing the same record see character-level convergence with proper undo/redo and (when the room exposes awareness) remote cursor decorations.
+
+Opt out per-field — useful for read-only or private content:
+
+```ts
+CodeEditorField.make('debug_log')
+  .language('json')
+  .collab(false)   // local-only — never sees a remote update
+```
+
+Top-level fields bind to a doc-root share keyed by the bare field name. Repeater / Builder row leaves bind to `${arrayName}.${rowId}.${fieldName}` so the shared text survives row reorders (keyed by stable rowId, not array index).
+
+### Install the optional peers
+
+```bash
+pnpm add y-codemirror.next yjs
+```
+
+Both are declared as **optional** peer deps on `@pilotiq/codemirror` — panels that don't ship realtime collab (most of them) leave them out entirely and the local editor path runs as before.
+
+### Known caveat — relationship-row text on PK switch
+
+`y-codemirror.next` binds against `Y.Text`. `@pilotiq-pro/collab`'s row-rename path (`rowArrayBinding.renameRow`, used when a freshly-created Repeater / Builder row gets its UUID swapped for a real DB primary key on first save) only rekeys `Y.XmlFragment` shares today. The submitter's text content survives because they hold the local edits in memory; peer B re-seeds from the DB column on next mount.
+
+In practice this means: row-leaf `CodeEditorField` content in a brand-new relationship-row converges live across peers until the form is saved; after save, the row's PK changes and peer B falls back to the persisted DB column (which is identical content). No data is lost — only the live CRDT identity is reset for that row's text fields. Top-level code editors and any code editor on an already-saved row are unaffected.
+
+Tracked as a `@pilotiq-pro/collab` follow-up: extend `rowArrayBinding.renameRow` with a parallel `Y.Text` clone branch.
+
 ## Wire format
 
 Raw string under the field name. No new coerce branch — `coerceFormValues` passes strings through unchanged. `required / minLength / maxLength` validators apply as on any text field. JSON / YAML *parse* validation isn't built in; add a custom `Validator` if you need it:
