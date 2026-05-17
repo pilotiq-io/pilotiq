@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { EditorView, lineNumbers as lineNumbersExt, keymap } from '@codemirror/view'
 import { EditorState, Compartment, type Extension } from '@codemirror/state'
 import { indentUnit } from '@codemirror/language'
@@ -61,6 +61,12 @@ export interface CollabCodeMirrorEditorProps {
  * top-level fields key off the bare name; Repeater / Builder row leaves
  * key off `${arrayName}.${rowId}.${fieldName}` so the share survives
  * row reorders (keyed by stable rowId, not array index).
+ *
+ * Only `fragmentKey` and `language` force a full remount — every other
+ * structural prop (theme, height, line numbers, wrapping, indent, editable)
+ * is wired through a `Compartment` and reconfigured in place, preserving
+ * cursor, scroll, and undo history across toggles (e.g. dark-mode switch
+ * inside a dense Repeater).
  */
 export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): React.ReactElement {
   const {
@@ -69,20 +75,23 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     theme, readOnly, disabled, placeholder,
   } = props
 
-  const hostRef = useRef<HTMLDivElement | null>(null)
-  const viewRef = useRef<EditorView | null>(null)
+  const hostRef      = useRef<HTMLDivElement | null>(null)
+  const viewRef      = useRef<EditorView | null>(null)
+  const lastTextRef  = useRef<string>(defaultValue)
   const [text, setText] = useState<string>(defaultValue)
-  const themeIsDark = useThemeIsDark(theme)
+  const themeIsDark  = useThemeIsDark(theme)
 
-  // Re-mount the editor when any structural prop changes. Stable per field;
-  // `readOnly`/`disabled` are handled via a `Compartment` reconfigure below
-  // so we don't tear down the doc binding for runtime state changes.
-  const mountKey = useMemo(
-    () => `${fragmentKey}::${language ?? ''}::${lineNumbers}::${lineWrapping}::${indentWithTabs}::${indentSize}::${themeIsDark ? 'dark' : 'light'}`,
-    [fragmentKey, language, lineNumbers, lineWrapping, indentWithTabs, indentSize, themeIsDark],
-  )
+  // Stable Compartments — created once per component instance, reused across
+  // remounts. Reconfigured by the prop-mirror effects below.
+  const editableCompartment     = useRef<Compartment>(new Compartment())
+  const lineNumbersCompartment  = useRef<Compartment>(new Compartment())
+  const lineWrappingCompartment = useRef<Compartment>(new Compartment())
+  const indentCompartment       = useRef<Compartment>(new Compartment())
+  const themeCompartment        = useRef<Compartment>(new Compartment())
 
-  const editableCompartment = useRef<Compartment>(new Compartment())
+  // Only fragmentKey + language force a teardown: the Y.Text binding and the
+  // language-support extension can't be swapped via Compartment.
+  const mountKey = `${fragmentKey}::${language ?? ''}`
 
   useEffect(() => {
     if (!hostRef.current) return
@@ -99,17 +108,13 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     extensions.push(basicSetup)
     extensions.push(history())
     extensions.push(keymap.of([...defaultKeymap, ...historyKeymap, ...yUndoManagerKeymap]))
-    if (lineNumbers) extensions.push(lineNumbersExt())
-    if (lineWrapping) extensions.push(EditorView.lineWrapping)
-    extensions.push(indentUnit.of(indentWithTabs ? '\t' : ' '.repeat(indentSize)))
+    extensions.push(lineNumbersCompartment.current.of(buildLineNumbersExtension(lineNumbers)))
+    extensions.push(lineWrappingCompartment.current.of(buildLineWrappingExtension(lineWrapping)))
+    extensions.push(indentCompartment.current.of(buildIndentExtension(indentWithTabs, indentSize)))
     const langFactory = language ? getCodeLanguage(language) : undefined
     if (langFactory) extensions.push(langFactory())
     extensions.push(editableCompartment.current.of(buildEditableExtension(disabled, readOnly)))
-    extensions.push(EditorView.theme({
-      '&':           { height: height ?? '300px' },
-      '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', overflow: 'auto' },
-      '.cm-content': { caretColor: 'currentcolor' },
-    }, themeIsDark ? { dark: true } : {}))
+    extensions.push(themeCompartment.current.of(buildThemeExtension(themeIsDark, height)))
 
     // y-codemirror.next: bind editor doc to Y.Text + (optional) awareness for
     // remote cursors. Pass `awareness ?? undefined` — the implementation
@@ -119,12 +124,15 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     // own per-client undo stack via the keymap we already added).
     extensions.push(yCollab(yText, awareness, { undoManager: false } as never))
 
-    // Mirror editor text into React state on every change. Single doc-read
-    // per change (cheap — CodeMirror's doc is a rope).
+    // Mirror editor text into React state on every change. `update.docChanged`
+    // can fire with an identical `doc.toString()` (IME composition, cursor-only
+    // edits) — short-circuit to avoid spurious FormData rerenders.
     extensions.push(EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
-        setText(update.state.doc.toString())
-      }
+      if (!update.docChanged) return
+      const next = update.state.doc.toString()
+      if (next === lastTextRef.current) return
+      lastTextRef.current = next
+      setText(next)
     }))
 
     // y-codemirror.next's `ySyncPlugin` assumes editor.doc and yText are
@@ -163,6 +171,7 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     // Initial mirror of yText into the hidden input (yCollab's first sync
     // happens after EditorView mount; mirror once now and the updateListener
     // takes over for subsequent changes).
+    lastTextRef.current = seed
     setText(seed)
 
     return () => {
@@ -170,20 +179,40 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
       try { view.destroy() } catch { /* ignore */ }
       viewRef.current = null
     }
-    // mountKey collapses the structural deps into a single rebuild trigger.
-    // Other deps are stable per mount or handled via reconfigure below.
+    // mountKey collapses fragmentKey + language into the single rebuild trigger.
+    // Other structural props are reconfigured via Compartments below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mountKey])
 
-  // Reconfigure editable state without re-mounting the editor (preserves
-  // CRDT binding, cursor, undo history, etc).
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
-    view.dispatch({
-      effects: editableCompartment.current.reconfigure(buildEditableExtension(disabled, readOnly)),
-    })
+    view.dispatch({ effects: editableCompartment.current.reconfigure(buildEditableExtension(disabled, readOnly)) })
   }, [disabled, readOnly])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({ effects: lineNumbersCompartment.current.reconfigure(buildLineNumbersExtension(lineNumbers)) })
+  }, [lineNumbers])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({ effects: lineWrappingCompartment.current.reconfigure(buildLineWrappingExtension(lineWrapping)) })
+  }, [lineWrapping])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({ effects: indentCompartment.current.reconfigure(buildIndentExtension(indentWithTabs, indentSize)) })
+  }, [indentWithTabs, indentSize])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({ effects: themeCompartment.current.reconfigure(buildThemeExtension(themeIsDark, height)) })
+  }, [themeIsDark, height])
 
   return (
     <div className="flex flex-col gap-1">
@@ -207,34 +236,70 @@ function buildEditableExtension(disabled: boolean, readOnly: boolean): Extension
   ]
 }
 
+function buildLineNumbersExtension(enabled: boolean): Extension {
+  return enabled ? lineNumbersExt() : []
+}
+
+function buildLineWrappingExtension(enabled: boolean): Extension {
+  return enabled ? EditorView.lineWrapping : []
+}
+
+function buildIndentExtension(withTabs: boolean, size: number): Extension {
+  return indentUnit.of(withTabs ? '\t' : ' '.repeat(size))
+}
+
+function buildThemeExtension(isDark: boolean, height: string | undefined): Extension {
+  return EditorView.theme({
+    '&':            { height: height ?? '300px' },
+    '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', overflow: 'auto' },
+    '.cm-content':  { caretColor: 'currentcolor' },
+  }, isDark ? { dark: true } : {})
+}
+
+// One MutationObserver + one matchMedia listener for the whole page, fanned
+// out to all `useThemeIsDark` subscribers via `useSyncExternalStore`. Previous
+// implementation installed an observer pair per editor instance, which scaled
+// linearly with editor count in dense Repeaters.
+const autoDarkListeners = new Set<() => void>()
+let autoDarkSubscribed = false
+let cachedAutoDark = false
+
+function notifyAutoDarkListeners(): void {
+  const next = resolveAutoDark()
+  if (next === cachedAutoDark) return
+  cachedAutoDark = next
+  autoDarkListeners.forEach((l) => l())
+}
+
+function ensureAutoDarkSubscribed(): void {
+  if (autoDarkSubscribed) return
+  if (typeof window === 'undefined') return
+  autoDarkSubscribed = true
+  cachedAutoDark = resolveAutoDark()
+  const observer = new MutationObserver(notifyAutoDarkListeners)
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', notifyAutoDarkListeners)
+}
+
+function subscribeAutoDark(listener: () => void): () => void {
+  ensureAutoDarkSubscribed()
+  autoDarkListeners.add(listener)
+  return () => { autoDarkListeners.delete(listener) }
+}
+
+function getAutoDarkSnapshot(): boolean {
+  return cachedAutoDark
+}
+
+function getAutoDarkServerSnapshot(): boolean {
+  return false
+}
+
 function useThemeIsDark(keyword: CodeEditorTheme): boolean {
-  const [isDark, setIsDark] = useState<boolean>(() => {
-    if (keyword === 'light') return false
-    if (keyword === 'dark')  return true
-    if (typeof window === 'undefined') return false
-    return resolveAutoDark()
-  })
-
-  useEffect(() => {
-    if (keyword === 'light') { setIsDark(false); return }
-    if (keyword === 'dark')  { setIsDark(true);  return }
-
-    const update = (): void => setIsDark(resolveAutoDark())
-    update()
-
-    const observer = new MutationObserver(update)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
-
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    mq.addEventListener('change', update)
-
-    return () => {
-      observer.disconnect()
-      mq.removeEventListener('change', update)
-    }
-  }, [keyword])
-
-  return isDark
+  const isAutoDark = useSyncExternalStore(subscribeAutoDark, getAutoDarkSnapshot, getAutoDarkServerSnapshot)
+  if (keyword === 'light') return false
+  if (keyword === 'dark')  return true
+  return isAutoDark
 }
 
 function resolveAutoDark(): boolean {
