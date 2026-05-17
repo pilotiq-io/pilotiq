@@ -1,5 +1,33 @@
 # @pilotiq/pilotiq
 
+## 0.16.0
+
+### Minor Changes
+
+- 9965448: feat(react): apply relationship-row UUID → PK renames against the active form's collab binding on submit success
+
+  Closes the client-side half of the PK-switch Phase B wire (`pilotiq-pro/docs/plans/repeater-relationship-pk-switch.md`). The previous changeset shipped server-side `relationshipRenames` emission; this one dispatches them against the form's collab binding so non-submitting peers converge on the DB-assigned PK without reloading.
+
+  New optional `FormCollabBinding.renameRow?(arrayName, oldId, newId): void` contract on the binding interface — bindings that omit it silently skip the apply step (the documented pre-Phase-B posture; Phase A's submitter-side reconciler still cleans orphans on next mount). `@pilotiq-pro/collab@0.0.x` ships a matching forward to `Y.Map`-based rename-by-clone.
+
+  Internally the wire is a per-`formId` module-level registry (`react/fields/relationshipRenameDispatch.ts`) — `FormStateProvider` registers a handler when the binding mounts; `FormRenderer`'s submit-success path calls `applyRelationshipRenames(formId, renames)` _before_ `markSubmitForReconcile + navigate` so the Yjs transact lands on the local doc while the binding is still mounted. StrictMode-safe cleanup (clears the slot only when the current handler matches).
+
+  The submitter-only Phase A `repeaterReconcile.ts` reconciler stays in place — it composes with Phase B (no-ops on a freshly-renamed CRDT) and remains the fallback for bindings without `renameRow` plus the close-tab-mid-flush edge case.
+
+- d492951: feat(repeater, builder): emit per-row UUID → PK renames from relationship-backed creates
+
+  `Repeater.relationship` / `Builder.relationship` row creates now emit `{ field, old, new }` renames whenever the renderer-minted `__id` (typically a UUID) differs from the DB-assigned primary key. Renames are aggregated through `DispatchSuccess.relationshipRenames` (new field, defaulting to `[]`) and serialized into the form-submit JSON response under `relationshipRenames` when non-empty. The 303-redirect form-post path is unaffected (renames are a collab-only concern).
+
+  Phase B groundwork for `pilotiq-pro/docs/plans/repeater-relationship-pk-switch.md` — a future `@pilotiq-pro/collab` adapter can subscribe to the JSON response and rename the row in the shared CRDT so non-submitting peers converge on the new PK without reloading. With no adapter registered, renames silently no-op (non-collab forms unaffected).
+
+  New public type `RelationshipRename` re-exported from `@pilotiq/pilotiq`.
+
+### Patch Changes
+
+- 5880551: fix(repeater, builder): scope `draggable=true` to the grip, not the row container
+
+  Row reorder previously broke when row contents hosted a contenteditable (e.g. a Tiptap-backed `MarkdownField` / `RichTextField` inside a Repeater or Builder row): a mousedown starting inside the editor was absorbed for text-selection and the row's drag never fired. The grip `<span>` now carries `draggable=true` + `onDragStart`; the row container keeps only the drop-target handlers (`onDragOver` / `onDrop` / `onDragEnd`). `setDragImage(rowEl, 0, 0)` preserves the full-row drag preview.
+
 ## 0.15.1
 
 ### Patch Changes
