@@ -113,6 +113,28 @@ export interface FormCollabBinding {
    * Empty array when the binding has no state for `arrayName` yet.
    */
   getRowOrder?(arrayName: string): string[]
+
+  /**
+   * PK-switch Phase B — re-key a row from `oldId` to `newId` across the
+   * binding's row CRDT surface. Called by `FormRenderer` after a successful
+   * form submit that emitted `relationshipRenames` in the JSON response;
+   * the relevant `Repeater.relationship` / `Builder.relationship` field
+   * pre-assigned the submitter's UUID and the server returned the DB PK
+   * each row was actually persisted under. Renaming inside CRDT means
+   * other peers converge on the DB PK without reloading.
+   *
+   * Idempotent: bindings should no-op on `oldId === newId`, on unknown
+   * `oldId`, on unknown `arrayName`, AND on collisions where `newId`
+   * already exists (clobbering an unrelated row's content is worse than
+   * leaving the orphan UUID for the mount-time reconciler to drop).
+   *
+   * When absent, the dispatch step silently skips — the submitting
+   * peer's Phase A reconciler still drops orphans on next mount, but
+   * other peers stay on the UUID until they reload (the documented
+   * pre-Phase-B posture). See
+   * `pilotiq-pro/docs/plans/repeater-relationship-pk-switch.md`.
+   */
+  renameRow?(arrayName: string, oldId: string, newId: string): void
 }
 
 /**

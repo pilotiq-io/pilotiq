@@ -25,6 +25,7 @@ import {
   type FormCollabBinding,
   type RowBindingApi,
 } from './FormCollabBindingRegistry.js'
+import { registerRelationshipRenameHandler } from './fields/relationshipRenameDispatch.js'
 
 export type FieldStatus = 'idle' | 'pending'
 
@@ -311,8 +312,26 @@ export function FormStateProvider({
       })
     })
 
+    // PK-switch Phase B — register a per-formId rename handler so
+    // `FormRenderer`'s submit-success path can re-key newly persisted
+    // relationship rows on the CRDT without us having to expose the
+    // binding through React context (FormRenderer lives outside this
+    // provider). No-op when the active binding skipped the optional
+    // `renameRow` method; the documented fallback is the submitter-only
+    // Phase A reconciler (other peers reload to converge). See
+    // `pilotiq-pro/docs/plans/repeater-relationship-pk-switch.md`.
+    const renameRow = binding.renameRow
+    const unregisterRename = renameRow
+      ? registerRelationshipRenameHandler(formId, (renames) => {
+          for (const r of renames) {
+            renameRow.call(binding, r.field, r.old, r.new)
+          }
+        })
+      : () => {}
+
     return () => {
       unsubscribe()
+      unregisterRename()
       binding.destroy()
       bindingRef.current = null
       setRowBindings(null)

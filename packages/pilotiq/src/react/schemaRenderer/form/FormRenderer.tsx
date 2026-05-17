@@ -7,6 +7,10 @@ import { getFormCollabBinding } from '../../FormCollabBindingRegistry.js'
 import { useNavigate } from '../../navigate.js'
 import { useToast } from '../../Toaster.js'
 import { markSubmitForReconcile } from '../../fields/repeaterReconcile.js'
+import {
+  applyRelationshipRenames,
+  type RelationshipRenameEntry,
+} from '../../fields/relationshipRenameDispatch.js'
 import { renderField } from './renderField.js'
 
 // ─── Form ───────────────────────────────────────────────────
@@ -113,6 +117,21 @@ export function FormRenderer({
 
       // Success — drain notifications and SPA-navigate to the redirect.
       //
+      // Apply PK-switch Phase B renames against the active form's collab
+      // binding FIRST (synchronous Yjs transact under the hood). The
+      // server emits `relationshipRenames: { field, old, new }[]` for
+      // every relationship-backed row that persisted under a new PK; we
+      // forward each through the formId-keyed dispatch so the binding's
+      // `renameRow` runs before the navigate destroys the provider that
+      // owns it. No-op when no binding is registered (no collab plugin)
+      // OR when the array is empty (no relationship-backed creates this
+      // submit). The submitter-only Phase A reconciler still fires below
+      // — Phase B closes the multi-peer gap WITHOUT obviating the
+      // single-peer cleanup path.
+      const renames = (data as { relationshipRenames?: RelationshipRenameEntry[] })
+        .relationshipRenames
+      applyRelationshipRenames(formId, renames)
+
       // Before navigating, mark this tab for the relationship-backed
       // Repeater/Builder PK-switch reconciler. The next mount of any
       // child Repeater/Builder under this formId will run a one-shot
