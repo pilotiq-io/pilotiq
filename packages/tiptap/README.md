@@ -64,4 +64,32 @@ RichTextField.make('body')
 
 `attachFiles` reuses the panel's `UploadAdapter` (`Pilotiq.uploads({ adapter })`); the button is stripped server-side when no adapter is wired. The `table` button inserts a 3×3 table with a header row; while the cursor is inside a table, a floating toolbar with column / row / merge / split / header-toggle / delete buttons sits above it. `mergeTags` adds a "Merge tags" group to the slash menu — each id becomes a `{{ id }}` placeholder substituted at read time via `renderRichTextToHtml(content, { mergeTags })`. Each `MentionProvider` registers its trigger character (`@`, `#`, …) and either a static item list (`.items([…])`) or an async resolver (`.itemsUsing(async (query, ctx) => […])`) — the editor fetches a tiny per-form endpoint for async providers and inlines static items into the field meta.
 
+## Vite config — required when using `MarkdownField`
+
+Pilotiq's `MarkdownField` is backed by `tiptap-markdown@^0.9` (registered by `tiptap()`). That package's transitive `markdown-it-task-lists@2.1.1` is pure CJS (`module.exports = function...`) with no `default` export, no `exports` map, and no `type: module`. Vite's dev runtime serves it raw and the client throws `does not provide an export named 'default'` at module init — which silently kills the entire admin client bundle (no Tiptap editors mount, no console-visible error beyond a single `pageerror`).
+
+Pre-bundle the CJS chain via esbuild to fix the interop:
+
+```ts
+// vite.config.ts
+export default defineConfig({
+  optimizeDeps: {
+    include: [
+      // … other includes …
+      'tiptap-markdown',
+      'markdown-it',
+      'markdown-it-task-lists',
+    ],
+    exclude: [
+      '@pilotiq/pilotiq',
+      // NB: do NOT exclude `@pilotiq/tiptap` when you use `MarkdownField` —
+      // the tiptap → tiptap-markdown → task-lists chain has to be pre-bundled
+      // together, and excluding tiptap defeats that.
+    ],
+  },
+})
+```
+
+Apps that don't use `MarkdownField` can keep `@pilotiq/tiptap` in `exclude` and skip the `tiptap-markdown` includes — `RichTextField` (the pure-Tiptap rich-text editor) doesn't touch this code path.
+
 Full reference: [docs/packages/tiptap.md](../../docs/packages/tiptap.md).

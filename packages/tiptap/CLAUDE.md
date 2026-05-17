@@ -100,3 +100,4 @@ Tests are pure — `node:test` + `node:assert/strict`. No DOM, no React mounts. 
 - **Peer:** `@pilotiq/pilotiq` — for `Field` types, `<FormFields>`, `FieldShell` chrome.
 - **Tiptap:** `@tiptap/core`, `@tiptap/react`, `@tiptap/pm`, `@tiptap/starter-kit`, `@tiptap/suggestion`, plus extensions (link, placeholder, underline, sub/superscript, text-align, text-style, color, highlight, image, table).
 - **UI:** `@base-ui/react` (popovers).
+- **Markdown** (shipped 3.3.0, consumed by `MarkdownEditor`): `tiptap-markdown@^0.9`. Its transitive `markdown-it-task-lists@2.1.1` is pure CJS with no `default` export — Vite's dev runtime fails the ESM-default interop and silently kills the entire client bundle unless consumers pre-bundle it. See README "Vite config — required when using `MarkdownField`". Pilotiq-pro fixed locally in `playground/vite.config.ts` (commit `fdbec12`).
