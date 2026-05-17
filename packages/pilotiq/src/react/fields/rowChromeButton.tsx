@@ -131,17 +131,31 @@ export function RowChromeIconButton({
 }
 
 /**
- * Drag grip — a `<span>` not a `<button>`, since native HTML5 DnD only
- * fires `dragstart` on parents with `draggable=true`. Honors the
- * `reorderAction` customizer for icon / label / tooltip / color so users
- * can swap the glyph or copy without owning the drag wiring.
+ * Drag grip — a `<span>` not a `<button>`. Honors the `reorderAction`
+ * customizer for icon / label / tooltip / color so users can swap the
+ * glyph or copy without owning the drag wiring.
+ *
+ * When `dragHandleProps` is passed, the grip carries `draggable=true` +
+ * `onDragStart` and becomes the HTML5 drag source — required for row
+ * layouts whose body hosts a contenteditable (Tiptap-backed fields).
+ * If `draggable=true` lives on the row container instead, a dragstart
+ * that initiates over the contenteditable is absorbed by the text-
+ * selection handler and the row drag never fires. Moving the source to
+ * the grip sidesteps that. Drop-target handlers (`onDragOver/onDrop/
+ * onDragEnd`) stay on the row container — `dragend` bubbles so source-
+ * side cleanup still reaches it.
  */
 export function ReorderGrip({
   disabled,
   buttons,
+  dragHandleProps,
 }: {
   disabled: boolean
   buttons:  RowButtonsMeta | undefined
+  dragHandleProps?: {
+    draggable:   true
+    onDragStart: (e: React.DragEvent<HTMLElement>) => void
+  } | undefined
 }): React.ReactElement {
   const { Icon, label, tooltip, colorClass } = resolveRowChromeFor('reorder', DEFAULT_REORDER, buttons)
   return (
@@ -149,6 +163,7 @@ export function ReorderGrip({
       aria-label={label}
       title={tooltip}
       className={`${colorClass} ${disabled ? 'opacity-30' : 'cursor-grab active:cursor-grabbing'}`}
+      {...dragHandleProps}
     >
       <Icon className="size-4" />
     </span>

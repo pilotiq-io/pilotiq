@@ -879,10 +879,10 @@ function BuilderRow({
   onClone:           () => void
   onRemove:          () => void
   onToggleCollapse:  () => void
-  onDragStart:       (e: React.DragEvent<HTMLDivElement>) => void
-  onDragOver:        (e: React.DragEvent<HTMLDivElement>) => void
-  onDrop:            (e: React.DragEvent<HTMLDivElement>) => void
-  onDragEnd:         (e: React.DragEvent<HTMLDivElement>) => void
+  onDragStart:       (e: React.DragEvent<HTMLElement>) => void
+  onDragOver:        (e: React.DragEvent<HTMLElement>) => void
+  onDrop:            (e: React.DragEvent<HTMLElement>) => void
+  onDragEnd:         (e: React.DragEvent<HTMLElement>) => void
 }): React.ReactElement {
   // Inner inputs sit under `name.<i>.data.*` so the {type, data}
   // envelope round-trips through FormData. Hidden envelope inputs
@@ -942,28 +942,37 @@ function BuilderRow({
   const canClone   = row.canClone   !== false
   const canReorder = row.canReorder !== false
 
-  const dragProps = reorderable && !buttonsOnly && !disabled && canReorder
-    ? {
-        draggable:     true as const,
-        onDragStart,
-        onDragOver,
-        onDrop,
-        onDragEnd,
-      }
+  // Drag source on the grip `<span>`, drop target on the row container.
+  // See RepeaterInput's RepeaterRow for the rationale (lets the row body
+  // host a Tiptap contenteditable without losing reorder).
+  const rowRef = useRef<HTMLDivElement>(null)
+  const dragEnabled = reorderable && !buttonsOnly && !disabled && canReorder
+  const containerDropTargetProps = dragEnabled
+    ? { onDragOver, onDrop, onDragEnd }
     : {}
+  const gripDragHandleProps = dragEnabled
+    ? {
+        draggable: true as const,
+        onDragStart: (e: React.DragEvent<HTMLElement>): void => {
+          if (rowRef.current) e.dataTransfer.setDragImage(rowRef.current, 0, 0)
+          onDragStart(e)
+        },
+      }
+    : undefined
 
   const innerColumns = block.columns && block.columns > 1 ? block.columns : 1
 
   return (
     <RowCoordsContext.Provider value={rowCoords}>
     <div
+      ref={rowRef}
       className={`rounded-md border bg-card transition-opacity ${isDragging ? 'opacity-50' : ''}`}
       data-pilotiq-builder-row=""
-      {...dragProps}
+      {...containerDropTargetProps}
     >
       <div className="flex items-center gap-2 border-b px-3 py-2">
         {reorderable && !buttonsOnly && canReorder && (
-          <ReorderGrip disabled={disabled} buttons={buttons} />
+          <ReorderGrip disabled={disabled} buttons={buttons} dragHandleProps={gripDragHandleProps} />
         )}
         {collapsible && (
           <CollapseChevron

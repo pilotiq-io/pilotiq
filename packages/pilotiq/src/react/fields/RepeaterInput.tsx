@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useId, useMemo, useState } from 'react'
+import React, { useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { PlusIcon } from 'lucide-react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { Button } from '../ui/button.js'
@@ -811,21 +811,29 @@ function RepeaterRow({
   const canClone   = row.canClone   !== false
   const canReorder = row.canReorder !== false
 
-  // Native HTML5 DnD only fires `dragstart` from elements with `draggable=true`.
-  // We attach it at the row container so the grip handle (and the empty
-  // header gutter, for forgiving aim) both initiate a drag. The handle's
-  // visual cursor + aria-label tell users where the affordance lives.
-  // Pinned rows (`canReorder === false`) lose drag-start; other rows can
-  // still drop next to them — see itemCanReorder docstring.
-  const dragProps = reorderable && !disabled && canReorder
-    ? {
-        draggable:     true as const,
-        onDragStart,
-        onDragOver,
-        onDrop,
-        onDragEnd,
-      }
+  // Drag source lives on the grip `<span>` (see `ReorderGrip`). The
+  // row container is only the drop target — `dragend` bubbles, so source
+  // cleanup still reaches it. Splitting source from target this way lets
+  // row contents host a Tiptap contenteditable without the editor's
+  // text-selection handler swallowing the row's dragstart.
+  // Pinned rows (`canReorder === false`) lose the grip; others can still
+  // accept drops — see itemCanReorder docstring.
+  const rowRef = useRef<HTMLDivElement>(null)
+  const dragEnabled = reorderable && !disabled && canReorder
+  const containerDropTargetProps = dragEnabled
+    ? { onDragOver, onDrop, onDragEnd }
     : {}
+  const gripDragHandleProps = dragEnabled
+    ? {
+        draggable: true as const,
+        onDragStart: (e: React.DragEvent<HTMLElement>): void => {
+          // Use the row element as the drag preview so the user still
+          // sees the whole row floating, not just the grip icon.
+          if (rowRef.current) e.dataTransfer.setDragImage(rowRef.current, 0, 0)
+          onDragStart(e)
+        },
+      }
+    : undefined
 
   // Simple-mode: flatten the row to one input + inline action strip — no
   // header, no border, no collapse (a single field has nothing to collapse).
@@ -839,12 +847,15 @@ function RepeaterRow({
     return (
       <RowCoordsContext.Provider value={rowCoords}>
       <div
+        ref={rowRef}
         className={`flex items-center gap-2 transition-opacity ${isDragging ? 'opacity-50' : ''}`}
         data-pilotiq-repeater-row="simple"
-        {...dragProps}
+        {...containerDropTargetProps}
       >
         <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
-        {reorderable && canReorder && <ReorderGrip disabled={disabled} buttons={buttons} />}
+        {reorderable && canReorder && (
+          <ReorderGrip disabled={disabled} buttons={buttons} dragHandleProps={gripDragHandleProps} />
+        )}
         <div className="flex-1 [&_label]:sr-only">
           <SchemaRenderer elements={namespaced} />
         </div>
@@ -880,12 +891,15 @@ function RepeaterRow({
   return (
     <RowCoordsContext.Provider value={rowCoords}>
     <div
+      ref={rowRef}
       className={`rounded-md border bg-card transition-opacity ${isDragging ? 'opacity-50' : ''}`}
       data-pilotiq-repeater-row=""
-      {...dragProps}
+      {...containerDropTargetProps}
     >
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        {reorderable && canReorder && <ReorderGrip disabled={disabled} buttons={buttons} />}
+        {reorderable && canReorder && (
+          <ReorderGrip disabled={disabled} buttons={buttons} dragHandleProps={gripDragHandleProps} />
+        )}
         {collapsible && (
           <CollapseChevron
             isCollapsed={isCollapsed}
@@ -1255,22 +1269,29 @@ function RepeaterTableRow({
   const canClone   = row.canClone   !== false
   const canReorder = row.canReorder !== false
 
-  const dragProps = reorderable && !disabled && canReorder
+  // Drag source on the grip, drop target on the `<tr>` — see RepeaterRow.
+  const rowRef = useRef<HTMLTableRowElement>(null)
+  const dragEnabled = reorderable && !disabled && canReorder
+  const containerDropTargetProps = dragEnabled
+    ? { onDragOver, onDrop, onDragEnd }
+    : {}
+  const gripDragHandleProps = dragEnabled
     ? {
         draggable: true as const,
-        onDragStart,
-        onDragOver,
-        onDrop,
-        onDragEnd,
+        onDragStart: (e: React.DragEvent<HTMLElement>): void => {
+          if (rowRef.current) e.dataTransfer.setDragImage(rowRef.current, 0, 0)
+          onDragStart(e)
+        },
       }
-    : {}
+    : undefined
 
   return (
     <RowCoordsContext.Provider value={rowCoords}>
     <tr
+      ref={rowRef}
       className={`border-t align-top ${isDragging ? 'opacity-50' : ''}`}
       data-pilotiq-repeater-row=""
-      {...dragProps}
+      {...containerDropTargetProps}
     >
       <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
       {columns.map((c, i) => (
@@ -1282,7 +1303,7 @@ function RepeaterTableRow({
         <div className="inline-flex items-center gap-1">
           {reorderable && canReorder && (
             <>
-              <ReorderGrip disabled={disabled} buttons={buttons} />
+              <ReorderGrip disabled={disabled} buttons={buttons} dragHandleProps={gripDragHandleProps} />
               <RowChromeIconButton
                 defaults={DEFAULT_MOVE_UP}
                 override={buttons?.moveUp}
