@@ -139,10 +139,16 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     }))
 
     const state = EditorState.create({
-      // Empty initial doc — yCollab seeds from yText immediately on mount.
-      // Passing yText.toString() here would double-insert when yText has
-      // pre-existing content (yCollab applies its own initial-sync delta).
-      doc: '',
+      // Seed the editor with yText's current content. y-codemirror.next's
+      // `ySyncPlugin` assumes editor.doc and yText are already in sync at
+      // init time and only observes subsequent deltas — it does NOT pull
+      // pre-existing yText content into the editor. So a remount onto a
+      // yText that already has content (e.g. after `renameRow` clones a
+      // row leaf to a new composite key on PK switch) would paint blank
+      // unless we seed here. No double-insert risk: the plugin won't try
+      // to insert anything that's already in the editor doc on first
+      // attachment.
+      doc: yText.toString(),
       extensions,
     })
 
