@@ -987,6 +987,101 @@ describe('formStateData (Plan #5)', () => {
     const formMeta = result.form as { values?: Record<string, unknown> }
     assert.equal(formMeta.values?.['slug'], 'hello-world')
   })
+
+  // Regression lock — reactive `itemHidden` end-to-end. Server-side resolve
+  // alone is covered in `RepeaterField.test.ts` / `BuilderField.test.ts`, and
+  // the client-side row-gate sync is covered in `syncRowGates.test.ts`. This
+  // covers the wire between them: applyStateUpdate of a row-leaf dotted
+  // path, then full resolveSchema, with the `itemHidden` rule reading the
+  // updated row value. If this regresses, peer A typing into a `live()`
+  // inner field would never flip the row's chrome on a real form.
+
+  it('re-evaluates Repeater itemHidden after a live() inner-leaf cycle', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([
+          Repeater.make('items')
+            .schema([
+              TextField.make('mode').live(),
+              TextField.make('label'),
+            ])
+            .itemHidden(({ values }) => (values as Record<string, unknown>)['mode'] === 'hidden'),
+        ])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+
+    // Before: row is visible.
+    const visible = await formStateData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', changed: 'items.0.mode', values: { items: [{ mode: 'visible', label: 'one' }] } },
+    )
+    if (visible === null || !visible.ok) throw new Error('expected ok result')
+    const visibleMeta = visible.form as { children: Array<{ rows: Array<{ id: string; hidden?: boolean }> }> }
+    assert.equal(visibleMeta.children[0]?.rows[0]?.hidden, undefined)
+
+    // After: same row, `mode` flipped to `'hidden'` — itemHidden re-evaluates.
+    const hidden = await formStateData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      { formId: 'the-form', changed: 'items.0.mode', values: { items: [{ mode: 'hidden', label: 'one' }] } },
+    )
+    if (hidden === null || !hidden.ok) throw new Error('expected ok result')
+    const hiddenMeta = hidden.form as { children: Array<{ rows: Array<{ id: string; hidden?: boolean }> }> }
+    assert.equal(hiddenMeta.children[0]?.rows[0]?.hidden, true)
+    // Row id stays stable across the cycle — syncRowGates on the client
+    // matches on `id`, so an unstable id would silently skip the hidden
+    // flip.
+    assert.equal(hiddenMeta.children[0]?.rows[0]?.id, visibleMeta.children[0]?.rows[0]?.id)
+  })
+
+  it('re-evaluates Builder itemHidden after a live() block-leaf cycle', async () => {
+    class TestPage extends Page {
+      static override slug   = 'demo'
+      static override schema() {
+        return [Form.make().formId('the-form').schema([
+          Builder.make('content')
+            .blocks([
+              Block.make('heading').schema([
+                TextField.make('text').live(),
+                TextField.make('anchor'),
+              ]),
+            ])
+            .itemHidden(({ values }) => (values as Record<string, unknown>)['text'] === 'skip'),
+        ])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([TestPage])
+
+    const keep = await formStateData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      {
+        formId:  'the-form',
+        changed: 'content.0.data.text',
+        values:  { content: [{ type: 'heading', data: { text: 'keep', anchor: '' } }] },
+      },
+    )
+    if (keep === null || !keep.ok) throw new Error('expected ok result')
+    const keepMeta = keep.form as { children: Array<{ rows: Array<{ id: string; hidden?: boolean }> }> }
+    assert.equal(keepMeta.children[0]?.rows[0]?.hidden, undefined)
+
+    const skip = await formStateData(
+      panel,
+      { kind: 'page', pageSlug: 'demo' },
+      {
+        formId:  'the-form',
+        changed: 'content.0.data.text',
+        values:  { content: [{ type: 'heading', data: { text: 'skip', anchor: '' } }] },
+      },
+    )
+    if (skip === null || !skip.ok) throw new Error('expected ok result')
+    const skipMeta = skip.form as { children: Array<{ rows: Array<{ id: string; hidden?: boolean }> }> }
+    assert.equal(skipMeta.children[0]?.rows[0]?.hidden, true)
+    assert.equal(skipMeta.children[0]?.rows[0]?.id, keepMeta.children[0]?.rows[0]?.id)
+  })
 })
 
 describe('mentionResolveData (async mention items)', () => {
