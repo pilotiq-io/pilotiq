@@ -141,13 +141,11 @@ pnpm add y-codemirror.next yjs
 
 Both are declared as **optional** peer deps on `@pilotiq/codemirror` — panels that don't ship realtime collab (most of them) leave them out entirely and the local editor path runs as before.
 
-### Known caveat — relationship-row text on PK switch
+### Relationship-row text on PK switch
 
-`y-codemirror.next` binds against `Y.Text`. `@pilotiq-pro/collab`'s row-rename path (`rowArrayBinding.renameRow`, used when a freshly-created Repeater / Builder row gets its UUID swapped for a real DB primary key on first save) only rekeys `Y.XmlFragment` shares today. The submitter's text content survives because they hold the local edits in memory; peer B re-seeds from the DB column on next mount.
+`y-codemirror.next` binds against `Y.Text`, and `@pilotiq-pro/collab`'s row-rename path (`rowArrayBinding.renameRow`, used when a freshly-created Repeater / Builder row gets its UUID swapped for a real DB primary key on first save) rekeys doc-root `Y.Text` shares alongside `Y.XmlFragment` shares via rename-by-recreate (`applyDelta(toDelta())` into a fresh share at the new composite key, all inside one `ydoc.transact`). Peer B's `CodeEditorField` rebinds to the new key and sees the same content without falling back to the DB column.
 
-In practice this means: row-leaf `CodeEditorField` content in a brand-new relationship-row converges live across peers until the form is saved; after save, the row's PK changes and peer B falls back to the persisted DB column (which is identical content). No data is lost — only the live CRDT identity is reset for that row's text fields. Top-level code editors and any code editor on an already-saved row are unaffected.
-
-Tracked as a `@pilotiq-pro/collab` follow-up: extend `rowArrayBinding.renameRow` with a parallel `Y.Text` clone branch.
+Trade-off: rename-by-recreate carries fresh CRDT identity, so concurrent-edit history on the renamed row's code-editor leaves is discarded — same posture as the `Y.XmlFragment` branch shipped for Tiptap-backed text leaves.
 
 ## Wire format
 
