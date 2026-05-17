@@ -5,12 +5,9 @@ import { indentUnit } from '@codemirror/language'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { basicSetup } from 'codemirror'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
-// Yjs is accessed via the room's `ydoc.getText(name)` API; the type imports
-// are only for the awareness handle. Importing as `type` keeps the value-
-// import surface inside `y-codemirror.next` (which is a peer dep), so consumers
-// without `yjs` installed still type-check this file via TS' module-omission
-// rules for type-only imports.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// Type-only import keeps the value-import surface inside `y-codemirror.next`
+// (a peer dep), so consumers without `yjs` installed still type-check this
+// file via TS' module-omission rules for type-only imports.
 import type * as Y from 'yjs'
 import { getCodeLanguage } from '../languageRegistry.js'
 
@@ -63,15 +60,6 @@ export interface CollabCodeMirrorEditorProps {
  * top-level fields key off the bare name; Repeater / Builder row leaves
  * key off `${arrayName}.${rowId}.${fieldName}` so the share survives
  * row reorders (keyed by stable rowId, not array index).
- *
- * **PK-switch row-rename caveat:** y-codemirror.next binds against
- * `Y.Text`, not `Y.XmlFragment`. `@pilotiq-pro/collab`'s
- * `rowArrayBinding.renameRow` only clones `Y.XmlFragment` shares today,
- * so on PK-switch (UUID → DB PK after first save) the row's
- * `Y.Text` content does NOT carry over to the new composite key on
- * peer B. Peer B falls back to the DB column on next mount — same
- * baseline as pre-tiptap row text. Future follow-up: extend
- * `renameRow` with a parallel `Y.Text` clone branch.
  */
 export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): React.ReactElement {
   const {
@@ -138,19 +126,15 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
       }
     }))
 
-    const state = EditorState.create({
-      // Seed the editor with yText's current content. y-codemirror.next's
-      // `ySyncPlugin` assumes editor.doc and yText are already in sync at
-      // init time and only observes subsequent deltas — it does NOT pull
-      // pre-existing yText content into the editor. So a remount onto a
-      // yText that already has content (e.g. after `renameRow` clones a
-      // row leaf to a new composite key on PK switch) would paint blank
-      // unless we seed here. No double-insert risk: the plugin won't try
-      // to insert anything that's already in the editor doc on first
-      // attachment.
-      doc: yText.toString(),
-      extensions,
-    })
+    // y-codemirror.next's `ySyncPlugin` assumes editor.doc and yText are
+    // already in sync at init time and only observes subsequent deltas — it
+    // does NOT pull pre-existing yText content into the editor. So a remount
+    // onto a yText that already has content (e.g. after `renameRow` clones a
+    // row leaf to a new composite key on PK switch) would paint blank unless
+    // we seed here. No double-insert risk: the plugin won't try to insert
+    // anything already in the editor doc on first attachment.
+    const seed = yText.toString()
+    const state = EditorState.create({ doc: seed, extensions })
 
     const view = new EditorView({ state, parent: hostRef.current })
     viewRef.current = view
@@ -179,7 +163,7 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     // Initial mirror of yText into the hidden input (yCollab's first sync
     // happens after EditorView mount; mirror once now and the updateListener
     // takes over for subsequent changes).
-    setText(yText.toString())
+    setText(seed)
 
     return () => {
       try { providerAny?.off?.('synced', trySeed) } catch { /* ignore */ }
@@ -205,7 +189,11 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     <div className="flex flex-col gap-1">
       <input type="hidden" name={hiddenInputName} value={text} readOnly />
       <div className="overflow-hidden rounded-md border border-input bg-transparent text-sm">
-        <div ref={hostRef} aria-label={placeholder ?? undefined} />
+        <div
+          ref={hostRef}
+          data-pilotiq-collab-code={hiddenInputName}
+          aria-label={placeholder ?? undefined}
+        />
       </div>
     </div>
   )
