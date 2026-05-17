@@ -1,6 +1,6 @@
 {
   "name": "@pilotiq/codemirror",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "CodeMirror 6 code-editor field adapter for @pilotiq/pilotiq — syntax highlight, line numbers, language registry",
   "license": "MIT",
   "repository": {
@@ -44,7 +44,13 @@
     "@uiw/react-codemirror": "^4",
     "codemirror": "^6",
     "react": "^18 || ^19",
-    "react-dom": "^18 || ^19"
+    "react-dom": "^18 || ^19",
+    "y-codemirror.next": "^0.3",
+    "yjs": "^13"
+  },
+  "peerDependenciesMeta": {
+    "y-codemirror.next": { "optional": true },
+    "yjs": { "optional": true }
   },
   "devDependencies": {
     "@pilotiq/pilotiq": "workspace:^",
@@ -59,7 +65,9 @@
     "codemirror": "^6",
     "react": "^19",
     "react-dom": "^19",
-    "typescript": "^5"
+    "typescript": "^5",
+    "y-codemirror.next": "^0.3",
+    "yjs": "^13"
   },
   "author": "Suleiman Shahbari"
 }

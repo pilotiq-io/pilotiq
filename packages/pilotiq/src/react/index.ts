@@ -117,7 +117,8 @@ export {
   type UseFieldStateResult,
 } from './FormStateContext.js'
 
-export { parseFormDataToNested } from './formStateHelpers.js'
+export { parseFormDataToNested, parseRowFieldPath, type ParsedRowFieldPath } from './formStateHelpers.js'
+export { RowCoordsContext, useRowCoords, type RowCoords } from './RowCoordsContext.js'
 
 export { NavigateProvider, useNavigate, type NavigateFn } from './navigate.js'
 

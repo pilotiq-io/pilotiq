@@ -8,3 +8,7 @@ export {
 export { registerCodeEditor } from './register.js'
 export { codeEditor, type CodeEditorPluginOptions } from './plugin.js'
 export { CodeMirrorEditor } from './react/CodeMirrorEditor.js'
+export {
+  CollabCodeMirrorEditor,
+  type CollabCodeMirrorEditorProps,
+} from './react/CollabCodeMirrorEditor.js'

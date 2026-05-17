@@ -3,8 +3,14 @@ import CodeMirror, { EditorView, type Extension } from '@uiw/react-codemirror'
 import { indentUnit } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 import type { FieldRendererProps } from '@pilotiq/pilotiq/react'
-import { useFieldState } from '@pilotiq/pilotiq/react'
+import {
+  useFieldState,
+  useCollabRoom,
+  useRowCoords,
+  parseRowFieldPath,
+} from '@pilotiq/pilotiq/react'
 import { getCodeLanguage } from '../languageRegistry.js'
+import { CollabCodeMirrorEditor } from './CollabCodeMirrorEditor.js'
 
 type CodeEditorTheme = 'auto' | 'light' | 'dark'
 
@@ -32,6 +38,27 @@ export function CodeMirrorEditor(props: FieldRendererProps): React.ReactElement 
   return <ClientEditor {...props} />
 }
 
+/**
+ * Compose the doc-root share key for collab. Mirrors the convention used by
+ * `TextLikeInput` for plain-text fields:
+ *
+ *   - Top-level fields: bare `name`.
+ *   - Repeater / Builder row leaves: `${arrayName}.${rowId}.${fieldName}` —
+ *     row id is the stable identity, so the share survives row reorders.
+ *
+ * Returns `null` when the dotted path doesn't match a row shape OR row
+ * coords are missing — callers fall through to the local-only editor.
+ */
+function composeFragmentKey(name: string, rowCoords: { arrayName: string; rowIndex: number; rowId: string } | null): string | null {
+  if (!name.includes('.')) return name
+  if (!rowCoords) return null
+  const parsed = parseRowFieldPath(name)
+  if (!parsed) return null
+  if (parsed.arrayName !== rowCoords.arrayName) return null
+  if (parsed.index     !== rowCoords.rowIndex)  return null
+  return `${rowCoords.arrayName}.${rowCoords.rowId}.${parsed.fieldName}`
+}
+
 function PlaceholderEditor({ name, defaultValue, placeholder }: FieldRendererProps): React.ReactElement {
   const initial = stringValue(defaultValue)
   return (
@@ -45,6 +72,50 @@ function PlaceholderEditor({ name, defaultValue, placeholder }: FieldRendererPro
 }
 
 function ClientEditor(props: FieldRendererProps): React.ReactElement {
+  const { el, name } = props
+
+  // Collab branch — y-codemirror.next binding against the room's Y.Doc.
+  // Mounts when a `<RecordCollabRoom>` is up-tree AND the field hasn't
+  // opted out via `.collab(false)`. Top-level fields bind to bare `name`;
+  // Repeater / Builder row leaves bind to `${arrayName}.${rowId}.${fieldName}`
+  // so the Y.Text share survives row reorders. Each branch lives in its own
+  // component so the hook count stays stable across renders — entering or
+  // leaving the collab branch remounts; we never call a different set of
+  // hooks under one component instance.
+  const room = useCollabRoom()
+  const rowCoords = useRowCoords()
+  const fieldCollab = el['collab'] as boolean | undefined
+  const fragmentKey = composeFragmentKey(name, rowCoords)
+  if (room && fieldCollab !== false && fragmentKey !== null) {
+    return <CollabBranch {...props} fragmentKey={fragmentKey} room={room} />
+  }
+  return <LocalBranch {...props} />
+}
+
+function CollabBranch(props: FieldRendererProps & { fragmentKey: string; room: { ydoc: unknown; provider: unknown } }): React.ReactElement {
+  const { el, name, defaultValue, disabled, placeholder, fragmentKey, room } = props
+  return (
+    <CollabCodeMirrorEditor
+      ydoc={room.ydoc}
+      provider={room.provider}
+      fragmentKey={fragmentKey}
+      hiddenInputName={name}
+      defaultValue={stringValue(defaultValue)}
+      language={readString(el['language'])}
+      height={readString(el['height'])}
+      lineNumbers={readBool(el['lineNumbers'], true)}
+      lineWrapping={readBool(el['lineWrapping'], false)}
+      indentWithTabs={readBool(el['indentWithTabs'], false)}
+      indentSize={readNumber(el['indentSize'], 2)}
+      theme={readTheme(el['theme'])}
+      readOnly={readBool(el['readOnly'], false)}
+      disabled={Boolean(disabled)}
+      placeholder={placeholder}
+    />
+  )
+}
+
+function LocalBranch(props: FieldRendererProps): React.ReactElement {
   const { el, name, defaultValue, disabled, placeholder } = props
 
   const languageId    = readString(el['language'])
