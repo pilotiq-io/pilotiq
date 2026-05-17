@@ -4,8 +4,12 @@ import type { AnyExtension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Image from '@tiptap/extension-image'
+// The `tiptap-markdown` chain (incl. CJS-only `markdown-it-task-lists`) is
+// pre-bundled into `dist/markdownExtension.js` at @pilotiq/tiptap build
+// time; importing the wrapper instead of `tiptap-markdown` directly
+// keeps the CJS interop on our side of the dist boundary.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-import { Markdown } from 'tiptap-markdown'
+import { Markdown } from '../markdownExtension.js'
 import {
   useCollabRoom,
   getCollabExtensions,

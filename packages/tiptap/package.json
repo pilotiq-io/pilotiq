@@ -31,7 +31,8 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && pnpm run bundle:markdown",
+    "bundle:markdown": "esbuild src/markdownExtension.ts --bundle --format=esm --outfile=dist/markdownExtension.js --external:@tiptap/* --sourcemap",
     "dev": "tsc -p tsconfig.build.json --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
@@ -59,7 +60,6 @@
     "@tiptap/extension-table": "3.22.4",
     "@tiptap/extension-details": "3.22.4",
     "@tiptap/suggestion": "^3",
-    "tiptap-markdown": "^0.9",
     "react": "^18 || ^19",
     "react-dom": "^18 || ^19"
   },
@@ -87,6 +87,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.27",
     "react": "^19",
     "react-dom": "^19",
     "typescript": "^5"
