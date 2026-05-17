@@ -4,6 +4,7 @@ import type { AnyExtension } from '@tiptap/core'
 import {
   useCollabRoom,
   getCollabExtensions,
+  onProviderSynced,
   type CollabTextRendererProps,
 } from '@pilotiq/pilotiq/react'
 import { createPlainTextEditor, plainTextOf, plainTextToDoc } from '../PlainTextEditor.js'
@@ -128,14 +129,7 @@ export function CollabTextRenderer({
       }
     }
 
-    if (provider.synced) {
-      trySeed()
-      return
-    }
-    provider.once('synced', trySeed)
-    return () => {
-      try { provider.off?.('synced', trySeed) } catch { /* ignore */ }
-    }
+    return onProviderSynced(provider, trySeed)
     // Seed once per editor instance — keyed remount above resets `hasSeeded`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, collabActive, room])

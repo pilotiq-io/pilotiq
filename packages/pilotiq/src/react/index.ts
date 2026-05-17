@@ -35,7 +35,9 @@ export {
 export {
   CollabRoomContext,
   useCollabRoom,
+  onProviderSynced,
   type CollabRoom,
+  type SyncedProviderLike,
 } from './CollabRoomContext.js'
 export {
   registerCollabExtensions,

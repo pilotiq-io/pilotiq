@@ -40,3 +40,47 @@ export const CollabRoomContext = createContext<CollabRoom | null>(null)
 export function useCollabRoom(): CollabRoom | null {
   return useContext(CollabRoomContext)
 }
+
+/**
+ * Minimal structural shape every collab provider exposes for the
+ * "initial room state has streamed in" signal. Kept structural so callers
+ * (`@pilotiq/tiptap`, `@pilotiq/codemirror`, future adapters) can pass
+ * `provider as unknown as SyncedProviderLike` without taking a hard peer
+ * dep on yjs / y-websocket / y-webrtc.
+ */
+export interface SyncedProviderLike {
+  synced?: boolean
+  once?(event: 'synced', fn: () => void): void
+  off?(event:  'synced', fn: () => void): void
+}
+
+const NOOP_CLEANUP = (): void => {}
+
+/**
+ * Run `fn` once the collab provider's initial room state has streamed in.
+ * If the provider is already synced, `fn` fires synchronously; otherwise
+ * it's registered via `provider.once('synced', fn)`. The returned cleanup
+ * unregisters the once handler safely (idempotent + try/catch) so callers
+ * can wire it directly into a React effect's cleanup return.
+ *
+ * Useful for the brand-new-record seed pattern: editors mounting against
+ * a freshly-created record want to push the SSR-rendered default into
+ * the empty `Y.Text` / `Y.XmlFragment` exactly once after sync, before
+ * the user types. Race caveat: two peers simultaneously mounting against
+ * a brand-new record can both see `length === 0` and both seed —
+ * accepted today across every adapter's seed path.
+ */
+export function onProviderSynced(
+  provider: SyncedProviderLike | null | undefined,
+  fn:       () => void,
+): () => void {
+  if (!provider) return NOOP_CLEANUP
+  if (provider.synced) {
+    fn()
+    return NOOP_CLEANUP
+  }
+  provider.once?.('synced', fn)
+  return () => {
+    try { provider.off?.('synced', fn) } catch { /* ignore */ }
+  }
+}

@@ -5,6 +5,7 @@ import { indentUnit } from '@codemirror/language'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { basicSetup } from 'codemirror'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
+import { onProviderSynced, type SyncedProviderLike } from '@pilotiq/pilotiq/react'
 // Type-only import keeps the value-import surface inside `y-codemirror.next`
 // (a peer dep), so consumers without `yjs` installed still type-check this
 // file via TS' module-omission rules for type-only imports.
@@ -86,7 +87,7 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
   useEffect(() => {
     if (!hostRef.current) return
     const ydocAny     = ydoc as { getText: (k: string) => unknown }
-    const providerAny = provider as { awareness?: unknown; synced?: boolean; once?: (e: string, fn: () => void) => void; off?: (e: string, fn: () => void) => void }
+    const providerAny = provider as ({ awareness?: unknown } & SyncedProviderLike) | null | undefined
     if (!ydocAny || typeof ydocAny.getText !== 'function') {
       return undefined
     }
@@ -157,8 +158,7 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
         // ignore
       }
     }
-    if (providerAny?.synced) trySeed()
-    else providerAny?.once?.('synced', trySeed)
+    const seedCleanup = onProviderSynced(providerAny ?? null, trySeed)
 
     // Initial mirror of yText into the hidden input (yCollab's first sync
     // happens after EditorView mount; mirror once now and the updateListener
@@ -166,7 +166,7 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     setText(seed)
 
     return () => {
-      try { providerAny?.off?.('synced', trySeed) } catch { /* ignore */ }
+      seedCleanup()
       try { view.destroy() } catch { /* ignore */ }
       viewRef.current = null
     }

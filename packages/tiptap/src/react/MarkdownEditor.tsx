@@ -13,6 +13,7 @@ import { Markdown } from '../markdownExtension.js'
 import {
   useCollabRoom,
   getCollabExtensions,
+  onProviderSynced,
   type MarkdownEditorProps,
 } from '@pilotiq/pilotiq/react'
 
@@ -263,14 +264,7 @@ export function MarkdownEditor({
       }
     }
 
-    if (provider.synced) {
-      trySeed()
-      return
-    }
-    provider.once('synced', trySeed)
-    return () => {
-      try { provider.off?.('synced', trySeed) } catch { /* ignore */ }
-    }
+    return onProviderSynced(provider, trySeed)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, collabActive, room])
 

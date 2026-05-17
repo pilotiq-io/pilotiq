@@ -18,7 +18,7 @@ import type {
   CollabRoom,
   CollabExtensionFactory,
 } from '@pilotiq/pilotiq/react'
-import { useCollabRoom, getCollabExtensions } from '@pilotiq/pilotiq/react'
+import { useCollabRoom, getCollabExtensions, onProviderSynced } from '@pilotiq/pilotiq/react'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 import type { BlockMeta } from '../Block.js'
 import type { ToolbarGroups, RichTextStorage, ColorSwatch } from '../RichTextField.js'
@@ -453,14 +453,7 @@ function ClientEditor(props: ClientEditorProps) {
       } catch { /* ignore — seed is best-effort */ }
     }
 
-    if (provider.synced) {
-      trySeed()
-      return
-    }
-    provider.once('synced', trySeed)
-    return () => {
-      try { provider.off?.('synced', trySeed) } catch { /* ignore */ }
-    }
+    return onProviderSynced(provider, trySeed)
     // `initialContent` resolves once per mount (parsed from defaultValue
     // at the top of this body). The keyed remount above guarantees we
     // get a fresh closure per collab session.
