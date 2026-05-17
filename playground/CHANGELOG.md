@@ -1,5 +1,12 @@
 # pilotiq-playground
 
+## 0.0.32
+
+### Patch Changes
+
+- Updated dependencies [99bca27]
+  - @pilotiq/codemirror@3.2.4
+
 ## 0.0.31
 
 ### Patch Changes
