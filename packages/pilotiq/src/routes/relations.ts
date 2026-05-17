@@ -215,7 +215,9 @@ export function registerRelationRoutes(
         }
 
         const redirect = normalizeRedirect(result.redirect, base) ?? listUrl
-        return sendRedirectResponse(req, res, json, redirect, result.notifications)
+        return sendRedirectResponse(req, res, json, redirect, result.notifications,
+          result.relationshipRenames.length > 0 ? { relationshipRenames: result.relationshipRenames } : undefined,
+        )
       })
 
       // View — GET ${resourceBase}/:id/${rel}/:childId  (Phase A nested
@@ -332,7 +334,9 @@ export function registerRelationRoutes(
         }
 
         const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
-        return sendRedirectResponse(req, res, json, redirect, result.notifications)
+        return sendRedirectResponse(req, res, json, redirect, result.notifications,
+          result.relationshipRenames.length > 0 ? { relationshipRenames: result.relationshipRenames } : undefined,
+        )
       })
 
       // Delete — POST ${resourceBase}/:id/${rel}/:childId/delete
@@ -773,7 +777,9 @@ export function registerRelationRoutes(
           }
 
           const redirect = normalizeRedirect(result.redirect, base) ?? listUrl
-          return sendRedirectResponse(req, res, json, redirect, result.notifications)
+          return sendRedirectResponse(req, res, json, redirect, result.notifications,
+            result.relationshipRenames.length > 0 ? { relationshipRenames: result.relationshipRenames } : undefined,
+          )
         })
 
         // ── View ──
@@ -902,7 +908,9 @@ export function registerRelationRoutes(
           }
 
           const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
-          return sendRedirectResponse(req, res, json, redirect, result.notifications)
+          return sendRedirectResponse(req, res, json, redirect, result.notifications,
+            result.relationshipRenames.length > 0 ? { relationshipRenames: result.relationshipRenames } : undefined,
+          )
         })
 
         // ── Delete ──

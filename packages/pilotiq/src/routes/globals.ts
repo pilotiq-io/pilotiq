@@ -137,7 +137,9 @@ export function registerGlobalRoutes(
       }
 
       const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
-      return sendRedirectResponse(req, res, json, redirect, result.notifications)
+      return sendRedirectResponse(req, res, json, redirect, result.notifications,
+        result.relationshipRenames.length > 0 ? { relationshipRenames: result.relationshipRenames } : undefined,
+      )
     })
   }
 

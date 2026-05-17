@@ -359,6 +359,7 @@ export {
   type DispatchResult,
   type DispatchSuccess,
   type DispatchFailure,
+  type RelationshipRename,
 } from './elements/dispatchForm.js'
 export {
   dispatchAction,

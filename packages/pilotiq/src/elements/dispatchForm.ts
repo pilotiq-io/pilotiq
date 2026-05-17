@@ -19,6 +19,32 @@ import {
 } from '../orm/modelDefaults.js'
 import { resolveM2MAccessor } from '../orm/m2mAccessor.js'
 
+/**
+ * Server-emitted rename of a `Repeater.relationship` / `Builder.relationship`
+ * row's stable id. When a brand-new row is submitted with a renderer-minted
+ * UUID `__id`, `persistRelationshipRows` calls `model.create(...)` and the
+ * DB assigns a real primary key — the row's identity then switches from
+ * the UUID to `String(pk)`. The submitter learns the new id from the
+ * reloaded form's `initialRows`; other collab peers don't, leaving their
+ * Y.Doc row state keyed by the orphan UUID. Phase B (see
+ * `pilotiq-pro/docs/plans/repeater-relationship-pk-switch.md`) lets a
+ * collab adapter subscribe to these renames from the form-submit JSON
+ * response and rename the row in the shared CRDT so other peers converge
+ * without reloading. Carries no opinion about transport — emitted unconditionally
+ * on every relationship-backed row create; consumers without a collab
+ * binding ignore the field.
+ */
+export interface RelationshipRename {
+  /** Field name on the form (the `Repeater.make(...)` / `Builder.make(...)` name). */
+  field: string
+  /** The id the renderer submitted — usually a UUID, occasionally a numeric string
+   *  when the consumer pre-assigned an id. May equal `new` when the consumer's
+   *  pre-assigned id matched the DB-assigned PK; consumers can no-op in that case. */
+  old:   string
+  /** The DB-assigned primary key, stringified. */
+  new:   string
+}
+
 export interface DispatchSuccess<R> {
   ok:            true
   record:        R
@@ -30,6 +56,12 @@ export interface DispatchSuccess<R> {
    * path drops them until a flash mechanism lands.
    */
   notifications: NotificationMeta[]
+  /**
+   * Per-row UUID → PK renames emitted by `Repeater.relationship` /
+   * `Builder.relationship` creates. Empty when the submitted form had
+   * no relationship-backed fields or no new rows. See {@link RelationshipRename}.
+   */
+  relationshipRenames: RelationshipRename[]
 }
 
 export interface DispatchFailure {
@@ -130,6 +162,7 @@ export async function dispatchFormSubmit<R = unknown>(
   // Persist the relationship-backed Repeater diffs against the saved
   // parent. Runs BEFORE `afterCreate / afterUpdate` so user hooks can
   // observe the fully-saved tree (parent + children).
+  const relationshipRenames: RelationshipRename[] = []
   if (relationshipDeferrals.length > 0 || builderRelationshipDeferrals.length > 0) {
     const parentModel = (ctx as { parentModel?: ModelLike }).parentModel
     if (!parentModel) {
@@ -139,10 +172,12 @@ export async function dispatchFormSubmit<R = unknown>(
       )
     }
     for (const deferral of relationshipDeferrals) {
-      await persistRelationshipRows(record, deferral, parentModel)
+      const renames = await persistRelationshipRows(record, deferral, parentModel)
+      relationshipRenames.push(...renames)
     }
     for (const deferral of builderRelationshipDeferrals) {
-      await persistRelationshipBuilderRows(record, deferral, parentModel)
+      const renames = await persistRelationshipBuilderRows(record, deferral, parentModel)
+      relationshipRenames.push(...renames)
     }
   }
 
@@ -163,7 +198,7 @@ export async function dispatchFormSubmit<R = unknown>(
   )
   const notifications = notification ? [notification] : []
 
-  return { ok: true, record, redirect, notifications }
+  return { ok: true, record, redirect, notifications, relationshipRenames }
 }
 
 /**
@@ -1513,7 +1548,8 @@ async function persistRelationshipRows(
   parent:      unknown,
   deferral:    RelationshipDeferral,
   parentModel: ModelLike,
-): Promise<void> {
+): Promise<RelationshipRename[]> {
+  const renames: RelationshipRename[] = []
   const { rows, cfg, field } = deferral
   const attachment  = resolveChildAndAttachment(parentModel, cfg)
   const { model }   = attachment
@@ -1675,6 +1711,18 @@ async function persistRelationshipRows(
         }
         createdRecord = created
       }
+      // Phase B PK-switch — emit the rename so a collab adapter can swap
+      // the row's id in the shared CRDT. Skipped when the submitter didn't
+      // pass an `__id` (rare: only happens when consumer code constructs
+      // a row server-side); skipped when old === new (consumer pre-assigned
+      // the DB PK on the row).
+      const createdPk = (createdRecord as Record<string, unknown> | null | undefined)?.[pk]
+      if (submittedId !== undefined && createdPk !== undefined && createdPk !== null) {
+        const newId = String(createdPk)
+        if (submittedId !== newId) {
+          renames.push({ field: cfg.name, old: submittedId, new: newId })
+        }
+      }
       if (afterCreate) await afterCreate(createdRecord, buildRowCtx(idx))
     }
   }
@@ -1691,6 +1739,7 @@ async function persistRelationshipRows(
     }
     if (afterDelete) await afterDelete(removedRow, buildRowCtx(-1))
   }
+  return renames
 }
 
 /**
@@ -1863,7 +1912,8 @@ async function persistRelationshipBuilderRows(
   parent:      unknown,
   deferral:    BuilderRelationshipDeferral,
   parentModel: ModelLike,
-): Promise<void> {
+): Promise<RelationshipRename[]> {
+  const renames: RelationshipRename[] = []
   const { rows, cfg } = deferral
   const attachment  = resolveBuilderChildAndAttachment(parentModel, cfg)
   const { model }   = attachment
@@ -1923,7 +1973,15 @@ async function persistRelationshipBuilderRows(
       } else {
         Object.assign(payload, morphStamp)
       }
-      await model.create(payload)
+      const createdRecord = await model.create(payload)
+      // Phase B PK-switch — see persistRelationshipRows for the contract.
+      const createdPk = (createdRecord as Record<string, unknown> | null | undefined)?.[pk]
+      if (submittedId !== undefined && createdPk !== undefined && createdPk !== null) {
+        const newId = String(createdPk)
+        if (submittedId !== newId) {
+          renames.push({ field: cfg.name, old: submittedId, new: newId })
+        }
+      }
     }
   }
 
@@ -1931,4 +1989,5 @@ async function persistRelationshipBuilderRows(
     if (keptPks.has(pkVal)) continue
     await model.delete(pkVal)
   }
+  return renames
 }

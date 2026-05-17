@@ -451,7 +451,10 @@ export function registerResourceRoutes(
         const redirect = continueCreate
           ? createUrl
           : normalizeRedirect(result.redirect, base) ?? fallback
-        return sendRedirectResponse(req, res, json, redirect, result.notifications, continueCreate ? { force: true } : undefined)
+        return sendRedirectResponse(req, res, json, redirect, result.notifications, {
+          ...(continueCreate ? { force: true as const } : {}),
+          ...(result.relationshipRenames.length > 0 ? { relationshipRenames: result.relationshipRenames } : {}),
+        })
       })
 
       // Action dispatch — POST ${createUrl}/_action/:actionName
@@ -702,7 +705,9 @@ export function registerResourceRoutes(
         }
 
         const redirect = normalizeRedirect(result.redirect, base) ?? editUrl
-        return sendRedirectResponse(req, res, json, redirect, result.notifications)
+        return sendRedirectResponse(req, res, json, redirect, result.notifications,
+          result.relationshipRenames.length > 0 ? { relationshipRenames: result.relationshipRenames } : undefined,
+        )
       })
 
       // Action dispatch — POST ${editUrl}/_action/:actionName

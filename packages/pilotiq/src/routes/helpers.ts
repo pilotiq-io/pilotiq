@@ -1,6 +1,7 @@
 import type { AppRequest, AppResponse } from '@rudderjs/contracts'
 import type { Pilotiq } from '../Pilotiq.js'
 import { findActions, findRowExtraActions, type DispatchActionResult } from '../elements/dispatchAction.js'
+import type { RelationshipRename } from '../elements/dispatchForm.js'
 import { flashNotifications } from '../notifications/flash.js'
 import type { NotificationMeta } from '../notifications/Notification.js'
 import { findRecord, type ModelQuery } from '../orm/modelDefaults.js'
@@ -105,18 +106,24 @@ export function sendDownload(
 }
 
 /** Low-level success-or-redirect responder. Either emits a JSON envelope
- *  (`{ ok: true, redirect, notifications?, force? }`) when the client
- *  asked for JSON, or flashes notifications to the next request and
- *  issues a 303 redirect. Shared by `sendActionResult`,
+ *  (`{ ok: true, redirect, notifications?, force?, relationshipRenames? }`)
+ *  when the client asked for JSON, or flashes notifications to the next
+ *  request and issues a 303 redirect. Shared by `sendActionResult`,
  *  `sendMutationSuccess`, and the form-submit success branches in
- *  resources / globals / pages / relations. */
+ *  resources / globals / pages / relations.
+ *
+ *  `relationshipRenames` are emitted only on the JSON path — they're a
+ *  collab-side concern (per-row UUID → PK renames from
+ *  `Repeater.relationship` / `Builder.relationship` creates) consumed
+ *  by client-side adapters that own a CRDT binding. The 303 path drops
+ *  them silently; non-collab flows are unaffected. */
 export function sendRedirectResponse(
   req:           AppRequest,
   res:           AppResponse,
   json:          boolean,
   redirect:      string,
   notifications: ReadonlyArray<NotificationMeta> | undefined,
-  extras?:       { force?: boolean },
+  extras?:       { force?: boolean; relationshipRenames?: ReadonlyArray<RelationshipRename> },
 ): unknown {
   if (json) {
     return res.json({
@@ -124,6 +131,9 @@ export function sendRedirectResponse(
       redirect,
       ...(extras?.force ? { force: true } : {}),
       ...(notifications && notifications.length > 0 ? { notifications } : {}),
+      ...(extras?.relationshipRenames && extras.relationshipRenames.length > 0
+        ? { relationshipRenames: extras.relationshipRenames }
+        : {}),
     })
   }
   flashNotifications(req, notifications)

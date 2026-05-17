@@ -413,6 +413,126 @@ describe('Repeater.relationship — full pipeline', () => {
   })
 })
 
+describe('Repeater.relationship — PK-switch renames (Phase B)', () => {
+  it('emits a rename for each create when submitted __id differs from new PK', async () => {
+    const child = makeFakeChildModel([])
+    const parent = makeFakeParentModel({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'items',
+      foreignKey:   'orderId',
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items').relationship('items').schema([
+          TextField.make('label').required(),
+        ]),
+      ])
+      .save(async () => ({ id: 'p1' }))
+
+    const result = await dispatchFormSubmit(
+      form,
+      // Renderer-minted UUIDs on the two new rows — Fake model assigns
+      // `c1` / `c2` so the post-save renames swap the UUIDs to those.
+      { items: [{ __id: 'uuid-A', label: 'A' }, { __id: 'uuid-B', label: 'B' }] },
+      {
+        values:      { items: [{ __id: 'uuid-A', label: 'A' }, { __id: 'uuid-B', label: 'B' }] },
+        parentModel: parent,
+      },
+    )
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    assert.deepEqual(result.relationshipRenames, [
+      { field: 'items', old: 'uuid-A', new: 'c1' },
+      { field: 'items', old: 'uuid-B', new: 'c2' },
+    ])
+  })
+
+  it('skips renames for rows that resolve as updates (submitted __id matches existing PK)', async () => {
+    const child = makeFakeChildModel([
+      { id: 'c1', orderId: 'p1', label: 'old' },
+    ])
+    const parent = makeFakeParentModel({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'items',
+      foreignKey:   'orderId',
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items').relationship('items').schema([
+          TextField.make('label').required(),
+        ]),
+      ])
+      .save(async () => ({ id: 'p1' }))
+
+    const result = await dispatchFormSubmit(
+      form,
+      { items: [{ __id: 'c1', label: 'new' }, { __id: 'uuid-X', label: 'fresh' }] },
+      {
+        values:      { items: [{ __id: 'c1', label: 'new' }, { __id: 'uuid-X', label: 'fresh' }] },
+        record:      { id: 'p1' },
+        parentModel: parent,
+      },
+    )
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    // Update of c1 emits no rename; create from uuid-X resolves to a new id.
+    assert.equal(result.relationshipRenames.length, 1)
+    assert.equal(result.relationshipRenames[0]?.field, 'items')
+    assert.equal(result.relationshipRenames[0]?.old, 'uuid-X')
+  })
+
+  it('skips the rename when the consumer pre-assigned the DB PK', async () => {
+    const child = makeFakeChildModel([])
+    // Pre-assign id `c1` on the submitted row — the fake model honors data.id.
+    const parent = makeFakeParentModel({
+      childModel:   child.model,
+      childRows:    child.rows,
+      relationName: 'items',
+      foreignKey:   'orderId',
+    })
+
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('items').relationship('items').schema([
+          TextField.make('label').required(),
+        ]),
+      ])
+      .save(async () => ({ id: 'p1' }))
+
+    const result = await dispatchFormSubmit(
+      form,
+      { items: [{ __id: 'c1', label: 'A', id: 'c1' }] },
+      {
+        values:      { items: [{ __id: 'c1', label: 'A', id: 'c1' }] },
+        parentModel: parent,
+      },
+    )
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    // Submitted __id already matches the PK — no rename to emit.
+    assert.equal(result.relationshipRenames.length, 0)
+  })
+
+  it('returns an empty array on a parent save with no relationship fields', async () => {
+    const form = Form.make()
+      .schema([TextField.make('title')])
+      .save(async () => ({ id: 'p1' }))
+
+    const result = await dispatchFormSubmit(
+      form,
+      { title: 'Hello' },
+      { values: { title: 'Hello' } },
+    )
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    assert.deepEqual(result.relationshipRenames, [])
+  })
+})
+
 describe('Repeater.relationship — load (applyRelationshipRepeaterFill)', () => {
   it('stamps __id from PK and strips PK + FK from each row', async () => {
     const child = makeFakeChildModel([
