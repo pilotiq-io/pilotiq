@@ -1,5 +1,57 @@
 # @pilotiq/tiptap
 
+## 3.5.0
+
+### Minor Changes
+
+- 644939b: fix(pilotiq, tiptap): route AI suggestions through the Tiptap bridge for collab-on / markdown / richtext fields — fixes chat-driven `update_form_state` no-op
+
+  Two cooperating bugs left chat-sidebar Approve doing nothing on Tiptap-backed fields:
+
+  1. **`FieldShell` overlay shadowed the bridge.** The gate `isRichText = fieldType === 'richtext'` ran the legacy overlay UI on `markdown` / `text` / `textarea`, _and_ registered a generic DOM-write applier that overwrote the Tiptap bridge's applier in the registry (parent effect runs after children). Approve set the hidden `<input>`'s `.value`, which the Tiptap editor never observes, so the visible content never changed.
+
+  2. **Bridge skipped whole-field suggestions.** `useAiSuggestionBridge` only pushed entries with `meta.editorRange = { from, to }` into the editor. Chat-agent producers like `@pilotiq-pro/ai`'s `update_form_state` tool target the whole field — no range — so suggestions sat in the queue with no chip widget and no applier path.
+
+  Fix:
+
+  - **`@pilotiq/pilotiq`** — `FieldShell` widens `isRichText` to `isTiptapMounted`: `richtext` always, `markdown` when a `MarkdownEditor` is registered, `text` / `textarea` when both a `CollabTextRenderer` is registered and `useCollabRoom()` resolves a room. Hides the legacy overlay and skips DOM-write applier registration so the bridge's editor-driven applier owns the surface.
+
+  - **`@pilotiq/tiptap`** — `useAiSuggestionBridge` accepts a new `onApplyWholeField(value)` option. When Approve fires for a non-bridge-pushed id, the bridge calls this callback instead of no-op'ing. Each renderer passes its own implementation:
+    - `CollabTextRenderer` → `editor.commands.setContent(plainTextToDoc(value, multiline))` — y-prosemirror syncs the resulting transaction to peers when collab is on.
+    - `MarkdownEditor` → `editor.commands.setContent(value)` — the Markdown extension parses the raw source.
+    - `TiptapEditor` (RichTextField) → `editor.commands.setContent(value)` — HTML / JSON.
+
+  After the fix every chat-driven `update_form_state` set-value lands on the visible editor surface across all three Tiptap mounts. Range-anchored suggestions (existing chip-widget path) keep their original behavior unchanged.
+
+  **Plus inline-diff visualization for whole-field suggestions.** Two follow-on improvements in `@pilotiq/tiptap`:
+
+  - `useAiSuggestionBridge` accepts `synthesizeWholeFieldRange(editor, suggestion) => { from, to } | undefined`. When opted in, whole-field suggestions get a synthesized range and the inline-diff chip widget renders BEFORE the user approves (red strikethrough on the current value + green chip with the suggested text + ✓/✕ buttons). `CollabTextRenderer` opts in with `{ from: 0, to: editor.state.doc.content.size }` — its plain-text schema accepts the extension's text-node replacement on Approve cleanly. `MarkdownEditor` and `TiptapEditor` abstain (they'd lose formatting on the chip-driven approve) and continue to use the silent `onApplyWholeField` fallback.
+
+  - `AiSuggestionExtension` injects minimal default styles into `<head>` on first mount (idempotent via a `data-pilotiq-ai-suggestion-styles` sentinel). Consumers no longer need to wire CSS for the chip — they see the visualization out of the box. User stylesheets still override since they cascade after the injected `<style>` block, and the class names (`pilotiq-ai-suggestion-original` / `-chip` / `-replacement` / `-accept` / `-reject`) stay the documented surface for customization.
+
+### Patch Changes
+
+- adc0ce0: feat(pilotiq, tiptap): auto-upgrade `TextField` / `TextareaField` to the Tiptap-backed editor when AI agents are attached (no collab required)
+
+  Previously, the Tiptap-backed renderer (`CollabTextRenderer` in `@pilotiq/tiptap`) only mounted when a `<RecordCollabRoom>` was active — so AI suggestions on plain (non-collab) `TextField` / `TextareaField` fell back to the legacy DOM-write overlay, with no inline-diff chip widget.
+
+  The rule is now: a text-like field gets the Tiptap surface if **any one of**:
+
+  1. A collab room is active (existing behavior — cursor preservation under concurrent edits).
+  2. AI agents are attached via `field.ai([…])` (new — the inline-diff chip needs a ProseMirror surface to render).
+  3. The field is a `MarkdownField` (existing — always Tiptap).
+
+  `TextLikeInput` widens its routing gate from `room && collabRenderer …` to `(room || hasAi) && collabRenderer …`. `FieldShell` mirrors the widening so its legacy overlay + DOM-write applier stay out of the way when the Tiptap bridge owns the surface. `CollabTextRenderer` already handles `useCollabRoom() === null` — it just mounts the editor without the Yjs Collaboration extension, so this widening doesn't force a collab room.
+
+  No new public API. Users get the auto-upgrade for free by attaching agents — exactly what they already do to opt into AI features on a field.
+
+  **`@pilotiq/tiptap` follow-on:**
+
+  - `CollabTextRenderer` now sets `immediatelyRender: false` on the editor config. Pre-rule-#2 the host's `TextLikeInput` gated on a live collab room (client-only state), so SSR fell through to the native input and the editor never constructed server-side. With AI-attached fields now SSR-rendering Tiptap, `useEditor` would throw `"Tiptap Error: SSR has been detected, please set immediatelyRender explicitly to false"` on the first direct-navigation request. The flag defers construction to the first React effect — empty shell on SSR, live editor on hydration.
+  - Build script no longer ships `dist/markdownExtension.js.map`. The bundled file is 371 KB of inlined `tiptap-markdown` + `markdown-it` chain; the sourcemap from `tsc` only described the original ~20-line wrapper, leaving Vite to log a `Sourcemap … points to missing source files` warning on every consumer dev boot.
+
+  **Inline-diff chip visualization extended to MarkdownEditor + TiptapEditor.** Both now opt into `synthesizeWholeFieldRange` so chat-driven whole-field suggestions (`update_form_state`'s `set_value`) render the chip widget over the whole doc. The bridge tracks synthesized ids in a separate set: on Approve, _producer-supplied_ range hits the editor's `approveAiSuggestion` (text-node replace, surgical), while _synthesized_ whole-doc range delegates to the renderer's `onApplyWholeField` (`setContent(...)`) and clears the chip with a no-op reject. Without this split, approving a synthesized chip on richtext / markdown would do a plain-text replace and clobber all formatting; without the synthesis, the user saw no visualization at all on richtext / markdown.
+
 ## 3.4.0
 
 ### Minor Changes
