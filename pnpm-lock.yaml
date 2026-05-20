@@ -173,6 +173,10 @@ importers:
         version: 5.9.3
 
   packages/tiptap:
+    dependencies:
+      prosemirror-changeset:
+        specifier: ^2.4.1
+        version: 2.4.1
     devDependencies:
       '@base-ui/react':
         specifier: ^1

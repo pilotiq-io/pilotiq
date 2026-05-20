@@ -222,6 +222,57 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
       }
       .${prefix}-accept:hover { color: rgb(21, 128, 61); }
       .${prefix}-reject:hover { color: rgb(185, 28, 28); }
+
+      /* Banner — top-of-editor strip for whole-field suggestions on rich
+         surfaces (markdown / richtext). Sibling to the chip styles above;
+         lives here so both ship via the same extension-mount sentinel.
+         Class names live under \`pilotiq-ai-banner-*\` (not \`-suggestion-\`)
+         since the banner is a host-mounted React component, not a PM
+         decoration. */
+      .pilotiq-ai-banner {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.375rem 0.625rem;
+        margin-bottom: 0.375rem;
+        border-radius: 0.375rem;
+        background-color: rgba(254, 252, 232, 0.9);
+        border: 1px solid rgba(234, 179, 8, 0.4);
+        color: rgb(113, 63, 18);
+        font-size: 0.875rem;
+        line-height: 1.4;
+      }
+      .pilotiq-ai-banner-icon { flex: 0 0 auto; }
+      .pilotiq-ai-banner-label { flex: 1 1 auto; }
+      .pilotiq-ai-banner-actions {
+        display: inline-flex;
+        gap: 0.375rem;
+        flex: 0 0 auto;
+      }
+      .pilotiq-ai-banner-reject,
+      .pilotiq-ai-banner-accept {
+        appearance: none;
+        cursor: pointer;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        line-height: 1;
+        padding: 0.25rem 0.625rem;
+        border-radius: 0.25rem;
+        border: 1px solid transparent;
+      }
+      .pilotiq-ai-banner-reject {
+        background-color: transparent;
+        color: rgb(120, 53, 15);
+        border-color: rgba(180, 83, 9, 0.4);
+      }
+      .pilotiq-ai-banner-reject:hover {
+        background-color: rgba(254, 215, 170, 0.4);
+      }
+      .pilotiq-ai-banner-accept {
+        background-color: rgb(22, 101, 52);
+        color: white;
+      }
+      .pilotiq-ai-banner-accept:hover { background-color: rgb(21, 128, 61); }
     `
     document.head.appendChild(style)
   },

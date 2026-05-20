@@ -20,6 +20,9 @@ import type {
 } from '@pilotiq/pilotiq/react'
 import { useCollabRoom, getCollabExtensions, onProviderSynced } from '@pilotiq/pilotiq/react'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
+import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
+import { AiSuggestionBanner } from './AiSuggestionBanner.js'
+import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import type { BlockMeta } from '../Block.js'
 import type { ToolbarGroups, RichTextStorage, ColorSwatch } from '../RichTextField.js'
 import { BlockNodeExtension } from '../extensions/BlockNodeExtension.js'
@@ -31,6 +34,7 @@ import { DragHandleExtension } from '../extensions/DragHandleExtension.js'
 import { MergeTagExtension } from '../extensions/MergeTagExtension.js'
 import { LeadMarkExtension, SmallMarkExtension } from '../extensions/TextSizeMarks.js'
 import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
+import { AiInlineDiffExtension } from '../extensions/AiInlineDiffExtension.js'
 import {
   MentionExtension,
   type MentionState,
@@ -315,10 +319,11 @@ function ClientEditor(props: ClientEditorProps) {
         fieldName:     name,
       })] : [MentionExtension]),
       DragHandleExtension,
-      // AI suggestions — always-on extension that tracks suggested edits as
-      // inline strikethrough + Approve/Reject chip widgets. Idle until the
-      // host calls `editor.commands.addAiSuggestion(...)`.
+      // AI suggestions — chip widget for surgical (range-anchored) edits.
       AiSuggestionExtension,
+      // AI inline diff — Tiptap-Pro-style visualization for whole-field
+      // suggestions via prosemirror-changeset. See AiInlineDiffExtension.
+      AiInlineDiffExtension,
       // Realtime-collab extensions (Yjs `Collaboration` + cursor) — empty
       // when no `<RecordCollabRoom>` is mounted up-tree, or when no plugin
       // registered a factory via `registerCollabExtensions`.
@@ -464,22 +469,35 @@ function ClientEditor(props: ClientEditorProps) {
   // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
   // extension. No-op when no provider is mounted (default no-op context).
   //
-  // Whole-field handling: rare for RichTextField (chat-driven flows usually
-  // emit range-anchored suggestions for richtext), but `update_form_state`
-  // can still arrive with `set_value` on a rich field. The chip widget
-  // renders over the whole doc for visualization; Approve routes through
-  // `onApplyWholeField` so `setContent` parses the new HTML / JSON
-  // correctly — the chip's plain-text replace would lose all formatting.
+  // Whole-field handling: NO chip widget here. The chip's `textContent`
+  // renderer would surface raw HTML tags as literal text inside the
+  // green pill — unparseable on multi-paragraph rewrites. Instead,
+  // `<AiSuggestionBanner>` mounts above the editor (see render below).
+  // Producer-supplied range suggestions still ride the inline chip —
+  // those have a precise anchor worth visualizing in context.
+  const applyWholeField = (value: string): void => {
+    if (!editor || editor.isDestroyed) return
+    editor.commands.setContent(value)
+  }
   useAiSuggestionBridge(editor ?? null, name, {
-    synthesizeWholeFieldRange: (ed) => ({
-      from: 0,
-      to:   ed.state.doc.content.size,
-    }),
-    onApplyWholeField: (value) => {
-      if (!editor || editor.isDestroyed) return
-      editor.commands.setContent(value)
+    onApplyWholeField: applyWholeField,
+  })
+
+  // Inline diff for whole-field suggestions. Pipeline mirrors MarkdownEditor:
+  // HTML → ProseMirror Slice via the schema's DOMParser. Suggested values
+  // on a RichTextField are typically HTML (or marked-up JSON that the
+  // schema's DOMParser also handles via its serialized round-trip). For
+  // JSON suggestions, the schema may reject — falls back to banner-only.
+  useAiInlineDiff(editor ?? null, name, {
+    parseSuggestion: (ed, value) => {
+      try {
+        const container = document.createElement('div')
+        container.innerHTML = value
+        return ProseMirrorDOMParser.fromSchema(ed.schema).parseSlice(container)
+      } catch { return null }
     },
   })
+  const isDiffActive = useIsAiInlineDiffActive(editor ?? null)
 
   // Re-render the toolbar when the selection / marks change so active-state
   // booleans stay fresh.
@@ -488,6 +506,16 @@ function ClientEditor(props: ClientEditorProps) {
   return (
     <div className="relative flex flex-col">
       <input type="hidden" name={name} value={serialized} />
+      <AiSuggestionBanner
+        fieldName={name}
+        onApplyWholeField={applyWholeField}
+        {...(isDiffActive && editor
+          ? {
+              onAcceptViaEditor: () => editor.commands.acceptAiInlineDiff(),
+              onRejectViaEditor: () => editor.commands.rejectAiInlineDiff(),
+            }
+          : {})}
+      />
       {editor && toolbarGroups && toolbarGroups.length > 0 && (
         <Toolbar
           editor={editor}

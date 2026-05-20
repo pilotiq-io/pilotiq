@@ -4,6 +4,7 @@ import type { AnyExtension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Image from '@tiptap/extension-image'
+import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 // The `tiptap-markdown` chain (incl. CJS-only `markdown-it-task-lists`) is
 // pre-bundled into `dist/markdownExtension.js` at @pilotiq/tiptap build
 // time; importing the wrapper instead of `tiptap-markdown` directly
@@ -17,7 +18,10 @@ import {
   type MarkdownEditorProps,
 } from '@pilotiq/pilotiq/react'
 import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
+import { AiInlineDiffExtension, aiInlineDiffPluginKey } from '../extensions/AiInlineDiffExtension.js'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
+import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
+import { AiSuggestionBanner } from './AiSuggestionBanner.js'
 
 // Inline lucide.dev SVGs — same posture as `toolbarButtons.tsx` so this
 // package doesn't pull `lucide-react` as a peer dep. Keep stroke / size
@@ -214,12 +218,14 @@ export function MarkdownEditor({
         }),
         Image.configure({ inline: false, allowBase64: false }),
         Placeholder.configure({ placeholder: placeholder ?? 'Write in markdown…' }),
-        // AI suggestions — always-on extension that tracks suggested edits as
-        // inline strikethrough + Approve/Reject chip widgets. Idle until the
-        // host calls `editor.commands.addAiSuggestion(...)` via the bridge below.
-        // Matches the `TiptapEditor` wiring so suggestion mode works uniformly
-        // across RichTextField / MarkdownField / TextField+TextareaField.
+        // AI suggestions — chip widget for surgical (range-anchored) edits.
         AiSuggestionExtension,
+        // AI inline diff — Tiptap-Pro-style visualization for whole-field
+        // suggestions (prosemirror-changeset under the hood). Decorations
+        // show green-background inserts inline + red-strikethrough widgets
+        // for deleted text. Host's `<AiSuggestionBanner>` drives Accept /
+        // Reject via the extension's commands.
+        AiInlineDiffExtension,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ...(collabExtensions as any[]),
       ],
@@ -248,23 +254,46 @@ export function MarkdownEditor({
   // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
   // extension. No-op when no provider is mounted (default no-op context).
   //
-  // Whole-field handling for chat-driven suggestions (e.g.
-  // `update_form_state`). The chip widget renders inline for visualization
-  // (synthesized range over the whole doc), but Approve routes through
-  // `onApplyWholeField` so the new markdown source parses correctly via
-  // the Markdown extension — the chip's plain-text replace would lose
-  // headings, lists, formatting.
+  // Whole-field handling: NO chip widget here. The chip's `textContent`
+  // renderer surfaces raw markdown (`## Heading\n- item`) as literal text
+  // inside the green pill — visually unparseable for multi-paragraph
+  // rewrites. Instead, `<AiSuggestionBanner>` mounts above the editor
+  // (see render below). Producer-supplied range suggestions still ride
+  // the inline chip path — those have a precise anchor worth showing
+  // in context.
+  const applyWholeField = (value: string): void => {
+    if (!editor || editor.isDestroyed) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(editor.commands as any).setContent(value)
+  }
   useAiSuggestionBridge(editor ?? null, name, {
-    synthesizeWholeFieldRange: (ed) => ({
-      from: 0,
-      to:   ed.state.doc.content.size,
-    }),
-    onApplyWholeField: (value) => {
-      if (!editor || editor.isDestroyed) return
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(editor.commands as any).setContent(value)
+    onApplyWholeField: applyWholeField,
+  })
+
+  // Inline diff for whole-field suggestions — replaces the editor doc with
+  // the proposed markdown so the user sees the structural diff (inserted
+  // headings / list items / etc.) before approving. Pipeline:
+  //   1. tiptap-markdown's parser turns the source into HTML
+  //      (`editor.storage.markdown.parser.parse(value)` returns a string).
+  //   2. ProseMirror's `DOMParser.fromSchema(schema).parseSlice(...)` turns
+  //      that HTML into a Slice against THIS editor's schema — same path
+  //      the editor's own clipboard-paste uses, so the slice is guaranteed
+  //      schema-valid.
+  useAiInlineDiff(editor ?? null, name, {
+    parseSuggestion: (ed, value) => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const parser = (ed.storage as any).markdown?.parser
+        if (!parser || typeof parser.parse !== 'function') return null
+        const html = parser.parse(value)
+        if (typeof html !== 'string') return null
+        const container = document.createElement('div')
+        container.innerHTML = html
+        return ProseMirrorDOMParser.fromSchema(ed.schema).parseSlice(container)
+      } catch { return null }
     },
   })
+  const isDiffActive = useIsAiInlineDiffActive(editor ?? null)
 
   // First-load seed for collab. Collaboration starts the editor empty
   // regardless of `content`; once the provider syncs from the server we
@@ -434,6 +463,16 @@ export function MarkdownEditor({
 
   return (
     <div className="flex flex-col rounded-md border bg-background">
+      <AiSuggestionBanner
+        fieldName={name}
+        onApplyWholeField={applyWholeField}
+        {...(isDiffActive && editor
+          ? {
+              onAcceptViaEditor: () => editor.commands.acceptAiInlineDiff(),
+              onRejectViaEditor: () => editor.commands.rejectAiInlineDiff(),
+            }
+          : {})}
+      />
       {canAttach && (
         <input
           ref={fileInputRef}
