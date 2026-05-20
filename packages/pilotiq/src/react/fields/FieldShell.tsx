@@ -7,6 +7,9 @@ import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from 
 import { FormIdContext, useFieldState } from '../FormStateContext.js'
 import { getFieldPresenceComponent } from '../FieldPresenceRegistry.js'
 import { getFieldFocusReporter } from '../FieldFocusReporterRegistry.js'
+import { useCollabRoom } from '../CollabRoomContext.js'
+import { getCollabTextRenderer } from '../CollabTextRendererRegistry.js'
+import { getMarkdownEditor } from '../MarkdownEditorRegistry.js'
 
 /**
  * Field types whose visible state is driven by React (not by a matching
@@ -74,7 +77,22 @@ export function FieldShell({ el, name, label, required, children, before, after,
   // `@pilotiq-pro/ai`) has registered a renderer AND there's a matching
   // suggestion in the queue.
   const fieldType = el['fieldType'] as string | undefined
-  const isRichText = fieldType === 'richtext'
+  // `isTiptapMounted` widens "richtext only" to every field whose visible
+  // surface is actually a Tiptap editor — covers MarkdownField (always
+  // Tiptap via `MarkdownEditor`) and TextField / TextareaField when a
+  // collab room is active (uses `CollabTextRenderer` via @pilotiq/tiptap).
+  // For these the editor renders inline-diff Approve/Reject chips and owns
+  // its own applier through `useAiSuggestionBridge` — FieldShell hides the
+  // legacy overlay AND skips registering its DOM-write applier so the
+  // bridge's applier stays last-write-wins.
+  const collabRoom = useCollabRoom()
+  const hasCollabTextRenderer = getCollabTextRenderer() !== null
+  const hasMarkdownEditor = getMarkdownEditor() !== null
+  const isTextLikeCollab =
+    (fieldType === 'text' || fieldType === 'textarea') &&
+    collabRoom !== null && hasCollabTextRenderer
+  const isMarkdownTiptap = fieldType === 'markdown' && hasMarkdownEditor
+  const isRichText = fieldType === 'richtext' || isMarkdownTiptap || isTextLikeCollab
   // Field types that drive their visible state from React (not from a
   // matching `[name]` DOM input) register their own applier — see
   // `SelectFieldInput` for the canonical example. FieldShell's generic

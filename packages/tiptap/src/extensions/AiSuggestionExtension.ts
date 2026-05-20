@@ -170,6 +170,62 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
     }
   },
 
+  onCreate() {
+    // Inject minimal default styles for the chip + strikethrough on first
+    // mount so consumers see the visualization without wiring CSS. Idempotent
+    // via the `data-pilotiq-ai-suggestion-styles` sentinel; consumers who
+    // want full control just add their own `<style>` with the same class
+    // names (last wins — the cascade picks user overrides over our defaults
+    // since the user stylesheet appears AFTER our injected one in `<head>`
+    // when imported via Vite/Webpack, OR via higher specificity).
+    if (typeof document === 'undefined') return
+    const SENTINEL = 'data-pilotiq-ai-suggestion-styles'
+    if (document.head.querySelector(`style[${SENTINEL}]`)) return
+    const prefix = this.options.classPrefix
+    const style  = document.createElement('style')
+    style.setAttribute(SENTINEL, '')
+    // Colors picked to look right on light + dark surfaces without theme
+    // overrides (60% alpha on background-color, 100% on text). Tuned to
+    // match the inline-diff convention used by the Tiptap Pro AI Agent.
+    style.textContent = `
+      .${prefix}-original {
+        text-decoration: line-through;
+        text-decoration-color: rgba(220, 38, 38, 0.7);
+        background-color: rgba(254, 226, 226, 0.6);
+        color: rgb(153, 27, 27);
+      }
+      .${prefix}-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin-left: 0.25rem;
+        padding: 0 0.25rem;
+        border-radius: 0.25rem;
+        background-color: rgba(220, 252, 231, 0.7);
+        color: rgb(22, 101, 52);
+        font-size: 0.875em;
+        line-height: 1.4;
+      }
+      .${prefix}-replacement {
+        padding: 0 0.125rem;
+      }
+      .${prefix}-accept,
+      .${prefix}-reject {
+        appearance: none;
+        background: transparent;
+        border: 0;
+        padding: 0 0.25rem;
+        cursor: pointer;
+        font-size: 0.875em;
+        line-height: 1;
+        color: inherit;
+      }
+      .${prefix}-accept:hover { color: rgb(21, 128, 61); }
+      .${prefix}-reject:hover { color: rgb(185, 28, 28); }
+    `
+    document.head.appendChild(style)
+  },
+
   addCommands() {
     return {
       addAiSuggestion: (suggestion) => ({ tr, state, dispatch }) => {

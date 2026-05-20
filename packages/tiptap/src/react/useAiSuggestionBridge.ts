@@ -29,14 +29,64 @@ import { aiSuggestionPluginKey } from '../extensions/AiSuggestionExtension.js'
  * hook had previously pushed (so an id added directly by host code via
  * `editor.commands.addAiSuggestion(...)` doesn't get reflected back through
  * a context that never knew about it).
+ *
+ * **Whole-field fallback** (chat-driven suggestions). Producers like
+ * `@pilotiq-pro/ai`'s `update_form_state` tool push suggestions that target
+ * the whole field — no `meta.editorRange`, just `suggestedValue` as a string.
+ * Without `editorRange` the bridge can't render the inline-diff chip widget
+ * (it has nowhere to anchor), so the host renderer passes an
+ * `onApplyWholeField(value)` callback. When the chat-sidebar Approve fires
+ * for a non-bridge-pushed id, the registered applier calls this callback
+ * instead of no-op'ing — letting each renderer apply the suggestion the
+ * right way for its shape (plain text → `plainTextToDoc`, markdown → set
+ * markdown source, richtext → setContent with HTML/JSON). The host is also
+ * responsible for the Approve UI — FieldShell hides its legacy overlay
+ * whenever a Tiptap renderer is mounted (richtext / markdown / collab text).
  */
-export function useAiSuggestionBridge(editor: Editor | null, fieldName: string): void {
+export interface UseAiSuggestionBridgeOptions {
+  /**
+   * Apply a whole-field suggestion that lacks `meta.editorRange`. Each
+   * Tiptap renderer passes its own implementation (different content
+   * shapes — plain text, markdown source, HTML/JSON). Omit for editors
+   * that should ignore whole-field suggestions entirely.
+   */
+  onApplyWholeField?: (suggestedValue: string) => void
+
+  /**
+   * Synthesize a `{ from, to }` range for whole-field suggestions so the
+   * inline-diff chip widget can render BEFORE the user approves. The
+   * extension's `applyApprove` inserts a plain text node spanning the
+   * synthesized range — safe only for editors whose schema accepts a
+   * text-node replacement covering the whole doc (CollabTextRenderer's
+   * plain-text schema fits; richtext / markdown lose formatting if
+   * approved that way). Return `undefined` to skip synthesis and fall
+   * through to the legacy `onApplyWholeField` callback (silent swap).
+   */
+  synthesizeWholeFieldRange?: (
+    editor:     Editor,
+    suggestion: PendingSuggestion,
+  ) => { from: number; to: number } | undefined
+}
+
+export function useAiSuggestionBridge(
+  editor: Editor | null,
+  fieldName: string,
+  options: UseAiSuggestionBridgeOptions = {},
+): void {
   const { list, dismiss } = usePendingSuggestionsForField(fieldName)
 
   // Hold the latest `dismiss` in a ref so the editor-side listener — which
   // installs once per editor — always reaches the up-to-date context API.
   const dismissRef = useRef(dismiss)
   useEffect(() => { dismissRef.current = dismiss }, [dismiss])
+
+  // Same ref pattern for the whole-field applier — captured here so the
+  // applier closure registered below stays stable across re-renders without
+  // re-registering on every option change.
+  const onApplyWholeFieldRef = useRef(options.onApplyWholeField)
+  useEffect(() => { onApplyWholeFieldRef.current = options.onApplyWholeField }, [options.onApplyWholeField])
+  const synthesizeRangeRef = useRef(options.synthesizeWholeFieldRange)
+  useEffect(() => { synthesizeRangeRef.current = options.synthesizeWholeFieldRange }, [options.synthesizeWholeFieldRange])
 
   // Set of ids this hook pushed; used by both directions for cycle control.
   const pushedRef = useRef<Set<string>>(new Set())
@@ -49,8 +99,18 @@ export function useAiSuggestionBridge(editor: Editor | null, fieldName: string):
     for (const s of list) {
       if (pushedRef.current.has(s.id)) continue
       const meta = (s.meta ?? {}) as Record<string, unknown>
-      const range = meta['editorRange'] as { from?: unknown; to?: unknown } | undefined
-      if (!range || typeof range.from !== 'number' || typeof range.to !== 'number') continue
+      const rawRange = meta['editorRange'] as { from?: unknown; to?: unknown } | undefined
+      let range: { from: number; to: number } | undefined
+      if (rawRange && typeof rawRange.from === 'number' && typeof rawRange.to === 'number') {
+        range = { from: rawRange.from, to: rawRange.to }
+      } else {
+        // Producer didn't supply a range — let the renderer synthesize one
+        // so the inline-diff chip widget can still render. Safe to skip
+        // when the renderer abstains (richtext / markdown — they'd lose
+        // formatting if the chip's plain-text replace approved them).
+        range = synthesizeRangeRef.current?.(editor, s)
+        if (!range) continue
+      }
       const replacement = typeof s.suggestedValue === 'string' ? s.suggestedValue : ''
       editor.commands.addAiSuggestion({
         id:          s.id,
@@ -98,12 +158,23 @@ export function useAiSuggestionBridge(editor: Editor | null, fieldName: string):
   useEffect(() => {
     if (!editor) return
     const applier: PendingSuggestionApplier = (suggestion) => {
-      // Bail when the suggestion isn't one of ours (no editor range or
-      // bridge-pushed entry). Pro provider falls back to plain dismiss.
-      if (!pushedRef.current.has(suggestion.id)) return
-      editor.chain().focus().approveAiSuggestion(suggestion.id).run()
-      // The transaction listener above sees the editor state drop the id
-      // and calls `dismiss(id)` on its own — no manual mirror needed.
+      // Editor-range path — the bridge has pushed this id into the editor
+      // as an inline diff hunk. Forward Approve to the editor command; the
+      // transaction listener above mirrors the dismiss back into context.
+      if (pushedRef.current.has(suggestion.id)) {
+        editor.chain().focus().approveAiSuggestion(suggestion.id).run()
+        return
+      }
+      // Whole-field path — the producer didn't supply `meta.editorRange`
+      // (e.g. `@pilotiq-pro/ai`'s `update_form_state` tool). Delegate to
+      // the renderer-supplied callback so the editor's content shape
+      // (plain text / markdown source / HTML) gets the right replacement.
+      // Context's `approve()` will dismiss the queue entry afterwards;
+      // we don't dismiss here.
+      const apply = onApplyWholeFieldRef.current
+      if (apply && typeof suggestion.suggestedValue === 'string') {
+        apply(suggestion.suggestedValue)
+      }
     }
     // Editor renderers don't currently have access to a `formId` here;
     // pass `undefined` so the wildcard form scope resolves. Phase 8.5+

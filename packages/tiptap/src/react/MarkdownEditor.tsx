@@ -247,7 +247,18 @@ export function MarkdownEditor({
   // Cross-package suggestion bridge — sync the host's
   // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
   // extension. No-op when no provider is mounted (default no-op context).
-  useAiSuggestionBridge(editor ?? null, name)
+  //
+  // Whole-field fallback: chat-driven suggestions (e.g. `update_form_state`)
+  // arrive without `meta.editorRange`. The Markdown extension parses
+  // markdown source on `setContent`, so passing the raw markdown string
+  // replaces the editor's doc in-place.
+  useAiSuggestionBridge(editor ?? null, name, {
+    onApplyWholeField: (value) => {
+      if (!editor || editor.isDestroyed) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(editor.commands as any).setContent(value)
+    },
+  })
 
   // First-load seed for collab. Collaboration starts the editor empty
   // regardless of `content`; once the provider syncs from the server we

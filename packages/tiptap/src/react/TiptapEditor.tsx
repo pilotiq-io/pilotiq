@@ -463,7 +463,17 @@ function ClientEditor(props: ClientEditorProps) {
   // Cross-package suggestion bridge — sync the host's
   // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
   // extension. No-op when no provider is mounted (default no-op context).
-  useAiSuggestionBridge(editor ?? null, name)
+  //
+  // Whole-field fallback: rare for RichTextField (chat-driven flows usually
+  // emit range-anchored suggestions for richtext), but `update_form_state`
+  // can still arrive with `set_value` on a rich field — accept HTML / JSON
+  // / markdown via `setContent` so the visible content updates.
+  useAiSuggestionBridge(editor ?? null, name, {
+    onApplyWholeField: (value) => {
+      if (!editor || editor.isDestroyed) return
+      editor.commands.setContent(value)
+    },
+  })
 
   // Re-render the toolbar when the selection / marks change so active-state
   // booleans stay fresh.

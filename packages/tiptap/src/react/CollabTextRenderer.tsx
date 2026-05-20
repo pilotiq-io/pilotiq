@@ -107,7 +107,26 @@ export function CollabTextRenderer({
   // Cross-package suggestion bridge — sync the host's
   // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
   // extension. No-op when no provider is mounted (default no-op context).
-  useAiSuggestionBridge(editor ?? null, name)
+  //
+  // Whole-field fallback: chat-driven suggestions (e.g. `update_form_state`)
+  // arrive without `meta.editorRange`. Plain-text editors opt into a
+  // synthesized full-doc range so the inline-diff chip (red strikethrough on
+  // the current value + green chip with the suggested text + ✓/✕ buttons)
+  // renders BEFORE the user approves. The extension's `applyApprove` is
+  // text-node-based which fits the plain-text schema exactly. The
+  // `onApplyWholeField` callback stays as a fallback for cases that don't
+  // synthesize (e.g. an empty doc — `from === to` skips the chip but the
+  // applier still needs to swap content).
+  useAiSuggestionBridge(editor ?? null, name, {
+    synthesizeWholeFieldRange: (ed) => ({
+      from: 0,
+      to:   ed.state.doc.content.size,
+    }),
+    onApplyWholeField: (value) => {
+      if (!editor || editor.isDestroyed) return
+      editor.commands.setContent(plainTextToDoc(value, !!multiline))
+    },
+  })
 
   // First-load seed when collab is active. Collaboration starts the editor
   // empty regardless of `defaultValue`; once the provider syncs the room
