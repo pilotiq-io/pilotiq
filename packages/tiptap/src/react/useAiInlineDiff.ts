@@ -162,18 +162,22 @@ function hasEditorRange(s: PendingSuggestion): boolean {
  * `range` apply only to the mark op. Discriminated union; readers should
  * narrow on `op`.
  */
-type SurgicalMeta =
+type SurgicalOp =
   | { op: 'replace_block';       blockIndex: number; content: string }
   | { op: 'insert_block_before'; blockIndex: number; content: string }
   | { op: 'delete_block';        blockIndex: number }
   | { op: 'update_block_mark';   blockIndex: number; mark: string; range: BlockMarkRange; apply: boolean; attrs?: Record<string, unknown> }
 
-function readSurgicalMeta(s: PendingSuggestion): SurgicalMeta | null {
-  const meta = (s.meta ?? {}) as Record<string, unknown>
-  const raw  = meta['surgical']
-  if (!raw || typeof raw !== 'object') return null
-  const obj  = raw as Record<string, unknown>
-  const op   = obj['op']
+/**
+ * Either a single op (when the AI emitted only one surgical change) or
+ * an `{ ops: [...] }` batch (when the AI emitted multiple surgical ops
+ * in one `update_form_state` tool call). We apply a batch as a single
+ * combined diff so the user sees one Accept / Reject for the whole set.
+ */
+type SurgicalMeta = SurgicalOp | { ops: SurgicalOp[] }
+
+function parseSurgicalOp(obj: Record<string, unknown>): SurgicalOp | null {
+  const op = obj['op']
   const blockIndex = obj['blockIndex']
   if (typeof blockIndex !== 'number') return null
   switch (op) {
@@ -207,22 +211,57 @@ function readSurgicalMeta(s: PendingSuggestion): SurgicalMeta | null {
   }
 }
 
-function planSurgicalModifier(editor: Editor, surgical: SurgicalMeta): TransactionModifier | null {
-  switch (surgical.op) {
-    case 'replace_block':
-      return planReplaceBlock(editor, surgical.blockIndex, surgical.content)
-    case 'insert_block_before':
-      return planInsertBlockBefore(editor, surgical.blockIndex, surgical.content)
-    case 'delete_block':
-      return planDeleteBlock(editor, surgical.blockIndex)
-    case 'update_block_mark':
-      return planUpdateBlockMark(
-        editor,
-        surgical.blockIndex,
-        surgical.mark,
-        surgical.range,
-        surgical.apply,
-        surgical.attrs,
-      )
+function readSurgicalMeta(s: PendingSuggestion): SurgicalMeta | null {
+  const meta = (s.meta ?? {}) as Record<string, unknown>
+  const raw  = meta['surgical']
+  if (!raw || typeof raw !== 'object') return null
+  const obj = raw as Record<string, unknown>
+  // Batch form: { ops: [SurgicalOp, ...] }
+  if (Array.isArray(obj['ops'])) {
+    const parsed: SurgicalOp[] = []
+    for (const entry of obj['ops'] as unknown[]) {
+      if (!entry || typeof entry !== 'object') continue
+      const op = parseSurgicalOp(entry as Record<string, unknown>)
+      if (op) parsed.push(op)
+    }
+    if (parsed.length === 0) return null
+    return { ops: parsed }
   }
+  return parseSurgicalOp(obj)
+}
+
+function planOp(editor: Editor, op: SurgicalOp): TransactionModifier | null {
+  switch (op.op) {
+    case 'replace_block':       return planReplaceBlock(editor, op.blockIndex, op.content)
+    case 'insert_block_before': return planInsertBlockBefore(editor, op.blockIndex, op.content)
+    case 'delete_block':        return planDeleteBlock(editor, op.blockIndex)
+    case 'update_block_mark':   return planUpdateBlockMark(editor, op.blockIndex, op.mark, op.range, op.apply, op.attrs)
+  }
+}
+
+/**
+ * Translate a surgical meta into a single TransactionModifier the diff
+ * extension can wrap with a snapshot. For batches, modifiers are
+ * computed against the original (pre-transaction) doc and then applied
+ * in DESC `blockIndex` order — each subsequent modifier touches earlier
+ * positions, so the prior modifiers' edits (at higher positions) don't
+ * shift the absolute positions the later modifiers were planned with.
+ *
+ * Returns null when the batch has no plannable ops (all out-of-range /
+ * unparseable). Drops individual non-plannable ops from a batch but
+ * still runs whatever did plan, so a single bad op doesn't kill the
+ * whole batch.
+ */
+function planSurgicalModifier(editor: Editor, surgical: SurgicalMeta): TransactionModifier | null {
+  if ('ops' in surgical) {
+    const sorted = [...surgical.ops].sort((a, b) => b.blockIndex - a.blockIndex)
+    const modifiers: TransactionModifier[] = []
+    for (const op of sorted) {
+      const mod = planOp(editor, op)
+      if (mod) modifiers.push(mod)
+    }
+    if (modifiers.length === 0) return null
+    return (tr) => { for (const mod of modifiers) mod(tr) }
+  }
+  return planOp(editor, surgical)
 }

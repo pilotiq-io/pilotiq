@@ -20,12 +20,21 @@ Adds 4 precise block-edit primitives the AI agent can call instead of always rew
 
 Each planner returns a `TransactionModifier | null` — `null` means "abort, this can't be planned" (out-of-range index, unparseable HTML, unknown mark).
 
-**`useAiInlineDiff` hook** now reads `meta.surgical` on pending suggestions. The pilotiq-pro AI `update_form_state` client handler stamps:
+**`useAiInlineDiff` hook** now reads `meta.surgical` on pending suggestions in two shapes:
 
 ```ts
+// Single op (one surgical change)
 meta: { surgical: { op: 'replace_block', blockIndex: 2, content: '<h2>...</h2>' } }
+
+// Batched ops (multiple surgical changes from one AI tool call)
+meta: { surgical: { ops: [
+  { op: 'replace_block',       blockIndex: 0, content: '<h1>Title</h1>' },
+  { op: 'insert_block_before', blockIndex: 2, content: '<p>New para</p>' },
+] } }
 ```
 
-The hook routes the surgical-meta suggestion to the matching planner, then dispatches `applySurgicalAiInlineDiff`. Whole-field suggestions (no surgical meta) continue through the existing `startAiInlineDiff` path.
+Batches are applied as one combined diff: modifiers are computed against the original (pre-transaction) doc, then dispatched in DESC `blockIndex` order so earlier modifiers' edits at higher positions don't shift the absolute positions later modifiers were planned with. The user sees a single inline-diff overlay with one Accept / Reject covering every op in the batch — rather than N pending suggestions that have to be reviewed serially.
+
+Whole-field suggestions (no surgical meta) continue through the existing `startAiInlineDiff` path.
 
 Also re-exports `AiInlineDiffExtension` / `aiInlineDiffPluginKey` / `getAiInlineDiffState` from the package root for consumers that want to read diff state directly.
