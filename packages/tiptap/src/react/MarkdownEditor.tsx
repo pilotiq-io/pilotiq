@@ -16,6 +16,8 @@ import {
   onProviderSynced,
   type MarkdownEditorProps,
 } from '@pilotiq/pilotiq/react'
+import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
+import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 
 // Inline lucide.dev SVGs — same posture as `toolbarButtons.tsx` so this
 // package doesn't pull `lucide-react` as a peer dep. Keep stroke / size
@@ -212,6 +214,12 @@ export function MarkdownEditor({
         }),
         Image.configure({ inline: false, allowBase64: false }),
         Placeholder.configure({ placeholder: placeholder ?? 'Write in markdown…' }),
+        // AI suggestions — always-on extension that tracks suggested edits as
+        // inline strikethrough + Approve/Reject chip widgets. Idle until the
+        // host calls `editor.commands.addAiSuggestion(...)` via the bridge below.
+        // Matches the `TiptapEditor` wiring so suggestion mode works uniformly
+        // across RichTextField / MarkdownField / TextField+TextareaField.
+        AiSuggestionExtension,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ...(collabExtensions as any[]),
       ],
@@ -235,6 +243,11 @@ export function MarkdownEditor({
     if (!editor) return
     editor.setEditable(!disabled && tab === 'editor')
   }, [editor, disabled, tab])
+
+  // Cross-package suggestion bridge — sync the host's
+  // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
+  // extension. No-op when no provider is mounted (default no-op context).
+  useAiSuggestionBridge(editor ?? null, name)
 
   // First-load seed for collab. Collaboration starts the editor empty
   // regardless of `content`; once the provider syncs from the server we

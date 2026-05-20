@@ -8,6 +8,8 @@ import {
   type CollabTextRendererProps,
 } from '@pilotiq/pilotiq/react'
 import { createPlainTextEditor, plainTextOf, plainTextToDoc } from '../PlainTextEditor.js'
+import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
+import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 
 /**
  * Tiptap-backed plain-text editor for pilotiq's `TextField` / `TextareaField`
@@ -73,7 +75,12 @@ export function CollabTextRenderer({
       // seeds the fragment on first connect when it's still empty. When
       // collab is off, seed from defaultValue directly.
       content: collabActive ? '' : defaultValue,
-      extensions: collabExtensions,
+      // AI suggestions — always-on extension that tracks suggested edits as
+      // inline strikethrough + Approve/Reject chip widgets. Idle until the
+      // host calls `editor.commands.addAiSuggestion(...)` via the bridge below.
+      // Matches the `TiptapEditor` wiring so suggestion mode works uniformly
+      // across RichTextField / MarkdownField / TextField+TextareaField.
+      extensions: [...collabExtensions, AiSuggestionExtension],
       onUpdate: (text) => onChange(text),
       ...(onSubmit ? { onSubmit: () => { onSubmit(); return false } } : {}),
       ...(className || editorAttributes
@@ -96,6 +103,11 @@ export function CollabTextRenderer({
     if (!editor) return
     editor.setEditable(!disabled)
   }, [editor, disabled])
+
+  // Cross-package suggestion bridge — sync the host's
+  // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
+  // extension. No-op when no provider is mounted (default no-op context).
+  useAiSuggestionBridge(editor ?? null, name)
 
   // First-load seed when collab is active. Collaboration starts the editor
   // empty regardless of `defaultValue`; once the provider syncs the room
