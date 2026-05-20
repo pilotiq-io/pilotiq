@@ -52,6 +52,20 @@ declare module '@tiptap/core' {
        * the queue entry.
        */
       startAiInlineDiff:  (id: string, newDocSlice: Slice) => ReturnType
+      /**
+       * Start the inline-diff review session for a surgical edit.
+       * Snapshots the current doc as the baseline, then runs
+       * `applyFn(tr)` to mutate the transaction with a precise change
+       * (e.g. replace one block, insert before a position, set a mark
+       * on a range). The plugin folds the resulting steps into the
+       * changeset, so decorations land exactly on the modified ranges
+       * — no whole-doc replacement.
+       *
+       * Use this for `replace_block` / `insert_block_before` /
+       * `delete_block` / `update_block_mark` AI ops. Returns false (no
+       * dispatch) when `applyFn` produced no doc change.
+       */
+      applySurgicalAiInlineDiff: (id: string, applyFn: (tr: Transaction) => void) => ReturnType
       /** Clear diff state. Current doc IS the accepted state. */
       acceptAiInlineDiff: () => ReturnType
       /** Revert doc to the captured baseline and clear diff state. */
@@ -136,6 +150,15 @@ export const AiInlineDiffExtension = Extension.create<AiInlineDiffExtensionOptio
         // schema enforces validity — if the slice doesn't fit, ProseMirror
         // throws (callers should pre-validate via `editor.schema`).
         tr.replaceRange(0, docEnd, newDocSlice)
+        const meta: StartMeta = { type: 'start', id, baseline }
+        tr.setMeta(aiInlineDiffPluginKey, meta)
+        if (dispatch) dispatch(tr)
+        return true
+      },
+      applySurgicalAiInlineDiff: (id, applyFn) => ({ tr, state, dispatch }) => {
+        const baseline = state.doc
+        applyFn(tr)
+        if (!tr.docChanged) return false
         const meta: StartMeta = { type: 'start', id, baseline }
         tr.setMeta(aiInlineDiffPluginKey, meta)
         if (dispatch) dispatch(tr)

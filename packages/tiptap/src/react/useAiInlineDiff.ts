@@ -33,6 +33,7 @@
 import { useEffect, useRef } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Slice } from '@tiptap/pm/model'
+import { useEditorState } from '@tiptap/react'
 import {
   registerPendingSuggestionApplier,
   usePendingSuggestionsForField,
@@ -40,6 +41,14 @@ import {
   type PendingSuggestionApplier,
 } from '@pilotiq/pilotiq/react'
 import { aiInlineDiffPluginKey } from '../extensions/AiInlineDiffExtension.js'
+import {
+  planReplaceBlock,
+  planInsertBlockBefore,
+  planDeleteBlock,
+  planUpdateBlockMark,
+  type BlockMarkRange,
+  type TransactionModifier,
+} from '../surgicalOps.js'
 
 export interface UseAiInlineDiffOptions {
   /**
@@ -64,18 +73,11 @@ export interface UseAiInlineDiffOptions {
  * `rejectAiInlineDiff` to revert the doc).
  */
 export function useIsAiInlineDiffActive(editor: Editor | null): boolean {
-  // Re-render on every editor transaction so the hook tracks state
-  // changes (start / accept / reject). useEditorState would be the
-  // idiomatic way; we read directly here to keep the dep surface tiny.
-  const [, force] = useReducerForceUpdate()
-  useEffect(() => {
-    if (!editor) return
-    const handler = () => force()
-    editor.on('transaction', handler)
-    return () => { editor.off('transaction', handler) }
-  }, [editor, force])
-  if (!editor) return false
-  return aiInlineDiffPluginKey.getState(editor.state) !== null
+  const active = useEditorState({
+    editor,
+    selector: ({ editor: ed }) => !!ed && aiInlineDiffPluginKey.getState(ed.state) !== null,
+  })
+  return active ?? false
 }
 
 export function useAiInlineDiff(
@@ -93,17 +95,31 @@ export function useAiInlineDiff(
   // suggestions.
   const startedRef = useRef<Set<string>>(new Set())
 
-  // Context → editor: start the diff for each new whole-field suggestion.
+  // Context → editor: start the diff for each new whole-field /
+  // surgical-block suggestion. `meta.surgical` (if present) routes to a
+  // precise PM transaction; otherwise we treat the suggested value as a
+  // whole-field replacement. `meta.editorRange` (chip path) is filtered
+  // out — handled by AiSuggestionExtension elsewhere.
   useEffect(() => {
     if (!editor) return
-    const wholeField = list.filter(s => !hasEditorRange(s))
-    for (const s of wholeField) {
+    const diffable = list.filter(s => !hasEditorRange(s))
+    for (const s of diffable) {
       if (startedRef.current.has(s.id)) continue
-      if (typeof s.suggestedValue !== 'string') continue
       // Bail when a different diff is already showing — one at a time.
       // Producer should serialize calls; if not, the second suggestion
       // sits in the queue until the first is approved/rejected.
       if (aiInlineDiffPluginKey.getState(editor.state) !== null) continue
+
+      const surgical = readSurgicalMeta(s)
+      if (surgical) {
+        const modifier = planSurgicalModifier(editor, surgical)
+        if (!modifier) continue
+        editor.commands.applySurgicalAiInlineDiff(s.id, modifier)
+        startedRef.current.add(s.id)
+        continue
+      }
+
+      if (typeof s.suggestedValue !== 'string') continue
       const slice = parseRef.current(editor, s.suggestedValue)
       if (!slice) continue
       editor.commands.startAiInlineDiff(s.id, slice)
@@ -137,10 +153,76 @@ function hasEditorRange(s: PendingSuggestion): boolean {
   return !!(range && typeof range.from === 'number' && typeof range.to === 'number')
 }
 
-// useReducer + dispatch is the smallest-API force-update primitive React
-// ships. Hoisted into a helper so the call site stays one line.
-import { useReducer } from 'react'
-function useReducerForceUpdate(): [number, () => void] {
-  const [n, inc] = useReducer((x: number) => (x + 1) | 0, 0)
-  return [n, () => inc()]
+/**
+ * Surgical op carried in `PendingSuggestion.meta.surgical`. The pilotiq-
+ * pro `update_form_state` client handler stamps this when the AI agent
+ * picks a block-level op instead of `set_value`.
+ *
+ * `content` is HTML for replace/insert ops, ignored otherwise. `mark` +
+ * `range` apply only to the mark op. Discriminated union; readers should
+ * narrow on `op`.
+ */
+type SurgicalMeta =
+  | { op: 'replace_block';       blockIndex: number; content: string }
+  | { op: 'insert_block_before'; blockIndex: number; content: string }
+  | { op: 'delete_block';        blockIndex: number }
+  | { op: 'update_block_mark';   blockIndex: number; mark: string; range: BlockMarkRange; apply: boolean; attrs?: Record<string, unknown> }
+
+function readSurgicalMeta(s: PendingSuggestion): SurgicalMeta | null {
+  const meta = (s.meta ?? {}) as Record<string, unknown>
+  const raw  = meta['surgical']
+  if (!raw || typeof raw !== 'object') return null
+  const obj  = raw as Record<string, unknown>
+  const op   = obj['op']
+  const blockIndex = obj['blockIndex']
+  if (typeof blockIndex !== 'number') return null
+  switch (op) {
+    case 'replace_block':
+    case 'insert_block_before': {
+      const content = obj['content']
+      if (typeof content !== 'string') return null
+      return { op, blockIndex, content }
+    }
+    case 'delete_block':
+      return { op, blockIndex }
+    case 'update_block_mark': {
+      const mark  = obj['mark']
+      const range = obj['range'] as { from?: unknown; to?: unknown } | undefined
+      const apply = obj['apply']
+      const attrs = obj['attrs']
+      if (typeof mark !== 'string') return null
+      if (!range || typeof range.from !== 'number' || typeof range.to !== 'number') return null
+      if (typeof apply !== 'boolean') return null
+      return {
+        op,
+        blockIndex,
+        mark,
+        range: { from: range.from, to: range.to },
+        apply,
+        ...(attrs && typeof attrs === 'object' ? { attrs: attrs as Record<string, unknown> } : {}),
+      }
+    }
+    default:
+      return null
+  }
+}
+
+function planSurgicalModifier(editor: Editor, surgical: SurgicalMeta): TransactionModifier | null {
+  switch (surgical.op) {
+    case 'replace_block':
+      return planReplaceBlock(editor, surgical.blockIndex, surgical.content)
+    case 'insert_block_before':
+      return planInsertBlockBefore(editor, surgical.blockIndex, surgical.content)
+    case 'delete_block':
+      return planDeleteBlock(editor, surgical.blockIndex)
+    case 'update_block_mark':
+      return planUpdateBlockMark(
+        editor,
+        surgical.blockIndex,
+        surgical.mark,
+        surgical.range,
+        surgical.apply,
+        surgical.attrs,
+      )
+  }
 }

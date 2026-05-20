@@ -39,6 +39,21 @@ export {
 } from './extensions/AiSuggestionExtension.js'
 export { useAiSuggestionBridge } from './react/useAiSuggestionBridge.js'
 export {
+  AiInlineDiffExtension,
+  aiInlineDiffPluginKey,
+  getAiInlineDiffState,
+  type AiInlineDiffExtensionOptions,
+} from './extensions/AiInlineDiffExtension.js'
+export {
+  planReplaceBlock,
+  planInsertBlockBefore,
+  planDeleteBlock,
+  planUpdateBlockMark,
+  summarizeBlockStructure,
+  type BlockMarkRange,
+  type TransactionModifier,
+} from './surgicalOps.js'
+export {
   renderRichTextToHtml,
   isRichTextValue,
   type RenderRichTextOptions,
