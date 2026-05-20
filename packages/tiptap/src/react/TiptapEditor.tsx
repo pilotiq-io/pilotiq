@@ -464,11 +464,17 @@ function ClientEditor(props: ClientEditorProps) {
   // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
   // extension. No-op when no provider is mounted (default no-op context).
   //
-  // Whole-field fallback: rare for RichTextField (chat-driven flows usually
+  // Whole-field handling: rare for RichTextField (chat-driven flows usually
   // emit range-anchored suggestions for richtext), but `update_form_state`
-  // can still arrive with `set_value` on a rich field — accept HTML / JSON
-  // / markdown via `setContent` so the visible content updates.
+  // can still arrive with `set_value` on a rich field. The chip widget
+  // renders over the whole doc for visualization; Approve routes through
+  // `onApplyWholeField` so `setContent` parses the new HTML / JSON
+  // correctly — the chip's plain-text replace would lose all formatting.
   useAiSuggestionBridge(editor ?? null, name, {
+    synthesizeWholeFieldRange: (ed) => ({
+      from: 0,
+      to:   ed.state.doc.content.size,
+    }),
     onApplyWholeField: (value) => {
       if (!editor || editor.isDestroyed) return
       editor.commands.setContent(value)

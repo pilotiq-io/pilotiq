@@ -32,7 +32,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && pnpm run bundle:markdown",
-    "bundle:markdown": "esbuild src/markdownExtension.ts --bundle --format=esm --outfile=dist/markdownExtension.js --external:@tiptap/* --sourcemap",
+    "bundle:markdown": "esbuild src/markdownExtension.ts --bundle --format=esm --outfile=dist/markdownExtension.js --external:@tiptap/* && rm -f dist/markdownExtension.js.map",
     "dev": "tsc -p tsconfig.build.json --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",

@@ -73,6 +73,19 @@ export function TextLikeInput({
   // names) skip the collab path and fall through to the controlled /
   // uncontrolled branches below.
   const fieldCollab = el['collab'] as boolean | undefined
+  // Auto-upgrade to the Tiptap-backed editor whenever the field has AI
+  // agents attached, even outside collab — the inline-diff chip widget
+  // (red strikethrough on the current value + green chip with the suggested
+  // text + ✓/✕) needs a real ProseMirror surface to render. The renderer
+  // handles `useCollabRoom() === null` cleanly (mounts the editor without
+  // the Yjs Collaboration extension), so this widening doesn't force a
+  // collab room.
+  //
+  // `field.ai([…])` from `@pilotiq-pro/ai` lands on `FieldMeta.aiActions`
+  // as a resolved `PilotiqAgentMeta[]`. Read the array; non-empty means
+  // "this field has AI surfaces wired".
+  const aiActions = el['aiActions']
+  const hasAi = Array.isArray(aiActions) && aiActions.length > 0
   const fragmentKey: string | null = (() => {
     if (!name.includes('.')) return name
     if (!rowCoords) return null
@@ -83,7 +96,7 @@ export function TextLikeInput({
     return `${rowCoords.arrayName}.${rowCoords.rowId}.${parsed.fieldName}`
   })()
   if (
-    room &&
+    (room || hasAi) &&
     collabRenderer &&
     fieldCollab !== false &&
     !hasMask &&

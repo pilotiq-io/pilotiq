@@ -79,20 +79,27 @@ export function FieldShell({ el, name, label, required, children, before, after,
   const fieldType = el['fieldType'] as string | undefined
   // `isTiptapMounted` widens "richtext only" to every field whose visible
   // surface is actually a Tiptap editor — covers MarkdownField (always
-  // Tiptap via `MarkdownEditor`) and TextField / TextareaField when a
-  // collab room is active (uses `CollabTextRenderer` via @pilotiq/tiptap).
-  // For these the editor renders inline-diff Approve/Reject chips and owns
-  // its own applier through `useAiSuggestionBridge` — FieldShell hides the
-  // legacy overlay AND skips registering its DOM-write applier so the
-  // bridge's applier stays last-write-wins.
+  // Tiptap via `MarkdownEditor`), TextField / TextareaField when a collab
+  // room is active OR when AI agents are attached (uses `CollabTextRenderer`
+  // via @pilotiq/tiptap). For these the editor renders inline-diff
+  // Approve/Reject chips and owns its own applier through
+  // `useAiSuggestionBridge` — FieldShell hides the legacy overlay AND skips
+  // registering its DOM-write applier so the bridge's applier stays
+  // last-write-wins.
+  //
+  // Keep the AI-attached branch in sync with `TextLikeInput`'s gate — both
+  // need to flip together or the surface diverges (overlay would mount
+  // alongside the inline chip, etc.).
   const collabRoom = useCollabRoom()
   const hasCollabTextRenderer = getCollabTextRenderer() !== null
   const hasMarkdownEditor = getMarkdownEditor() !== null
-  const isTextLikeCollab =
+  const aiActions = el['aiActions']
+  const hasAi = Array.isArray(aiActions) && aiActions.length > 0
+  const isTextLikeTiptap =
     (fieldType === 'text' || fieldType === 'textarea') &&
-    collabRoom !== null && hasCollabTextRenderer
+    (collabRoom !== null || hasAi) && hasCollabTextRenderer
   const isMarkdownTiptap = fieldType === 'markdown' && hasMarkdownEditor
-  const isRichText = fieldType === 'richtext' || isMarkdownTiptap || isTextLikeCollab
+  const isRichText = fieldType === 'richtext' || isMarkdownTiptap || isTextLikeTiptap
   // Field types that drive their visible state from React (not from a
   // matching `[name]` DOM input) register their own applier — see
   // `SelectFieldInput` for the canonical example. FieldShell's generic

@@ -90,6 +90,14 @@ export function useAiSuggestionBridge(
 
   // Set of ids this hook pushed; used by both directions for cycle control.
   const pushedRef = useRef<Set<string>>(new Set())
+  // Subset of `pushedRef` whose range was synthesized (no producer-supplied
+  // `meta.editorRange`). Approving these must NOT route through the chip's
+  // plain-text replace — that would clobber HTML / markdown formatting on
+  // rich editors. Instead the applier delegates to `onApplyWholeField`,
+  // which sets content via the renderer's content-shape-aware command
+  // (`setContent(plainTextToDoc(...))` / `setContent(markdownSrc)` /
+  // `setContent(html)`), then clears the chip without a doc edit.
+  const synthesizedRef = useRef<Set<string>>(new Set())
 
   // Context → editor.
   useEffect(() => {
@@ -101,15 +109,20 @@ export function useAiSuggestionBridge(
       const meta = (s.meta ?? {}) as Record<string, unknown>
       const rawRange = meta['editorRange'] as { from?: unknown; to?: unknown } | undefined
       let range: { from: number; to: number } | undefined
+      let isSynthesized = false
       if (rawRange && typeof rawRange.from === 'number' && typeof rawRange.to === 'number') {
         range = { from: rawRange.from, to: rawRange.to }
       } else {
         // Producer didn't supply a range — let the renderer synthesize one
-        // so the inline-diff chip widget can still render. Safe to skip
-        // when the renderer abstains (richtext / markdown — they'd lose
-        // formatting if the chip's plain-text replace approved them).
+        // so the inline-diff chip widget can still render. Renderers that
+        // can't safely round-trip a plain-text replace (richtext/markdown
+        // losing formatting on approve) STILL benefit by synthesizing for
+        // visualization — the applier below routes Approve through
+        // `onApplyWholeField` for synthesized ids instead of the chip's
+        // text-node replace.
         range = synthesizeRangeRef.current?.(editor, s)
         if (!range) continue
+        isSynthesized = true
       }
       const replacement = typeof s.suggestedValue === 'string' ? s.suggestedValue : ''
       editor.commands.addAiSuggestion({
@@ -120,6 +133,7 @@ export function useAiSuggestionBridge(
         ...(s.source ? { source: s.source } : {}),
       })
       pushedRef.current.add(s.id)
+      if (isSynthesized) synthesizedRef.current.add(s.id)
     }
 
     for (const id of Array.from(pushedRef.current)) {
@@ -128,6 +142,7 @@ export function useAiSuggestionBridge(
       // mutating the doc (rejectAiSuggestion drops state only).
       editor.commands.rejectAiSuggestion(id)
       pushedRef.current.delete(id)
+      synthesizedRef.current.delete(id)
     }
   }, [editor, list])
 
@@ -158,20 +173,30 @@ export function useAiSuggestionBridge(
   useEffect(() => {
     if (!editor) return
     const applier: PendingSuggestionApplier = (suggestion) => {
-      // Editor-range path — the bridge has pushed this id into the editor
-      // as an inline diff hunk. Forward Approve to the editor command; the
-      // transaction listener above mirrors the dismiss back into context.
-      if (pushedRef.current.has(suggestion.id)) {
+      const apply = onApplyWholeFieldRef.current
+      const hasSynthesized = synthesizedRef.current.has(suggestion.id)
+      const hasPushed      = pushedRef.current.has(suggestion.id)
+
+      // Synthesized whole-field range — the chip rendered for visualization,
+      // but routing Approve through the editor's `approveAiSuggestion` would
+      // do a plain-text replace and clobber HTML / markdown formatting.
+      // Delegate to the renderer-supplied applier (content-shape-aware)
+      // and clear the chip state without a doc edit.
+      if (hasSynthesized && apply && typeof suggestion.suggestedValue === 'string') {
+        apply(suggestion.suggestedValue)
+        editor.commands.rejectAiSuggestion(suggestion.id)
+        return
+      }
+      // Producer-supplied editor range — surgical edit. Forward Approve to
+      // the editor command; the transaction listener above mirrors the
+      // dismiss back into context.
+      if (hasPushed) {
         editor.chain().focus().approveAiSuggestion(suggestion.id).run()
         return
       }
-      // Whole-field path — the producer didn't supply `meta.editorRange`
-      // (e.g. `@pilotiq-pro/ai`'s `update_form_state` tool). Delegate to
-      // the renderer-supplied callback so the editor's content shape
-      // (plain text / markdown source / HTML) gets the right replacement.
-      // Context's `approve()` will dismiss the queue entry afterwards;
-      // we don't dismiss here.
-      const apply = onApplyWholeFieldRef.current
+      // Whole-field path WITHOUT visualization — producer skipped the range
+      // and the renderer didn't synthesize. Same applier as above, no chip
+      // to clear. Context's `approve()` dismisses the queue entry.
       if (apply && typeof suggestion.suggestedValue === 'string') {
         apply(suggestion.suggestedValue)
       }

@@ -248,11 +248,17 @@ export function MarkdownEditor({
   // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
   // extension. No-op when no provider is mounted (default no-op context).
   //
-  // Whole-field fallback: chat-driven suggestions (e.g. `update_form_state`)
-  // arrive without `meta.editorRange`. The Markdown extension parses
-  // markdown source on `setContent`, so passing the raw markdown string
-  // replaces the editor's doc in-place.
+  // Whole-field handling for chat-driven suggestions (e.g.
+  // `update_form_state`). The chip widget renders inline for visualization
+  // (synthesized range over the whole doc), but Approve routes through
+  // `onApplyWholeField` so the new markdown source parses correctly via
+  // the Markdown extension — the chip's plain-text replace would lose
+  // headings, lists, formatting.
   useAiSuggestionBridge(editor ?? null, name, {
+    synthesizeWholeFieldRange: (ed) => ({
+      from: 0,
+      to:   ed.state.doc.content.size,
+    }),
     onApplyWholeField: (value) => {
       if (!editor || editor.isDestroyed) return
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -66,32 +66,47 @@ export function CollabTextRenderer({
   }, [collabActive])
 
   const editor = useEditor(
-    createPlainTextEditor({
-      multiline,
-      ...(placeholder !== undefined ? { placeholder } : {}),
-      editable: !disabled,
-      // When Collaboration owns the doc, omit `content` so the editor
-      // doesn't race the y-prosemirror sync. The post-`synced` effect below
-      // seeds the fragment on first connect when it's still empty. When
-      // collab is off, seed from defaultValue directly.
-      content: collabActive ? '' : defaultValue,
-      // AI suggestions — always-on extension that tracks suggested edits as
-      // inline strikethrough + Approve/Reject chip widgets. Idle until the
-      // host calls `editor.commands.addAiSuggestion(...)` via the bridge below.
-      // Matches the `TiptapEditor` wiring so suggestion mode works uniformly
-      // across RichTextField / MarkdownField / TextField+TextareaField.
-      extensions: [...collabExtensions, AiSuggestionExtension],
-      onUpdate: (text) => onChange(text),
-      ...(onSubmit ? { onSubmit: () => { onSubmit(); return false } } : {}),
-      ...(className || editorAttributes
-        ? {
-            editorAttributes: {
-              ...(editorAttributes ?? {}),
-              ...(className ? { class: className } : {}),
-            },
-          }
-        : {}),
-    }),
+    {
+      // Tiptap v3 SSR guard. With `immediatelyRender: true` (default)
+      // `useEditor` touches the DOM during construction; under Vike's
+      // `onRenderHtml` that throws "SSR has been detected, please set
+      // `immediatelyRender` explicitly to `false` to avoid hydration
+      // mismatches." Deferring until the first React effect lets SSR
+      // produce an empty shell + hydration mount the live editor.
+      //
+      // Load-bearing for the AI-attached auto-upgrade path: with rule
+      // #2, AI fields render the Tiptap surface during SSR (where
+      // `useCollabRoom()` is null but `aiActions.length > 0` flips the
+      // host's gate). Without this flag the dev server would crash on
+      // the first SSR pass of any record-edit page touching AI fields.
+      immediatelyRender: false,
+      ...createPlainTextEditor({
+        multiline,
+        ...(placeholder !== undefined ? { placeholder } : {}),
+        editable: !disabled,
+        // When Collaboration owns the doc, omit `content` so the editor
+        // doesn't race the y-prosemirror sync. The post-`synced` effect below
+        // seeds the fragment on first connect when it's still empty. When
+        // collab is off, seed from defaultValue directly.
+        content: collabActive ? '' : defaultValue,
+        // AI suggestions — always-on extension that tracks suggested edits as
+        // inline strikethrough + Approve/Reject chip widgets. Idle until the
+        // host calls `editor.commands.addAiSuggestion(...)` via the bridge below.
+        // Matches the `TiptapEditor` wiring so suggestion mode works uniformly
+        // across RichTextField / MarkdownField / TextField+TextareaField.
+        extensions: [...collabExtensions, AiSuggestionExtension],
+        onUpdate: (text) => onChange(text),
+        ...(onSubmit ? { onSubmit: () => { onSubmit(); return false } } : {}),
+        ...(className || editorAttributes
+          ? {
+              editorAttributes: {
+                ...(editorAttributes ?? {}),
+                ...(className ? { class: className } : {}),
+              },
+            }
+          : {}),
+      }),
+    },
     // Re-mount when collab toggles. Other props (multiline, name, etc) are
     // stable per mount under the upstream gate.
     [collabActive],
