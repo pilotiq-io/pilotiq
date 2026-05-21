@@ -1,5 +1,45 @@
 # @pilotiq/tiptap
 
+## 3.8.0
+
+### Minor Changes
+
+- 7cbf610: feat(tiptap): auto-mode applier for surgical AI inline-diff ops
+
+  `useAiInlineDiff`'s registry applier now handles two paths:
+
+  1. **Review accept (existing).** Suggestion was already started via `startAiInlineDiff` / `applySurgicalAiInlineDiff`; approve runs `acceptAiInlineDiff()`.
+  2. **Auto-mode direct apply (new).** Suggestion arrives at the applier with `meta.surgical` but was never started (the producer bypassed the queue). The hook plans the same modifier the diff path uses and dispatches it as a plain transaction — no diff overlay, no Accept / Reject step.
+
+  Mirrors the existing `set_value` auto-mode behaviour, where the AI tool binding calls the applier directly with a synthesized suggestion to skip the review queue. Surgical ops in `Pilotiq.aiSuggestionsMode('auto')` now write through immediately instead of always waiting on the user.
+
+  Review-mode behaviour unchanged.
+
+- 374168b: feat(tiptap): cross-tool-call stacking for surgical AI inline-diff ops
+
+  When a surgical AI suggestion arrives while an inline-diff review is already active for the same field, `useAiInlineDiff` now folds the new op into the active diff instead of stalling the suggestion in the queue.
+
+  Previously: the second suggestion sat in the queue until the user approved or rejected the first, then started its own diff afterwards. Worse, if the user clicked Accept while two were pending, the banner's "approve all" path dismissed both queue entries even though only the first had been applied — the second was silently dropped.
+
+  Now: the new modifier dispatches as a plain transaction; the extension's plugin folds the resulting steps into the running changeset, so:
+
+  - The banner shows the combined count (`"N changes suggested"`).
+  - Decorations update to cover both ops' ranges.
+  - Accept commits the union, Reject reverts to the original baseline captured when the first suggestion started the diff — semantically "reject all pending suggested changes", matching the banner copy.
+
+  Whole-field (non-surgical) suggestions still bail when a diff is active — replacing the entire doc on top of an active review would be too disruptive. That gap (whole-field stacking + silent-drop) remains a known issue, deferred until a consumer hits it.
+
+- cabbcf3: feat(tiptap): surgical AI inline-diff ops now support markdown fields
+
+  `planReplaceBlock` and `planInsertBlockBefore` now auto-detect markdown editors by sniffing for the `tiptap-markdown` extension's `storage.markdown.parser`:
+
+  - **Richtext (`RichTextField` / `TiptapEditor`)** — unchanged. `content` is HTML and parses through `DOMParser.fromSchema(...).parseSlice(...)` directly.
+  - **Markdown (`MarkdownField` / `MarkdownEditor`)** — new. `content` is markdown source; the planner runs it through the markdown-it parser bundled with `tiptap-markdown` to produce HTML first, then parses that as a Slice.
+
+  Mirrors the same auto-detect strategy `MarkdownEditor.tsx` already uses for whole-field `parseSuggestion` callbacks, so surgical ops on markdown fields now share the same content-handling path as the existing whole-field replacement path.
+
+  Closes follow-up #4 of the surgical block ops shipped in `@pilotiq/tiptap@3.7.0`.
+
 ## 3.7.0
 
 ### Minor Changes
