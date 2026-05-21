@@ -51,6 +51,16 @@ export interface ModelQuery {
   paginate(page: number, perPage?: number): Promise<{ data: unknown[]; total: number }>
 
   /**
+   * Single-row `LIMIT 1` SELECT — Laravel-parity sibling of `paginate`
+   * for the "first matching row" case. Optional on the structural shape;
+   * the `@rudderjs/orm` `QueryBuilder` ships it, test stubs typically
+   * don't. Callers that need it should fall back to
+   * `(await q.paginate(1, 1)).data[0]` when absent — see `findRecord` /
+   * `loadSingularRecord` / `childBelongsToParent` for the pattern.
+   */
+  first?(): Promise<unknown | null>
+
+  /**
    * Plan #13 — soft-delete query scopes. Optional on the structural
    * shape; the `@rudderjs/orm-prisma` QueryBuilder ships them when
    * `Model.softDeletes = true`. Pilotiq's `TrashedFilter` checks for
@@ -192,7 +202,7 @@ export function modelLoadRecord(R: ResourceLike): LoadRecordHandler {
  * `Global` subclasses with `static model = M` set get this wired
  * automatically by `defaultGlobalEditPage`.
  *
- * Default strategy: paginate(1, 1) — i.e. "the first row". Pass
+ * Default strategy: `.first()` — i.e. the first matching row. Pass
  * `findSingular` to switch to a fixed-id lookup
  * (`(q) => q.where('id', '=', 1)`) or a slug-style lookup
  * (`(q) => q.where('key', '=', 'site')`).
@@ -208,6 +218,7 @@ export function loadSingularRecord(
   return async (): Promise<unknown> => {
     let q = M.query()
     if (opts?.findSingular) q = opts.findSingular(q)
+    if (q.first) return (await q.first()) ?? null
     const result = await q.paginate(1, 1)
     const data = (result?.data ?? []) as unknown[]
     return data[0] ?? null
@@ -234,7 +245,9 @@ export async function findRecord<T = unknown>(
   const M = R.model
   if (!M) return undefined
   const pk = getPrimaryKey(M)
-  const result = await R.query(ctx).where(pk, '=', id).paginate(1, 1)
+  const q = R.query(ctx).where(pk, '=', id)
+  if (q.first) return ((await q.first()) ?? undefined) as T | undefined
+  const result = await q.paginate(1, 1)
   const data = (result?.data ?? []) as unknown[]
   return data[0] as T | undefined
 }

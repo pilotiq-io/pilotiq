@@ -193,7 +193,9 @@ async function childBelongsToParent(
     const q: ModelQuery = (parentModel.relatedQuery
       ? parentModel.relatedQuery(parent, relationship)
       : (parent as { related: (n: string) => ModelQuery }).related(relationship))
-    const result = await q.where(childPk, '=', childId).paginate(1, 1)
+      .where(childPk, '=', childId)
+    if (q.first) return (await q.first()) !== null
+    const result = await q.paginate(1, 1)
     return result.total > 0
   } catch {
     return false
