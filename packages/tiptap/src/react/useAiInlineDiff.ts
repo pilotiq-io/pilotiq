@@ -95,6 +95,22 @@ export function useAiInlineDiff(
   // suggestions.
   const startedRef = useRef<Set<string>>(new Set())
 
+  // Re-evaluate the suggestion queue when the editor's doc shape
+  // changes. Specifically guards against the seed race: collab-enabled
+  // markdown/richtext editors mount empty and seed their content
+  // asynchronously after the Yjs provider syncs. A suggestion arriving
+  // during that window (or before the first user keystroke) sees an
+  // empty doc, `planReplaceBlock` returns null for any blockIndex >= 1,
+  // the effect bails — and never re-runs because `list` hasn't changed
+  // and React doesn't track ProseMirror's doc state. Watching
+  // `doc.childCount` flips the diff-start effect from "ran once at
+  // suggestion-push time" to "re-runs when the doc reaches usable
+  // shape," which closes the silent no-preview gap.
+  const childCount = useEditorState({
+    editor,
+    selector: ({ editor: ed }) => ed?.state.doc.childCount ?? 0,
+  }) ?? 0
+
   // Context → editor: start the diff for each new whole-field /
   // surgical-block suggestion. `meta.surgical` (if present) routes to a
   // precise PM transaction; otherwise we treat the suggested value as a
@@ -159,7 +175,7 @@ export function useAiInlineDiff(
     for (const id of Array.from(startedRef.current)) {
       if (!contextIds.has(id)) startedRef.current.delete(id)
     }
-  }, [editor, list])
+  }, [editor, list, childCount])
 
   // Cross-tree applier — two paths:
   //
