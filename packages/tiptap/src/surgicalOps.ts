@@ -34,15 +34,35 @@ function blockStartPos(doc: ProseMirrorNode, blockIndex: number): number | null 
 }
 
 /**
- * Parse an HTML fragment into a doc-replaceable Slice. Uses the
- * editor's own schema so block types unknown to the schema fail loudly
- * rather than silently degrading.
+ * Parse content into a doc-replaceable Slice against the editor's
+ * schema. Auto-detects markdown editors by sniffing for the
+ * `tiptap-markdown` extension's `storage.markdown.parser`: if present,
+ * the editor is a `MarkdownEditor` and AI-supplied `content` is
+ * markdown source — run it through the markdown parser to produce
+ * HTML first. Otherwise content is HTML (the `RichTextField` /
+ * `TiptapEditor` path).
  *
- * Returns `null` when DOM isn't available (SSR — shouldn't happen here,
- * but keeps the planner safe).
+ * Mirrors the same auto-detect strategy `MarkdownEditor.tsx` uses for
+ * its `parseSuggestion` whole-field callback (see `useAiInlineDiff`),
+ * so surgical ops on markdown fields stay consistent with the
+ * existing whole-field replacement path.
+ *
+ * Returns `null` when DOM isn't available (SSR — shouldn't happen
+ * here, but keeps the planner safe) or when the markdown parser
+ * throws / returns a non-string (malformed content).
  */
-function parseHtmlToSlice(editor: Editor, html: string): ReturnType<typeof PMDOMParser.prototype.parseSlice> | null {
+function parseContentToSlice(editor: Editor, content: string): ReturnType<typeof PMDOMParser.prototype.parseSlice> | null {
   if (typeof document === 'undefined') return null
+  let html = content
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mdParser = (editor.storage as any)?.markdown?.parser
+  if (mdParser && typeof mdParser.parse === 'function') {
+    try {
+      const parsed: unknown = mdParser.parse(content)
+      if (typeof parsed !== 'string') return null
+      html = parsed
+    } catch { return null }
+  }
   const container = document.createElement('div')
   container.innerHTML = html
   return PMDOMParser.fromSchema(editor.schema).parseSlice(container)
@@ -50,7 +70,9 @@ function parseHtmlToSlice(editor: Editor, html: string): ReturnType<typeof PMDOM
 
 /**
  * Replace the top-level block at `blockIndex` with the parsed content.
- * Caller-supplied `content` is HTML — multiple top-level nodes are
+ * `content` is HTML for `RichTextField` (Tiptap) editors and markdown
+ * source for `MarkdownField` (markdown-extension) editors —
+ * auto-detected by `parseContentToSlice`. Multiple top-level nodes are
  * allowed and will all land where the original block was.
  */
 export function planReplaceBlock(
@@ -61,16 +83,17 @@ export function planReplaceBlock(
   const doc = editor.state.doc
   const start = blockStartPos(doc, blockIndex)
   if (start === null) return null
-  const slice = parseHtmlToSlice(editor, content)
+  const slice = parseContentToSlice(editor, content)
   if (!slice) return null
   const end = start + doc.child(blockIndex).nodeSize
   return (tr) => { tr.replace(start, end, slice) }
 }
 
 /**
- * Insert one or more top-level nodes (parsed from `content` HTML)
- * before the block at `blockIndex`. `blockIndex === doc.childCount`
- * appends at the end.
+ * Insert one or more top-level nodes before the block at `blockIndex`.
+ * `content` is HTML on `RichTextField` editors and markdown source on
+ * `MarkdownField` editors — auto-detected by `parseContentToSlice`.
+ * `blockIndex === doc.childCount` appends at the end.
  */
 export function planInsertBlockBefore(
   editor:     Editor,
@@ -79,7 +102,7 @@ export function planInsertBlockBefore(
 ): TransactionModifier | null {
   const doc = editor.state.doc
   if (!Number.isInteger(blockIndex) || blockIndex < 0 || blockIndex > doc.childCount) return null
-  const slice = parseHtmlToSlice(editor, content)
+  const slice = parseContentToSlice(editor, content)
   if (!slice) return null
   let pos = 0
   for (let i = 0; i < blockIndex; i++) pos += doc.child(i).nodeSize
