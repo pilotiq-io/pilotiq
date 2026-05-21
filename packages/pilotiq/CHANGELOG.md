@@ -1,5 +1,93 @@
 # @pilotiq/pilotiq
 
+## 0.22.0
+
+### Minor Changes
+
+- 89a9101: feat(collab): consume `@rudderjs/sync/react`'s collab-room lifecycle via `useCollabSeed` (Phase 6d of the code-quality sweep)
+
+  The same `provider.once('synced', …)` + empty-fragment seed dance was duplicated across four pilotiq adapters (`TiptapEditor`, `MarkdownEditor`, `CollabTextRenderer`, `CollabCodeMirrorEditor`) and `@pilotiq-pro/collab`'s `useRecordCollabRoom`. `@rudderjs/sync@1.2.0` shipped `@rudderjs/sync/react` with `CollabRoomManager` (cancellation-safe, idempotent stop, optional `y-indexeddb`); this PR threads its synced Promise through pilotiq's open-core `CollabRoom` so adapters can consume the consolidated seed-gate via `useCollabSeed`.
+
+  **`@pilotiq/pilotiq` (minor — new public API + widened `CollabRoom` shape, both additive)**
+
+  - `CollabRoom` interface widened with two optional fields:
+    - `synced?: Promise<void>` — resolves on the provider's first sync. Stamped by `@pilotiq-pro/collab@>=0.2`'s `<RecordCollabRoom>`; absent for legacy / hand-rolled providers.
+    - `persistence?: unknown` — `y-indexeddb` handle, opaque to pilotiq core. Present when the room owner wired offline persistence; absent otherwise.
+  - New `useCollabSeed(room, fragmentKey, seedFn)` hook (re-exported from `@pilotiq/pilotiq/react`). Mirrors `@rudderjs/sync/react`'s shape — reimplemented locally so pilotiq core stays free of any hard runtime dep on Yjs. Waits for `room.synced` to resolve, wraps `seedFn` in `ydoc.transact(..., 'pilotiq-collab-seed')`. Consumers manage their own share-type lookup (`doc.getXmlFragment(key)` for Tiptap; `doc.getText(key)` for CodeMirror) and emptiness check, since the share type varies per adapter and pilotiq's `CollabRoom.ydoc` stays `unknown`.
+  - `onProviderSynced` is unchanged and still exported for back-compat — legacy rooms without `.synced` short-circuit through `useCollabSeed` immediately (seeded=true with no callback fired), so any adapter still calling `onProviderSynced` keeps working unchanged.
+
+  **`@pilotiq/tiptap` (patch — internal migration, no public-surface change)**
+
+  `TiptapEditor`, `MarkdownEditor`, and `CollabTextRenderer` each dropped their inline `useEffect(() => onProviderSynced(provider, trySeed), [editor, collabActive, room])` block in favour of one `useCollabSeed(editor && collabActive ? room : null, collabName, seedFn)`. The shape of the seed (Y.XmlFragment empty-check + `editor.commands.setContent(initialContent)` via the y-prosemirror binding) is unchanged. Roughly −40 LOC per file; the `hasSeeded` `useState` slots are gone (the hook owns dedup).
+
+  **`@pilotiq/codemirror` (patch — internal migration, additive prop)**
+
+  - New optional `synced?: Promise<void> | null` prop on `CollabCodeMirrorEditor`. Threaded from the wrapper in `CodeMirrorEditor.tsx`'s `<CollabBranch>` so the renderer can gate the brand-new-record Y.Text seed on the same Promise.
+  - Seed logic moved out of the EditorView mount effect to a top-level `useCollabSeed` call. The mount-time pre-seed (`EditorState.create({ doc: yText.toString(), ... })`) is unchanged — that path handles re-mount onto a yText that already has content (e.g. `renameRow` clones); the post-sync seed handles brand-new records where the share is empty after first sync.
+  - `onProviderSynced` + `SyncedProviderLike` no longer imported. The `synced` prop is optional with `null` default — passing nothing falls back to seeding immediately, matching the legacy `onProviderSynced(null, …)` no-op posture.
+
+  No wire-protocol changes. The race window (two peers mounting against a brand-new record may both see "empty" + seed) is unchanged from the prior `onProviderSynced` path; the fix is server-side seed handoff, deferred.
+
+  Coverage: existing tests pass unchanged (tiptap 183/183, codemirror 22/22, pilotiq monorepo typecheck 9/9). Dual-browser smoke via the existing `pilotiq-pro/e2e/collab` Playwright suite gates the actual sync behaviour.
+
+- bf429a1: refactor(theme): decouple theme override persistence behind a `ThemeStorageAdapter`
+
+  `PilotiqServiceProvider` and the theme editor's PUT/DELETE routes used to hard-code Prisma — `app.make('prisma') as any` + `prisma.panelGlobal.{findUnique,upsert,delete}` — which broke the ORM-agnostic story (`@rudderjs/orm` works fine on Drizzle) and put the only non-test `as any` in the codebase in a hot path. The bare `catch {}` around the boot-time load also swallowed real misconfiguration (misnamed `panelGlobal` schema, Prisma client not connecting) as silently as it swallowed "no overrides persisted yet".
+
+  This release introduces a `ThemeStorageAdapter` interface — `{ load(), save(overrides), clear() }` — and a `prismaThemeStorage(prisma, { slug })` factory. Pass an explicit adapter via the new `themeEditor({ storage })` option:
+
+  ```ts
+  import { themeEditor, prismaThemeStorage } from "@pilotiq/pilotiq/plugins";
+
+  Pilotiq.make("Admin").use(
+    themeEditor({
+      storage: prismaThemeStorage(prisma, { slug: "admin__theme" }),
+    })
+  );
+  ```
+
+  Apps on Drizzle, a KV store, or filesystem JSON can implement the three methods themselves; the panel only cares about the adapter shape.
+
+  **Back-compat / deprecation.** Calling `themeEditor()` without `storage` still works for one minor cycle: the service provider falls back to the implicit Prisma adapter at boot, logs a one-time deprecation warning naming the panel, and proceeds as before. The fallback branch will be removed in a future minor — pass `storage` explicitly to silence the warning. Explicit adapters propagate errors normally; the implicit fallback continues to swallow connection / schema errors for back-compat.
+
+  Tests: new `theme/storage.test.ts` covers the Prisma adapter round-trip (load / save / clear + P2025 "row not found" tolerance + non-P2025 error propagation) and `plugins/themeEditor.test.ts` confirms the option wires the adapter onto the panel.
+
+### Patch Changes
+
+- 67aadbd: fix(security): enforce `Pilotiq.guard()` on every panel route via `router.group()`
+
+  `Pilotiq.guard()` is documented as the 401 layer, but until now the guard callback was only consulted on the `_uploads` route. Every other panel route — list / view / create / edit / delete / `_action` / `_widget` / `_form` / `_table` / `_search`, relation managers, custom pages, theme editor — relied on `cfg.user` returning null + each Resource's `canX(user, …)` defaulting to true.
+
+  An app that wired `Pilotiq.guard(req => Auth.check())` but shipped any Resource without `canAccess` overrides could expose an unauthenticated, fully-readable admin panel. The intent was documented; the wiring was not there.
+
+  Fix: wrap every core panel route registration in one `router.group({ middleware: [guardMiddleware] }, …)` call. The guard now runs in front of every handler. Removed the redundant inline guard inside `handleUploadRequest` — the group middleware fires first and the inline check would just double-fire. Plugin routes registered via `plugin.registerRoutes?.(router, pilotiq)` mount OUTSIDE the group; plugins own their own auth posture (public webhooks etc) and should consult `cfg.guard` themselves at handler entry if they want the panel guard.
+
+  Regression coverage: new `src/routes/guard.test.ts` iterates `router.list()` across a panel touching every register branch (resources + relation managers + globals + custom pages + clusters + theme editor + database notifications) and asserts each route 401s on `guard(() => false)` and reaches its handler on `guard(() => true)`.
+
+- f75aa7d: perf: bundle of hot-path wins (Phase 5 of the code-quality sweep)
+
+  Four independent perf changes that share a release because they're each small and orthogonal. None of these were bottlenecks today; the cost rises around ~50 resources or ~10K imported rows.
+
+  - **5a — Chunked `Action.import`.** `runImport` used to walk rows serially: 5–10ms per round-trip × 10K rows × 2 round-trips for upsert mode adds up to ~100s of pinned request time. Each row now processes through a chunked `Promise.all` (default `concurrency: 10`). Per-row order within a chunk is non-deterministic; row indices in `summary.errors` still match the original CSV/JSON position. Tunable via `Action.import({ concurrency })`.
+
+  - **5b — Per-user navigation-badge TTL cache.** Every page render used to re-resolve every `R.navigationBadge()` / `G.navigationBadge()` / `C.navigationBadge()`. A panel with 20 resources each calling `Model.count()` for the badge was 20+ extra queries on every nav. Cache lives on the `Pilotiq` instance, keyed by `(ownerName, userIdentity)`, default TTL 30s. Configurable via `Pilotiq.navigationBadgeTtl(ms)` — pass `0` to disable, `null` to restore the default. User identity sniffs `user.id` (the 99% case for app-supplied users), falls back to JSON.stringify; anonymous requests share one slot.
+
+  - **5c — Map-indexed slug lookup.** `cfg.resources.find(r => r.getSlug() === slug)` and its siblings were called 16+ times per request across the page-data builders. New `pilotiq.findResource(slug)` / `findGlobal(slug)` / `findPage(slug)` accessors build a lazy `Map<slug, Class>` on first call and invalidate when the matching builder method (`.resources([…])` / `.globals([…])` / `.pages([…])` / `.dashboard(P)` / `.profile(P)`) mutates the array. O(n) → O(1) per lookup; measurable around 100+ resources.
+
+  - **5d — Parallel policy gates.** ~32 route handlers paired `await policyAccess(R, user)` with `await checkPolicy(() => R.canViewAny(user))` (or `canCreate` / `canEdit(user, undefined)` / `canView(user, undefined)`) serially. New `policyGate(owner, user, predicate)` helper composes both via `Promise.all`. Record-dependent predicates (e.g. `canEdit(user, record)` where `record` is loaded mid-handler) stay sequential — those calls weren't touched. The helper fail-closes on either branch throwing, matching the prior semantics.
+
+  Coverage: new `Pilotiq.perf.test.ts` covers the 5a/5b/5c surfaces (chunking + index preservation, TTL hit/miss + invalidation paths, Map invalidation across all setter sites). 5d is exercised by the existing authorization / routes tests — the contract is unchanged.
+
+  No public-surface changes beyond the three new opt-in accessors. Existing routes / callers keep working with their prior shape; the chunking + caching default-on behavior swaps in transparently.
+
+- 15661ec: perf(orm): use `.first()` over `paginate(1, 1)` for single-row lookups
+
+  Three internal callsites — `loadSingularRecord`, `findRecord`, and the relation `childBelongsToParent` IDOR check — were hand-rolling "first matching row" as `paginate(1, 1)` then reading `result.data[0]`. The rudder ORM (and most Laravel-style query builders) ship `.first()` for this case; `paginate(1, 1)` builds + executes a COUNT query plus the data query, where `.first()` is a single `LIMIT 1` SELECT.
+
+  Added an optional `first?(): Promise<unknown | null>` to the structural `ModelQuery` shape (same pattern as `withTrashed?` / `whereGroup?` / `whereNull?`). Callsites use it when present, fall back to the existing `paginate(1, 1)` shape when absent — so test stubs and user-supplied `ModelLike` implementations don't have to update. The rudder `QueryBuilder` ships it; production paths get a ~half-RTT win on every record edit / view / Global page render / relation-edit IDOR check, with zero behaviour change.
+
+  No public API change. Existing tests cover both branches.
+
 ## 0.21.0
 
 ### Minor Changes
