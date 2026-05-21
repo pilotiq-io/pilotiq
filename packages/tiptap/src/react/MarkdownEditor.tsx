@@ -152,6 +152,7 @@ const SvgIcons: Record<string, React.ReactElement> = {
  */
 export function MarkdownEditor({
   name,
+  fragmentKey,
   defaultValue,
   placeholder,
   disabled = false,
@@ -168,6 +169,13 @@ export function MarkdownEditor({
   const factory = getCollabExtensions()
   const collabActive = !!(room && factory)
 
+  // Collab-stable identifier — same `name` (the FormData/AI routing
+  // name) on top-level fields, but the row-id-anchored composite on
+  // Repeater/Builder row leaves so the Y.XmlFragment survives row
+  // reorders. AI suggestion routing + hidden input + banner stay on
+  // `name` — they don't care about reorder stability.
+  const collabName = fragmentKey ?? name
+
   const [tab, setTab] = useState<'editor' | 'source' | 'preview'>('editor')
   const [sourceDraft, setSourceDraft] = useState<string>(defaultValue)
   const [uploading, setUploading] = useState(false)
@@ -181,7 +189,7 @@ export function MarkdownEditor({
     return factory({
       ydoc:      room.ydoc,
       provider:  room.provider,
-      fieldName: name,
+      fieldName: collabName,
       ...(room.user ? { user: room.user } : {}),
     }) as AnyExtension[]
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -311,7 +319,7 @@ export function MarkdownEditor({
 
     const trySeed = (): void => {
       try {
-        const fragment = ydoc.getXmlFragment(name)
+        const fragment = ydoc.getXmlFragment(collabName)
         if (fragment && fragment.length === 0 && defaultValue) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const cmd = (editor.commands as any).setContent

@@ -75,16 +75,17 @@ export function MarkdownInput({
   // BOTH the legacy non-collab textarea path AND the prior collab plain-text
   // path with a single rich editor that handles WYSIWYG editing, markdown
   // serialization, and collab binding (via its own `useCollabRoom()` read)
-  // internally. Row leaves pass the composite key as `collabKey` so the
-  // editor's collab factory anchors against the stable name while the
-  // hidden input + form-state keep using the original dotted path for
-  // submit routing.
+  // internally. Row leaves pass the composite key as `fragmentKey` so the
+  // editor's collab factory anchors against the stable name while `name`
+  // (the dotted positional path) drives the hidden input, form-state, AND
+  // AI suggestion routing — AI tool calls reference fields by their
+  // FormData name, not their collab-stable composite.
   if (markdownEditor && fragmentKey !== null) {
     return (
       <MarkdownEditorHost
         Editor={markdownEditor}
         name={name}
-        {...(fragmentKey !== name ? { collabKey: fragmentKey } : {})}
+        {...(fragmentKey !== name ? { fragmentKey } : {})}
         defaultValue={defaultValue}
         disabled={disabled}
         {...(placeholder !== undefined ? { placeholder } : {})}
@@ -501,7 +502,7 @@ function stringValue(v: unknown): string {
  * input so submit picks it up unchanged.
  */
 function MarkdownEditorHost({
-  Editor, name, collabKey, defaultValue, disabled, placeholder,
+  Editor, name, fragmentKey, defaultValue, disabled, placeholder,
   toolbarButtons, minHeight, maxHeight,
   fileAttachmentsDirectory, fileAttachmentsVisibility, uploadUrl,
 }: {
@@ -509,9 +510,11 @@ function MarkdownEditorHost({
   name:                       string
   // Distinct from `name` only inside Repeater/Builder rows: the dotted
   // form-input name (`items.0.body`) is unstable across reorders, so the
-  // editor's collab factory needs a row-id-anchored key. Defaults to
-  // `name` when unset (top-level fields).
-  collabKey?:                 string
+  // editor binds its `Y.XmlFragment` under this row-id-anchored key
+  // instead. AI hooks, hidden input, and the inline-diff banner still
+  // use `name` — they route by FormData identity, not collab identity.
+  // Defaults to `name` when unset (top-level fields).
+  fragmentKey?:               string
   defaultValue:               unknown
   disabled:                   boolean
   placeholder?:               string
@@ -537,7 +540,8 @@ function MarkdownEditorHost({
     <>
       <input type="hidden" name={name} value={text} readOnly />
       <Editor
-        name={collabKey ?? name}
+        name={name}
+        {...(fragmentKey !== undefined ? { fragmentKey } : {})}
         defaultValue={initial}
         disabled={disabled}
         {...(placeholder !== undefined ? { placeholder } : {})}

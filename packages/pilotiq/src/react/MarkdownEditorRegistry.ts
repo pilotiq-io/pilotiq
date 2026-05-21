@@ -27,9 +27,29 @@ import type { ComponentType } from 'react'
  * stays identical to the textarea path.
  */
 export interface MarkdownEditorProps {
-  /** Field name — drives the hidden form-input name AND the
-   * `Y.XmlFragment` selector when collab is active. */
+  /**
+   * Field name — drives the FormData hidden input AND the routing key
+   * for AI suggestion delivery, applier registry, and the inline-diff
+   * banner. For Repeater / Builder row leaves this is the dotted
+   * positional path (`items.0.body`).
+   */
   name: string
+  /**
+   * Collab-stable identifier for the `Y.XmlFragment` selector. When
+   * present, the editor binds its collab fragment under this key
+   * instead of `name`. Row leaves pass a row-id-anchored composite
+   * (`items.<rowId>.body`) so the fragment survives reorders even as
+   * the dotted positional `name` shifts. Top-level fields omit it —
+   * `name` is stable on its own, so the fragment key tracks it
+   * directly.
+   *
+   * AI suggestion routing and the FormData hidden input continue to
+   * use `name`. The two concerns are intentionally separated: AI tool
+   * calls reference fields by their positional FormData name (what
+   * the agent sees), while collab needs a key that doesn't churn
+   * when rows reorder.
+   */
+  fragmentKey?: string
   /**
    * Server-rendered default value (raw markdown string). The renderer parses
    * this into the editor's initial document. When collab is active and the
