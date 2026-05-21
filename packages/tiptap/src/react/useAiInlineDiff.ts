@@ -105,12 +105,39 @@ export function useAiInlineDiff(
     const diffable = list.filter(s => !hasEditorRange(s))
     for (const s of diffable) {
       if (startedRef.current.has(s.id)) continue
-      // Bail when a different diff is already showing — one at a time.
-      // Producer should serialize calls; if not, the second suggestion
-      // sits in the queue until the first is approved/rejected.
-      if (aiInlineDiffPluginKey.getState(editor.state) !== null) continue
+      const diffActive = aiInlineDiffPluginKey.getState(editor.state) !== null
+      const surgical   = readSurgicalMeta(s)
 
-      const surgical = readSurgicalMeta(s)
+      // Cross-tool-call surgical stacking. When a diff is already active
+      // and a fresh surgical suggestion arrives (typically the model
+      // emitted a second `update_form_state` tool call instead of
+      // batching ops in one), fold the new modifier into the active
+      // diff. We dispatch a plain transaction with no extension meta;
+      // the plugin's existing "no explicit meta + tr.docChanged" branch
+      // adds the steps to the running changeset, so decorations update
+      // to cover both ops' ranges and the banner shows the combined
+      // count. Accept commits the union, Reject reverts to the same
+      // baseline captured when the FIRST suggestion started the diff —
+      // semantically "reject all pending suggested changes", which
+      // matches the banner copy.
+      //
+      // Whole-field suggestions still bail when a diff is active —
+      // dropping a fresh slice on top of an active review is too
+      // disruptive (it'd swap the entire doc mid-review).
+      if (diffActive) {
+        if (!surgical) continue
+        const modifier = planSurgicalModifier(editor, surgical)
+        if (!modifier) continue
+        editor.commands.command(({ tr, dispatch }) => {
+          modifier(tr)
+          if (!tr.docChanged) return false
+          if (dispatch) dispatch(tr)
+          return true
+        })
+        startedRef.current.add(s.id)
+        continue
+      }
+
       if (surgical) {
         const modifier = planSurgicalModifier(editor, surgical)
         if (!modifier) continue
