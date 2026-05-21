@@ -36,6 +36,7 @@ import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
  */
 export function CollabTextRenderer({
   name,
+  fragmentKey,
   multiline,
   defaultValue,
   placeholder,
@@ -50,6 +51,15 @@ export function CollabTextRenderer({
   const factory = getCollabExtensions()
   const collabActive = !!(room && factory)
 
+  // Collab-stable identifier — `name` on top-level fields, but the
+  // row-id-anchored composite (`items.<rowId>.title`) on Repeater /
+  // Builder row leaves so the Y.XmlFragment survives reorders. Routes
+  // ONLY into the collab branches (factory + first-load seed); AI
+  // suggestion bridge + onChange + hidden FormData input stay on
+  // `name` (the positional FormData path) so AI tool calls referencing
+  // the field by its FormData name still reach the editor.
+  const collabName = fragmentKey ?? name
+
   // Built once per editor mount. The factory closes over the room's `ydoc`
   // + `provider` and the field name to produce a `Collaboration` (and
   // optional `CollaborationCursor`) extension targeting the field's
@@ -59,7 +69,7 @@ export function CollabTextRenderer({
     return factory({
       ydoc:      room.ydoc,
       provider:  room.provider,
-      fieldName: name,
+      fieldName: collabName,
       ...(room.user ? { user: room.user } : {}),
     }) as Extension[]
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,7 +175,7 @@ export function CollabTextRenderer({
 
     const trySeed = (): void => {
       try {
-        const fragment = ydoc.getXmlFragment(name)
+        const fragment = ydoc.getXmlFragment(collabName)
         if (fragment && fragment.length === 0 && defaultValue) {
           editor.commands.setContent(plainTextToDoc(defaultValue, multiline))
         }

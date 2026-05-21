@@ -24,8 +24,26 @@ import type { ComponentType } from 'react'
  * keeps the seam narrow: handler callbacks + DOM chrome only.
  */
 export interface CollabTextRendererProps {
-  /** Field name — drives the `Y.XmlFragment` selector inside the collab adapter. */
+  /**
+   * Field name — drives the FormData hidden input AND the routing key
+   * for AI suggestion delivery (chip widget, applier registry). For
+   * Repeater / Builder row leaves this is the dotted positional path
+   * (`items.0.title`).
+   */
   name: string
+  /**
+   * Collab-stable identifier for the `Y.XmlFragment` selector. When
+   * present, the renderer binds its collab fragment under this key
+   * instead of `name`. Row leaves pass a row-id-anchored composite
+   * (`items.<rowId>.title`) so the fragment survives reorders even
+   * as the dotted positional `name` shifts. Top-level fields omit
+   * it — `name` is stable on its own.
+   *
+   * AI suggestion routing continues to use `name` regardless. Tool
+   * calls reference fields by their positional FormData name, not
+   * the collab-stable composite.
+   */
+  fragmentKey?: string
   /** `true` for textarea-like (multiple paragraphs); `false` for input-like. */
   multiline: boolean
   /**

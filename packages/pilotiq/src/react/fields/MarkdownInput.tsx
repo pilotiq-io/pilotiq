@@ -463,7 +463,8 @@ function MarkdownCollabInput({
         <div style={wrapperStyle} className="overflow-auto">
           <input type="hidden" name={hiddenInputName} value={text} />
           <Renderer
-            name={fragmentKey}
+            name={hiddenInputName}
+            {...(fragmentKey !== hiddenInputName ? { fragmentKey } : {})}
             multiline={true}
             defaultValue={initial}
             {...(placeholder !== undefined ? { placeholder } : {})}

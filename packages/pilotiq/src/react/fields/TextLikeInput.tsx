@@ -233,7 +233,8 @@ function CollabTextField({
     <>
       <input type="hidden" name={hiddenInputName} value={text} />
       <Renderer
-        name={fragmentKey}
+        name={hiddenInputName}
+        {...(fragmentKey !== hiddenInputName ? { fragmentKey } : {})}
         multiline={multiline}
         defaultValue={defaultValue}
         {...(placeholder !== undefined ? { placeholder } : {})}
