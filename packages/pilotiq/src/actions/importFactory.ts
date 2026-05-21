@@ -65,6 +65,11 @@ export interface ImportOptions {
    *  exceeded — protects against accidental million-row uploads. Default
    *  `10_000`. */
   maxRows?: number
+  /** Number of rows to process in parallel. The importer chunks the row
+   *  list into batches of this size and runs each chunk via `Promise.all`.
+   *  Order within a chunk is non-deterministic; row indices in error
+   *  messages still match the original CSV/JSON position. Default `10`. */
+  concurrency?: number
   /** Final hook after the import loop. Useful for audit-log writes,
    *  cache invalidation, etc. Async-aware. */
   onComplete?: (summary: ImportSummary, ctx: ImportContext) => void | Promise<void>
@@ -123,16 +128,21 @@ export async function runImport(
 ): Promise<ImportSummary> {
   const summary: ImportSummary = { created: 0, updated: 0, skipped: 0, errors: [] }
   const upsertBy = opts.upsertBy
+  const concurrency = Math.max(1, opts.concurrency ?? 10)
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i]!
+  // Per-row outcome — a small value type so chunks can resolve in any
+  // order and we still accumulate `summary` in original-row order.
+  type RowOutcome =
+    | { kind: 'created' }
+    | { kind: 'updated' }
+    | { kind: 'skipped'; row: number; message: string }
+
+  async function processRow(row: Record<string, unknown>, i: number): Promise<RowOutcome> {
     const rowCtx: ImportContext = { ...ctx, rowIndex: i }
     try {
       const guard = await opts.validate?.(row, rowCtx)
       if (typeof guard === 'string' && guard.length > 0) {
-        summary.skipped++
-        summary.errors.push({ row: i + 1, message: guard })
-        continue
+        return { kind: 'skipped', row: i + 1, message: guard }
       }
 
       if (mode === 'upsert' && upsertBy) {
@@ -144,8 +154,7 @@ export async function runImport(
             ? await opts.beforeUpdate(row, existing, rowCtx)
             : row
           await M.update(id, payload)
-          summary.updated++
-          continue
+          return { kind: 'updated' }
         }
       }
 
@@ -153,10 +162,22 @@ export async function runImport(
         ? await opts.beforeCreate(row, rowCtx)
         : row
       await M.create(payload)
-      summary.created++
+      return { kind: 'created' }
     } catch (err) {
-      summary.skipped++
-      summary.errors.push({ row: i + 1, message: err instanceof Error ? err.message : 'unknown' })
+      return { kind: 'skipped', row: i + 1, message: err instanceof Error ? err.message : 'unknown' }
+    }
+  }
+
+  for (let start = 0; start < rows.length; start += concurrency) {
+    const slice = rows.slice(start, start + concurrency)
+    const outcomes = await Promise.all(slice.map((row, idx) => processRow(row, start + idx)))
+    for (const outcome of outcomes) {
+      if (outcome.kind === 'created')      summary.created++
+      else if (outcome.kind === 'updated') summary.updated++
+      else {
+        summary.skipped++
+        summary.errors.push({ row: outcome.row, message: outcome.message })
+      }
     }
   }
 

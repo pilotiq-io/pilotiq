@@ -43,7 +43,7 @@ export async function globalEditData(
   req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
-  const G = cfg.globals.find(g => g.getSlug() === slug)
+  const G = pilotiq.findGlobal(slug)
   if (!G) return null
   const pages = G.resolvePages()
   if (!pages.edit) return null
@@ -98,7 +98,7 @@ export async function globalViewData(
   req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
-  const G = cfg.globals.find(g => g.getSlug() === slug)
+  const G = pilotiq.findGlobal(slug)
   if (!G) return null
   const pages = G.resolvePages()
   if (!pages.view) return null
@@ -134,7 +134,7 @@ export async function customPageData(
   req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
-  const PageClass = cfg.pages.find(P => P.getSlug() === pageSlug)
+  const PageClass = pilotiq.findPage(pageSlug)
   if (!PageClass) return null
 
   const pageUrl = pageBasePath(cfg.path, PageClass)
@@ -237,14 +237,14 @@ export async function widgetData(
     ctx = uploadCtx(userCtx({ basePath: cfg.path }, user), cfg)
     elements = await callPageSchema(cfg.dashboardPage, ctx)
   } else if (scope.kind === 'page') {
-    const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
+    const P = pilotiq.findPage(scope.pageSlug)
     if (!P) return { ok: false, status: 404, error: 'Page not found' }
     ctx = uploadCtx(userCtx({ basePath: cfg.path }, user), cfg)
     elements = await callPageSchema(P, ctx)
   } else {
     // Resource-scope: re-resolve the list page's schema so widgets from
     // `Resource.headerSchema()` / `footerSchema()` are reachable.
-    const R = cfg.resources.find(r => r.getSlug() === scope.slug)
+    const R = pilotiq.findResource(scope.slug)
     if (!R) return { ok: false, status: 404, error: 'Resource not found' }
     const pages = R.resolvePages()
     if (!pages.index) return { ok: false, status: 404, error: 'Resource has no list page' }

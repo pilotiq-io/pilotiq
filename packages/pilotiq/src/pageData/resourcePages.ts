@@ -142,7 +142,7 @@ export async function resourceIndexData(
   req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
-  const R = cfg.resources.find(r => r.getSlug() === slug)
+  const R = pilotiq.findResource(slug)
   if (!R) return null
 
   const pages = R.resolvePages()
@@ -193,7 +193,7 @@ export async function resourceTableData(
   req?:    unknown,
 ): Promise<{ tables: Record<string, unknown>[] } | null> {
   const cfg = pilotiq.getConfig()
-  const R = cfg.resources.find(r => r.getSlug() === slug)
+  const R = pilotiq.findResource(slug)
   if (!R) return null
 
   const pages = R.resolvePages()
@@ -321,7 +321,7 @@ export async function resourceCreateData(
   req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
-  const R = cfg.resources.find(r => r.getSlug() === slug)
+  const R = pilotiq.findResource(slug)
   if (!R) return null
   const pages = R.resolvePages()
   if (!pages.create) return null
@@ -373,7 +373,7 @@ export async function resourceEditData(
   req?:     unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
-  const R = cfg.resources.find(r => r.getSlug() === slug)
+  const R = pilotiq.findResource(slug)
   if (!R) return null
   const pages = R.resolvePages()
   if (!pages.edit) return null
@@ -466,7 +466,7 @@ export async function resourceViewData(
   req?:     unknown,
 ): Promise<Record<string, unknown> | null> {
   const cfg = pilotiq.getConfig()
-  const R = cfg.resources.find(r => r.getSlug() === slug)
+  const R = pilotiq.findResource(slug)
   if (!R) return null
   const pages = R.resolvePages()
   if (!pages.view) return null
@@ -538,7 +538,7 @@ export async function resourceRecordPageData(
   req?:          unknown,
 ): Promise<Record<string, unknown> | null | { ok: false; status: 403 }> {
   const cfg = pilotiq.getConfig()
-  const R = cfg.resources.find(r => r.getSlug() === slug)
+  const R = pilotiq.findResource(slug)
   if (!R) return null
   const recordPages = R.getRecordPages()
   const PageClass = recordPages[subPageSlug]

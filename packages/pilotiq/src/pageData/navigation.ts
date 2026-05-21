@@ -627,7 +627,7 @@ export async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<
   const raw: RawNavItem[] = []
   let idx = 0
 
-  const pushBadge: Array<{ item: RawNavItem; handler: () => unknown }> = []
+  const pushBadge: Array<{ item: RawNavItem; handler: () => unknown; owner: string }> = []
 
   // Plan #10 — pre-evaluate canAccess for every owner in parallel so we
   // can drop forbidden items before flattening. Failed predicates fail
@@ -672,7 +672,7 @@ export async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<
     if (R.cluster)                              item.parent       = R.cluster.name
     else if (R.navigationParentItem !== undefined) item.parent    = R.navigationParentItem
     if (R.navigationBadgeColor   !== 'default') item.badgeColor   = R.navigationBadgeColor
-    if (R.navigationBadge)                       pushBadge.push({ item, handler: R.navigationBadge })
+    if (R.navigationBadge)                       pushBadge.push({ item, handler: R.navigationBadge, owner: R.name })
     raw.push(item)
   }
 
@@ -697,7 +697,7 @@ export async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<
     if (G.cluster)                              item.parent       = G.cluster.name
     else if (G.navigationParentItem !== undefined) item.parent    = G.navigationParentItem
     if (G.navigationBadgeColor   !== 'default') item.badgeColor   = G.navigationBadgeColor
-    if (G.navigationBadge)                       pushBadge.push({ item, handler: G.navigationBadge })
+    if (G.navigationBadge)                       pushBadge.push({ item, handler: G.navigationBadge, owner: G.name })
     raw.push(item)
   }
 
@@ -724,7 +724,7 @@ export async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<
     if (P.cluster && !isDashboard)              item.parent       = P.cluster.name
     else if (P.navigationParentItem !== undefined) item.parent    = P.navigationParentItem
     if (P.navigationBadgeColor   !== 'default') item.badgeColor   = P.navigationBadgeColor
-    if (P.navigationBadge)                       pushBadge.push({ item, handler: P.navigationBadge })
+    if (P.navigationBadge)                       pushBadge.push({ item, handler: P.navigationBadge, owner: P.name })
     raw.push(item)
   }
 
@@ -755,15 +755,17 @@ export async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<
     if (C.navigationSort         !== undefined) item.sort         = C.navigationSort
     if (C.navigationParentItem   !== undefined) item.parent       = C.navigationParentItem
     if (C.navigationBadgeColor   !== 'default') item.badgeColor   = C.navigationBadgeColor
-    if (C.navigationBadge)                       pushBadge.push({ item, handler: C.navigationBadge })
+    if (C.navigationBadge)                       pushBadge.push({ item, handler: C.navigationBadge, owner: C.name })
     raw.push(item)
   }
 
-  await Promise.all(pushBadge.map(async ({ item, handler }) => {
+  await Promise.all(pushBadge.map(async ({ item, handler, owner }) => {
     try {
-      const v = await handler()
-      if (v === undefined || v === null) return
-      item.badge = String(v)
+      const v = await pilotiq.resolveNavigationBadge(owner, user, async () => {
+        const raw = await handler()
+        return raw === undefined || raw === null ? undefined : String(raw)
+      })
+      if (v !== undefined) item.badge = v
     } catch {
       // Per-badge errors stay silent.
     }

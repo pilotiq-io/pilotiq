@@ -256,6 +256,30 @@ export async function policyAccess(
   return ownerOk && clusterOk
 }
 
+/**
+ * Two-predicate policy gate. Runs `policyAccess(owner, user)` in
+ * parallel with `checkPolicy(predicate)` and returns true only when
+ * both resolve truthy. Use this when the predicate does NOT depend on a
+ * record loaded between the two checks — record-dependent gates (e.g.
+ * `canEdit(user, record)` where `record` is loaded mid-handler) must
+ * stay sequential.
+ *
+ * Both checks fail-closed (throw → false). The pair runs whenever the
+ * route handler enters; replacing the serial pair halves the wait when
+ * either predicate makes a network round-trip.
+ */
+export async function policyGate(
+  owner: Parameters<typeof policyAccess>[0],
+  user: unknown,
+  predicate: () => boolean | Promise<boolean>,
+): Promise<boolean> {
+  const [accessOk, predOk] = await Promise.all([
+    policyAccess(owner, user),
+    checkPolicy(predicate),
+  ])
+  return accessOk && predOk
+}
+
 /** Run `policyAccess(R, user)` and `findRecord(R, recordId, { user })`
  *  in parallel. Both depend only on `user`, so the two round-trips
  *  overlap instead of waiting on each other. When `R.model` isn't set

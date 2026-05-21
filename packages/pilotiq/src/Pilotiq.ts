@@ -328,6 +328,11 @@ export interface PilotiqConfig {
   aiSuggestionsMode?: 'auto' | 'review'
   /** @internal Runtime theme overrides from DB. */
   _themeOverrides?: Partial<ThemeConfig>
+  /**
+   * TTL (milliseconds) for the per-user navigation badge cache. Set to
+   * `0` (or `null` via the builder) to disable caching. Default 30000.
+   */
+  navigationBadgeTtlMs?: number
 }
 
 /**
@@ -380,6 +385,21 @@ export interface ComponentSlots {
 export class Pilotiq {
   private config: PilotiqConfig
   private installedPlugins: PilotiqPlugin[] = []
+  /** Lazy slug-indexed caches. Built on first lookup; invalidated when
+   *  the underlying setter mutates the matching array. Resources /
+   *  globals / pages are looked up by slug 16+ times per request across
+   *  the page-data builders — the linear `Array.find` adds up around 50+
+   *  resources. */
+  private _resourceBySlug?: Map<string, ResourceClass>
+  private _globalBySlug?:   Map<string, GlobalClass>
+  private _pageBySlug?:     Map<string, typeof Page>
+  /**
+   * Per-user navigation badge cache. Keyed by `${ownerName}|${userKey}`
+   * — `userKey` derived from `user.id` (or the primitive user / JSON
+   * fallback / `''` for anon). Each entry expires after
+   * `getNavigationBadgeTtl()` ms.
+   */
+  private _navigationBadgeCache: Map<string, { value: string | undefined; expires: number }> = new Map()
 
   private constructor(name: string) {
     this.config = {
@@ -410,16 +430,19 @@ export class Pilotiq {
 
   resources(r: ResourceClass[]): this {
     this.config.resources = r
+    delete this._resourceBySlug
     return this
   }
 
   globals(g: GlobalClass[]): this {
     this.config.globals = g
+    delete this._globalBySlug
     return this
   }
 
   pages(p: (typeof Page)[]): this {
     this.config.pages = p
+    delete this._pageBySlug
     return this
   }
 
@@ -464,6 +487,7 @@ export class Pilotiq {
     this.config.dashboardPage = P
     if (!this.config.pages.includes(P)) {
       this.config.pages = [...this.config.pages, P]
+      delete this._pageBySlug
     }
     return this
   }
@@ -487,6 +511,7 @@ export class Pilotiq {
     this.config.profilePage = P
     if (!this.config.pages.includes(P)) {
       this.config.pages = [...this.config.pages, P]
+      delete this._pageBySlug
     }
     return this
   }
@@ -1009,6 +1034,93 @@ export class Pilotiq {
     return { ...base, ...overrides }
   }
 
+  /**
+   * Slug-indexed lookup for resources. O(1) replacement for
+   * `cfg.resources.find(r => r.getSlug() === slug)`. Built lazily on
+   * first call; invalidated when `.resources([…])` is reassigned.
+   */
+  findResource(slug: string): ResourceClass | undefined {
+    if (!this._resourceBySlug) {
+      this._resourceBySlug = new Map(this.config.resources.map(r => [r.getSlug(), r]))
+    }
+    return this._resourceBySlug.get(slug)
+  }
+
+  /** Slug-indexed lookup for globals. See `findResource`. */
+  findGlobal(slug: string): GlobalClass | undefined {
+    if (!this._globalBySlug) {
+      this._globalBySlug = new Map(this.config.globals.map(g => [g.getSlug(), g]))
+    }
+    return this._globalBySlug.get(slug)
+  }
+
+  /** Slug-indexed lookup for pages. See `findResource`. */
+  findPage(slug: string): typeof Page | undefined {
+    if (!this._pageBySlug) {
+      this._pageBySlug = new Map(this.config.pages.map(p => [p.getSlug(), p]))
+    }
+    return this._pageBySlug.get(slug)
+  }
+
+  /**
+   * TTL (milliseconds) for the per-user navigation badge cache. Badges
+   * resolve once per `(owner, userIdentity)` pair and serve from the
+   * in-memory cache until the TTL elapses; the cache covers the
+   * common case where a panel with N resources each running
+   * `Model.count()` for a sidebar badge would otherwise issue N queries
+   * on every page nav.
+   *
+   * Pass `0` (or `null`) to disable caching entirely. Default 30000.
+   */
+  navigationBadgeTtl(ms: number | null): this {
+    if (ms === null) {
+      delete this.config.navigationBadgeTtlMs
+    } else {
+      this.config.navigationBadgeTtlMs = Math.max(0, ms)
+    }
+    // Bust on reconfigure so the new TTL doesn't reuse stale slots.
+    this._navigationBadgeCache.clear()
+    return this
+  }
+
+  /** @internal — resolved TTL in milliseconds. Default 30s. `0`
+   *  disables caching (each request re-resolves). */
+  getNavigationBadgeTtl(): number {
+    return this.config.navigationBadgeTtlMs ?? 30_000
+  }
+
+  /** @internal — cache key for one (owner, user) pair. */
+  navigationBadgeCacheKey(ownerName: string, user: unknown): string {
+    return `${ownerName}|${userIdentityKey(user)}`
+  }
+
+  /** @internal — read-through cache for a single owner's badge value.
+   *  Caller supplies the resolver; cache wraps it with the configured
+   *  TTL. When TTL is 0 the resolver is invoked unconditionally and
+   *  nothing is stored. */
+  async resolveNavigationBadge(
+    ownerName: string,
+    user:      unknown,
+    resolver:  () => Promise<string | undefined>,
+  ): Promise<string | undefined> {
+    const ttl = this.getNavigationBadgeTtl()
+    if (ttl <= 0) return resolver()
+
+    const key = this.navigationBadgeCacheKey(ownerName, user)
+    const now = Date.now()
+    const hit = this._navigationBadgeCache.get(key)
+    if (hit && hit.expires > now) return hit.value
+
+    const value = await resolver()
+    this._navigationBadgeCache.set(key, { value, expires: now + ttl })
+    return value
+  }
+
+  /** @internal — test seam; clears the per-user badge cache. */
+  _clearNavigationBadgeCache(): void {
+    this._navigationBadgeCache.clear()
+  }
+
   /** @internal */
   getConfig(): Readonly<PilotiqConfig> {
     return this.config
@@ -1018,4 +1130,29 @@ export class Pilotiq {
   getPlugins(): readonly PilotiqPlugin[] {
     return this.installedPlugins
   }
+}
+
+/**
+ * Stable cache key derived from a user object. Pilotiq treats the user
+ * as opaque, so we sniff the common shapes:
+ *
+ * 1. `null` / `undefined` — anonymous request; everyone shares one slot.
+ * 2. Primitive (string / number / bigint / boolean) — stringify directly.
+ * 3. Object with `id` — `String(user.id)` (the 99% case for app-supplied users).
+ * 4. Other objects — `JSON.stringify` as a last resort; falls back to a
+ *    sentinel if stringify throws (cycles).
+ *
+ * Two distinct users with the same `id` collide, but that's the same
+ * collision the rest of the framework already trusts.
+ */
+function userIdentityKey(user: unknown): string {
+  if (user === null || user === undefined) return ''
+  const t = typeof user
+  if (t === 'string' || t === 'number' || t === 'bigint' || t === 'boolean') return String(user)
+  if (t === 'object') {
+    const u = user as { id?: unknown }
+    if (u.id !== undefined && u.id !== null) return String(u.id)
+    try { return JSON.stringify(user) } catch { return '__opaque__' }
+  }
+  return '__opaque__'
 }

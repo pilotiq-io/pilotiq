@@ -35,6 +35,7 @@ import {
   cellHookErrorMessage,
   checkPolicy,
   policyAccess,
+  policyGate,
   resolveDispatchTarget,
   handleFormState,
   handleFormWizard,
@@ -87,8 +88,7 @@ export function registerResourceRoutes(
       const indexUrl  = resourceBase
       router.get(indexUrl, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user))  return forbidden(res, wantsJson(req))
-        if (!await checkPolicy(() => R.canViewAny(user))) return forbidden(res, wantsJson(req))
+        if (!await policyGate(R, user, () => R.canViewAny(user))) return forbidden(res, wantsJson(req))
 
         if (R.persistFiltersInSession) {
           const query = (req.query as Record<string, unknown> | undefined) ?? {}
@@ -113,16 +113,14 @@ export function registerResourceRoutes(
 
       router.post(`${indexUrl}/_widget/:id`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user))  return forbidden(res, true)
-        if (!await checkPolicy(() => R.canViewAny(user))) return forbidden(res, true)
+        if (!await policyGate(R, user, () => R.canViewAny(user))) return forbidden(res, true)
         return handleWidgetData(req, res, pilotiq, { kind: 'resource', slug }, req.params['id']!)
       })
 
       if (R.deferLoading) {
         router.get(`${indexUrl}/_table`, async (req, res) => {
           const user = await pilotiq.resolveUser(req)
-          if (!await policyAccess(R, user))  return forbidden(res, true)
-          if (!await checkPolicy(() => R.canViewAny(user))) return forbidden(res, true)
+          if (!await policyGate(R, user, () => R.canViewAny(user))) return forbidden(res, true)
           const data = await resourceTableData(pilotiq, slug, req.query as Record<string, string>, req)
           if (!data) { res.status(404); return res.json({ ok: false, error: 'Resource not found' }) }
           return res.json({ ok: true, ...data })
@@ -169,12 +167,11 @@ export function registerResourceRoutes(
       if (options.reorderable) {
         router.post(`${indexUrl}/_reorder`, async (req, res) => {
           const user = await pilotiq.resolveUser(req)
-          if (!await policyAccess(R, user)) return forbidden(res, true)
           // List-level edit gate. The drop affects many rows at once;
           // there's no single record to authorize against, so we pass
           // `undefined` and let user-supplied `canEdit` overrides branch
           // on `record === undefined` if they want row-level granularity.
-          if (!await checkPolicy(() => R.canEdit(user, undefined))) return forbidden(res, true)
+          if (!await policyGate(R, user, () => R.canEdit(user, undefined))) return forbidden(res, true)
 
           const body = await readFormBody(req)
           const raw  = (body as { ids?: unknown }).ids
@@ -302,8 +299,7 @@ export function registerResourceRoutes(
     if (pages.create) {
       router.post(`${resourceBase}/_form/:formId/state`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, true)
-        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, true)
+        if (!await policyGate(R, user, () => R.canCreate(user))) return forbidden(res, true)
         const formId = req.params['formId']!
         return handleFormState(req, res, pilotiq, { kind: 'resource-create', slug }, formId)
       })
@@ -311,8 +307,7 @@ export function registerResourceRoutes(
       // Plan #8 — wizard step-validate endpoint for create-mode forms.
       router.post(`${resourceBase}/_form/:formId/wizard`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, true)
-        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, true)
+        if (!await policyGate(R, user, () => R.canCreate(user))) return forbidden(res, true)
         const formId = req.params['formId']!
         return handleFormWizard(req, res, pilotiq, { kind: 'resource-create', slug }, formId)
       })
@@ -320,8 +315,7 @@ export function registerResourceRoutes(
       // Async-mention endpoint for create-mode forms.
       router.post(`${resourceBase}/_form/:formId/mentions`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, true)
-        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, true)
+        if (!await policyGate(R, user, () => R.canCreate(user))) return forbidden(res, true)
         const formId = req.params['formId']!
         return handleFormMentions(req, res, pilotiq, { kind: 'resource-create', slug }, formId)
       })
@@ -329,8 +323,7 @@ export function registerResourceRoutes(
       // SelectField inline-create modal endpoint for create-mode forms.
       router.post(`${resourceBase}/_form/:formId/create-option/:fieldName`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, true)
-        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, true)
+        if (!await policyGate(R, user, () => R.canCreate(user))) return forbidden(res, true)
         const formId    = req.params['formId']!
         const fieldName = req.params['fieldName']!
         return handleFormCreateOption(req, res, pilotiq, { kind: 'resource-create', slug }, formId, fieldName)
@@ -392,8 +385,7 @@ export function registerResourceRoutes(
 
       router.get(createUrl, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
-        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, wantsJson(req))
+        if (!await policyGate(R, user, () => R.canCreate(user))) return forbidden(res, wantsJson(req))
         const data = await resourceCreateData(pilotiq, slug, undefined, req)
         return view('pilotiq.resource-create', data ?? {})
       })
@@ -401,8 +393,7 @@ export function registerResourceRoutes(
       // Create — POST ${resourceBase}/create
       router.post(createUrl, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
-        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, wantsJson(req))
+        if (!await policyGate(R, user, () => R.canCreate(user))) return forbidden(res, wantsJson(req))
 
         const body = await readFormBody(req)
         const { values, formId, continueCreate } = splitMeta(body)
@@ -464,8 +455,7 @@ export function registerResourceRoutes(
       // coerced values.
       router.post(`${createUrl}/_action/:actionName`, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
-        if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
-        if (!await checkPolicy(() => R.canCreate(user))) return forbidden(res, wantsJson(req))
+        if (!await policyGate(R, user, () => R.canCreate(user))) return forbidden(res, wantsJson(req))
 
         const actionName = req.params['actionName']!
         const json = wantsJson(req)

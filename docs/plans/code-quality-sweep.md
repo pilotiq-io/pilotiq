@@ -142,7 +142,7 @@ Migration path for existing apps: log a one-time deprecation if `prisma` resolve
 
 ---
 
-## Phase 5 — Hot-path perf wins (4 items, can ship as one PR or split)
+## Phase 5 — Hot-path perf wins (4 items, can ship as one PR or split) ✅ SHIPPED 2026-05-22
 
 **Severity:** low — none of these are bottlenecks today; measurable above ~50 resources or ~10K rows
 **Effort:** ~3h total

@@ -58,7 +58,7 @@ async function resolveScopeForm(
   let baseCtxExtras: Record<string, unknown> = {}
 
   if (scope.kind === 'resource-create' || scope.kind === 'resource-edit') {
-    const R = cfg.resources.find(r => r.getSlug() === scope.slug)
+    const R = pilotiq.findResource(scope.slug)
     if (!R) return null
     const pages = R.resolvePages()
     if (scope.kind === 'resource-create') {
@@ -77,14 +77,14 @@ async function resolveScopeForm(
       }
     }
   } else if (scope.kind === 'global-edit') {
-    const G = cfg.globals.find(g => g.getSlug() === scope.slug)
+    const G = pilotiq.findGlobal(scope.slug)
     if (!G) return null
     const pages = G.resolvePages()
     if (!pages.edit) return null
     PageClass = pages.edit
     mode = 'edit'
   } else {
-    const P = cfg.pages.find(p => p.getSlug() === scope.pageSlug)
+    const P = pilotiq.findPage(scope.pageSlug)
     if (!P) return null
     PageClass = P
     // Custom pages don't have a record/edit-mode concept — pass mode

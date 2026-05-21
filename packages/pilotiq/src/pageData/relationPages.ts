@@ -296,7 +296,7 @@ export async function relationManagerData(
 
   const cfg = pilotiq.getConfig()
 
-  const R = cfg.resources.find(r => r.getSlug() === scope.slug)
+  const R = pilotiq.findResource(scope.slug)
   if (!R) return null
 
   const M = findManager(R, scope.relationship)
@@ -771,7 +771,7 @@ export async function resolveRelationChain(
 ): Promise<ResolvedChain | { ok: false; status: 403 } | null> {
   const cfg = pilotiq.getConfig()
 
-  const R = cfg.resources.find(r => r.getSlug() === scope.slug)
+  const R = pilotiq.findResource(scope.slug)
   if (!R) return null
 
   // Layer 0 — same gates as the depth-1 pipeline.
