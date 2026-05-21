@@ -18,7 +18,7 @@ import type {
   CollabRoom,
   CollabExtensionFactory,
 } from '@pilotiq/pilotiq/react'
-import { useCollabRoom, getCollabExtensions, onProviderSynced } from '@pilotiq/pilotiq/react'
+import { useCollabRoom, getCollabExtensions, onProviderSynced, useRowCoords, parseRowFieldPath } from '@pilotiq/pilotiq/react'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
 import { AiSuggestionBanner } from './AiSuggestionBanner.js'
@@ -130,6 +130,32 @@ interface ClientEditorProps extends FieldRendererProps {
 function ClientEditor(props: ClientEditorProps) {
   const { el, name, defaultValue, placeholder, disabled, room, factory, collabActive } = props
 
+  // Collab-stable identifier — top-level fields just use `name`, but
+  // Repeater / Builder row leaves rebind to a row-id-anchored composite
+  // (`metadata.<rowId>.body`) so the `Y.XmlFragment` survives reorders.
+  // AI suggestion routing, hidden FormData input, and the inline-diff
+  // banner stay on the positional `name` so tool calls referencing the
+  // field by its FormData name (`metadata.0.body`) still resolve.
+  //
+  // Mirrors the `name` + `fragmentKey` split shipped for `MarkdownField`
+  // in `@pilotiq/pilotiq@0.20.0` + `@pilotiq/tiptap@3.9.0`. Different
+  // mechanics: `MarkdownInput` had an intermediate host wrapper in
+  // pilotiq core (because markdown has a textarea fallback path that
+  // needs the same composite). `RichTextField` has no fallback —
+  // pilotiq core just dispatches the registered renderer with the
+  // positional name. So the composite logic lives here, on the only
+  // editor that needs it.
+  const rowCoords  = useRowCoords()
+  const collabName = useMemo<string>(() => {
+    if (!name.includes('.')) return name
+    if (!rowCoords)          return name
+    const parsed = parseRowFieldPath(name)
+    if (!parsed)                                  return name
+    if (parsed.arrayName !== rowCoords.arrayName) return name
+    if (parsed.index     !== rowCoords.rowIndex)  return name
+    return `${rowCoords.arrayName}.${rowCoords.rowId}.${parsed.fieldName}`
+  }, [name, rowCoords])
+
   const blocks            = (el['blocks']           as BlockMeta[]     | undefined) ?? []
   const slashEnabled      = (el['slashCommand']     as boolean         | undefined) ?? true
   const toolbarGroups     = (el['toolbarGroups']    as ToolbarGroups   | null | undefined) ?? null
@@ -222,7 +248,7 @@ function ClientEditor(props: ClientEditorProps) {
     return factory({
       ydoc:      room.ydoc,
       provider:  room.provider,
-      fieldName: name,
+      fieldName: collabName,
       ...(room.user ? { user: room.user } : {}),
     })
     // Intentionally deps-stable across renders within the same collab
@@ -440,7 +466,7 @@ function ClientEditor(props: ClientEditorProps) {
 
     const trySeed = () => {
       try {
-        const fragment = ydoc.getXmlFragment(name)
+        const fragment = ydoc.getXmlFragment(collabName)
         if (
           fragment &&
           fragment.length === 0 &&
