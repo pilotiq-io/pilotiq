@@ -195,11 +195,11 @@ function PieChartView({ data, color, options, doughnut }: PieChartViewProps) {
   // a stacked-by-label primitive that needs different config; the
   // common case is "labels = slice names, dataset[0].data = values".
   const ds = data.datasets[0]
-  if (!ds) return <ChartEmpty />
   const slices = useMemo(
-    () => data.labels.map((label, i) => ({ name: label, value: ds.data[i] ?? 0 })),
-    [data.labels, ds.data],
+    () => (ds ? data.labels.map((label, i) => ({ name: label, value: ds.data[i] ?? 0 })) : []),
+    [data.labels, ds],
   )
+  if (!ds) return <ChartEmpty />
   return (
     <ResponsiveContainer width="100%" height="100%">
       <PieChart>
