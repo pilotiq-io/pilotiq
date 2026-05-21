@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useEditor, EditorContent, type Extension } from '@tiptap/react'
 import type { AnyExtension } from '@tiptap/core'
 import {
   useCollabRoom,
   getCollabExtensions,
-  onProviderSynced,
+  useCollabSeed,
   type CollabTextRendererProps,
 } from '@pilotiq/pilotiq/react'
 import { createPlainTextEditor, plainTextOf, plainTextToDoc } from '../PlainTextEditor.js'
@@ -154,41 +154,27 @@ export function CollabTextRenderer({
   })
 
   // First-load seed when collab is active. Collaboration starts the editor
-  // empty regardless of `defaultValue`; once the provider syncs the room
-  // state from the server we check whether the field's `Y.XmlFragment`
-  // was ever written. Empty + we have an initial value = first session for
-  // this record — push the SSR-rendered default into the editor once.
+  // empty regardless of `defaultValue`; once the room's first sync
+  // resolves, `useCollabSeed` runs the callback inside `ydoc.transact`.
+  // Empty fragment + we have an initial value = first session for this
+  // record — push the SSR-rendered default into the editor once.
   //
   // Race caveat: two peers simultaneously mounting against a brand-new
   // record (both seeing `fragment.length === 0`) can both seed and produce
   // duplicated text. Same window as `TiptapEditor`'s rich-text seed path.
   // Acceptable for now; can be tightened later via a deterministic
   // first-writer election or a server-side seed handoff.
-  const [hasSeeded, setHasSeeded] = useState(false)
-  useEffect(() => {
-    if (!editor || !collabActive || !room || hasSeeded) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ydoc     = room.ydoc as any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const provider = room.provider as any
-    if (!ydoc || !provider) return
-
-    const trySeed = (): void => {
-      try {
-        const fragment = ydoc.getXmlFragment(collabName)
-        if (fragment && fragment.length === 0 && defaultValue) {
-          editor.commands.setContent(plainTextToDoc(defaultValue, multiline))
-        }
-        setHasSeeded(true)
-      } catch {
-        setHasSeeded(true)
+  useCollabSeed(
+    editor && collabActive ? room : null,
+    collabName,
+    (doc) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fragment = (doc as any).getXmlFragment(collabName)
+      if (fragment && fragment.length === 0 && defaultValue && editor) {
+        editor.commands.setContent(plainTextToDoc(defaultValue, multiline))
       }
-    }
-
-    return onProviderSynced(provider, trySeed)
-    // Seed once per editor instance — keyed remount above resets `hasSeeded`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, collabActive, room])
+    },
+  )
 
   // Bubble the editor's blur event up to the host. Tiptap exposes this via
   // `editor.on('blur', ...)`. The simpler `onBlur` prop on `EditorContent`

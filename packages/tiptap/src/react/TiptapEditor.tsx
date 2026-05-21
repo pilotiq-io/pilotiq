@@ -18,7 +18,7 @@ import type {
   CollabRoom,
   CollabExtensionFactory,
 } from '@pilotiq/pilotiq/react'
-import { useCollabRoom, getCollabExtensions, onProviderSynced, useRowCoords, parseRowFieldPath } from '@pilotiq/pilotiq/react'
+import { useCollabRoom, getCollabExtensions, useCollabSeed, useRowCoords, parseRowFieldPath } from '@pilotiq/pilotiq/react'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
 import { AiSuggestionBanner } from './AiSuggestionBanner.js'
@@ -460,46 +460,39 @@ function ClientEditor(props: ClientEditorProps) {
   }, [editor, disabled])
 
   // First-load seed when collab is active. Collaboration starts the
-  // editor empty regardless of `defaultValue`; once the WebsocketProvider
-  // syncs the room state from the server we check whether the field's
-  // Y.XmlFragment was ever written. Empty + we have an initial value =
-  // first session for this record — push the DB content into the ydoc
-  // exactly once. Non-empty = the room already has authoritative state;
-  // don't overwrite.
-  useEffect(() => {
-    if (!editor || !collabActive || !room) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const provider = room.provider as any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ydoc     = room.ydoc as any
-    if (!provider || !ydoc) return
-
-    const trySeed = () => {
-      try {
-        const fragment = ydoc.getXmlFragment(collabName)
-        if (
-          fragment &&
-          fragment.length === 0 &&
-          initialContent !== undefined &&
-          initialContent !== null &&
-          initialContent !== '' &&
-          isTiptapShapedContent(initialContent)
-        ) {
-          // setContent dispatches a Tiptap transaction; the bound
-          // y-prosemirror binding (inside Collaboration) mirrors it
-          // into the fragment so every peer sees the seeded state.
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          editor.commands.setContent(initialContent as any)
-        }
-      } catch { /* ignore — seed is best-effort */ }
-    }
-
-    return onProviderSynced(provider, trySeed)
-    // `initialContent` resolves once per mount (parsed from defaultValue
-    // at the top of this body). The keyed remount above guarantees we
-    // get a fresh closure per collab session.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, collabActive, room, name])
+  // editor empty regardless of `defaultValue`; once the room's first
+  // sync resolves, `useCollabSeed` runs the callback inside
+  // `ydoc.transact(..., 'pilotiq-collab-seed')`. We check whether the
+  // field's `Y.XmlFragment` was ever written — empty + we have an
+  // initial value = first session for this record — push the DB
+  // content into the ydoc exactly once. Non-empty = the room already
+  // has authoritative state; don't overwrite. Gating on `editor` keeps
+  // the effect from firing before Tiptap mounts its
+  // y-prosemirror binding (Tiptap v3 defers editor construction to
+  // first effect under `immediatelyRender: false`).
+  useCollabSeed(
+    editor && collabActive ? room : null,
+    collabName,
+    (doc) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fragment = (doc as any).getXmlFragment(collabName)
+      if (
+        fragment &&
+        fragment.length === 0 &&
+        initialContent !== undefined &&
+        initialContent !== null &&
+        initialContent !== '' &&
+        isTiptapShapedContent(initialContent) &&
+        editor
+      ) {
+        // setContent dispatches a Tiptap transaction; the bound
+        // y-prosemirror binding (inside Collaboration) mirrors it
+        // into the fragment so every peer sees the seeded state.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        editor.commands.setContent(initialContent as any)
+      }
+    },
+  )
 
   // Cross-package suggestion bridge — sync the host's
   // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`

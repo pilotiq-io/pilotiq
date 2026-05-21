@@ -1,11 +1,11 @@
-import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { EditorView, lineNumbers as lineNumbersExt, keymap } from '@codemirror/view'
 import { EditorState, Compartment, type Extension } from '@codemirror/state'
 import { indentUnit } from '@codemirror/language'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { basicSetup } from 'codemirror'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
-import { onProviderSynced, type SyncedProviderLike } from '@pilotiq/pilotiq/react'
+import { useCollabSeed, type CollabRoom } from '@pilotiq/pilotiq/react'
 // Type-only import keeps the value-import surface inside `y-codemirror.next`
 // (a peer dep), so consumers without `yjs` installed still type-check this
 // file via TS' module-omission rules for type-only imports.
@@ -22,10 +22,18 @@ export interface CollabCodeMirrorEditorProps {
   ydoc:            unknown
   /**
    * Provider from `useCollabRoom()`. The renderer reads `provider.awareness`
-   * for cursor presence. `provider.synced` / `provider.once('synced', …)` are
-   * used to defer first-load seeding until the server-side ydoc has streamed in.
+   * for cursor presence.
    */
   provider:        unknown
+  /**
+   * The room's `synced` Promise (from `useCollabRoom()`); resolves on the
+   * provider's first sync. Threaded through pilotiq's `CollabRoom.synced`
+   * by `@pilotiq-pro/collab@>=0.2`'s `<RecordCollabRoom>`. Omit / `null`
+   * for legacy / hand-rolled providers — the renderer falls back to
+   * seeding immediately (the legacy gate ran on `provider.once('synced')`
+   * and could race the same way).
+   */
+  synced?:         Promise<void> | null
   /** Doc-root share key — top-level: bare field name; row-leaf: `${arrayName}.${rowId}.${fieldName}`. */
   fragmentKey:     string
   /** Hidden-input name for FormData submission. */
@@ -70,10 +78,25 @@ export interface CollabCodeMirrorEditorProps {
  */
 export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): React.ReactElement {
   const {
-    ydoc, provider, fragmentKey, hiddenInputName, defaultValue,
+    ydoc, provider, synced, fragmentKey, hiddenInputName, defaultValue,
     language, height, lineNumbers, lineWrapping, indentWithTabs, indentSize,
     theme, readOnly, disabled, placeholder,
   } = props
+
+  // Synthetic `CollabRoom` for `useCollabSeed` — this component takes
+  // `ydoc / provider / synced` as separate props rather than the full
+  // context object so the wrapper in `CodeMirrorEditor.tsx` keeps
+  // control of which fields it threads through. Recomputed only when
+  // the underlying handles change; `useCollabSeed`'s effect deps key
+  // on the room identity.
+  const seedRoom = useMemo<CollabRoom | null>(() => {
+    if (!ydoc || !provider) return null
+    return {
+      ydoc,
+      provider,
+      ...(synced ? { synced } : {}),
+    }
+  }, [ydoc, provider, synced ?? null])
 
   const hostRef      = useRef<HTMLDivElement | null>(null)
   const viewRef      = useRef<EditorView | null>(null)
@@ -96,7 +119,8 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
   useEffect(() => {
     if (!hostRef.current) return
     const ydocAny     = ydoc as { getText: (k: string) => unknown }
-    const providerAny = provider as ({ awareness?: unknown } & SyncedProviderLike) | null | undefined
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const providerAny = provider as ({ awareness?: any } | null | undefined)
     if (!ydocAny || typeof ydocAny.getText !== 'function') {
       return undefined
     }
@@ -151,25 +175,12 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     const view = new EditorView({ state, parent: hostRef.current })
     viewRef.current = view
 
-    // First-load seed: brand-new records arrive with an empty Y.Text + a
-    // server-rendered defaultValue. Wait for provider sync (so we know the
-    // emptiness isn't just "not yet streamed"), then push defaultValue into
-    // yText if it's still empty. Two peers mounting against a brand-new
-    // record can both seed → duplicated text; same window as
-    // `CollabTextRenderer`'s plain-text seed. Acceptable for v1.
-    let didSeed = false
-    const trySeed = (): void => {
-      if (didSeed) return
-      didSeed = true
-      try {
-        if (yText.length === 0 && defaultValue) {
-          yText.insert(0, defaultValue)
-        }
-      } catch {
-        // ignore
-      }
-    }
-    const seedCleanup = onProviderSynced(providerAny ?? null, trySeed)
+    // First-load seed runs outside this mount effect via `useCollabSeed`
+    // — see the call below. It gates on `seedRoom.synced` resolving so
+    // we don't conflate "empty stream" with "brand-new record"; same
+    // race-window caveat (two peers mounting against a brand-new
+    // record can both seed → duplicated text). Wait for v1's
+    // server-side seed handoff to tighten.
 
     // Initial mirror of yText into the hidden input (yCollab's first sync
     // happens after EditorView mount; mirror once now and the updateListener
@@ -178,7 +189,6 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     setText(seed)
 
     return () => {
-      seedCleanup()
       try { view.destroy() } catch { /* ignore */ }
       viewRef.current = null
     }
@@ -186,6 +196,20 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     // Other structural props are reconfigured via Compartments below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mountKey])
+
+  // First-load seed gate — runs after the room's first sync resolves
+  // (or immediately for legacy rooms without a `synced` Promise). The
+  // seedFn checks `yText.length === 0` so subsequent peers joining
+  // the same room don't re-seed; pair with the in-mount `yText.toString()`
+  // pre-seed above which handles re-mount onto a yText that already has
+  // content (e.g. `renameRow` clones).
+  useCollabSeed(seedRoom, fragmentKey, (doc) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const yText = (doc as any).getText(fragmentKey) as Y.Text | undefined
+    if (yText && yText.length === 0 && defaultValue) {
+      yText.insert(0, defaultValue)
+    }
+  })
 
   useEffect(() => {
     const view = viewRef.current

@@ -22,6 +22,18 @@ export interface CollabRoom {
   ydoc:      unknown
   /** `WebsocketProvider` instance. Opaque to pilotiq core. */
   provider:  unknown
+  /**
+   * Resolves on the provider's first sync. Present when the room is
+   * wired through `@rudderjs/sync/react`'s `CollabRoomManager` (which is
+   * what `@pilotiq-pro/collab@>=0.2`'s `<RecordCollabRoom>` does);
+   * absent for legacy / hand-rolled providers. `useCollabSeed` gates
+   * its seed callback on this Promise — adapters that need a
+   * "fragment-empty?" check after first sync should consume the hook
+   * rather than calling `onProviderSynced` themselves.
+   */
+  synced?:   Promise<void>
+  /** IndexedDB persistence handle, when the room wraps `y-indexeddb`. Opaque. */
+  persistence?: unknown
   /** Presence info for cursors / avatars. Forwarded to the extension factory. */
   user?: {
     name?:  string

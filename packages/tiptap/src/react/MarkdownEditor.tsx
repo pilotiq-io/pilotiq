@@ -14,7 +14,7 @@ import { Markdown } from '../markdownExtension.js'
 import {
   useCollabRoom,
   getCollabExtensions,
-  onProviderSynced,
+  useCollabSeed,
   useToast,
   type MarkdownEditorProps,
 } from '@pilotiq/pilotiq/react'
@@ -309,36 +309,25 @@ export function MarkdownEditor({
   const isDiffActive = useIsAiInlineDiffActive(editor ?? null)
 
   // First-load seed for collab. Collaboration starts the editor empty
-  // regardless of `content`; once the provider syncs from the server we
-  // check whether the field's `Y.XmlFragment` was ever written. Empty +
-  // we have an initial value = first session for this record. Mirrors
-  // the rich-text TiptapEditor seed path and the CollabTextRenderer seed.
-  const [hasSeeded, setHasSeeded] = useState(false)
-  useEffect(() => {
-    if (!editor || !collabActive || !room || hasSeeded) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ydoc     = room.ydoc as any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const provider = room.provider as any
-    if (!ydoc || !provider) return
-
-    const trySeed = (): void => {
-      try {
-        const fragment = ydoc.getXmlFragment(collabName)
-        if (fragment && fragment.length === 0 && defaultValue) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const cmd = (editor.commands as any).setContent
-          if (cmd) cmd(defaultValue)
-        }
-        setHasSeeded(true)
-      } catch {
-        setHasSeeded(true)
+  // regardless of `content`; once the room's first sync resolves,
+  // `useCollabSeed` runs the callback inside `ydoc.transact`. Empty
+  // fragment + we have an initial value = first session for this
+  // record. Mirrors the rich-text TiptapEditor seed path and the
+  // CollabTextRenderer seed. Gates on `editor` so Tiptap v3's deferred
+  // `immediatelyRender: false` mount completes first.
+  useCollabSeed(
+    editor && collabActive ? room : null,
+    collabName,
+    (doc) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fragment = (doc as any).getXmlFragment(collabName)
+      if (fragment && fragment.length === 0 && defaultValue && editor) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cmd = (editor.commands as any).setContent
+        if (cmd) cmd(defaultValue)
       }
-    }
-
-    return onProviderSynced(provider, trySeed)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, collabActive, room])
+    },
+  )
 
   // Source-tab → Editor: parse the textarea back into the editor (this also
   // emits onChange via the editor's onUpdate). One-way during the same flip.

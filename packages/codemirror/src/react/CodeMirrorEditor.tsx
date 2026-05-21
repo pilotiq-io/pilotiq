@@ -92,12 +92,13 @@ function ClientEditor(props: FieldRendererProps): React.ReactElement {
   return <LocalBranch {...props} />
 }
 
-function CollabBranch(props: FieldRendererProps & { fragmentKey: string; room: { ydoc: unknown; provider: unknown } }): React.ReactElement {
+function CollabBranch(props: FieldRendererProps & { fragmentKey: string; room: { ydoc: unknown; provider: unknown; synced?: Promise<void> } }): React.ReactElement {
   const { el, name, defaultValue, disabled, placeholder, fragmentKey, room } = props
   return (
     <CollabCodeMirrorEditor
       ydoc={room.ydoc}
       provider={room.provider}
+      synced={room.synced ?? null}
       fragmentKey={fragmentKey}
       hiddenInputName={name}
       defaultValue={stringValue(defaultValue)}
