@@ -6,6 +6,7 @@ import type { ClusterClass } from './Cluster.js'
 import type { Page } from './Page.js'
 import type { SchemaDefinition } from './schema/resolveSchema.js'
 import type { ThemeConfig } from './theme/types.js'
+import type { ThemeStorageAdapter } from './theme/storage.js'
 import type { UploadAdapter } from './uploads/UploadAdapter.js'
 import type { UserMenuItem } from './UserMenuItem.js'
 import type { NavigationBadgeColor } from './Resource.js'
@@ -228,6 +229,16 @@ export interface PilotiqConfig {
   profilePage?: typeof Page
   theme?:        ThemeConfig
   themeEditor?:  boolean
+  /**
+   * Theme override persistence adapter — wired via
+   * `themeEditor({ storage })`. Reads/writes the JSON blob the editor
+   * page produces. Without this, the service provider falls back to
+   * the implicit Prisma adapter (auto-resolved via
+   * `app.make('prisma')`) for back-compat — that fallback is
+   * deprecated and will be removed in a future minor; pass `storage`
+   * explicitly.
+   */
+  themeStorage?: ThemeStorageAdapter
   guard?:        (req: unknown) => boolean | Promise<boolean>
   user?:         UserResolver
   uploads?:      UploadConfig
@@ -959,6 +970,24 @@ export class Pilotiq {
   /** @internal */
   enableThemeEditor(): void {
     this.config.themeEditor = true
+  }
+
+  /** @internal — assign the storage adapter resolved by the
+   *  `themeEditor({ storage })` plugin OR by the service provider's
+   *  back-compat Prisma fallback. Both writers funnel through this
+   *  setter so the route handlers consume a single slot. */
+  _setThemeStorage(adapter: ThemeStorageAdapter | undefined): void {
+    if (adapter === undefined) {
+      delete this.config.themeStorage
+    } else {
+      this.config.themeStorage = adapter
+    }
+  }
+
+  /** @internal — the active theme storage adapter (explicit or the
+   *  boot-time Prisma fallback). Routes read from here. */
+  getThemeStorage(): ThemeStorageAdapter | undefined {
+    return this.config.themeStorage
   }
 
   /** @internal */

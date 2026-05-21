@@ -1,4 +1,24 @@
 import type { PilotiqPlugin } from '../Pilotiq.js'
+import type { ThemeStorageAdapter } from '../theme/storage.js'
+
+export interface ThemeEditorOptions {
+  /**
+   * Override persistence adapter. Defaults to the implicit Prisma
+   * fallback (auto-resolved from `app.make('prisma')` against the
+   * `panelGlobal` row) — that fallback is deprecated; pass an explicit
+   * adapter to opt out and silence the deprecation warning.
+   *
+   * @example
+   * ```ts
+   * import { prismaThemeStorage, themeEditor } from '@pilotiq/pilotiq/plugins'
+   *
+   * .use(themeEditor({
+   *   storage: prismaThemeStorage(prisma, { slug: 'admin__theme' }),
+   * }))
+   * ```
+   */
+  storage?: ThemeStorageAdapter
+}
 
 /**
  * Theme editor plugin — adds an interactive theme customization page
@@ -14,11 +34,12 @@ import type { PilotiqPlugin } from '../Pilotiq.js'
  *   .use(themeEditor())
  * ```
  */
-export function themeEditor(): PilotiqPlugin {
+export function themeEditor(opts: ThemeEditorOptions = {}): PilotiqPlugin {
   return {
     name: 'theme-editor',
     register(panel) {
       panel.enableThemeEditor()
+      if (opts.storage) panel._setThemeStorage(opts.storage)
     },
   }
 }

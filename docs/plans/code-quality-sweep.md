@@ -107,7 +107,7 @@ No new framework surface. No regression test needed beyond existing coverage (th
 
 ---
 
-## Phase 4 — Replace prisma-coupled theme persistence with a storage adapter
+## Phase 4 — Replace prisma-coupled theme persistence with a storage adapter ✅ SHIPPED 2026-05-22
 
 **Severity:** low — works today, but breaks ORM-agnostic story and swallows real startup errors
 **Effort:** ~2h

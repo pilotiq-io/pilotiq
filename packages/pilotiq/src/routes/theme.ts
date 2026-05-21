@@ -9,29 +9,15 @@ import { migrateThemeOverrides } from '../theme/migrate.js'
 import { radiusMap } from '../theme/radius.js'
 import { panelInfo } from '../pageData.js'
 
-/** Minimal Prisma surface used by the theme editor — narrow enough to
- *  keep the DI lookup type-safe without dragging in `PrismaClient`,
- *  which would couple the package to a concrete schema. */
-type PanelGlobalRow = { data: string | object | null }
-type PanelGlobalDelegate = {
-  panelGlobal: {
-    findUnique(args: { where: { slug: string } }): Promise<PanelGlobalRow | null>
-    upsert(args: {
-      where:  { slug: string }
-      update: { data: string }
-      create: { slug: string; data: string }
-    }): Promise<unknown>
-    delete(args: { where: { slug: string } }): Promise<unknown>
-  }
-}
-
 /**
  * Register the theme editor routes — the `${base}/theme` editor page
  * plus the `${base}/api/_theme` GET / PUT / DELETE persistence endpoints.
  * Only mounted when `cfg.themeEditor` is set (caller checks first).
  *
- * Pulled out of `registerPilotiqRoutes` in 2026-05-12 (Phase 3 of the
- * routes.ts split).
+ * Storage persists through `panel.getThemeStorage()` — the adapter
+ * resolved by the service provider's boot pass (explicit when
+ * `themeEditor({ storage })` was set, otherwise the implicit Prisma
+ * fallback while that back-compat branch is still active).
  */
 export function registerThemeRoutes(
   router:  Router,
@@ -51,16 +37,15 @@ export function registerThemeRoutes(
 
   router.get(`${base}/api/_theme`, async (_req, res) => {
     let overrides: Partial<ThemeConfig> | null = null
-    try {
-      const { app } = await import(/* @vite-ignore */ '@rudderjs/core') as { app(): { make(key: string): unknown } }
-      const prisma = app().make('prisma') as PanelGlobalDelegate
-      const slug = `${cfg.name}__theme`
-      const row = await prisma.panelGlobal.findUnique({ where: { slug } })
-      if (row?.data) {
-        const raw = typeof row.data === 'string' ? JSON.parse(row.data as string) : row.data
-        overrides = migrateThemeOverrides(raw)
+    const storage = pilotiq.getThemeStorage()
+    if (storage) {
+      try {
+        const raw = await storage.load()
+        if (raw) overrides = migrateThemeOverrides(raw)
+      } catch (e) {
+        console.warn('[pilotiq] failed to load theme overrides:', e)
       }
-    } catch { /* no DB or no table — that's fine */ }
+    }
 
     return res.json({
       config:    cfg.theme ?? {},
@@ -77,18 +62,13 @@ export function registerThemeRoutes(
   })
 
   router.put(`${base}/api/_theme`, async (req, res) => {
+    const storage = pilotiq.getThemeStorage()
+    if (!storage) {
+      return res.status(500).json({ message: 'No theme storage adapter configured.' })
+    }
     try {
       const overrides = req.body as Partial<ThemeConfig>
-      const { app } = await import(/* @vite-ignore */ '@rudderjs/core') as { app(): { make(key: string): unknown } }
-      const prisma = app().make('prisma') as PanelGlobalDelegate
-      const slug = `${cfg.name}__theme`
-
-      await prisma.panelGlobal.upsert({
-        where:  { slug },
-        update: { data: JSON.stringify(overrides) },
-        create: { slug, data: JSON.stringify(overrides) },
-      })
-
+      await storage.save(overrides)
       pilotiq.setThemeOverrides(overrides)
       return res.json({ ok: true })
     } catch (e) {
@@ -97,13 +77,15 @@ export function registerThemeRoutes(
   })
 
   router.delete(`${base}/api/_theme`, async (_req, res) => {
-    try {
-      const { app } = await import(/* @vite-ignore */ '@rudderjs/core') as { app(): { make(key: string): unknown } }
-      const prisma = app().make('prisma') as PanelGlobalDelegate
-      const slug = `${cfg.name}__theme`
-      await prisma.panelGlobal.delete({ where: { slug } }).catch(() => {})
-      pilotiq.setThemeOverrides(undefined)
-    } catch { /* ignore */ }
+    const storage = pilotiq.getThemeStorage()
+    if (storage) {
+      try {
+        await storage.clear()
+      } catch (e) {
+        console.warn('[pilotiq] failed to clear theme overrides:', e)
+      }
+    }
+    pilotiq.setThemeOverrides(undefined)
     return res.json({ ok: true })
   })
 }
