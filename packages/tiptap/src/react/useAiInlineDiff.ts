@@ -134,14 +134,36 @@ export function useAiInlineDiff(
     }
   }, [editor, list])
 
-  // Cross-tree applier — when the banner / chat-sidebar pill calls
-  // `pendingSuggestions.approve(id)` for one of our tracked suggestions,
-  // accept the diff. Editor is the source of truth for the new doc.
+  // Cross-tree applier — two paths:
+  //
+  //   1. Review-mode accept. Banner / chat-sidebar pill calls
+  //      `pendingSuggestions.approve(id)` for a suggestion we've already
+  //      started a diff for. Clear the diff state — current doc IS the
+  //      accepted state.
+  //   2. Auto-mode direct apply. AI tool binding bypassed the queue and
+  //      called the registry's applier with a synthetic suggestion
+  //      carrying `meta.surgical` (the suggestion was never pushed to
+  //      the context, so it's not in `startedRef`). Plan the modifier
+  //      and dispatch it as a plain transaction — no diff overlay, no
+  //      Accept / Reject step. Mirrors `set_value` auto-mode, which
+  //      writes directly via the same registry.
   useEffect(() => {
     if (!editor) return
     const applier: PendingSuggestionApplier = (suggestion) => {
-      if (!startedRef.current.has(suggestion.id)) return
-      editor.commands.acceptAiInlineDiff()
+      if (startedRef.current.has(suggestion.id)) {
+        editor.commands.acceptAiInlineDiff()
+        return
+      }
+      const surgical = readSurgicalMeta(suggestion)
+      if (!surgical) return
+      const modifier = planSurgicalModifier(editor, surgical)
+      if (!modifier) return
+      editor.commands.command(({ tr, dispatch }) => {
+        modifier(tr)
+        if (!tr.docChanged) return false
+        if (dispatch) dispatch(tr)
+        return true
+      })
     }
     return registerPendingSuggestionApplier(undefined, fieldName, applier)
   }, [editor, fieldName])
