@@ -128,8 +128,14 @@ function LocalBranch(props: FieldRendererProps): React.ReactElement {
   const readOnly      = readBool(el['readOnly'], false)
 
   const fs = useFieldState(name)
-  const initial = useMemo(() => stringValue(defaultValue), [])
-  const [localValue, setLocalValue] = useState<string>(initial)
+  // Uncontrolled fallback path locks to the first `defaultValue` seen at
+  // mount — same shape as native `<input defaultValue=…>`. Parents that
+  // need a fresh starting value across record swaps mount under `key`
+  // (FormRenderer keys on `formId` already; Repeater/Builder per-row
+  // mounts). When the form opts into reactive state via `Form.stateUrl`,
+  // `fs.controlled` flips to true and `value` reads from `fs.value` —
+  // the localValue branch is unused in that case.
+  const [localValue, setLocalValue] = useState<string>(() => stringValue(defaultValue))
 
   const value = fs.controlled ? stringValue(fs.value) : localValue
   const setValue = (next: string): void => {

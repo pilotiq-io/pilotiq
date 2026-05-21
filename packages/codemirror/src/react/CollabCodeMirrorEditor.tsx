@@ -121,8 +121,11 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     // wraps remote-selection wiring in `if (awareness)` so undefined disables
     // cursor decorations cleanly. `undoManager: false` lets our own
     // `historyKeymap` run on the plain CodeMirror history (Yjs maintains its
-    // own per-client undo stack via the keymap we already added).
-    extensions.push(yCollab(yText, awareness, { undoManager: false } as never))
+    // own per-client undo stack via the keymap we already added). The option
+    // key is `undoManager` (verified against y-codemirror.next's
+    // `index.d.ts` — `{ undoManager: Y.UndoManager | false }`); the prior
+    // `as never` cast was bypassing typecheck for no reason and is gone.
+    extensions.push(yCollab(yText, awareness, { undoManager: false }))
 
     // Mirror editor text into React state on every change. `update.docChanged`
     // can fire with an identical `doc.toString()` (IME composition, cursor-only

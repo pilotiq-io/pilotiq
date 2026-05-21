@@ -449,6 +449,16 @@ function ClientEditor(props: ClientEditorProps) {
   // scratch on every keystroke.
   useEffect(() => { editorRef.current = editor ?? null }, [editor])
 
+  // Mirror `disabled` onto the live editor at runtime. `useEditor`'s
+  // `editable: !disabled` only fires at construction time, so a parent
+  // flipping read-only after mount (e.g. policy denial mid-edit, form
+  // submitting state) would silently no-op without this effect. Same
+  // shape MarkdownEditor.tsx and CollabTextRenderer.tsx already use.
+  useEffect(() => {
+    if (!editor) return
+    editor.setEditable(!disabled)
+  }, [editor, disabled])
+
   // First-load seed when collab is active. Collaboration starts the
   // editor empty regardless of `defaultValue`; once the WebsocketProvider
   // syncs the room state from the server we check whether the field's

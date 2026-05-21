@@ -15,6 +15,7 @@ import {
   useCollabRoom,
   getCollabExtensions,
   onProviderSynced,
+  useToast,
   type MarkdownEditorProps,
 } from '@pilotiq/pilotiq/react'
 import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
@@ -180,6 +181,10 @@ export function MarkdownEditor({
   const [sourceDraft, setSourceDraft] = useState<string>(defaultValue)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  // Toast handle for surfacing upload failures via the host's notification
+  // stack. Falls back to a no-op when no ToasterProvider is mounted
+  // (`useToast` returns a default context — see Toaster.tsx).
+  const { notify } = useToast()
 
   // Collab extension factory output. Built once per editor mount (the
   // factory closes over the room's ydoc + provider + field name); keyed
@@ -381,9 +386,25 @@ export function MarkdownEditor({
       if (fileAttachmentsDirectory)  fd.append('directory',  fileAttachmentsDirectory)
       if (fileAttachmentsVisibility) fd.append('visibility', fileAttachmentsVisibility)
       fd.append('fieldName', name)
-      const res = await fetch(uploadUrl, { method: 'POST', body: fd, headers: { Accept: 'application/json' } })
+      let res: Response
+      try {
+        res = await fetch(uploadUrl, { method: 'POST', body: fd, headers: { Accept: 'application/json' } })
+      } catch {
+        // Network-level failure (offline, DNS, etc.) — surface as a
+        // toast since the user clicked Upload and would otherwise see
+        // only the spinner stop.
+        notify({ title: 'Upload failed', body: 'Could not reach the upload endpoint.', type: 'error' })
+        return
+      }
       const data = await res.json().catch(() => ({} as { ok?: boolean; url?: string; error?: string }))
-      if (!res.ok || !data.ok || !data.url) return
+      if (!res.ok || !data.ok || !data.url) {
+        notify({
+          title: 'Upload failed',
+          body:  data.error ?? `Upload failed (status ${res.status}).`,
+          type:  'error',
+        })
+        return
+      }
       const isImage = file.type.startsWith('image/')
       if (isImage) {
         editor.chain().focus().setImage({ src: data.url, alt: file.name }).run()
