@@ -588,14 +588,12 @@ export async function handleUploadRequest(
     return res.json({ ok: false, error: 'No upload adapter configured' })
   }
 
-  // Auth: panel-wide `guard` and per-request `user`. We don't enforce
-  // per-resource canEdit here because the field doesn't know which
-  // resource it belongs to — apps that need it should hook into
-  // their adapter's `put()` and consult their own auth there.
-  if (cfg.guard && !await cfg.guard(req)) {
-    res.status(401)
-    return res.json({ ok: false, error: 'Unauthorized' })
-  }
+  // Auth: `Pilotiq.guard()` runs as a `router.group(...)` middleware in
+  // `routes.ts`, so by the time we land here the panel-wide gate has
+  // already passed. We don't enforce per-resource canEdit because the
+  // field doesn't know which resource it belongs to — apps that need
+  // it should hook into their adapter's `put()` and consult their own
+  // auth there.
 
   // Parse multipart body. Hono's parseBody returns `Record<string, File | string>`.
   const raw = req.raw as { req?: { parseBody?: (opts?: { all?: boolean }) => Promise<Record<string, unknown>> } } | undefined

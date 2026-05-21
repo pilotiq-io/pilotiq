@@ -62,6 +62,10 @@ function makeStubRouter(): Router & { _calls: Array<{ method: string; path: stri
     put:    (path: string) => noop(path),
     delete: (path: string) => noop(path),
     patch:  (path: string) => noop(path),
+    // `router.group(opts, fn)` runs `fn()` synchronously inside its
+    // scope. Stub mirrors that — `Pilotiq.guard()` middleware doesn't
+    // touch the stub, only `fn()` matters.
+    group:  (_opts: unknown, fn: () => void) => { fn() },
     _calls: calls,
   }
   return stub

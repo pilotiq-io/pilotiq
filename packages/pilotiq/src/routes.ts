@@ -1,4 +1,5 @@
 import type { Router } from '@rudderjs/router'
+import type { MiddlewareHandler } from '@rudderjs/contracts'
 import type { Pilotiq } from './Pilotiq.js'
 import { Form } from './elements/Form.js'
 import { dispatchFormSubmit, findForms, selectForm } from './elements/dispatchForm.js'
@@ -6,6 +7,7 @@ import { RESERVED_RELATIONSHIP_TOKENS } from './RelationManager.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
 import type { ClusterClass } from './Cluster.js'
+import { wantsJson } from './routes/helpers.js'
 
 // `routes.ts` is split into a directory of focused modules under
 // `./routes/`. This file is the orchestrator — boot-time validation
@@ -214,46 +216,68 @@ export function registerPilotiqRoutes(
     }
   }
 
-  // ── Panel-level sibling routes ────────────────────────
-  // Dashboard, _uploads, _widget, _search, _notifications.
-  // Pulled out 2026-05-12 (Phase 2 of the routes.ts split).
-  registerPanelRoutes(router, pilotiq, base)
-
-  // ── Resource routes ───────────────────────────────────
-  // List / view / create / edit / delete + soft-delete / actions /
-  // widgets / deferred-table / reorder / per-row editable cells / the
-  // four form-state companion endpoints / record sub-pages. Each
-  // Resource also fans out into its registered relation managers
-  // (depth-1 + depth-2). Pulled out 2026-05-12 (Phase 5 of the
-  // routes.ts split).
-  for (const R of cfg.resources) {
-    registerResourceRoutes(router, pilotiq, R, base, {
-      reorderable: reorderEnabled.has(R.getSlug()),
-      editable:    editableEnabled.has(R.getSlug()),
-    })
+  // ── `Pilotiq.guard()` — panel-wide 401 layer ──────────
+  // Documented as the unauthenticated-request gate, but until 2026-05-21
+  // only `_uploads` consulted it — every other route relied on
+  // `cfg.user` returning null + `R.canX(user, …)` defaulting to true,
+  // so an app that wired `guard(req => Auth.check())` but shipped any
+  // Resource without `canAccess` ended up with an unauthenticated,
+  // fully-readable admin panel. Wrap every core panel route in one
+  // group so the guard runs in front of every handler.
+  const guardMiddleware: MiddlewareHandler = async (req, res, next) => {
+    if (cfg.guard) {
+      const allowed = await cfg.guard(req)
+      if (!allowed) {
+        res.status(401)
+        if (wantsJson(req)) return res.json({ ok: false, error: 'Unauthorized' })
+        return res.send('Unauthorized')
+      }
+    }
+    return next()
   }
 
-  // ── Globals (singletons — 2-segment, no /:id) ────────
-  // Pulled out 2026-05-12 (Phase 3 of the routes.ts split).
-  for (const G of cfg.globals) {
-    registerGlobalRoutes(router, pilotiq, G, base)
-  }
+  router.group({ middleware: [guardMiddleware] }, () => {
+    // ── Panel-level sibling routes ────────────────────────
+    // Dashboard, _uploads, _widget, _search, _notifications.
+    // Pulled out 2026-05-12 (Phase 2 of the routes.ts split).
+    registerPanelRoutes(router, pilotiq, base)
 
-  // ── Custom pages (2-segment, slug route) ──────────────
-  // Pulled out 2026-05-12 (Phase 3 of the routes.ts split).
-  for (const PageClass of cfg.pages) {
-    // The dashboard page lives at `${base}` (panel routes handle it);
-    // skip it here so we don't register a duplicate `${pageUrl}` route
-    // or a broken `${base}/` (when `slug = ''`).
-    if (cfg.dashboardPage === PageClass) continue
-    registerCustomPageRoutes(router, pilotiq, PageClass, base)
-  }
+    // ── Resource routes ───────────────────────────────────
+    // List / view / create / edit / delete + soft-delete / actions /
+    // widgets / deferred-table / reorder / per-row editable cells / the
+    // four form-state companion endpoints / record sub-pages. Each
+    // Resource also fans out into its registered relation managers
+    // (depth-1 + depth-2). Pulled out 2026-05-12 (Phase 5 of the
+    // routes.ts split).
+    for (const R of cfg.resources) {
+      registerResourceRoutes(router, pilotiq, R, base, {
+        reorderable: reorderEnabled.has(R.getSlug()),
+        editable:    editableEnabled.has(R.getSlug()),
+      })
+    }
 
-  // ── Theme editor ──────────────────────────────────────
-  // Pulled out 2026-05-12 (Phase 3 of the routes.ts split).
-  if (cfg.themeEditor) {
-    registerThemeRoutes(router, pilotiq, base)
-  }
+    // ── Globals (singletons — 2-segment, no /:id) ────────
+    // Pulled out 2026-05-12 (Phase 3 of the routes.ts split).
+    for (const G of cfg.globals) {
+      registerGlobalRoutes(router, pilotiq, G, base)
+    }
+
+    // ── Custom pages (2-segment, slug route) ──────────────
+    // Pulled out 2026-05-12 (Phase 3 of the routes.ts split).
+    for (const PageClass of cfg.pages) {
+      // The dashboard page lives at `${base}` (panel routes handle it);
+      // skip it here so we don't register a duplicate `${pageUrl}` route
+      // or a broken `${base}/` (when `slug = ''`).
+      if (cfg.dashboardPage === PageClass) continue
+      registerCustomPageRoutes(router, pilotiq, PageClass, base)
+    }
+
+    // ── Theme editor ──────────────────────────────────────
+    // Pulled out 2026-05-12 (Phase 3 of the routes.ts split).
+    if (cfg.themeEditor) {
+      registerThemeRoutes(router, pilotiq, base)
+    }
+  })
 
   // Plugin route hook — runs AFTER all core routes register so plugins
   // can mount their own HTTP surface alongside the panel's. Order
@@ -263,6 +287,11 @@ export function registerPilotiqRoutes(
   // `_notifications`) is the recommended shape. Failures inside a
   // plugin's hook propagate — boot order is "register all core, then
   // each plugin in order"; a throw on hook N stops hooks N+1..N+M.
+  //
+  // Plugin routes mount OUTSIDE the guard group — plugins own their
+  // own auth posture (e.g. public webhooks, custom auth handshakes).
+  // Plugin authors that want the panel guard should consult
+  // `cfg.guard` themselves at the top of their handlers.
   for (const plugin of pilotiq.getPlugins()) {
     plugin.registerRoutes?.(router, pilotiq)
   }
