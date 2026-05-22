@@ -517,7 +517,7 @@ function ClientEditor(props: ClientEditorProps) {
   // Whole-field handling: NO chip widget here. The chip's `textContent`
   // renderer would surface raw HTML tags as literal text inside the
   // green pill — unparseable on multi-paragraph rewrites. Instead,
-  // `<AiSuggestionBanner>` mounts above the editor (see render below).
+  // `<AiSuggestionBanner>` mounts below the editor (see render below).
   // Producer-supplied range suggestions still ride the inline chip —
   // those have a precise anchor worth visualizing in context.
   const applyWholeField = (value: string): void => {
@@ -551,16 +551,6 @@ function ClientEditor(props: ClientEditorProps) {
   return (
     <div className="relative flex flex-col">
       <input type="hidden" name={name} value={serialized} />
-      <AiSuggestionBanner
-        fieldName={name}
-        onApplyWholeField={applyWholeField}
-        {...(isDiffActive && editor
-          ? {
-              onAcceptViaEditor: () => editor.commands.acceptAiInlineDiff(),
-              onRejectViaEditor: () => editor.commands.rejectAiInlineDiff(),
-            }
-          : {})}
-      />
       {editor && toolbarGroups && toolbarGroups.length > 0 && (
         <Toolbar
           editor={editor}
@@ -590,6 +580,16 @@ function ClientEditor(props: ClientEditorProps) {
         />
       )}
       <EditorContent editor={editor} />
+      <AiSuggestionBanner
+        fieldName={name}
+        onApplyWholeField={applyWholeField}
+        {...(isDiffActive && editor
+          ? {
+              onAcceptViaEditor: () => editor.commands.acceptAiInlineDiff(),
+              onRejectViaEditor: () => editor.commands.rejectAiInlineDiff(),
+            }
+          : {})}
+      />
       {editor && floatingEnabled && <FloatingToolbar editor={editor} />}
       {editor && <TableFloatingToolbar editor={editor} />}
       <SlashPopover state={slashState} keyHandlerRef={slashKeyRef} />

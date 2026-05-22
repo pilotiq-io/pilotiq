@@ -270,7 +270,7 @@ export function MarkdownEditor({
   // Whole-field handling: NO chip widget here. The chip's `textContent`
   // renderer surfaces raw markdown (`## Heading\n- item`) as literal text
   // inside the green pill — visually unparseable for multi-paragraph
-  // rewrites. Instead, `<AiSuggestionBanner>` mounts above the editor
+  // rewrites. Instead, `<AiSuggestionBanner>` mounts below the editor
   // (see render below). Producer-supplied range suggestions still ride
   // the inline chip path — those have a precise anchor worth showing
   // in context.
@@ -501,16 +501,6 @@ export function MarkdownEditor({
 
   return (
     <div className="flex flex-col rounded-md border bg-background">
-      <AiSuggestionBanner
-        fieldName={name}
-        onApplyWholeField={applyWholeField}
-        {...(isDiffActive && editor
-          ? {
-              onAcceptViaEditor: () => editor.commands.acceptAiInlineDiff(),
-              onRejectViaEditor: () => editor.commands.rejectAiInlineDiff(),
-            }
-          : {})}
-      />
       {canAttach && (
         <input
           ref={fileInputRef}
@@ -592,6 +582,17 @@ export function MarkdownEditor({
           dangerouslySetInnerHTML={{ __html: previewHtml || '<p class="text-muted-foreground italic">Nothing to preview</p>' }}
         />
       )}
+
+      <AiSuggestionBanner
+        fieldName={name}
+        onApplyWholeField={applyWholeField}
+        {...(isDiffActive && editor
+          ? {
+              onAcceptViaEditor: () => editor.commands.acceptAiInlineDiff(),
+              onRejectViaEditor: () => editor.commands.rejectAiInlineDiff(),
+            }
+          : {})}
+      />
     </div>
   )
 }

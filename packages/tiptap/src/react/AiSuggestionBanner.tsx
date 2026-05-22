@@ -6,11 +6,12 @@ import {
 } from '@pilotiq/pilotiq/react'
 
 /**
- * Top-of-editor banner UI for whole-field AI suggestions on Tiptap surfaces
- * whose content shape can't survive the inline chip widget's plain-text
- * replace (richtext, markdown). The chip path renders the replacement via
- * `Element.textContent = replacement` which surfaces raw HTML / markdown
- * as literal text — fine for plain `TextField`, ugly for the others.
+ * Bottom-of-editor banner UI for whole-field AI suggestions on Tiptap
+ * surfaces whose content shape can't survive the inline chip widget's
+ * plain-text replace (richtext, markdown). The chip path renders the
+ * replacement via `Element.textContent = replacement` which surfaces raw
+ * HTML / markdown as literal text — fine for plain `TextField`, ugly for
+ * the others.
  *
  * Visible only when at least one pending suggestion targets this field
  * AND lacks `meta.editorRange` (i.e. a whole-field replacement from

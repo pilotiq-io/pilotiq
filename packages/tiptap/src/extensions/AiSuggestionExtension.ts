@@ -223,7 +223,7 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
       .${prefix}-accept:hover { color: rgb(21, 128, 61); }
       .${prefix}-reject:hover { color: rgb(185, 28, 28); }
 
-      /* Banner — top-of-editor strip for whole-field suggestions on rich
+      /* Banner — bottom-of-editor strip for whole-field suggestions on rich
          surfaces (markdown / richtext). Sibling to the chip styles above;
          lives here so both ship via the same extension-mount sentinel.
          Class names live under \`pilotiq-ai-banner-*\` (not \`-suggestion-\`)
@@ -234,7 +234,7 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
         align-items: center;
         gap: 0.5rem;
         padding: 0.375rem 0.625rem;
-        margin-bottom: 0.375rem;
+        margin-top: 0.375rem;
         border-radius: 0.375rem;
         background-color: rgba(254, 252, 232, 0.9);
         border: 1px solid rgba(234, 179, 8, 0.4);
