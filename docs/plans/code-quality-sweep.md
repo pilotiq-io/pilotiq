@@ -206,11 +206,11 @@ Fix: add `useEffect(() => { editor?.setEditable(!disabled) }, [editor, disabled]
 - `CollabCodeMirrorEditor.tsx:125` — `yCollab(yText, awareness, { undoManager: false } as never)` bypasses real `y-codemirror.next` typing. Verify the option key — it's `yUndoManager` in current upstream typings. If wrong, undo via `historyKeymap` works coincidentally because Yjs adds its own history.
 - Fold local `useThemeIsDark` in `CodeMirrorEditor.tsx:183-213` into the shared `useSyncExternalStore` helper in `CollabCodeMirrorEditor.tsx:259-303` to avoid per-Repeater-row listener fan-out.
 
-### 6d. Consume framework collab hooks (depends on framework plan) ✅ MOSTLY SHIPPED 2026-05-22 (commit 223eb38)
+### 6d. Consume framework collab hooks (depends on framework plan) ✅ SHIPPED 2026-05-22
 
-**Outcome:** Tiptap's three editor adapters (`TiptapEditor`, `MarkdownEditor`, `CollabTextRenderer`) now import `useCollabSeed` from `@rudderjs/sync/react` directly. `YDocShape` shim deleted. Framework hook returns the `(doc, fragment)` pair pre-resolved so callers drop their `(doc as YDocShape).getXmlFragment(name)` boilerplate. `@rudderjs/sync` added as optional peer on `@pilotiq/tiptap`.
+**Phase 6d.1 — Tiptap (commit 223eb38):** Tiptap's three editor adapters (`TiptapEditor`, `MarkdownEditor`, `CollabTextRenderer`) now import `useCollabSeed` from `@rudderjs/sync/react` directly. `YDocShape` shim deleted. Framework hook returns the `(doc, fragment)` pair pre-resolved so callers drop their `(doc as YDocShape).getXmlFragment(name)` boilerplate. `@rudderjs/sync@^1.2.0` added as peer on `@pilotiq/tiptap`.
 
-**Not migrated:** CodeMirror — framework's `useCollabSeed` is `Y.XmlFragment`-only (calls `doc.getXmlFragment(fragmentKey)` internally); CodeMirror's seed uses `Y.Text`. Framework would need a `useCollabSeedText` variant. Tracked separately.
+**Phase 6d.2 — CodeMirror (this PR):** `CollabCodeMirrorEditor` now consumes `useCollabSeedText` from `@rudderjs/sync@1.3.0`. The `(doc as Y.Doc).getText(fragmentKey)` cast and manual `getText` call are gone — the seed callback receives `(_doc, yText)` already resolved to `Y.Text`. `@rudderjs/sync@^1.3.0` added as peer on `@pilotiq/codemirror`. Framework plan `2026-05-22-sync-react-hooks-text-and-enabled.md` shipped at rudder commits 3b048481 + 79b8df50.
 
 **Not migrated:** pilotiq core's `useCollabSeed.ts` shim — kept as deprecation surface for external consumers; framework's hook lives next to it under its own import path. Drop in next major (the local shim's behavior is a strict subset of the framework hook's).
 
@@ -274,7 +274,7 @@ Items worth fixing eventually but not part of this sweep:
 7. **Phase 6 d** alone (`refactor(adapters): consume @rudderjs/sync/react hooks` + changeset patch) — blocked on framework plan
 8. **Phase 6 e** alone (`test(adapters):` — no changeset, no version bump)
 
-Phases 1, 2, and 3 should ship today; the rest can wait for normal cadence. Phase 6d is blocked on the framework-side `@rudderjs/sync/react` plan landing first.
+Phases 1, 2, and 3 should ship today; the rest can wait for normal cadence.
 
 ---
 

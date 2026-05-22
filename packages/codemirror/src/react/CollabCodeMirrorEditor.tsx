@@ -5,7 +5,8 @@ import { indentUnit } from '@codemirror/language'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { basicSetup } from 'codemirror'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
-import { useCollabSeed, type CollabRoom } from '@pilotiq/pilotiq/react'
+import { type CollabRoom } from '@pilotiq/pilotiq/react'
+import { useCollabSeedText, type CollabRoom as FrameworkCollabRoom } from '@rudderjs/sync/react'
 // Type-only import keeps the value-import surface inside `y-codemirror.next`
 // (a peer dep), so consumers without `yjs` installed still type-check this
 // file via TS' module-omission rules for type-only imports.
@@ -203,12 +204,15 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
   // the same room don't re-seed; pair with the in-mount `yText.toString()`
   // pre-seed above which handles re-mount onto a yText that already has
   // content (e.g. `renameRow` clones).
-  useCollabSeed(seedRoom, fragmentKey, (doc) => {
-    const yText = (doc as Y.Doc).getText(fragmentKey)
-    if (yText.length === 0 && defaultValue) {
-      yText.insert(0, defaultValue)
-    }
-  })
+  useCollabSeedText(
+    seedRoom as unknown as FrameworkCollabRoom | null,
+    fragmentKey,
+    (_doc, yText) => {
+      if (yText.length === 0 && defaultValue) {
+        yText.insert(0, defaultValue)
+      }
+    },
+  )
 
   useEffect(() => {
     const view = viewRef.current

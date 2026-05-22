@@ -50,6 +50,9 @@ importers:
       '@pilotiq/pilotiq':
         specifier: workspace:^
         version: link:../pilotiq
+      '@rudderjs/sync':
+        specifier: ^1.3.0
+        version: 1.3.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(react@19.2.5)(typescript@5.9.3)
       '@testing-library/dom':
         specifier: ^10.4.1
         version: 10.4.1
@@ -1560,6 +1563,21 @@ packages:
 
   '@rudderjs/sync@1.2.0':
     resolution: {integrity: sha512-88hSNqfcMXj2wx8HooSIYPT1QI0RAccU2EyhwU8SCNAbcT1YNiucq2hyKQF1A2QzIOaM/Q31Dsto0Gg75M9Lzg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    peerDependencies:
+      react: '>=19.2.0'
+      y-indexeddb: ^9.0.0
+      y-websocket: ^2.0.0 || ^3.0.0
+    peerDependenciesMeta:
+      react:
+        optional: true
+      y-indexeddb:
+        optional: true
+      y-websocket:
+        optional: true
+
+  '@rudderjs/sync@1.3.0':
+    resolution: {integrity: sha512-7uaacyGx1Btn9ELCT5mYEfbdPi8+tIPD55ZOGn/tgC/7ZJvRgS0sogmOkDbgfgXjCU3DStVT2bw2cfJaftqiXg==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       react: '>=19.2.0'
@@ -5110,6 +5128,23 @@ snapshots:
       zod: 4.3.6
 
   '@rudderjs/sync@1.2.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(react@19.2.5)(typescript@5.9.3)':
+    dependencies:
+      '@rudderjs/core': 1.2.0
+      lib0: 0.2.117
+      ws: 8.20.0
+      yjs: 13.6.30
+    optionalDependencies:
+      '@prisma/client': 7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3)
+      ioredis: 5.10.1
+      react: 19.2.5
+    transitivePeerDependencies:
+      - bufferutil
+      - prisma
+      - supports-color
+      - typescript
+      - utf-8-validate
+
+  '@rudderjs/sync@1.3.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(react@19.2.5)(typescript@5.9.3)':
     dependencies:
       '@rudderjs/core': 1.2.0
       lib0: 0.2.117
