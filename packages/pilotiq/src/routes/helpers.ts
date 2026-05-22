@@ -680,8 +680,12 @@ export async function handleUploadRequest(
         const buf = await pkg.image(file).resize(w, h).format('webp').toBuffer()
         const baseName = file.name.replace(/\.[^.]+$/, '')
         uploadFile = new File([buf.buffer as ArrayBuffer], `${baseName}.webp`, { type: 'image/webp' })
-      } catch {
-        // @rudderjs/image not installed or resize failed — fall through with original file
+      } catch (err) {
+        // @rudderjs/image not installed or resize failed — fall through with the
+        // original file. We log so a misconfigured resize (peer dep present but
+        // crashing on a specific file) doesn't silently degrade to unresized
+        // uploads in production.
+        console.warn('[pilotiq] image resize fell through; uploading original file:', err instanceof Error ? err.message : err)
       }
     }
   }
