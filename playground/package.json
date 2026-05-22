@@ -4,14 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "rudder doctor --only structure",
     "dev": "vike dev --port 3003",
     "dev:clean": "pids=$(lsof -ti :24680 -ti :3003 2>/dev/null); if [ -n \"$pids\" ]; then kill -9 $pids; fi; vike dev --port 3003",
     "build": "vike build",
     "start": "node ./dist/server/index.mjs",
     "preview": "pids=$(lsof -ti :3003 2>/dev/null); if [ -n \"$pids\" ]; then kill -9 $pids; fi; node ./dist/server/index.mjs",
     "pretypecheck": "node scripts/regen-pilotiq-stubs.mjs",
-    "typecheck": "tsc --noEmit",
-    "rudder": "tsx node_modules/@rudderjs/cli/src/index.ts"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@pilotiq/pilotiq": "workspace:*",
@@ -84,7 +84,7 @@
     "vike-react": "^0.6.20"
   },
   "devDependencies": {
-    "@rudderjs/cli": "^4.1.0",
+    "@rudderjs/cli": "^4.6.2",
     "@types/node": "^20.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
