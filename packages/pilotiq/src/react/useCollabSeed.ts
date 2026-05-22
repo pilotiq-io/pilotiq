@@ -37,12 +37,25 @@ export function useCollabSeed(
       setSeeded(false)
       return
     }
-    // Legacy rooms without `.synced` — the room owner is on the hook
-    // for whatever first-sync gating they used to do via
-    // `onProviderSynced`. Mark seeded immediately so the consumer
-    // can mount without a placeholder. No seedFn runs.
+    // Legacy rooms without `.synced` — the room owner did its own first-
+    // sync gating (typically `onProviderSynced` inside `<RecordCollabRoom>`).
+    // Adapters that migrated to `useCollabSeed` still need the seedFn to
+    // run, otherwise an empty Y.XmlFragment never picks up the SSR-rendered
+    // `defaultValue` — and the editor's mount-time `onChange('')` clobbers
+    // the hidden FormData input. Run the seedFn immediately (treat as
+    // already-synced); the room owner's prior gating is assumed to have
+    // resolved by the time the React mount effect fires.
     const syncedPromise = room.synced
     if (!syncedPromise) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ydoc = room.ydoc as any
+        if (ydoc && typeof ydoc.transact === 'function') {
+          ydoc.transact(() => seedFnRef.current(ydoc), SEED_ORIGIN)
+        } else {
+          seedFnRef.current(ydoc)
+        }
+      } catch { /* ignore — seed is best-effort */ }
       setSeeded(true)
       return
     }
