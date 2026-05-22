@@ -23,6 +23,7 @@ import { AiInlineDiffExtension, aiInlineDiffPluginKey } from '../extensions/AiIn
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
 import { AiSuggestionBanner } from './AiSuggestionBanner.js'
+import { getMarkdownString, parseMarkdownToHtml } from '../markdownStorage.js'
 
 // Inline lucide.dev SVGs — same posture as `toolbarButtons.tsx` so this
 // package doesn't pull `lucide-react` as a peer dep. Keep stroke / size
@@ -246,10 +247,7 @@ export function MarkdownEditor({
       // race the Y.XmlFragment sync. Seed after first connect (effect below).
       content: collabActive ? '' : defaultValue,
       onUpdate({ editor }) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const storage = (editor.storage as any).markdown
-        const md = typeof storage?.getMarkdown === 'function' ? storage.getMarkdown() : ''
-        onChange(md)
+        onChange(getMarkdownString(editor))
       },
       onBlur() { onBlur?.() },
     },
@@ -295,11 +293,8 @@ export function MarkdownEditor({
   useAiInlineDiff(editor ?? null, name, {
     parseSuggestion: (ed, value) => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const parser = (ed.storage as any).markdown?.parser
-        if (!parser || typeof parser.parse !== 'function') return null
-        const html = parser.parse(value)
-        if (typeof html !== 'string') return null
+        const html = parseMarkdownToHtml(ed, value)
+        if (html === undefined) return null
         const container = document.createElement('div')
         container.innerHTML = html
         return ProseMirrorDOMParser.fromSchema(ed.schema).parseSlice(container)
@@ -340,12 +335,7 @@ export function MarkdownEditor({
         const cmd = (editor.commands as any).setContent
         if (cmd) cmd(defaultValue)
       }
-      if (editor) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const storage = (editor.storage as any).markdown
-        const md = typeof storage?.getMarkdown === 'function' ? storage.getMarkdown() : ''
-        onChange(md)
-      }
+      if (editor) onChange(getMarkdownString(editor))
     },
   )
 
@@ -363,10 +353,7 @@ export function MarkdownEditor({
 
   const enterSourceTab = (): void => {
     if (editor) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const storage = (editor.storage as any).markdown
-      const md = typeof storage?.getMarkdown === 'function' ? storage.getMarkdown() : ''
-      setSourceDraft(md)
+      setSourceDraft(getMarkdownString(editor))
     }
     setTab('source')
   }

@@ -22,6 +22,7 @@ import type { Editor } from '@tiptap/core'
 import type { Transaction } from '@tiptap/pm/state'
 import type { Mark, MarkType, Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { DOMParser as PMDOMParser } from '@tiptap/pm/model'
+import { parseMarkdownToHtml } from './markdownStorage.js'
 
 export type TransactionModifier = (tr: Transaction) => void
 
@@ -54,15 +55,10 @@ function blockStartPos(doc: ProseMirrorNode, blockIndex: number): number | null 
 function parseContentToSlice(editor: Editor, content: string): ReturnType<typeof PMDOMParser.prototype.parseSlice> | null {
   if (typeof document === 'undefined') return null
   let html = content
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mdParser = (editor.storage as any)?.markdown?.parser
-  if (mdParser && typeof mdParser.parse === 'function') {
-    try {
-      const parsed: unknown = mdParser.parse(content)
-      if (typeof parsed !== 'string') return null
-      html = parsed
-    } catch { return null }
-  }
+  try {
+    const parsed = parseMarkdownToHtml(editor, content)
+    if (parsed !== undefined) html = parsed
+  } catch { return null }
   const container = document.createElement('div')
   container.innerHTML = html
   return PMDOMParser.fromSchema(editor.schema).parseSlice(container)
