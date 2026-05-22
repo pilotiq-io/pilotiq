@@ -9,10 +9,11 @@ This plan tracks fixes uncovered by a focused code-quality review across the ope
 
 ---
 
-## Phase 1 — Enforce `Pilotiq.guard()` via `router.group()` 🔒
+## Phase 1 — Enforce `Pilotiq.guard()` via `router.group()` 🔒 ✅ SHIPPED 2026-05-21 (commit 67aadbd)
 
 **Severity:** high — possible unauthenticated panel exposure
 **Effort:** ~1h + regression test
+**Outcome:** `registerPilotiqRoutes` wraps every core route in `router.group({ middleware: [guardMiddleware] })`; redundant inline guard removed from `_uploads`; regression test at `routes/guard.test.ts` (325 lines, 19 cases) asserts every documented route 401s when `guard(() => false)` is set.
 
 ### The bug
 
