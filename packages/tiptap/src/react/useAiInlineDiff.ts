@@ -37,6 +37,7 @@ import { useEditorState } from '@tiptap/react'
 import {
   registerPendingSuggestionApplier,
   usePendingSuggestionsForField,
+  useFormId,
   type PendingSuggestion,
   type PendingSuggestionApplier,
 } from '@pilotiq/pilotiq/react'
@@ -86,6 +87,15 @@ export function useAiInlineDiff(
   options: UseAiInlineDiffOptions,
 ): void {
   const { list } = usePendingSuggestionsForField(fieldName)
+  // Scope the applier registration by the surrounding form's id so
+  // multi-form pages route suggestions to the editor instance inside the
+  // matching form — without this, two editors on different forms but
+  // sharing a field name (e.g. two "summary" RichTextFields, one in the
+  // main edit form + one in a Replicate modal) would race on
+  // `registerPendingSuggestionApplier(undefined, …)` and the last-mounted
+  // editor would steal every approval. Falls back to wildcard scope
+  // (`undefined`) when no form is up-tree.
+  const formId = useFormId()
 
   const parseRef = useRef(options.parseSuggestion)
   useEffect(() => { parseRef.current = options.parseSuggestion }, [options.parseSuggestion])
@@ -208,8 +218,8 @@ export function useAiInlineDiff(
         return true
       })
     }
-    return registerPendingSuggestionApplier(undefined, fieldName, applier)
-  }, [editor, fieldName])
+    return registerPendingSuggestionApplier(formId, fieldName, applier)
+  }, [editor, fieldName, formId])
 }
 
 function hasEditorRange(s: PendingSuggestion): boolean {

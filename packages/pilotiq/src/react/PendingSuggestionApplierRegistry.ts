@@ -58,6 +58,18 @@ export function registerPendingSuggestionApplier(
  * key first; falls back to the wildcard form ('*') so a producer that
  * pushed a suggestion without `formId` still resolves an applier from
  * a single-form page.
+ *
+ * Global-producer fallback: when the lookup `formId` is `undefined` AND
+ * no wildcard entry is registered, return any single scoped entry
+ * matching `fieldName`. This mirrors the consumer-side filter in
+ * `usePendingSuggestionsForField` which lets undefined formId on either
+ * side pass-through. Editors today register scoped by their surrounding
+ * `FormRenderer`'s id (`useFormId()`), so the wildcard slot is almost
+ * always empty — without this fallback, a producer that pushes without
+ * a formId on a single-form page would silently fail to resolve any
+ * applier. We pick the first scoped match (Map insertion order); when
+ * the page genuinely has multiple forms with the same field name,
+ * producers SHOULD stamp `formId` to disambiguate.
  */
 export function getPendingSuggestionApplier(
   formId:    string | undefined,
@@ -68,7 +80,13 @@ export function getPendingSuggestionApplier(
     if (scoped) return scoped.apply
   }
   const wild = _entries.get(keyFor(undefined, fieldName))
-  return wild?.apply
+  if (wild) return wild.apply
+  if (formId === undefined) {
+    for (const entry of _entries.values()) {
+      if (entry.fieldName === fieldName) return entry.apply
+    }
+  }
+  return undefined
 }
 
 /**

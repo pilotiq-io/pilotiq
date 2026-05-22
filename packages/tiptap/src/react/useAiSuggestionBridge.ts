@@ -3,6 +3,7 @@ import type { Editor } from '@tiptap/core'
 import {
   registerPendingSuggestionApplier,
   usePendingSuggestionsForField,
+  useFormId,
   type PendingSuggestion,
   type PendingSuggestionApplier,
 } from '@pilotiq/pilotiq/react'
@@ -74,6 +75,12 @@ export function useAiSuggestionBridge(
   options: UseAiSuggestionBridgeOptions = {},
 ): void {
   const { list, dismiss } = usePendingSuggestionsForField(fieldName)
+  // Scope the applier under the surrounding form's id — same reasoning
+  // as `useAiInlineDiff`: two editors with the same field name across
+  // different forms (main edit form vs. a Replicate modal, say) would
+  // otherwise race on `registerPendingSuggestionApplier(undefined, …)`
+  // and the last-mounted editor would steal every approval.
+  const formId = useFormId()
 
   // Hold the latest `dismiss` in a ref so the editor-side listener — which
   // installs once per editor — always reaches the up-to-date context API.
@@ -201,12 +208,13 @@ export function useAiSuggestionBridge(
         apply(suggestion.suggestedValue)
       }
     }
-    // Editor renderers don't currently have access to a `formId` here;
-    // pass `undefined` so the wildcard form scope resolves. Phase 8.5+
-    // can thread `formId` via the bridge call site if a future multi-
-    // form richtext consumer needs it.
-    return registerPendingSuggestionApplier(undefined, fieldName, applier)
-  }, [editor, fieldName])
+    // formId comes from `useFormId()` on the form-context side — scopes
+    // the registration per-form so multi-form pages route approvals to
+    // the matching editor. Falls back to wildcard (`undefined`) when no
+    // FormRenderer is up-tree (modal action schemas, action-modal forms
+    // mounted outside the main page form).
+    return registerPendingSuggestionApplier(formId, fieldName, applier)
+  }, [editor, fieldName, formId])
 }
 
 // Re-export the pending-suggestion type for consumers that import the hook

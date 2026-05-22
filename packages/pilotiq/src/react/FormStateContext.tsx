@@ -72,6 +72,19 @@ export function useFormState(): FormStateApi | null {
  */
 export const FormIdContext = createContext<string>('')
 
+/**
+ * Public accessor for the surrounding form's id, normalized to
+ * `undefined` when no `FormRenderer` is mounted up-tree (the sentinel
+ * empty string maps to `undefined`). Adapter packages — `@pilotiq/tiptap`,
+ * `@pilotiq/codemirror` — consume this via the package's `react` re-export
+ * to scope per-field registries (pending-suggestion appliers, focus
+ * reporters) by form so multi-form pages route correctly to the matching
+ * editor instance.
+ */
+export function useFormId(): string | undefined {
+  return useContext(FormIdContext) || undefined
+}
+
 export interface UseFieldStateResult {
   /** True when the field is inside a controlled form (live fields enabled).
    *  Renderers should fall back to their `defaultValue` path when false.

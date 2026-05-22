@@ -114,6 +114,7 @@ export {
   FormStateProvider,
   useFieldState,
   useFormState,
+  useFormId,
   useRowBinding,
   type FormStateApi,
   type FormStateProviderProps,
