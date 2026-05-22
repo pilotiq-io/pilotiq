@@ -37,7 +37,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "clean": "rm -rf dist",
-    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\"; EXIT=$?; rm -rf dist-test; exit $EXIT"
+    "test": "tsc -p tsconfig.test.json && node --import ./dist-test/test/setup.js --test \"dist-test/**/*.test.js\"; EXIT=$?; rm -rf dist-test; exit $EXIT"
   },
   "dependencies": {
     "prosemirror-changeset": "^2.4.1"
@@ -68,6 +68,8 @@
   "devDependencies": {
     "@base-ui/react": "^1",
     "@pilotiq/pilotiq": "workspace:^",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@tiptap/core": "^3",
     "@tiptap/extension-color": "3.22.4",
     "@tiptap/extension-details": "3.22.4",
@@ -85,10 +87,12 @@
     "@tiptap/react": "^3",
     "@tiptap/starter-kit": "^3",
     "@tiptap/suggestion": "^3",
+    "@types/jsdom": "^28.0.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "esbuild": "^0.27",
+    "jsdom": "^29.1.1",
     "react": "^19",
     "react-dom": "^19",
     "tiptap-markdown": "^0.9",

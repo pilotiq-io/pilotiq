@@ -32,9 +32,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "clean": "rm -rf dist",
-    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\"; EXIT=$?; rm -rf dist-test; exit $EXIT"
+    "test": "tsc -p tsconfig.test.json && node --import ./dist-test/test/setup.js --test \"dist-test/**/*.test.js\"; EXIT=$?; rm -rf dist-test; exit $EXIT"
   },
-  "dependencies": {},
   "peerDependencies": {
     "@pilotiq/pilotiq": ">=0.6.0 <1.0.0",
     "react": "^18 || ^19",
@@ -43,9 +42,13 @@
   },
   "devDependencies": {
     "@pilotiq/pilotiq": "workspace:^",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/jsdom": "^28.0.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "jsdom": "^29.1.1",
     "react": "^19",
     "react-dom": "^19",
     "recharts": "^2",
