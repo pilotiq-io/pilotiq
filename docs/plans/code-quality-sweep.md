@@ -66,10 +66,11 @@ This is the file we want a future regression to fail loudly — keep it boring a
 
 ---
 
-## Phase 2 — React hook-order crash in `PieChartView`
+## Phase 2 — React hook-order crash in `PieChartView` ✅ SHIPPED 2026-05-21 (commit b232826)
 
 **Severity:** medium — known crash, triggers when filter yields empty datasets
 **Effort:** 5 min + test
+**Outcome:** `useMemo` moved above the early return in `ChartRenderer.tsx:198-201`; `recharts` peer widened to `^2 || ^3`.
 
 `packages/recharts/src/react/ChartRenderer.tsx:197-202`:
 
@@ -85,10 +86,11 @@ Also bump `recharts` peer to `^2 || ^3` (currently pinned `^2`, blocks consumers
 
 ---
 
-## Phase 3 — Use framework `.first()` API for one-record lookups
+## Phase 3 — Use framework `.first()` API for one-record lookups ✅ SHIPPED (commit 15661ec)
 
 **Severity:** low — works today, just verbose and slower than necessary
 **Effort:** ~15 min
+**Outcome:** All three call sites now prefer `q.first()` with `paginate(1, 1)` as a defensive fallback for ORM adapters that don't yet implement `first()`. Comment at `orm/modelDefaults.ts` updated to reflect the new default strategy.
 
 `@rudderjs/orm` ships `Model.where(...).first()` / `firstOrFail()` / `firstOrCreate()` — Laravel-parity API at `packages/orm/src/index.ts:1079`. Pilotiq hand-rolls the same lookup as `paginate(1, 1)` in three spots:
 
@@ -186,18 +188,19 @@ Fix: precompute three `Map<slug, ResourceClass | GlobalClass | PageClass>` on th
 
 **Severity:** low (mostly) — one runtime-disabled-toggle bug, otherwise tidying
 **Effort:** ~3h spread across packages
+**Status:** 6a/b/c/e shipped; 6d remains (framework-blocked on `@rudderjs/sync/react` hooks landing).
 
-### 6a. `TiptapEditor` doesn't mirror `disabled` at runtime
+### 6a. `TiptapEditor` doesn't mirror `disabled` at runtime ✅ SHIPPED
 
 `packages/tiptap/src/react/TiptapEditor.tsx:260` — `editable: !disabled` is set at construction only. Siblings `MarkdownEditor.tsx:257-259` and `CollabTextRenderer.tsx:127-130` both call `editor.setEditable(...)` in an effect; this one doesn't. Toggling `disabled` at runtime (e.g. parent flips read-only on validation) silently no-ops.
 
 Fix: add `useEffect(() => { editor?.setEditable(!disabled) }, [editor, disabled])`.
 
-### 6b. `MarkdownEditor.uploadAndInsert` swallows server errors
+### 6b. `MarkdownEditor.uploadAndInsert` swallows server errors ✅ SHIPPED
 
 `packages/tiptap/src/react/MarkdownEditor.tsx:386` — `if (!res.ok || !data.ok || !data.url) return` after `setUploading(false)`. User sees the spinner stop, no toast, no console. Same shape as `Toolbar.tsx:389` `onUpload`. Surface via the notification primitives shipped in `@pilotiq/pilotiq`.
 
-### 6c. CodeMirror `useMemo` deps + cast cleanup
+### 6c. CodeMirror `useMemo` deps + cast cleanup ✅ SHIPPED 2026-05-22 (useThemeIsDark dedupe commit 79ded10; useMemo deps + yCollab key shipped earlier)
 
 - `CodeMirrorEditor.tsx:131` — `useMemo(..., [])` reads `defaultValue` once. If parent ever changes it between renders (form reset, record swap without remount), editor sticks with the original. Mirror `CollabBranch`'s posture (include `defaultValue` in deps) or document a `key` requirement on parents.
 - `CollabCodeMirrorEditor.tsx:125` — `yCollab(yText, awareness, { undoManager: false } as never)` bypasses real `y-codemirror.next` typing. Verify the option key — it's `yUndoManager` in current upstream typings. If wrong, undo via `historyKeymap` works coincidentally because Yjs adds its own history.
@@ -216,7 +219,7 @@ Once the framework hooks ship:
 
 If the framework plan stalls, the local-extraction fallback is to add a `useCollabSeed` helper in `@pilotiq/pilotiq/react` — same shape, smaller blast radius. Prefer the framework path; this is a textbook framework concern.
 
-### 6e. React-mount test coverage
+### 6e. React-mount test coverage ✅ SHIPPED (commit 56cf795)
 
 Zero React tests across all three adapter packages — every `.test.ts` is pure Node against helpers, schemas, registries, Tiptap extensions sans React. The biggest behavioral risk (lifecycle, hydration, listener cleanup) ships uncovered. `MarkdownEditor.tsx` (588 LOC) and `TiptapEditor.tsx` (757 LOC) are entirely untested.
 
