@@ -206,7 +206,13 @@ Fix: add `useEffect(() => { editor?.setEditable(!disabled) }, [editor, disabled]
 - `CollabCodeMirrorEditor.tsx:125` — `yCollab(yText, awareness, { undoManager: false } as never)` bypasses real `y-codemirror.next` typing. Verify the option key — it's `yUndoManager` in current upstream typings. If wrong, undo via `historyKeymap` works coincidentally because Yjs adds its own history.
 - Fold local `useThemeIsDark` in `CodeMirrorEditor.tsx:183-213` into the shared `useSyncExternalStore` helper in `CollabCodeMirrorEditor.tsx:259-303` to avoid per-Repeater-row listener fan-out.
 
-### 6d. Consume framework collab hooks (depends on framework plan)
+### 6d. Consume framework collab hooks (depends on framework plan) ✅ MOSTLY SHIPPED 2026-05-22 (commit 223eb38)
+
+**Outcome:** Tiptap's three editor adapters (`TiptapEditor`, `MarkdownEditor`, `CollabTextRenderer`) now import `useCollabSeed` from `@rudderjs/sync/react` directly. `YDocShape` shim deleted. Framework hook returns the `(doc, fragment)` pair pre-resolved so callers drop their `(doc as YDocShape).getXmlFragment(name)` boilerplate. `@rudderjs/sync` added as optional peer on `@pilotiq/tiptap`.
+
+**Not migrated:** CodeMirror — framework's `useCollabSeed` is `Y.XmlFragment`-only (calls `doc.getXmlFragment(fragmentKey)` internally); CodeMirror's seed uses `Y.Text`. Framework would need a `useCollabSeedText` variant. Tracked separately.
+
+**Not migrated:** pilotiq core's `useCollabSeed.ts` shim — kept as deprecation surface for external consumers; framework's hook lives next to it under its own import path. Drop in next major (the local shim's behavior is a strict subset of the framework hook's).
 
 `TiptapEditor` / `MarkdownEditor` / `CollabTextRenderer` / `CollabCodeMirrorEditor` all duplicate `room.ydoc as any` + `room.provider as any` + `onProviderSynced(provider, trySeed)` + the empty-fragment seed dance with the same race-window comment.
 
