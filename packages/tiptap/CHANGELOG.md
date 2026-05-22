@@ -1,5 +1,54 @@
 # @pilotiq/tiptap
 
+## 3.10.2
+
+### Patch Changes
+
+- 00b0c48: fix(collab): mirror editor text into the FormData hidden input after first sync
+
+  `CollabTextRenderer` (the plain-text Tiptap editor mounted for `TextField` / `TextareaField` when collab is on) relied on three paths to keep the hidden FormData mirror in sync with the y-prosemirror-backed editor doc:
+
+  1. `onUpdate` — fires on every y-prosemirror transaction.
+  2. The mount-time safety-net `useEffect(() => onChange(plainTextOf(editor)), [editor])` — fires once when the editor instance materializes.
+  3. The `useCollabSeed` callback — seeded empty fragments with the SSR-rendered `defaultValue`, but never propagated the seed (or the post-sync fragment content) back to the host's `onChange`.
+
+  In the cold-mount case (a fresh peer joining a populated doc), all three paths could miss: the safety net reads `plainTextOf(editor)` before y-prosemirror's `ySyncPlugin` view-hook dispatch has populated the prose-mirror doc, and the subsequent `_forceRerender` / `_typeChanged` transactions occasionally landed in a window where the `update` listener hadn't been installed by the React owner yet. The result: hidden input stayed empty, server-submitted values dropped row text on `disconnect-and-reload`.
+
+  The fix extends the existing `useCollabSeed` callback to also call `onChange(plainTextOf(editor))` after `room.synced` resolves — regardless of whether the seed branch ran. Idempotent (`setText(sameValue)` is a no-op when `onUpdate` already propagated the value); same shape as the catch-up replay in `@pilotiq-pro/collab`'s `rowArrayBinding.subscribeRows`.
+
+  Closes the remaining ~20% flake on `pilotiq-pro/e2e/tests/collab/reorder-persistence.spec.ts` (peer C's `metadata.0.heading` hidden input occasionally never appeared within 20s).
+
+- b87b2a5: fix(ai): scope inline-diff + chip suggestion appliers by surrounding form id
+
+  Multi-form pages would route AI suggestions to whichever editor mounted last because both `useAiInlineDiff` and `useAiSuggestionBridge` hard-coded `formId: undefined` when registering their applier — so two editors sharing a field name across forms (e.g. a "summary" `RichTextField` in the main edit form + the same field in a Replicate modal) would race on `registerPendingSuggestionApplier(undefined, fieldName, …)` and the last `useEffect` would win.
+
+  **`@pilotiq/pilotiq` (minor — new public API, additive)**
+
+  - New `useFormId(): string | undefined` hook re-exported from `@pilotiq/pilotiq/react`. Reads the surrounding `FormRenderer`'s id from `FormIdContext` and normalizes the sentinel empty string to `undefined`. Adapter packages (Tiptap + future editor adapters) consume this to scope per-field registries by form.
+  - `getPendingSuggestionApplier(undefined, fieldName)` now falls back to ANY matching scoped entry when no wildcard entry is registered. Closes the regression that would have followed from adapter scoping: editors now register under their form's id, so the wildcard slot is almost always empty — without the fallback, global producers (suggestions pushed without a `formId`) would silently fail to resolve. Scoped lookups + explicit wildcard registrations preserve their original precedence.
+
+  **`@pilotiq/tiptap` (patch — internal hook wiring)**
+
+  `useAiInlineDiff` and `useAiSuggestionBridge` now thread `useFormId()` into `registerPendingSuggestionApplier(formId, fieldName, applier)` and the effect's dep array. No public-surface change; the multi-form routing simply works now.
+
+  Coverage: 9 new unit tests on `PendingSuggestionApplierRegistry` cover scoped lookup, scoped multi-form disambiguation, the global-producer fallback, precedence (wildcard wins over scoped for undefined lookups when both exist; scoped wins for explicit lookups), unregister cleanup, and re-register identity guard.
+
+- 20513fc: fix(collab): mirror markdown editor into the FormData hidden input after first sync
+
+  Third symmetric application of the subscribe-after-sync mirror — `MarkdownEditor` had the same gap as `TiptapEditor` and `CollabTextRenderer`. The wrapping host (`MarkdownEditorHost` in pilotiq core) drives a hidden FormData input from React state populated ONLY through the editor's `onChange` callback. In the cold-mount case (a fresh peer joining a populated doc) y-prosemirror's `ySyncPlugin` view-hook `_forceRerender` could land before the React owner installed the `update` listener — leaving the hidden input at its SSR-rendered `defaultValue` through to submit.
+
+  The `useCollabSeed` callback now serializes the editor's markdown via `editor.storage.markdown.getMarkdown()` and fires `onChange(md)` after `room.synced` resolves, alongside the existing empty-fragment seed branch. Idempotent — when `onUpdate` already propagated the value, this is a no-op `setText(sameValue)`.
+
+  Sister audit on `@pilotiq/codemirror`'s `CollabCodeMirrorEditor` came back clean: that path already reads `yText.toString()` synchronously in its mount effect and propagates via `setText`, so the catch-up is built into the codemirror branch.
+
+- a81af81: fix(collab): mirror rich-text editor into the FormData hidden input after first sync
+
+  Symmetric follow-on to the `CollabTextRenderer` fix from the same session. `TiptapEditor` (the rich-text surface mounted for `RichTextField`) had the same subscribe-after-sync gap: `onUpdate` debounces to `setSerialized(ed.getHTML() | JSON.stringify(ed.getJSON()))` on every keystroke, but in the cold-mount case (a fresh peer joining a populated doc) y-prosemirror's `ySyncPlugin` view-hook `_forceRerender` could land before the React owner installed the `update` listener — leaving the hidden FormData input at its SSR-rendered initial value through to submit.
+
+  The `useCollabSeed` callback now also calls `setSerialized` (using the same `storage`-mode-aware serialization as the debounced `onUpdate` body) after `room.synced` resolves. Idempotent — when `onUpdate` already propagated the value, this is a no-op `setSerialized(sameValue)`.
+
+  Not tickled by `pilotiq-pro/e2e/tests/collab/reorder-persistence.spec.ts` (which exercises plain-text fields), but closes the same latent flake for any `RichTextField` mounted under a populated collab room.
+
 ## 3.10.1
 
 ### Patch Changes
