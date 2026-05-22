@@ -470,6 +470,18 @@ function ClientEditor(props: ClientEditorProps) {
   // the effect from firing before Tiptap mounts its
   // y-prosemirror binding (Tiptap v3 defers editor construction to
   // first effect under `immediatelyRender: false`).
+  //
+  // Subscribe-after-sync mirror: after the seed branch (or no-op when
+  // the fragment already has content from a remote peer), serialize the
+  // editor's current state into the hidden FormData input. The
+  // debounced `onUpdate` path covers steady-state typing, but in the
+  // cold-mount case (fresh peer joining a populated doc) y-prosemirror's
+  // `ySyncPlugin` view hook may run `_forceRerender` before the React
+  // owner has installed the `update` listener — leaving the hidden
+  // input empty on submit. Idempotent: when `onUpdate` already
+  // propagated, this is a no-op `setSerialized(sameValue)`. Same shape
+  // as `CollabTextRenderer`'s post-sync mirror and
+  // `@pilotiq-pro/collab`'s `rowArrayBinding.subscribeRows` catch-up.
   useCollabSeed(
     editor && collabActive ? room : null,
     collabName,
@@ -490,6 +502,10 @@ function ClientEditor(props: ClientEditorProps) {
         // into the fragment so every peer sees the seeded state.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         editor.commands.setContent(initialContent as any)
+      }
+      if (editor) {
+        const value = storage === 'html' ? editor.getHTML() : JSON.stringify(editor.getJSON())
+        setSerialized(value)
       }
     },
   )
