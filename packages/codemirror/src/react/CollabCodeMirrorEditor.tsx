@@ -204,9 +204,8 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
   // pre-seed above which handles re-mount onto a yText that already has
   // content (e.g. `renameRow` clones).
   useCollabSeed(seedRoom, fragmentKey, (doc) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const yText = (doc as any).getText(fragmentKey) as Y.Text | undefined
-    if (yText && yText.length === 0 && defaultValue) {
+    const yText = (doc as Y.Doc).getText(fragmentKey)
+    if (yText.length === 0 && defaultValue) {
       yText.insert(0, defaultValue)
     }
   })

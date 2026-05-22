@@ -24,6 +24,7 @@ import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
 import { AiSuggestionBanner } from './AiSuggestionBanner.js'
 import { getMarkdownString, parseMarkdownToHtml } from '../markdownStorage.js'
+import type { YDocShape } from '../collabShapes.js'
 
 // Inline lucide.dev SVGs — same posture as `toolbarButtons.tsx` so this
 // package doesn't pull `lucide-react` as a peer dep. Keep stroke / size
@@ -328,8 +329,7 @@ export function MarkdownEditor({
     editor && collabActive ? room : null,
     collabName,
     (doc) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fragment = (doc as any).getXmlFragment(collabName)
+      const fragment = (doc as YDocShape).getXmlFragment(collabName)
       if (fragment && fragment.length === 0 && defaultValue && editor) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const cmd = (editor.commands as any).setContent

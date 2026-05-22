@@ -10,6 +10,7 @@ import {
 import { createPlainTextEditor, plainTextOf, plainTextToDoc } from '../PlainTextEditor.js'
 import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
+import type { YDocShape } from '../collabShapes.js'
 
 /**
  * Tiptap-backed plain-text editor for pilotiq's `TextField` / `TextareaField`
@@ -195,8 +196,7 @@ export function CollabTextRenderer({
     editor && collabActive ? room : null,
     collabName,
     (doc) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fragment = (doc as any).getXmlFragment(collabName)
+      const fragment = (doc as YDocShape).getXmlFragment(collabName)
       const seedValue = initialDefaultValueRef.current
       if (fragment && fragment.length === 0 && seedValue && editor) {
         editor.commands.setContent(plainTextToDoc(seedValue, multiline))

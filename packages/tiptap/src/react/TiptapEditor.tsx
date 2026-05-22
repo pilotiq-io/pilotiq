@@ -19,6 +19,7 @@ import type {
   CollabExtensionFactory,
 } from '@pilotiq/pilotiq/react'
 import { useCollabRoom, getCollabExtensions, useCollabSeed, useRowCoords, parseRowFieldPath } from '@pilotiq/pilotiq/react'
+import type { YDocShape } from '../collabShapes.js'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
 import { AiSuggestionBanner } from './AiSuggestionBanner.js'
@@ -486,8 +487,7 @@ function ClientEditor(props: ClientEditorProps) {
     editor && collabActive ? room : null,
     collabName,
     (doc) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fragment = (doc as any).getXmlFragment(collabName)
+      const fragment = (doc as YDocShape).getXmlFragment(collabName)
       if (
         fragment &&
         fragment.length === 0 &&
