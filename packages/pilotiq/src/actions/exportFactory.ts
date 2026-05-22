@@ -5,6 +5,16 @@
  * `Table.ts` honest — `Action.export` calls into here via dynamic
  * import inside the handler, so module-eval order never reads either
  * side's exports too early.
+ *
+ * The `R: { table?(t: any): any }` shape on `resolveExportColumns`
+ * (and the matching parameter in `collectExportRows`) is the load-bearing
+ * piece of this isolation: the real `Resource.table()` signature is
+ * `(t: Table) => Table`, but importing `Table` here from a static-top
+ * import would resurrect the cycle this file exists to break. Loosening
+ * the parameter to `any` is the price — call sites in `Action.ts` are
+ * typed against the proper `ResourceLike`, so the leak doesn't escape
+ * this module. Don't widen `R`'s annotation; do narrow inside the body
+ * if you need stricter local typing.
  */
 
 import { Table } from '../elements/Table.js'
