@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
+import type { AnyExtension, Content } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Subscript from '@tiptap/extension-subscript'
@@ -244,14 +245,14 @@ function ClientEditor(props: ClientEditorProps) {
   // Resolve the collab-attached extensions once per editor build.
   // `Collaboration` is constructed eagerly here (during `useEditor`'s
   // first call); the keyed remount above guarantees we never swap it.
-  const collabExtensions = useMemo(() => {
-    if (!collabActive || !room || !factory) return [] as unknown[]
+  const collabExtensions = useMemo<AnyExtension[]>(() => {
+    if (!collabActive || !room || !factory) return []
     return factory({
       ydoc:      room.ydoc,
       provider:  room.provider,
       fieldName: collabName,
       ...(room.user ? { user: room.user } : {}),
-    })
+    }) as AnyExtension[]
     // Intentionally deps-stable across renders within the same collab
     // mount — the keyed wrapper above remounts us when collab toggles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -354,8 +355,7 @@ function ClientEditor(props: ClientEditorProps) {
       // Realtime-collab extensions (Yjs `Collaboration` + cursor) — empty
       // when no `<RecordCollabRoom>` is mounted up-tree, or when no plugin
       // registered a factory via `registerCollabExtensions`.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ...(collabExtensions as any[]),
+      ...collabExtensions,
     ],
     // Collaboration takes ownership of the document — `content` would race
     // the Y.XmlFragment sync. Seed instead via the post-`synced` effect
@@ -498,8 +498,11 @@ function ClientEditor(props: ClientEditorProps) {
         // setContent dispatches a Tiptap transaction; the bound
         // y-prosemirror binding (inside Collaboration) mirrors it
         // into the fragment so every peer sees the seeded state.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        editor.commands.setContent(initialContent as any)
+        // `initialContent` is `object | string` (from `parseInitialContent`)
+        // and already gated by `isTiptapShapedContent` above; cast to
+        // Tiptap's `Content` once at the boundary instead of bypassing
+        // the type system entirely.
+        editor.commands.setContent(initialContent as Content)
       }
       if (editor) {
         const value = storage === 'html' ? editor.getHTML() : JSON.stringify(editor.getJSON())

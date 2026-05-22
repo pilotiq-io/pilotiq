@@ -47,25 +47,20 @@ Add `runStore.test.ts` case: mock dynamic `import('@rudderjs/cache')` to resolve
 
 ---
 
-## Phase 2 — SSE handler `finally(close)` [pro]
+## Phase 2 — SSE handler `finally(close)` [pro] ⏹ NOT NEEDED — false positive (audited 2026-05-22)
 
-**Severity:** high — orphan SSE streams on handler-throw paths that bypass the existing `.catch`
-**Effort:** ~5 LOC
+**Severity:** N/A
 **File:** `~/Projects/pilotiq-pro/packages/ai/src/handlers/chat/chatHandler.ts:72-79`
 
-`void handleMultiSubAgentResume(...).catch(emitError)` — `.catch` covers thrown errors inside the handler but not synchronous-throw paths or `emitError` itself crashing. A `.finally(() => close())` after the catch guarantees the SSE writer closes on every termination path.
+### Audit findings
 
-```ts
-void handleMultiSubAgentResume(...)
-  .catch((err) => emitError(err))
-  .finally(() => close())
-```
+1. `handleMultiSubAgentResume` (subAgentResume.ts:248-379) is structured as `try { … } catch (err) { send('error', …) } finally { close() }`. Every internal path — happy + thrown — already fires `close()` via the `finally`.
+2. The outer `.catch(err => { send('error', …); close() })` at chatHandler.ts:77-79 catches only the rare case where the inner `catch`'s own `send()` throws.
+3. `close()` is **idempotent** — `createSSEStream` (types.ts:158-160) wraps `controller.close()` in `try/catch` that swallows "already closed" errors. So calling it twice in the double-fire scenario is a no-op on the second call.
 
-No new abstractions; mechanical.
+Adding `.finally(() => close())` to the outer chain would be structurally redundant — it adds a third path with the same effect. The current chain already guarantees `close()` fires on every termination path. The review's invariant ("`close()` must fire on every path") holds; the proposed mechanism is unnecessary.
 
-### Test
-
-`chatHandler.test.ts` — inject a handler that throws synchronously; assert the SSE `close()` was invoked.
+No code change shipped.
 
 ---
 
@@ -90,10 +85,16 @@ For the relations.ts one, the existing `relations.test.ts` already builds a Reso
 
 ---
 
-## Phase 4 — Document `aiSuggestionsMode` 4-tier precedence [pro]
+## Phase 4 — Document `aiSuggestionsMode` 4-tier precedence [pro] ✅ SHIPPED 2026-05-22
 
 **Severity:** medium — DX, no behavior change
 **Effort:** ~30 min (doc + 3 cross-references)
+
+**At-audit finding:** the four code sites (`readSuggestionMode` resolver, `Field.aiSuggestionsMode` setter, `PilotiqAgent.aiSuggestionsMode` setter, `activeAgentRun` slot) already had cross-references in their docstrings — the review's "scattered" framing was overstated. The only genuine gap was the user-facing docs site.
+
+**Shipped:**
+1. Added "Resolution order" subsection to `~/Projects/pilotiq-pro/docs/packages/ai.md` § "1. Review mode" — 4-tier table with setter examples + a note on when each tier wins.
+2. Added a back-pointer from `readSuggestionMode`'s docstring to the new docs section so the canonical pointer chain works in both directions.
 
 The precedence chain is **active agent → field DOM marker → panel window-global → `'auto'`**, evaluated in `AiClientToolBindings.readSuggestionMode()`. Today the rule is split across:
 
@@ -119,15 +120,14 @@ No code change. Memory note `project_pilotiq_field_ai_suggestions_mode` already 
 
 The review counts ~80 unsafe casts repo-wide. Three boundaries account for ~70 of them, and all three have one obvious typed fix.
 
-### 5a. Yjs `doc as any` (~10 casts, open-source)
+### 5a. Yjs `doc as any` (open-source) ✅ SHIPPED 2026-05-22
 
-Sites:
-- `packages/tiptap/src/react/TiptapEditor.tsx:357,490,504` — `collabExtensions as any[]`, `doc as any`, `initialContent as any`
-- `packages/tiptap/src/react/MarkdownEditor.tsx:243` — `collabExtensions as any[]`
-- `packages/tiptap/src/react/CollabTextRenderer.tsx:199` — `doc as any`
-- `packages/codemirror/src/react/CollabCodeMirrorEditor.tsx:208` — `doc as any`
+Sites resolved:
+- `TiptapEditor.tsx`: typed `collabExtensions` useMemo as `<AnyExtension[]>`; dropped `as any[]` cast in the spread; replaced `initialContent as any` with `as Content` (Tiptap's `Content` type, narrowed at the call site after the `isTiptapShapedContent` gate).
+- `MarkdownEditor.tsx`: dropped the redundant `as any[]` cast — the useMemo was already typed `<AnyExtension[]>`.
+- `CollabTextRenderer.tsx` + `CollabCodeMirrorEditor.tsx`: the review's pointers were stale — the live casts in those files are `room as unknown as FrameworkCollabRoom`, a deliberate framework-room boundary (not Y.Doc). Left alone.
 
-Fix: `import type * as Y from 'yjs'` at file top; type the param/binding as `Y.Doc`. For collab extensions, define `type AnyCollabExtension = Extension<any, any>` once in a shared `tiptap/src/types.ts` and import. ~10 casts → 0.
+Net: 4 untyped `as any` / `as any[]` escapes → 1 boundary cast (`as AnyExtension[]` inside useMemo body) + 1 narrow typed cast (`as Content`). `pnpm -F @pilotiq/tiptap test` clean (193/193).
 
 ### 5b. MarkdownEditor storage augmentation (7 casts, open-source) ✅ SHIPPED
 
@@ -135,34 +135,23 @@ All `editor.storage as any` callsites in `MarkdownEditor.tsx` + `surgicalOps.ts`
 
 Module augmentation isn't actually needed because the helper boxes the cast in one place — preferred since `tiptap-markdown` types stay first-party-controlled.
 
-### 5c. Lazy-import helpers (~55 casts, pro)
+### 5c. Lazy-import helpers (pro) ✅ SHIPPED 2026-05-22
 
-Sites cluster in `~/Projects/pilotiq-pro/packages/ai/src/`:
-- `agents/PilotiqAgent.ts:17-18` — `import(/* @vite-ignore */ '@rudderjs/ai') as any`, same for `@rudderjs/sync`
-- `runStore.ts:106` — same for `@rudderjs/cache`
-- Various other dynamic peer imports across `handlers/`, `bindings/`
+**Re-scoped at investigation:** `handlers/chat/lazyImports.ts` already existed with `loadAi` / `loadSync` / `loadSyncLexical`. Live cast inventory at start of phase: 29 (review's estimate of ~55 was stale). The genuine open work was the 4 inline `@rudderjs/core` + `@rudderjs/ai` sites that hadn't been routed through helpers yet.
 
-Fix: create `~/Projects/pilotiq-pro/packages/ai/src/internal/lazyImports.ts`:
+Changes shipped:
+1. Extended `LoadedAi` interface to include `AiRegistry` so the pilotiq-gateway provider-registration path can route through `loadAi()` instead of its own inline cast.
+2. Added typed `CoreApp` interface + `loadCore()` helper with in-flight guard (mirrors `runStore.ts:loadCache`).
+3. Added in-flight guards to `loadAi` and `loadSyncLexical` (same pattern as Phase 1's runStore.ts).
+4. Replaced 4 inline dynamic-import casts:
+   - `handlers/chat/index.ts:64` — `@rudderjs/core` → `loadCore()`
+   - `handlers/chat/types.ts:139` — `@rudderjs/core` → `loadCore()`
+   - `conversation/PrismaConversationStore.ts:26` — `@rudderjs/core` → `loadCore()`
+   - `internal/pilotiq-gateway.ts:359` — `@rudderjs/ai` → `loadAi()` (using new `AiRegistry` field)
 
-```ts
-type AiModule = typeof import('@rudderjs/ai')
-type SyncModule = typeof import('@rudderjs/sync')
-type CacheModule = typeof import('@rudderjs/cache')
+Net: 4 inline dynamic-import casts collapse into 2 typed helper calls; in-flight races on the 3 cached loaders (`loadAi`, `loadSyncLexical`, `loadCore`) now coalesced. `pnpm -F @pilotiq-pro/ai test` clean (113/113).
 
-let _ai: AiModule | null = null
-let _aiLoading: Promise<AiModule> | null = null
-export async function loadAi(): Promise<AiModule> {
-  if (_ai) return _ai
-  if (!_aiLoading) _aiLoading = import('@rudderjs/ai').then((m) => { _ai = m; return m })
-  return _aiLoading
-}
-
-// ditto for sync, cache — each gets its own in-flight guard (subsumes Phase 1)
-```
-
-Reuse across the codebase. ~55 casts → ~3 (the helper itself).
-
-**Sequencing:** Phase 1 implements the inline pattern; Phase 5c lifts it into the shared helper and consumes it from `runStore.ts`. This is intentional — Phase 1 stays tiny and shippable today; 5c is the larger refactor that includes 5c-style consolidation later.
+Not done (review's "move helpers to `internal/lazyImports.ts`" suggestion): kept the file at `handlers/chat/lazyImports.ts` to avoid the import-path churn across 20+ consumers. The existing location is acknowledged in the file's own header comment.
 
 ---
 

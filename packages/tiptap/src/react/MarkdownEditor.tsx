@@ -240,8 +240,7 @@ export function MarkdownEditor({
         // for deleted text. Host's `<AiSuggestionBanner>` drives Accept /
         // Reject via the extension's commands.
         AiInlineDiffExtension,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ...(collabExtensions as any[]),
+        ...collabExtensions,
       ],
       // Collab takes ownership of the document — passing `content` would
       // race the Y.XmlFragment sync. Seed after first connect (effect below).
