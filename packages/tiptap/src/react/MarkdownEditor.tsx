@@ -14,17 +14,16 @@ import { Markdown } from '../markdownExtension.js'
 import {
   useCollabRoom,
   getCollabExtensions,
-  useCollabSeed,
   useToast,
   type MarkdownEditorProps,
 } from '@pilotiq/pilotiq/react'
+import { useCollabSeed, type CollabRoom as FrameworkCollabRoom } from '@rudderjs/sync/react'
 import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
 import { AiInlineDiffExtension, aiInlineDiffPluginKey } from '../extensions/AiInlineDiffExtension.js'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
 import { AiSuggestionBanner } from './AiSuggestionBanner.js'
 import { getMarkdownString, parseMarkdownToHtml } from '../markdownStorage.js'
-import type { YDocShape } from '../collabShapes.js'
 
 // Inline lucide.dev SVGs — same posture as `toolbarButtons.tsx` so this
 // package doesn't pull `lucide-react` as a peer dep. Keep stroke / size
@@ -326,11 +325,10 @@ export function MarkdownEditor({
   // `setText(sameValue)`. Same shape as `TiptapEditor` /
   // `CollabTextRenderer` / `rowArrayBinding.subscribeRows`.
   useCollabSeed(
-    editor && collabActive ? room : null,
+    editor && collabActive && room ? (room as unknown as FrameworkCollabRoom) : null,
     collabName,
-    (doc) => {
-      const fragment = (doc as YDocShape).getXmlFragment(collabName)
-      if (fragment && fragment.length === 0 && defaultValue && editor) {
+    (_doc, fragment) => {
+      if (fragment.length === 0 && defaultValue && editor) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const cmd = (editor.commands as any).setContent
         if (cmd) cmd(defaultValue)

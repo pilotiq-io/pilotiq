@@ -4,13 +4,12 @@ import type { AnyExtension } from '@tiptap/core'
 import {
   useCollabRoom,
   getCollabExtensions,
-  useCollabSeed,
   type CollabTextRendererProps,
 } from '@pilotiq/pilotiq/react'
+import { useCollabSeed, type CollabRoom as FrameworkCollabRoom } from '@rudderjs/sync/react'
 import { createPlainTextEditor, plainTextOf, plainTextToDoc } from '../PlainTextEditor.js'
 import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
-import type { YDocShape } from '../collabShapes.js'
 
 /**
  * Tiptap-backed plain-text editor for pilotiq's `TextField` / `TextareaField`
@@ -193,12 +192,11 @@ export function CollabTextRenderer({
   // a no-op `setText(sameValue)`. Same shape as the catch-up replay in
   // `@pilotiq-pro/collab`'s `rowArrayBinding.subscribeRows`.
   useCollabSeed(
-    editor && collabActive ? room : null,
+    editor && collabActive && room ? (room as unknown as FrameworkCollabRoom) : null,
     collabName,
-    (doc) => {
-      const fragment = (doc as YDocShape).getXmlFragment(collabName)
+    (_doc, fragment) => {
       const seedValue = initialDefaultValueRef.current
-      if (fragment && fragment.length === 0 && seedValue && editor) {
+      if (fragment.length === 0 && seedValue && editor) {
         editor.commands.setContent(plainTextToDoc(seedValue, multiline))
       }
       if (editor) onChange(plainTextOf(editor))

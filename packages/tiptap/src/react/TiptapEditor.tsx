@@ -18,8 +18,8 @@ import type {
   CollabRoom,
   CollabExtensionFactory,
 } from '@pilotiq/pilotiq/react'
-import { useCollabRoom, getCollabExtensions, useCollabSeed, useRowCoords, parseRowFieldPath } from '@pilotiq/pilotiq/react'
-import type { YDocShape } from '../collabShapes.js'
+import { useCollabRoom, getCollabExtensions, useRowCoords, parseRowFieldPath } from '@pilotiq/pilotiq/react'
+import { useCollabSeed, type CollabRoom as FrameworkCollabRoom } from '@rudderjs/sync/react'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
 import { AiSuggestionBanner } from './AiSuggestionBanner.js'
@@ -484,12 +484,10 @@ function ClientEditor(props: ClientEditorProps) {
   // as `CollabTextRenderer`'s post-sync mirror and
   // `@pilotiq-pro/collab`'s `rowArrayBinding.subscribeRows` catch-up.
   useCollabSeed(
-    editor && collabActive ? room : null,
+    editor && collabActive && room ? (room as unknown as FrameworkCollabRoom) : null,
     collabName,
-    (doc) => {
-      const fragment = (doc as YDocShape).getXmlFragment(collabName)
+    (_doc, fragment) => {
       if (
-        fragment &&
         fragment.length === 0 &&
         initialContent !== undefined &&
         initialContent !== null &&
