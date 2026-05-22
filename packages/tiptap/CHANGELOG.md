@@ -1,5 +1,40 @@
 # @pilotiq/tiptap
 
+## 3.10.6
+
+### Patch Changes
+
+- 1c6a067: feat(adapters): ship `boost/guidelines.md` for `@rudderjs/boost` discovery
+
+  Phase C of the boost-producer rollout. Each adapter now ships its own `boost/guidelines.md` so consumer Rudder apps with `@rudderjs/boost` installed pick them up automatically via `rudder boost:install`. Per-agent config files (`CLAUDE.md` / `.cursorrules` / `AGENTS.md` / etc.) include all installed adapter guidelines in the concatenated body.
+
+  - **`@pilotiq/tiptap`** — RichTextField + Block (custom-block side panel), toolbar customization, mentions (static + async) + merge tags, file attachments, JSON vs HTML storage, server-side rendering via `renderRichTextToHtml`.
+  - **`@pilotiq/codemirror`** — CodeEditorField + Code alias, language registry (`registerCodeLanguage` / `codeEditor({ languages })`), theming (auto / light / dark), reactive integration, validation, common language packs.
+  - **`@pilotiq/recharts`** — Chart class + fluent form, chart types (line / bar / pie / doughnut), Chart.js-shaped data normalized to Recharts internally, per-chart filter dropdown, polling, resource header/footer placement, escape hatch via `static options`.
+
+  Each guideline closes with a "Common Pitfalls" section distilled from project memory + a "Key Imports" reference. No skills shipped in this phase — adapter usage is single-surface enough that the always-loaded `guidelines.md` covers it; skill modules can follow if a consumer asks.
+
+- 6d2ac13: chore: slim published tarballs to `dist` + `boost` + `CHANGELOG.md`
+
+  All four packages now declare `"files": ["dist", "boost", "CHANGELOG.md"]` so npm pack only ships the compiled output, the `@rudderjs/boost` guidelines + skills tree, and the changelog. Previously `@pilotiq/pilotiq` shipped its full `src/`, `CLAUDE.md`, `.turbo/`, and test files; the three adapters shipped `src/` deliberately but no longer need to.
+
+  - **`@pilotiq/pilotiq`** — 2.1 MB → 1.3 MB (~38% smaller). Drops `src/**`, `CLAUDE.md`, `.turbo/` from the tarball.
+  - **`@pilotiq/tiptap` / `@pilotiq/codemirror` / `@pilotiq/recharts`** — drop `src/**` from the tarball.
+
+  No API impact. Consumer Tailwind `@source` rules that previously scanned `node_modules/@pilotiq/*/src` should re-point at `node_modules/@pilotiq/*/dist` (Tailwind scans `.js` just fine). Source maps in `dist/` still reference `../src/*.ts` paths that are no longer in the tarball — sourcemap navigation inside `node_modules` won't resolve to TS, but stack traces still line up.
+
+- 6d2ac13: feat(tiptap): ship `pilotiq-tiptap-blocks` boost skill
+
+  First on-demand skill for `@pilotiq/tiptap`. `SKILL.md` declares `appliesTo: ['@pilotiq/tiptap']` so `@rudderjs/boost`'s `boost:install` only writes it to `.ai/skills/` when the consumer has `@pilotiq/tiptap` installed. Trigger heuristics scope the deep rules to specific authoring contexts — defining `Block.make(...)` types, wiring mentions / merge tags, customizing the toolbar, debugging slash-menu or drag-handle behavior.
+
+  Three rule files under `boost/skills/pilotiq-tiptap-blocks/rules/`:
+
+  - **`custom-blocks.md`** — `Block.make().schema([…])`, side panel V2 UX, field-type coverage inside a block (primitives, JSON-encoded, repeater / builder), `Mod-E` / `Esc` / focus trap / width memory, common authoring mistakes (including the `'block'` name collision).
+  - **`slash-menu-and-mentions.md`** — slash menu groups, capture-phase keys, `MentionProvider` (static + async via `itemsUsing`), merge tags, mentions inside Repeater / Builder rows.
+  - **`toolbar-and-extensibility.md`** — three customization styles (`toolbarButtons` / `enable+disableToolbarButtons` / hide chrome), the recognized button-id union, opt-in primitives (`lead` / `small` / `details` / `grid`), file attachments, drag-handle's three-step drop dance, Tiptap module identity (`resolve.dedupe`), toolbar-driven slash entries.
+
+  Mirrors the shape established by `pilotiq-resource` / `pilotiq-fields` / `pilotiq-relations`.
+
 ## 3.10.5
 
 ### Patch Changes
