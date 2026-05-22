@@ -1,5 +1,16 @@
 # pilotiq-playground
 
+## 0.0.45
+
+### Patch Changes
+
+- Updated dependencies [ef76978]
+- Updated dependencies [26dabc1]
+  - @pilotiq/codemirror@3.2.6
+  - @pilotiq/pilotiq@0.24.0
+  - @pilotiq/recharts@3.0.2
+  - @pilotiq/tiptap@3.10.4
+
 ## 0.0.44
 
 ### Patch Changes
