@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useEditor, EditorContent, type Extension } from '@tiptap/react'
 import type { AnyExtension } from '@tiptap/core'
 import {
@@ -50,6 +50,21 @@ export function CollabTextRenderer({
   const room    = useCollabRoom()
   const factory = getCollabExtensions()
   const collabActive = !!(room && factory)
+
+  // Capture the initial non-empty `defaultValue` on mount + keep it stable.
+  // The seedFn (below) needs to re-seed the empty fragment with the
+  // SSR-loaded value even if the host's `defaultValue` prop has been
+  // clobbered to '' by a sync-triggered empty `onChange` round-trip
+  // (handleChange → setText('') → setValue('') → ctx.values.title=''  →
+  // FormBody re-renders the field with the new empty value). Closing
+  // over the live prop in seedFn means seed-on-resync silently fails;
+  // the ref preserves the seed source. Once the user types into the
+  // editor the seedFn will no longer fire — the fragment won't be
+  // empty — so this ref is read-only after the first non-empty seed.
+  const initialDefaultValueRef = useRef<string>(defaultValue)
+  if (defaultValue && !initialDefaultValueRef.current) {
+    initialDefaultValueRef.current = defaultValue
+  }
 
   // Collab-stable identifier — `name` on top-level fields, but the
   // row-id-anchored composite (`items.<rowId>.title`) on Repeater /
@@ -182,8 +197,9 @@ export function CollabTextRenderer({
     (doc) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const fragment = (doc as any).getXmlFragment(collabName)
-      if (fragment && fragment.length === 0 && defaultValue && editor) {
-        editor.commands.setContent(plainTextToDoc(defaultValue, multiline))
+      const seedValue = initialDefaultValueRef.current
+      if (fragment && fragment.length === 0 && seedValue && editor) {
+        editor.commands.setContent(plainTextToDoc(seedValue, multiline))
       }
       if (editor) onChange(plainTextOf(editor))
     },
