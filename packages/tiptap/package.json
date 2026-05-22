@@ -1,6 +1,6 @@
 {
   "name": "@pilotiq/tiptap",
-  "version": "3.10.4",
+  "version": "3.10.5",
   "description": "Tiptap rich-text editor adapter for @pilotiq/pilotiq — slash menu, draggable blocks, custom-block API",
   "license": "MIT",
   "repository": {
