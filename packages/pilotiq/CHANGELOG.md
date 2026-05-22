@@ -1,5 +1,38 @@
 # @pilotiq/pilotiq
 
+## 0.24.2
+
+### Patch Changes
+
+- 28fbd5f: feat(pilotiq): ship `boost/guidelines.md` for `@rudderjs/boost` discovery
+
+  Consumer Rudder apps with `@rudderjs/boost` installed now pick up `@pilotiq/pilotiq` AI coding guidelines automatically. Running `rudder boost:install` in the consumer writes the contents to `.ai/guidelines/pilotiq.md`, and the per-agent config files (`CLAUDE.md` / `.cursorrules` / `AGENTS.md` / etc.) include them in the concatenated guideline body.
+
+  The guidelines cover Resource definition (with `static model` auto-fill), folder-per-resource layout, the form-field catalog + common setters, layout primitives (Section / Tabs / Group / Wizard / Split / Fieldset), tables (columns + filters + groups + actions + reorder), Action with the four dispatch modes and modal-form variant, Page base classes (`ListPage` / `CreatePage` / `EditPage` / `ViewPage`) with override hooks, authorization via `Pilotiq.user()` + `can*` statics, Globals, Relations (`RelationManager` + `Repeater.relationship()`), reactive fields, theming, common pitfalls, and the key import surface.
+
+  Phase A of the boost-producer rollout — skills (`boost/skills/<name>/SKILL.md`) follow in subsequent releases. Adapter packages (`@pilotiq/tiptap` / `@pilotiq/codemirror` / `@pilotiq/recharts`) ship their own guidelines + `appliesTo`-gated skills separately.
+
+- e36d65c: feat(pilotiq): ship boost skills — pilotiq-resource, pilotiq-fields, pilotiq-relations
+
+  Phase B of the boost-producer rollout. Adds three task-specific skill modules under `packages/pilotiq/boost/skills/`:
+
+  - **pilotiq-resource** — `SKILL.md` + 3 rules: defining-resources, page-overrides, authorization
+  - **pilotiq-fields** — `SKILL.md` + 3 rules: field-catalog (24 field types), validation (built-ins + `unique` + `distinct`), reactive-fields (`live` + `afterStateUpdated` + `$get`/`$set`)
+  - **pilotiq-relations** — `SKILL.md` + 2 rules: relation-managers (hasMany / morph / M2M), repeater-relationship (`Repeater.relationship` + `Builder.relationship`)
+
+  Each SKILL.md declares `appliesTo: ['@pilotiq/pilotiq']` so `@rudderjs/boost`'s `boost:install` only writes them to `.ai/skills/` when the consumer has `@pilotiq/pilotiq` installed. Triggers are scoped to specific work contexts — defining a Resource, adding a form field, wiring a relation — so AI agents load the deeper rule files on-demand rather than always-on.
+
+  Phase C (adapter packages — `@pilotiq/tiptap` / `@pilotiq/codemirror` / `@pilotiq/recharts`) and the remaining four skill candidates (pilotiq-actions, pilotiq-widgets, pilotiq-theme, pilotiq-vite-plugin) follow in subsequent releases.
+
+- 6d2ac13: chore: slim published tarballs to `dist` + `boost` + `CHANGELOG.md`
+
+  All four packages now declare `"files": ["dist", "boost", "CHANGELOG.md"]` so npm pack only ships the compiled output, the `@rudderjs/boost` guidelines + skills tree, and the changelog. Previously `@pilotiq/pilotiq` shipped its full `src/`, `CLAUDE.md`, `.turbo/`, and test files; the three adapters shipped `src/` deliberately but no longer need to.
+
+  - **`@pilotiq/pilotiq`** — 2.1 MB → 1.3 MB (~38% smaller). Drops `src/**`, `CLAUDE.md`, `.turbo/` from the tarball.
+  - **`@pilotiq/tiptap` / `@pilotiq/codemirror` / `@pilotiq/recharts`** — drop `src/**` from the tarball.
+
+  No API impact. Consumer Tailwind `@source` rules that previously scanned `node_modules/@pilotiq/*/src` should re-point at `node_modules/@pilotiq/*/dist` (Tailwind scans `.js` just fine). Source maps in `dist/` still reference `../src/*.ts` paths that are no longer in the tarball — sourcemap navigation inside `node_modules` won't resolve to TS, but stack traces still line up.
+
 ## 0.24.1
 
 ### Patch Changes
