@@ -164,6 +164,18 @@ export function CollabTextRenderer({
   // duplicated text. Same window as `TiptapEditor`'s rich-text seed path.
   // Acceptable for now; can be tightened later via a deterministic
   // first-writer election or a server-side seed handoff.
+  //
+  // Subscribe-after-sync mirror: after the seed branch (or no-op when the
+  // fragment already has content from a remote peer), replay the editor's
+  // current text into `onChange`. The mount-time safety-net effect below
+  // fires once when the editor instance materializes, but in the cold-mount
+  // case (fresh peer joining a populated doc) y-prosemirror's `ySyncPlugin`
+  // view hook may run _forceRerender before the React owner has installed
+  // the `update` listener that drives `onUpdate` — leaving the hidden
+  // FormData input empty. Mirroring after `room.synced` resolves closes the
+  // gap. Idempotent — when `onUpdate` already propagated the value, this is
+  // a no-op `setText(sameValue)`. Same shape as the catch-up replay in
+  // `@pilotiq-pro/collab`'s `rowArrayBinding.subscribeRows`.
   useCollabSeed(
     editor && collabActive ? room : null,
     collabName,
@@ -173,6 +185,7 @@ export function CollabTextRenderer({
       if (fragment && fragment.length === 0 && defaultValue && editor) {
         editor.commands.setContent(plainTextToDoc(defaultValue, multiline))
       }
+      if (editor) onChange(plainTextOf(editor))
     },
   )
 
