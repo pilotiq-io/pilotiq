@@ -21,6 +21,25 @@ const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
 
 const window = dom.window as unknown as Window & typeof globalThis
 
+// jsdom doesn't ship `matchMedia`; CodeMirror's `EditorView.theme` queries
+// `(prefers-color-scheme: dark)` at mount under `@uiw/react-codemirror` when
+// the user picks the `auto` theme. Stub returns "no match" so the editor
+// resolves to its default theme — sufficient for behavioral tests that
+// assert mount + DOM shape rather than dark-mode-specific styling.
+if (typeof window.matchMedia !== 'function') {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ;(window as any).matchMedia = (query: string) => ({
+    matches:       false,
+    media:         query,
+    onchange:      null,
+    addListener:    () => {},
+    removeListener: () => {},
+    addEventListener:    () => {},
+    removeEventListener: () => {},
+    dispatchEvent:       () => false,
+  })
+}
+
 // Properties that Tiptap, React 19, and RTL touch directly via the
 // global namespace (rather than via the captured `window` reference).
 // Keep this list tight — every override is a place where jsdom and Node
