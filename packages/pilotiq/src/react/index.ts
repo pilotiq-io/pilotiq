@@ -39,7 +39,6 @@ export {
   type CollabRoom,
   type SyncedProviderLike,
 } from './CollabRoomContext.js'
-export { useCollabSeed } from './useCollabSeed.js'
 export {
   registerCollabExtensions,
   getCollabExtensions,

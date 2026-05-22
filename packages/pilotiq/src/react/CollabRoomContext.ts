@@ -24,12 +24,12 @@ export interface CollabRoom {
   provider:  unknown
   /**
    * Resolves on the provider's first sync. Present when the room is
-   * wired through `@rudderjs/sync/react`'s `CollabRoomManager` (which is
+   * wired through `@rudderjs/sync/react`'s `useCollabRoom` (which is
    * what `@pilotiq-pro/collab@>=0.2`'s `<RecordCollabRoom>` does);
-   * absent for legacy / hand-rolled providers. `useCollabSeed` gates
-   * its seed callback on this Promise — adapters that need a
-   * "fragment-empty?" check after first sync should consume the hook
-   * rather than calling `onProviderSynced` themselves.
+   * absent for legacy / hand-rolled providers. Threaded into the
+   * framework's `useCollabSeed` / `useCollabSeedText` (from
+   * `@rudderjs/sync/react`) so adapters can gate seed callbacks on
+   * first sync without calling `onProviderSynced` directly.
    */
   synced?:   Promise<void>
   /** IndexedDB persistence handle, when the room wraps `y-indexeddb`. Opaque. */
