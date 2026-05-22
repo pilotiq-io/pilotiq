@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "rudder doctor --only structure",
+    "predev": "node --env-file-if-exists=.env node_modules/@rudderjs/cli/dist/index.js doctor",
     "dev": "vike dev --port 3003",
     "dev:clean": "pids=$(lsof -ti :24680 -ti :3003 2>/dev/null); if [ -n \"$pids\" ]; then kill -9 $pids; fi; vike dev --port 3003",
     "build": "vike build",
@@ -84,7 +84,7 @@
     "vike-react": "^0.6.20"
   },
   "devDependencies": {
-    "@rudderjs/cli": "^4.6.2",
+    "@rudderjs/cli": "^4.6.3",
     "@types/node": "^20.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
