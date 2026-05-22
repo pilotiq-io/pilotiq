@@ -771,7 +771,7 @@ export function registerResourceRoutes(
       router.get(recordPageUrl, async (req, res) => {
         const user = await pilotiq.resolveUser(req)
         if (!await policyAccess(R, user)) return forbidden(res, wantsJson(req))
-        const recordId = req.params['id']!
+        const recordId = (req.params as Record<string, string | undefined>)['id']!
         const data = await resourceRecordPageData(pilotiq, slug, recordId, subPageSlug, req)
         if (data === null) { res.status(404); return res.send('Not found') }
         if ('ok' in data && data.ok === false) return forbidden(res, wantsJson(req))

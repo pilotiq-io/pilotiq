@@ -10,7 +10,7 @@ importers:
     devDependencies:
       '@changesets/cli':
         specifier: ^2.27.0
-        version: 2.30.0(@types/node@20.19.39)
+        version: 2.30.0(@types/node@24.12.4)
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.2.0(jiti@2.6.1))
@@ -51,8 +51,8 @@ importers:
         specifier: workspace:^
         version: link:../pilotiq
       '@rudderjs/sync':
-        specifier: ^1.3.0
-        version: 1.3.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(react@19.2.5)(typescript@5.9.3)
+        specifier: ^1.3.1
+        version: 1.3.1(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(react@19.2.5)(typescript@5.9.3)
       '@testing-library/dom':
         specifier: ^10.4.1
         version: 10.4.1
@@ -115,17 +115,17 @@ importers:
         specifier: ^1
         version: 1.3.0(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@rudderjs/contracts':
-        specifier: ^1.6.0
-        version: 1.6.0
+        specifier: ^1.8.0
+        version: 1.8.0
       '@rudderjs/core':
-        specifier: ^1.1.4
-        version: 1.1.4
-      '@rudderjs/router':
         specifier: ^1.2.0
         version: 1.2.0
+      '@rudderjs/router':
+        specifier: ^1.6.0
+        version: 1.6.0
       '@rudderjs/view':
-        specifier: ^1.1.0
-        version: 1.1.0(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
+        specifier: ^1.2.2
+        version: 1.2.2(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
       '@types/node':
         specifier: ^20
         version: 20.19.39
@@ -212,8 +212,8 @@ importers:
         specifier: workspace:^
         version: link:../pilotiq
       '@rudderjs/sync':
-        specifier: ^1.2.0
-        version: 1.2.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(react@19.2.5)(typescript@5.9.3)
+        specifier: ^1.3.1
+        version: 1.3.1(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(react@19.2.5)(typescript@5.9.3)
       '@testing-library/dom':
         specifier: ^10.4.1
         version: 10.4.1
@@ -350,11 +350,11 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@rudderjs/contracts':
-        specifier: ^1.6.0
-        version: 1.6.0
+        specifier: ^1.8.0
+        version: 1.8.0
       '@rudderjs/core':
-        specifier: ^1.1.4
-        version: 1.1.4
+        specifier: ^1.2.0
+        version: 1.2.0
       '@rudderjs/localization':
         specifier: ^1.0.2
         version: 1.0.2
@@ -365,14 +365,14 @@ importers:
         specifier: ^1.0.1
         version: 1.0.1
       '@rudderjs/orm':
-        specifier: ^1.8.0
-        version: 1.8.0
+        specifier: ^1.12.0
+        version: 1.12.0
       '@rudderjs/orm-prisma':
-        specifier: ^1.5.0
-        version: 1.5.0(@prisma/client@7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3))
+        specifier: ^1.9.1
+        version: 1.9.1(@prisma/client@7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3))
       '@rudderjs/router':
-        specifier: ^1.2.0
-        version: 1.2.0
+        specifier: ^1.6.0
+        version: 1.6.0
       '@rudderjs/server-hono':
         specifier: ^1.0.5
         version: 1.0.5(srvx@0.11.15)(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
@@ -380,11 +380,11 @@ importers:
         specifier: ^1.0.4
         version: 1.0.4
       '@rudderjs/view':
-        specifier: ^1.1.0
-        version: 1.1.0(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
+        specifier: ^1.2.2
+        version: 1.2.2(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
       '@rudderjs/vite':
         specifier: ^2.0.0
-        version: 2.0.0(@rudderjs/core@1.1.4)(@vitejs/plugin-react@4.7.0(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
+        version: 2.0.0(@rudderjs/core@1.2.0)(@vitejs/plugin-react@4.7.0(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
       '@tailwindcss/typography':
         specifier: ^0.5.16
         version: 0.5.19(tailwindcss@4.2.2)
@@ -510,8 +510,8 @@ importers:
         version: 4.3.6
     devDependencies:
       '@rudderjs/cli':
-        specifier: ^4.6.3
-        version: 4.6.3(@rudderjs/router@1.2.0)
+        specifier: ^4.6.4
+        version: 4.6.4(@rudderjs/router@1.6.0)
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.39
@@ -1201,6 +1201,9 @@ packages:
   '@prisma/adapter-libsql@7.8.0':
     resolution: {integrity: sha512-WnBGVMMlaehdVtWyUydCopL9WjGO77FZaaX0NWbW/Puu7iom3xNM9njpz57QBySbwJSLJMqoIbBPVGcjZ6jk/A==}
 
+  '@prisma/adapter-mariadb@7.8.0':
+    resolution: {integrity: sha512-mWsgcfbUjxB3qSzRlLs8E03vsKrqXzYK2zpx3e8u6wIgeHJM/sE46cuOGcYvHiZGmeQLCd3xL6YSSGM9QOLI6w==}
+
   '@prisma/adapter-pg@7.8.0':
     resolution: {integrity: sha512-ygb3UkerK3v8MDpXVgCISdRNDozpxh6+JVJgiIGbSr5KBgz10LLf5ejUskPGoXlsIjxsOu6nuy1JVQr2EKGSlg==}
 
@@ -1488,8 +1491,8 @@ packages:
   '@rudderjs/cache@1.1.1':
     resolution: {integrity: sha512-ATVVl1xwHb0lnLErjbyf5DyrbCVQAxtZ4ZhrzSqgk1cEa+rIidTcvTK3zi+KlKcBf9q9lGZpCaomJdmFmNqUqA==}
 
-  '@rudderjs/cli@4.6.3':
-    resolution: {integrity: sha512-T8F75VY3M7OcCRsdvB8ldHEE5uWogMJLe82nq1PA2RlhswMTI3QS7sUyPafO8ZK2EWRIoh9Qj6vUclVxtYV7rw==}
+  '@rudderjs/cli@4.6.4':
+    resolution: {integrity: sha512-QrSnefEhhGtnRYMDHrochidqjs+M8jSjpM5F8y/JkpEzKgpuqf7ettmwMAwkfoMF4ef04/oi5G2hGkQkj3wv8w==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -1501,22 +1504,13 @@ packages:
   '@rudderjs/console@1.0.0':
     resolution: {integrity: sha512-p04z0/NdGi7d8bVo0nLWLouraQIRbCsZGuh+ftc2/odohIwJmaIC9kotqWJZ3n2H5aSYwZKGnvAwtnSey4JsBg==}
 
-  '@rudderjs/console@1.0.1':
-    resolution: {integrity: sha512-iQ6Uf95jI24P/noc8y3Oh6WwNQmLjRkuZr9xl3/OVJrCYFZYnV/ffhPT/FsAdwwpUDJbZPrI2XeQchs5uZhdBA==}
-
   '@rudderjs/console@1.1.0':
     resolution: {integrity: sha512-XK1pcaVwAV8Gg6LdzMgpFAaeNbKBznoKgcbRfJ+ugLpR7tTGHHhVR/3MHPDXTDB3JTSkMQuhziZ4Y2oO9gLE3g==}
     engines: {node: ^20.19.0 || >=22.12.0}
 
-  '@rudderjs/contracts@1.6.0':
-    resolution: {integrity: sha512-d+82y1IfqhA8LlCmnYGbvanz09zdNHT9sOvLVx8b7jApfJnL9gpHm4AJWc9wu+CZ68hYE65ZRNf4IosBD17URg==}
-
   '@rudderjs/contracts@1.8.0':
     resolution: {integrity: sha512-uo4eiXRtNqIx1X3nnCiAhdw/3DtaVkixr8AcE/9hoe5Xjuq9NNLO5UE3Mdw0LuY9q+aE3hEM7WbFRfLoazhoSw==}
     engines: {node: ^20.19.0 || >=22.12.0}
-
-  '@rudderjs/core@1.1.4':
-    resolution: {integrity: sha512-rqgvPJBZRAshHMxQem338sLNiZm5e8NdaHD123lP5vMRJHRZ0UPK9tHTkR6wRr9Y0vDNe3VAMiKbDqIqA2JFuw==}
 
   '@rudderjs/core@1.2.0':
     resolution: {integrity: sha512-JLkPbwYdt9p1OY6COtDxhdE1z+ScB+3VyL5J1lPRVxm0YNKZby86VWcH3qLVHy0QIMemdtLYqaSPN4jd0JxIWA==}
@@ -1531,19 +1525,21 @@ packages:
   '@rudderjs/middleware@1.0.1':
     resolution: {integrity: sha512-ppwFelBXZ8pKgpBjjq2wrPIeyW+lAy1jXBZqzngCTFEgddhcaovBfirxIsF5/biF2HsZej5jXObqGtuubgKuug==}
 
-  '@rudderjs/orm-prisma@1.5.0':
-    resolution: {integrity: sha512-E72l8xQSAl3jPDIb0LMG8AeParFUZTDIg/XqCSCTtWAivAYoB4+tsseDwAMO8SXOcVbGIzxs1Jr1v/hVaB63AA==}
+  '@rudderjs/orm-prisma@1.9.1':
+    resolution: {integrity: sha512-atG+MmStd8ml3wOHwKqYIqnCnAaJxFqfbwPTxKZZb5vv51/WEBd+VZe0kCfV2MpZso77OuDAy6jDIREqHH8Gtw==}
+    engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       '@prisma/client': ^7.0.0
+      '@rudderjs/ai': ^1.8.0
     peerDependenciesMeta:
       '@prisma/client':
         optional: true
+      '@rudderjs/ai':
+        optional: true
 
-  '@rudderjs/orm@1.8.0':
-    resolution: {integrity: sha512-Ge8pBUmbNp4yW6KGnOe0ANj2hKTPs5jd8PfMd9DXrcohlcFc0xyoJwsQxhQmGXBDzblZ2hOgKhCZpWZWmqy6Yg==}
-
-  '@rudderjs/router@1.2.0':
-    resolution: {integrity: sha512-HdAIrLzN4BlwtIDlHwWX+DAu64/6rmHnSvtHMn5VfAqF3AX3JxJaF2dXGQ6q52np+q43HFtbVVKgD1XaVjuwpw==}
+  '@rudderjs/orm@1.12.0':
+    resolution: {integrity: sha512-YVGzqrVCCdRhrXsoKWu4cmGDlaYoQcRwvP+d1kydimMPUsc6/Z2IDV9R0RndzJRRWOs8Ei31+l58Pjy91nP/QQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
 
   '@rudderjs/router@1.6.0':
     resolution: {integrity: sha512-AABg2SmV5lWq+jbVBImxRAunra6eLMcPVmiRoBdZxL6hzkCfTHAueD2kH8iANXA1CLH5GsH0rc13MSkQ911VVA==}
@@ -1555,15 +1551,12 @@ packages:
   '@rudderjs/session@1.0.4':
     resolution: {integrity: sha512-EqqFiBsPBKpSJMuA1Y2Ssmfc2liHQr4yEZSgNZaV5CnMlUzgPUdNHj8yK2CBnKYYs8y4d04pQQE7feuMJO3YxA==}
 
-  '@rudderjs/support@1.2.1':
-    resolution: {integrity: sha512-wlEyVzz5kMembrwDr+RyNKxTjbLzo5f8FRf9HDwtFm7blCrxJCmShfV2tuxiP9hNbDvuzhhEb6uTyt6lErjAFw==}
-
-  '@rudderjs/support@1.2.2':
-    resolution: {integrity: sha512-DjcVO/LFCahhkCYTRCDdzTYyPWWcJ/eN4sfJ+EJipzyfR53rPTlB4soKM9WhWVEPsbpVvsrhf+OxbXSJKQYJ/Q==}
+  '@rudderjs/support@1.3.0':
+    resolution: {integrity: sha512-tjG68Iwelwl+ScmNbJBNyBJzO3p5gccQD5Efj77deVTF3ouigo2n7Uce/dHSYNVMsRNYlzhcTBpqZZt92tlYhQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
 
-  '@rudderjs/sync@1.2.0':
-    resolution: {integrity: sha512-88hSNqfcMXj2wx8HooSIYPT1QI0RAccU2EyhwU8SCNAbcT1YNiucq2hyKQF1A2QzIOaM/Q31Dsto0Gg75M9Lzg==}
+  '@rudderjs/sync@1.3.1':
+    resolution: {integrity: sha512-Ei0LWX4GbeXC3kaq2oo5kDcfdVfQVoUlC/LAu0j/0MfLEhqa1VaDc9CYNms15CYuS3/oI/DCVcR9WjzQ3xTvWg==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       react: '>=19.2.0'
@@ -1577,23 +1570,9 @@ packages:
       y-websocket:
         optional: true
 
-  '@rudderjs/sync@1.3.0':
-    resolution: {integrity: sha512-7uaacyGx1Btn9ELCT5mYEfbdPi8+tIPD55ZOGn/tgC/7ZJvRgS0sogmOkDbgfgXjCU3DStVT2bw2cfJaftqiXg==}
+  '@rudderjs/view@1.2.2':
+    resolution: {integrity: sha512-KUbNL6y6qRjNOMWVhe9ze2HCrkis7asFKltI7JUc4DpmeB4sIX78gO40wbywBOZCU/YlXqZNkOAYgYV2Z+9Heg==}
     engines: {node: ^20.19.0 || >=22.12.0}
-    peerDependencies:
-      react: '>=19.2.0'
-      y-indexeddb: ^9.0.0
-      y-websocket: ^2.0.0 || ^3.0.0
-    peerDependenciesMeta:
-      react:
-        optional: true
-      y-indexeddb:
-        optional: true
-      y-websocket:
-        optional: true
-
-  '@rudderjs/view@1.1.0':
-    resolution: {integrity: sha512-OK99ZYiK9nVOn+5B7xh1fiLRal3mUycNgEh2DGSKW73wcBELzvmjm6bDfaERc7WwI7sLrfrJbO00J9fijN/fNA==}
     peerDependencies:
       vike: '>=0.4.0'
 
@@ -2029,6 +2008,9 @@ packages:
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
 
+  '@types/geojson@7946.0.16':
+    resolution: {integrity: sha512-6C8nqWur3j98U6+lXDfTUWIfgvZU+EumvpHKcYjujKH7woYyLj2sUmff0tRhrqM7BohUw7Pz3ZB1jj2gW9Fvmg==}
+
   '@types/jsdom@28.0.3':
     resolution: {integrity: sha512-/HQ2uFoetFTXuye8vzIcHw2z6Fwi7Hi/qcgC+RoS9NCyewiqxhVGqlG+ViGB6lkax481R6dmhf1I7lIGlzJStQ==}
 
@@ -2058,6 +2040,9 @@ packages:
 
   '@types/node@20.19.39':
     resolution: {integrity: sha512-orrrD74MBUyK8jOAD/r0+lfa1I2MO6I+vAkmAWzMYbCcgrN4lCrmK52gRFQq/JRxfYPfonkr4b0jcY7Olqdqbw==}
+
+  '@types/node@24.12.4':
+    resolution: {integrity: sha512-GUUEShf+PBCGW2KaXwcIt3Yk+e3pkKwWKb9GSyM9WQVE+ep2jzmHdGsHzu4wgcZy5fN9FBdVzjpBQsYlpfpgLA==}
 
   '@types/pg@8.20.0':
     resolution: {integrity: sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow==}
@@ -2844,6 +2829,10 @@ packages:
     resolution: {integrity: sha512-tsYlhAYpjCKa//8rXZ9DqKEawhPoSytweBC2eNvcaDK+57RZLHGqNs3PZTQO6yekLFSuvA6AlnAfrw1uBvtb+Q==}
     hasBin: true
 
+  iconv-lite@0.6.3:
+    resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
+    engines: {node: '>=0.10.0'}
+
   iconv-lite@0.7.2:
     resolution: {integrity: sha512-im9DjEDQ55s9fL4EYzOAv0yMqmMBSZp6G0VvFyTMPKWxiSBHUj9NW/qqLmXUwXrrM7AvqSlTCfvqRb0cM8yYqw==}
     engines: {node: '>=0.10.0'}
@@ -3093,6 +3082,9 @@ packages:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
 
+  lru-cache@10.4.3:
+    resolution: {integrity: sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==}
+
   lru-cache@11.5.0:
     resolution: {integrity: sha512-5YgH9UJd7wVb9hIouI2adWpgqrrICkt070Dnj8EUY1+B4B2P9eRLPAkAAo6NICA7CEhOIeBHl46u9zSNpNu7zA==}
     engines: {node: 20 || >=22}
@@ -3115,6 +3107,14 @@ packages:
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
+
+  mariadb@3.4.5:
+    resolution: {integrity: sha512-gThTYkhIS5rRqkVr+Y0cIdzr+GRqJ9sA2Q34e0yzmyhMCwyApf3OKAC1jnF23aSlIOqJuyaUFUcj7O1qZslmmQ==}
+    engines: {node: '>= 14'}
+
+  mariadb@3.5.2:
+    resolution: {integrity: sha512-9rztrI4nouxAY/82a+RlzzZ5ie2vxu2eYclkBvTy1ATXH1B9cnvZ0O71Pzsy/mlfDb5P3HhOg0JzQKkDRhctyA==}
+    engines: {node: '>= 18'}
 
   markdown-it-task-lists@2.1.1:
     resolution: {integrity: sha512-TxFAc76Jnhb2OUu+n3yz9RMu4CwGfaT788br6HhEDlvWfdeJcLUsxk1Hgw2yJio0OXsxv7pyIPmvECY7bMbluA==}
@@ -3820,6 +3820,9 @@ packages:
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
+  undici-types@7.16.0:
+    resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
+
   undici-types@7.25.0:
     resolution: {integrity: sha512-AXNgS1Byr27fTI+2bsPEkV9CxkT8H6xNyRI68b3TatlZo3RkzlqQBLL+w7SmGPVpokjHbcuNVQUWE7FRTg+LRA==}
 
@@ -4007,6 +4010,9 @@ packages:
 
   zod@4.3.6:
     resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
+
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
 snapshots:
 
@@ -4212,7 +4218,7 @@ snapshots:
     dependencies:
       '@changesets/types': 6.1.0
 
-  '@changesets/cli@2.30.0(@types/node@20.19.39)':
+  '@changesets/cli@2.30.0(@types/node@24.12.4)':
     dependencies:
       '@changesets/apply-release-plan': 7.1.0
       '@changesets/assemble-release-plan': 6.0.9
@@ -4228,7 +4234,7 @@ snapshots:
       '@changesets/should-skip-package': 0.1.2
       '@changesets/types': 6.1.0
       '@changesets/write': 0.4.0
-      '@inquirer/external-editor': 1.0.3(@types/node@20.19.39)
+      '@inquirer/external-editor': 1.0.3(@types/node@24.12.4)
       '@manypkg/get-packages': 1.1.3
       ansi-colors: 4.1.3
       enquirer: 2.4.1
@@ -4594,12 +4600,12 @@ snapshots:
 
   '@humanwhocodes/retry@0.4.3': {}
 
-  '@inquirer/external-editor@1.0.3(@types/node@20.19.39)':
+  '@inquirer/external-editor@1.0.3(@types/node@24.12.4)':
     dependencies:
       chardet: 2.1.1
       iconv-lite: 0.7.2
     optionalDependencies:
-      '@types/node': 20.19.39
+      '@types/node': 24.12.4
 
   '@ioredis/commands@1.5.1':
     optional: true
@@ -4751,6 +4757,12 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+    optional: true
+
+  '@prisma/adapter-mariadb@7.8.0':
+    dependencies:
+      '@prisma/driver-adapter-utils': 7.8.0
+      mariadb: 3.4.5
     optional: true
 
   '@prisma/adapter-pg@7.8.0':
@@ -4996,13 +5008,13 @@ snapshots:
 
   '@rudderjs/cache@1.1.1':
     dependencies:
-      '@rudderjs/core': 1.1.4
+      '@rudderjs/core': 1.2.0
     optionalDependencies:
       ioredis: 5.10.1
     transitivePeerDependencies:
       - supports-color
 
-  '@rudderjs/cli@4.6.3(@rudderjs/router@1.2.0)':
+  '@rudderjs/cli@4.6.4(@rudderjs/router@1.6.0)':
     dependencies:
       '@clack/prompts': 1.3.0
       '@rudderjs/console': 1.1.0
@@ -5010,13 +5022,9 @@ snapshots:
       chalk: 5.6.2
       commander: 12.1.0
     optionalDependencies:
-      '@rudderjs/router': 1.2.0
+      '@rudderjs/router': 1.6.0
 
   '@rudderjs/console@1.0.0':
-    dependencies:
-      '@clack/prompts': 1.3.0
-
-  '@rudderjs/console@1.0.1':
     dependencies:
       '@clack/prompts': 1.3.0
 
@@ -5024,80 +5032,69 @@ snapshots:
     dependencies:
       '@clack/prompts': 1.3.0
 
-  '@rudderjs/contracts@1.6.0': {}
-
   '@rudderjs/contracts@1.8.0': {}
-
-  '@rudderjs/core@1.1.4':
-    dependencies:
-      '@rudderjs/console': 1.0.1
-      '@rudderjs/contracts': 1.6.0
-      '@rudderjs/router': 1.2.0
-      '@rudderjs/support': 1.2.1
-      reflect-metadata: 0.2.2
-      zod: 4.3.6
 
   '@rudderjs/core@1.2.0':
     dependencies:
       '@rudderjs/console': 1.1.0
       '@rudderjs/contracts': 1.8.0
       '@rudderjs/router': 1.6.0
-      '@rudderjs/support': 1.2.2
+      '@rudderjs/support': 1.3.0
       reflect-metadata: 0.2.2
       zod: 4.3.6
 
   '@rudderjs/localization@1.0.2':
     dependencies:
-      '@rudderjs/core': 1.1.4
+      '@rudderjs/core': 1.2.0
 
   '@rudderjs/log@1.0.1':
     dependencies:
-      '@rudderjs/core': 1.1.4
+      '@rudderjs/core': 1.2.0
 
   '@rudderjs/middleware@1.0.1':
     dependencies:
       '@rudderjs/cache': 1.1.1
-      '@rudderjs/contracts': 1.6.0
+      '@rudderjs/contracts': 1.8.0
     transitivePeerDependencies:
       - supports-color
 
-  '@rudderjs/orm-prisma@1.5.0(@prisma/client@7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3))':
+  '@rudderjs/orm-prisma@1.9.1(@prisma/client@7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3))':
     dependencies:
-      '@rudderjs/contracts': 1.6.0
-      '@rudderjs/core': 1.1.4
-      '@rudderjs/orm': 1.8.0
+      '@rudderjs/console': 1.1.0
+      '@rudderjs/contracts': 1.8.0
+      '@rudderjs/core': 1.2.0
+      '@rudderjs/orm': 1.12.0
+      '@rudderjs/support': 1.3.0
     optionalDependencies:
       '@libsql/client': 0.17.3
       '@prisma/adapter-better-sqlite3': 7.7.0
       '@prisma/adapter-libsql': 7.8.0
+      '@prisma/adapter-mariadb': 7.8.0
       '@prisma/adapter-pg': 7.8.0
       '@prisma/client': 7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3)
       better-sqlite3: 12.8.0
+      mariadb: 3.5.2
       pg: 8.20.0
     transitivePeerDependencies:
       - bufferutil
       - pg-native
       - utf-8-validate
 
-  '@rudderjs/orm@1.8.0':
+  '@rudderjs/orm@1.12.0':
     dependencies:
-      '@rudderjs/contracts': 1.6.0
-
-  '@rudderjs/router@1.2.0':
-    dependencies:
-      '@rudderjs/contracts': 1.6.0
-      reflect-metadata: 0.2.2
+      '@rudderjs/console': 1.1.0
+      '@rudderjs/contracts': 1.8.0
 
   '@rudderjs/router@1.6.0':
     dependencies:
       '@rudderjs/contracts': 1.8.0
       reflect-metadata: 0.2.2
-      zod: 4.3.6
+      zod: 4.4.3
 
   '@rudderjs/server-hono@1.0.5(srvx@0.11.15)(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))':
     dependencies:
       '@hono/node-server': 1.19.11(hono@4.12.12)
-      '@rudderjs/contracts': 1.6.0
+      '@rudderjs/contracts': 1.8.0
       '@vikejs/hono': 0.2.0(hono@4.12.12)(srvx@0.11.15)(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
       hono: 4.12.12
     transitivePeerDependencies:
@@ -5113,22 +5110,18 @@ snapshots:
 
   '@rudderjs/session@1.0.4':
     dependencies:
-      '@rudderjs/contracts': 1.6.0
-      '@rudderjs/core': 1.1.4
+      '@rudderjs/contracts': 1.8.0
+      '@rudderjs/core': 1.2.0
     optionalDependencies:
       ioredis: 5.10.1
     transitivePeerDependencies:
       - supports-color
 
-  '@rudderjs/support@1.2.1':
+  '@rudderjs/support@1.3.0':
     dependencies:
       zod: 4.3.6
 
-  '@rudderjs/support@1.2.2':
-    dependencies:
-      zod: 4.3.6
-
-  '@rudderjs/sync@1.2.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(react@19.2.5)(typescript@5.9.3)':
+  '@rudderjs/sync@1.3.1(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(react@19.2.5)(typescript@5.9.3)':
     dependencies:
       '@rudderjs/core': 1.2.0
       lib0: 0.2.117
@@ -5145,33 +5138,16 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@rudderjs/sync@1.3.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(react@19.2.5)(typescript@5.9.3)':
-    dependencies:
-      '@rudderjs/core': 1.2.0
-      lib0: 0.2.117
-      ws: 8.20.0
-      yjs: 13.6.30
-    optionalDependencies:
-      '@prisma/client': 7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3)
-      ioredis: 5.10.1
-      react: 19.2.5
-    transitivePeerDependencies:
-      - bufferutil
-      - prisma
-      - supports-color
-      - typescript
-      - utf-8-validate
-
-  '@rudderjs/view@1.1.0(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))':
+  '@rudderjs/view@1.2.2(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))':
     dependencies:
       vike: 0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
 
-  '@rudderjs/vite@2.0.0(@rudderjs/core@1.1.4)(@vitejs/plugin-react@4.7.0(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))':
+  '@rudderjs/vite@2.0.0(@rudderjs/core@1.2.0)(@vitejs/plugin-react@4.7.0(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))':
     dependencies:
       vike: 0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
       vite: 7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)
     optionalDependencies:
-      '@rudderjs/core': 1.1.4
+      '@rudderjs/core': 1.2.0
       '@vitejs/plugin-react': 4.7.0(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
 
   '@standard-schema/spec@1.1.0': {}
@@ -5562,6 +5538,9 @@ snapshots:
 
   '@types/estree@1.0.8': {}
 
+  '@types/geojson@7946.0.16':
+    optional: true
+
   '@types/jsdom@28.0.3':
     dependencies:
       '@types/node': 20.19.39
@@ -5594,6 +5573,11 @@ snapshots:
   '@types/node@20.19.39':
     dependencies:
       undici-types: 6.21.0
+
+  '@types/node@24.12.4':
+    dependencies:
+      undici-types: 7.16.0
+    optional: true
 
   '@types/pg@8.20.0':
     dependencies:
@@ -6464,6 +6448,11 @@ snapshots:
 
   human-id@4.1.3: {}
 
+  iconv-lite@0.6.3:
+    dependencies:
+      safer-buffer: 2.1.2
+    optional: true
+
   iconv-lite@0.7.2:
     dependencies:
       safer-buffer: 2.1.2
@@ -6689,6 +6678,9 @@ snapshots:
     dependencies:
       js-tokens: 4.0.0
 
+  lru-cache@10.4.3:
+    optional: true
+
   lru-cache@11.5.0: {}
 
   lru-cache@5.1.1:
@@ -6706,6 +6698,24 @@ snapshots:
   magic-string@0.30.21:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  mariadb@3.4.5:
+    dependencies:
+      '@types/geojson': 7946.0.16
+      '@types/node': 24.12.4
+      denque: 2.1.0
+      iconv-lite: 0.6.3
+      lru-cache: 10.4.3
+    optional: true
+
+  mariadb@3.5.2:
+    dependencies:
+      '@types/geojson': 7946.0.16
+      '@types/node': 20.19.39
+      denque: 2.1.0
+      iconv-lite: 0.7.2
+      lru-cache: 10.4.3
+    optional: true
 
   markdown-it-task-lists@2.1.1: {}
 
@@ -7453,6 +7463,9 @@ snapshots:
 
   undici-types@6.21.0: {}
 
+  undici-types@7.16.0:
+    optional: true
+
   undici-types@7.25.0: {}
 
   undici@7.25.0: {}
@@ -7621,3 +7634,5 @@ snapshots:
       zod: 4.3.6
 
   zod@4.3.6: {}
+
+  zod@4.4.3: {}

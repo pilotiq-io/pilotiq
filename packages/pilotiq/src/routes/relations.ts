@@ -672,8 +672,9 @@ export function registerRelationRoutes(
         // ── List ──
         router.get(nestedBase, async (req, res) => {
           const json = wantsJson(req)
-          const id       = req.params['id']!
-          const childId1 = req.params['childId']!
+          const params = req.params as Record<string, string | undefined>
+          const id       = params['id']!
+          const childId1 = params['childId']!
           const data = await relationManagerData(pilotiq, {
             kind: 'nested-relation-list', slug,
             chain: buildChain(id, childId1),
@@ -687,8 +688,9 @@ export function registerRelationRoutes(
         // ── Create (GET) ──
         router.get(`${nestedBase}/create`, async (req, res) => {
           const json = wantsJson(req)
-          const id       = req.params['id']!
-          const childId1 = req.params['childId']!
+          const params = req.params as Record<string, string | undefined>
+          const id       = params['id']!
+          const childId1 = params['childId']!
           const data = await relationManagerData(pilotiq, {
             kind: 'nested-relation-create', slug,
             chain: buildChain(id, childId1),
@@ -701,8 +703,9 @@ export function registerRelationRoutes(
         // ── Create (POST) ──
         router.post(`${nestedBase}/create`, async (req, res) => {
           const json = wantsJson(req)
-          const id       = req.params['id']!
-          const childId1 = req.params['childId']!
+          const params = req.params as Record<string, string | undefined>
+          const id       = params['id']!
+          const childId1 = params['childId']!
           // Run the chain walk once to verify auth + IDOR + load child1.
           // Any failure returns the same tagged shape we serve on GET.
           const pre = await relationManagerData(pilotiq, {
@@ -801,9 +804,10 @@ export function registerRelationRoutes(
         // ── View ──
         router.get(`${nestedBase}/:childId2`, async (req, res) => {
           const json = wantsJson(req)
-          const id       = req.params['id']!
-          const childId1 = req.params['childId']!
-          const childId2 = req.params['childId2']!
+          const params = req.params as Record<string, string | undefined>
+          const id       = params['id']!
+          const childId1 = params['childId']!
+          const childId2 = params['childId2']!
           if (childId2 === 'create')                    { res.status(404); return res.send('Not found') }
           const data = await relationManagerData(pilotiq, {
             kind: 'nested-relation-view', slug,
@@ -818,9 +822,10 @@ export function registerRelationRoutes(
         // ── Edit (GET) ──
         router.get(`${nestedBase}/:childId2/edit`, async (req, res) => {
           const json = wantsJson(req)
-          const id       = req.params['id']!
-          const childId1 = req.params['childId']!
-          const childId2 = req.params['childId2']!
+          const params = req.params as Record<string, string | undefined>
+          const id       = params['id']!
+          const childId1 = params['childId']!
+          const childId2 = params['childId2']!
           const data = await relationManagerData(pilotiq, {
             kind: 'nested-relation-edit', slug,
             chain: buildChain(id, childId1),
@@ -834,9 +839,10 @@ export function registerRelationRoutes(
         // ── Edit (POST) ──
         router.post(`${nestedBase}/:childId2/edit`, async (req, res) => {
           const json = wantsJson(req)
-          const id       = req.params['id']!
-          const childId1 = req.params['childId']!
-          const childId2 = req.params['childId2']!
+          const params = req.params as Record<string, string | undefined>
+          const id       = params['id']!
+          const childId1 = params['childId']!
+          const childId2 = params['childId2']!
 
           // Replay the chain to verify auth, IDOR, load child1+child2.
           const pre = await relationManagerData(pilotiq, {
@@ -932,9 +938,10 @@ export function registerRelationRoutes(
         // ── Delete ──
         router.post(`${nestedBase}/:childId2/delete`, async (req, res) => {
           const json = wantsJson(req)
-          const id       = req.params['id']!
-          const childId1 = req.params['childId']!
-          const childId2 = req.params['childId2']!
+          const params = req.params as Record<string, string | undefined>
+          const id       = params['id']!
+          const childId1 = params['childId']!
+          const childId2 = params['childId2']!
 
           // Replay the chain to verify auth + IDOR + load child2.
           // We piggy-back on the edit scope's checks (canEdit on the
