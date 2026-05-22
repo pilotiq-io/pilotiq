@@ -38,6 +38,13 @@ import {
   loadAccessGated,
 } from './helpers.js'
 
+// One-shot warning dedup: a Resource that declares relations() without
+// setting `static model` silently has every relation collapse to 'hasMany'
+// (the safe default), which is wrong for M2M / morph. The fallback prevents
+// crashes during late binding but masks the misconfiguration in dev — log
+// once per offending Resource so the operator sees it.
+const warnedMissingModelResources = new Set<string>()
+
 /**
  * Register the relation manager routes for one Resource — every
  * relation declared via `R.relations()` mounts a depth-1 strip
@@ -63,6 +70,15 @@ export function registerRelationRoutes(
   const cfg = pilotiq.getConfig()
   const slug = R.getSlug()
   const resourceBase = resourceBasePath(base, R)
+
+    if (R.relations().length > 0 && !R.model && !warnedMissingModelResources.has(R.name)) {
+      warnedMissingModelResources.add(R.name)
+      console.warn(
+        `[@pilotiq/pilotiq] ${R.name}: declares relations() without a static model — every relation will default to 'hasMany'. ` +
+        `M2M (belongsToMany / morphToMany / morphedByMany) and polymorphic (morphMany / morphTo) relations will misbehave. ` +
+        `Set 'static model = …' on the Resource to fix.`,
+      )
+    }
 
     for (const M of R.relations()) {
       const rel = M.getRelationship()
