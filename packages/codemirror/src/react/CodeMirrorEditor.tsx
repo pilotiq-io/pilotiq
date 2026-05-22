@@ -10,9 +10,9 @@ import {
   parseRowFieldPath,
 } from '@pilotiq/pilotiq/react'
 import { getCodeLanguage } from '../languageRegistry.js'
+import type { CodeEditorTheme } from '../CodeEditorField.js'
 import { CollabCodeMirrorEditor } from './CollabCodeMirrorEditor.js'
-
-type CodeEditorTheme = 'auto' | 'light' | 'dark'
+import { useThemeIsDark } from './useThemeIsDark.js'
 
 /**
  * The pilotiq field renderer for `CodeEditorField`. Registered globally
@@ -185,44 +185,6 @@ function LocalBranch(props: FieldRendererProps): React.ReactElement {
       </div>
     </div>
   )
-}
-
-function useThemeIsDark(keyword: CodeEditorTheme): boolean {
-  const [isDark, setIsDark] = useState<boolean>(() => {
-    if (keyword === 'light') return false
-    if (keyword === 'dark')  return true
-    if (typeof window === 'undefined') return false
-    return resolveAutoDark()
-  })
-
-  useEffect(() => {
-    if (keyword === 'light') { setIsDark(false); return }
-    if (keyword === 'dark')  { setIsDark(true);  return }
-
-    const update = (): void => setIsDark(resolveAutoDark())
-    update()
-
-    // Track the app's `.dark` class (pilotiq's ThemeProvider toggles it on
-    // <html>) so the editor follows manual theme switches, not just OS.
-    const observer = new MutationObserver(update)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
-
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    mq.addEventListener('change', update)
-
-    return () => {
-      observer.disconnect()
-      mq.removeEventListener('change', update)
-    }
-  }, [keyword])
-
-  return isDark
-}
-
-function resolveAutoDark(): boolean {
-  if (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')) return true
-  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) return true
-  return false
 }
 
 function stringValue(v: unknown): string {

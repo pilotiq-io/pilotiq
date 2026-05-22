@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { EditorView, lineNumbers as lineNumbersExt, keymap } from '@codemirror/view'
 import { EditorState, Compartment, type Extension } from '@codemirror/state'
 import { indentUnit } from '@codemirror/language'
@@ -11,8 +11,8 @@ import { useCollabSeed, type CollabRoom } from '@pilotiq/pilotiq/react'
 // file via TS' module-omission rules for type-only imports.
 import type * as Y from 'yjs'
 import { getCodeLanguage } from '../languageRegistry.js'
-
-type CodeEditorTheme = 'auto' | 'light' | 'dark'
+import type { CodeEditorTheme } from '../CodeEditorField.js'
+import { useThemeIsDark } from './useThemeIsDark.js'
 
 export interface CollabCodeMirrorEditorProps {
   /**
@@ -282,54 +282,3 @@ function buildThemeExtension(isDark: boolean, height: string | undefined): Exten
   }, isDark ? { dark: true } : {})
 }
 
-// One MutationObserver + one matchMedia listener for the whole page, fanned
-// out to all `useThemeIsDark` subscribers via `useSyncExternalStore`. Previous
-// implementation installed an observer pair per editor instance, which scaled
-// linearly with editor count in dense Repeaters.
-const autoDarkListeners = new Set<() => void>()
-let autoDarkSubscribed = false
-let cachedAutoDark = false
-
-function notifyAutoDarkListeners(): void {
-  const next = resolveAutoDark()
-  if (next === cachedAutoDark) return
-  cachedAutoDark = next
-  autoDarkListeners.forEach((l) => l())
-}
-
-function ensureAutoDarkSubscribed(): void {
-  if (autoDarkSubscribed) return
-  if (typeof window === 'undefined') return
-  autoDarkSubscribed = true
-  cachedAutoDark = resolveAutoDark()
-  const observer = new MutationObserver(notifyAutoDarkListeners)
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', notifyAutoDarkListeners)
-}
-
-function subscribeAutoDark(listener: () => void): () => void {
-  ensureAutoDarkSubscribed()
-  autoDarkListeners.add(listener)
-  return () => { autoDarkListeners.delete(listener) }
-}
-
-function getAutoDarkSnapshot(): boolean {
-  return cachedAutoDark
-}
-
-function getAutoDarkServerSnapshot(): boolean {
-  return false
-}
-
-function useThemeIsDark(keyword: CodeEditorTheme): boolean {
-  const isAutoDark = useSyncExternalStore(subscribeAutoDark, getAutoDarkSnapshot, getAutoDarkServerSnapshot)
-  if (keyword === 'light') return false
-  if (keyword === 'dark')  return true
-  return isAutoDark
-}
-
-function resolveAutoDark(): boolean {
-  if (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')) return true
-  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) return true
-  return false
-}
