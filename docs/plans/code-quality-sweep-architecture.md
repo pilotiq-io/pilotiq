@@ -2,7 +2,7 @@
 
 **Status:** OPEN 2026-05-22 — most phases superseded by parallel work shipped today
 **Scope:** Pre-1.0 tier from the 2026-05-22 architectural review (all 7 packages, ~138K LOC).
-**Source:** `CODE_QUALITY_REVIEW.md` (root, untracked) — 5 parallel sub-agents reading for type-safety, duplication, race conditions, leaky abstractions.
+**Source:** `code-quality-sweep-architecture-review.md` (sibling in `docs/plans/`) — 5 parallel sub-agents reading for type-safety, duplication, race conditions, leaky abstractions.
 
 > **Re-baseline note (2026-05-22 evening):** The architectural review snapshot was generated earlier today before several fixes landed. As of this writing: **Phase 1, 3a, 3c, 5b are already shipped**. Genuinely open: Phase 2 (needs analysis — possibly already covered by subAgentResume's own `finally`), Phase 3b, Phase 4, Phase 5a (~5 live casts), Phase 5c (needs cast inventory). The shipped phases are kept below for traceability and to demonstrate the resolution pattern.
 
