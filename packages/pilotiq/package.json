@@ -9,6 +9,11 @@
     "directory": "packages/pilotiq"
   },
   "type": "module",
+  "files": [
+    "dist",
+    "boost",
+    "CHANGELOG.md"
+  ],
   "exports": {
     ".": {
       "import": "./dist/index.js",
