@@ -315,6 +315,20 @@ export function MarkdownEditor({
   // record. Mirrors the rich-text TiptapEditor seed path and the
   // CollabTextRenderer seed. Gates on `editor` so Tiptap v3's deferred
   // `immediatelyRender: false` mount completes first.
+  //
+  // Subscribe-after-sync mirror: after the seed branch (or no-op when
+  // the fragment already has content from a remote peer), serialize
+  // the editor's current markdown and propagate via `onChange` so the
+  // host's hidden FormData input picks it up. The host (`MarkdownEditorHost`
+  // in pilotiq core) drives the hidden input from React state that's
+  // populated ONLY through `onChange`; in the cold-mount case
+  // (fresh peer joining a populated doc) y-prosemirror's `ySyncPlugin`
+  // view hook may run `_forceRerender` before the React owner has
+  // installed the `update` listener that drives `onUpdate` — leaving
+  // the input at its SSR-rendered `defaultValue`. Idempotent — when
+  // `onUpdate` already propagated the value, this is a no-op
+  // `setText(sameValue)`. Same shape as `TiptapEditor` /
+  // `CollabTextRenderer` / `rowArrayBinding.subscribeRows`.
   useCollabSeed(
     editor && collabActive ? room : null,
     collabName,
@@ -325,6 +339,12 @@ export function MarkdownEditor({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const cmd = (editor.commands as any).setContent
         if (cmd) cmd(defaultValue)
+      }
+      if (editor) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const storage = (editor.storage as any).markdown
+        const md = typeof storage?.getMarkdown === 'function' ? storage.getMarkdown() : ''
+        onChange(md)
       }
     },
   )
