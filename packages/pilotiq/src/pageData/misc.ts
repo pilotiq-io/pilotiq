@@ -1,4 +1,5 @@
 import type { Pilotiq } from '../Pilotiq.js'
+import { livePanel } from '../PilotiqRegistry.js'
 import type { Page } from '../Page.js'
 import { globalBasePath, pageBasePath } from '../clusterPaths.js'
 import { Element } from '../schema/Element.js'
@@ -42,6 +43,7 @@ export async function globalEditData(
   prefill?: { values?: Record<string, unknown>; errors?: Record<string, string[]> },
   req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
+  pilotiq = livePanel(pilotiq)
   const cfg = pilotiq.getConfig()
   const G = pilotiq.findGlobal(slug)
   if (!G) return null
@@ -97,6 +99,7 @@ export async function globalViewData(
   slug:    string,
   req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
+  pilotiq = livePanel(pilotiq)
   const cfg = pilotiq.getConfig()
   const G = pilotiq.findGlobal(slug)
   if (!G) return null
@@ -133,6 +136,7 @@ export async function customPageData(
   pageSlug: string,
   req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
+  pilotiq = livePanel(pilotiq)
   const cfg = pilotiq.getConfig()
   const PageClass = pilotiq.findPage(pageSlug)
   if (!PageClass) return null
@@ -226,6 +230,7 @@ export async function widgetData(
   body:    WidgetRequest,
   req?:    unknown,
 ): Promise<WidgetSuccess | WidgetFailure> {
+  pilotiq = livePanel(pilotiq)
   const cfg = pilotiq.getConfig()
   const user = await pilotiq.resolveUser(req)
 
@@ -326,6 +331,7 @@ export async function searchData(
   results: GlobalSearchResult[]
   renderHooks?: RenderHookMap
 }> {
+  pilotiq = livePanel(pilotiq)
   const user = await pilotiq.resolveUser(req)
   const results = await searchAllResources(pilotiq, query, user)
   const cfg = pilotiq.getConfig()
