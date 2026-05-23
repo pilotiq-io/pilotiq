@@ -4,7 +4,7 @@ import {
   UserMenuItem,
   Alert, Heading,
 } from '@pilotiq/pilotiq'
-import { themeEditor } from '@pilotiq/pilotiq/plugins'
+import { themeEditor, prismaThemeStorage } from '@pilotiq/pilotiq/plugins'
 import { registerIcons } from '@pilotiq/pilotiq/icons'
 import { lucideIcons } from '@pilotiq/pilotiq/icons/lucide'
 import { tiptap }      from '@pilotiq/tiptap'
@@ -80,7 +80,18 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
     tiptap(),
     codeEditor({ languages: { json, sql } }),
     recharts(),
-    themeEditor(),
+    // Explicit theme persistence — opts out of `themeEditor()`'s deprecated
+    // implicit Prisma fallback. The Prisma delegate is a lazy getter so
+    // `prisma()` (→ `app().make('prisma')`) only fires inside the adapter's
+    // server-side load/save, never at module-eval — keeps the panel module
+    // client-safe (it's re-imported in the browser via `_components.ts`).
+    // Slug matches the old implicit key so already-saved themes carry over.
+    themeEditor({
+      storage: prismaThemeStorage(
+        { get panelGlobal() { return prisma().panelGlobal } },
+        { slug: 'Pilotiq Admin__theme' },
+      ),
+    }),
   ])
   // Plan #10 demo — pretend everyone is an admin so the canDelete()
   // check on `ArticleResource` shows the Delete row action. Real apps
