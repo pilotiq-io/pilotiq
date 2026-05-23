@@ -42,6 +42,8 @@ export default defineConfig({
       '@tiptap/core',
       '@tiptap/pm/state',
       '@tiptap/pm/view',
+      '@tiptap/pm/model',
+      'prosemirror-changeset',
       '@tiptap/react',
       '@tiptap/starter-kit',
       '@tiptap/extension-placeholder',
@@ -88,14 +90,22 @@ export default defineConfig({
       '@rudderjs/core',
       '@rudderjs/router',
       '@rudderjs/orm',
+      // Collab editor surface (record-room Y.Doc, CollabRoomManager) — its
+      // React entry is pulled the first time a collab-enabled page mounts.
+      '@rudderjs/sync/react',
       'sanitize-html',
       'react-image-crop',
       'recharts',
       '@uiw/react-codemirror',
       '@codemirror/language',
       '@codemirror/state',
+      '@codemirror/view',
+      '@codemirror/commands',
       '@codemirror/lang-json',
       '@codemirror/lang-sql',
+      'codemirror',
+      // y-codemirror.next bridges the CodeEditor field to the collab Y.Doc.
+      'y-codemirror.next',
     ],
     exclude: [
       // Keep as workspace-link runtime imports so a single instance is shared

@@ -39,6 +39,7 @@
     "@rudderjs/router": "^1.6.0",
     "@rudderjs/server-hono": "^1.0.5",
     "@rudderjs/session": "^1.0.4",
+    "@rudderjs/sync": "^1.3.0",
     "@rudderjs/view": "^1.2.2",
     "@rudderjs/vite": "^2.0.0",
     "@tailwindcss/typography": "^0.5.16",
@@ -69,6 +70,7 @@
     "dotenv": "^16.4.0",
     "lucide-react": "^0.503",
     "marked": "^14",
+    "prosemirror-changeset": "^2.4.1",
     "react": "^19.0.0",
     "react-day-picker": "^9",
     "react-dom": "^19.0.0",
@@ -81,6 +83,7 @@
     "tw-animate-css": "^1.4.0",
     "vike": "^0.4.257",
     "vike-react": "^0.6.20",
+    "y-codemirror.next": "^0.3",
     "zod": "^4"
   },
   "devDependencies": {
