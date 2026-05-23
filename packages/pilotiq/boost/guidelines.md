@@ -442,11 +442,16 @@ Client-only reactivity (no server round-trip): `afterStateUpdatedJs(`$set('slug'
 Pilotiq.make('Admin')
   .branding({ name: 'Acme', logo: '/logo.svg', primaryColor: '#3b82f6' })
   .theme('nova')                                                // built-in preset
-  .layout('sidebar')                                            // 'sidebar' | 'topbar'
+  .layout('sidebar', { variant: 'inset', collapsible: 'icon', side: 'left' }) // see below
   .use(themeEditor())                                           // exposes /admin/theme runtime editor
 ```
 
 Presets: `default`, `nova`, `maia`, `lyra`. Custom themes pass a `Theme` object to `.theme()`.
+
+**`.layout(mode, opts?)`** — `mode` is `'sidebar' | 'topbar'`. The optional second arg configures the sidebar's chrome and is **bound to the `'sidebar'` mode**: `.layout('topbar', {...})` is a compile error (so sidebar-only config can't silently no-op under topbar). Sidebar keys (all optional):
+- `variant`: `'inset'` (default — content floats in a rounded card) · `'floating'` (sidebar itself floats) · `'sidebar'` (classic full-height flush rail)
+- `collapsible`: `'icon'` (default — collapses to an icon rail) · `'offcanvas'` (slides fully off-screen) · `'none'` (always expanded)
+- `side`: `'left'` (default, RTL-aware) · `'right'`
 
 Plugin-shaped extensions: `.plugins([tiptap(), codeEditor(), recharts()])` — register adapter packages in one call.
 

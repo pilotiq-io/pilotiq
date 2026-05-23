@@ -30,6 +30,24 @@ import type {
 
 export type PilotiqLayout = 'sidebar' | 'topbar'
 
+/**
+ * Sidebar chrome options for the `'sidebar'` layout. Maps 1:1 onto the
+ * underlying shadcn `<Sidebar>` primitive; ignored under the `'topbar'`
+ * layout. All keys are optional — unset falls back to the panel default
+ * (`inset` / `icon` / `left`).
+ */
+export interface PilotiqSidebarOptions {
+  /** Surface treatment. `inset` floats the content in a rounded card
+   *  (the default); `floating` floats the sidebar itself; `sidebar` is
+   *  the classic full-height flush rail. */
+  variant?:     'sidebar' | 'floating' | 'inset'
+  /** Collapse behavior. `icon` collapses to an icon rail (default);
+   *  `offcanvas` slides fully off-screen; `none` disables collapsing. */
+  collapsible?: 'offcanvas' | 'icon' | 'none'
+  /** Which edge the rail docks to. `left` (default) is RTL-aware. */
+  side?:        'left' | 'right'
+}
+
 /** Plugin interface for extending Pilotiq panels. */
 export interface PilotiqPlugin {
   name: string
@@ -200,6 +218,9 @@ export interface PilotiqConfig {
   name:          string
   path:          string
   layout:        PilotiqLayout
+  /** Sidebar chrome options — honored only under the `'sidebar'` layout.
+   *  Absent → primitive defaults (`inset` / `icon` / `left`). */
+  sidebar?:      PilotiqSidebarOptions
   resources:     ResourceClass[]
   globals:       GlobalClass[]
   pages:         (typeof Page)[]
@@ -516,8 +537,21 @@ export class Pilotiq {
     return this
   }
 
-  layout(l: PilotiqLayout): this {
+  /**
+   * Pick the panel layout, and (for `'sidebar'`) its chrome options.
+   * The options are bound to the layout that uses them: passing a second
+   * argument with `'topbar'` is a compile error, so sidebar-only config
+   * can't silently no-op under a topbar panel.
+   *
+   * @example
+   *   Pilotiq.make('Admin').layout('sidebar', { variant: 'floating', side: 'right' })
+   *   Pilotiq.make('Admin').layout('topbar')
+   */
+  layout(l: 'sidebar', opts?: PilotiqSidebarOptions): this
+  layout(l: PilotiqLayout): this
+  layout(l: PilotiqLayout, opts?: PilotiqSidebarOptions): this {
     this.config.layout = l
+    if (l === 'sidebar' && opts) this.config.sidebar = opts
     return this
   }
 

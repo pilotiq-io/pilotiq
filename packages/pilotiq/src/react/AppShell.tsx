@@ -50,6 +50,14 @@ export interface AppShellProps {
      *  `panelInfo()` server-side. */
     renderHooks?: RenderHookMap
     themeEditor?: boolean
+    /** Sidebar chrome options for the `'sidebar'` layout (variant /
+     *  collapsible / side). Absent → defaults (`inset` / `icon` /
+     *  `left`). Built by `panelInfo()` from `Pilotiq.sidebar(...)`. */
+    sidebar?: {
+      variant?:     'sidebar' | 'floating' | 'inset'
+      collapsible?: 'offcanvas' | 'icon' | 'none'
+      side?:        'left' | 'right'
+    }
     /** AI suggestion mode — absent means `'auto'` (the default). When
      *  set to `'review'`, AI plugins read this and stage writes as
      *  `PendingSuggestion`s for user approval instead of applying

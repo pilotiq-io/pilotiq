@@ -281,6 +281,7 @@ export async function panelInfo(
     navigation,
     theme,
     themeEditor: cfg.themeEditor ?? false,
+    ...(cfg.sidebar ? { sidebar: cfg.sidebar } : {}),
     ...(userMenu ? { userMenu } : {}),
     ...(databaseNotifications ? { databaseNotifications } : {}),
     ...(rightSidebar ? { rightSidebar } : {}),

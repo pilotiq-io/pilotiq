@@ -143,6 +143,11 @@ function NavTree({
 export function SidebarLayout({ panel, basePath, currentPath, children, componentSlotRegistry }: AppShellProps) {
   const title = panel.branding?.title ?? panel.name
   const groups = groupItems(panel.navigation ?? [])
+  // Sidebar chrome knobs (Pilotiq.sidebar) — default to the historical
+  // inset / icon / left when the panel didn't configure them.
+  const variant     = panel.sidebar?.variant     ?? 'inset'
+  const collapsible = panel.sidebar?.collapsible ?? 'icon'
+  const side        = panel.sidebar?.side        ?? 'left'
   const hooks = panel.renderHooks
   const dn = panel.databaseNotifications
   const bellInTopbar  = dn && dn.position === 'topbar'
@@ -154,7 +159,7 @@ export function SidebarLayout({ panel, basePath, currentPath, children, componen
 
   return (
     <SidebarProvider>
-      <Sidebar variant="inset" collapsible="icon">
+      <Sidebar variant={variant} collapsible={collapsible} side={side}>
         <SidebarHeader>
           <RenderHookSlot name="panels::sidebar.start" hooks={hooks} />
           <SidebarMenu>
@@ -219,7 +224,12 @@ export function SidebarLayout({ panel, basePath, currentPath, children, componen
       <SidebarInset>
         {HeaderSlot
           ? <HeaderSlot navigation={panel.navigation ?? []} basePath={basePath} {...slotProps} />
-          : <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2">
+          : <header className={cn(
+              'sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60',
+              // Only the inset variant floats content in a rounded card,
+              // so only then should the sticky header round its top corners.
+              variant === 'inset' && 'md:rounded-t-xl',
+            )}>
               <div className="flex flex-1 items-center gap-2 px-3">
                 <SidebarTrigger />
                 <Separator orientation="vertical" className="me-2 data-[orientation=vertical]:h-4" />
@@ -239,7 +249,7 @@ export function SidebarLayout({ panel, basePath, currentPath, children, componen
               </div>
             </header>
         }
-        <div className="flex flex-1 flex-col px-4 pb-4">
+        <div className="flex flex-1 flex-col p-4">
           {children}
           <RenderHookSlot name="panels::footer" hooks={hooks} />
         </div>
