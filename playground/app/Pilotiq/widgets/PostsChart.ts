@@ -18,7 +18,8 @@ function prisma(): any {
 export class PostsChart extends Chart {
   static override label   = 'Posts per day'
   static override type    = 'line' as const
-  static override color   = 'primary' as const
+  // No explicit color — defaults to the theme chart palette (--chart-1)
+  // so the chart tracks the theme editor's "Chart Color" setting.
   static override maxHeight = 280
 
   static override filters = {
@@ -27,7 +28,7 @@ export class PostsChart extends Chart {
     month: 'Last 30 days',
   }
 
-  static override defaultFilter = 'week'
+  static override defaultFilter = 'month'
 
   static override async getData(ctx: RenderContext) {
     const days = ctx.filter === 'today' ? 1

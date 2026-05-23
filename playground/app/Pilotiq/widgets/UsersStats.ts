@@ -30,14 +30,12 @@ export class UsersStats extends StatsOverview {
         .value(users)
         .description('total registered')
         .icon('users')
-        .color('primary')
         .url('/new-admin/users'),
 
       Stat.make('Posts')
         .value(posts)
         .description('not in trash')
         .icon('file-text')
-        .color('success')
         .url('/new-admin/posts'),
 
       Stat.make('Published this week')
@@ -45,7 +43,6 @@ export class UsersStats extends StatsOverview {
         .description('+ vs last week')
         .descriptionIcon('trending-up')
         .icon('trending-up')
-        .color('info')
         .chart([3, 5, 4, 7, 8, 6, recent]),
     ]
   }

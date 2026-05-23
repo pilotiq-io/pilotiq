@@ -38,13 +38,19 @@ export class MyDashboard extends Page {
       UsersStats.make(),
 
       // Chart with filter dropdown + auto-refresh.
-      Card.make('Posts over time')
-        .description('Filter changes re-fetch through the same widget polling endpoint.')
-        .schema([
-          PostsChart.make().poll(30),
-        ]),
+      // Card.make('Posts over time')
+      //   .description('Filter changes re-fetch through the same widget polling endpoint.')
+      //   .schema([
+      //     PostsChart.make().poll(30),
+      //   ]),
 
-      Divider.make(),
+      Heading.make('Posts over time')
+        .description('Filter changes re-fetch through the same widget polling endpoint.')
+        .level(2),
+        
+      PostsChart.make().poll(30),
+
+      // Divider.make(),
 
       // Slim TableWidget + custom-component View widget side-by-side.
       Grid.make().columns(2).schema([
