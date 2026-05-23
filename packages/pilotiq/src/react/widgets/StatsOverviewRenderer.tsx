@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useId } from 'react'
 import type { ElementMeta } from '../../schema/Element.js'
 import type { StatColor, StatMeta } from '../../schema/Stat.js'
 import { useWidgetData } from '../WidgetDataContext.js'
@@ -31,13 +31,17 @@ const COLOR_VALUE_CLASSES: Record<StatColor, string> = {
   info:        'text-blue-600 dark:text-blue-400',
 }
 
-const COLOR_SPARKLINE_CLASSES: Record<StatColor, string> = {
-  default:     'text-muted-foreground',
-  primary:     'text-primary',
-  success:     'text-emerald-500',
-  warning:     'text-amber-500',
-  destructive: 'text-red-500',
-  info:        'text-blue-500',
+// Sparkline stroke/fill resolves to a CSS color value (not a Tailwind
+// class) so the gradient fill can reference it directly. `default` pulls
+// the theme chart palette so neutral stats read on-theme — matching the
+// theme-editor preview's filled sparklines.
+const SPARKLINE_COLOR: Record<StatColor, string> = {
+  default:     'var(--chart-1)',
+  primary:     'var(--primary)',
+  success:     'oklch(0.65 0.18 150)',
+  warning:     'oklch(0.75 0.18 75)',
+  destructive: 'oklch(0.62 0.22 25)',
+  info:        'oklch(0.65 0.18 240)',
 }
 
 export interface StatsOverviewRendererProps {
@@ -97,7 +101,7 @@ function StatCard({ stat }: StatCardProps) {
         <StatDescription stat={stat} />
       )}
       {stat.chart && stat.chart.length > 0 && (
-        <Sparkline values={stat.chart} className={COLOR_SPARKLINE_CLASSES[color]} />
+        <Sparkline values={stat.chart} color={SPARKLINE_COLOR[color]} />
       )}
     </div>
   )
@@ -153,19 +157,21 @@ function StatIcon({ name, className }: { name: string; className: string }) {
 // ─── Sparkline ────────────────────────────────────────────
 
 interface SparklineProps {
-  values:    number[]
-  className: string
+  values: number[]
+  color:  string
 }
 
 /**
- * Inline-SVG sparkline. Sized fluidly via `viewBox` + `preserveAspectRatio`
- * — the parent card sets the rendered height. No deps, no chart lib.
+ * Inline-SVG sparkline with a soft area-fill gradient under the line —
+ * mirrors the theme-editor preview. Sized fluidly via `viewBox` +
+ * `preserveAspectRatio`; the parent card sets the rendered height. No
+ * deps, no chart lib.
  *
- * Single-value series renders a flat horizontal line at mid-height; flat
- * series (all values equal) likewise — avoids divide-by-zero when the
- * range collapses.
+ * Single-value / flat series render a flat line at mid-height (the
+ * range floors at 1 to avoid divide-by-zero).
  */
-function Sparkline({ values, className }: SparklineProps) {
+function Sparkline({ values, color }: SparklineProps) {
+  const gid = useId().replace(/:/g, '')
   if (values.length === 0) return null
   const W = 100
   const H = 30
@@ -173,25 +179,39 @@ function Sparkline({ values, className }: SparklineProps) {
   const max = Math.max(...values)
   const range = max - min || 1
   const stepX = values.length > 1 ? W / (values.length - 1) : 0
-  const points = values.map((v, i) => {
+  const pts = values.map((v, i): [number, number] => {
     const x = stepX === 0 ? W / 2 : i * stepX
     const y = H - ((v - min) / range) * H
-    return `${x.toFixed(2)},${y.toFixed(2)}`
-  }).join(' ')
+    return [x, y]
+  })
+  const first = pts[0]
+  if (!first) return null
+  const line = pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ')
+  const area =
+    `M${first[0].toFixed(2)},${first[1].toFixed(2)} ` +
+    pts.slice(1).map(([x, y]) => `L${x.toFixed(2)},${y.toFixed(2)}`).join(' ') +
+    ` L${W},${H} L0,${H} Z`
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="none"
-      className={`mt-2 h-8 w-full ${className}`}
+      className="mt-2 h-8 w-full"
       aria-hidden
     >
+      <defs>
+        <linearGradient id={`pq-spark-${gid}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={color} stopOpacity={0.3} />
+          <stop offset="100%" stopColor={color} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#pq-spark-${gid})`} stroke="none" />
       <polyline
         fill="none"
-        stroke="currentColor"
+        stroke={color}
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
-        points={points}
+        points={line}
       />
     </svg>
   )
