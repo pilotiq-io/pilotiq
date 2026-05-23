@@ -1,4 +1,5 @@
 import type { Pilotiq, PilotiqConfig } from '../Pilotiq.js'
+import { livePanel } from '../PilotiqRegistry.js'
 import type { Page, PageCollabConfig } from '../Page.js'
 import type { ResourceClass, NavigationBadgeColor, ResourceCollabConfig } from '../Resource.js'
 import type { GlobalClass } from '../Global.js'
@@ -256,6 +257,7 @@ export async function panelInfo(
   req?:    unknown,
   route:   PanelInfoRoute = {},
 ) {
+  pilotiq = livePanel(pilotiq) // dev HMR: resolve the latest panel, not the registration-time closure
   const cfg = pilotiq.getConfig()
   const merged = pilotiq.getMergedTheme()
   const theme: ThemeMeta | undefined = merged ? resolveTheme(merged) : undefined

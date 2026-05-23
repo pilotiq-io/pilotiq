@@ -1,5 +1,5 @@
 import type { Pilotiq } from '../Pilotiq.js'
-import { PilotiqRegistry } from '../PilotiqRegistry.js'
+import { PilotiqRegistry, livePanel } from '../PilotiqRegistry.js'
 import type { Page } from '../Page.js'
 import type { ResourceClass } from '../Resource.js'
 import { resourceBasePath } from '../clusterPaths.js'
@@ -90,6 +90,7 @@ async function prepareResourceTable(
 }
 
 export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Record<string, unknown>> {
+  pilotiq = livePanel(pilotiq)
   const cfg = pilotiq.getConfig()
   const user = await pilotiq.resolveUser(req)
   const ctx: SchemaContext = uploadCtx(userCtx({ basePath: cfg.path }, user), cfg)
@@ -141,6 +142,7 @@ export async function resourceIndexData(
   query:   Record<string, string> = {},
   req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
+  pilotiq = livePanel(pilotiq)
   const cfg = pilotiq.getConfig()
   const R = pilotiq.findResource(slug)
   if (!R) return null
@@ -192,6 +194,7 @@ export async function resourceTableData(
   query:   Record<string, string> = {},
   req?:    unknown,
 ): Promise<{ tables: Record<string, unknown>[] } | null> {
+  pilotiq = livePanel(pilotiq)
   const cfg = pilotiq.getConfig()
   const R = pilotiq.findResource(slug)
   if (!R) return null
@@ -320,6 +323,7 @@ export async function resourceCreateData(
   prefill?: { values?: Record<string, unknown>; errors?: Record<string, string[]> },
   req?:    unknown,
 ): Promise<Record<string, unknown> | null> {
+  pilotiq = livePanel(pilotiq)
   const cfg = pilotiq.getConfig()
   const R = pilotiq.findResource(slug)
   if (!R) return null
@@ -372,6 +376,7 @@ export async function resourceEditData(
   prefill?: { values?: Record<string, unknown>; errors?: Record<string, string[]> },
   req?:     unknown,
 ): Promise<Record<string, unknown> | null> {
+  pilotiq = livePanel(pilotiq)
   const cfg = pilotiq.getConfig()
   const R = pilotiq.findResource(slug)
   if (!R) return null
@@ -465,6 +470,7 @@ export async function resourceViewData(
   recordId: string,
   req?:     unknown,
 ): Promise<Record<string, unknown> | null> {
+  pilotiq = livePanel(pilotiq)
   const cfg = pilotiq.getConfig()
   const R = pilotiq.findResource(slug)
   if (!R) return null
@@ -537,6 +543,7 @@ export async function resourceRecordPageData(
   subPageSlug:   string,
   req?:          unknown,
 ): Promise<Record<string, unknown> | null | { ok: false; status: 403 }> {
+  pilotiq = livePanel(pilotiq)
   const cfg = pilotiq.getConfig()
   const R = pilotiq.findResource(slug)
   if (!R) return null

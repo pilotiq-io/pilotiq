@@ -1,4 +1,5 @@
 import type { Pilotiq, PilotiqConfig } from '../Pilotiq.js'
+import { livePanel } from '../PilotiqRegistry.js'
 import type { ResourceClass } from '../Resource.js'
 import { resourceBasePath } from '../clusterPaths.js'
 import { Element } from '../schema/Element.js'
@@ -284,6 +285,7 @@ export async function relationManagerData(
   scope:   RelationManagerScope,
   req?:    unknown,
 ): Promise<RelationManagerResult> {
+  pilotiq = livePanel(pilotiq)
   // Phase B nested-relation-* scopes split out into their own pipeline
   // — the chain walking + per-layer auth differs enough from the
   // depth-1 path that interleaving them would mostly hurt readability.
@@ -769,6 +771,7 @@ export async function resolveRelationChain(
   scope:   NestedRelationScope,
   user:    unknown,
 ): Promise<ResolvedChain | { ok: false; status: 403 } | null> {
+  pilotiq = livePanel(pilotiq)
   const cfg = pilotiq.getConfig()
 
   const R = pilotiq.findResource(scope.slug)

@@ -34,3 +34,19 @@ export const PilotiqRegistry = {
     map.clear()
   },
 }
+
+/**
+ * Resolve the live panel instance from the registry, by name.
+ *
+ * Route handlers close over the `Pilotiq` instance captured when their
+ * routes were registered. In dev, editing the panel module re-registers a
+ * fresh panel in `PilotiqRegistry` (via the provider's `register()`), but
+ * those already-registered handler closures keep pointing at the stale
+ * instance — so SSR-rendered chrome and schema lag one reload behind until
+ * the server restarts. Re-resolving by name at request time keeps render
+ * data in sync with the latest panel. Falls back to the passed instance
+ * when the registry has no entry for it (e.g. tests, teardown).
+ */
+export function livePanel(panel: Pilotiq): Pilotiq {
+  return map.get(panel.getConfig().name) ?? panel
+}
