@@ -122,9 +122,17 @@ different chart adapter later:
 ```
 
 `color` per dataset is a `ChartColor` token (`primary`, `success`,
-`warning`, `destructive`, `info`, `default`). When omitted, the chart
-falls through to the chart-level `static color` and then to the
-panel's color tokens.
+`warning`, `destructive`, `info`, `default`). Resolution order:
+per-dataset `color` → an explicit (non-`default`) chart-level `static
+color` claims the first series → otherwise the **theme chart palette**
+(`--chart-1`…`--chart-5`, by series index) drives every series. Leaving
+both unset is the recommended path: charts then track the theme editor's
+"Chart Color" setting and read cohesively, matching the theme preview.
+
+Chrome is intentionally minimal: line charts render as a soft area-fill
+(palette stroke + a fade-to-transparent gradient), bars get rounded
+tops, and there is no value-grid — just a hairline X baseline with muted
+tick labels and no Y axis. Tooltips use the theme surface tokens.
 
 ## Per-chart filter dropdown
 

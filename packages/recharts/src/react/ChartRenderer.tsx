@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from 'react'
+import React, { useId, useMemo, useState } from 'react'
 import {
   ResponsiveContainer,
-  LineChart, Line,
+  AreaChart, Area,
   BarChart, Bar,
   PieChart, Pie, Cell,
-  XAxis, YAxis, Tooltip, Legend, CartesianGrid,
+  XAxis, YAxis, Tooltip, Legend,
 } from 'recharts'
 import { useWidgetData } from '@pilotiq/pilotiq/react'
 import type { WidgetMetaLike, WidgetRendererProps } from '@pilotiq/pilotiq/react'
@@ -27,9 +27,21 @@ import type {
  * `ctx.filter` and `Chart.resolveServerData` branches on it.
  */
 
-// ─── Color tokens (CSS var-based, match StatsOverview palette) ─────
+// ─── Color tokens ─────────────────────────────────────────────────
+// The theme chart palette (`--chart-1..5`) is the default source so the
+// "Chart Color" theme setting actually drives every chart — matching the
+// theme-editor preview. The semantic `COLOR_VAR` map is kept only as an
+// explicit per-chart override (`Chart.color('primary')`).
+const PALETTE: string[] = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+]
+
 const COLOR_VAR: Record<ChartColor, string> = {
-  default:     'var(--muted-foreground)',
+  default:     'var(--chart-1)',
   primary:     'var(--primary)',
   success:     'oklch(0.65 0.18 150)',
   warning:     'oklch(0.75 0.18 75)',
@@ -45,17 +57,6 @@ const CARD_BORDER: Record<ChartColor, string> = {
   destructive: 'border-red-500/40',
   info:        'border-blue-500/40',
 }
-
-/** Multi-series fallback palette — used for dataset[1..n] when no
- *  per-dataset color is set. dataset[0] uses the chart-level color. */
-const SERIES_FALLBACK = [
-  'oklch(0.65 0.18 240)', // blue
-  'oklch(0.65 0.18 150)', // green
-  'oklch(0.75 0.18 75)',  // amber
-  'oklch(0.62 0.22 25)',  // red
-  'oklch(0.65 0.18 300)', // purple
-  'oklch(0.65 0.18 195)', // teal
-]
 
 export function ChartRenderer({ meta }: WidgetRendererProps) {
   const m = meta as ChartMeta
@@ -122,7 +123,37 @@ function ChartBody({ chartType, data, color, options }: ChartBodyProps) {
   }
 }
 
-// ─── Line ───────────────────────────────────────────────────────
+// ─── Shared minimal chrome ────────────────────────────────────────
+// Clean, preview-matching axes: hairline baseline on X, no tick lines,
+// no value-grid, no Y axis. Tooltip styled with theme surface vars.
+function MinimalAxes() {
+  return (
+    <>
+      <XAxis
+        dataKey="__label"
+        tickLine={false}
+        axisLine={{ stroke: 'var(--border)' }}
+        tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
+        tickMargin={8}
+      />
+      <YAxis hide />
+      <Tooltip
+        cursor={{ fill: 'var(--muted)', opacity: 0.35 }}
+        contentStyle={{
+          background:    'var(--popover)',
+          border:        '1px solid var(--border)',
+          borderRadius:  8,
+          fontSize:      12,
+          color:         'var(--popover-foreground)',
+          boxShadow:     '0 4px 12px rgb(0 0 0 / 0.08)',
+        }}
+        labelStyle={{ color: 'var(--muted-foreground)' }}
+      />
+    </>
+  )
+}
+
+// ─── Line (rendered as a soft area) ───────────────────────────────
 
 interface LineChartViewProps {
   data:    ChartData
@@ -132,26 +163,38 @@ interface LineChartViewProps {
 
 function LineChartView({ data, color, options }: LineChartViewProps) {
   const rows = useMemo(() => toRows(data), [data])
+  // Unique gradient id namespace so multiple charts on a page don't
+  // collide on `<defs>` ids.
+  const gid = useId().replace(/:/g, '')
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={rows} margin={{ top: 5, right: 12, left: 0, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-        <XAxis dataKey="__label" tick={{ fontSize: 12 }} stroke="var(--muted-foreground)" />
-        <YAxis tick={{ fontSize: 12 }} stroke="var(--muted-foreground)" />
-        <Tooltip />
+      <AreaChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+        <defs>
+          {data.datasets.map((ds, i) => {
+            const c = resolveSeriesColor(ds, color, i)
+            return (
+              <linearGradient key={ds.label} id={`pq-${gid}-${i}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor={c} stopOpacity={0.28} />
+                <stop offset="100%" stopColor={c} stopOpacity={0} />
+              </linearGradient>
+            )
+          })}
+        </defs>
+        <MinimalAxes />
         {data.datasets.length > 1 && <Legend />}
         {data.datasets.map((ds, i) => (
-          <Line
+          <Area
             key={ds.label}
             type="monotone"
             dataKey={ds.label}
             stroke={resolveSeriesColor(ds, color, i)}
             strokeWidth={2}
+            fill={`url(#pq-${gid}-${i})`}
             dot={false}
             {...options}
           />
         ))}
-      </LineChart>
+      </AreaChart>
     </ResponsiveContainer>
   )
 }
@@ -162,17 +205,15 @@ function BarChartView({ data, color, options }: LineChartViewProps) {
   const rows = useMemo(() => toRows(data), [data])
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={rows} margin={{ top: 5, right: 12, left: 0, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-        <XAxis dataKey="__label" tick={{ fontSize: 12 }} stroke="var(--muted-foreground)" />
-        <YAxis tick={{ fontSize: 12 }} stroke="var(--muted-foreground)" />
-        <Tooltip />
+      <BarChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+        <MinimalAxes />
         {data.datasets.length > 1 && <Legend />}
         {data.datasets.map((ds, i) => (
           <Bar
             key={ds.label}
             dataKey={ds.label}
             fill={resolveSeriesColor(ds, color, i)}
+            radius={[4, 4, 0, 0]}
             {...options}
           />
         ))}
@@ -217,7 +258,7 @@ function PieChartView({ data, color, options, doughnut }: PieChartViewProps) {
           {...options}
         >
           {slices.map((_, i) => (
-            <Cell key={i} fill={SERIES_FALLBACK[i % SERIES_FALLBACK.length] ?? COLOR_VAR[color]} />
+            <Cell key={i} fill={PALETTE[i % PALETTE.length] ?? COLOR_VAR[color]} />
           ))}
         </Pie>
       </PieChart>
@@ -249,9 +290,12 @@ function toRows(data: ChartData): RechartsRow[] {
 }
 
 function resolveSeriesColor(ds: ChartDataset, color: ChartColor, index: number): string {
+  // Explicit per-dataset color wins; then an explicit (non-default)
+  // chart-level semantic color claims the primary series; otherwise the
+  // theme chart palette drives every series by index.
   if (ds.color) return ds.color
-  if (index === 0) return COLOR_VAR[color]
-  return SERIES_FALLBACK[index % SERIES_FALLBACK.length] ?? COLOR_VAR[color]
+  if (index === 0 && color !== 'default') return COLOR_VAR[color]
+  return PALETTE[index % PALETTE.length] ?? COLOR_VAR[color]
 }
 
 function readChartData(raw: unknown): ChartData {

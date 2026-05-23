@@ -118,7 +118,7 @@ Chart.js-shaped — the renderer normalizes to Recharts internally so swapping a
 }
 ```
 
-Per-dataset `color` is a `ChartColor` token: `primary` / `success` / `warning` / `destructive` / `info` / `default`. Omitted → falls through to the chart-level `static color`, then to the panel's color tokens.
+Per-dataset `color` is a `ChartColor` token: `primary` / `success` / `warning` / `destructive` / `info` / `default`. Resolution: per-dataset `color` → explicit (non-`default`) chart-level `static color` for the first series → otherwise the **theme chart palette** (`--chart-1`…`--chart-5`, by series index). Leave both unset so charts track the theme editor's "Chart Color" setting. Chrome is minimal: lines render as soft area-fills, bars get rounded tops, no value-grid — hairline X baseline + muted labels only.
 
 For pie / doughnut, the single dataset's `data` array maps positionally to `labels`:
 
