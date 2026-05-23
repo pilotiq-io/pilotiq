@@ -1,5 +1,29 @@
 # @pilotiq/pilotiq
 
+## 0.24.3
+
+### Patch Changes
+
+- 02d5793: fix(pilotiq): panel routes resolve the live panel at request time — dev edits reflect without a server restart
+
+  Panel route handlers closed over the `Pilotiq` instance captured when their routes were registered. In dev, editing the panel module (or a resource/page schema it imports) re-registers a fresh panel in `PilotiqRegistry`, but those already-registered handler closures kept pointing at the stale instance — so SSR-rendered chrome and schema lagged a reload behind (the panel only updated after editing some _other_ watched file, or a restart).
+
+  The render-data layer now re-resolves the panel from `PilotiqRegistry` by name at request time, via a new `livePanel()` helper, applied at the top of `panelInfo` (chrome) and every render-data builder (`resourcePages`, `misc`, `relationPages`). This mirrors what `dispatchPageData()` already did for the client-nav path; the SSR route path was the only outlier. `livePanel()` falls back to the passed instance when the registry has no entry (tests, teardown), so non-dev behavior is unchanged.
+
+- 539c87a: feat(pilotiq): ship `pilotiq-actions` boost skill — Phase B residual #1
+
+  First of the four still-open Phase B skill candidates. `SKILL.md` declares `appliesTo: ['@pilotiq/pilotiq']` so `@rudderjs/boost`'s `boost:install` writes it under `.ai/skills/` only when the consumer has `@pilotiq/pilotiq` installed. Trigger scopes to specific action-authoring contexts — adding header/row/bulk buttons, wiring a modal-form action, customizing per-row visibility, reaching for a built-in factory.
+
+  Three rule files under `boost/skills/pilotiq-actions/rules/`:
+
+  - **`dispatch-modes.md`** — 4 mutually-exclusive modes (`href` / `method` / `handler` / `submit`), modal-form as a flavor of handler, return shape, `ctx` shape, 12 modal chrome setters, `.confirm()` + `.formField()` interactions.
+  - **`visibility-and-authorization.md`** — 4 conditional setters (`visible / hidden / disabled / authorize`), `ActionVisibilityContext`, fail-closed semantics (opposite of layout-visible), per-row gating cost model, composing with Resource policies.
+  - **`factories.md`** — 25 pre-built factories (`create / edit / view / delete / replicate / restore / forceDelete / markAsRead`, bulk variants, `import / export`, relation\* variants including M2M `attach / detach`), `ReplicateOptions` with `getCreatedNotificationTitle / getRedirectUrl` callbacks, when to skip factories for compound flows.
+
+  Mirrors the shape established by `pilotiq-resource` / `pilotiq-fields` / `pilotiq-relations` / `pilotiq-tiptap-blocks`.
+
+  Remaining Phase B residuals (lower priority — `guidelines.md` already covers most of what they'd add): `pilotiq-widgets`, `pilotiq-theme`, `pilotiq-vite-plugin`.
+
 ## 0.24.2
 
 ### Patch Changes
