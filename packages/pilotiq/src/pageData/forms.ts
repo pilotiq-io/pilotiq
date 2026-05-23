@@ -1,4 +1,5 @@
 import type { Pilotiq } from '../Pilotiq.js'
+import { livePanel } from '../PilotiqRegistry.js'
 import type { Page } from '../Page.js'
 import { Element } from '../schema/Element.js'
 import { resolveSchema, type SchemaContext, type RenderContext } from '../schema/resolveSchema.js'
@@ -157,6 +158,7 @@ export async function formStateData(
   body:    FormStateRequest,
   req?:    unknown,
 ): Promise<FormStateResult | FormStateError | null> {
+  pilotiq = livePanel(pilotiq) // dev HMR: re-resolve the latest panel, not the registration-time closure
   const user = await pilotiq.resolveUser(req)
   const loaded = await resolveScopeForm(pilotiq, scope, body.formId, user)
   if (!loaded)     return null
@@ -235,6 +237,7 @@ export async function formWizardData(
   body:    FormWizardRequest,
   req?:    unknown,
 ): Promise<FormWizardSuccess | FormWizardFailure | null> {
+  pilotiq = livePanel(pilotiq) // dev HMR: re-resolve the latest panel, not the registration-time closure
   const user = await pilotiq.resolveUser(req)
   const loaded = await resolveScopeForm(pilotiq, scope, body.formId, user)
   if (!loaded)     return null
@@ -343,6 +346,7 @@ export async function formCreateOptionData(
   body:    FormCreateOptionRequest,
   req?:    unknown,
 ): Promise<FormCreateOptionSuccess | FormCreateOptionFailure | null> {
+  pilotiq = livePanel(pilotiq) // dev HMR: re-resolve the latest panel, not the registration-time closure
   const user = await pilotiq.resolveUser(req)
   const loaded = await resolveScopeForm(pilotiq, scope, body.formId, user)
   if (!loaded)     return null
@@ -544,6 +548,7 @@ export async function mentionResolveData(
   body:    MentionResolveRequest,
   req?:    unknown,
 ): Promise<MentionResolveSuccess | MentionResolveError | null> {
+  pilotiq = livePanel(pilotiq) // dev HMR: re-resolve the latest panel, not the registration-time closure
   const user = await pilotiq.resolveUser(req)
   const loaded = await resolveScopeForm(pilotiq, scope, body.formId, user)
   if (!loaded)     return null
