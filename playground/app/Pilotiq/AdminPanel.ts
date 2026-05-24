@@ -74,7 +74,7 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   // Sidebar chrome: a floating rail that slides fully off-screen when
   // toggled (instead of the default inset card + icon rail). `side`
   // defaults to 'left'.
-  .layout('sidebar', { variant: 'inset', collapsible: 'offcanvas' })
+  .layout('sidebar', { variant: 'sidebar', collapsible: 'offcanvas' })
   // Adapter packages register through the panel module — no separate
   // `register*()` calls in `pages/+Layout.tsx`. AdminPanel.ts is re-imported
   // on the client via the Vite plugin's `_components.ts` manifest, so each

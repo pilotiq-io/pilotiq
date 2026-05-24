@@ -5,6 +5,7 @@ import { getFieldLabelSlot } from './FieldLabelSlotRegistry.js'
 import { FormStateProvider, useFormState, FormIdContext } from './FormStateContext.js'
 import { CircleIcon } from 'lucide-react'
 import { useNavigate } from './navigate.js'
+import { useBreadcrumbsHoisted } from './breadcrumb-hoist.js'
 import { useIconFor } from './icon-context.js'
 import type { SerializedIcon } from '../icons/types.js'
 import { useToast } from './Toaster.js'
@@ -415,8 +416,20 @@ interface BreadcrumbItemShape {
  *  as plain text + `aria-current="page"`. SPA-navigates on plain
  *  left-click; modified clicks fall through. */
 function BreadcrumbsRenderer({ el }: { el: ElementMeta }) {
-  const navigate = useNavigate()
+  // Suppressed in the body when the active layout has hoisted the
+  // breadcrumb into its header (sidebar layout). Hook runs first so its
+  // order is stable regardless of the items read.
+  const hoisted = useBreadcrumbsHoisted()
   const items = (el['items'] as BreadcrumbItemShape[] | undefined) ?? []
+  if (hoisted) return null
+  return <BreadcrumbsView items={items} />
+}
+
+/** Shared breadcrumb markup — used by the in-body `BreadcrumbsRenderer`
+ *  and (hoisted) by the sidebar layout's sticky header. Returns null for
+ *  a single-item trail since there's nothing to navigate up to. */
+export function BreadcrumbsView({ items }: { items: BreadcrumbItemShape[] }) {
+  const navigate = useNavigate()
   if (items.length < 2) return null
 
   return (

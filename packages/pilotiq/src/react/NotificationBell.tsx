@@ -32,39 +32,43 @@ const TYPE_DOT: Record<NonNullable<DatabaseNotificationMeta['type']>, string> = 
   error:   'bg-red-500',
 }
 
+export interface UseNotificationsResult {
+  unreadCount: number
+  items:       DatabaseNotificationMeta[]
+  loading:     boolean
+  markRead:    (id: string) => void
+  markAllRead: () => void
+  refetch:     () => Promise<void>
+}
+
 /**
- * Bell-icon dropdown for `Pilotiq.databaseNotifications()`. Renders
- * nothing when `meta` is absent — `panelInfo()` only ships the meta
- * when the panel opted in AND a user resolved.
+ * Data + mutation lifecycle for `Pilotiq.databaseNotifications()` —
+ * shared by the standalone <NotificationBell> and the user-menu
+ * notifications submenu (<NotificationList>). No-ops cleanly when `meta`
+ * is absent so a caller (e.g. UserMenu) can call it unconditionally.
  *
  * Lifecycle:
  *   - First mount: fetch the current list via `meta.listUrl`.
- *   - Polling: when `meta.polling > 0`, refetch every N seconds.
- *     Pauses while `document.visibilityState !== 'visible'` so a
- *     backgrounded tab doesn't keep tickling the server.
- *   - Mark-read: optimistic — flips `readAt` immediately, refetches
- *     after the POST so the unread count rebases against the server.
- *   - Click-through: when a row carries a `url`, the click marks-read
- *     + SPA-navigates in the same step.
+ *   - Polling: when `meta.polling > 0`, refetch every N seconds. Pauses
+ *     while the tab is hidden so a backgrounded tab stops tickling the
+ *     server.
+ *   - Broadcast: when `meta.broadcast` is present, a WS message triggers
+ *     the same `refetch()` (low-latency hint, not a payload transport).
+ *   - Mark-read: optimistic flip, then refetch to rebase the count.
  */
-export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta }) {
-  if (!meta) return null
-  const navigate = useNavigate()
-
-  const [open, setOpen] = React.useState(false)
+export function useNotifications(meta?: DatabaseNotificationsMeta): UseNotificationsResult {
   const [data, setData] = React.useState<{
     notifications: DatabaseNotificationMeta[]
     unreadCount:   number
   } | null>(null)
   const [loading, setLoading] = React.useState(false)
 
-  // ── Fetch helpers ─────────────────────────────────────
-  // Latest-wins seq tracking — same pattern as the global-search
-  // palette / live-form state. A slow first request can't clobber a
-  // fresh second one.
+  // Latest-wins seq tracking — a slow first request can't clobber a
+  // fresh second one (same pattern as the search palette / live form).
   const seqRef     = React.useRef(0)
   const latestRef  = React.useRef(0)
   const refetch = React.useCallback(async () => {
+    if (!meta) return
     const seq = ++seqRef.current
     setLoading(true)
     try {
@@ -87,15 +91,15 @@ export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta })
     finally {
       if (seq >= latestRef.current) setLoading(false)
     }
-  }, [meta.listUrl])
+  }, [meta?.listUrl])
 
-  // ── First mount + polling ────────────────────────────
+  // First mount + polling.
   React.useEffect(() => {
     void refetch()
   }, [refetch])
 
   React.useEffect(() => {
-    if (meta.polling === null || meta.polling === 0) return
+    if (!meta || meta.polling === null || meta.polling === 0) return
     const ms = meta.polling * 1000
     const tick = () => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
@@ -103,19 +107,13 @@ export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta })
     }
     const id = window.setInterval(tick, ms)
     return () => window.clearInterval(id)
-  }, [meta.polling, refetch])
+  }, [meta?.polling, refetch])
 
-  // ── Phase 2 broadcast subscription ───────────────────
-  // When `meta.broadcast` is present, connect to the panel's WebSocket
-  // and listen for `notification.created` on the user's private channel.
-  // Triggers the same `refetch()` already wired for polling — broadcast
-  // is "low-latency refetch hint", not a payload-pushing transport.
-  //
-  // RudderSocket loads via dynamic import so the bell doesn't bundle
-  // broadcast for apps that don't enable it. Failures (package missing,
-  // wsUrl unreachable, auth rejected) silently fall back to polling.
+  // Phase 2 broadcast subscription — RudderSocket loads via dynamic
+  // import so the bell doesn't bundle broadcast for apps that don't
+  // enable it. Failures silently fall back to polling.
   React.useEffect(() => {
-    if (!meta.broadcast) return
+    if (!meta?.broadcast) return
     if (typeof window === 'undefined') return
     let cancelled = false
     let socket:   { disconnect(): void } | null = null
@@ -131,9 +129,8 @@ export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta })
         const s = new RudderSocket(wsUrl)
         socket = s
         // Strip the `private-` prefix — `RudderSocket.private(name)`
-        // re-adds it. We pass an empty token because the auth callback
-        // we registered server-side reads the upgrade request's cookies,
-        // not a per-message bearer token.
+        // re-adds it. Empty token: the server-side auth callback reads
+        // the upgrade request's cookies, not a per-message bearer token.
         const bareName = channelName.replace(/^private-/, '')
         s.private(bareName, '').on(eventName, () => {
           if (cancelled) return
@@ -146,11 +143,11 @@ export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta })
       cancelled = true
       socket?.disconnect()
     }
-  }, [meta.broadcast?.wsUrl, meta.broadcast?.channel, meta.broadcast?.event, refetch])
+  }, [meta?.broadcast?.wsUrl, meta?.broadcast?.channel, meta?.broadcast?.event, refetch])
 
-  // ── Mutations ────────────────────────────────────────
   const markRead = React.useCallback(async (id: string) => {
-    // Optimistic flip — the bell stays responsive even on slow networks.
+    if (!meta) return
+    // Optimistic flip — stays responsive even on slow networks.
     setData(prev => prev && {
       notifications: prev.notifications.map(n =>
         n.id === id ? { ...n, readAt: n.readAt ?? new Date().toISOString() } : n,
@@ -165,9 +162,10 @@ export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta })
       })
     } catch { /* swallow — next poll resyncs */ }
     void refetch()
-  }, [meta.readUrl, refetch])
+  }, [meta?.readUrl, refetch])
 
   const markAllRead = React.useCallback(async () => {
+    if (!meta) return
     setData(prev => prev && {
       notifications: prev.notifications.map(n =>
         n.readAt ? n : { ...n, readAt: new Date().toISOString() }),
@@ -181,11 +179,88 @@ export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta })
       })
     } catch { /* swallow */ }
     void refetch()
-  }, [meta.readAllUrl, refetch])
+  }, [meta?.readAllUrl, refetch])
 
-  const unreadCount = data?.unreadCount ?? 0
-  const items       = data?.notifications ?? []
-  const toast       = useToast()
+  return {
+    unreadCount: data?.unreadCount ?? 0,
+    items:       data?.notifications ?? [],
+    loading,
+    markRead,
+    markAllRead,
+    refetch,
+  }
+}
+
+/**
+ * The scrollable list body — header (with "Mark all as read") + rows.
+ * Used inside the bell's popup and the user-menu notifications submenu.
+ * `onClose` lets the host dropdown close on row click-through.
+ */
+export function NotificationList({
+  meta,
+  items,
+  loading,
+  unreadCount,
+  markRead,
+  markAllRead,
+  onClose,
+}: {
+  meta:        DatabaseNotificationsMeta
+  items:       DatabaseNotificationMeta[]
+  loading:     boolean
+  unreadCount: number
+  markRead:    (id: string) => void
+  markAllRead: () => void
+  onClose:     () => void
+}) {
+  const navigate = useNavigate()
+  const toast    = useToast()
+  return (
+    <>
+      <header className="flex items-center justify-between px-3 py-2 border-b">
+        <span className="text-sm font-medium">Notifications</span>
+        {unreadCount > 0 && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => { void markAllRead() }}
+          >
+            Mark all as read
+          </button>
+        )}
+      </header>
+
+      <div className="max-h-96 overflow-y-auto">
+        {items.length === 0
+          ? <EmptyState loading={loading} />
+          : items.map(n => (
+              <NotificationRow
+                key={n.id}
+                notification={n}
+                actionUrlTemplate={meta.actionUrl}
+                onMarkRead={markRead}
+                onNavigate={(href) => { onClose(); navigate(href) }}
+                onNotify={(notifs) => notifs.forEach(t => toast.notify(t))}
+                onAfterClick={onClose}
+              />
+            ))
+        }
+      </div>
+    </>
+  )
+}
+
+/**
+ * Bell-icon dropdown for `Pilotiq.databaseNotifications()`. Renders
+ * nothing when `meta` is absent — `panelInfo()` only ships the meta
+ * when the panel opted in AND a user resolved. Used for the
+ * `position: 'sidebar'` placement; the topbar placement folds the same
+ * list into the user-menu submenu instead.
+ */
+export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta }) {
+  if (!meta) return null
+  const [open, setOpen] = React.useState(false)
+  const { unreadCount, items, loading, markRead, markAllRead } = useNotifications(meta)
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -208,35 +283,15 @@ export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta })
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end" className="w-80 p-0">
-        <header className="flex items-center justify-between px-3 py-2 border-b">
-          <span className="text-sm font-medium">Notifications</span>
-          {unreadCount > 0 && (
-            <button
-              type="button"
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => { void markAllRead() }}
-            >
-              Mark all as read
-            </button>
-          )}
-        </header>
-
-        <div className="max-h-96 overflow-y-auto">
-          {items.length === 0
-            ? <EmptyState loading={loading} />
-            : items.map(n => (
-                <NotificationRow
-                  key={n.id}
-                  notification={n}
-                  actionUrlTemplate={meta.actionUrl}
-                  onMarkRead={markRead}
-                  onNavigate={(href) => { setOpen(false); navigate(href) }}
-                  onNotify={(notifs) => notifs.forEach(t => toast.notify(t))}
-                  onAfterClick={() => setOpen(false)}
-                />
-              ))
-          }
-        </div>
+        <NotificationList
+          meta={meta}
+          items={items}
+          loading={loading}
+          unreadCount={unreadCount}
+          markRead={markRead}
+          markAllRead={markAllRead}
+          onClose={() => setOpen(false)}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   )
