@@ -6,7 +6,12 @@ import {
 } from '@pilotiq/pilotiq'
 import { themeEditor, prismaThemeStorage } from '@pilotiq/pilotiq/plugins'
 import { registerIcons } from '@pilotiq/pilotiq/icons'
-import { lucideIcons } from '@pilotiq/pilotiq/icons/lucide'
+import {
+  Archive, AtSign, BookOpen, Check, CheckCircle2, Circle, FileText,
+  Heading as HeadingIcon, IdCard, ImageIcon, Inbox, Info, Link,
+  MessageCircle, MoreHorizontal, Pilcrow, Pencil, Quote, Send, Star,
+  Sticker, TrendingUp, TriangleAlert, User, UserPlus, Users, XCircle,
+} from 'lucide-react'
 import { tiptap }      from '@pilotiq/tiptap'
 import { codeEditor }  from '@pilotiq/codemirror'
 import { recharts }    from '@pilotiq/recharts'
@@ -31,11 +36,45 @@ import { MyDashboard } from './pages/MyDashboard.js'
 import { ProfilePage } from './pages/ProfilePage.js'
 import { NotificationsDemo } from './pages/NotificationsDemo.js'
 
-// Register the curated lucide baseline so string-typed icons
-// (Action.icon('check'), Column.icon('star'), etc.) resolve at render time.
-// Runs at module load — both server (provider boot) and client (auto-gen
-// _components.ts re-imports this file).
-registerIcons(lucideIcons)
+// Register ONLY the string-typed icons this panel actually uses
+// (Action.icon('check'), Column.icon('star'), sidebar nav, badge cells,
+// framework defaults like BooleanColumn's 'circle', etc.) instead of the
+// full ~150-icon lucide baseline — keeps the client bundle lean since
+// importing `lucideIcons` pulls every icon in (it references them all).
+// Runs at module load on both server (provider boot) and client (the
+// auto-gen _components.ts re-imports this file). Resources that set a
+// component-typed icon (e.g. `static icon = Newspaper` in ArticleResource)
+// don't need an entry here — those resolve via the component registry.
+registerIcons({
+  'archive':         Archive,
+  'at-sign':         AtSign,
+  'book-open':       BookOpen,
+  'check':           Check,
+  'check-circle':    CheckCircle2,
+  'check-circle-2':  CheckCircle2,
+  'circle':          Circle,         // BooleanColumn's "false" default
+  'file-text':       FileText,
+  'heading':         HeadingIcon,
+  'id-card':         IdCard,
+  'image':           ImageIcon,
+  'inbox':           Inbox,
+  'info':            Info,
+  'link':            Link,
+  'message-circle':  MessageCircle,
+  'more-horizontal': MoreHorizontal,
+  'paragraph':       Pilcrow,
+  'pencil':          Pencil,
+  'quote':           Quote,
+  'send':            Send,
+  'star':            Star,
+  'sticker':         Sticker,
+  'trending-up':     TrendingUp,
+  'triangle-alert':  TriangleAlert,
+  'user':            User,
+  'user-plus':       UserPlus,
+  'users':           Users,
+  'x-circle':        XCircle,
+})
 
 function prisma(): any {
   return app().make('prisma')
