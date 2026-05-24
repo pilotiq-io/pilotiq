@@ -353,8 +353,8 @@ importers:
         specifier: ^1.8.0
         version: 1.8.0
       '@rudderjs/core':
-        specifier: ^1.2.0
-        version: 1.2.0
+        specifier: ^1.3.0
+        version: 1.3.0
       '@rudderjs/localization':
         specifier: ^1.0.2
         version: 1.0.2
@@ -386,8 +386,8 @@ importers:
         specifier: ^1.2.2
         version: 1.2.2(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))
       '@rudderjs/vite':
-        specifier: ^2.0.0
-        version: 2.0.0(@rudderjs/core@1.2.0)(@vitejs/plugin-react@4.7.0(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
+        specifier: ^2.7.0
+        version: 2.7.0(@rudderjs/core@1.3.0)(@vitejs/plugin-react@4.7.0(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
       '@tailwindcss/typography':
         specifier: ^0.5.16
         version: 0.5.19(tailwindcss@4.2.2)
@@ -1525,6 +1525,10 @@ packages:
     resolution: {integrity: sha512-JLkPbwYdt9p1OY6COtDxhdE1z+ScB+3VyL5J1lPRVxm0YNKZby86VWcH3qLVHy0QIMemdtLYqaSPN4jd0JxIWA==}
     engines: {node: ^20.19.0 || >=22.12.0}
 
+  '@rudderjs/core@1.3.0':
+    resolution: {integrity: sha512-gxC4H47uMqvMAJ72rFN1ACoVhoYromg2rcqyc5xwVfahdn2Arlyqa5b6PpBaMRC4BHCeVg5hA8e9wsr6M8qzJQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+
   '@rudderjs/localization@1.0.2':
     resolution: {integrity: sha512-1Lh6clQHou8h4YhYZOAOAtEuWp7jGMr0I6oggqVBc5LYT2oKehmlusjBedISxAGD0JcId2sixtI2h7h988IK6w==}
 
@@ -1552,6 +1556,10 @@ packages:
 
   '@rudderjs/router@1.6.0':
     resolution: {integrity: sha512-AABg2SmV5lWq+jbVBImxRAunra6eLMcPVmiRoBdZxL6hzkCfTHAueD2kH8iANXA1CLH5GsH0rc13MSkQ911VVA==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+
+  '@rudderjs/router@1.7.0':
+    resolution: {integrity: sha512-gak6nc9IzsQKZc12vw8TOAiQLQ+ohCeeS5YfgiAv0tUOxPWlbVNfTjZNaqm5YPcvqpZTKM+4cjQ7QV2J9Tc1Aw==}
     engines: {node: ^20.19.0 || >=22.12.0}
 
   '@rudderjs/server-hono@1.0.5':
@@ -1585,10 +1593,11 @@ packages:
     peerDependencies:
       vike: '>=0.4.0'
 
-  '@rudderjs/vite@2.0.0':
-    resolution: {integrity: sha512-lfMzVkn0FD4haJnyD118GFIAK4GiwkRWs7gQbGNmRVfuGwDHS12x9ith0siYeFwlI6SNc4H4RoynpmfZF5cHhA==}
+  '@rudderjs/vite@2.7.0':
+    resolution: {integrity: sha512-/g38YrVyCeyZ2wvY+dYpQow1bHMt38/h6dRP5spxHJxIce/DP1CASL9I47VqXb0evryks7bM6b1JVfAiqCl23A==}
+    engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
-      '@rudderjs/core': ^1.1.4
+      '@rudderjs/core': ^1.3.0
       '@vitejs/plugin-react': '>=4.0.0'
       '@vitejs/plugin-vue': '>=5.0.0'
       vike: '>=0.4.0'
@@ -5017,7 +5026,7 @@ snapshots:
 
   '@rudderjs/cache@1.1.1':
     dependencies:
-      '@rudderjs/core': 1.2.0
+      '@rudderjs/core': 1.3.0
     optionalDependencies:
       ioredis: 5.10.1
     transitivePeerDependencies:
@@ -5027,7 +5036,7 @@ snapshots:
     dependencies:
       '@clack/prompts': 1.3.0
       '@rudderjs/console': 1.1.0
-      '@rudderjs/core': 1.2.0
+      '@rudderjs/core': 1.3.0
       chalk: 5.6.2
       commander: 12.1.0
     optionalDependencies:
@@ -5052,13 +5061,22 @@ snapshots:
       reflect-metadata: 0.2.2
       zod: 4.3.6
 
+  '@rudderjs/core@1.3.0':
+    dependencies:
+      '@rudderjs/console': 1.1.0
+      '@rudderjs/contracts': 1.8.0
+      '@rudderjs/router': 1.7.0
+      '@rudderjs/support': 1.3.0
+      reflect-metadata: 0.2.2
+      zod: 4.4.3
+
   '@rudderjs/localization@1.0.2':
     dependencies:
-      '@rudderjs/core': 1.2.0
+      '@rudderjs/core': 1.3.0
 
   '@rudderjs/log@1.0.1':
     dependencies:
-      '@rudderjs/core': 1.2.0
+      '@rudderjs/core': 1.3.0
 
   '@rudderjs/middleware@1.0.1':
     dependencies:
@@ -5071,7 +5089,7 @@ snapshots:
     dependencies:
       '@rudderjs/console': 1.1.0
       '@rudderjs/contracts': 1.8.0
-      '@rudderjs/core': 1.2.0
+      '@rudderjs/core': 1.3.0
       '@rudderjs/orm': 1.12.0
       '@rudderjs/support': 1.3.0
     optionalDependencies:
@@ -5100,6 +5118,12 @@ snapshots:
       reflect-metadata: 0.2.2
       zod: 4.4.3
 
+  '@rudderjs/router@1.7.0':
+    dependencies:
+      '@rudderjs/contracts': 1.8.0
+      reflect-metadata: 0.2.2
+      zod: 4.4.3
+
   '@rudderjs/server-hono@1.0.5(srvx@0.11.15)(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))':
     dependencies:
       '@hono/node-server': 1.19.11(hono@4.12.12)
@@ -5120,7 +5144,7 @@ snapshots:
   '@rudderjs/session@1.0.4':
     dependencies:
       '@rudderjs/contracts': 1.8.0
-      '@rudderjs/core': 1.2.0
+      '@rudderjs/core': 1.3.0
     optionalDependencies:
       ioredis: 5.10.1
     transitivePeerDependencies:
@@ -5151,12 +5175,12 @@ snapshots:
     dependencies:
       vike: 0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
 
-  '@rudderjs/vite@2.0.0(@rudderjs/core@1.2.0)(@vitejs/plugin-react@4.7.0(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))':
+  '@rudderjs/vite@2.7.0(@rudderjs/core@1.3.0)(@vitejs/plugin-react@4.7.0(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vike@0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)))(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))':
     dependencies:
       vike: 0.4.257(hono@4.12.12)(react-streaming@0.4.17(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(srvx@0.11.15)(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
       vite: 7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)
     optionalDependencies:
-      '@rudderjs/core': 1.2.0
+      '@rudderjs/core': 1.3.0
       '@vitejs/plugin-react': 4.7.0(vite@7.3.2(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0))
 
   '@standard-schema/spec@1.1.0': {}
