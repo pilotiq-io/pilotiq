@@ -1058,6 +1058,13 @@ export class Pilotiq {
     }
   }
 
+  /** @internal — the raw DB-loaded overrides (NOT merged with code
+   *  defaults). Used by the dev Vite plugin to carry boot-time theme
+   *  state onto a freshly hot-reloaded panel instance. */
+  getThemeOverrides(): Partial<ThemeConfig> | undefined {
+    return this.config._themeOverrides
+  }
+
   /** @internal — returns code defaults merged with DB overrides. Returns an
    *  empty config when the theme editor is on so the built-in default preset
    *  still resolves and the editor can persist overrides on top. */
