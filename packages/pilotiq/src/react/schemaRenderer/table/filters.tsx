@@ -1200,7 +1200,7 @@ export function ColumnsToggleDropdown({
           <button
             {...props}
             type="button"
-            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium text-foreground hover:bg-accent"
+            className={cn(buttonVariants({ variant: 'outline' }))}
             aria-label="Show or hide columns"
           >
             <Columns3Icon className="h-4 w-4" aria-hidden="true" />
