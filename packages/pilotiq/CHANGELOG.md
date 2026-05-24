@@ -1,5 +1,32 @@
 # @pilotiq/pilotiq
 
+## 0.25.1
+
+### Patch Changes
+
+- 0950718: refactor(pilotiq): table "Columns" toggle trigger uses the shadcn `<Button>` styling
+
+  Routes the toolbar Columns dropdown trigger through `cn(buttonVariants({ variant: 'outline' }))` so it matches the Filters trigger and the rest of the `h-8` / `rounded-lg` control row. (The active-filters "Clear all" stays a subtle text link by design.)
+
+- 608d09b: fix(pilotiq): panel-module edits hot-reload in dev without a server restart
+
+  The Vite plugin now re-imports the panel module through the dev server's SSR loader whenever a file changes and swaps the fresh instance into `PilotiqRegistry` by name. Because route handlers already re-resolve the panel from that registry via `livePanel()` at request time, edits to `app/Pilotiq/AdminPanel.ts` (and the resource/page schemas it imports — Vite invalidates the panel as their importer) now reflect on the next request.
+
+  Previously the rudder provider booted once and never re-ran on dev edits, so the registry held the stale boot-time panel until a manual server restart — `livePanel()` (PRs #70/#71) fixed the render path but had nothing fresh to resolve. This closes that gap on the pilotiq side; the deeper "provider `boot()` should re-run on HMR" fix remains an upstream `@rudderjs/core` follow-up. The change is dev-only (`configureServer`) — no production-build impact.
+
+- de73228: fix(pilotiq): preserve theme + speed up panel hot-reload
+
+  Two refinements to the dev panel-HMR support added in the prior patch:
+
+  - **Theme no longer resets on a panel edit.** Boot-time runtime state — the theme storage adapter and the DB-loaded overrides injected by the provider's `boot()` — is now carried onto the freshly hot-reloaded panel instance (new internal `Pilotiq.getThemeOverrides()`), so editing `AdminPanel.ts` keeps the active theme/colors.
+  - **Faster saves.** The dev watcher rebuilds both the client component manifest and the live registry from a single **incremental** `ssrLoadModule` import instead of the no-cache jiti re-import it used before — so each save only re-executes the modules that actually changed.
+
+- 7d4343a: fix(pilotiq): wrap multi-column search in a `whereGroup` so it can't leak past surrounding scopes
+
+  List search, relation-manager search, and global (Cmd+K) search built their LIKE chain as a bare `where(col0).orWhere(col1)…` and appended scopes/filters as separate `.where()` clauses. With an adapter that honours Laravel-parity `where`/`orWhere` precedence — `@rudderjs/orm-prisma` ≥2.0 — that compiles to `(scope AND col0 LIKE x) OR col1 LIKE x`, so a row matching the second-or-later searchable column would bypass the surrounding scope: trashed records (soft-delete `deletedAt IS NULL`), filtered-out rows, or — in a relation manager — another parent's rows would leak into search hits.
+
+  The three search sites now route through a shared `applyColumnSearch(q, columns, needle)` helper that wraps the OR-chain in `q.whereGroup(…)` → `scope AND (col0 LIKE x OR col1 LIKE x OR …)`. This is correct and adapter-version-independent. `whereGroup` is optional on `ModelQuery`; when a builder doesn't implement it (bare drivers / test stubs) the helper falls back to the flat chain unchanged.
+
 ## 0.25.0
 
 ### Minor Changes
