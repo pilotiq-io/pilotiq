@@ -16,6 +16,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createJiti } from 'jiti'
 import type { Plugin } from 'vite'
+import type { Pilotiq } from './Pilotiq.js'
+import { PilotiqRegistry } from './PilotiqRegistry.js'
 
 export interface PilotiqVitePluginOptions {
   /**
@@ -772,10 +774,54 @@ export function pilotiq(options: PilotiqVitePluginOptions = {}): Plugin {
     },
     configureServer(devServer) {
       // Watch panel files so editing AdminPanel.ts regenerates the
-      // manifest in dev. Best-effort: regenerate on any FS event.
+      // client manifest AND refreshes the live server-side registry.
+      // Best-effort: run on any FS event.
       const watch = async () => {
         try { await regenerateManifest() } catch {}
+        try { await refreshLiveRegistry() } catch { /* mid-edit error — the next save retries */ }
       }
+
+      // Dev HMR for the panel module. The rudder provider boots once and
+      // doesn't re-run on edits, so the boot-time panel would otherwise
+      // sit in `PilotiqRegistry` until a full server restart. Re-import
+      // the panel through the SSR module runner (Vite re-executes it +
+      // any edited schema it imports) and swap the fresh instance into
+      // the registry by name. Route handlers close over the boot-time
+      // panel but re-resolve it from this registry via `livePanel()` on
+      // every render — so edits reflect with no restart. Same process /
+      // globalThis-backed Map, so the swap is visible to the running
+      // server. `ssrLoadModule` returns the cached module untouched when
+      // nothing in the panel's graph changed, so unrelated saves are cheap.
+      const refreshLiveRegistry = async () => {
+        const fresh = new Map<string, Pilotiq>()
+        for (const userPath of panelPaths) {
+          const resolved = await resolvePanelPath(userPath, cwd)
+          if (!resolved) continue
+          const mod = await devServer.ssrLoadModule(resolved) as Record<string, unknown>
+          for (const value of Object.values(mod)) {
+            if (looksLikePilotiq(value)) {
+              const panel = value as Pilotiq
+              fresh.set(panel.getConfig().name, panel)
+            }
+          }
+        }
+        // `fresh` is fully built before any mutation — a throwing
+        // ssrLoadModule above leaves the registry untouched (no half-reset).
+        const current = PilotiqRegistry.all()
+        if (current.length === 0 && fresh.size === 0) return
+        PilotiqRegistry.reset()
+        if (current.length > 0) {
+          // Preserve the boot-time panel set; swap fresh instances in by
+          // name, keep the old one when a panel failed to re-import.
+          for (const old of current) {
+            PilotiqRegistry.register(fresh.get(old.getConfig().name) ?? old)
+          }
+        } else {
+          // Cold-boot edge: registry was empty when the first edit landed.
+          for (const panel of fresh.values()) PilotiqRegistry.register(panel)
+        }
+      }
+
       const watcher = devServer.watcher
       for (const userPath of panelPaths) {
         const guess = path.isAbsolute(userPath) ? userPath : path.resolve(cwd, userPath)
