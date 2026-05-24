@@ -14,7 +14,10 @@ const navigate = (url: string): void => {
 
 export default function PilotiqLayout({ children }: { children: ReactNode }) {
   const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown>; data?: Record<string, unknown>; urlPathname?: string }
-  const { panel, basePath, layout, notifications } = (ctx.data ?? ctx.viewProps) as any ?? {}
+  const data = (ctx.data ?? ctx.viewProps) as any ?? {}
+  const { panel, basePath, layout, notifications } = data
+  // Hoist the page breadcrumb into the layout header (sidebar layout).
+  const breadcrumb = Array.isArray(data.schemaData) ? data.schemaData.find((e: any) => e && e.type === 'breadcrumbs') : undefined
   const currentPath = ctx.urlPathname
   if (!panel) return <NavigateProvider navigate={navigate}>{children}</NavigateProvider>
 
@@ -25,7 +28,7 @@ export default function PilotiqLayout({ children }: { children: ReactNode }) {
     <NavigateProvider navigate={navigate}>
       <ThemeProvider theme={panel.theme}>
         {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
-        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} currentPath={currentPath ?? ''} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any} layoutProviderRegistry={layoutProviderRegistry as any} componentSlotRegistry={componentSlotRegistry as any}>
+        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} breadcrumb={breadcrumb} currentPath={currentPath ?? ''} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any} layoutProviderRegistry={layoutProviderRegistry as any} componentSlotRegistry={componentSlotRegistry as any}>
           {children}
         </AppShell>
       </ThemeProvider>

@@ -1,9 +1,7 @@
 import React from 'react'
 import { Separator } from '../ui/separator.js'
-import { ThemeToggle } from '../ThemeToggle.js'
 import { SearchTrigger } from '../SearchTrigger.js'
 import { UserMenu } from '../UserMenu.js'
-import { NotificationBell } from '../NotificationBell.js'
 import { RightSidebarTrigger } from '../RightSidebarTrigger.js'
 import { RenderHookSlot } from '../RenderHookSlot.js'
 import {
@@ -235,11 +233,10 @@ export function TopbarLayout({ panel, basePath, currentPath, children, component
                 </nav>
             }
             <SearchTrigger />
-            <ThemeToggle />
-            {dn && <NotificationBell meta={dn} />}
             <RightSidebarTrigger />
             <UserMenu
               userMenu={panel.userMenu}
+              {...(dn ? { notifications: dn } : {})}
               before={<RenderHookSlot name="panels::user-menu.before" hooks={hooks} />}
               after={<RenderHookSlot name="panels::user-menu.after"  hooks={hooks} />}
             />

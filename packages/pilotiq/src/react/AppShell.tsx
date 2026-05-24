@@ -100,7 +100,19 @@ export interface AppShellProps {
    * additional slots will land as concrete consumers ask.
    */
   componentSlotRegistry?: ComponentSlotRegistry
+  /** Page breadcrumb element meta, extracted from `schemaData` by the
+   *  auto-gen `+Layout`. The sidebar layout renders it in the header
+   *  (next to the toggle) and suppresses the in-body copy; the topbar
+   *  layout ignores it and keeps the breadcrumb in the body. */
+  breadcrumb?: BreadcrumbMeta
   children: React.ReactNode
+}
+
+/** Minimal shape of the `breadcrumbs` element meta consumed by the
+ *  header. Mirrors what `Breadcrumbs.toMeta()` emits. */
+export interface BreadcrumbMeta {
+  type:  'breadcrumbs'
+  items: { label: string; url?: string }[]
 }
 
 export function AppShell({ layout = 'sidebar', notifications, componentRegistry, rightPanelRegistry, layoutProviderRegistry, ...props }: AppShellProps) {

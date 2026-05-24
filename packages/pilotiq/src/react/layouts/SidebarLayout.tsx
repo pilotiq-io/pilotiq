@@ -20,11 +20,12 @@ import {
   SidebarTrigger,
 } from '../ui/sidebar.js'
 import { Separator } from '../ui/separator.js'
-import { ThemeToggle } from '../ThemeToggle.js'
 import { SearchTrigger } from '../SearchTrigger.js'
 import { UserMenu } from '../UserMenu.js'
 import { NotificationBell } from '../NotificationBell.js'
 import { RightSidebarTrigger } from '../RightSidebarTrigger.js'
+import { BreadcrumbsView } from '../SchemaRenderer.js'
+import { BreadcrumbHoistProvider } from '../breadcrumb-hoist.js'
 import { RenderHookSlot } from '../RenderHookSlot.js'
 import type { AppShellProps } from '../AppShell.js'
 import { useIconFor } from '../icon-context.js'
@@ -140,7 +141,7 @@ function NavTree({
   )
 }
 
-export function SidebarLayout({ panel, basePath, currentPath, children, componentSlotRegistry }: AppShellProps) {
+export function SidebarLayout({ panel, basePath, currentPath, children, componentSlotRegistry, breadcrumb }: AppShellProps) {
   const title = panel.branding?.title ?? panel.name
   const groups = groupItems(panel.navigation ?? [])
   // Sidebar chrome knobs (Pilotiq.sidebar) — default to the historical
@@ -150,14 +151,17 @@ export function SidebarLayout({ panel, basePath, currentPath, children, componen
   const side        = panel.sidebar?.side        ?? 'left'
   const hooks = panel.renderHooks
   const dn = panel.databaseNotifications
-  const bellInTopbar  = dn && dn.position === 'topbar'
   const bellInSidebar = dn && dn.position === 'sidebar'
   const NavSlot    = componentSlotRegistry?.nav
   const HeaderSlot = componentSlotRegistry?.header
   const FooterSlot = componentSlotRegistry?.footer
   const slotProps = currentPath !== undefined ? { currentPath } : {}
+  // Hoist the breadcrumb into the header only when we own the header
+  // (no custom HeaderSlot) — otherwise the body keeps rendering it.
+  const hoistBreadcrumb = !!breadcrumb && !HeaderSlot
 
   return (
+    <BreadcrumbHoistProvider value={hoistBreadcrumb}>
     <SidebarProvider>
       <Sidebar variant={variant} collapsible={collapsible} side={side}>
         <SidebarHeader>
@@ -230,18 +234,18 @@ export function SidebarLayout({ panel, basePath, currentPath, children, componen
               // so only then should the sticky header round its top corners.
               variant === 'inset' && 'md:rounded-t-xl',
             )}>
-              <div className="flex flex-1 items-center gap-2 px-3">
+              <div className="flex min-w-0 flex-1 items-center gap-2 px-3">
                 <SidebarTrigger />
-                <Separator orientation="vertical" className="me-2 data-[orientation=vertical]:h-4" />
+                <Separator orientation="vertical" className="me-1 data-[orientation=vertical]:h-4" />
                 <RenderHookSlot name="panels::topbar.start" hooks={hooks} />
-                <SearchTrigger />
+                {breadcrumb && <BreadcrumbsView items={breadcrumb.items} />}
               </div>
               <div className="flex items-center gap-1 px-3">
-                <ThemeToggle />
-                {bellInTopbar && <NotificationBell meta={dn} />}
+                <SearchTrigger />
                 <RightSidebarTrigger />
                 <UserMenu
                   userMenu={panel.userMenu}
+                  {...(dn && dn.position === 'topbar' ? { notifications: dn } : {})}
                   before={<RenderHookSlot name="panels::user-menu.before" hooks={hooks} />}
                   after={<RenderHookSlot name="panels::user-menu.after"  hooks={hooks} />}
                 />
@@ -256,5 +260,6 @@ export function SidebarLayout({ panel, basePath, currentPath, children, componen
         {FooterSlot && <FooterSlot basePath={basePath} {...slotProps} />}
       </SidebarInset>
     </SidebarProvider>
+    </BreadcrumbHoistProvider>
   )
 }
