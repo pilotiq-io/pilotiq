@@ -108,6 +108,38 @@ export interface ModelQuery {
 }
 
 /**
+ * Apply a multi-column `LIKE` search as a single grouped OR clause —
+ * `(col0 LIKE x OR col1 LIKE x OR …)` — so it AND-composes with any
+ * surrounding scope (soft-delete `deletedAt IS NULL`, a relation's
+ * `foreignKey = parentId`, applied filters, a `Resource.query()`
+ * override) instead of the OR leaking to the query root.
+ *
+ * Without the group, `scope.where(col0).orWhere(col1)` is adapter-
+ * precedence-dependent: `@rudderjs/orm-prisma` ≥2.0 honours Laravel-
+ * parity `(scope AND col0) OR col1`, which leaks scoped-out rows (e.g.
+ * trashed records, or another parent's rows in a relation manager) into
+ * search hits. Wrapping makes the result correct and adapter-independent.
+ *
+ * `whereGroup` is optional on {@link ModelQuery} (test stubs / bare
+ * drivers skip it); when absent we fall back to the flat `where`/
+ * `orWhere` chain — the legacy shape — for those callers.
+ */
+export function applyColumnSearch(q: ModelQuery, columns: string[], needle: string): ModelQuery {
+  const build = (qb: ModelQuery): void => {
+    columns.forEach((col, i) => {
+      i === 0
+        ? qb.where(col, 'LIKE', needle)
+        : qb.orWhere(col, 'LIKE', needle)
+    })
+  }
+  if (typeof q.whereGroup === 'function') {
+    return q.whereGroup(g => { build(g) })
+  }
+  build(q)
+  return q
+}
+
+/**
  * Structural shape pilotiq calls to wire ORM defaults. A class extending
  * `@rudderjs/orm`'s `Model` satisfies this automatically via its static
  * methods. Users with a different ORM can build their own object.
@@ -278,12 +310,7 @@ export function modelTableRecords(R: ResourceLike, table: Table): TableRecordsHa
     let q = R.query(user !== undefined ? { user } : undefined)
 
     if (ctx.search && searchable.length > 0) {
-      const needle = `%${ctx.search}%`
-      searchable.forEach((col, i) => {
-        q = i === 0
-          ? q.where(col, 'LIKE', needle)
-          : q.orWhere(col, 'LIKE', needle)
-      })
+      q = applyColumnSearch(q, searchable, `%${ctx.search}%`)
     }
 
     // Apply filters. Each Filter contributes a `where` clause with type
@@ -620,12 +647,7 @@ export function modelRelationTableRecords(
     let q = resolveRelatedQuery(parentModel, parent, relationName)
 
     if (ctx.search && searchable.length > 0) {
-      const needle = `%${ctx.search}%`
-      searchable.forEach((col, i) => {
-        q = i === 0
-          ? q.where(col, 'LIKE', needle)
-          : q.orWhere(col, 'LIKE', needle)
-      })
+      q = applyColumnSearch(q, searchable, `%${ctx.search}%`)
     }
 
     const filterValues = ctx.filters ?? {}

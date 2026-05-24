@@ -10,6 +10,7 @@ import { defaultListPage, defaultCreatePage, defaultEditPage } from '../defaultP
 import type { ModelLike, ModelQuery } from './modelDefaults.js'
 import type { TableContext } from '../elements/Table.js'
 import {
+  applyColumnSearch,
   defaultRelatedQuery,
   resolveRelatedQuery,
   modelRelationTableRecords,
@@ -75,6 +76,48 @@ class FakeQuery implements ModelQuery {
     return this._paginateResult
   }
 }
+
+/**
+ * Records ops like FakeQuery but also implements `whereGroup` — the
+ * callback runs against a fresh sub-builder whose ops are spliced back
+ * under a single `{ op: 'whereGroup', group: [...] }` entry. Mirrors the
+ * rudder QueryBuilder's grouped-clause shape so we can assert the search
+ * OR-chain is parenthesised (and AND-composes with surrounding scopes).
+ */
+class GroupingQuery extends FakeQuery {
+  whereGroup(fn: (q: ModelQuery) => ModelQuery | void): ModelQuery {
+    const sub = new GroupingQuery({ data: [], total: 0 })
+    fn(sub)
+    this.ops.push({ op: 'whereGroup', args: [], group: sub.ops } as never)
+    return this
+  }
+}
+
+describe('applyColumnSearch — grouped multi-column search', () => {
+  it('wraps the OR-chain in a whereGroup so it AND-composes with a preceding scope', () => {
+    const q = new GroupingQuery({ data: [], total: 0 })
+    q.where('deletedAt', null)                       // soft-delete scope at root
+    applyColumnSearch(q, ['title', 'slug'], '%foo%')
+
+    const ops = q.ops as Array<{ op: string; args: unknown[]; group?: Array<{ op: string; args: unknown[] }> }>
+    assert.deepEqual(ops[0], { op: 'where', args: ['deletedAt', null] })
+    // The search lives inside one group, NOT leaked to the root.
+    assert.equal(ops[1]!.op, 'whereGroup')
+    assert.deepEqual(ops[1]!.group, [
+      { op: 'where',   args: ['title', 'LIKE', '%foo%'] },
+      { op: 'orWhere', args: ['slug',  'LIKE', '%foo%'] },
+    ])
+  })
+
+  it('falls back to a flat where/orWhere chain when whereGroup is absent', () => {
+    const q = new FakeQuery({ data: [], total: 0 })
+    applyColumnSearch(q, ['title', 'slug'], '%foo%')
+    assert.deepEqual(q.ops, [
+      { op: 'where',   args: ['title', 'LIKE', '%foo%'] },
+      { op: 'orWhere', args: ['slug',  'LIKE', '%foo%'] },
+    ])
+  })
+})
 
 // ── Tests ────────────────────────────────────────────────────────────
 

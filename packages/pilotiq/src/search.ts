@@ -22,7 +22,7 @@
  */
 import type { Pilotiq } from './Pilotiq.js'
 import type { ResourceClass } from './Resource.js'
-import type { ModelQuery } from './orm/modelDefaults.js'
+import { applyColumnSearch, type ModelQuery } from './orm/modelDefaults.js'
 import { serializeIcon, type SerializedIcon } from './icons/types.js'
 
 export interface GlobalSearchResult {
@@ -167,12 +167,6 @@ function buildSearchQuery(R: ResourceClass, needle: string, user: unknown): Mode
   const attrs = R.globallySearchableAttributes()
   if (attrs.length === 0) return undefined
 
-  const wildcarded = `%${needle}%`
-  let q = R.query(user != null ? { user } : undefined)
-  attrs.forEach((col, i) => {
-    q = i === 0
-      ? q.where(col,   'LIKE', wildcarded)
-      : q.orWhere(col, 'LIKE', wildcarded)
-  })
-  return q
+  const q = R.query(user != null ? { user } : undefined)
+  return applyColumnSearch(q, attrs, `%${needle}%`)
 }
