@@ -6,6 +6,7 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../../ui/dropdown-menu.js'
+import { Button } from '../../ui/button.js'
 import { useNavigate } from '../../navigate.js'
 import { useToast } from '../../Toaster.js'
 import { withTooltip } from '../helpers.js'
@@ -144,14 +145,10 @@ export function ActionGroupTrigger({
                 <DialogDescription>{pendingConfirm.message}</DialogDescription>
               </DialogHeader>
               <DialogFooter>
-                <button
-                  type="button"
-                  onClick={() => setPending(null)}
-                  className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 h-9 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-                >
+                <Button type="button" variant="outline" onClick={() => setPending(null)}>
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   autoFocus
                   onClick={() => {
@@ -161,12 +158,12 @@ export function ActionGroupTrigger({
                   }}
                   className={
                     pending && pending['destructive']
-                      ? 'inline-flex items-center justify-center rounded-md bg-destructive px-3 h-9 text-sm font-medium text-destructive-foreground hover:bg-destructive/90'
-                      : 'inline-flex items-center justify-center rounded-md bg-primary px-3 h-9 text-sm font-medium text-primary-foreground hover:bg-primary/90'
+                      ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/30'
+                      : ''
                   }
                 >
                   {pending && pending['destructive'] ? 'Delete' : 'Confirm'}
-                </button>
+                </Button>
               </DialogFooter>
             </>
           )}

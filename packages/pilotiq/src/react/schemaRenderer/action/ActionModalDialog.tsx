@@ -4,6 +4,7 @@ import type { ElementMeta } from '../../../schema/Element.js'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog.js'
+import { Button } from '../../ui/button.js'
 import { useIconFor } from '../../icon-context.js'
 import { useNavigate } from '../../navigate.js'
 import { useToast } from '../../Toaster.js'
@@ -179,10 +180,11 @@ export function ActionModalDialog({
     }
   }
 
-  const cancelClass  = 'inline-flex items-center justify-center rounded-md border border-input bg-background px-3 h-9 text-sm font-medium hover:bg-accent hover:text-accent-foreground'
-  const confirmClass = destructive
-    ? 'inline-flex items-center justify-center rounded-md bg-destructive px-3 h-9 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50'
-    : 'inline-flex items-center justify-center rounded-md bg-primary px-3 h-9 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50'
+  // Modal confirm CTA stays SOLID red (stronger than pilotiq's soft
+  // `destructive` Button variant used for inline/row actions).
+  const confirmOverride = destructive
+    ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/30'
+    : ''
 
   // Resolved icon component for the modal header (Filament-style chrome
   // — leading glyph next to the heading). Passed through `useIconFor`
@@ -225,14 +227,16 @@ export function ActionModalDialog({
       >
         <DialogContent className={popupClass}>
           {showCloseButton && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               aria-label="Close"
               onClick={() => setOpen(false)}
-              className="absolute top-3 right-3 z-20 inline-flex items-center justify-center rounded-md h-8 w-8 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              className="absolute top-3 right-3 z-20 text-muted-foreground"
             >
               <XIcon className="size-4" />
-            </button>
+            </Button>
           )}
           <form ref={formRef} onSubmit={onSubmit} className={formCls}>
             <DialogHeader className={headerCls}>
@@ -258,12 +262,12 @@ export function ActionModalDialog({
               <p className={`py-2 text-sm text-destructive ${stickyMode ? 'px-6' : ''}`.trim()}>{serverError}</p>
             )}
             <DialogFooter className={footerCls}>
-              <button type="button" onClick={() => setOpen(false)} className={cancelClass}>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 {cancelLabel}
-              </button>
-              <button type="submit" disabled={submitting} autoFocus={submitAutofocus} className={confirmClass}>
+              </Button>
+              <Button type="submit" disabled={submitting} autoFocus={submitAutofocus} className={confirmOverride}>
                 {submitting ? 'Working…' : submitLabel}
-              </button>
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
