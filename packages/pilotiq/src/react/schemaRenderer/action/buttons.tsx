@@ -44,14 +44,14 @@ const OUTLINED_VARIANTS: Record<string, string> = {
 /** Size preset → tailwind sizing classes. Icon-only buttons use the
  * width=height variants from the second map. */
 const SIZE_CLASSES: Record<string, string> = {
-  sm: 'h-7 px-2 text-xs',
-  md: 'h-8 px-3 text-sm',
-  lg: 'h-10 px-4 text-base',
+  sm: 'h-7 px-2.5 text-xs',
+  md: 'h-8 px-2.5 text-sm',
+  lg: 'h-9 px-2.5 text-base',
 }
 const ICON_SIZE_CLASSES: Record<string, string> = {
   sm: 'h-7 w-7 text-xs',
   md: 'h-8 w-8 text-sm',
-  lg: 'h-10 w-10 text-base',
+  lg: 'h-9 w-9 text-base',
 }
 
 /** Build the trigger button className from action meta + render context. */
@@ -73,7 +73,12 @@ export function actionButtonClass(el: ElementMeta, opts: RenderActionOptions): s
   const sizingMap = iconOnly ? ICON_SIZE_CLASSES : SIZE_CLASSES
   const sizing = sizingMap[size] ?? sizingMap['md']
 
-  return `relative inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition ${variant} ${sizing}`
+  // Mirror the shadcn `<Button>` chrome (rounded-lg, focus ring, active
+  // press, svg sizing) so action buttons read identically to the base
+  // Button — the COLOR/OUTLINED maps above add the richer Action palette
+  // (success/warning/info) that buttonVariants doesn't carry. No base
+  // border so the OUTLINED variants own their border color cleanly.
+  return `group/button relative inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 ${variant} ${sizing}`
 }
 
 /** Render the action's icon (when set). String names resolve through the

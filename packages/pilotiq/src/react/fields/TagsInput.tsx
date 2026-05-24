@@ -182,7 +182,7 @@ export function TagsInput({
       <input type="hidden" name={name} value={hiddenValue} readOnly />
       <div
         className={[
-          'flex flex-wrap items-center gap-1 min-h-9 px-2 py-1 rounded-md border bg-transparent text-sm',
+          'flex flex-wrap items-center gap-1 min-h-8 px-2 py-1 rounded-lg border bg-transparent text-sm',
           'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
           disabled ? 'opacity-50 pointer-events-none' : 'cursor-text',
         ].join(' ')}

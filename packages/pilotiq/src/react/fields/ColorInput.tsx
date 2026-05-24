@@ -55,7 +55,7 @@ export function ColorInput({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         disabled={disabled}
-        className="h-9 w-12 cursor-pointer rounded-md border border-input bg-transparent"
+        className="h-8 w-12 cursor-pointer rounded-lg border border-input bg-transparent"
       />
       <Input
         type="text"
