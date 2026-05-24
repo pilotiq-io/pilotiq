@@ -1,5 +1,46 @@
 # @pilotiq/pilotiq
 
+## 0.25.0
+
+### Minor Changes
+
+- a7c0ffd: feat(pilotiq): align form controls to the shadcn input/button spec + tighter default spacing
+
+  Brings every text/control surface onto the shadcn component look for a more consistent, denser admin UI:
+
+  - **Inputs / Select / Textarea / field inputs** (`Input`, `SelectTrigger`, `Textarea`, plus the `DateField` trigger, `ColorPicker` swatch, `TagsInput`, and the Tiptap text chrome) → `h-8`, `rounded-lg`, `px-2.5`, `ring-3` focus, no drop shadow — matching the shadcn.com control set. The standalone `<Input>` was previously `h-9`.
+  - **Filters & Actions buttons** now use the shared shadcn button styling: the table toolbar's Filters triggers render via `buttonVariants({ variant: 'outline' })` (wrapped in `cn()` so `tailwind-merge` keeps the outline border), and `actionButtonClass` emits the `<Button>` chrome (`rounded-lg`, focus ring, `active:translate-y-px`, `h-8`/`h-7`/`h-9` sizes) while keeping the richer Action color palette (primary/destructive/success/warning/info + outlined).
+  - **Toolbar consistency**: the group-by / sort pickers drop `size="sm"` so they render at the default `h-8`, matching the search input.
+  - **Default spacing** density tightened — the default `vega` preset now resolves `--spacing` to `0.25rem` (Tailwind's stock unit) instead of `0.3rem`, so every `p-*`/`gap-*`/`m-*` tightens uniformly. Matches the theme-editor preview, which already used `0.25rem`.
+
+  No public API changes.
+
+- e9e7dbb: feat(pilotiq): sidebar layout options + palette-driven stat sparklines
+
+  - `Pilotiq.layout('sidebar', opts?)` is now overloaded so the sidebar chrome options bind to the `'sidebar'` mode: `variant: 'sidebar' | 'floating' | 'inset'`, `collapsible: 'offcanvas' | 'icon' | 'none'`, `side: 'left' | 'right'` (defaults `inset` / `icon` / `left`). `.layout('topbar', {...})` is a compile error so sidebar-only config can't silently no-op under topbar. The sticky page header gains `border-b bg-background/95 backdrop-blur`; the `md:rounded-t-xl` float applies only to `variant: 'inset'`.
+  - `StatsOverview` sparklines render as soft area-fills and default to the theme chart palette.
+
+- 8e4dc9f: feat(pilotiq): simplify the panel topbar — search right, breadcrumb in the header, theme + notifications in the user menu
+
+  The sticky header chrome is consolidated:
+
+  - **Search** moves to the right cluster (sidebar layout); the left now holds just the sidebar toggle.
+  - **Breadcrumb** is hoisted into the header next to the toggle (sidebar layout) and removed from the page body. Wired SSR-correctly — the auto-gen `+Layout` extracts the `breadcrumbs` element from `schemaData` and passes it to the header, so it paints on first load and updates on SPA nav. The topbar layout (and any custom header slot) keeps the breadcrumb in the body.
+  - **Theme toggle** moves into the user dropdown as a row (stays open on click).
+  - **Database notifications** fold into the user dropdown as a "Notifications" submenu carrying the full inbox list; an unread dot shows on the avatar. The standalone `<NotificationBell>` is retained for the `databaseNotificationsPosition('sidebar')` placement.
+
+  New: `DropdownMenuSub` / `DropdownMenuSubTrigger` / `DropdownMenuSubContent` primitives, a shared `useNotifications()` hook + `NotificationList` component (extracted from `NotificationBell`), an exported `BreadcrumbsView`, and a `breadcrumb` prop on `AppShell` / `UserMenu`'s new optional `notifications` prop. No breaking public API.
+
+### Patch Changes
+
+- 184951e: refactor(pilotiq): route dialog / action-group / inline-create buttons through the shadcn `<Button>`
+
+  The remaining hand-rolled `h-9` buttons that bypassed the shared component now use `<Button>`, so they pick up the shadcn chrome (`h-8`, `rounded-lg`, focus ring, active-press) and stay consistent with the rest of the panel: the confirm/cancel buttons in `ActionModalDialog` and `ConfirmActionDialog`, the confirm dialog inside `ActionGroup`, and the `SelectField` inline-create trigger/cancel/submit. Modal confirm CTAs keep their intentional **solid-red** styling (a className override on the default variant) rather than the soft inline `destructive` variant.
+
+- ac7a567: fix(pilotiq): resolve the live panel in the reactive form POST endpoints too — dev edits reflect without a restart
+
+  Follow-up to the SSR/render-data `livePanel()` fix. The four interactive form builders (`formStateData`, `formWizardData`, `formCreateOptionData`, `mentionResolveData`) still passed their registration-time `Pilotiq` closure straight through, so editing a `live()` field's `options(fn)`, an `afterStateUpdated` hook, a wizard step's validators, an inline-create form, or a mention resolver reflected on the initial SSR render but not on the subsequent partial-resolve / step-validate / create-option / mention roundtrip until a server restart. Each now re-resolves via `livePanel()` at request time, matching the chrome and render-data builders.
+
 ## 0.24.3
 
 ### Patch Changes
