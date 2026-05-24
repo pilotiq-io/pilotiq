@@ -2,7 +2,9 @@
 
 **Status:** spike plan, 2026-05-24. One approach already attempted and abandoned (see "Dead ends"). Pick up with a browser open — this cannot be landed blind.
 
-**Goal:** editing `app/Pilotiq/AdminPanel.ts` (and the schemas it imports) in dev should re-render the panel **without a full browser page reload** — a data-only re-render. Target: near-instant, no JS re-download / re-hydrate.
+**Goal:** editing **any registered panel module** (and the schemas it imports) in dev should re-render the panel **without a full browser page reload** — a data-only re-render. Target: near-instant, no JS re-download / re-hydrate.
+
+**Scope — all panels, not just `AdminPanel.ts`.** "Panel module" = any path in the plugin's `panelPaths` (default `['./app/Pilotiq/AdminPanel']`, overridable via `pilotiq({ panels: [...] })`). A single file may export multiple panels (the playground exports both `pilotiqAdmin` and `pilotiqSimple`), and panels may be split across files. The fix must be **panel-agnostic**: every panel module in `panelPaths` gets the soft reload, and every panel the provider registered stays registered (matched by name). The #78/#79 `refreshLivePanel` already loops `panelPaths` and re-registers exactly the boot-time set — keep that generality; do **not** special-case any one file.
 
 ---
 
@@ -14,7 +16,7 @@
 
 ## Why the full reload happens
 
-The generated `pages/(pilotiq)/_components.ts` does `import { pilotiqAdmin, … } from '<panel module>'` (component class refs for icons). So **`AdminPanel.ts` is in the client module graph**. Editing it invalidates `_components.ts` → `+Layout.tsx` → root with **no HMR accept boundary**, so Vite triggers a full page reload (re-download + re-eval of the client bundle + re-SSR + re-hydrate). That reload is the remaining slowness.
+The generated `pages/(pilotiq)/_components.ts` does `import { … } from '<each panel module>'` (component class refs for icons) — one import line per panel module in `panelPaths`. So **every panel module is in the client module graph**. Editing any of them invalidates `_components.ts` → `+Layout.tsx` → root with **no HMR accept boundary**, so Vite triggers a full page reload (re-download + re-eval of the client bundle + re-SSR + re-hydrate). That reload is the remaining slowness — and it's the same for every panel module, so the fix is naturally panel-agnostic if anchored at `_components.ts`.
 
 ## Target approach
 
@@ -43,12 +45,12 @@ Contrast: the #79 **watcher** path (no `handleHotUpdate`) gets fresh, because Vi
 
 How to get `ssrLoadModule` (or the Vite 7 module runner) to **re-execute the edited panel** while **also** suppressing the client full reload. Likely answers to probe:
 - The correct Vite 7 cache to evict is the **module runner's** evaluated-module cache, not just the module-graph node. Look at `devServer.environments.ssr` — its `moduleRunner` / `runner` and any `clearCache()` / `evaluatedModules` API. `ssrLoadModule` is deprecated in Vite 7; the live path may be `environments.ssr.runner.import()` / `moduleRunner.evaluatedModules`.
-- Alternative: **don't** suppress via `handleHotUpdate` `[]`. Instead let Vite's normal pipeline run (keeps SSR fresh, as #79 proves) and add a **client accept boundary** in the generated `_components.ts`: `import.meta.hot.accept('<panel specifier>', () => reload())`. Accepting the *specific dep* should stop the bubble at `_components` (no full reload) while Vite still invalidates normally. **Degrades gracefully** — if the accept doesn't fully catch it, Vite falls back to the full reload (= #79 behavior, still correct). This is the recommended first thing to try because the failure mode is "no worse than today," not "stale."
+- Alternative: **don't** suppress via `handleHotUpdate` `[]`. Instead let Vite's normal pipeline run (keeps SSR fresh, as #79 proves) and add **client accept boundaries** in the generated `_components.ts` — `import.meta.hot.accept('<panel specifier>', () => reload())` **for every panel module it imports from** (one accept per `panelPaths` entry, not just the first). Accepting the *specific dep* should stop the bubble at `_components` (no full reload) while Vite still invalidates normally. Because `_components.ts` is the single import site for all panel modules, anchoring here covers every registered panel for free. **Degrades gracefully** — if an accept doesn't fully catch it, Vite falls back to the full reload (= #79 behavior, still correct). Recommended first attempt: failure mode is "no worse than today," not "stale."
 
 ## Acceptance criteria
 
-- Edit `AdminPanel.ts` branding/layout/nav → panel updates in the browser **without a full reload** (verify in devtools Network: no document re-request; or a console marker that survives).
-- The updated value is **fresh, not stale** (the thing that killed the last attempt) — confirm both in the DOM and via curl.
+- Edit **any** registered panel module (branding/layout/nav) → panel updates in the browser **without a full reload** (verify in devtools Network: no document re-request; or a console marker that survives). Test with the playground's **two panels** (`pilotiqAdmin` at `/new-admin`, `pilotiqSimple` at `/simple`) and, ideally, a second panel **file** added to `pilotiq({ panels })` — the fast path must fire for each, not just the first/default.
+- The updated value is **fresh, not stale** (the thing that killed the last attempt) — confirm both in the DOM and via curl, for whichever panel was edited.
 - Active **theme** (incl. DB overrides) persists across the edit (already handled by #79's state carry-over; keep it).
 - Schema edits (resource/page files the panel imports) either take the same fast path or fall back to the (correct) full reload.
 - No regression for production build (`configureServer` / `handleHotUpdate` are dev-only).
