@@ -368,8 +368,8 @@ importers:
         specifier: ^1.12.0
         version: 1.12.0
       '@rudderjs/orm-prisma':
-        specifier: ^1.9.1
-        version: 1.9.1(@prisma/client@7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3))
+        specifier: ^2.0.1
+        version: 2.0.1(@prisma/client@7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3))
       '@rudderjs/router':
         specifier: ^1.6.0
         version: 1.6.0
@@ -1529,6 +1529,10 @@ packages:
     resolution: {integrity: sha512-mKCU/nU4rNFMnN8vERNGR42gFO9QqW+vE1vCNX9pQUMNFMbWHu4iDUrGdZ9qBDV3jn/k98z3uj+KSDGaRU6Ewg==}
     engines: {node: ^20.19.0 || >=22.12.0}
 
+  '@rudderjs/core@1.3.2':
+    resolution: {integrity: sha512-Bv+wqC8n9InhBtKD72d7AmQLZomiB52Pfc7k8aTJB37Fb7Ox69Qv94FA6YlvD5evWIvFovP6AdTXHsTq3AlJoQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+
   '@rudderjs/localization@1.0.2':
     resolution: {integrity: sha512-1Lh6clQHou8h4YhYZOAOAtEuWp7jGMr0I6oggqVBc5LYT2oKehmlusjBedISxAGD0JcId2sixtI2h7h988IK6w==}
 
@@ -1538,12 +1542,12 @@ packages:
   '@rudderjs/middleware@1.0.1':
     resolution: {integrity: sha512-ppwFelBXZ8pKgpBjjq2wrPIeyW+lAy1jXBZqzngCTFEgddhcaovBfirxIsF5/biF2HsZej5jXObqGtuubgKuug==}
 
-  '@rudderjs/orm-prisma@1.9.1':
-    resolution: {integrity: sha512-atG+MmStd8ml3wOHwKqYIqnCnAaJxFqfbwPTxKZZb5vv51/WEBd+VZe0kCfV2MpZso77OuDAy6jDIREqHH8Gtw==}
+  '@rudderjs/orm-prisma@2.0.1':
+    resolution: {integrity: sha512-vMTyPZXzuECjlUfVmBImW55LHiyPyT1OcKLY11jNHXPD3hQaRiYZYMpg4F1hfMtDn3sv6F9FvQABCEuq3vDM3A==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       '@prisma/client': ^7.0.0
-      '@rudderjs/ai': ^1.8.0
+      '@rudderjs/ai': ^1.8.3
     peerDependenciesMeta:
       '@prisma/client':
         optional: true
@@ -5070,6 +5074,15 @@ snapshots:
       reflect-metadata: 0.2.2
       zod: 4.4.3
 
+  '@rudderjs/core@1.3.2':
+    dependencies:
+      '@rudderjs/console': 1.1.0
+      '@rudderjs/contracts': 1.8.0
+      '@rudderjs/router': 1.7.0
+      '@rudderjs/support': 1.3.0
+      reflect-metadata: 0.2.2
+      zod: 4.4.3
+
   '@rudderjs/localization@1.0.2':
     dependencies:
       '@rudderjs/core': 1.3.1
@@ -5085,11 +5098,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@rudderjs/orm-prisma@1.9.1(@prisma/client@7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3))':
+  '@rudderjs/orm-prisma@2.0.1(@prisma/client@7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3))':
     dependencies:
       '@rudderjs/console': 1.1.0
       '@rudderjs/contracts': 1.8.0
-      '@rudderjs/core': 1.3.1
+      '@rudderjs/core': 1.3.2
       '@rudderjs/orm': 1.12.0
       '@rudderjs/support': 1.3.0
     optionalDependencies:
