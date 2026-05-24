@@ -9,7 +9,7 @@ import { registerIcons } from '@pilotiq/pilotiq/icons'
 import {
   Archive, AtSign, BookOpen, Check, CheckCircle2, Circle, FileText,
   Heading as HeadingIcon, IdCard, ImageIcon, Inbox, Info, Link,
-  MessageCircle, MoreHorizontal, Pilcrow, Pencil, Quote, Send, Star,
+  MessageCircle, MoreHorizontal, Palette, Pilcrow, Pencil, Quote, Send, Star,
   Sticker, TrendingUp, TriangleAlert, User, UserPlus, Users, XCircle,
 } from 'lucide-react'
 import { tiptap }      from '@pilotiq/tiptap'
@@ -62,6 +62,7 @@ registerIcons({
   'link':            Link,
   'message-circle':  MessageCircle,
   'more-horizontal': MoreHorizontal,
+  'palette':         Palette,         // theme-editor nav link
   'paragraph':       Pilcrow,
   'pencil':          Pencil,
   'quote':           Quote,
@@ -110,6 +111,18 @@ class SiteSettings extends Global {
 export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .path('/new-admin')
   .branding({ title: 'Pilotiq' })
+  // Pilotiq brand defaults. These are the panel's code-level theme, so they
+  // render by default AND are what the theme editor's "Reset to Defaults"
+  // snaps back to (it DELETEs DB overrides → server re-resolves to this).
+  .theme({
+    preset:     'vega',
+    baseColor:  'taupe',
+    themeColor: 'terracotta',
+    chartColor: 'terracotta',
+    radius:     'default',
+    spacing:    'default',
+    fonts:      { heading: 'Satoshi', body: 'Satoshi' },
+  })
   // Sidebar chrome: a floating rail that slides fully off-screen when
   // toggled (instead of the default inset card + icon rail). `side`
   // defaults to 'left'.

@@ -762,6 +762,20 @@ export async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<
     raw.push(item)
   }
 
+  // Theme editor — surfaced as a regular top-level nav link (not bespoke
+  // footer chrome) so it reads like any other page. Appended last so it
+  // sorts to the end of the ungrouped items. The route is mounted
+  // unconditionally when themeEditor is enabled, so there's no canAccess gate.
+  if (cfg.themeEditor) {
+    raw.push({
+      name:  '__theme',
+      label: 'Theme',
+      url:   `${base}/theme`,
+      icon:  'palette',
+      _idx:  idx++,
+    })
+  }
+
   await Promise.all(pushBadge.map(async ({ item, handler, owner }) => {
     try {
       const v = await pilotiq.resolveNavigationBadge(owner, user, async () => {

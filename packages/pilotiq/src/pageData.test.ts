@@ -26,6 +26,7 @@ import { TextInputColumn, ToggleColumn } from './columns/index.js'
 import { Pilotiq } from './Pilotiq.js'
 import { Resource } from './Resource.js'
 import { Global } from './Global.js'
+import { themeEditor } from './plugins/themeEditor.js'
 import { Page } from './Page.js'
 import { TextField } from './fields/TextField.js'
 import { SelectField } from './fields/SelectField.js'
@@ -490,6 +491,24 @@ describe('panelInfo — navigation tree (Plan #9)', () => {
     const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Drafty]))
     assert.equal(info.navigation[0]!.badge,      '3')
     assert.equal(info.navigation[0]!.badgeColor, 'warning')
+  })
+
+  it('appends a top-level "Theme" nav item when the theme editor is enabled', async () => {
+    class Articles extends Resource { static override label = 'Articles' }
+    const panel = Pilotiq.make('T').path('/admin').resources([Articles]).use(themeEditor())
+    const info  = await panelInfo(panel)
+    const theme = info.navigation.at(-1)!
+    assert.equal(theme.name,  '__theme')
+    assert.equal(theme.label, 'Theme')
+    assert.equal(theme.url,   '/admin/theme')
+    assert.equal(theme.icon,  'palette')
+    assert.equal(theme.group, undefined) // top-level, like any other page
+  })
+
+  it('omits the "Theme" nav item when the theme editor is not enabled', async () => {
+    class Articles extends Resource { static override label = 'Articles' }
+    const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Articles]))
+    assert.ok(!info.navigation.some(n => n.name === '__theme'))
   })
 })
 

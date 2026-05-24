@@ -211,16 +211,6 @@ export function SidebarLayout({ panel, basePath, currentPath, children, componen
               </SidebarMenuItem>
             </SidebarMenu>
           )}
-          {panel.themeEditor && (
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton render={<a href={`${basePath}/theme`} />} tooltip="Theme">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><path d="M17.5 10.5 19 12l-5.5 5.5"/><circle cx="8.5" cy="8.5" r="2.5"/><path d="M5 12 2.5 14.5 8 20l2.5-2.5"/><path d="m6 18 4-4"/></svg>
-                  <span>Theme</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          )}
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>

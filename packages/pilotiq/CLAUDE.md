@@ -242,7 +242,8 @@ Deep notes for many of these also live in `~/.claude/projects/-Users-sleman-Proj
 
 **themeEditor() plugin:**
 - `import { themeEditor } from '@pilotiq/pilotiq/plugins'` → `.use(themeEditor())`
-- Adds "Theme" nav link in sidebar footer / topbar
+- Adds a regular top-level "Theme" nav link (icon `'palette'`) — injected into the nav tree by `buildNavigation` when `cfg.themeEditor` is set, so it renders like any other page in both sidebar + topbar (not bespoke footer chrome). Appended last; no `canAccess` gate (the route is mounted unconditionally with the editor)
+- **Reset to Defaults** restores the panel's *code* `.theme()` config (passed to the page as `codeTheme`, distinct from the DB-merged `themeConfig`/`initialConfig`), then DELETEs the stored overrides so the server re-resolves to exactly `cfg.theme`. Falls back to `{}` (bare factory preset) when the panel declared no `.theme()`
 - ThemeSettingsPage: controls sidebar + live iframe preview (srcDoc, client-only via mounted guard)
 - API routes: GET/PUT/DELETE `{base}/api/_theme` persisted to `panelGlobal` table
 - `applyToParent()` updates `<style id="pilotiq-theme">` for instant visual feedback on save

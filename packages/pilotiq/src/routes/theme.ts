@@ -32,6 +32,9 @@ export function registerThemeRoutes(
       basePath:    base,
       layout:      cfg.layout,
       themeConfig: pilotiq.getMergedTheme() ?? {},
+      // Pure code-level defaults (the panel's `.theme()` config, sans DB
+      // overrides) — the editor's "Reset to Defaults" snaps back to these.
+      codeTheme:   cfg.theme ?? {},
     })
   })
 

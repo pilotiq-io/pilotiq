@@ -222,14 +222,6 @@ export function TopbarLayout({ panel, basePath, currentPath, children, component
                       />
                     )
                   })}
-                  {panel.themeEditor && (
-                    <a
-                      href={`${basePath}/theme`}
-                      className={cn(linkBase, currentPath === `${basePath}/theme` ? linkActive : linkIdle)}
-                    >
-                      Theme
-                    </a>
-                  )}
                 </nav>
             }
             <SearchTrigger />

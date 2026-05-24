@@ -112,11 +112,15 @@ function PreviewIframe({ config, mode }: { config: Partial<ThemeConfig>; mode: '
 interface ThemeSettingsPageProps {
   panelPath: string
   initialConfig?: Partial<ThemeConfig>
+  /** Pure code-level defaults (the panel's `.theme()` config, sans DB
+   *  overrides). "Reset to Defaults" restores these — falling back to an
+   *  empty config (the bare factory preset) when the panel declared no theme. */
+  codeTheme?: Partial<ThemeConfig>
   /** Called after save/reset to force Vike to re-fetch server data. Provided by generated page. */
   onNavigate?: (url: string) => Promise<void>
 }
 
-export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: ThemeSettingsPageProps) {
+export function ThemeSettingsPage({ panelPath, initialConfig, codeTheme, onNavigate }: ThemeSettingsPageProps) {
   const codeDefaults = initialConfig ?? {}
   const [config, setConfig] = useState<Partial<ThemeConfig>>({ ...codeDefaults })
   const [saving, setSaving] = useState(false)
@@ -166,12 +170,16 @@ export function ThemeSettingsPage({ panelPath, initialConfig, onNavigate }: Them
   }
 
   const handleReset = async () => {
-    // Snap state to truly empty (NOT `codeDefaults`, which is `initialConfig`
-    // = code .theme() defaults merged with whatever DB overrides existed at
-    // page-load time). With config = {}, the preview resolves the bare
-    // `vega` preset — i.e. the package's factory default.
-    setConfig({})
-    applyToParent({})
+    // Snap state back to the panel's PURE code defaults (its `.theme()`
+    // config), NOT to `codeDefaults`/`initialConfig` — that's the code
+    // defaults already merged with whatever DB overrides existed at
+    // page-load time. DELETEing the stored overrides makes the server
+    // re-resolve to exactly `cfg.theme`, so the editor state and the
+    // rendered panel stay in lockstep. Falls back to `{}` (bare factory
+    // preset) when the panel declared no `.theme()`.
+    const defaults = codeTheme ?? {}
+    setConfig({ ...defaults })
+    applyToParent(defaults)
     try {
       await fetch(`${panelPath}/api/_theme`, { method: 'DELETE' })
       await reNavigate()

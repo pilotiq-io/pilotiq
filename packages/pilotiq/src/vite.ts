@@ -503,8 +503,8 @@ const handleNavigate = (url: string) => navigate(url, { overwriteLastHistoryEntr
 
 export default function ThemeEditorPage() {
   const ctx = usePageContext() as unknown as { viewProps?: Record<string, unknown>; data?: Record<string, unknown> }
-  const { basePath, themeConfig } = (ctx.data ?? ctx.viewProps) as any ?? {}
-  return <ThemeSettingsPage panelPath={basePath} initialConfig={themeConfig} onNavigate={handleNavigate} />
+  const { basePath, themeConfig, codeTheme } = (ctx.data ?? ctx.viewProps) as any ?? {}
+  return <ThemeSettingsPage panelPath={basePath} initialConfig={themeConfig} codeTheme={codeTheme} onNavigate={handleNavigate} />
 }
 `)
 }
