@@ -3,6 +3,8 @@ import { CheckIcon, Columns3Icon, FilterIcon } from 'lucide-react'
 import type { ElementMeta } from '../../../schema/Element.js'
 import { Checkbox } from '../../ui/checkbox.js'
 import { Input } from '../../ui/input.js'
+import { buttonVariants } from '../../ui/button.js'
+import { cn } from '../../utils.js'
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover.js'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -126,7 +128,7 @@ export function FilterPopover({ filters, prefix, renderFormChild }: {
             {...props}
             type="button"
             aria-label="Filters"
-            className="relative inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            className={cn(buttonVariants({ variant: 'outline' }))}
           >
             <FilterIcon className="size-4" />
             <span>Filters</span>
@@ -197,7 +199,7 @@ export function FilterStripToggle({
       aria-label="Filters"
       aria-expanded={open}
       onClick={onToggle}
-      className="relative inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+      className={cn(buttonVariants({ variant: 'outline' }))}
     >
       <FilterIcon className="size-4" />
       <span>Filters</span>
@@ -302,7 +304,7 @@ export function TableGroupPicker({
   const value = active ?? ''
   return (
     <Select value={value} onValueChange={(v) => onChange(typeof v === 'string' ? v : '')}>
-      <SelectTrigger size="sm" className="h-9 w-44">
+      <SelectTrigger className="w-44">
         <SelectValue placeholder="Group by…" />
       </SelectTrigger>
       <SelectContent>
@@ -1157,7 +1159,7 @@ export function SortByPicker({
         onChange(col, dir as 'asc' | 'desc')
       }}
     >
-      <SelectTrigger size="sm" className="h-9 w-44">
+      <SelectTrigger className="w-44">
         <SelectValue placeholder="Sort by…" />
       </SelectTrigger>
       <SelectContent>

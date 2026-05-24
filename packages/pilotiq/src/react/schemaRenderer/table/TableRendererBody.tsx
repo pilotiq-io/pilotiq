@@ -470,7 +470,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
                     name={prefixK(queryPrefix, 'search')}
                     defaultValue={search ?? ''}
                     placeholder="Search…"
-                    className="h-9 w-64"
+                    className="h-8 w-64"
                   />
                   {/* Search submits via Enter natively. Hidden submit kept
                       for screen-reader form semantics. */}

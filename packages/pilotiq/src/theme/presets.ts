@@ -125,7 +125,7 @@ export const PRESET_RADIUS: Record<StylePreset, RadiusPreset> = {
  * Mira goes compact.
  */
 export const PRESET_SPACING: Record<StylePreset, SpacingPreset> = {
-  vega: 'comfortable',
+  vega: 'default',
   nova: 'compact',
   maia: 'comfortable',
   lyra: 'default',

@@ -148,7 +148,7 @@ describe('resolveTheme', () => {
     it('undefined spacing falls through to PRESET_SPACING[preset]', () => {
       const vega = resolveTheme({ preset: 'vega' })
       assert.equal(vega.spacing, spacingMap[PRESET_SPACING.vega])
-      assert.equal(vega.spacing, spacingMap.comfortable)
+      assert.equal(vega.spacing, spacingMap.default)
     })
 
     it('explicit spacing wins over preset default', () => {
