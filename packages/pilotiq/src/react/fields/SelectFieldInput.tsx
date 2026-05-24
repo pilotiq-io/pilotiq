@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog.js'
+import { Button } from '../ui/button.js'
 import {
   Select,
   SelectContent,
@@ -206,20 +207,17 @@ function CreateOptionTrigger({
     }
   }
 
-  const triggerClass = 'inline-flex items-center justify-center rounded-md border border-input bg-background h-9 w-9 shrink-0 hover:bg-accent hover:text-accent-foreground disabled:opacity-50'
-  const cancelClass  = 'inline-flex items-center justify-center rounded-md border border-input bg-background px-3 h-9 text-sm font-medium hover:bg-accent hover:text-accent-foreground'
-  const submitClass  = 'inline-flex items-center justify-center rounded-md bg-primary px-3 h-9 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50'
-
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="icon"
         aria-label={`Create ${fieldLabel}`}
         onClick={() => { reset(); setOpen(true) }}
-        className={triggerClass}
       >
         <PlusIcon className="size-4" />
-      </button>
+      </Button>
       <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); setOpen(o) }}>
         <DialogContent className="sm:max-w-lg">
           <form onSubmit={onSubmit}>
@@ -238,12 +236,12 @@ function CreateOptionTrigger({
               <p className="py-2 text-sm text-destructive">{serverError}</p>
             )}
             <DialogFooter>
-              <button type="button" onClick={() => setOpen(false)} className={cancelClass}>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
-              </button>
-              <button type="submit" disabled={submitting} className={submitClass}>
+              </Button>
+              <Button type="submit" disabled={submitting}>
                 {submitting ? 'Working…' : 'Create'}
-              </button>
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

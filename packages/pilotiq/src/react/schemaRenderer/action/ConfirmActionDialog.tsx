@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog.js'
+import { Button } from '../../ui/button.js'
 
 /**
  * Confirm-style dialog wrapping an action's button. The trigger button is
@@ -25,9 +26,11 @@ export function ConfirmActionDialog({
   onConfirm:   () => void
 }) {
   const [open, setOpen] = useState(false)
-  const confirmClass = destructive
-    ? 'inline-flex items-center justify-center rounded-md bg-destructive px-3 h-9 text-sm font-medium text-destructive-foreground hover:bg-destructive/90'
-    : 'inline-flex items-center justify-center rounded-md bg-primary px-3 h-9 text-sm font-medium text-primary-foreground hover:bg-primary/90'
+  // Modal confirm CTA stays SOLID red (stronger than pilotiq's soft
+  // `destructive` Button variant used for inline/row actions).
+  const confirmOverride = destructive
+    ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/30'
+    : ''
   return (
     <>
       {trigger(() => setOpen(true))}
@@ -38,21 +41,17 @@ export function ConfirmActionDialog({
             <DialogDescription>{message}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 h-9 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-            >
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={() => { setOpen(false); onConfirm() }}
-              className={confirmClass}
+              className={confirmOverride}
               autoFocus
             >
               {destructive ? 'Delete' : 'Confirm'}
-            </button>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
