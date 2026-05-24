@@ -1,5 +1,6 @@
 import { Element, type ElementMeta } from '../schema/Element.js'
 import type { RenderContext } from '../schema/resolveSchema.js'
+import { applyColumnFormat } from '../columnFormat.js'
 
 /**
  * Per-record formatter callback. Receives the resolved state value and the
@@ -266,6 +267,22 @@ export abstract class Entry extends Element {
         // posture of `Column.formatStateUsing` (errors don't crash the
         // page-data builder).
       }
+    }
+
+    // Built-in `format` (dateTime / since / money / numeric / limit) is
+    // applied here, server-side, and stamped into `_formatted` so the
+    // renderer paints the snapshot rather than re-running the locale-/
+    // clock-dependent formatter (which diverges between Node and the
+    // browser → hydration mismatch). Only the `text` entry consults
+    // `format` (mirrors `renderEntry`); `formatStateUsing` still wins.
+    if (
+      meta._formatted === undefined
+      && this._format !== undefined
+      && this.getEntryType() === 'text'
+      && value !== null && value !== undefined && value !== ''
+      && !Array.isArray(value)
+    ) {
+      meta._formatted = applyColumnFormat(value, this._format)
     }
 
     return meta

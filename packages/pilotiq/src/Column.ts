@@ -584,6 +584,11 @@ export class Column extends Element {
    *  numeric / limit`) is configured. Used by walkers that want to skip
    *  columns the user has already chosen formatting for. */
   hasFormat(): boolean { return this._format !== undefined }
+  /** The configured built-in `format` spec, if any. Lets the server-side
+   *  table dispatcher format the value into `_formatted` at resolve time
+   *  (deterministic) rather than re-running the locale-/clock-dependent
+   *  formatter on both server and client. */
+  getFormat(): ColumnFormat | undefined { return this._format }
   getRecordUrlHandler(): ColumnRecordUrlHandler | undefined {
     return typeof this._recordUrl === 'function' ? this._recordUrl : undefined
   }

@@ -4,6 +4,7 @@ import { TableGroup, bucketDateValue, formatDateBucketTitle } from './TableGroup
 import type { Filter } from '../filters/Filter.js'
 import { Action } from '../actions/Action.js'
 import { Column, type ColumnSelectOption } from '../Column.js'
+import { applyColumnFormat } from '../columnFormat.js'
 import { SelectColumn, normalizeSelectOptions, type SelectColumnOptionsResolver } from '../columns/SelectColumn.js'
 import { ListTab } from '../Tab.js'
 import { isRepeaterField } from '../fields/RepeaterField.js'
@@ -313,6 +314,25 @@ export async function loadTableRecords(
       const columnsWithFormatter = (table.getChildren() ?? [])
         .filter((c): c is Column => c instanceof Column && c.hasFormatter())
 
+      // Text columns carrying a built-in `format` spec (`dateTime / since
+      // / money / numeric / limit / words`). Formatting is computed here,
+      // server-side, and stamped into `row._formatted[col]` so the client
+      // renders the snapshot verbatim instead of re-running the locale-/
+      // timezone-/clock-dependent formatter — which diverged between the
+      // Node server and the browser and tripped React hydration. Gated to
+      // the `text` cell path (the only `formatCell` branch that consults
+      // `format`); `formatStateUsing` still wins (excluded via
+      // `!hasFormatter()`), as do editable + rich-text cells.
+      const columnsWithBuiltinFormat = (table.getChildren() ?? [])
+        .filter((c): c is Column =>
+          c instanceof Column
+          && c.hasFormat()
+          && !c.hasFormatter()
+          && c.getColumnType() === 'text'
+          && !c.isEditable()
+          && !c.isRichText(),
+        )
+
       // Plain-text columns that may carry Tiptap rich-text content.
       // Auto-rendered by the registered richtext renderer (Phase D —
       // wired by `registerTiptap()`). Conservative: only default-text
@@ -381,6 +401,7 @@ export async function loadTableRecords(
       const needsRowMutation =
         rowActionsWithRules.length > 0 ||
         columnsWithFormatter.length > 0 ||
+        columnsWithBuiltinFormat.length > 0 ||
         columnsWithRecordUrl.length > 0 ||
         recordUrlFn !== undefined ||
         recordClassesFn !== undefined ||
@@ -426,6 +447,22 @@ export async function loadTableRecords(
                 }
               }
               out['_formatted'] = formatted
+            }
+
+            if (columnsWithBuiltinFormat.length > 0) {
+              const formatted = (out['_formatted'] as Record<string, string> | undefined) ?? {}
+              for (const col of columnsWithBuiltinFormat) {
+                // formatStateUsing already won (disjoint by filter, but
+                // defensive). Skip blank / array values — `formatCell`
+                // routes those elsewhere (fallback / list rendering).
+                if (formatted[col.name] !== undefined) continue
+                const raw = recordObj[col.name]
+                if (raw === null || raw === undefined || raw === '' || Array.isArray(raw)) continue
+                const fmt = col.getFormat()
+                if (!fmt) continue
+                formatted[col.name] = applyColumnFormat(raw, fmt)
+              }
+              if (Object.keys(formatted).length > 0) out['_formatted'] = formatted
             }
 
             if (richTextColumns.length > 0) {

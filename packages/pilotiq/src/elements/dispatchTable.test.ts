@@ -224,6 +224,45 @@ describe('loadTableRecords', () => {
       assert.deepEqual(rows[1]!['_formatted'], { priority: '★ 9' })
     })
 
+    it('stamps built-in format (dateTime/numeric) into _formatted server-side', async () => {
+      // Deterministic server-side formatting avoids the locale/timezone
+      // hydration mismatch from re-running toLocaleString on the client.
+      const t = Table.make()
+        .columns([
+          Column.make('createdAt').dateTime(),
+          Column.make('price').money('USD', 'en-US'),
+          Column.make('plain'),
+        ])
+        .records(async () => [
+          { id: '1', createdAt: '2026-04-30T00:00:00.000Z', price: 12.5, plain: 'x' },
+        ])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      const formatted = rows[0]!['_formatted'] as Record<string, string>
+      // The date is formatted to a fixed string (the server's locale) —
+      // exact text varies by runtime, but it must be a stamped snapshot.
+      assert.equal(typeof formatted['createdAt'], 'string')
+      assert.ok(formatted['createdAt']!.includes('2026'))
+      assert.equal(formatted['price'], '$12.50')
+      // Columns without a format spec are not stamped.
+      assert.equal(formatted['plain'], undefined)
+    })
+
+    it('lets formatStateUsing win over a built-in format spec', async () => {
+      const t = Table.make()
+        .columns([
+          Column.make('createdAt').dateTime().formatStateUsing(() => 'CUSTOM'),
+        ])
+        .records(async () => [{ id: '1', createdAt: '2026-04-30T00:00:00.000Z' }])
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const rows = meta['rows'] as Array<Record<string, unknown>>
+      assert.equal((rows[0]!['_formatted'] as Record<string, string>)['createdAt'], 'CUSTOM')
+    })
+
     it('swallows errors thrown by a formatStateUsing handler', async () => {
       const t = Table.make()
         .columns([
