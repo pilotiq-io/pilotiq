@@ -17,8 +17,10 @@ const prisma = (): any => app().make('prisma')
 export const ArticlesTable = {
   configure(table: Table): Table {
     return table
-      .heading('Articles')
-      .description('Manage published content, drafts, and archived posts.')
+      // No table .heading()/.description() here — the page header (set in
+      // ListArticles.getHeader) already shows "Articles" + subheading.
+      // Repeating the resource name on the table reads as a duplicate title
+      // (Filament shows the title once, in the page header).
       .striped()
       .emptyState({
         heading:     'No articles yet',

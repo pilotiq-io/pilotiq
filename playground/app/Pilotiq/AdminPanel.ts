@@ -111,6 +111,11 @@ class SiteSettings extends Global {
 export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .path('/new-admin')
   .branding({ title: 'Pilotiq' })
+  // App locale for built-in dateTime/money/numeric formatting. Keep in sync
+  // with config/localization.ts (APP_LOCALE). A literal — not Env.get() —
+  // because this panel module is also bundled for the client, and reading
+  // server env here would pull server-only code into the browser.
+  .locale('en')
   // Pilotiq brand defaults. These are the panel's code-level theme, so they
   // render by default AND are what the theme editor's "Reset to Defaults"
   // snaps back to (it DELETEs DB overrides → server re-resolves to this).

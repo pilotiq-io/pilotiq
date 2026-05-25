@@ -1,4 +1,4 @@
-import { ListPage, Action, ListTab } from '@pilotiq/pilotiq'
+import { ListPage, Action, ListTab, Heading } from '@pilotiq/pilotiq'
 import { app } from '@rudderjs/core'
 import { ArticleResource } from '../ArticleResource.js'
 
@@ -6,6 +6,17 @@ const prisma = (): any => app().make('prisma')
 
 export class ListArticles extends ListPage {
   static override getResource() { return ArticleResource }
+
+  // Page header: the single page title + a subheading (Filament-style).
+  // The table no longer carries its own heading, so this is the only
+  // "Articles" title on the page.
+  static override getHeader(R: typeof ArticleResource) {
+    return [
+      Heading.make(R.label)
+        .level(1)
+        .description('Manage published content, drafts, and archived posts.'),
+    ]
+  }
 
   // Filament-style explicit row + header actions. Pilotiq's defaults
   // for these are `[]` — opt in here so the table shows New / Edit / Delete.
