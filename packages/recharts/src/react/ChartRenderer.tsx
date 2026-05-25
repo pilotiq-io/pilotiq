@@ -63,6 +63,7 @@ export function ChartRenderer({ meta }: WidgetRendererProps) {
   const color = (m.color ?? 'default') as ChartColor
   const maxHeight = typeof m.maxHeight === 'number' ? m.maxHeight : 320
   const label = m.label
+  const description = m.description
   const filters = m.filters
   const defaultFilter = m.defaultFilter
 
@@ -76,9 +77,14 @@ export function ChartRenderer({ meta }: WidgetRendererProps) {
 
   return (
     <div className={`rounded-xl border bg-card p-5 shadow-sm ${CARD_BORDER[color]}`}>
-      {(label || filters) && (
+      {(label || description || filters) && (
         <div className="mb-3 flex items-start justify-between gap-3">
-          {label && <h3 className="text-sm font-semibold text-foreground">{label}</h3>}
+          {(label || description) && (
+            <div className="space-y-0.5">
+              {label && <h3 className="text-sm font-semibold text-foreground">{label}</h3>}
+              {description && <p className="text-xs text-muted-foreground">{description}</p>}
+            </div>
+          )}
           {filters && (
             <>
               {/* Desktop: segmented toggle (shadcn ToggleGroup style). */}

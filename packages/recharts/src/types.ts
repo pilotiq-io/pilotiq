@@ -57,6 +57,7 @@ export interface ChartMeta extends ElementMeta {
   type:           'chart'
   chartType:      ChartType
   label?:         string
+  description?:   string
   color?:         ChartColor
   maxHeight?:     number
   options?:       Record<string, unknown>

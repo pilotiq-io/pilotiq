@@ -16,8 +16,9 @@ function prisma(): any {
  * re-fetch through the same `_widget/:id` polling endpoint.
  */
 export class PostsChart extends Chart {
-  static override label   = 'Posts per day'
-  static override type    = 'line' as const
+  static override label       = 'Posts per day'
+  static override description = 'New posts grouped by day in the selected window.'
+  static override type        = 'line' as const
   // No explicit color — defaults to the theme chart palette (--chart-1)
   // so the chart tracks the theme editor's "Chart Color" setting.
   static override maxHeight = 280

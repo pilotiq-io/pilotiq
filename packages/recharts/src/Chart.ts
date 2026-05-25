@@ -57,6 +57,8 @@ export class Chart extends ServerDataElement {
    *  `'line'` when neither is set. */
   static type?:        ChartType
   static label?:       string
+  /** Muted subtitle rendered under the chart title (shadcn `CardDescription`). */
+  static description?: string
   static color?:       ChartColor
   static maxHeight?:   number
   /** Pass-through Recharts props the renderer spreads onto the chart's
@@ -72,6 +74,7 @@ export class Chart extends ServerDataElement {
   // ─── Instance state (fluent overrides) ─────────────────────
   private _type?:          ChartType
   private _label?:         string
+  private _description?:   string
   private _color?:         ChartColor
   private _maxHeight?:     number
   private _options?:       Record<string, unknown>
@@ -101,6 +104,12 @@ export class Chart extends ServerDataElement {
 
   label(text: string): this {
     this._label = text
+    return this
+  }
+
+  /** Muted subtitle under the title — e.g. "Total for the last 3 months". */
+  description(text: string): this {
+    this._description = text
     return this
   }
 
@@ -162,6 +171,12 @@ export class Chart extends ServerDataElement {
     return ctor.label
   }
 
+  getDescription(): string | undefined {
+    if (this._description !== undefined) return this._description
+    const ctor = this.constructor as { description?: string }
+    return ctor.description
+  }
+
   getColor(): ChartColor | undefined {
     if (this._color !== undefined) return this._color
     const ctor = this.constructor as { color?: ChartColor }
@@ -199,6 +214,8 @@ export class Chart extends ServerDataElement {
     }
     const label = this.getLabel()
     if (label !== undefined) meta['label'] = label
+    const description = this.getDescription()
+    if (description !== undefined) meta['description'] = description
     const color = this.getColor()
     if (color !== undefined) meta['color'] = color
     const maxHeight = this.getMaxHeight()
