@@ -181,6 +181,11 @@ export default defineConfig({
       'codemirror',
       // y-codemirror.next bridges the CodeEditor field to the collab Y.Doc.
       'y-codemirror.next',
+      // @dnd-kit powers smooth row reordering in pilotiq's table renderer.
+      '@dnd-kit/core',
+      '@dnd-kit/sortable',
+      '@dnd-kit/modifiers',
+      '@dnd-kit/utilities',
     ],
     exclude: [
       // Keep as workspace-link runtime imports so a single instance is shared
