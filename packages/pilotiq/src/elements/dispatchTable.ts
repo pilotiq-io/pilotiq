@@ -183,7 +183,16 @@ export function findTables(elements: ReadonlyArray<Element>): Table[] {
   const tables: Table[] = []
   const walk = (els: ReadonlyArray<Element>): void => {
     for (const el of els) {
-      if (el instanceof Table) tables.push(el)
+      // Structural `getType() === 'table'` rather than `instanceof Table`:
+      // a dev HMR re-boot re-imports the schema modules, so the page's
+      // `Table` element can be an instance of a *different* `Table` class
+      // identity than the one this module closed over — `instanceof` then
+      // returns false, `findTables` returns `[]`, and `loadTableRecords`
+      // early-returns (no `paginate` issued) → the resource table renders
+      // its empty-state and stays wedged until a full server restart.
+      // Mirrors `findForms` / `findActions` (see
+      // feedback_vite_ssr_module_dup_instanceof).
+      if (el.getType() === 'table') tables.push(el as Table)
       // Plan #14 — Tables inside Repeater / Builder rows aren't
       // supported in v1. Stop at the array-row boundary so the parent
       // table dispatcher doesn't pick them up.

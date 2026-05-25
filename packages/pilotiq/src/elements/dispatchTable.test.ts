@@ -71,6 +71,23 @@ describe('findTables', () => {
     assert.equal(found[1], outer)
     assert.equal(found[2], inner)
   })
+
+  it('finds a table-typed element of a FOREIGN class identity (dev HMR module-dup)', () => {
+    // A dev re-boot re-imports the schema modules, so the page's Table can be
+    // an instance of a different `Table` class than this module's. `findTables`
+    // must match structurally (`getType() === 'table'`), not via `instanceof`,
+    // or `loadTableRecords` early-returns and the resource table wedges empty.
+    // Mirror that with a stand-in that is NOT `instanceof Table`.
+    class ForeignTable {
+      getType() { return 'table' }
+      getChildren() { return [] as never[] }
+    }
+    const foreign = new ForeignTable() as unknown as Table
+    assert.equal(foreign instanceof Table, false)
+    const found = findTables([foreign])
+    assert.equal(found.length, 1)
+    assert.equal(found[0], foreign)
+  })
 })
 
 describe('loadTableRecords', () => {
