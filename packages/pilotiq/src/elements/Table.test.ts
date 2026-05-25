@@ -331,9 +331,10 @@ describe('Table Element', () => {
       assert.equal(t.toMeta().contentLayout, 'cards')
     })
 
-    it('toMeta() throws when cards layout is set without a cardSchema', () => {
+    it('toMeta() does NOT require a cardSchema — cards mode renders an auto-card', () => {
       const t = Table.make().cards()
-      assert.throws(() => t.toMeta(), /cardSchema/)
+      assert.doesNotThrow(() => t.toMeta())
+      assert.equal(t.toMeta().contentLayout, 'cards')
     })
 
     it('cardsPerRow stamps onto meta and clamps to [1, 12]', () => {
@@ -359,22 +360,26 @@ describe('Table Element', () => {
       assert.equal(t.toMeta().contentLayout, undefined)
     })
 
-    it('cardSchema receiver gets the record and ctx', async () => {
+    it('cardSchema receiver gets (record, auto, ctx)', () => {
       type Row = { id: number; title: string }
-      const seen: Array<{ row: Row; hasCtx: boolean }> = []
+      const seen: Array<{ row: Row; autoLen: number; hasCtx: boolean }> = []
       const t = Table.make<Row>()
         .cards()
         .columns([Column.make('title')])
         .records(() => [{ id: 1, title: 'A' }, { id: 2, title: 'B' }])
-        .cardSchema((row, ctx) => {
-          seen.push({ row, hasCtx: typeof ctx === 'object' })
-          return []
+        .cardSchema((row, auto, ctx) => {
+          seen.push({ row, autoLen: auto.length, hasCtx: typeof ctx === 'object' })
+          return auto
         })
-      // resolveSchema doesn't run records or per-row stamping — that's
-      // the dispatcher's job. Just confirm the handler is wired.
-      assert.equal(t.getCardSchema()?.({ id: 1, title: 'A' }, {}) instanceof Promise === false, true)
+      // resolveSchema doesn't run records or per-row stamping — that's the
+      // dispatcher's job. Confirm the handler is wired and receives the
+      // auto-built elements as the second arg + the ctx as the third.
+      const fakeAuto = [{}, {}] as never
+      t.getCardSchema()?.({ id: 1, title: 'A' }, fakeAuto, {} as never)
       assert.equal(seen.length, 1)
       assert.equal(seen[0]!.row.id, 1)
+      assert.equal(seen[0]!.autoLen, 2)
+      assert.equal(seen[0]!.hasCtx, true)
     })
 
     it('survives resolveSchema as a regular Element', async () => {

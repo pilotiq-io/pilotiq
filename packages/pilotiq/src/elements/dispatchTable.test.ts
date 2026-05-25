@@ -1485,7 +1485,7 @@ describe('Table.queryStringIdentifier', () => {
 })
 
 describe('loadTableRecords — cards layout per-row schema', () => {
-  it('stamps `_cardChildren` per row resolved from cardSchema(record, ctx)', async () => {
+  it('stamps `_cardChildren` per row resolved from cardSchema(record, auto, ctx)', async () => {
     type Row = { id: number; title: string; subtitle: string }
     let receivedSearch: string | undefined
     const t = Table.make<Row>()
@@ -1495,7 +1495,7 @@ describe('loadTableRecords — cards layout per-row schema', () => {
         { id: 1, title: 'First',  subtitle: 'A subtitle' },
         { id: 2, title: 'Second', subtitle: 'Another'    },
       ])
-      .cardSchema((row, ctx) => {
+      .cardSchema((row, _auto, ctx) => {
         receivedSearch = ctx.search
         return [
           Heading.make(row.title).level(3),
@@ -1516,6 +1516,40 @@ describe('loadTableRecords — cards layout per-row schema', () => {
 
     const secondChildren = rows[1]!['_cardChildren'] as Array<Record<string, unknown>>
     assert.equal(secondChildren[0]!['content'], 'Second')
+  })
+
+  it('builds an auto-card on `_cardChildren` when cards mode has no cardSchema', async () => {
+    type Row = { id: number; title: string; status: string }
+    const t = Table.make<Row>()
+      .cards()
+      .columns([Column.make('title'), Column.make('status').label('Status')])
+      .records(() => [{ id: 1, title: 'First', status: 'Live' }])
+
+    await loadTableRecords([t], {}, undefined, undefined, { recordTitleAttribute: 'title' })
+
+    const rows = t.getRows() as Array<Record<string, unknown>>
+    const children = rows[0]!['_cardChildren'] as Array<Record<string, unknown>>
+    assert.equal(children[0]!['type'], 'heading')
+    assert.equal(children[0]!['content'], 'First')           // title column, not repeated
+    const line = children.find(c => c['type'] === 'text')
+    assert.equal(line!['content'], 'Status · Live')
+  })
+
+  it('passes the auto-built elements to cardSchema so it can extend them', async () => {
+    type Row = { id: number; title: string }
+    const t = Table.make<Row>()
+      .cards()
+      .columns([Column.make('title')])
+      .records(() => [{ id: 1, title: 'First' }])
+      .cardSchema((_row, auto) => [...auto, Text.make('extra line')])
+
+    await loadTableRecords([t], {}, undefined, undefined, { recordTitleAttribute: 'title' })
+
+    const rows = t.getRows() as Array<Record<string, unknown>>
+    const children = rows[0]!['_cardChildren'] as Array<Record<string, unknown>>
+    assert.equal(children[0]!['type'], 'heading')            // auto title kept
+    assert.equal(children.at(-1)!['type'], 'text')           // appended extra
+    assert.equal(children.at(-1)!['content'], 'extra line')
   })
 
   it('does NOT stamp `_cardChildren` when contentLayout is the default "table"', async () => {

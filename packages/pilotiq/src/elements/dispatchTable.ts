@@ -11,6 +11,7 @@ import { isRepeaterField } from '../fields/RepeaterField.js'
 import { isBuilderField } from '../fields/BuilderField.js'
 import { tryRenderRichText, getRichTextRenderer } from '../richtext/registry.js'
 import { resolveSchema, type RenderContext } from '../schema/resolveSchema.js'
+import { buildAutoCard, type AutoCardAttrs } from './autoCard.js'
 import { sanitizeHtml } from '../schema/sanitize.js'
 import { marked } from 'marked'
 import type { SummaryResult } from '../summarizers/Summarizer.js'
@@ -68,6 +69,12 @@ export interface LoadTableHooks {
    *  `numeric` cell formatting. Stamped server-side into `row._formatted`
    *  so it's deterministic across server/client (no hydration mismatch). */
   locale?: string
+  /** Record-identity attributes (from the owning `Resource`) the auto-card
+   *  builder uses for the title / image / description when a table is in
+   *  cards mode without an explicit `cardSchema`. All optional. */
+  recordTitleAttribute?:       string
+  recordImageAttribute?:       string
+  recordDescriptionAttribute?: string
 }
 
 export function parseFilterValues(
@@ -409,7 +416,21 @@ export async function loadTableRecords(
 
       const recordUrlFn     = table.getRecordUrl()
       const recordClassesFn = table.getRecordClasses()
-      const cardSchemaFn    = table.isCardsLayout() ? table.getCardSchema() : undefined
+      // Card content is stamped per-row when the table is in cards mode.
+      // Without a `cardSchema`, the card is built automatically from the
+      // columns + the resource's record-identity attributes; with one, the
+      // schema receives the auto-built elements so it can extend or replace.
+      const cardsActive     = table.isCardsLayout()
+      const cardSchemaFn    = cardsActive ? table.getCardSchema() : undefined
+      const cardColumns     = cardsActive ? table.getColumns() : []
+      const firstImageCol   = cardsActive
+        ? cardColumns.find(c => c.getColumnType() === 'image')?.name
+        : undefined
+      const cardAttrs: AutoCardAttrs = {
+        ...(hooks?.recordTitleAttribute       !== undefined ? { recordTitleAttribute:       hooks.recordTitleAttribute }       : {}),
+        ...(hooks?.recordImageAttribute       !== undefined ? { recordImageAttribute:       hooks.recordImageAttribute }       : {}),
+        ...(hooks?.recordDescriptionAttribute !== undefined ? { recordDescriptionAttribute: hooks.recordDescriptionAttribute } : {}),
+      }
       // `activeGroupCol` + `activeGroup` are reconciled at the top of
       // the table-async callback. Stamp the drilled key back onto the
       // table here so `toMeta()` emits `activeGroupKey` alongside the
@@ -435,7 +456,7 @@ export async function loadTableRecords(
         canEditEditableColumns ||
         richTextColumns.length > 0 ||
         explicitRichTextColumns.length > 0 ||
-        cardSchemaFn !== undefined
+        cardsActive
 
       const rows = !needsRowMutation
         ? rawRows
@@ -609,9 +630,16 @@ export async function loadTableRecords(
               out['_columnRecordUrls'] = colUrls
             }
 
-            if (cardSchemaFn !== undefined) {
+            if (cardsActive) {
               try {
-                const elements = await cardSchemaFn(row, finalCtx)
+                const formattedRow = out['_formatted'] as Record<string, string> | undefined
+                const auto = buildAutoCard(recordObj, cardColumns, formattedRow, cardAttrs, firstImageCol)
+                // No `cardSchema` → auto-card. With one, it receives the
+                // auto-built elements (extend) + the table context; a
+                // single-arg schema ignores both and fully replaces.
+                const elements = cardSchemaFn !== undefined
+                  ? await cardSchemaFn(row, auto, finalCtx)
+                  : auto
                 const cardCtx: RenderContext = {
                   mode:   'table',
                   record: row,
@@ -622,7 +650,7 @@ export async function loadTableRecords(
                 const children = await resolveSchema(elements, cardCtx)
                 out['_cardChildren'] = children as ElementMeta[]
               } catch (err) {
-                console.warn(`[pilotiq] cardSchema() threw for row in Table:`, err)
+                console.warn(`[pilotiq] auto-card / cardSchema() threw for row in Table:`, err)
                 out['_cardChildren'] = [] as ElementMeta[]
               }
             }

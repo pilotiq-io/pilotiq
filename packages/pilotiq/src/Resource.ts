@@ -157,6 +157,17 @@ export abstract class Resource {
    * is `recordTitleAttribute` → `'name'` → `'title'` → `'id'`. */
   static recordTitleAttribute: string | undefined = undefined
 
+  /** Attribute holding a record's representative image URL (avatar /
+   * thumbnail). Consumed by the responsive auto-card (table → card on
+   * mobile); when unset the auto-card falls back to the first `ImageColumn`
+   * in the table, if any. Reusable wherever a record needs a thumbnail. */
+  static recordImageAttribute: string | undefined = undefined
+
+  /** Attribute holding a record's short description / subtitle. Rendered as
+   * a muted line under the title in the responsive auto-card; omitted when
+   * unset. */
+  static recordDescriptionAttribute: string | undefined = undefined
+
   /**
    * Optional ORM model. When set, `defaultPages` auto-fills `Form.save`,
    * `Form.loadRecord`, `Table.records`, and `Resource.deleteRecord` so

@@ -103,10 +103,20 @@ export type RecordUrlHandler<R = unknown> = (record: R) => string | undefined
 export type RecordClassesHandler<R = unknown> = (record: R) => string | undefined
 
 /**
- * Per-row card content function. Receives the record + the current
- * `TableContext` and returns an `Element[]` rendered inside a card in
- * `contentLayout('cards')` mode. Resolved via `resolveSchema` per-row in
- * `loadTableRecords`; the result is stamped onto `row._cardChildren`.
+ * Per-row card content function for `contentLayout('cards')` (and the
+ * responsive `stackOnMobile` fallback). Returns an `Element[]` rendered
+ * inside the card; resolved via `resolveSchema` per-row in
+ * `loadTableRecords` and stamped onto `row._cardChildren`.
+ *
+ * Receives `(record, auto, ctx)`:
+ * - `record` — the row.
+ * - `auto` — the elements pilotiq built automatically from the columns +
+ *   the resource's record-identity attributes (title / image / description
+ *   + `Label · value` lines). Return `[...auto, extra]` to **extend** the
+ *   default card; ignore it (single-arg handler) to **replace** it.
+ * - `ctx` — the current `TableContext`.
+ *
+ * Omitting `cardSchema` entirely renders `auto` as-is.
  *
  * Typical content: `Image`, `Heading`, `Text`, `Icon`, `Badge`-style
  * `Entry` primitives, plus layout primitives like `Group / Split / Grid`.
@@ -115,6 +125,7 @@ export type RecordClassesHandler<R = unknown> = (record: R) => string | undefine
  */
 export type CardSchemaHandler<R = unknown> = (
   record: R,
+  auto:   Element[],
   ctx:    TableContext<R>,
 ) => Element[] | Promise<Element[]>
 
@@ -655,10 +666,13 @@ export class Table<R = unknown, Q = unknown> extends Element {
   cards(): this { return this.contentLayout('cards') }
 
   /**
-   * Per-row card content. Returns an `Element[]` rendered inside a card
-   * for the given record + ctx. Resolved server-side per row in
-   * `loadTableRecords` and stamped on `row._cardChildren`. Required when
-   * `contentLayout === 'cards'`; `toMeta()` throws otherwise.
+   * Per-row card content. Returns an `Element[]` rendered inside a card,
+   * resolved server-side per row in `loadTableRecords` and stamped on
+   * `row._cardChildren`. **Optional** — without it, cards mode renders an
+   * auto-card built from the columns + the resource's record-identity
+   * attributes. The handler receives `(record, auto, ctx)`: return
+   * `[...auto, extra]` to extend that default, or ignore `auto` to replace
+   * it entirely.
    *
    * Display-only — `Form / Field / Filter / Action` inside the card
    * schema is unsupported in v1. Reuse `Heading`, `Text`, `Image`, `Icon`,
@@ -779,12 +793,9 @@ export class Table<R = unknown, Q = unknown> extends Element {
 
   override toMeta(): TableMeta {
     const searchable = this.getColumns().some(c => c.isSearchable())
-    if (this._contentLayout === 'cards' && this._cardSchema === undefined) {
-      throw new Error(
-        'Table.contentLayout("cards") requires .cardSchema((record, ctx) => Element[]). ' +
-        'Cards mode renders each row from a per-row schema; configure one before rendering.',
-      )
-    }
+    // Cards mode no longer requires a `cardSchema` — without one, each row
+    // renders an auto-card built from the columns + record-identity
+    // attributes (see `buildAutoCard`). A `cardSchema` extends or replaces it.
     const cardsPerRow = this._cardsPerRow !== undefined
       ? clampCardsPerRow(this._cardsPerRow)
       : undefined

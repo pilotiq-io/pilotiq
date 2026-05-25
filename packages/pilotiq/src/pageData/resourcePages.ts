@@ -86,6 +86,9 @@ async function prepareResourceTable(
   await loadTableRecords(elements, query, indexUrl, user, {
     canEdit: (u, record) => R.canEdit(u, record),
     ...(locale !== undefined ? { locale } : {}),
+    ...(R.recordTitleAttribute       !== undefined ? { recordTitleAttribute:       R.recordTitleAttribute }       : {}),
+    ...(R.recordImageAttribute       !== undefined ? { recordImageAttribute:       R.recordImageAttribute }       : {}),
+    ...(R.recordDescriptionAttribute !== undefined ? { recordDescriptionAttribute: R.recordDescriptionAttribute } : {}),
   })
   tagTableReorderUrls(elements, `${indexUrl}/_reorder`)
   tagCellEditUrls(elements, indexUrl)
