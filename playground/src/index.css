@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @source "../../packages/pilotiq/src";
 @source "../../packages/tiptap/src";
+@source "../../packages/recharts/src";
+@source "../../packages/codemirror/src";
 @import "tw-animate-css";
 @import "@pilotiq/pilotiq/styles/file-upload.css";
 @plugin "@tailwindcss/typography";

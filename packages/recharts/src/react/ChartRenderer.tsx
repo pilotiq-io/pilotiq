@@ -80,11 +80,13 @@ export function ChartRenderer({ meta }: WidgetRendererProps) {
         <div className="mb-3 flex items-start justify-between gap-3">
           {label && <h3 className="text-sm font-semibold text-foreground">{label}</h3>}
           {filters && (
-            <ChartFilterDropdown
-              filters={filters}
-              active={activeFilter}
-              onChange={onFilterChange}
-            />
+            <>
+              {/* Desktop: segmented toggle (shadcn ToggleGroup style). */}
+              <ChartFilterToggle filters={filters} active={activeFilter} onChange={onFilterChange} />
+              {/* Mobile: compact select — the toggle needs width the narrow
+                  card doesn't have. */}
+              <ChartFilterDropdown filters={filters} active={activeFilter} onChange={onFilterChange} />
+            </>
           )}
         </div>
       )}
@@ -327,18 +329,56 @@ interface ChartFilterDropdownProps {
   onChange: (value: string) => void
 }
 
+// Mobile control — a compact select shown below `md`. The segmented
+// toggle takes more horizontal room than a narrow card / phone has.
 function ChartFilterDropdown({ filters, active, onChange }: ChartFilterDropdownProps) {
   const entries = Object.entries(filters)
   return (
     <select
-      value={active ?? ''}
+      value={active ?? entries[0]?.[0] ?? ''}
       onChange={(e) => onChange(e.target.value)}
-      className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+      aria-label="Time range"
+      className="md:hidden h-8 rounded-md border border-border bg-background px-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
     >
       {entries.map(([key, label]) => (
         <option key={key} value={key}>{label}</option>
       ))}
     </select>
+  )
+}
+
+// Desktop control — a segmented toggle (shadcn ToggleGroup `outline` look):
+// a bordered track with the active window highlighted. Hidden below `md`,
+// where the select takes over.
+function ChartFilterToggle({ filters, active, onChange }: ChartFilterDropdownProps) {
+  const entries = Object.entries(filters)
+  const current = active ?? entries[0]?.[0]
+  return (
+    <div
+      role="group"
+      aria-label="Time range"
+      className="hidden md:inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5"
+    >
+      {entries.map(([key, label]) => {
+        const isActive = current === key
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onChange(key)}
+            aria-pressed={isActive}
+            className={[
+              'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+              isActive
+                ? 'bg-muted text-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+            ].join(' ')}
+          >
+            {label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
