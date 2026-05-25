@@ -46,6 +46,36 @@ export interface TableBodyDeps {
   renderFormChild:  (child: ElementMeta, index: number, values: Record<string, unknown>, errors: Record<string, string[]>) => React.ReactNode
 }
 
+/**
+ * Column-header sort indicator (lucide `arrow-up-down`). The up arrow (left
+ * half) and down arrow (right half) are independently colored: the half
+ * matching the active sort direction is `text-foreground`, the rest stays
+ * muted. With no active sort both halves are muted (and lift slightly on
+ * header hover to hint they're clickable).
+ */
+function SortIcon({ direction }: { direction: 'asc' | 'desc' | undefined }) {
+  const up   = direction === 'asc'  ? 'text-foreground' : 'text-muted-foreground/40 group-hover:text-muted-foreground/70'
+  const down = direction === 'desc' ? 'text-foreground' : 'text-muted-foreground/40 group-hover:text-muted-foreground/70'
+  return (
+    <svg
+      width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+      className="shrink-0 transition-colors" aria-hidden="true"
+    >
+      {/* up arrow (left) — highlighted when sorted ascending */}
+      <g className={up}>
+        <path d="m3 8 4-4 4 4" />
+        <path d="M7 4v16" />
+      </g>
+      {/* down arrow (right) — highlighted when sorted descending */}
+      <g className={down}>
+        <path d="m21 16-4 4-4-4" />
+        <path d="M17 20V4" />
+      </g>
+    </svg>
+  )
+}
+
 
 export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBodyDeps }) {
   const { renderElement, renderActionLike, renderFormChild } = deps
@@ -647,11 +677,9 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
                 const href = buildTableQuery(state, { sort: next, page: 1 }, currentPath, activeFilters, queryPrefix)
                 return (
                   <TableHead key={i} className="text-xs uppercase tracking-wider">
-                    <a href={href} className="inline-flex items-center gap-1 hover:text-foreground">
+                    <a href={href} className="group inline-flex items-center gap-1.5 hover:text-foreground">
                       {label}
-                      <span className="text-muted-foreground/70">
-                        {isActive ? (currentSort!.direction === 'asc' ? '↑' : '↓') : '↕'}
-                      </span>
+                      <SortIcon direction={isActive ? currentSort!.direction : undefined} />
                     </a>
                   </TableHead>
                 )
