@@ -50,14 +50,17 @@ export class ArticleResource extends Resource {
   // ── Default query scope ───────────────────────────────────
   // `Resource.query(ctx)` is the hook list pages, global search, and
   // per-record loads (view / edit / policy lookups) all route through.
-  // Override to install always-on filters, eager-load defaults, or
-  // tenant scopes. Returning `super.query(ctx).where(...)` composes on
-  // top of whatever the parent class returned.
+  // Override to install always-on filters, eager-load defaults, or tenant
+  // scopes, e.g. `return super.query(ctx).where('tenantId', ctx?.user?.tenantId)`.
   //
-  // This demo orders by `createdAt DESC` so newest articles surface
-  // first by default; column-header sorts still override per-request.
+  // Do NOT add `.orderBy()` here for a "default sort". A query-scope order is
+  // applied as the PRIMARY sort on every request, so a column-header click
+  // only appends a secondary tiebreaker — the header sort then appears to do
+  // nothing. Default ordering that should YIELD to column sorts belongs on the
+  // table via `.defaultSort('createdAt', 'desc')` (see ArticlesTable), which
+  // pilotiq applies only when the request carries no explicit `?sort=`.
   static override query(ctx?: QueryContext): ModelQuery {
-    return super.query(ctx).orderBy('createdAt', 'DESC')
+    return super.query(ctx)
   }
 
   static override form(form: Form): Form {
