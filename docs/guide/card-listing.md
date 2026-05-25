@@ -11,6 +11,11 @@ in cards mode; only the row-level *rendering* swaps. The top bar gains a
 "Sort by" dropdown since column headers (the usual sort affordance) are
 hidden.
 
+Want a table on desktop that only becomes cards on small screens? Reach
+for [`Table.stackOnMobile()`](#tablestackonmobilebreakpoint--md) instead of
+`cards()` — same card content, but the classic table stays put on wide
+viewports.
+
 ## Quick example
 
 ```ts
@@ -57,15 +62,85 @@ t.contentLayout('cards')   // explicit
 t.contentLayout('table')   // back to default
 ```
 
-### `Table.cardSchema((record, ctx) => Element[])`
+### `Table.cardSchema((record, auto, ctx) => Element[])`
 
-Required when cards mode is on — `toMeta()` throws otherwise. Receives
-the row record plus the active `TableContext` (search / sort / filters /
-user). Returns a tree of display elements rendered inside each card.
+**Optional.** Without it, cards mode renders an **auto-card** built from
+the columns (see below). With it, you control the card content. The
+handler receives:
 
-The per-row schema is resolved server-side via `resolveSchema` once per
-row (parallel to existing `_formatted` / `_visibleActions` stamping), so
-condition callbacks and visibility rules see `ctx.record === row`.
+- `record` — the row.
+- `auto` — the elements pilotiq built automatically (title / image /
+  description / `Label · value` lines). Return `[...auto, extra]` to
+  **extend** the default card; ignore `auto` to **replace** it entirely.
+- `ctx` — the active `TableContext` (search / sort / filters / user).
+
+```ts
+// extend the auto-card with one extra element
+.cardSchema((record, auto) => [...auto, Badge.make(record.status)])
+
+// replace it completely
+.cardSchema((record) => [Image.make(record.coverUrl), Heading.make(record.title)])
+```
+
+The schema is resolved server-side via `resolveSchema` once per row
+(parallel to `_formatted` / `_visibleActions` stamping), so condition
+callbacks and visibility rules see `ctx.record === row`.
+
+### The auto-card
+
+With no `cardSchema`, each card is assembled from what the resource
+already knows:
+
+- **Image** — `Resource.recordImageAttribute` (e.g. `'thumbnail'`); if
+  unset, the first `ImageColumn` in the table, if any.
+- **Title** — `Resource.recordTitleAttribute` (heading), falling back to
+  `name` → `title` → `id`.
+- **Description** — `Resource.recordDescriptionAttribute` (muted
+  subtitle); omitted when unset.
+- **Rest** — the other columns as muted `Label · value` lines, reusing
+  each row's formatted cell value.
+
+```ts
+export class ArticleResource extends Resource {
+  static recordTitleAttribute       = 'title'
+  static recordImageAttribute       = 'coverImage'   // optional
+  static recordDescriptionAttribute = 'excerpt'      // optional
+}
+```
+
+### `Table.stackOnMobile(breakpoint = 'md')`
+
+Responsive fallback: render the **classic table at/above** the breakpoint
+and **one card per row below** it — killing the mobile horizontal scroll
+without committing the resource to cards everywhere. Opt-in; breakpoint is
+`'sm' | 'md' | 'lg'` (default `'md'`). The mobile card uses the same
+content as `cards()` — the auto-card, or your `cardSchema`.
+
+```ts
+t.stackOnMobile()        // table ≥ md, cards < md
+t.stackOnMobile('lg')    // table ≥ lg, cards < lg
+```
+
+| | desktop | mobile |
+|---|---|---|
+| (nothing) | table | table (horizontal scroll) |
+| `stackOnMobile()` | table | auto-card / `cardSchema` |
+| `cards()` | cards | cards |
+
+### `Column.visibleFrom(bp)` / `Column.hiddenFrom(bp)`
+
+Per-column responsive visibility (`bp`: `sm | md | lg | xl | 2xl`).
+`visibleFrom('md')` shows the column from `md` up (hidden below);
+`hiddenFrom('md')` hides it from `md` up (a mobile-only column). Mutually
+exclusive. Applies to the desktop table cell **and** the mobile card: a
+column visible only at/above the `stackOnMobile` breakpoint is desktop-only
+and is dropped from the card. Works on a plain table too (trim columns on
+small screens while keeping horizontal scroll).
+
+```ts
+Column.make('slug').visibleFrom('lg')   // desktop detail only
+Column.make('tags').hiddenFrom('md')    // mobile only
+```
 
 ### `Table.cardsPerRow({ default, sm, md, lg, xl, '2xl' })`
 
@@ -113,10 +188,11 @@ cards mode in v1 — drop them or use the default `'table'` layout.
 
 ## Tradeoffs
 
-**Both `columns` and `cardSchema` required.** Columns drive data
-semantics (search / sort / filter / group / summarize); the schema drives
-visuals. v1 keeps these as two separate authorings rather than auto-
-deriving one from the other.
+**`cardSchema` is optional.** Columns drive data semantics (search / sort
+/ filter / group / summarize); without a schema the auto-card derives the
+visuals from those same columns + the resource's record-identity
+attributes. Provide a `cardSchema` only when you want to extend or replace
+that default.
 
 **Per-row schema resolution costs N×schema-resolves per page.** Same
 shape as `Resource.detail()` — fine for typical 25-row pages. If you
@@ -124,7 +200,7 @@ ship card schemas with expensive nested resolvers and large `paginate`
 counts, pair with `Resource.deferLoading = true` so the SSR pass skips
 records work.
 
-**Cards don't dump every column.** Skip `cardSchema` entirely and the
-renderer shows a "No card content configured" placeholder — explicit
-opt-in only, no auto-fallback to "render every column stacked." Author
-the card content the way you'd author a detail page.
+**The auto-card is a sensible default, not a detail page.** It lists the
+columns as `Label · value` lines under the title — fine for a compact
+mobile card or a quick gallery, but for a media-led layout (large cover,
+custom hierarchy) author a `cardSchema`.

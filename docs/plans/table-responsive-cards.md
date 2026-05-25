@@ -1,6 +1,6 @@
 # Responsive tables — card-per-row on mobile + auto-card from columns
 
-**Status:** plan, 2026-05-26. Not started. Renderer-heavy; the mobile/desktop switch and the card layout are **browser-verifiable** (resize the viewport) — land each phase with the playground open at `:3003`.
+**Status:** SHIPPED 2026-05-26. Phase A `d9fbf5f` (auto-card), Phase B `6cd595b` (`stackOnMobile`), Phase C `369196d` (`visibleFrom`/`hiddenFrom`), Phase D docs + changeset. All four layouts user-verified by resizing at `:3003`. Released as part of the next `@pilotiq/pilotiq` minor (changeset `table-responsive-cards`).
 
 **Goal:** a normal columnar list table should stay a table on desktop and collapse to **one card per row on mobile**, so wide tables stop forcing a horizontal scroll on phones. The card content is **built automatically from the table's columns** (no hand-written schema required), with optional image/description and a full override escape hatch.
 
