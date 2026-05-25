@@ -78,7 +78,7 @@ export function ChartRenderer({ meta }: WidgetRendererProps) {
     <div className={`rounded-xl border bg-card p-5 shadow-sm ${CARD_BORDER[color]}`}>
       {(label || filters) && (
         <div className="mb-3 flex items-start justify-between gap-3">
-          {label && <h3 className="text-sm font-medium text-muted-foreground">{label}</h3>}
+          {label && <h3 className="text-sm font-semibold text-foreground">{label}</h3>}
           {filters && (
             <ChartFilterDropdown
               filters={filters}
@@ -124,33 +124,42 @@ function ChartBody({ chartType, data, color, options }: ChartBodyProps) {
 }
 
 // ─── Shared minimal chrome ────────────────────────────────────────
-// Clean, preview-matching axes: hairline baseline on X, no tick lines,
-// no value-grid, no Y axis. Tooltip styled with theme surface vars.
-function MinimalAxes() {
-  return (
-    <>
-      <XAxis
-        dataKey="__label"
-        tickLine={false}
-        axisLine={{ stroke: 'var(--border)' }}
-        tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
-        tickMargin={8}
-      />
-      <YAxis hide />
-      <Tooltip
-        cursor={{ fill: 'var(--muted)', opacity: 0.35 }}
-        contentStyle={{
-          background:    'var(--popover)',
-          border:        '1px solid var(--border)',
-          borderRadius:  8,
-          fontSize:      12,
-          color:         'var(--popover-foreground)',
-          boxShadow:     '0 4px 12px rgb(0 0 0 / 0.08)',
-        }}
-        labelStyle={{ color: 'var(--muted-foreground)' }}
-      />
-    </>
-  )
+// Clean, preview-matching axes: no tick/axis lines, no value-grid, no Y
+// axis; tooltip styled with theme surface vars.
+//
+// Returns an ARRAY (not a wrapper component / Fragment) so the elements
+// land as DIRECT children of the chart when spread via `{minimalAxes()}`.
+// Recharts detects axes/tooltip by scanning the chart's direct children
+// by type — wrapping them in a custom component or a Fragment hides them,
+// so the X-axis ticks (and tooltip) silently never render.
+function minimalAxes(): React.ReactNode[] {
+  return [
+    <XAxis
+      key="x"
+      dataKey="__label"
+      tickLine={false}
+      axisLine={false}
+      tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
+      tickMargin={8}
+      minTickGap={24}
+      interval="preserveStartEnd"
+      height={24}
+    />,
+    <YAxis key="y" hide />,
+    <Tooltip
+      key="t"
+      cursor={{ fill: 'var(--muted)', opacity: 0.35 }}
+      contentStyle={{
+        background:    'var(--popover)',
+        border:        '1px solid var(--border)',
+        borderRadius:  8,
+        fontSize:      12,
+        color:         'var(--popover-foreground)',
+        boxShadow:     '0 4px 12px rgb(0 0 0 / 0.08)',
+      }}
+      labelStyle={{ color: 'var(--muted-foreground)' }}
+    />,
+  ]
 }
 
 // ─── Line (rendered as a soft area) ───────────────────────────────
@@ -168,7 +177,7 @@ function LineChartView({ data, color, options }: LineChartViewProps) {
   const gid = useId().replace(/:/g, '')
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <AreaChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+      <AreaChart data={rows} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
         <defs>
           {data.datasets.map((ds, i) => {
             const c = resolveSeriesColor(ds, color, i)
@@ -180,11 +189,14 @@ function LineChartView({ data, color, options }: LineChartViewProps) {
             )
           })}
         </defs>
-        <MinimalAxes />
+        {minimalAxes()}
         {data.datasets.length > 1 && <Legend />}
         {data.datasets.map((ds, i) => (
           <Area
             key={ds.label}
+            // `monotone` (not `natural`): natural overshoots below the data
+            // baseline on sparse/spiky series, drawing fake dips that clip at
+            // the bottom. monotone stays within the data bounds.
             type="monotone"
             dataKey={ds.label}
             stroke={resolveSeriesColor(ds, color, i)}
@@ -206,7 +218,7 @@ function BarChartView({ data, color, options }: LineChartViewProps) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-        <MinimalAxes />
+        {minimalAxes()}
         {data.datasets.length > 1 && <Legend />}
         {data.datasets.map((ds, i) => (
           <Bar

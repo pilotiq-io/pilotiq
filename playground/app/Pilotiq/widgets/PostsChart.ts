@@ -44,9 +44,14 @@ export class PostsChart extends Chart {
     }) as Array<{ createdAt: Date }>
 
     const buckets = new Map<string, number>()
+    // Short, readable X-axis labels ("May 1") keyed by ISO day for matching —
+    // mirrors the shadcn chart's compact date ticks.
+    const labelFor = new Map<string, string>()
     for (let i = 0; i < days; i++) {
       const d = new Date(since.getTime() + i * 86_400_000)
-      buckets.set(toIsoDay(d), 0)
+      const key = toIsoDay(d)
+      buckets.set(key, 0)
+      labelFor.set(key, d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
     }
     for (const row of rows) {
       const key = toIsoDay(row.createdAt)
@@ -54,7 +59,7 @@ export class PostsChart extends Chart {
     }
 
     return {
-      labels:   [...buckets.keys()],
+      labels:   [...buckets.keys()].map(k => labelFor.get(k) ?? k),
       datasets: [{ label: 'Posts', data: [...buckets.values()] }],
     }
   }
