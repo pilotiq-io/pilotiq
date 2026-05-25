@@ -1,5 +1,5 @@
 import { ListPage, Action, ListTab, Heading } from '@pilotiq/pilotiq'
-import { app } from '@rudderjs/core'
+import { app } from '@rudderjs/core/client'
 import { ArticleResource } from '../ArticleResource.js'
 
 const prisma = (): any => app().make('prisma')

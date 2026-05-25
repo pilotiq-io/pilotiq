@@ -1,58 +1,27 @@
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig } from 'vite'
 import rudderjs from '@rudderjs/vite'
 import vike from 'vike/plugin'
 import { pilotiq } from '@pilotiq/pilotiq/vite'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
-// `@rudderjs/core` is the server framework. Its main entry eval-references the
-// Node `process` global (and `node:fs`) and re-exports the `@rudderjs/console`
-// → `@clack/prompts` CLI chain. The panel schema files (`app/Pilotiq/**`) import
-// `app` from it purely to call `app().make('prisma')` inside SERVER-side data
-// callbacks — but those same files are also pulled into the CLIENT bundle by the
-// generated `pages/(pilotiq)/_components.ts` (it imports AdminPanel to harvest
-// component-typed icons). Bundling core for the browser throws
-// `process is not defined` at module eval → React never hydrates → Vike's client
-// router never attaches → every navigation becomes a full page reload.
+// `@rudderjs/core`'s main entry eval-references the Node `process` global (and
+// `node:fs`) and re-exports the `@rudderjs/console` → `@clack/prompts` CLI chain,
+// so it must never reach the browser bundle (`process is not defined` at module
+// eval → React never hydrates → Vike's client router never attaches → every
+// navigation becomes a full page reload).
 //
-// Fix: stub `@rudderjs/core` in the CLIENT build only. The SSR build keeps the
-// real module, so server-side `app()` works untouched. The stub's `app()` (etc.)
-// throws if it is ever actually invoked on the client — it never is, because the
-// callbacks that call it only run server-side. If a panel file starts importing a
-// new core export, add it to the stub (a missing named export surfaces as a clear
-// build error). See memory: optimizeDeps.include — @rudderjs/core trips @clack.
-function stubServerCoreOnClient(): Plugin {
-  const VIRTUAL = '\0rudderjs-core-client-stub'
-  return {
-    name: 'pilotiq:stub-rudderjs-core-on-client',
-    enforce: 'pre',
-    resolveId(id, _importer, opts) {
-      if (id === '@rudderjs/core' && !opts?.ssr) return VIRTUAL
-      return null
-    },
-    load(id) {
-      if (id !== VIRTUAL) return null
-      return [
-        "const serverOnly = (name) => () => { throw new Error('@rudderjs/core ' + name + '() is server-only and was reached on the client') }",
-        "export const app = serverOnly('app')",
-        "export const resolve = serverOnly('resolve')",
-        "export const appendToGroup = serverOnly('appendToGroup')",
-        "export const resetGroupMiddleware = serverOnly('resetGroupMiddleware')",
-        "export const defaultProviders = serverOnly('defaultProviders')",
-        "export const defineConfig = (c) => c",
-        "export const Env = serverOnly('Env')",
-        "export class Application {}",
-        "export class RudderJS {}",
-        "export class ServiceProvider {}",
-        "export default {}",
-      ].join('\n')
-    },
-  }
-}
+// The panel schema files (`app/Pilotiq/**`) call `app().make('prisma')` inside
+// SERVER-side data callbacks, but those files are also pulled into the CLIENT
+// bundle by the generated `pages/(pilotiq)/_components.ts` (it imports AdminPanel
+// to harvest component-typed icons). They therefore import `app` from the
+// client-safe `@rudderjs/core/client` subpath (core@1.4.0+) — real on the server,
+// browser-safe on the client. Server-only files (bootstrap, providers, config/**)
+// keep importing the main `@rudderjs/core` entry via the SSR build. This replaced
+// an earlier CLIENT-build stub of the whole module.
 
 export default defineConfig({
   plugins: [
-    stubServerCoreOnClient(),
     pilotiq(),
     rudderjs(),
     vike(),
@@ -134,15 +103,18 @@ export default defineConfig({
       // each gets discovered the first time a page renders something that
       // uses it, triggering a "new dependencies optimized" reload mid-nav.
       //
-      // DO NOT add '@rudderjs/core' or '@rudderjs/router' here. They re-export
-      // '@rudderjs/console', whose `await import('@clack/prompts')` pulls a
-      // CLI lib that references the Node `process` global. Pre-bundling them
-      // into the CLIENT bundle therefore throws `process is not defined` on
-      // mount → React never hydrates → Vike's client router never attaches →
-      // every link becomes a full page reload. Neither is client-reachable
-      // from pilotiq, so omitting them simply keeps them out of the browser
-      // graph. Only '@rudderjs/orm' is safe (its chain ends at @rudderjs/contracts).
+      // DO NOT add the main '@rudderjs/core' entry or '@rudderjs/router' here.
+      // They re-export '@rudderjs/console', whose `await import('@clack/prompts')`
+      // pulls a CLI lib that references the Node `process` global. Pre-bundling
+      // them into the CLIENT bundle throws `process is not defined` on mount →
+      // React never hydrates → Vike's client router never attaches → every link
+      // becomes a full page reload. Neither is client-reachable from pilotiq.
+      // Client code uses the '@rudderjs/core/client' subpath instead (below).
+      // '@rudderjs/orm' is safe (its chain ends at @rudderjs/contracts).
       '@rudderjs/orm',
+      // Client-safe core subpath (app / Env / config / DI / validation) — imported
+      // by the panel schema files that get pulled into the browser bundle.
+      '@rudderjs/core/client',
       // Collab editor surface (record-room Y.Doc, CollabRoomManager) — its
       // React entry is pulled the first time a collab-enabled page mounts.
       '@rudderjs/sync/react',
@@ -173,9 +145,10 @@ export default defineConfig({
       // touches `node:fs` and would break client builds.
       '@pilotiq/pilotiq',
       '@pilotiq/tiptap',
-      // Server framework — stubbed on the client by stubServerCoreOnClient().
-      // Excluded here so the client dep-optimizer never tries to pre-bundle the
-      // real module (which would re-introduce the `process is not defined` crash).
+      // Server framework main entry (CLI chain + Node-only). Not client-reachable
+      // — browser code uses '@rudderjs/core/client'. Excluded so the dep-optimizer
+      // never tries to pre-bundle the real module (which would re-introduce the
+      // `process is not defined` crash); server-only files import it via the SSR build.
       '@rudderjs/core',
       // CLI-only — server-side, must not be pre-bundled
       '@clack/prompts',

@@ -10,7 +10,7 @@ import {
   TableGroup,
   type Table,
 } from '@pilotiq/pilotiq'
-import { app } from '@rudderjs/core'
+import { app } from '@rudderjs/core/client'
 
 const prisma = (): any => app().make('prisma')
 

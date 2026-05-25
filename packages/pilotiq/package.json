@@ -100,7 +100,7 @@
   "devDependencies": {
     "@base-ui/react": "^1",
     "@rudderjs/contracts": "^1.8.0",
-    "@rudderjs/core": "^1.2.0",
+    "@rudderjs/core": "^1.4.0",
     "@rudderjs/router": "^1.6.0",
     "@rudderjs/view": "^1.2.2",
     "@types/node": "^20",

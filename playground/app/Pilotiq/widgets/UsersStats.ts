@@ -1,5 +1,5 @@
 import { StatsOverview, Stat } from '@pilotiq/pilotiq'
-import { app } from '@rudderjs/core'
+import { app } from '@rudderjs/core/client'
 
 function prisma(): any {
   return app().make('prisma')
