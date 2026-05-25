@@ -5,16 +5,20 @@ import {
 } from '@dnd-kit/core'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import {
-  SortableContext, sortableKeyboardCoordinates,
+  SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates,
   useSortable, verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
+// Re-exported so the Repeater / Builder reorder handlers compute the new
+// order with the same primitive `@dnd-kit` uses internally.
+export { arrayMove }
+
 /**
  * Shared `@dnd-kit` row-reorder primitives for the field inputs that let
  * the user drag rows — `RepeaterInput` / `BuilderInput` (and the same
- * pattern the table renderer uses inline). Replaces the legacy HTML5-DnD
- * `useRowReorderDnd` hook with `@dnd-kit`'s animated, keyboard-accessible
+ * pattern the table renderer uses inline). Replaces the legacy HTML5
+ * drag-and-drop wiring with `@dnd-kit`'s animated, keyboard-accessible
  * sortable.
  *
  * Usage: wrap the row list in `<SortableRows>` (only when reorder is on —
@@ -46,12 +50,19 @@ export interface SortableRowHandle {
 }
 
 export function SortableRows({
-  enabled, ids, onReorder, children,
+  enabled, ids, onReorder, gridMode = false, children,
 }: {
   enabled:   boolean
   ids:       string[]
   /** Fires on drop with the dragged row id + the row it was dropped onto. */
   onReorder: (activeId: string, overId: string) => void
+  /**
+   * Row-grid layouts (`Repeater.grid(n)` / `Builder.grid(n)`) lay rows out
+   * in an n-column grid, so drag must move freely on both axes —
+   * `rectSortingStrategy` + no vertical-axis lock. Stacked / table layouts
+   * (the default) stay on the vertical list sortable.
+   */
+  gridMode?: boolean
   children:  React.ReactNode
 }): React.ReactElement {
   const sensors = useSensors(
@@ -64,13 +75,13 @@ export function SortableRows({
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
-      modifiers={[restrictToVerticalAxis]}
+      modifiers={gridMode ? [] : [restrictToVerticalAxis]}
       onDragEnd={(e: DragEndEvent) => {
         const { active, over } = e
         if (over !== null && active.id !== over.id) onReorder(String(active.id), String(over.id))
       }}
     >
-      <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+      <SortableContext items={ids} strategy={gridMode ? rectSortingStrategy : verticalListSortingStrategy}>
         {children}
       </SortableContext>
     </DndContext>

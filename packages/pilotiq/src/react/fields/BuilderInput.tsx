@@ -25,7 +25,7 @@ import {
 import {
   generateRowId, makeAccordionStorage, makeCollapsedStorage,
 } from './rowState.js'
-import { useRowReorderDnd } from './useRowReorderDnd.js'
+import { SortableRows, SortableRowSlot, arrayMove, type SortableRowHandle } from './sortable.js'
 
 const collapsedStorage = makeCollapsedStorage('builder')
 const accordionStorage = makeAccordionStorage('builder')
@@ -406,29 +406,19 @@ export function BuilderInput({
     rowBinding?.reorder(next.map(r => r.id))
   }
 
-  // ── DnD state (skipped when buttonsOnly) ────────────────
+  // ── Reorder via @dnd-kit (skipped when buttonsOnly) ─────
+  // `buttonsOnly` keeps the Up/Down chrome but disables grip drag. The
+  // keyboard reorder path stays on `moveRow` (`reorderRows`); the drag
+  // path routes through `handleReorder` + `arrayMove`. See RepeaterInput.
   const dndEnabled = reorderable && !buttonsOnly && !disabled
-  const {
-    dragId, dropAt,
-    onDragStart: onRowDragStart,
-    onDragOver:  onRowDragOver,
-    onDrop:      onRowDrop,
-    onDragEnd:   onRowDragEnd,
-  } = useRowReorderDnd({
-    enabled: dndEnabled,
-    onDrop: (fromId, at) => {
-      // See RepeaterInput's matching onDrop comment — closure-mutation
-      // through setRows's updater is unreliable when other state updates
-      // are batched (useRowReorderDnd nulls dragId/dropAt right before
-      // calling this).
-      const fromIdx = rows.findIndex(r => r.id === fromId)
-      if (fromIdx < 0) return
-      const next = reorderRows(rows, fromIdx, at)
-      if (next === rows) return
-      setRows(next)
-      rowBinding?.reorder(next.map(r => r.id))
-    },
-  })
+  const handleReorder = (activeId: string, overId: string): void => {
+    const fromIdx = rows.findIndex(r => r.id === activeId)
+    const toIdx   = rows.findIndex(r => r.id === overId)
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return
+    const next = arrayMove(rows, fromIdx, toIdx)
+    setRows(next)
+    rowBinding?.reorder(next.map(r => r.id))
+  }
 
   // ── Inner-field live re-resolve (mirrors RepeaterInput) ─
   const formState = useFormState()
@@ -509,6 +499,8 @@ export function BuilderInput({
     for (let i = rows.length - 1; i >= 0; i--) if (!rows[i]?.hidden) return i
     return -1
   })()
+  // SortableContext items — visible rows only (see RepeaterInput).
+  const sortableIds = rows.filter(r => !r.hidden).map(r => r.id)
 
   const addAlignClass = addAlignment === 'center'
     ? 'self-center'
@@ -541,19 +533,14 @@ export function BuilderInput({
         className={gridContainer.className}
         style={gridContainer.style}
       >
-      {rows.map((row, i) => (
-        <React.Fragment key={row.id}>
-          {!row.hidden && dropAt === i && !gridContainer.hasGrid && <DropIndicator />}
-          {!row.hidden && addBetween && addable && blocks.length > 0 && !gridContainer.hasGrid && (
-            <BetweenInserter
-              blocks={blocks}
-              typeCounts={typeCounts}
-              atMax={atMax}
-              disabled={disabled}
-              columns={pickerColumns}
-              onPick={(blockName) => addRowOfType(blockName, i)}
-            />
-          )}
+      <SortableRows
+        enabled={dndEnabled}
+        ids={sortableIds}
+        onReorder={handleReorder}
+        gridMode={gridContainer.hasGrid}
+      >
+      {rows.map((row, i) => {
+        const renderRow = (sortable?: SortableRowHandle): React.ReactElement => (
           <BuilderRow
             row={row}
             block={blocksByName.get(row.type)}
@@ -577,21 +564,47 @@ export function BuilderInput({
             showNumbers={showNumbers}
             showIcons={showIcons}
             buttons={buttons}
-            isDragging={dragId === row.id}
             rowPath={`${name}.${i}`}
+            sortable={sortable}
             onMoveUp={() => moveRow(row.id, -1)}
             onMoveDown={() => moveRow(row.id, 1)}
             onClone={() => cloneRow(row.id)}
             onRemove={() => removeRow(row.id)}
             onToggleCollapse={() => toggleCollapsed(row.id)}
-            onDragStart={onRowDragStart(row.id)}
-            onDragOver={onRowDragOver(i)}
-            onDrop={onRowDrop}
-            onDragEnd={onRowDragEnd}
           />
-        </React.Fragment>
-      ))}
-      {dropAt === rows.length && !gridContainer.hasGrid && <DropIndicator />}
+        )
+        // The insert-between zone is a non-draggable sibling rendered
+        // before each visible row (suppressed in grid mode).
+        const inserter = !row.hidden && addBetween && addable && blocks.length > 0 && !gridContainer.hasGrid
+          ? (
+            <BetweenInserter
+              blocks={blocks}
+              typeCounts={typeCounts}
+              atMax={atMax}
+              disabled={disabled}
+              columns={pickerColumns}
+              onPick={(blockName) => addRowOfType(blockName, i)}
+            />
+          )
+          : null
+        if (!dndEnabled || row.hidden) {
+          return (
+            <React.Fragment key={row.id}>
+              {inserter}
+              {renderRow(undefined)}
+            </React.Fragment>
+          )
+        }
+        return (
+          <React.Fragment key={row.id}>
+            {inserter}
+            <SortableRowSlot id={row.id} disabled={row.canReorder === false}>
+              {(handle) => renderRow(handle)}
+            </SortableRowSlot>
+          </React.Fragment>
+        )
+      })}
+      </SortableRows>
       </div>
 
       {addable && blocks.length > 0 && (
@@ -849,10 +862,10 @@ function BetweenInserter({
 function BuilderRow({
   row, block, index, isFirstVisible, isLastVisible, name, disabled,
   collapsible, isCollapsed, reorderable, buttonsOnly, cloneable, deletable,
-  atMin, atMax, showNumbers, showIcons, buttons, isDragging,
+  atMin, atMax, showNumbers, showIcons, buttons,
   rowPath,
+  sortable,
   onMoveUp, onMoveDown, onClone, onRemove, onToggleCollapse,
-  onDragStart, onDragOver, onDrop, onDragEnd,
 }: {
   row:               RowState
   block:             BlockShape | undefined
@@ -872,17 +885,14 @@ function BuilderRow({
   showNumbers:       boolean
   showIcons:         boolean
   buttons:           RowButtonsMeta | undefined
-  isDragging:        boolean
   rowPath:           string
+  /** `@dnd-kit` row handle — undefined when this row isn't draggable. */
+  sortable?:         SortableRowHandle | undefined
   onMoveUp:          () => void
   onMoveDown:        () => void
   onClone:           () => void
   onRemove:          () => void
   onToggleCollapse:  () => void
-  onDragStart:       (e: React.DragEvent<HTMLElement>) => void
-  onDragOver:        (e: React.DragEvent<HTMLElement>) => void
-  onDrop:            (e: React.DragEvent<HTMLElement>) => void
-  onDragEnd:         (e: React.DragEvent<HTMLElement>) => void
 }): React.ReactElement {
   // Inner inputs sit under `name.<i>.data.*` so the {type, data}
   // envelope round-trips through FormData. Hidden envelope inputs
@@ -926,7 +936,11 @@ function BuilderRow({
     // schema is gone), but they survive submit because the server
     // passes them through verbatim.
     return (
-      <div className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+      <div
+        ref={sortable?.setNodeRef}
+        style={sortable?.style}
+        className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-sm text-muted-foreground"
+      >
         <input type="hidden" name={`${name}.${index}.__id`} value={row.id} readOnly />
         <input type="hidden" name={`${name}.${index}.type`} value={row.type} readOnly />
         Unknown block type "{row.type}". Block was removed from the schema —
@@ -942,37 +956,23 @@ function BuilderRow({
   const canClone   = row.canClone   !== false
   const canReorder = row.canReorder !== false
 
-  // Drag source on the grip `<span>`, drop target on the row container.
-  // See RepeaterInput's RepeaterRow for the rationale (lets the row body
-  // host a Tiptap contenteditable without losing reorder).
-  const rowRef = useRef<HTMLDivElement>(null)
-  const dragEnabled = reorderable && !buttonsOnly && !disabled && canReorder
-  const containerDropTargetProps = dragEnabled
-    ? { onDragOver, onDrop, onDragEnd }
-    : {}
-  const gripDragHandleProps = dragEnabled
-    ? {
-        draggable: true as const,
-        onDragStart: (e: React.DragEvent<HTMLElement>): void => {
-          if (rowRef.current) e.dataTransfer.setDragImage(rowRef.current, 0, 0)
-          onDragStart(e)
-        },
-      }
-    : undefined
+  // `@dnd-kit` row handle — grip carries the listeners, the row root gets
+  // the node ref + transform style. See RepeaterInput's RepeaterRow.
+  const isDragging = sortable?.isDragging ?? false
 
   const innerColumns = block.columns && block.columns > 1 ? block.columns : 1
 
   return (
     <RowCoordsContext.Provider value={rowCoords}>
     <div
-      ref={rowRef}
+      ref={sortable?.setNodeRef}
+      style={sortable?.style}
       className={`rounded-md border bg-card transition-opacity ${isDragging ? 'opacity-50' : ''}`}
       data-pilotiq-builder-row=""
-      {...containerDropTargetProps}
     >
       <div className="flex items-center gap-2 border-b px-3 py-2">
         {reorderable && !buttonsOnly && canReorder && (
-          <ReorderGrip disabled={disabled} buttons={buttons} dragHandleProps={gripDragHandleProps} />
+          <ReorderGrip disabled={disabled} buttons={buttons} dragHandleProps={sortable?.gripProps} />
         )}
         {collapsible && (
           <CollapseChevron
@@ -1044,15 +1044,6 @@ function BuilderRow({
       </div>
     </div>
     </RowCoordsContext.Provider>
-  )
-}
-
-function DropIndicator(): React.ReactElement {
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none h-0.5 rounded-full bg-primary"
-    />
   )
 }
 

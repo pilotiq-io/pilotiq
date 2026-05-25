@@ -135,15 +135,13 @@ export function RowChromeIconButton({
  * customizer for icon / label / tooltip / color so users can swap the
  * glyph or copy without owning the drag wiring.
  *
- * When `dragHandleProps` is passed, the grip carries `draggable=true` +
- * `onDragStart` and becomes the HTML5 drag source — required for row
- * layouts whose body hosts a contenteditable (Tiptap-backed fields).
- * If `draggable=true` lives on the row container instead, a dragstart
- * that initiates over the contenteditable is absorbed by the text-
- * selection handler and the row drag never fires. Moving the source to
- * the grip sidesteps that. Drop-target handlers (`onDragOver/onDrop/
- * onDragEnd`) stay on the row container — `dragend` bubbles so source-
- * side cleanup still reaches it.
+ * `dragHandleProps` carries `@dnd-kit`'s `useSortable` attributes +
+ * listeners (the `gripProps` from a `SortableRowHandle`). Putting them on
+ * the grip rather than the row container makes the grip the sole drag
+ * source, so the row body can host a contenteditable (Tiptap-backed
+ * fields) or focusable inputs without those swallowing the pointer-drag.
+ * `touch-none` is applied alongside so a touch-drag on the grip doesn't
+ * scroll the page instead of reordering.
  */
 export function ReorderGrip({
   disabled,
@@ -152,17 +150,14 @@ export function ReorderGrip({
 }: {
   disabled: boolean
   buttons:  RowButtonsMeta | undefined
-  dragHandleProps?: {
-    draggable:   true
-    onDragStart: (e: React.DragEvent<HTMLElement>) => void
-  } | undefined
+  dragHandleProps?: Record<string, unknown> | undefined
 }): React.ReactElement {
   const { Icon, label, tooltip, colorClass } = resolveRowChromeFor('reorder', DEFAULT_REORDER, buttons)
   return (
     <span
       aria-label={label}
       title={tooltip}
-      className={`${colorClass} ${disabled ? 'opacity-30' : 'cursor-grab active:cursor-grabbing'}`}
+      className={`${colorClass} ${dragHandleProps ? 'touch-none ' : ''}${disabled ? 'opacity-30' : 'cursor-grab active:cursor-grabbing'}`}
       {...dragHandleProps}
     >
       <Icon className="size-4" />

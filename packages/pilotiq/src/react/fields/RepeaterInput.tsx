@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
+import React, { useContext, useEffect, useId, useMemo, useState } from 'react'
 import { PlusIcon } from 'lucide-react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { Button } from '../ui/button.js'
@@ -25,7 +25,7 @@ import { consumeReconcileFlag, computeReconcilePlan } from './repeaterReconcile.
 import {
   generateRowId, makeAccordionStorage, makeCollapsedStorage,
 } from './rowState.js'
-import { useRowReorderDnd } from './useRowReorderDnd.js'
+import { SortableRows, SortableRowSlot, arrayMove, type SortableRowHandle } from './sortable.js'
 
 const collapsedStorage = makeCollapsedStorage('repeater')
 const accordionStorage = makeAccordionStorage('repeater')
@@ -448,32 +448,22 @@ export function RepeaterInput({
     rowBinding?.reorder(next.map(r => r.id))
   }
 
-  // ── DnD state ───────────────────────────────────────────
-  const {
-    dragId, dropAt,
-    onDragStart: onRowDragStart,
-    onDragOver:  onRowDragOver,
-    onDrop:      onRowDrop,
-    onDragEnd:   onRowDragEnd,
-  } = useRowReorderDnd({
-    enabled: reorderable && !disabled,
-    onDrop: (fromId, at) => {
-      // Compute next from the current `rows` directly. The previous
-      // setRows(updater) + closure-mutation pattern relied on React
-      // running the updater synchronously inside setState — which only
-      // happens when no other update is queued. `useRowReorderDnd`'s
-      // handleDrop sets dragId/dropAt to null right before calling
-      // this callback, so the updater runs in commit phase and the
-      // outer `newOrder` stayed null past the `if` check, silently
-      // skipping the rowBinding.reorder broadcast.
-      const fromIdx = rows.findIndex(r => r.id === fromId)
-      if (fromIdx < 0) return
-      const next = reorderRows(rows, fromIdx, at)
-      if (next === rows) return
-      setRows(next)
-      rowBinding?.reorder(next.map(r => r.id))
-    },
-  })
+  // ── Reorder via @dnd-kit ────────────────────────────────
+  // Smooth animated grip-handle drag; the keyboard Up/Down path
+  // (`moveRow`) stays on `reorderRows`. Both land on the same `rows`
+  // array + `rowBinding.reorder` broadcast. `handleReorder` receives the
+  // dragged row id + the row it was dropped onto, looks both up in the
+  // full `rows` array (robust to hidden rows being excluded from the
+  // sortable context), and applies `arrayMove`.
+  const dragEnabled = reorderable && !disabled
+  const handleReorder = (activeId: string, overId: string): void => {
+    const fromIdx = rows.findIndex(r => r.id === activeId)
+    const toIdx   = rows.findIndex(r => r.id === overId)
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return
+    const next = arrayMove(rows, fromIdx, toIdx)
+    setRows(next)
+    rowBinding?.reorder(next.map(r => r.id))
+  }
 
   // ── Inner-field live re-resolve (Plan #14 v1.1) ─────────────
   // Inner Repeater inputs are uncontrolled (so reorder/clone preserves
@@ -577,6 +567,11 @@ export function RepeaterInput({
     for (let i = rows.length - 1; i >= 0; i--) if (!rows[i]?.hidden) return i
     return -1
   })()
+  // SortableContext items — visible rows only (hidden rows render with
+  // `display:none` and never mount a `useSortable`). Pinned rows
+  // (`canReorder === false`) stay in the list as drop targets; their slot
+  // is mounted `disabled` so they can't initiate a drag.
+  const sortableIds = rows.filter(r => !r.hidden).map(r => r.id)
 
   if (tableMode && tableColumns) {
     // Table mode renders rows as `<tr>` with the inner schema's fields
@@ -605,7 +600,9 @@ export function RepeaterInput({
         firstVisibleIdx={firstVisibleIdx}
         lastVisibleIdx={lastVisibleIdx}
         hasVisibleRow={hasVisibleRow}
-        dragId={dragId}
+        dragEnabled={dragEnabled}
+        sortableIds={sortableIds}
+        onReorder={handleReorder}
         onAdd={addRow}
         onMoveUp={(id) => moveRow(id, -1)}
         onMoveDown={(id) => moveRow(id, 1)}
@@ -613,10 +610,6 @@ export function RepeaterInput({
         onRemove={removeRow}
         onContainerChange={onContainerChange}
         onContainerBlur={onContainerBlur}
-        onRowDragStart={onRowDragStart}
-        onRowDragOver={onRowDragOver}
-        onRowDrop={onRowDrop}
-        onRowDragEnd={onRowDragEnd}
       />
     )
   }
@@ -650,9 +643,14 @@ export function RepeaterInput({
         className={gridContainer.className}
         style={gridContainer.style}
       >
-      {rows.map((row, i) => (
-        <React.Fragment key={row.id}>
-          {!row.hidden && dropAt === i && !gridContainer.hasGrid && <DropIndicator />}
+      <SortableRows
+        enabled={dragEnabled}
+        ids={sortableIds}
+        onReorder={handleReorder}
+        gridMode={gridContainer.hasGrid}
+      >
+      {rows.map((row, i) => {
+        const renderRow = (sortable?: SortableRowHandle): React.ReactElement => (
           <RepeaterRow
             row={row}
             index={i}
@@ -673,21 +671,28 @@ export function RepeaterInput({
             atMax={atMax}
             columns={columns}
             buttons={buttons}
-            isDragging={dragId === row.id}
             rowPath={`${name}.${i}`}
+            sortable={sortable}
             onMoveUp={() => moveRow(row.id, -1)}
             onMoveDown={() => moveRow(row.id, 1)}
             onClone={() => cloneRow(row.id)}
             onRemove={() => removeRow(row.id)}
             onToggleCollapse={() => toggleCollapsed(row.id)}
-            onDragStart={onRowDragStart(row.id)}
-            onDragOver={onRowDragOver(i)}
-            onDrop={onRowDrop}
-            onDragEnd={onRowDragEnd}
           />
-        </React.Fragment>
-      ))}
-      {dropAt === rows.length && !gridContainer.hasGrid && <DropIndicator />}
+        )
+        // Hidden rows render bare (no chrome, no sortable node). When drag
+        // is off entirely SortableRows is a pass-through, so the bare row
+        // is correct there too.
+        if (!dragEnabled || row.hidden) {
+          return <React.Fragment key={row.id}>{renderRow(undefined)}</React.Fragment>
+        }
+        return (
+          <SortableRowSlot key={row.id} id={row.id} disabled={row.canReorder === false}>
+            {(handle) => renderRow(handle)}
+          </SortableRowSlot>
+        )
+      })}
+      </SortableRows>
       </div>
 
       <AddRowButton
@@ -744,10 +749,9 @@ function RepeaterRow({
   row, index, isFirstVisible, isLastVisible, name, disabled,
   collapsible, isCollapsed, reorderable, cloneable, simple, atMin, atMax, columns,
   buttons,
-  isDragging,
   rowPath,
+  sortable,
   onMoveUp, onMoveDown, onClone, onRemove, onToggleCollapse,
-  onDragStart, onDragOver, onDrop, onDragEnd,
 }: {
   row:               RowState
   index:             number
@@ -764,17 +768,14 @@ function RepeaterRow({
   atMax:             boolean
   columns:           number
   buttons:           RowButtonsMeta | undefined
-  isDragging:        boolean
   rowPath:           string
+  /** `@dnd-kit` row handle — undefined when this row isn't draggable. */
+  sortable?:         SortableRowHandle | undefined
   onMoveUp:          () => void
   onMoveDown:        () => void
   onClone:           () => void
   onRemove:          () => void
   onToggleCollapse:  () => void
-  onDragStart:       (e: React.DragEvent<HTMLElement>) => void
-  onDragOver:        (e: React.DragEvent<HTMLElement>) => void
-  onDrop:            (e: React.DragEvent<HTMLElement>) => void
-  onDragEnd:         (e: React.DragEvent<HTMLElement>) => void
 }): React.ReactElement {
   const prefix     = `${name}.${index}`
   const namespaced = useMemo(
@@ -811,29 +812,12 @@ function RepeaterRow({
   const canClone   = row.canClone   !== false
   const canReorder = row.canReorder !== false
 
-  // Drag source lives on the grip `<span>` (see `ReorderGrip`). The
-  // row container is only the drop target — `dragend` bubbles, so source
-  // cleanup still reaches it. Splitting source from target this way lets
-  // row contents host a Tiptap contenteditable without the editor's
-  // text-selection handler swallowing the row's dragstart.
-  // Pinned rows (`canReorder === false`) lose the grip; others can still
-  // accept drops — see itemCanReorder docstring.
-  const rowRef = useRef<HTMLDivElement>(null)
-  const dragEnabled = reorderable && !disabled && canReorder
-  const containerDropTargetProps = dragEnabled
-    ? { onDragOver, onDrop, onDragEnd }
-    : {}
-  const gripDragHandleProps = dragEnabled
-    ? {
-        draggable: true as const,
-        onDragStart: (e: React.DragEvent<HTMLElement>): void => {
-          // Use the row element as the drag preview so the user still
-          // sees the whole row floating, not just the grip icon.
-          if (rowRef.current) e.dataTransfer.setDragImage(rowRef.current, 0, 0)
-          onDragStart(e)
-        },
-      }
-    : undefined
+  // `@dnd-kit` drives the drag: the grip carries `sortable.gripProps`
+  // (attributes + listeners), the row root gets `setNodeRef` + the
+  // animated transform/transition `style`, and `isDragging` dims the row.
+  // Pinned rows (`canReorder === false`) mount a disabled sortable slot,
+  // so `gripProps` is empty and the grip is omitted below.
+  const isDragging = sortable?.isDragging ?? false
 
   // Simple-mode: flatten the row to one input + inline action strip — no
   // header, no border, no collapse (a single field has nothing to collapse).
@@ -847,14 +831,14 @@ function RepeaterRow({
     return (
       <RowCoordsContext.Provider value={rowCoords}>
       <div
-        ref={rowRef}
+        ref={sortable?.setNodeRef}
+        style={sortable?.style}
         className={`flex items-center gap-2 transition-opacity ${isDragging ? 'opacity-50' : ''}`}
         data-pilotiq-repeater-row="simple"
-        {...containerDropTargetProps}
       >
         <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
         {reorderable && canReorder && (
-          <ReorderGrip disabled={disabled} buttons={buttons} dragHandleProps={gripDragHandleProps} />
+          <ReorderGrip disabled={disabled} buttons={buttons} dragHandleProps={sortable?.gripProps} />
         )}
         <div className="flex-1 [&_label]:sr-only">
           <SchemaRenderer elements={namespaced} />
@@ -891,14 +875,14 @@ function RepeaterRow({
   return (
     <RowCoordsContext.Provider value={rowCoords}>
     <div
-      ref={rowRef}
+      ref={sortable?.setNodeRef}
+      style={sortable?.style}
       className={`rounded-md border bg-card transition-opacity ${isDragging ? 'opacity-50' : ''}`}
       data-pilotiq-repeater-row=""
-      {...containerDropTargetProps}
     >
       <div className="flex items-center gap-2 border-b px-3 py-2">
         {reorderable && canReorder && (
-          <ReorderGrip disabled={disabled} buttons={buttons} dragHandleProps={gripDragHandleProps} />
+          <ReorderGrip disabled={disabled} buttons={buttons} dragHandleProps={sortable?.gripProps} />
         )}
         {collapsible && (
           <CollapseChevron
@@ -1043,21 +1027,6 @@ export function ExtraActionStrip({
 }
 
 /**
- * 2px-tall horizontal accent line rendered between rows when the user
- * drags a row over a valid drop boundary. Uses `pointer-events: none`
- * so the underlying row's `dragover` keeps firing — without this, the
- * indicator would steal events and the drop slot would flicker.
- */
-function DropIndicator(): React.ReactElement {
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none h-0.5 rounded-full bg-primary"
-    />
-  )
-}
-
-/**
  * Table-mode layout. Renders rows as `<tr>` and inner schema fields as
  * `<td>` cells, with the supplied column headers in `<thead>`.
  *
@@ -1075,10 +1044,9 @@ function RepeaterTableLayout({
   rows, name, disabled, columns, addLabel, buttons, atMin, atMax,
   reorderable, cloneable,
   firstVisibleIdx, lastVisibleIdx, hasVisibleRow,
-  dragId,
+  dragEnabled, sortableIds, onReorder,
   onAdd, onMoveUp, onMoveDown, onClone, onRemove,
   onContainerChange, onContainerBlur,
-  onRowDragStart, onRowDragOver, onRowDrop, onRowDragEnd,
 }: {
   rows:              RowState[]
   name:              string
@@ -1093,7 +1061,9 @@ function RepeaterTableLayout({
   firstVisibleIdx:   number
   lastVisibleIdx:    number
   hasVisibleRow:     boolean
-  dragId:            string | null
+  dragEnabled:       boolean
+  sortableIds:       string[]
+  onReorder:         (activeId: string, overId: string) => void
   onAdd:             () => void
   onMoveUp:          (id: string) => void
   onMoveDown:        (id: string) => void
@@ -1101,10 +1071,6 @@ function RepeaterTableLayout({
   onRemove:          (id: string) => void
   onContainerChange: (e: React.ChangeEvent<HTMLDivElement>) => void
   onContainerBlur:   (e: React.FocusEvent<HTMLDivElement>) => void
-  onRowDragStart:    (id: string) => (e: React.DragEvent<HTMLElement>) => void
-  onRowDragOver:     (idx: number) => (e: React.DragEvent<HTMLElement>) => void
-  onRowDrop:         (e: React.DragEvent<HTMLElement>) => void
-  onRowDragEnd:      (e: React.DragEvent<HTMLElement>) => void
 }): React.ReactElement {
   // The container div carries the change/blur delegates so live() events
   // bubble identically to the card path. `[&_label]:sr-only` hides the
@@ -1123,6 +1089,7 @@ function RepeaterTableLayout({
 
       {hasVisibleRow && (
         <div className="overflow-x-auto rounded-md border [&_label]:sr-only">
+          <SortableRows enabled={dragEnabled} ids={sortableIds} onReorder={onReorder}>
           <table className="w-full border-collapse text-sm">
             <colgroup>
               {columns.map((c, i) => (
@@ -1146,35 +1113,41 @@ function RepeaterTableLayout({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, i) => (
-                <RepeaterTableRow
-                  key={row.id}
-                  row={row}
-                  index={i}
-                  name={name}
-                  disabled={disabled}
-                  columns={columns}
-                  reorderable={reorderable}
-                  cloneable={cloneable}
-                  buttons={buttons}
-                  isFirstVisible={i === firstVisibleIdx}
-                  isLastVisible={i === lastVisibleIdx}
-                  atMin={atMin}
-                  atMax={atMax}
-                  isDragging={dragId === row.id}
-                  rowPath={`${name}.${i}`}
-                  onMoveUp={() => onMoveUp(row.id)}
-                  onMoveDown={() => onMoveDown(row.id)}
-                  onClone={() => onClone(row.id)}
-                  onRemove={() => onRemove(row.id)}
-                  onDragStart={onRowDragStart(row.id)}
-                  onDragOver={onRowDragOver(i)}
-                  onDrop={onRowDrop}
-                  onDragEnd={onRowDragEnd}
-                />
-              ))}
+              {rows.map((row, i) => {
+                const renderRow = (sortable?: SortableRowHandle): React.ReactElement => (
+                  <RepeaterTableRow
+                    row={row}
+                    index={i}
+                    name={name}
+                    disabled={disabled}
+                    columns={columns}
+                    reorderable={reorderable}
+                    cloneable={cloneable}
+                    buttons={buttons}
+                    isFirstVisible={i === firstVisibleIdx}
+                    isLastVisible={i === lastVisibleIdx}
+                    atMin={atMin}
+                    atMax={atMax}
+                    rowPath={`${name}.${i}`}
+                    sortable={sortable}
+                    onMoveUp={() => onMoveUp(row.id)}
+                    onMoveDown={() => onMoveDown(row.id)}
+                    onClone={() => onClone(row.id)}
+                    onRemove={() => onRemove(row.id)}
+                  />
+                )
+                if (!dragEnabled || row.hidden) {
+                  return <React.Fragment key={row.id}>{renderRow(undefined)}</React.Fragment>
+                }
+                return (
+                  <SortableRowSlot key={row.id} id={row.id} disabled={row.canReorder === false}>
+                    {(handle) => renderRow(handle)}
+                  </SortableRowSlot>
+                )
+              })}
             </tbody>
           </table>
+          </SortableRows>
         </div>
       )}
 
@@ -1196,9 +1169,8 @@ function alignClass(a: 'left' | 'center' | 'right' | undefined): string {
 
 function RepeaterTableRow({
   row, index, name, disabled, columns, reorderable, cloneable, buttons,
-  isFirstVisible, isLastVisible, atMin, atMax, isDragging, rowPath,
+  isFirstVisible, isLastVisible, atMin, atMax, rowPath, sortable,
   onMoveUp, onMoveDown, onClone, onRemove,
-  onDragStart, onDragOver, onDrop, onDragEnd,
 }: {
   row:             RowState
   index:           number
@@ -1212,16 +1184,12 @@ function RepeaterTableRow({
   isLastVisible:   boolean
   atMin:           boolean
   atMax:           boolean
-  isDragging:      boolean
   rowPath:         string
+  sortable?:       SortableRowHandle | undefined
   onMoveUp:        () => void
   onMoveDown:      () => void
   onClone:         () => void
   onRemove:        () => void
-  onDragStart:     (e: React.DragEvent<HTMLElement>) => void
-  onDragOver:      (e: React.DragEvent<HTMLElement>) => void
-  onDrop:          (e: React.DragEvent<HTMLElement>) => void
-  onDragEnd:       (e: React.DragEvent<HTMLElement>) => void
 }): React.ReactElement {
   const prefix     = `${name}.${index}`
   const namespaced = useMemo(
@@ -1269,29 +1237,17 @@ function RepeaterTableRow({
   const canClone   = row.canClone   !== false
   const canReorder = row.canReorder !== false
 
-  // Drag source on the grip, drop target on the `<tr>` — see RepeaterRow.
-  const rowRef = useRef<HTMLTableRowElement>(null)
-  const dragEnabled = reorderable && !disabled && canReorder
-  const containerDropTargetProps = dragEnabled
-    ? { onDragOver, onDrop, onDragEnd }
-    : {}
-  const gripDragHandleProps = dragEnabled
-    ? {
-        draggable: true as const,
-        onDragStart: (e: React.DragEvent<HTMLElement>): void => {
-          if (rowRef.current) e.dataTransfer.setDragImage(rowRef.current, 0, 0)
-          onDragStart(e)
-        },
-      }
-    : undefined
+  // `@dnd-kit` row handle — grip carries the listeners, the `<tr>` gets
+  // the node ref + transform style. See RepeaterRow for the rationale.
+  const isDragging = sortable?.isDragging ?? false
 
   return (
     <RowCoordsContext.Provider value={rowCoords}>
     <tr
-      ref={rowRef}
+      ref={sortable?.setNodeRef}
+      style={sortable?.style}
       className={`border-t align-top ${isDragging ? 'opacity-50' : ''}`}
       data-pilotiq-repeater-row=""
-      {...containerDropTargetProps}
     >
       <input type="hidden" name={`${prefix}.__id`} value={row.id} readOnly />
       {columns.map((c, i) => (
@@ -1303,7 +1259,7 @@ function RepeaterTableRow({
         <div className="inline-flex items-center gap-1">
           {reorderable && canReorder && (
             <>
-              <ReorderGrip disabled={disabled} buttons={buttons} dragHandleProps={gripDragHandleProps} />
+              <ReorderGrip disabled={disabled} buttons={buttons} dragHandleProps={sortable?.gripProps} />
               <RowChromeIconButton
                 defaults={DEFAULT_MOVE_UP}
                 override={buttons?.moveUp}
