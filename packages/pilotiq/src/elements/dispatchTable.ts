@@ -416,11 +416,12 @@ export async function loadTableRecords(
 
       const recordUrlFn     = table.getRecordUrl()
       const recordClassesFn = table.getRecordClasses()
-      // Card content is stamped per-row when the table is in cards mode.
-      // Without a `cardSchema`, the card is built automatically from the
-      // columns + the resource's record-identity attributes; with one, the
-      // schema receives the auto-built elements so it can extend or replace.
-      const cardsActive     = table.isCardsLayout()
+      // Card content is stamped per-row whenever a card can render — cards
+      // mode (every breakpoint) OR stackOnMobile (mobile only). Without a
+      // `cardSchema`, the card is built automatically from the columns + the
+      // resource's record-identity attributes; with one, the schema receives
+      // the auto-built elements so it can extend or replace.
+      const cardsActive     = table.isCardsLayout() || table.getStackOnMobile() !== undefined
       const cardSchemaFn    = cardsActive ? table.getCardSchema() : undefined
       const cardColumns     = cardsActive ? table.getColumns() : []
       const firstImageCol   = cardsActive

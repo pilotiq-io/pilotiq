@@ -154,6 +154,10 @@ export interface CardsPerRow {
  */
 export type ContentLayout = 'table' | 'cards'
 
+/** Breakpoint at which `stackOnMobile` flips from card-per-row (below) to
+ *  the classic table (at/above). Tailwind's `sm` / `md` / `lg`. */
+export type StackBreakpoint = 'sm' | 'md' | 'lg'
+
 /**
  * Where filters render relative to the table.
  * - `'modal'` (default) — chrome-only popover above the table, opened by
@@ -303,6 +307,14 @@ export interface TableMeta extends ElementMeta {
    * maps each breakpoint to a `@container`-scoped Tailwind grid class. */
   cardsPerRow?: CardsPerRow
 
+  /** Responsive fallback — when set, the table renders as a classic table
+   * at/above this breakpoint and as one card per row below it (closes the
+   * mobile horizontal-scroll problem). Distinct from `contentLayout: 'cards'`
+   * (cards at every breakpoint). The per-row card content is stamped on
+   * `_cardChildren` the same way; with no `cardSchema` it's auto-built from
+   * the columns. Absent = no responsive switch (table + horizontal scroll). */
+  stackOnMobile?: StackBreakpoint
+
   /** Filter layout position. Absent = `'modal'` (current popover behavior).
    * The renderer swaps the toolbar Filters button for an inline strip in
    * the matching slot when set. See `FiltersLayout` for the full enum. */
@@ -366,6 +378,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _contentLayout: ContentLayout = 'table'
   private _cardSchema?:   CardSchemaHandler<R>
   private _cardsPerRow?:  CardsPerRow
+  private _stackOnMobile?: StackBreakpoint
   private _filtersLayout: FiltersLayout = 'modal'
 
   private constructor() { super() }
@@ -697,6 +710,19 @@ export class Table<R = unknown, Q = unknown> extends Element {
   }
 
   /**
+   * Responsive fallback — render as a classic table at/above `breakpoint`
+   * and as one card per row below it (kills the mobile horizontal scroll).
+   * Opt-in; breakpoint defaults to `'md'`. The mobile card uses the same
+   * content as `contentLayout('cards')` — an auto-card built from the
+   * columns + the resource's record-identity attributes, or the
+   * `cardSchema` when one is set. Leaves desktop unchanged.
+   */
+  stackOnMobile(breakpoint: StackBreakpoint = 'md'): this {
+    this._stackOnMobile = breakpoint
+    return this
+  }
+
+  /**
    * Where filters render relative to the table. Default `'modal'` keeps
    * the toolbar Filters button + popover. The three inline modes
    * (`'above-content'` / `'above-content-collapsible'` / `'below-content'`)
@@ -771,6 +797,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   isCardsLayout(): boolean { return this._contentLayout === 'cards' }
   getCardSchema(): CardSchemaHandler<R> | undefined { return this._cardSchema }
   getCardsPerRow(): CardsPerRow | undefined { return this._cardsPerRow }
+  getStackOnMobile(): StackBreakpoint | undefined { return this._stackOnMobile }
   getFiltersLayout(): FiltersLayout { return this._filtersLayout }
 
   /** Convenience: the `Column` children only.
@@ -839,6 +866,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
         ? { queryStringIdentifier: this._queryStringIdentifier } : {}),
       ...(this._contentLayout === 'cards' ? { contentLayout: 'cards' as const } : {}),
       ...(cardsPerRow !== undefined ? { cardsPerRow } : {}),
+      ...(this._stackOnMobile !== undefined ? { stackOnMobile: this._stackOnMobile } : {}),
       ...(this._filtersLayout !== 'modal' ? { filtersLayout: this._filtersLayout } : {}),
       ...(this._rows         !== undefined ? { rows:        this._rows }        : {}),
       ...(this._total        !== undefined ? { total:       this._total }       : {}),

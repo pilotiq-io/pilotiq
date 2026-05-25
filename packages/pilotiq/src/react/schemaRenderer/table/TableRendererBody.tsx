@@ -36,6 +36,21 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
+// ─── stackOnMobile responsive class maps ───────────────────
+// Literal Tailwind strings (the JIT scanner can't see runtime-built class
+// names). `TABLE_VISIBLE` shows the classic table at/above the breakpoint;
+// `MOBILE_ONLY` shows the card body (and the sort picker) only below it.
+const STACK_TABLE_VISIBLE: Record<string, string> = {
+  sm: 'hidden sm:block',
+  md: 'hidden md:block',
+  lg: 'hidden lg:block',
+}
+const STACK_MOBILE_ONLY: Record<string, string> = {
+  sm: 'sm:hidden',
+  md: 'md:hidden',
+  lg: 'lg:hidden',
+}
+
 // ─── Table body ─────────────────────────────────────────────
 //
 // The biggest component in the renderer. Handles column rendering,
@@ -438,6 +453,13 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
 
   const isCardsLayout = el['contentLayout'] === 'cards'
   const cardsPerRow   = el['cardsPerRow'] as Record<string, number> | undefined
+  // Responsive fallback: table at/above the breakpoint, one card per row
+  // below it. Distinct from `isCardsLayout` (cards everywhere) — they're
+  // mutually exclusive in practice (cards mode wins if both somehow set).
+  const stackBp        = !isCardsLayout
+    ? (el['stackOnMobile'] as 'sm' | 'md' | 'lg' | undefined)
+    : undefined
+  const isStackOnMobile = stackBp !== undefined
 
   const totalPages = perPage && perPage > 0 ? Math.max(1, Math.ceil(total / perPage)) : 1
   const showPagination = totalPages > 1
@@ -480,8 +502,12 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
       || groupOptions[0]!.collapsed
       || groupOptions[0]!.date,
     ))
-  const sortableColumns  = isCardsLayout ? columns.filter(c => Boolean(c['sortable'])) : []
-  const hasSortPicker    = isCardsLayout && sortableColumns.length > 0
+  // Cards-everywhere AND stackOnMobile need the Sort-by picker (the cards
+  // have no clickable column headers). In stack mode it's mobile-only —
+  // the desktop table keeps its sortable headers.
+  const wantsCardSort    = isCardsLayout || isStackOnMobile
+  const sortableColumns  = wantsCardSort ? columns.filter(c => Boolean(c['sortable'])) : []
+  const hasSortPicker    = wantsCardSort && sortableColumns.length > 0
   // Only modal + collapsible mount a toolbar widget; the always-visible
   // strip modes don't add anything to the header bar.
   const showFiltersInToolbar = hasFilters && (filtersInModal || filtersCollapsible)
@@ -567,6 +593,40 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
   const activeEmpty = (hasFilterOrSearch && filteredEmptyState) ? filteredEmptyState : emptyState
   const EmptyIcon = activeEmpty?.icon ? (resolveIcon(activeEmpty.icon) ?? InboxIcon) : InboxIcon
 
+  // The card body — shared between `contentLayout('cards')` (every
+  // breakpoint) and the `stackOnMobile` mobile fallback (single column,
+  // inside a `<bp>:hidden` wrapper). Same `_cardChildren` content either way.
+  const renderCardsBody = (forceSingleColumn: boolean): React.ReactElement => (
+    <CardsLayoutBody
+      rows={rows}
+      visibleIds={visibleIds}
+      selected={selected}
+      toggleRow={toggleRow}
+      hasBulkActions={hasBulkActions}
+      hasRowActions={hasRowActions}
+      rowActions={rowActions}
+      hasRecordUrl={hasRecordUrl}
+      hasRecordClasses={hasRecordClasses}
+      activeEmpty={activeEmpty}
+      EmptyIcon={EmptyIcon}
+      hasFilterOrSearch={hasFilterOrSearch}
+      defaultGroup={defaultGroup}
+      groupColumnLabel={groupColumnLabel}
+      groupCollapsible={groupCollapsible}
+      collapsedGroups={collapsedGroups}
+      toggleGroupCollapsed={toggleGroupCollapsed}
+      cardsPerRow={cardsPerRow}
+      navigate={navigate}
+      groupHeadingScopable={groupHeadingScopable}
+      buildGroupKeyHref={buildGroupKeyHref}
+      forceSingleColumn={forceSingleColumn}
+      renderElement={renderElement}
+      renderRowActions={(id, recordObj, actions) =>
+        renderRowActions(id, recordObj, actions, renderActionLike)
+      }
+    />
+  )
+
   return (
     <div className="flex flex-col gap-3">
       {(tableHeading || tableDescription) && (
@@ -629,20 +689,22 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
                 />
               )}
               {hasSortPicker && (
-                <SortByPicker
-                  columns={sortableColumns}
-                  active={currentSort}
-                  onChange={(column: string, direction: 'asc' | 'desc') => {
-                    const href = buildTableQuery(
-                      state,
-                      { sort: { column, direction }, page: 1 },
-                      currentPath,
-                      activeFilters,
-                      queryPrefix,
-                    )
-                    navigate(href)
-                  }}
-                />
+                <span className={isStackOnMobile ? STACK_MOBILE_ONLY[stackBp!] : undefined}>
+                  <SortByPicker
+                    columns={sortableColumns}
+                    active={currentSort}
+                    onChange={(column: string, direction: 'asc' | 'desc') => {
+                      const href = buildTableQuery(
+                        state,
+                        { sort: { column, direction }, page: 1 },
+                        currentPath,
+                        activeFilters,
+                        queryPrefix,
+                      )
+                      navigate(href)
+                    }}
+                  />
+                </span>
               )}
               {toggleableColumns.length > 0 && (
                 <ColumnsToggleDropdown
@@ -707,35 +769,15 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
         </div>
       )}
       {isCardsLayout ? (
-        <CardsLayoutBody
-          rows={rows}
-          visibleIds={visibleIds}
-          selected={selected}
-          toggleRow={toggleRow}
-          hasBulkActions={hasBulkActions}
-          hasRowActions={hasRowActions}
-          rowActions={rowActions}
-          hasRecordUrl={hasRecordUrl}
-          hasRecordClasses={hasRecordClasses}
-          activeEmpty={activeEmpty}
-          EmptyIcon={EmptyIcon}
-          hasFilterOrSearch={hasFilterOrSearch}
-          defaultGroup={defaultGroup}
-          groupColumnLabel={groupColumnLabel}
-          groupCollapsible={groupCollapsible}
-          collapsedGroups={collapsedGroups}
-          toggleGroupCollapsed={toggleGroupCollapsed}
-          cardsPerRow={cardsPerRow}
-          navigate={navigate}
-          groupHeadingScopable={groupHeadingScopable}
-          buildGroupKeyHref={buildGroupKeyHref}
-          renderElement={renderElement}
-          renderRowActions={(id, recordObj, actions) =>
-            renderRowActions(id, recordObj, actions, renderActionLike)
-          }
-        />
+        renderCardsBody(false)
       ) : (
-      <div className="rounded-xl border bg-card overflow-hidden">
+      <>
+      {isStackOnMobile && (
+        <div className={STACK_MOBILE_ONLY[stackBp!]}>
+          {renderCardsBody(true)}
+        </div>
+      )}
+      <div className={`rounded-xl border bg-card overflow-hidden${isStackOnMobile ? ` ${STACK_TABLE_VISIBLE[stackBp!]}` : ''}`}>
         <ReorderProvider
           enabled={reorderColumnVisible}
           ids={visibleIds}
@@ -1062,6 +1104,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
         </DataTable>
         </ReorderProvider>
       </div>
+      </>
       )}
       {showPagination && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">

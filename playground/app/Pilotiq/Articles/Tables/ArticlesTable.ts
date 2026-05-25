@@ -22,6 +22,10 @@ export const ArticlesTable = {
       // Repeating the resource name on the table reads as a duplicate title
       // (Filament shows the title once, in the page header).
       .striped()
+      // Responsive: classic table on desktop, one auto-card per row below
+      // `md` (no cardSchema → built from columns + recordTitleAttribute +
+      // the `coverImage` ImageColumn). Resize the window to see the switch.
+      .stackOnMobile('md')
       .emptyState({
         heading:     'No articles yet',
         description: 'Create your first article to get started.',

@@ -113,6 +113,7 @@ export function CardsLayoutBody({
   defaultGroup, groupColumnLabel, groupCollapsible, collapsedGroups, toggleGroupCollapsed,
   cardsPerRow, navigate,
   groupHeadingScopable, buildGroupKeyHref,
+  forceSingleColumn,
   renderElement, renderRowActions,
 }: {
   rows:              unknown[]
@@ -138,12 +139,18 @@ export function CardsLayoutBody({
   // the heading renders as before; `buildGroupKeyHref` is unused.
   groupHeadingScopable?: boolean
   buildGroupKeyHref?:    (value: string) => string
+  // Force a single-column stack regardless of `cardsPerRow` — used by the
+  // `stackOnMobile` mobile fallback, where the card body is already inside
+  // a `<bp>:hidden` wrapper and should read as stacked rows, not a grid.
+  forceSingleColumn?:    boolean
   // Injected renderers — keeps the import cycle clean between
   // SchemaRenderer.tsx's top-level dispatch and this body.
   renderElement:     RenderElement
   renderRowActions:  RenderRowActions
 }) {
-  const gridClass = `grid gap-4 ${cardsPerRowClasses(cardsPerRow)}`
+  const gridClass = forceSingleColumn
+    ? 'grid grid-cols-1 gap-3'
+    : `grid gap-4 ${cardsPerRowClasses(cardsPerRow)}`
 
   if (rows.length === 0) {
     return (

@@ -353,6 +353,14 @@ describe('Table Element', () => {
       assert.deepEqual(clampedHigh.cardsPerRow, { default: 12, sm: 1 })
     })
 
+    it('stackOnMobile() emits the breakpoint on meta (default md), sparse when unset', () => {
+      assert.equal('stackOnMobile' in Table.make().toMeta(), false)
+      assert.equal(Table.make().stackOnMobile().toMeta().stackOnMobile, 'md')
+      assert.equal(Table.make().stackOnMobile('lg').toMeta().stackOnMobile, 'lg')
+      assert.equal(Table.make().getStackOnMobile(), undefined)
+      assert.equal(Table.make().stackOnMobile('sm').getStackOnMobile(), 'sm')
+    })
+
     it('contentLayout("table") stays the default and clears cardSchema requirement', () => {
       const t = Table.make().cards().contentLayout('table')
       // Even though cardSchema is unset, table mode shouldn't throw.
