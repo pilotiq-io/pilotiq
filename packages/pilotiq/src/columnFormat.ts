@@ -13,15 +13,28 @@
  *  as a hydration mismatch. Formatting once on the server and rendering
  *  the snapshot verbatim is deterministic. The function is pure so both
  *  sides stay in sync if a value is ever formatted client-side. */
-export function applyColumnFormat(value: unknown, format: { kind: string; [k: string]: unknown }): string {
+export function applyColumnFormat(
+  value: unknown,
+  format: { kind: string; [k: string]: unknown },
+  /**
+   * App locale (e.g. `'en'`, `'fr-CH'`) for locale-dependent kinds
+   * (`dateTime` / `money` / `numeric`). Threaded from the panel's
+   * `Pilotiq.locale()` so output is deterministic and matches the app's
+   * configured locale — not whatever locale the Node host machine defaults
+   * to (which differs between a dev Mac and a prod Linux box, and from the
+   * browser, the hydration-mismatch trap). A per-format `format.locale`
+   * (e.g. on `Column.money()`) still wins. Undefined → host default. */
+  locale?: string,
+): string {
   if (value === null || value === undefined || value === '') return ''
+  const fmtLocale = (format['locale'] as string | undefined) ?? locale
   switch (format['kind']) {
     case 'dateTime': {
       const d = value instanceof Date ? value : new Date(String(value))
       if (isNaN(d.getTime())) return String(value)
-      // Default — locale-aware short date+time. Custom patterns aren't
-      // supported (no date-fns dep); pattern is kept on meta for future use.
-      return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+      // Locale-aware short date+time. Custom patterns aren't supported
+      // (no date-fns dep); pattern is kept on meta for future use.
+      return d.toLocaleString(fmtLocale, { dateStyle: 'medium', timeStyle: 'short' })
     }
     case 'since': {
       const d = value instanceof Date ? value : new Date(String(value))
@@ -42,20 +55,18 @@ export function applyColumnFormat(value: unknown, format: { kind: string; [k: st
       const n = typeof value === 'number' ? value : Number(value)
       if (isNaN(n)) return String(value)
       const currency = String(format['currency'] ?? 'USD')
-      const locale   = format['locale'] as string | undefined
-      return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(n)
+      return new Intl.NumberFormat(fmtLocale, { style: 'currency', currency }).format(n)
     }
     case 'numeric': {
       const n = typeof value === 'number' ? value : Number(value)
       if (isNaN(n)) return String(value)
       const decimals = format['decimals'] as number | undefined
-      const locale   = format['locale']   as string | undefined
       const opts: Intl.NumberFormatOptions = {}
       if (decimals !== undefined) {
         opts.minimumFractionDigits = decimals
         opts.maximumFractionDigits = decimals
       }
-      return new Intl.NumberFormat(locale, opts).format(n)
+      return new Intl.NumberFormat(fmtLocale, opts).format(n)
     }
     case 'limit': {
       const s = String(value)

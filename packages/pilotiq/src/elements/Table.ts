@@ -374,7 +374,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   /** Shorthand: replace the column children. Existing actions are preserved. */
   columns(cols: Column[]): this {
     const existing = this._children ?? []
-    const nonColumns = existing.filter(el => !(el instanceof Column))
+    const nonColumns = existing.filter(el => el.getType() !== 'column')
     this._children = [...cols, ...nonColumns]
     return this
   }
@@ -410,7 +410,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   /** Shorthand: replace the filter children. Existing columns/actions stay. */
   filters(filters: Filter[]): this {
     const existing = this._children ?? []
-    const nonFilters = existing.filter(el => !(el instanceof Filter))
+    const nonFilters = existing.filter(el => el.getType() !== 'filter')
     this._children = [...nonFilters, ...filters]
     return this
   }
@@ -759,14 +759,18 @@ export class Table<R = unknown, Q = unknown> extends Element {
   getCardsPerRow(): CardsPerRow | undefined { return this._cardsPerRow }
   getFiltersLayout(): FiltersLayout { return this._filtersLayout }
 
-  /** Convenience: the `Column` children only. */
+  /** Convenience: the `Column` children only.
+   * Structural `getType()` rather than `instanceof Column` — under Vite SSR
+   * module duplication the children's class identity can differ from this
+   * module's `Column` import, and `instanceof` would silently drop every
+   * column. (Same reason as the dispatchTable guards.) */
   getColumns(): Column[] {
-    return (this._children ?? []).filter((el): el is Column => el instanceof Column)
+    return (this._children ?? []).filter((el): el is Column => el.getType() === 'column')
   }
 
-  /** Convenience: the `Filter` children only. */
+  /** Convenience: the `Filter` children only. Structural check — see getColumns. */
   getFilters(): Filter[] {
-    return (this._children ?? []).filter((el): el is Filter => el instanceof Filter)
+    return (this._children ?? []).filter((el): el is Filter => el.getType() === 'filter')
   }
 
   // ─── Serialization ────────────────────────────────────

@@ -226,6 +226,9 @@ export interface PilotiqConfig {
   pages:         (typeof Page)[]
   clusters:      ClusterClass[]
   branding:      { title?: string; logo?: string }
+  /** BCP-47 app locale for built-in dateTime/money/numeric formatting.
+   *  Set via `Pilotiq.locale()`; undefined → Node host-machine default. */
+  locale?:       string
   schema?:       SchemaDefinition
   /**
    * Plan #15 — homepage page class. When set, `GET ${base}` resolves
@@ -557,6 +560,23 @@ export class Pilotiq {
 
   theme(config: ThemeConfig): this {
     this.config.theme = config
+    return this
+  }
+
+  /**
+   * App locale (BCP-47, e.g. `'en'`, `'fr-CH'`) used to format built-in
+   * `dateTime` / `money` / `numeric` column + entry formats. Formatting
+   * runs once server-side and is stamped into `_formatted`, so it must be
+   * deterministic — without this, `Intl`/`toLocaleString` fall back to the
+   * Node host machine's locale, which differs between a dev box and a prod
+   * server (and from the user's browser → React hydration mismatch).
+   *
+   * Pass the same locale your app's localization config uses, e.g.
+   * `Pilotiq.make('Admin').locale('en')`. A per-column `Column.money({ locale })`
+   * still wins over this panel default.
+   */
+  locale(l: string): this {
+    this.config.locale = l
     return this
   }
 

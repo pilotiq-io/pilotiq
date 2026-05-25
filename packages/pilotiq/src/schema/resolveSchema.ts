@@ -28,6 +28,9 @@ import { Form } from '../elements/Form.js'
 
 export interface SchemaContext {
   user?: { name?: string; email?: string; [key: string]: unknown }
+  /** BCP-47 app locale (`Pilotiq.locale()`) for built-in dateTime/money/
+   *  numeric formatting in entries. Injected by `uploadCtx`. */
+  locale?: string
   [key: string]: unknown
 }
 

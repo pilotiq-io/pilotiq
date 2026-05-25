@@ -282,7 +282,7 @@ export abstract class Entry extends Element {
       && value !== null && value !== undefined && value !== ''
       && !Array.isArray(value)
     ) {
-      meta._formatted = applyColumnFormat(value, this._format)
+      meta._formatted = applyColumnFormat(value, this._format, ctx?.locale)
     }
 
     return meta

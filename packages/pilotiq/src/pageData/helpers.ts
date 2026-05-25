@@ -66,6 +66,9 @@ export function uploadCtx<C extends SchemaContext>(ctx: C, cfg: PilotiqConfig): 
     ...ctx,
     uploadUrl: `${cfg.path}/_uploads`,
     ...(cfg.uploads ? { hasUploadAdapter: true } : {}),
+    // App locale for built-in dateTime/money/numeric entry formatting, so the
+    // server-stamped `_formatted` is deterministic (consumed in Entry.toMeta).
+    ...(cfg.locale !== undefined ? { locale: cfg.locale } : {}),
   }
 }
 

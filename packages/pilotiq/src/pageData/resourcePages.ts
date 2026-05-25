@@ -75,6 +75,7 @@ async function prepareResourceTable(
   indexUrl: string,
   query:    Record<string, string>,
   user:     unknown,
+  locale?:  string,
 ): Promise<void> {
   tagActionDispatch(elements, indexUrl)
   // Mark the active tab + parallel-eval badges + stamp per-tab URLs
@@ -84,6 +85,7 @@ async function prepareResourceTable(
   await resolveActiveTab(elements, query, indexUrl)
   await loadTableRecords(elements, query, indexUrl, user, {
     canEdit: (u, record) => R.canEdit(u, record),
+    ...(locale !== undefined ? { locale } : {}),
   })
   tagTableReorderUrls(elements, `${indexUrl}/_reorder`)
   tagCellEditUrls(elements, indexUrl)
@@ -159,7 +161,7 @@ export async function resourceIndexData(
   // schema resolves so each widget's meta carries its endpoint.
   tagWidgetUrls(elements, id => `${indexUrl}/_widget/${id}`)
   if (R.deferLoading) tagTableDeferred(elements, `${indexUrl}/_table`)
-  await prepareResourceTable(elements, R, indexUrl, query, user)
+  await prepareResourceTable(elements, R, indexUrl, query, user, cfg.locale)
   const widgetData = await resolveServerDataElements(elements, ctx)
 
   const breadcrumbs = resourceListBreadcrumbs(cfg, R)
@@ -207,7 +209,7 @@ export async function resourceTableData(
   const user = await pilotiq.resolveUser(req)
   const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'table', basePath: cfg.path }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
-  await prepareResourceTable(elements, R, indexUrl, query, user)
+  await prepareResourceTable(elements, R, indexUrl, query, user, cfg.locale)
   const schemaData = await resolveSchema(elements, ctx)
 
   const tables = collectTableMetas(schemaData)

@@ -136,10 +136,13 @@ export function renderSimpleElement(
       const description = el['description'] ? String(el['description']) : undefined
       const headerActions = (el.children ?? []).filter(c => c.type === 'action' || c.type === 'actionGroup' || c.type === 'slotComponent')
       const Tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3'
-      const sizes = { 1: 'text-2xl', 2: 'text-xl', 3: 'text-lg' } as const
+      const sizes = { 1: 'text-2xl', 2: 'text-lg', 3: 'text-base' } as const
+      // Single-line title: vertically center the actions against it. With a
+      // description the block is taller, so top-align instead.
+      const alignActions = description ? 'items-start' : 'items-center'
       const titleBlock = (
-        <div>
-          <Tag className={`${sizes[level as 1 | 2 | 3]} font-bold tracking-tight`}>
+        <div className="min-w-0">
+          <Tag className={`${sizes[level as 1 | 2 | 3]} font-semibold tracking-tight text-foreground`}>
             {content}
           </Tag>
           {description && (
@@ -151,7 +154,7 @@ export function renderSimpleElement(
         return <div key={index}>{titleBlock}</div>
       }
       return (
-        <div key={index} className="flex items-start justify-between gap-4">
+        <div key={index} className={`flex ${alignActions} justify-between gap-4`}>
           {titleBlock}
           <div className="flex items-center gap-2 shrink-0">
             {headerActions.map((a, i) => renderActionLike(a, i))}

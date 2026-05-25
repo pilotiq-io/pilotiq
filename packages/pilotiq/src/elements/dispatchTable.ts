@@ -15,6 +15,19 @@ import { sanitizeHtml } from '../schema/sanitize.js'
 import { marked } from 'marked'
 import type { SummaryResult } from '../summarizers/Summarizer.js'
 
+// ─── Structural element-type guards — NEVER `instanceof` ─────────────────────
+// Under Vite SSR module duplication a page's `Column` / `Action` / `SelectColumn`
+// can resolve to a different module identity than the classes imported here, so
+// `instanceof` returns false. When that happens the per-row stamping pass below
+// (`_formatted`, `_visibleActions`, recordUrl, editable cells …) is silently
+// skipped — dates re-format client-side (React hydration mismatch) and
+// rule-gated row actions never appear. `getType()` is identity-independent.
+// Mirrors the `findTables` `getType() === 'table'` conversion in this file.
+const isColumnEl = (c: Element): c is Column => c.getType() === 'column'
+const isActionEl = (c: Element): c is Action => c.getType() === 'action'
+const isSelectColumnEl = (c: Element): c is SelectColumn =>
+  c.getType() === 'column' && (c as Column).getColumnType() === 'select'
+
 export interface QueryParams {
   search?: string
   sort?:   string  // "col:dir" or "col"
@@ -51,6 +64,10 @@ export interface LoadTableHooks {
     user:   unknown,
     record: Record<string, unknown>,
   ) => boolean | Promise<boolean>
+  /** App locale (`Pilotiq.locale()`) for built-in `dateTime`/`money`/
+   *  `numeric` cell formatting. Stamped server-side into `row._formatted`
+   *  so it's deterministic across server/client (no hydration mismatch). */
+  locale?: string
 }
 
 export function parseFilterValues(
@@ -311,7 +328,7 @@ export async function loadTableRecords(
       // skip stamping on rows when none of the table's row actions opt in.
       const rowActionsWithRules = (table.getChildren() ?? [])
         .filter((c): c is Action =>
-          c instanceof Action
+          isActionEl(c)
           && c.getPlacement() === 'row'
           && c.hasVisibilityRules(),
         )
@@ -321,7 +338,7 @@ export async function loadTableRecords(
       // stashed under `row._formatted[columnName]` so the renderer can
       // pick it up without re-running the function client-side.
       const columnsWithFormatter = (table.getChildren() ?? [])
-        .filter((c): c is Column => c instanceof Column && c.hasFormatter())
+        .filter((c): c is Column => isColumnEl(c) && c.hasFormatter())
 
       // Text columns carrying a built-in `format` spec (`dateTime / since
       // / money / numeric / limit / words`). Formatting is computed here,
@@ -334,7 +351,7 @@ export async function loadTableRecords(
       // `!hasFormatter()`), as do editable + rich-text cells.
       const columnsWithBuiltinFormat = (table.getChildren() ?? [])
         .filter((c): c is Column =>
-          c instanceof Column
+          isColumnEl(c)
           && c.hasFormat()
           && !c.hasFormatter()
           && c.getColumnType() === 'text'
@@ -351,7 +368,7 @@ export async function loadTableRecords(
       const richTextColumns = getRichTextRenderer() !== undefined
         ? (table.getChildren() ?? [])
             .filter((c): c is Column =>
-              c instanceof Column
+              isColumnEl(c)
               && c.getColumnType() === 'text'
               && !c.hasFormatter()
               && !c.hasFormat()
@@ -366,19 +383,19 @@ export async function loadTableRecords(
       // `_richtextCells[col.name] = true` so the renderer mounts the
       // existing prose-sm `dangerouslySetInnerHTML` path.
       const explicitRichTextColumns = (table.getChildren() ?? [])
-        .filter((c): c is Column => c instanceof Column && c.isRichText())
+        .filter((c): c is Column => isColumnEl(c) && c.isRichText())
 
       // Columns with their own per-row recordUrl handler — overrides
       // the table-level `Table.recordUrl` for clicks on that column.
       const columnsWithRecordUrl = (table.getChildren() ?? [])
-        .filter((c): c is Column => c instanceof Column && c.hasRecordUrlHandler())
+        .filter((c): c is Column => isColumnEl(c) && c.hasRecordUrlHandler())
 
       // Inline-edit columns (`TextInputColumn / ToggleColumn / SelectColumn`).
       // Per-row stamping is gated on a `canEdit` hook — without it the
       // dispatcher has no way to authorize the cell, so we skip stamping
       // entirely and the renderer falls back to the read-only formatter.
       const editableColumns = (table.getChildren() ?? [])
-        .filter((c): c is Column => c instanceof Column && c.isEditable())
+        .filter((c): c is Column => isColumnEl(c) && c.isEditable())
       const canEditEditableColumns = editableColumns.length > 0 && hooks?.canEdit !== undefined
 
       // SelectColumns with a per-row options resolver — pre-filtered so the
@@ -386,7 +403,7 @@ export async function loadTableRecords(
       // `row._cellSelectOptions[col.name]` with the resolved option list.
       const selectColumnsWithResolver: Array<{ name: string; resolve: SelectColumnOptionsResolver }> =
         editableColumns
-          .filter((c): c is SelectColumn => c instanceof SelectColumn)
+          .filter((c): c is SelectColumn => isSelectColumnEl(c))
           .map(c => ({ name: c.name, resolve: c.getOptionsResolver() }))
           .filter((c): c is { name: string; resolve: SelectColumnOptionsResolver } => c.resolve !== undefined)
 
@@ -469,7 +486,7 @@ export async function loadTableRecords(
                 if (raw === null || raw === undefined || raw === '' || Array.isArray(raw)) continue
                 const fmt = col.getFormat()
                 if (!fmt) continue
-                formatted[col.name] = applyColumnFormat(raw, fmt)
+                formatted[col.name] = applyColumnFormat(raw, fmt, hooks?.locale)
               }
               if (Object.keys(formatted).length > 0) out['_formatted'] = formatted
             }
@@ -676,7 +693,7 @@ export async function loadTableRecords(
       // (per-page only in v1; cross-page aggregation is deferred). Pulls
       // raw column values — summarizers coerce to numbers internally.
       const columnsWithSummaries = (table.getChildren() ?? [])
-        .filter((c): c is Column => c instanceof Column && c.hasSummarizers())
+        .filter((c): c is Column => isColumnEl(c) && c.hasSummarizers())
       if (columnsWithSummaries.length > 0) {
         const summaries: Record<string, SummaryResult[]> = {}
         for (const col of columnsWithSummaries) {
