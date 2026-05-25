@@ -38,7 +38,7 @@
     "@rudderjs/localization": "^1.0.2",
     "@rudderjs/log": "^1.0.1",
     "@rudderjs/middleware": "^1.0.1",
-    "@rudderjs/orm": "^1.12.4",
+    "@rudderjs/orm": "^1.12.5",
     "@rudderjs/orm-prisma": "^2.0.1",
     "@rudderjs/router": "^1.6.0",
     "@rudderjs/server-hono": "^1.0.5",

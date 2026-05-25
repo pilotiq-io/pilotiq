@@ -77,28 +77,7 @@ export default defineConfig({
       '@tiptap/core', '@tiptap/pm', '@tiptap/react',
     ],
   },
-  // `@rudderjs/orm@1.12.x` reads `process.env['RUDDER_ORM_TRACE']` at MODULE
-  // top-level (dist/index.js). orm is pulled into the CLIENT bundle via panel
-  // Models (which `extends Model` + use orm decorators, so the client must eval
-  // the orm module to define those classes). The browser has no `process`, so
-  // the bare read throws `process is not defined` at eval → React never hydrates
-  // → Vike's client router never attaches → every navigation becomes a full page
-  // reload. Folding the flag to a literal removes the only top-level `process`
-  // reference (verified: it's the sole one in orm's index). Harmless on SSR — it
-  // just disables orm's debug trace there too. Proper fix is upstream: orm should
-  // guard `typeof process !== 'undefined'`; rudder plan filed.
-  define: {
-    'process.env.RUDDER_ORM_TRACE': 'undefined',
-  },
   optimizeDeps: {
-    // orm is pre-bundled (it's in `include`), so the define above must also be
-    // applied during dep optimization — otherwise the pre-bundled chunk keeps the
-    // raw `process.env[...]` read and still crashes the client.
-    esbuildOptions: {
-      define: {
-        'process.env.RUDDER_ORM_TRACE': 'undefined',
-      },
-    },
     include: [
       'reflect-metadata',
       'vike/abort',

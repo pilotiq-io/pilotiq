@@ -389,8 +389,8 @@ importers:
         specifier: ^1.0.1
         version: 1.0.1
       '@rudderjs/orm':
-        specifier: ^1.12.4
-        version: 1.12.4
+        specifier: ^1.12.5
+        version: 1.12.5
       '@rudderjs/orm-prisma':
         specifier: ^2.0.1
         version: 2.0.1(@prisma/client@7.7.0(prisma@7.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(better-sqlite3@12.8.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(typescript@5.9.3))(typescript@5.9.3))
@@ -1602,8 +1602,8 @@ packages:
       '@rudderjs/ai':
         optional: true
 
-  '@rudderjs/orm@1.12.4':
-    resolution: {integrity: sha512-+wMvOR4rD8FgTgnTM5ORa/Kl6e1U56RutaYg9k0ILzu/BCgUI3KMoD/g+mqf3ZYVhDfSylWWcX1sWnkqqhq3JA==}
+  '@rudderjs/orm@1.12.5':
+    resolution: {integrity: sha512-sL6TY9qwifeomg9RhefzYMlAJPG0D1YO9G9NsLHrEzg2cFhG40qqug0yYbwoeQj4m9Xgb3VgXfVmS5L7liUzYg==}
     engines: {node: ^20.19.0 || >=22.12.0}
 
   '@rudderjs/router@1.6.0':
@@ -5174,7 +5174,7 @@ snapshots:
       '@rudderjs/console': 1.1.0
       '@rudderjs/contracts': 1.8.0
       '@rudderjs/core': 1.3.3
-      '@rudderjs/orm': 1.12.4
+      '@rudderjs/orm': 1.12.5
       '@rudderjs/support': 1.3.0
     optionalDependencies:
       '@libsql/client': 0.17.3
@@ -5191,7 +5191,7 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  '@rudderjs/orm@1.12.4':
+  '@rudderjs/orm@1.12.5':
     dependencies:
       '@rudderjs/console': 1.1.0
       '@rudderjs/contracts': 1.8.0
