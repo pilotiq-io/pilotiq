@@ -36,6 +36,24 @@ The plugin tells pilotiq's `SchemaRenderer` how to render `fieldType: 'richtext'
 
 Without one of the two, `RichTextField` form fields render as nothing — `SchemaRenderer` can't find a renderer for the `'richtext'` type.
 
+### Tailwind setup
+
+`@pilotiq/tiptap` ships Tailwind utility **class names**, not compiled CSS, so your
+app's Tailwind build must **scan the package** — the same requirement as
+`@pilotiq/pilotiq`. Skip it and any class not already used elsewhere in your
+project silently won't render.
+
+**Tailwind v4** — add an `@source` alongside the one for `@pilotiq/pilotiq`:
+
+```css
+@import "tailwindcss";
+@source "../node_modules/@pilotiq/pilotiq/dist";
+@source "../node_modules/@pilotiq/tiptap/dist";
+```
+
+(Adjust the relative path to resolve to the installed `dist`; workspace setups
+can point at `src`.) **Tailwind v3** — add `'./node_modules/@pilotiq/tiptap/dist/**/*.js'` to `content`. The editor's prose styles also expect `@plugin "@tailwindcss/typography"` (or the v3 plugin).
+
 ## Usage
 
 ```ts

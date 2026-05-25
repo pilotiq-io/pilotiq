@@ -44,6 +44,36 @@ Without one of the two, every `Chart` widget paints a clear inline error:
 Silent rendering would let a missing registration slip into production
 unnoticed.
 
+### Tailwind setup
+
+`@pilotiq/recharts` ships Tailwind utility **class names**, not compiled CSS, so
+your app's Tailwind build must **scan the package** for those classes to be
+generated — the same requirement as `@pilotiq/pilotiq` itself. Skip it and any
+class that doesn't already appear elsewhere in your project silently won't
+render — notably the **responsive `md:` variants** on the chart's time-range
+toggle (you'd see the mobile `<select>` even on desktop).
+
+**Tailwind v4** — add an `@source` to your main CSS, alongside the one you
+already have for `@pilotiq/pilotiq`:
+
+```css
+@import "tailwindcss";
+@source "../node_modules/@pilotiq/pilotiq/dist";
+@source "../node_modules/@pilotiq/recharts/dist";
+```
+
+Adjust the relative path so it resolves to the installed package's `dist`
+(monorepo/workspace setups can point at `src` instead).
+
+**Tailwind v3** — add the package to `content` in `tailwind.config`:
+
+```js
+content: [
+  './node_modules/@pilotiq/pilotiq/dist/**/*.js',
+  './node_modules/@pilotiq/recharts/dist/**/*.js',
+]
+```
+
 ## Quick example
 
 ```ts

@@ -40,6 +40,24 @@ The plugin registers the editor renderer plus every language pack you pass in. A
 
 Without one of the two, `CodeEditorField` form fields render as nothing — `SchemaRenderer` can't find a renderer for the `'code'` type.
 
+### Tailwind setup
+
+`@pilotiq/codemirror` ships Tailwind utility **class names**, not compiled CSS, so
+your app's Tailwind build must **scan the package** — the same requirement as
+`@pilotiq/pilotiq`. Skip it and any class not already used elsewhere in your
+project silently won't render.
+
+**Tailwind v4** — add an `@source` alongside the one for `@pilotiq/pilotiq`:
+
+```css
+@import "tailwindcss";
+@source "../node_modules/@pilotiq/pilotiq/dist";
+@source "../node_modules/@pilotiq/codemirror/dist";
+```
+
+(Adjust the relative path to resolve to the installed `dist`; workspace setups
+can point at `src`.) **Tailwind v3** — add `'./node_modules/@pilotiq/codemirror/dist/**/*.js'` to `content`.
+
 ## Usage
 
 ```ts
