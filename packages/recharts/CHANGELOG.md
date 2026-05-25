@@ -1,5 +1,43 @@
 # @pilotiq/recharts
 
+## 3.1.1
+
+### Patch Changes
+
+- 3625b85: fix(recharts): X-axis ticks + tooltip never rendered (axes were hidden behind a wrapper component)
+
+  The shared `XAxis` / `YAxis` / `Tooltip` were returned from a custom `MinimalAxes`
+  component. Recharts detects axes/tooltip by scanning the chart's **direct** children
+  by type, so anything behind a component (or Fragment) boundary is silently ignored —
+  the `<Area>` rendered (it's a direct child) but the X-axis date ticks and the hover
+  tooltip never did. `minimalAxes()` now returns an **array** of elements spread directly
+  into the chart (`{minimalAxes()}`), so recharts sees them.
+
+  Also: line/area charts use `type="monotone"` (was `natural`, which overshoots below the
+  baseline on sparse/spiky series and clipped at the bottom), the chart title renders at
+  `font-semibold text-foreground` (was muted), the X-axis matches the clean shadcn style
+  (no axis/tick lines, `minTickGap`, `preserveStartEnd`), and the plot has edge margins so
+  the first/last tick aren't clipped.
+
+- c1432ef: feat(recharts): `Chart.description()` — muted subtitle under the chart title
+
+  Adds a `description` to the chart card header, rendered under the title as a
+  muted subtitle (shadcn `CardDescription` style). Set fluently
+  (`Chart.make().description('…')`) or as a `static description` on a `Chart`
+  subclass; resolves instance-over-static like `label`.
+
+- 7cfa9da: feat(recharts): responsive chart filter — segmented toggle on desktop, select on mobile
+
+  The chart's time-range filter now renders as a segmented toggle (shadcn `ToggleGroup`
+  `outline` style — a bordered track with the active window highlighted) at `md` and up,
+  and falls back to the existing compact `<select>` below `md` where the toggle would be
+  too wide. Both drive the same `onChange`/refetch.
+
+  Consumer note: the adapter ships Tailwind class names (no precompiled CSS), so your
+  Tailwind content/`@source` config must include `@pilotiq/recharts` (e.g. the package's
+  `dist`) for the chart's utility classes — including the responsive `md:` variants — to
+  be generated.
+
 ## 3.1.0
 
 ### Minor Changes
