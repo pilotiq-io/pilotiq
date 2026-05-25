@@ -10,7 +10,9 @@ feat(pilotiq): `Pilotiq.locale()` for deterministic date/number formatting + fix
 **Feature — `Pilotiq.locale(localeTag)`.** Sets the BCP-47 app locale used to format built-in `dateTime` / `money` / `numeric` column and infolist-entry formats. Formatting runs once server-side and is stamped into `_formatted`, so it must be deterministic — without an explicit locale, `Intl` / `toLocaleString` fell back to the Node host machine's locale, which differs between a dev box and a prod server (and from the user's browser). Pass the same locale your app's localization config uses, e.g. `Pilotiq.make('Admin').locale('en')`. A per-column `Column.money({ locale })` still wins over the panel default; unset leaves the previous host-default behavior.
 
 Also (table design):
+- **Smooth row reordering via `@dnd-kit`.** Reorderable tables (`Table.reorderable(col)`) now drag through `@dnd-kit` (`DndContext`/`SortableContext`/`useSortable`) instead of native HTML5 DnD — animated, keyboard-accessible (focus grip → Space → ↑/↓ → Space), grip-handle-only so cell links/inputs stay clickable. Optimistic reorder + POST-or-rollback persistence unchanged. `@dnd-kit/{core,sortable,modifiers,utilities}` added as dependencies; non-reorderable tables render exactly as before (no `DndContext`, zero overhead).
 - Column-header sort indicator replaced with a two-arrow `arrow-up-down` icon whose halves are independently colored: the half matching the active sort direction is highlighted, the rest stays muted (both muted when unsorted, lifting on header hover).
+- Column headers restyled to the quiet shadcn convention — `text-muted-foreground font-medium`, normal case (was `text-xs uppercase tracking-wider`).
 
 Also (page-header design):
 - `Heading` titles render at `font-semibold` (was `font-bold`); single-line header actions are vertically centered against the title.

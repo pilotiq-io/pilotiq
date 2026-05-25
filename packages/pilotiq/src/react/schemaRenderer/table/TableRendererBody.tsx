@@ -25,7 +25,16 @@ import {
 import { ActiveGroupKeyChip, GroupHeadingLink, RecordCellLink } from './links.js'
 import { CardsLayoutBody } from './CardsLayoutBody.js'
 import { renderRowActions } from './renderRowActions.js'
-import { useRowReorderDnd } from '../../fields/useRowReorderDnd.js'
+import {
+  DndContext, KeyboardSensor, PointerSensor, closestCenter,
+  useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
+import {
+  SortableContext, arrayMove, sortableKeyboardCoordinates,
+  useSortable, verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 // ─── Table body ─────────────────────────────────────────────
 //
@@ -76,6 +85,90 @@ function SortIcon({ direction }: { direction: 'asc' | 'desc' | undefined }) {
   )
 }
 
+
+/**
+ * Wraps the table in `@dnd-kit` drag context only when the table is
+ * reorderable — otherwise a pass-through so non-reorderable tables pay
+ * nothing and `useSortable` (which needs a `SortableContext` ancestor) is
+ * never reached. Sensors are created in the parent so the hooks stay
+ * unconditional.
+ */
+function ReorderProvider({
+  enabled, ids, sensors, onDragEnd, children,
+}: {
+  enabled:   boolean
+  ids:       string[]
+  sensors:   ReturnType<typeof useSensors>
+  onDragEnd: (e: DragEndEvent) => void
+  children:  React.ReactNode
+}) {
+  if (!enabled) return <>{children}</>
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      modifiers={[restrictToVerticalAxis]}
+      onDragEnd={onDragEnd}
+    >
+      <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+        {children}
+      </SortableContext>
+    </DndContext>
+  )
+}
+
+/**
+ * A reorderable data row: `@dnd-kit`'s `useSortable` drives the transform/
+ * transition for a smooth drag. The grip cell carries the drag listeners
+ * (the handle), so cell links/inputs stay clickable; the rest of the row's
+ * cells arrive as `children`. Only rendered inside a `ReorderProvider`.
+ */
+function SortableDataRow({
+  id, disabled, reorderEnabled, dataState, rowClassName, children,
+}: {
+  id:             string
+  disabled:       boolean
+  reorderEnabled: boolean
+  dataState:      'selected' | undefined
+  rowClassName:   string | undefined
+  children:       React.ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id, disabled })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    ...(transition ? { transition } : {}),
+  }
+  return (
+    <TableRow
+      ref={setNodeRef}
+      data-state={dataState}
+      style={style}
+      className={[
+        rowClassName,
+        isDragging ? 'relative z-10 bg-card shadow-lg' : '',
+      ].filter(Boolean).join(' ') || undefined}
+    >
+      <TableCell className="w-9 px-2">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          disabled={!reorderEnabled}
+          aria-label={reorderEnabled ? 'Drag to reorder' : 'Reorder paused — clear filters and sort to enable'}
+          className={
+            reorderEnabled
+              ? 'inline-flex touch-none cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing'
+              : 'inline-flex cursor-not-allowed text-muted-foreground/40'
+          }
+        >
+          <GripVerticalIcon className="size-4" />
+        </button>
+      </TableCell>
+      {children}
+    </TableRow>
+  )
+}
 
 export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBodyDeps }) {
   const { renderElement, renderActionLike, renderFormChild } = deps
@@ -417,27 +510,25 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
     currentPage === 1
   const reorderColumnVisible = reorderableColumn !== undefined
 
-  // ── Reorder DnD state + handlers ──────────────────────
-  const {
-    dragId, dropAt,
-    onDragStart: onRowDragStart,
-    onDragOver:  onRowDragOver,
-    onDrop:      onRowDrop,
-    onDragEnd:   onRowDragEnd,
-  } = useRowReorderDnd({
-    enabled: reorderEnabled,
-    onDrop: async (fromId, at) => {
-      if (!reorderUrl) return
-      const fromIdx = visibleIds.findIndex(id => id === fromId)
-      if (fromIdx < 0) return
-      const target = at > fromIdx ? at - 1 : at
-      if (target === fromIdx) return
-      const reordered = rows.slice()
-      const moved = reordered.splice(fromIdx, 1)[0]
-      reordered.splice(target, 0, moved)
-      const newIds = reordered.map((row, i) => rowId(row, i))
-      const previousLocal = reorderRowsLocal
-      setReorderRowsLocal(reordered)
+  // ── Reorder via @dnd-kit ──────────────────────
+  // Grip-handle drag (PointerSensor with a small activation distance so a
+  // click on a cell link never starts a drag) + keyboard a11y. The optimistic
+  // local reorder + POST-or-rollback mirrors the previous HTML5-DnD behavior.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  function handleReorderDragEnd(event: DragEndEvent): void {
+    const { active, over } = event
+    if (!reorderUrl || over === null || active.id === over.id) return
+    const fromIdx = visibleIds.indexOf(String(active.id))
+    const toIdx   = visibleIds.indexOf(String(over.id))
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return
+    const reordered = arrayMove(rows.slice(), fromIdx, toIdx)
+    const newIds = reordered.map((row, i) => rowId(row, i))
+    const previousLocal = reorderRowsLocal
+    setReorderRowsLocal(reordered)
+    void (async () => {
       try {
         const res = await fetch(reorderUrl, {
           method:  'POST',
@@ -455,8 +546,8 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
           body:  err instanceof Error ? err.message : 'Reorder failed',
         })
       }
-    },
-  })
+    })()
+  }
   const totalCols = visibleColumns.length
                   + (hasBulkActions      ? 1 : 0)
                   + (hasRowActions       ? 1 : 0)
@@ -645,6 +736,12 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
         />
       ) : (
       <div className="rounded-xl border bg-card overflow-hidden">
+        <ReorderProvider
+          enabled={reorderColumnVisible}
+          ids={visibleIds}
+          sensors={sensors}
+          onDragEnd={handleReorderDragEnd}
+        >
         <DataTable>
           <TableHeader className="bg-muted">
             <TableRow>
@@ -668,7 +765,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
 
                 if (!sortable) {
                   return (
-                    <TableHead key={i} className="text-xs uppercase tracking-wider">
+                    <TableHead key={i}>
                       {label}
                     </TableHead>
                   )
@@ -676,8 +773,8 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
                 const next = nextSortDir(currentSort, name)
                 const href = buildTableQuery(state, { sort: next, page: 1 }, currentPath, activeFilters, queryPrefix)
                 return (
-                  <TableHead key={i} className="text-xs uppercase tracking-wider">
-                    <a href={href} className="group inline-flex items-center gap-1.5 hover:text-foreground">
+                  <TableHead key={i}>
+                    <a href={href} className="group -mx-1 inline-flex items-center gap-1.5 rounded px-1 hover:text-foreground">
                       {label}
                       <SortIcon direction={isActive ? currentSort!.direction : undefined} />
                     </a>
@@ -803,34 +900,12 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
                     </TableCell>
                   </TableRow>
                 )}
-                {isInCollapsedGroup ? null : (
-                <TableRow
-                  data-state={isSelected ? 'selected' : undefined}
-                  className={[
-                    rowClassName,
-                    dragId === id ? 'opacity-50' : '',
-                    dropAt === ri && dragId !== null ? 'border-t-2 border-t-primary' : '',
-                  ].filter(Boolean).join(' ') || undefined}
-                  draggable={reorderEnabled || undefined}
-                  onDragStart={reorderEnabled ? onRowDragStart(id) : undefined}
-                  onDragOver={reorderEnabled  ? onRowDragOver(ri)  : undefined}
-                  onDrop={reorderEnabled      ? onRowDrop          : undefined}
-                  onDragEnd={reorderEnabled   ? onRowDragEnd       : undefined}
-                >
-                  {reorderColumnVisible && (
-                    <TableCell className="w-9 px-2">
-                      <span
-                        aria-label={reorderEnabled ? 'Drag to reorder' : 'Reorder paused — clear filters and sort to enable'}
-                        className={
-                          reorderEnabled
-                            ? 'inline-flex cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing'
-                            : 'inline-flex cursor-not-allowed text-muted-foreground/40'
-                        }
-                      >
-                        <GripVerticalIcon className="size-4" />
-                      </span>
-                    </TableCell>
-                  )}
+                {isInCollapsedGroup ? null : (() => {
+                  // Shared cells (no grip — `SortableDataRow` adds the grip
+                  // handle itself so it can attach the drag listeners). Plain
+                  // tables render these directly in a `<TableRow>`.
+                  const dataCells = (
+                  <>
                   {hasBulkActions && (
                     <TableCell className="w-9 px-3">
                       <Checkbox
@@ -894,8 +969,27 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
                       {renderRowActions(id, recordObj, rowActions, renderActionLike)}
                     </TableCell>
                   )}
-                </TableRow>
-                )}
+                  </>
+                  )
+                  return reorderColumnVisible ? (
+                    <SortableDataRow
+                      id={id}
+                      disabled={!reorderEnabled}
+                      reorderEnabled={reorderEnabled}
+                      dataState={isSelected ? 'selected' : undefined}
+                      rowClassName={rowClassName || undefined}
+                    >
+                      {dataCells}
+                    </SortableDataRow>
+                  ) : (
+                    <TableRow
+                      data-state={isSelected ? 'selected' : undefined}
+                      className={rowClassName || undefined}
+                    >
+                      {dataCells}
+                    </TableRow>
+                  )
+                })()}
                 {/* Per-group summary row — emitted at the end of each
                     group band (last row in group OR last row overall),
                     aligned to the same columns as the global tfoot.
@@ -966,6 +1060,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
             </TableFooter>
           )}
         </DataTable>
+        </ReorderProvider>
       </div>
       )}
       {showPagination && (
