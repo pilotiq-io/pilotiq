@@ -68,6 +68,23 @@ describe('Column', () => {
       assert.equal(meta.tooltip,   undefined)
       assert.equal(meta.wrap,      undefined)
       assert.equal(meta.color,     undefined)
+      assert.equal(meta.visibleFrom, undefined)
+      assert.equal(meta.hiddenFrom,  undefined)
+    })
+
+    it('visibleFrom / hiddenFrom round-trip and are mutually exclusive', () => {
+      const vf = Column.make('slug').visibleFrom('md').toMeta()
+      assert.equal(vf.visibleFrom, 'md')
+      assert.equal(vf.hiddenFrom,  undefined)
+
+      const hf = Column.make('tags').hiddenFrom('lg').toMeta()
+      assert.equal(hf.hiddenFrom,  'lg')
+      assert.equal(hf.visibleFrom, undefined)
+
+      // last call wins; the other slot is cleared
+      const flip = Column.make('x').visibleFrom('md').hiddenFrom('sm').toMeta()
+      assert.equal(flip.hiddenFrom,  'sm')
+      assert.equal(flip.visibleFrom, undefined)
     })
   })
 

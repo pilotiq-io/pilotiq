@@ -51,6 +51,27 @@ const STACK_MOBILE_ONLY: Record<string, string> = {
   lg: 'lg:hidden',
 }
 
+// Per-column responsive visibility (`Column.visibleFrom` / `hiddenFrom`).
+// Literal Tailwind strings for the JIT; `table-cell` is the default cell
+// display so the breakpoint variant toggles it cleanly. Applied to EVERY
+// per-column cell (header / data / group-summary / footer) so a hidden
+// column drops consistently and the columns stay aligned.
+const COL_VISIBLE_FROM: Record<string, string> = {
+  sm: 'hidden sm:table-cell',  md: 'hidden md:table-cell',  lg: 'hidden lg:table-cell',
+  xl: 'hidden xl:table-cell',  '2xl': 'hidden 2xl:table-cell',
+}
+const COL_HIDDEN_FROM: Record<string, string> = {
+  sm: 'table-cell sm:hidden',  md: 'table-cell md:hidden',  lg: 'table-cell lg:hidden',
+  xl: 'table-cell xl:hidden',  '2xl': 'table-cell 2xl:hidden',
+}
+function colResponsiveClass(col: Record<string, unknown>): string {
+  const vf = col['visibleFrom'] as string | undefined
+  if (vf !== undefined && COL_VISIBLE_FROM[vf]) return COL_VISIBLE_FROM[vf]
+  const hf = col['hiddenFrom'] as string | undefined
+  if (hf !== undefined && COL_HIDDEN_FROM[hf]) return COL_HIDDEN_FROM[hf]
+  return ''
+}
+
 // ─── Table body ─────────────────────────────────────────────
 //
 // The biggest component in the renderer. Handles column rendering,
@@ -805,9 +826,10 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
                 const sortable = Boolean(col['sortable'])
                 const isActive = currentSort?.column === name
 
+                const respClass = colResponsiveClass(col)
                 if (!sortable) {
                   return (
-                    <TableHead key={i}>
+                    <TableHead key={i} className={respClass || undefined}>
                       {label}
                     </TableHead>
                   )
@@ -815,7 +837,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
                 const next = nextSortDir(currentSort, name)
                 const href = buildTableQuery(state, { sort: next, page: 1 }, currentPath, activeFilters, queryPrefix)
                 return (
-                  <TableHead key={i}>
+                  <TableHead key={i} className={respClass || undefined}>
                     <a href={href} className="group -mx-1 inline-flex items-center gap-1.5 rounded px-1 hover:text-foreground">
                       {label}
                       <SortIcon direction={isActive ? currentSort!.direction : undefined} />
@@ -984,7 +1006,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
                         Record<string, Array<{ value: string; label: string }>> | undefined
                       const rowOptions = cellSelectOptionsMap?.[name]
                       return (
-                        <TableCell key={ci} className={`text-sm text-foreground ${align} p-0`} style={widthStyle}>
+                        <TableCell key={ci} className={`text-sm text-foreground ${align} p-0 ${colResponsiveClass(col)}`} style={widthStyle}>
                           <EditableComp
                             url={editUrl}
                             col={col}
@@ -999,7 +1021,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
                     const cellContent = formatCell(value, col, recordObj)
                     const colUrl = resolveColumnUrl(col, tableUrl, colUrls)
                     return (
-                      <TableCell key={ci} className={`text-sm text-foreground ${align} p-0`} style={widthStyle}>
+                      <TableCell key={ci} className={`text-sm text-foreground ${align} p-0 ${colResponsiveClass(col)}`} style={widthStyle}>
                         {colUrl !== undefined
                           ? <RecordCellLink href={colUrl} navigate={navigate}>{cellContent}</RecordCellLink>
                           : <div className="px-2 py-2">{cellContent}</div>}
@@ -1057,7 +1079,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
                                     : 'text-left'
                         const items = perCol[name]
                         return (
-                          <TableCell key={ci} className={`text-xs font-medium ${align} px-2 py-1.5`}>
+                          <TableCell key={ci} className={`text-xs font-medium ${align} px-2 py-1.5 ${colResponsiveClass(col)}`}>
                             {items?.map((s, i) => (
                               <div key={i} className="leading-tight">
                                 {s.label && <span className="text-muted-foreground">{s.label}: </span>}
@@ -1087,7 +1109,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
                               : 'text-left'
                   const items = summaries[name]
                   return (
-                    <TableCell key={ci} className={`text-sm font-medium ${align}`}>
+                    <TableCell key={ci} className={`text-sm font-medium ${align} ${colResponsiveClass(col)}`}>
                       {items?.map((s, i) => (
                         <div key={i} className="leading-tight">
                           {s.label && <span className="text-muted-foreground">{s.label}: </span>}

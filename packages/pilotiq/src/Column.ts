@@ -10,6 +10,11 @@ import type {
 /** Cell content alignment. Maps to text-{start|center|end} on the cell. */
 export type ColumnAlignment = 'start' | 'center' | 'end'
 
+/** Responsive breakpoint for `Column.visibleFrom()` / `hiddenFrom()` —
+ *  Tailwind's screen names. `visibleFrom('md')` shows the column from `md`
+ *  up (hidden below); `hiddenFrom('md')` hides it from `md` up. */
+export type ColumnBreakpoint = 'sm' | 'md' | 'lg' | 'xl' | '2xl'
+
 /** Visual variant. The default `text` covers most cases — formatters
  * (dateTime / money / since / numeric / limit) layer on top.
  * `badge` / `icon` / `boolean` / `image` are subclasses that change
@@ -103,6 +108,12 @@ export interface ColumnMeta extends ElementMeta {
   weight?:     ColumnWeight
   color?:      ColumnColor
   format?:     ColumnFormat
+  /** Responsive visibility (Filament-idiom). `visibleFrom` shows the
+   * column from that breakpoint up; `hiddenFrom` hides it from that
+   * breakpoint up. Mutually exclusive. Applies to the desktop table cell
+   * and (via the stack breakpoint) the mobile auto-card. */
+  visibleFrom?: ColumnBreakpoint
+  hiddenFrom?:  ColumnBreakpoint
   /** True when a `formatStateUsing` callback is set. The renderer reads
    * formatted values out of `row._formatted[columnName]` instead of
    * re-applying the column's format spec. */
@@ -202,6 +213,8 @@ export class Column extends Element {
   // Visual / layout
   protected _columnType: ColumnType = 'text'
   protected _alignment?: ColumnAlignment
+  protected _visibleFrom?: ColumnBreakpoint | undefined
+  protected _hiddenFrom?:  ColumnBreakpoint | undefined
   protected _width?: string
   protected _default?: string
   protected _tooltip?: string
@@ -303,6 +316,24 @@ export class Column extends Element {
   // ─── Layout ───────────────────────────────────────────
 
   alignment(a: ColumnAlignment): this { this._alignment = a; return this }
+
+  /** Show this column only from `breakpoint` up (hidden below it). On a
+   *  `stackOnMobile` table a column visible only at/above the stack
+   *  breakpoint is desktop-only and is dropped from the mobile card.
+   *  Mutually exclusive with `hiddenFrom`. */
+  visibleFrom(breakpoint: ColumnBreakpoint): this {
+    this._visibleFrom = breakpoint
+    this._hiddenFrom  = undefined
+    return this
+  }
+
+  /** Hide this column from `breakpoint` up (visible below it) — a
+   *  mobile-only column. Mutually exclusive with `visibleFrom`. */
+  hiddenFrom(breakpoint: ColumnBreakpoint): this {
+    this._hiddenFrom  = breakpoint
+    this._visibleFrom = undefined
+    return this
+  }
   width(w: string): this { this._width = w; return this }
 
   /** Fallback string when the cell value is null / undefined / empty. */
@@ -578,6 +609,8 @@ export class Column extends Element {
   isSortable(): boolean { return this._sortable }
   isSearchable(): boolean { return this._searchable }
   getColumnType(): ColumnType { return this._columnType }
+  getVisibleFrom(): ColumnBreakpoint | undefined { return this._visibleFrom }
+  getHiddenFrom(): ColumnBreakpoint | undefined { return this._hiddenFrom }
   getFormatStateHandler(): FormatStateHandler | undefined { return this._formatState }
   hasFormatter(): boolean { return this._formatState !== undefined }
   /** True when a built-in `format` spec (`dateTime / since / money /
@@ -677,6 +710,8 @@ export class Column extends Element {
     // Only emit columnType when non-default to keep meta tidy.
     if (this._columnType !== 'text') meta.columnType = this._columnType
     if (this._alignment !== undefined) meta.alignment = this._alignment
+    if (this._visibleFrom !== undefined) meta.visibleFrom = this._visibleFrom
+    if (this._hiddenFrom  !== undefined) meta.hiddenFrom  = this._hiddenFrom
     if (this._width     !== undefined) meta.width     = this._width
     if (this._default   !== undefined) meta.default   = this._default
     if (this._tooltip   !== undefined) meta.tooltip   = this._tooltip

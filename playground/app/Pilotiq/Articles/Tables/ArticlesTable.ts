@@ -44,8 +44,11 @@ export const ArticlesTable = {
           .summarize([Count.make().label('Articles')]),
         // Limit truncates the rendered cell to N chars + '…'. Hover for
         // the full slug via .tooltip().
+        // `visibleFrom('lg')` — slug is desktop-detail only: hidden below
+        // lg on the table AND dropped from the mobile auto-card. Demos the
+        // Filament-idiom responsive column visibility (phase C).
         TextColumn.make('slug').label('Slug').searchable().color('muted')
-          .limit(28).tooltip('Full slug'),
+          .limit(28).tooltip('Full slug').visibleFrom('lg'),
         BadgeColumn.make('status').label('Status').sortable().colors({
           draft:     'gray',
           published: 'success',

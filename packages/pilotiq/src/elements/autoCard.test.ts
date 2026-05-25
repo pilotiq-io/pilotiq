@@ -72,6 +72,27 @@ describe('buildAutoCard', () => {
     assert.deepEqual(texts(meta), ['Created · May 1, 2026'])
   })
 
+  it('excludes desktop-only columns (visibleFrom ≥ stack breakpoint) from the card', async () => {
+    const record = { id: 1, title: 'T', status: 'Live', internalId: 'X-9' }
+    const cols = [
+      Column.make('title'),
+      Column.make('status').label('Status'),
+      Column.make('internalId').label('Internal ID').visibleFrom('lg'),  // desktop-only at lg+
+    ]
+    // stack breakpoint 'md' → a visibleFrom('lg') column is hidden below lg,
+    // and the card shows below md, so it must be dropped.
+    const meta = await resolveSchema(buildAutoCard(record, cols, undefined, { recordTitleAttribute: 'title' }, undefined, 'md'))
+    assert.deepEqual(texts(meta), ['Status · Live'])
+  })
+
+  it('keeps a visibleFrom column when it is below the stack breakpoint', async () => {
+    const record = { id: 1, title: 'T', status: 'Live' }
+    const cols = [Column.make('title'), Column.make('status').label('Status').visibleFrom('sm')]
+    // visibleFrom('sm') < stack 'md' → still visible somewhere below md → kept.
+    const meta = await resolveSchema(buildAutoCard(record, cols, undefined, { recordTitleAttribute: 'title' }, undefined, 'md'))
+    assert.deepEqual(texts(meta), ['Status · Live'])
+  })
+
   it('skips empty / null column values', async () => {
     const record = { id: 1, title: 'T', status: '', notes: null }
     const meta = await resolveSchema(buildAutoCard(

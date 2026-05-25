@@ -634,7 +634,7 @@ export async function loadTableRecords(
             if (cardsActive) {
               try {
                 const formattedRow = out['_formatted'] as Record<string, string> | undefined
-                const auto = buildAutoCard(recordObj, cardColumns, formattedRow, cardAttrs, firstImageCol)
+                const auto = buildAutoCard(recordObj, cardColumns, formattedRow, cardAttrs, firstImageCol, table.getStackOnMobile())
                 // No `cardSchema` → auto-card. With one, it receives the
                 // auto-built elements (extend) + the table context; a
                 // single-arg schema ignores both and fully replaces.

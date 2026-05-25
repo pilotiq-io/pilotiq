@@ -18,6 +18,10 @@ export interface AutoCardAttrs {
   recordDescriptionAttribute?: string | undefined
 }
 
+/** Tailwind breakpoint ordering — used to decide whether a `visibleFrom`
+ *  column is "desktop-only" relative to the `stackOnMobile` breakpoint. */
+const BP_ORDER: Record<string, number> = { sm: 1, md: 2, lg: 3, xl: 4, '2xl': 5 }
+
 /**
  * Resolve a record's display title — mirrors `Resource.getRecordTitle`'s
  * heuristic (`recordTitleAttribute` → `name` → `title` → `id`) so the card
@@ -68,6 +72,7 @@ export function buildAutoCard(
   formatted:             Record<string, string> | undefined,
   attrs:                 AutoCardAttrs,
   firstImageColumnName?: string | undefined,
+  stackBreakpoint?:      string | undefined,
 ): Element[] {
   const els: Element[] = []
 
@@ -99,6 +104,12 @@ export function buildAutoCard(
 
   for (const col of columns) {
     if (used.has(col.name)) continue
+    // Desktop-only columns (`visibleFrom` at/above the stack breakpoint) are
+    // hidden below the breakpoint where the card shows — drop them.
+    if (stackBreakpoint !== undefined) {
+      const vf = col.getVisibleFrom()
+      if (vf !== undefined && (BP_ORDER[vf] ?? 0) >= (BP_ORDER[stackBreakpoint] ?? 0)) continue
+    }
     const raw = formatted?.[col.name] ?? record[col.name]
     if (raw == null || String(raw) === '') continue
     els.push(Text.make(`${col.getLabel()} · ${String(raw)}`).size('sm').color('muted'))
