@@ -429,10 +429,14 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
     }
     const filled = await WithActions.schema({ recordId: '7', basePath: '/admin' }) as Array<{
       getType(): string
-      name?: string
-      getHref?(): string | undefined
+      getChildren?(): Array<{ getType(): string; name?: string; getHref?(): string | undefined }> | undefined
     }>
-    const filledActions = filled.filter(e => e.getType() === 'action')
+    // Actions are attached to the page heading (right-aligned next to the
+    // title), not spread as separate full-width top-level elements.
+    assert.equal(filled.filter(e => e.getType() === 'action').length, 0, 'no top-level action elements')
+    const heading = filled.find(e => e.getType() === 'heading')
+    assert.ok(heading, 'view page has a heading')
+    const filledActions = (heading!.getChildren?.() ?? []).filter(e => e.getType() === 'action')
     assert.equal(filledActions.length, 2)
     assert.equal(filledActions[0]!.name, 'edit')
     assert.equal(filledActions[1]!.name, 'delete')

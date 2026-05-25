@@ -1,5 +1,4 @@
 import { Element } from './Element.js'
-import type { Action } from '../actions/Action.js'
 
 export class Heading extends Element {
   private _level: 1 | 2 | 3 = 1
@@ -17,11 +16,11 @@ export class Heading extends Element {
   description(d: string): this { this._description = d; return this }
 
   /**
-   * Attach action buttons that render aligned to the right of the
-   * heading text — admin-style page header. The renderer lays the
-   * heading + actions out as a flex row.
+   * Attach action elements (Action / ActionGroup / SlotComponent) that
+   * render aligned to the right of the heading text — admin-style page
+   * header. The renderer lays the heading + actions out as a flex row.
    */
-  actions(actions: Action[]): this {
+  actions(actions: Element[]): this {
     this._children = actions
     return this
   }

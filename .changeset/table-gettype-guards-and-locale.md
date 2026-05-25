@@ -9,4 +9,6 @@ feat(pilotiq): `Pilotiq.locale()` for deterministic date/number formatting + fix
 
 **Feature — `Pilotiq.locale(localeTag)`.** Sets the BCP-47 app locale used to format built-in `dateTime` / `money` / `numeric` column and infolist-entry formats. Formatting runs once server-side and is stamped into `_formatted`, so it must be deterministic — without an explicit locale, `Intl` / `toLocaleString` fell back to the Node host machine's locale, which differs between a dev box and a prod server (and from the user's browser). Pass the same locale your app's localization config uses, e.g. `Pilotiq.make('Admin').locale('en')`. A per-column `Column.money({ locale })` still wins over the panel default; unset leaves the previous host-default behavior.
 
-Also: page-header (`Heading`) titles now render at `font-semibold` (was `font-bold`) with single-line header actions vertically centered against the title.
+Also (page-header design):
+- `Heading` titles render at `font-semibold` (was `font-bold`); single-line header actions are vertically centered against the title.
+- View/record pages (`ViewPage`) now attach their `getActions()` (Edit / Delete / …) to the page heading — right-aligned next to the title, matching create/edit pages — instead of rendering them as full-width stacked buttons below it. `Heading.actions()` widened to accept any action-like element (Action / ActionGroup / SlotComponent), and `buildHeader` is form-agnostic (works without a form) and uses `getType()` rather than `instanceof`.

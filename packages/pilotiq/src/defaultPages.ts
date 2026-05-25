@@ -233,15 +233,22 @@ export class ListPage extends ResourcePage {
  * actions are dropped (custom headers carry their own action layout).
  */
 function buildHeader(
-  header:      Element[],
-  formActions: Action[],
-  formId:      string,
+  header:  Element[],
+  actions: Element[],
+  /** Present on form pages (create/edit): submit actions get retargeted at
+   *  the form's generated id so a header-mounted Save submits the form below.
+   *  Omitted on view pages (no form). */
+  formId?: string,
 ): Element[] {
-  if (formActions.length === 0) return header
-  const targeted = formActions.map(a => (a.isSubmit() ? a.form(formId) : a))
+  if (actions.length === 0) return header
+  // Structural getType() — not `instanceof` — so a Vite SSR-duplicated
+  // Heading/Action class identity still attaches (see dispatchTable guards).
+  const targeted = formId !== undefined
+    ? actions.map(a => (a.getType() === 'action' && (a as Action).isSubmit() ? (a as Action).form(formId) : a))
+    : actions
   for (const el of header) {
-    if (el instanceof Heading) {
-      el.actions(targeted)
+    if (el.getType() === 'heading') {
+      (el as Heading).actions(targeted)
       return header
     }
   }
@@ -540,9 +547,12 @@ export class ViewPage extends ResourcePage {
       }
     }
 
+    // Attach the page actions (Edit / Delete / …) to the heading so they
+    // render right-aligned next to the title (matching create/edit pages),
+    // not as full-width stacked buttons below it.
+    const header = buildHeader(this.getHeader(R, record), this.getActions(R, recordId, basePath))
     return [
-      ...this.getHeader(R, record),
-      ...this.getActions(R, recordId, basePath),
+      ...header,
       ...R.detail(record),
     ]
   }
