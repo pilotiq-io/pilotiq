@@ -443,9 +443,8 @@ export async function resourceEditData(
   const relationTabsEl = await buildRelationTabs(R, recordId, cfg.path, '__edit', user, record)
   if (relationTabsEl) elements.unshift(relationTabsEl)
 
-  const recordTitle = record !== undefined && record !== null
-    ? deriveParentTitle(R, record)
-    : recordId
+  const recordLoaded = record !== undefined && record !== null
+  const recordTitle = recordLoaded ? deriveParentTitle(R, record) : recordId
   const breadcrumbs = resourceEditBreadcrumbs(cfg, R, recordId, recordTitle)
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
@@ -461,7 +460,9 @@ export async function resourceEditData(
   return {
     panel,
     page:     PageClass.toMeta(),
-    title:    `Edit ${recordTitle}`,
+    // Record-load failure falls back to the resource label, not the raw
+    // PK — the breadcrumb still shows `recordTitle` (the id) for context.
+    title:    `Edit ${recordLoaded ? recordTitle : R.labelSingular}`,
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'edit' as const,
     recordId,
@@ -504,9 +505,8 @@ export async function resourceViewData(
   const relationTabsEl = await buildRelationTabs(R, recordId, cfg.path, '__view', user, record)
   if (relationTabsEl) elements.unshift(relationTabsEl)
 
-  const recordTitle = record !== undefined && record !== null
-    ? deriveParentTitle(R, record)
-    : recordId
+  const recordLoaded = record !== undefined && record !== null
+  const recordTitle = recordLoaded ? deriveParentTitle(R, record) : recordId
   const breadcrumbs = resourceViewBreadcrumbs(cfg, R, recordTitle)
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
@@ -520,7 +520,9 @@ export async function resourceViewData(
   return {
     panel,
     page:     PageClass.toMeta(),
-    title:    recordTitle,
+    // Record-load failure falls back to the resource label, not the raw
+    // PK — the breadcrumb still shows `recordTitle` (the id) for context.
+    title:    recordLoaded ? recordTitle : R.labelSingular,
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'view' as const,
     recordId,
