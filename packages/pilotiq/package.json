@@ -100,7 +100,7 @@
   "devDependencies": {
     "@base-ui/react": "^1",
     "@rudderjs/contracts": "^1.8.0",
-    "@rudderjs/core": "^1.4.0",
+    "@rudderjs/core": "^1.4.1",
     "@rudderjs/router": "^1.7.0",
     "@rudderjs/view": "^1.2.2",
     "@types/node": "^20",
@@ -113,6 +113,6 @@
     "react-day-picker": "^9",
     "tailwind-merge": "^3",
     "typescript": "^5",
-    "vite": "^7"
+    "vite": "^8"
   }
 }
