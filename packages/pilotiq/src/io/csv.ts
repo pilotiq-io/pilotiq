@@ -93,7 +93,7 @@ export function parseCsv(input: string): ParsedCsv {
   if (input.length === 0) throw new Error('parseCsv: empty input')
 
   // Strip BOM
-  let text = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input
+  const text = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input
   if (text.trim() === '') throw new Error('parseCsv: empty input')
 
   const rows: string[][] = []

@@ -1042,7 +1042,7 @@ async function applyRepeaterStateUpdate<R>(
 
   // Clone path-traversed arrays + row maps so we can mutate them without
   // touching the caller's input. Final row map is the innermost row.
-  let rowMap = ensureRowAtPath(coerced, rowPath)
+  const rowMap = ensureRowAtPath(coerced, rowPath)
 
   // Coerce only the leaf field's value — read raw value from the existing
   // row map, then run it through `coerceFormValues` against the leaf field
