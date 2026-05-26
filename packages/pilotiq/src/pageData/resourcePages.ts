@@ -133,6 +133,7 @@ export async function dashboardData(pilotiq: Pilotiq, req?: unknown): Promise<Re
   return {
     panel,
     page:     cfg.dashboardPage ? cfg.dashboardPage.toMeta() : undefined,
+    title:    cfg.dashboardPage ? cfg.dashboardPage.getLabel() : 'Dashboard',
     basePath: cfg.path,
     layout:   cfg.layout,
     schemaData,
@@ -180,6 +181,7 @@ export async function resourceIndexData(
     pageType: 'resource',
     panel,
     page:     PageClass.toMeta(),
+    title:    R.label,
     resource: { name: R.name, label: R.label, labelSingular: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     basePath: cfg.path,
     layout:   cfg.layout,
@@ -364,6 +366,7 @@ export async function resourceCreateData(
   return {
     panel,
     page:     PageClass.toMeta(),
+    title:    `Create ${R.labelSingular}`,
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'create' as const,
     basePath: cfg.path,
@@ -458,6 +461,7 @@ export async function resourceEditData(
   return {
     panel,
     page:     PageClass.toMeta(),
+    title:    `Edit ${recordTitle}`,
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'edit' as const,
     recordId,
@@ -516,6 +520,7 @@ export async function resourceViewData(
   return {
     panel,
     page:     PageClass.toMeta(),
+    title:    recordTitle,
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'view' as const,
     recordId,
@@ -609,6 +614,7 @@ export async function resourceRecordPageData(
     pageType: 'record-page' as const,
     panel,
     page:     PageClass.toMeta(),
+    title:    PageClass.getLabel(),
     resource: { name: R.name, label: R.labelSingular, slug, icon: serializeIcon(R.icon, R.name) },
     mode:     'record' as const,
     recordId,

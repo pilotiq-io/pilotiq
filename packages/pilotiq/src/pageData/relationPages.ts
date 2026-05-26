@@ -427,6 +427,7 @@ async function buildRelationListData(
   return {
     pageType: 'relation-list',
     panel,
+    title:    M.getLabel(),
     resource: { name: R.name, label: R.label, labelSingular: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -500,6 +501,7 @@ async function buildRelationCreateData(
   return {
     pageType: 'relation-create',
     panel,
+    title:    `Create ${M.getLabelSingular()}`,
     resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -579,10 +581,11 @@ async function buildRelationViewData(
   const tabs = await buildRelationTabs(R, scope.recordId, base, scope.relationship, user, parentRecord)
   if (tabs) elements.unshift(tabs)
 
+  const childTitle = deriveParentTitle(Related, child, M)
   const breadcrumbs = relationViewBreadcrumbs(
     cfg, R, M, scope.recordId,
     deriveParentTitle(R, parentRecord),
-    deriveParentTitle(Related, child, M),
+    childTitle,
   )
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
@@ -602,6 +605,7 @@ async function buildRelationViewData(
   return {
     pageType: 'relation-view',
     panel,
+    title:    childTitle,
     resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -679,11 +683,12 @@ async function buildRelationEditData(
   const tabs = await buildRelationTabs(R, scope.recordId, base, scope.relationship, user, parentRecord)
   if (tabs) elements.unshift(tabs)
 
+  const childTitle = deriveParentTitle(Related, child, M)
   const breadcrumbs = relationEditBreadcrumbs(
     cfg, R, M, scope.recordId,
     deriveParentTitle(R, parentRecord),
     scope.childId,
-    deriveParentTitle(Related, child, M),
+    childTitle,
   )
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
@@ -703,6 +708,7 @@ async function buildRelationEditData(
   return {
     pageType: 'relation-edit',
     panel,
+    title:    `Edit ${childTitle}`,
     resource: { name: R.name, label: R.labelSingular, slug: scope.slug, icon: serializeIcon(R.icon, R.name) },
     relation: {
       name:          M.name,
@@ -939,6 +945,7 @@ function nestedResponseEnvelope(
   req:      unknown,
 ): {
   pageType: typeof pageType
+  title:    string
   resource: { name: string; label?: string | undefined; slug: string; icon?: SerializedIcon | undefined }
   parentRelation: { name: string; relationship: string; label: string; relatedSlug?: string | undefined }
   parentChild:    { id: string; title: string }
@@ -952,8 +959,15 @@ function nestedResponseEnvelope(
   const [step0, step1] = scope.chain
   const parentChildTitle = deriveParentTitle(Related1, child1, M1)
 
+  // List + create derive from the leaf manager; view + edit override
+  // this after the spread with the grandchild record's title.
+  const title = pageType === 'nested-relation-create'
+    ? `Create ${M2.getLabelSingular()}`
+    : M2.getLabel()
+
   return {
     pageType,
+    title,
     resource: { name: R.name, label: R.labelSingular, slug: R.getSlug(), icon: serializeIcon(R.icon, R.name) },
     parentRelation: {
       name:         M1.name,
@@ -1138,12 +1152,13 @@ async function buildNestedRelationViewData(
   const tabs = await buildNestedRelationTabs(resolved.R, resolved.M1, base, scope.chain[0], scope.chain[1].recordId, scope.chain[1].relationship, user, resolved.child1)
   if (tabs) elements.unshift(tabs)
 
+  const child2Title = deriveParentTitle(Related2, child2, M2)
   const breadcrumbs = nestedRelationViewBreadcrumbs(
     cfg, resolved.R, resolved.M1, M2, scope.chain[0],
     deriveParentTitle(resolved.R, resolved.parentRecord),
     scope.chain[1].recordId,
     deriveParentTitle(Related1, child1, resolved.M1),
-    deriveParentTitle(Related2, child2, M2),
+    child2Title,
   )
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
@@ -1163,6 +1178,7 @@ async function buildNestedRelationViewData(
   return {
     ...nestedResponseEnvelope('nested-relation-view', pilotiq, base, scope, resolved, req),
     panel,
+    title:    child2Title,
     mode:     'view' as const,
     childId:  scope.childId,
     schemaData,
@@ -1217,13 +1233,14 @@ async function buildNestedRelationEditData(
   const tabs = await buildNestedRelationTabs(resolved.R, resolved.M1, base, scope.chain[0], scope.chain[1].recordId, scope.chain[1].relationship, user, resolved.child1)
   if (tabs) elements.unshift(tabs)
 
+  const child2Title = deriveParentTitle(Related2, child2, M2)
   const breadcrumbs = nestedRelationEditBreadcrumbs(
     cfg, resolved.R, resolved.M1, M2, scope.chain[0],
     deriveParentTitle(resolved.R, resolved.parentRecord),
     scope.chain[1].recordId,
     deriveParentTitle(Related1, child1, resolved.M1),
     scope.childId,
-    deriveParentTitle(Related2, child2, M2),
+    child2Title,
   )
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
@@ -1243,6 +1260,7 @@ async function buildNestedRelationEditData(
   return {
     ...nestedResponseEnvelope('nested-relation-edit', pilotiq, base, scope, resolved, req),
     panel,
+    title:    `Edit ${child2Title}`,
     mode:     'edit' as const,
     childId:  scope.childId,
     schemaData,

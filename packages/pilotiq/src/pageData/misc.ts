@@ -85,6 +85,7 @@ export async function globalEditData(
     pageType: 'global',
     panel,
     page:     PageClass.toMeta(),
+    title:    G.label,
     global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
     layout:   cfg.layout,
@@ -123,6 +124,7 @@ export async function globalViewData(
   return {
     panel,
     page:     PageClass.toMeta(),
+    title:    G.label,
     global:   { name: G.name, label: G.label, labelSingular: G.labelSingular, slug, icon: serializeIcon(G.icon, G.name) },
     basePath: cfg.path,
     layout:   cfg.layout,
@@ -166,6 +168,7 @@ export async function customPageData(
     pageType: 'page',
     panel,
     page:     PageClass.toMeta(),
+    title:    PageClass.getLabel(),
     schemaData,
     _widgetData: resolvedWidgets,
     basePath: cfg.path,

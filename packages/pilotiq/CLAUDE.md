@@ -179,6 +179,7 @@ Deep notes for many of these also live in `~/.claude/projects/-Users-sleman-Proj
 - `pages/(pilotiq)/+Head.tsx` — FOUC prevention script (reads localStorage, sets `.dark` before hydration) + Google Fonts preload
 - `pages/(pilotiq)/+Layout.tsx` — wraps pages in ThemeProvider + AppShell, injects theme CSS inline for SSR
 - `pages/(pilotiq)/+config.ts` — `passToClient: ['viewProps']`
+- `pages/(pilotiq)/+title.ts` — browser `<title>` (vike-react `title`, cascades to every page; runs server + client), formatted `Page · Brand`. Reads a per-role `data.title` stamped by the page-data builders (list → `R.label`; create → `Create <singular>`; edit → `Edit <recordTitle>`; view → record title; global → `G.label`; custom/record-sub-page → `Page.getLabel()`; relation + nested-relation roles mirror these off the manager label / child title; dashboard → page label or `'Dashboard'`). Falls back to breadcrumb-last → level-1 `Heading` → brand for any page that doesn't stamp one. Import-free — reads only the serialized `data`/`viewProps` envelope, so it stays client-safe for SPA-nav `document.title` updates (the main barrel pulls `node:fs`).
 - `pages/(pilotiq)/dashboard/` — Dashboard (1-segment URL)
 - `pages/(pilotiq)/slug/` — **Single route** for 2-segment URLs (resource index, Global edit, custom page). Server sets `pageType: 'resource' | 'global' | 'page'` in viewProps; the renderer just renders `schemaData` uniformly via `<SchemaRenderer />`.
 - `pages/(pilotiq)/resource-create/` — 3-segment with `parts[2] === 'create'`
