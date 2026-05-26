@@ -127,9 +127,8 @@ export interface ModelQuery {
 export function applyColumnSearch(q: ModelQuery, columns: string[], needle: string): ModelQuery {
   const build = (qb: ModelQuery): void => {
     columns.forEach((col, i) => {
-      i === 0
-        ? qb.where(col, 'LIKE', needle)
-        : qb.orWhere(col, 'LIKE', needle)
+      if (i === 0) qb.where(col, 'LIKE', needle)
+      else         qb.orWhere(col, 'LIKE', needle)
     })
   }
   if (typeof q.whereGroup === 'function') {

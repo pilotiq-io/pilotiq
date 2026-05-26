@@ -772,7 +772,8 @@ export async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<
       label: 'Theme',
       url:   `${base}/theme`,
       icon:  'palette',
-      _idx:  idx++,
+      // Last raw entry pushed — no further `idx` reads, so no increment.
+      _idx:  idx,
     })
   }
 
