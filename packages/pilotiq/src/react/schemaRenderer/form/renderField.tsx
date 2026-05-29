@@ -381,6 +381,7 @@ function renderFieldInput(
           imageEditor={Boolean(el['imageEditor'])}
           circleCropper={Boolean(el['circleCropper'])}
           automaticallyCropImagesToAspectRatio={Boolean(el['automaticallyCropImagesToAspectRatio'])}
+          preserveFilenames={Boolean(el['preserveFilenames'])}
           {...(Array.isArray(el['imageEditorAspectRatioOptions'])
             ? { imageEditorAspectRatioOptions: el['imageEditorAspectRatioOptions'] as Array<{ ratio: number; label: string }> }
             : {})}

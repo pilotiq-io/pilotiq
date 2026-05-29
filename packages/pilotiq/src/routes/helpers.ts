@@ -641,6 +641,7 @@ export async function handleUploadRequest(
 
   const directory = typeof body['directory'] === 'string' ? body['directory'] : undefined
   const fieldName = typeof body['fieldName'] === 'string' ? body['fieldName'] : ''
+  const preserveFilenames = body['preserveFilenames'] === 'true' || body['preserveFilenames'] === '1'
 
   // Server-side validation. Both accept and maxSize are advisory hints
   // shipped by the field meta, so we re-check here so a tampered client
@@ -695,6 +696,7 @@ export async function handleUploadRequest(
       file: uploadFile,
       ...(directory ? { directory } : {}),
       fieldName,
+      ...(preserveFilenames ? { preserveFilenames: true } : {}),
     })
     return res.json({ ok: true, url: result.url, ...(result.meta ? { meta: result.meta } : {}) })
   } catch (err) {

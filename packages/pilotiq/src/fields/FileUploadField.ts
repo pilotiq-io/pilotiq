@@ -36,6 +36,7 @@ export class FileUploadField extends Field {
   private _circleCropper = false
   private _automaticallyCropImagesToAspectRatio = false
   private _automaticallyResize?: { width: number; height: number }
+  private _preserveFilenames = false
 
   private constructor(name: string) {
     super(name, 'fileUpload')
@@ -113,6 +114,17 @@ export class FileUploadField extends Field {
     return this
   }
 
+  /**
+   * Keep the original filename on the storage adapter instead of the
+   * default random id. The adapter sanitizes the supplied name (strips
+   * path segments + unsafe characters); two uploads with the same name
+   * land on the same key, so the later one overwrites — pair with
+   * `directory()` (or an adapter that namespaces per record) when
+   * collisions matter. Honored by `localUpload`; custom adapters read
+   * `UploadRequest.preserveFilenames`.
+   */
+  preserveFilenames(value: boolean = true): this { this._preserveFilenames = value; return this }
+
   getAccept(): string[] | undefined { return this._accept }
   getMaxSize(): number | undefined { return this._maxSize }
   isMultiple(): boolean { return this._multiple }
@@ -128,6 +140,7 @@ export class FileUploadField extends Field {
   hasCircleCropper(): boolean { return this._circleCropper }
   doesAutomaticallyCrop(): boolean { return this._automaticallyCropImagesToAspectRatio }
   getAutomaticallyResize(): { width: number; height: number } | undefined { return this._automaticallyResize }
+  isPreservingFilenames(): boolean { return this._preserveFilenames }
 
   override toMeta(ctx?: RenderContext): FieldMeta {
     return {
@@ -147,6 +160,7 @@ export class FileUploadField extends Field {
       ...(this._circleCropper ? { circleCropper: true } : {}),
       ...(this._automaticallyCropImagesToAspectRatio ? { automaticallyCropImagesToAspectRatio: true } : {}),
       ...(this._automaticallyResize ? { automaticallyResize: this._automaticallyResize } : {}),
+      ...(this._preserveFilenames ? { preserveFilenames: true } : {}),
       // `uploadUrl` is stamped via RenderContext by the page-data
       // builders. Without it the renderer falls back to a clear error
       // ("no upload URL configured"); the route handler (and therefore

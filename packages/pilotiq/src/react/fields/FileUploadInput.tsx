@@ -34,6 +34,7 @@ export function FileUploadInput({
   imageEditorAspectRatioOptions,
   circleCropper      = false,
   automaticallyCropImagesToAspectRatio = false,
+  preserveFilenames  = false,
 }: {
   name:               string
   defaultValue:       unknown
@@ -54,6 +55,7 @@ export function FileUploadInput({
   imageEditorAspectRatioOptions?: Array<{ ratio: number; label: string }>
   circleCropper?:     boolean
   automaticallyCropImagesToAspectRatio?: boolean
+  preserveFilenames?: boolean
 }): React.ReactElement {
   const fs        = useFieldState(name)
   const { notify } = useToast()
@@ -228,6 +230,7 @@ export function FileUploadInput({
           fd.append('resize_height', String(automaticallyResize.height))
         }
         fd.append('fieldName', name)
+        if (preserveFilenames) fd.append('preserveFilenames', 'true')
         const res  = await fetch(uploadUrl, { method: 'POST', body: fd, headers: { Accept: 'application/json' } })
         const json = await res.json().catch(() => ({})) as { ok?: boolean; url?: string; error?: string }
         if (!res.ok || !json.ok || !json.url) {

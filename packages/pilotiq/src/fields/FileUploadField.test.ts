@@ -102,6 +102,25 @@ describe('FileUploadField', () => {
     })
   })
 
+  describe('preserveFilenames', () => {
+    it('absent from meta by default', () => {
+      const meta = FileUploadField.make('x').toMeta()
+      assert.equal('preserveFilenames' in meta, false)
+      assert.equal(FileUploadField.make('x').isPreservingFilenames(), false)
+    })
+
+    it('preserveFilenames() stamps the flag', () => {
+      const field = FileUploadField.make('x').preserveFilenames()
+      assert.equal(field.isPreservingFilenames(), true)
+      assert.equal(field.toMeta()['preserveFilenames'], true)
+    })
+
+    it('preserveFilenames(false) clears it', () => {
+      const meta = FileUploadField.make('x').preserveFilenames().preserveFilenames(false).toMeta()
+      assert.equal('preserveFilenames' in meta, false)
+    })
+  })
+
   describe('coerceFormValues', () => {
     it('passes URL string through (single mode)', () => {
       const out = coerceFormValues(

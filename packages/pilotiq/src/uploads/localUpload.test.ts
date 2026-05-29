@@ -67,4 +67,46 @@ describe('localUpload adapter', () => {
     const result = await adapter.put({ file, fieldName: 'x' })
     assert.match(result.url, /^\/uploads\/[a-f0-9]{32}\.png$/)
   })
+
+  describe('preserveFilenames', () => {
+    it('keeps the original (sanitized) filename', async () => {
+      const adapter = localUpload({ root: dir, urlPrefix: '/uploads' })
+      const file = new File([new Uint8Array([1, 2, 3])], 'My Report.pdf', { type: 'application/pdf' })
+      const result = await adapter.put({ file, fieldName: 'doc', preserveFilenames: true })
+      assert.equal(result.url, '/uploads/My-Report.pdf')
+      assert.ok(existsSync(join(dir, 'My-Report.pdf')), 'file written under preserved name')
+    })
+
+    it('strips path segments + unsafe characters from the preserved name', async () => {
+      const adapter = localUpload({ root: dir, urlPrefix: '/uploads' })
+      const file = new File([new Uint8Array([0])], '../../etc/p@ss wd!.png', { type: 'image/png' })
+      const result = await adapter.put({ file, fieldName: 'x', preserveFilenames: true })
+      // last segment only, unsafe runs collapse to a dash, ext re-added clean
+      assert.equal(result.url, '/uploads/p-ss-wd.png')
+    })
+
+    it('same name overwrites (no random suffix)', async () => {
+      const adapter = localUpload({ root: dir, urlPrefix: '/uploads' })
+      const a = new File([new Uint8Array([1])], 'dup.txt', { type: 'text/plain' })
+      const b = new File([new Uint8Array([2])], 'dup.txt', { type: 'text/plain' })
+      const r1 = await adapter.put({ file: a, fieldName: 'x', preserveFilenames: true })
+      const r2 = await adapter.put({ file: b, fieldName: 'x', preserveFilenames: true })
+      assert.equal(r1.url, r2.url)
+      assert.deepEqual(Array.from(readFileSync(join(dir, 'dup.txt'))), [2], 'later upload overwrote')
+    })
+
+    it('falls back to a random id when the name sanitizes to empty', async () => {
+      const adapter = localUpload({ root: dir, urlPrefix: '/uploads' })
+      const file = new File([new Uint8Array([0])], '@@@.png', { type: 'image/png' })
+      const result = await adapter.put({ file, fieldName: 'x', preserveFilenames: true })
+      assert.match(result.url, /^\/uploads\/[a-f0-9]{32}\.png$/)
+    })
+
+    it('default (no flag) still uses a random id', async () => {
+      const adapter = localUpload({ root: dir, urlPrefix: '/uploads' })
+      const file = new File([new Uint8Array([0])], 'keepme.png', { type: 'image/png' })
+      const result = await adapter.put({ file, fieldName: 'x' })
+      assert.match(result.url, /^\/uploads\/[a-f0-9]{32}\.png$/)
+    })
+  })
 })

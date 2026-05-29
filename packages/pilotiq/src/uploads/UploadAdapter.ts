@@ -20,6 +20,13 @@ export interface UploadRequest {
   directory?: string
   /** The source field name — useful for adapter routing or audit logs. */
   fieldName:  string
+  /**
+   * When true, the adapter should keep the original (sanitized) filename
+   * instead of generating a random key. Set by
+   * `FileUpload.preserveFilenames()`. Adapters that can't honor it (e.g.
+   * content-addressed stores) may ignore the hint.
+   */
+  preserveFilenames?: boolean
 }
 
 export interface UploadResult {
