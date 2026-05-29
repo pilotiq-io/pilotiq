@@ -173,10 +173,21 @@ behavior that's left. Target the highest-traffic, highest-risk components first.
   unread-chrome. (`RepeaterInput.render.test.tsx`,
   `BuilderInput.render.test.tsx`, `CommandPalette.test.tsx`,
   `NotificationBell.test.tsx`)
-- ☐ Remaining (Phase 3c): `SearchTrigger.tsx` pill (mac-aware hint,
-  renders-nothing-outside-AppShell); action confirm dialogs / modal-form
-  actions / import-export modal; `NotificationBell` dropdown chrome +
-  action strip (the base-ui menu portal, untested here).
+- ✅ Phase 3c — DONE. `SearchTrigger.tsx` (null outside the opener
+  context; opens the palette on click). `ConfirmActionDialog.tsx` (open →
+  confirm runs `onConfirm` + closes; Cancel closes; destructive CTA
+  label). `ActionModalDialog.tsx` (200 → close + navigate; 422 → inline
+  field errors, stays open; 5xx → server-error banner; Cancel) — the
+  import/export modal rides this same submit pipeline.
+  `NotificationActionStrip.tsx` (url-mode navigate + mark-read; handler
+  POST → mark-read/notify/redirect; disabled handler chip with no
+  notification id). (`SearchTrigger.test.tsx`,
+  `schemaRenderer/action/{ConfirmActionDialog,ActionModalDialog}.test.tsx`,
+  `NotificationActionStrip.test.tsx`)
+- ☐ Not covered (low value): the base-ui `NotificationBell` dropdown
+  trigger/badge portal itself (the list + strip inside it are tested);
+  `ActionGroupTrigger` / `MethodActionButton` / `HandlerActionButton`
+  dispatch buttons. Pick up under Phase 4 chrome if wanted.
 
 ### Phase 4 — Chrome + cross-cutting
 - `layouts/SidebarLayout.tsx` / `TopbarLayout.tsx`, `AppShell.tsx`,
