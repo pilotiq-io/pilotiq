@@ -86,3 +86,51 @@ describe('BuilderInput', () => {
     assert.equal(rowCount(container), 1)
   })
 })
+
+// Phase 3b — Builder shares the Repeater row-chrome surface: clone,
+// collapse, and item-label resolution. The header default differs —
+// Builder labels a row by its block (e.g. "Text"), not "Item N".
+describe('BuilderInput — row chrome', () => {
+  it('clones a row when cloneable', async () => {
+    const { container } = render(
+      <BuilderInput
+        el={builderMeta([block('text', 'Text')], ['text'], { cloneable: true })}
+        name="content"
+        disabled={false}
+      />,
+    )
+    assert.equal(rowCount(container), 1)
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Duplicate row' }))
+    assert.equal(rowCount(container), 2)
+  })
+
+  it('toggles a row open/collapsed via the chevron', async () => {
+    render(
+      <BuilderInput
+        el={builderMeta([block('text', 'Text')], ['text'], { collapsible: true })}
+        name="content"
+        disabled={false}
+      />,
+    )
+    const collapse = screen.getByRole('button', { name: 'Collapse' })
+    assert.equal(collapse.getAttribute('aria-expanded'), 'true')
+    await userEvent.setup().click(collapse)
+    assert.equal(screen.getByRole('button', { name: 'Expand' }).getAttribute('aria-expanded'), 'false')
+  })
+
+  it('uses the resolved itemLabel, falling back to the block label', () => {
+    const meta: ElementMeta = {
+      type: 'field',
+      fieldType: 'builder',
+      name: 'content',
+      blocks: [block('text', 'Text')],
+      rows: [
+        { id: 'b1', type: 'text', children: [TEXT_CHILD], itemLabel: 'Intro paragraph' },
+        { id: 'b2', type: 'text', children: [TEXT_CHILD] },
+      ],
+    }
+    render(<BuilderInput el={meta} name="content" disabled={false} />)
+    assert.ok(screen.getByText('Intro paragraph'))
+    assert.ok(screen.getByText('Text')) // no itemLabel → block label
+  })
+})

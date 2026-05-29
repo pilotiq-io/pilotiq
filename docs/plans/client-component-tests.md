@@ -159,10 +159,24 @@ behavior that's left. Target the highest-traffic, highest-risk components first.
   `RepeaterInput.test.ts`.)
 - ✅ `fields/BuilderInput.tsx` — DONE. Initial-row render, empty state, single-
   block direct add, multi-block picker-menu add, remove. (`BuilderInput.render.test.tsx`)
-- ☐ Remaining (Phase 3b): clone, collapse/accordion, `@dnd-kit` reorder,
-  item-label resolution; action confirm dialogs / modal-form actions /
-  import-export modal; `CommandPalette.tsx` / `SearchTrigger.tsx` (⌘K); 
-  `NotificationBell.tsx` (list, mark-read, mark-all).
+- ✅ Phase 3b (first slice) — DONE. Repeater + Builder row chrome: clone
+  (`cloneable` → "Duplicate row", maxItems gating), collapse via the
+  chevron (`aria-expanded` flip), accordion one-open-at-a-time, item-label
+  resolution (resolved `itemLabel` vs positional / block-label default),
+  and the Up/Down reorder fallback (asserted via `__id` DOM order; the
+  `@dnd-kit` pointer drag stays covered by the pure `reorderRows` unit
+  test). `CommandPalette.tsx` (⌘K): empty-input quick-nav, debounced
+  search via `fetchImpl`, ↑/↓+Enter navigate, Escape close.
+  `NotificationBell.tsx`: `useNotifications` lifecycle (fetch-on-mount,
+  optimistic mark-read + POST, mark-all → zero) driven through a harness
+  with stubbed `fetch`, plus `NotificationList` empty / loading /
+  unread-chrome. (`RepeaterInput.render.test.tsx`,
+  `BuilderInput.render.test.tsx`, `CommandPalette.test.tsx`,
+  `NotificationBell.test.tsx`)
+- ☐ Remaining (Phase 3c): `SearchTrigger.tsx` pill (mac-aware hint,
+  renders-nothing-outside-AppShell); action confirm dialogs / modal-form
+  actions / import-export modal; `NotificationBell` dropdown chrome +
+  action strip (the base-ui menu portal, untested here).
 
 ### Phase 4 — Chrome + cross-cutting
 - `layouts/SidebarLayout.tsx` / `TopbarLayout.tsx`, `AppShell.tsx`,
