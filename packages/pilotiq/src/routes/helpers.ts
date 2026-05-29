@@ -675,7 +675,7 @@ export async function handleUploadRequest(
     if (Number.isFinite(w) && w > 0 && Number.isFinite(h) && h > 0) {
       try {
         const imageModuleName = '@rudderjs/image'
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+         
         const pkg = await import(/* @vite-ignore */ imageModuleName) as { image: (input: unknown) => { resize(w: number, h: number): { format(f: string): { toBuffer(): Promise<Buffer> } } } }
         const buf = await pkg.image(file).resize(w, h).format('webp').toBuffer()
         const baseName = file.name.replace(/\.[^.]+$/, '')

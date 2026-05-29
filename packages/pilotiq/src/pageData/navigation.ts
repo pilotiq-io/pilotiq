@@ -6,7 +6,6 @@ import type { GlobalClass } from '../Global.js'
 import type { ClusterClass } from '../Cluster.js'
 import { resourceBasePath, globalBasePath, pageBasePath } from '../clusterPaths.js'
 import type { ElementMeta } from '../schema/Element.js'
-import { resolveSchema, type SchemaContext } from '../schema/resolveSchema.js'
 import { resolveTheme } from '../theme/resolve.js'
 import type { ThemeMeta } from '../theme/types.js'
 import { serializeIcon, type SerializedIcon } from '../icons/types.js'
@@ -381,7 +380,7 @@ export async function buildRightSidebarMeta(
           const ok = await c.canAccess(user)
           if (!ok) return null
         } catch (err) {
-          // eslint-disable-next-line no-console
+           
           console.warn(`[Pilotiq] rightPanel "${c.id}" canAccess threw — dropping`, err)
           return null
         }
@@ -850,7 +849,7 @@ export function nestAndSort(raw: RawNavItem[]): NavItem[] {
   const finalize = (items: RawNavItem[]): NavItem[] =>
     sortItems(items).map(it => {
       const kids = childrenOf.get(it.name)
-      const { parent, _idx, ...rest } = it
+      const { parent: _parent, _idx, ...rest } = it
       const out: NavItem = { ...rest }
       if (kids && kids.length > 0) out.children = finalize(kids)
       return out

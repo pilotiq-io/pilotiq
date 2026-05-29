@@ -1,5 +1,5 @@
 import React from 'react'
-import { ChevronDownIcon, InboxIcon } from 'lucide-react'
+import { ChevronDownIcon } from 'lucide-react'
 import type { ElementMeta } from '../../../schema/Element.js'
 import { Checkbox } from '../../ui/checkbox.js'
 import { GroupHeadingLink, makeSpaNavClick } from './links.js'

@@ -291,12 +291,12 @@ export interface ResourceLike {
   /** Resource model adapter (set when the resource opts into auto-CRUD
    *  via `static model = M`). Import / Export factories need access to
    *  `create / update / find / query` to drive their writes / reads. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   model?: any
   /** Resource table configurator. Export factory calls
    *  `R.table(Table.make())` to discover columns + the records handler
    *  for the "filtered" / "all" scope. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   table?(t: any): any
 }
 
@@ -305,7 +305,7 @@ export interface ResourceLike {
  *  import inside a handler runs after both modules have finished
  *  loading. Cached after first call so we don't pay the import cost
  *  on every dispatched export. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let _TableClass: any | undefined
 async function loadTableClass(): Promise<unknown> {
   if (_TableClass !== undefined) return _TableClass.make()
@@ -714,7 +714,7 @@ export class Action extends Element {
   static export(
     R: ResourceLike,
     _basePath: string,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     opts: import('./exportFactory.js').ExportOptions = {},
   ): Action {
     return Action.make('export')
@@ -752,7 +752,7 @@ export class Action extends Element {
   static bulkExport(
     R: ResourceLike,
     _basePath: string,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     opts: Omit<import('./exportFactory.js').ExportOptions, 'scope'> = {},
   ): Action {
     return Action.make('bulkExport')

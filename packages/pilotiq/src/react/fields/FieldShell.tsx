@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useRef } from 'react'
 import type { ElementMeta } from '../../schema/Element.js'
 import { getIcon } from '../../icons/registry.js'
-import { usePendingSuggestions, usePendingSuggestionsForField, type PendingSuggestion } from '../PendingSuggestionsContext.js'
+import { usePendingSuggestions, usePendingSuggestionsForField } from '../PendingSuggestionsContext.js'
 import { getPendingSuggestionOverlay } from '../PendingSuggestionOverlayRegistry.js'
 import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 import { FormIdContext, useFieldState } from '../FormStateContext.js'

@@ -135,7 +135,7 @@ export function useWidgetData(meta: WidgetMetaLike): WidgetState {
   // Lazy first-paint fetch.
   useEffect(() => {
     if (lazy && data === null && url && !error) fetchOnce()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+     
   }, [])
 
   // Polling — re-fetch on the configured interval, paused when tab hidden.

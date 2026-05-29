@@ -178,7 +178,7 @@ export function BuilderInput({
       ...(r.canClone   === false ? { canClone:   false as const } : {}),
       ...(r.canReorder === false ? { canReorder: false as const } : {}),
     })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [],
   )
   const [rows, setRows] = useState<RowState[]>(initialRows)
@@ -276,7 +276,7 @@ export function BuilderInput({
       }
     }, 1500)
     return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [rowBinding, formId])
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
     accordion ? {} : initSeedCollapsed(initialRows, formId, name, defaultCollapsed, collapsible),

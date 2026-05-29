@@ -55,7 +55,7 @@ describe('Pilotiq plugins', () => {
 function makeStubRouter(): Router & { _calls: Array<{ method: string; path: string }> } {
   const calls: Array<{ method: string; path: string }> = []
   const noop = (path: string): void => { calls.push({ method: 'unknown', path }) }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const stub: any = {
     get:    (path: string) => noop(path),
     post:   (path: string) => noop(path),

@@ -128,7 +128,7 @@ export function RightSidebarProvider({ meta, basePath, children }: RightSidebarP
     // Run once on mount per basePath. Width / activeId / open keys are
     // basePath-derived, so the dependency list is effectively static for
     // a given panel — no stale-closure risk on subsequent renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [basePath])
 
   // Re-validate `activeId` when the contribution set changes (e.g.,

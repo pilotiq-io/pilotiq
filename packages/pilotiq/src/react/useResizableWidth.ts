@@ -97,7 +97,7 @@ export function useResizableWidth(opts: UseResizableWidthOptions): UseResizableW
   useEffect(() => {
     setWidthState(readStoredWidth(opts.storageKey, { min, max, defaultWidth }))
     // Intentionally exclude width — we only want this on storageKey flip.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [opts.storageKey])
 
   const setWidth = useCallback((px: number): void => {

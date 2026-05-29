@@ -120,7 +120,7 @@ export function parseImportText(
  */
 export async function runImport(
   rows: Array<Record<string, unknown>>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   M:    any,
   mode: 'create' | 'upsert',
   opts: ImportOptions,

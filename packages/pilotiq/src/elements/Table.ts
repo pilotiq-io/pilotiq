@@ -40,7 +40,7 @@ export interface TableContext<R = unknown> {
    * user-supplied `Table.records(fn)` handlers can branch on this for
    * cross-table joins or non-default narrowing. */
   groupScope?: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     group: import('./TableGroup.js').TableGroup<any>
     key:   string
   }
@@ -365,7 +365,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   private _defaultGroup?: string
   // Variance-relaxed — covariant `TableGroup<R>[]` ergonomics
   // matter more than tight invariance against the table's `R` parameter.
-  private _groups:        TableGroup<any>[] = []  // eslint-disable-line @typescript-eslint/no-explicit-any
+  private _groups:        TableGroup<any>[] = []   
   private _activeGroup?:  string
   private _activeGroupKey?: string
   private _summaries?:    Record<string, SummaryResult[]>
@@ -541,7 +541,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
    * registered already, so `defaultGroup(TableGroup.make('status').label('Status'))`
    * doesn't require repeating the registration.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   defaultGroup(group: string | TableGroup<any>): this {
     if (typeof group === 'string') {
       this._defaultGroup = group
@@ -560,7 +560,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
    * title). The active selection round-trips through the URL via the
    * reserved `?group=` key.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   groups(items: TableGroup<any>[]): this {
     this._groups = items
     return this
@@ -770,7 +770,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
   getRecordClasses(): RecordClassesHandler<R> | undefined { return this._recordClasses }
   getPollInterval(): number | undefined { return this._pollInterval }
   getDefaultGroup(): string | undefined { return this._defaultGroup }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   getGroups(): TableGroup<any>[] { return this._groups }
   getActiveGroup(): string | undefined { return this._activeGroup }
   getActiveGroupKey(): string | undefined { return this._activeGroupKey }
@@ -778,7 +778,7 @@ export class Table<R = unknown, Q = unknown> extends Element {
    * matching registered group, or — when the active column is set but
    * not registered (bare-column form) — synthesizes a no-metadata group
    * so the dispatcher has a uniform shape to work with. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   getActiveGroupInstance(): TableGroup<any> | undefined {
     const col = this._activeGroup
     if (!col) return undefined

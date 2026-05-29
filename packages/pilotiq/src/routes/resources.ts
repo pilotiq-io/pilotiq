@@ -1,9 +1,8 @@
 import type { Router } from '@rudderjs/router'
-import type { AppRequest, AppResponse } from '@rudderjs/contracts'
 import { view } from '@rudderjs/view'
 import type { Pilotiq } from '../Pilotiq.js'
 import type { ResourceClass } from '../Resource.js'
-import { resolveSchema, type SchemaContext } from '../schema/resolveSchema.js'
+import { type SchemaContext } from '../schema/resolveSchema.js'
 import { dispatchFormSubmit, findForms, selectForm } from '../elements/dispatchForm.js'
 import { dispatchAction, parseActionBody, type ResolveRecord } from '../elements/dispatchAction.js'
 import {
@@ -76,8 +75,6 @@ export function registerResourceRoutes(
   base:    string,
   options: { reorderable: boolean; editable: boolean },
 ): void {
-  const cfg = pilotiq.getConfig()
-
     const slug  = R.getSlug()
     const resourceBase = resourceBasePath(base, R)
     const pages = R.resolvePages()

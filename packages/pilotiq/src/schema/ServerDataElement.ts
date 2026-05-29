@@ -104,7 +104,7 @@ export abstract class ServerDataElement extends Element {
   /** Discriminator that pageData / routes use to find server-data
    *  elements without `instanceof` (Vite SSR module-cache duplication
    *  trap — same posture as `findForms`). */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- structural marker
+   
   isServerDataElement(): true { return true }
 
   /**

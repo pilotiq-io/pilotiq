@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react'
+import { createContext, useContext } from 'react'
 
 /**
  * Phase 1 — row-text Tiptap-backed collab plan

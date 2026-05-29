@@ -16,7 +16,6 @@ import { buildStaticPreviewHTML } from './theme-preview/build-html.js'
 
 import { colors, BASE_COLOR_NAMES, HUE_NAMES } from '../theme/colors.js'
 import { PRESET_FONTS, PRESET_RADIUS, PRESET_SPACING } from '../theme/presets.js'
-import { spacingMap } from '../theme/spacing.js'
 import type { StylePreset } from '../theme/types.js'
 
 const PRESETS = ['vega', 'nova', 'maia', 'lyra', 'mira', 'luma', 'sera'] as const

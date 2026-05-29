@@ -229,7 +229,7 @@ export function RepeaterInput({
       ...(r.canClone   === false ? { canClone:   false as const } : {}),
       ...(r.canReorder === false ? { canReorder: false as const } : {}),
     })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [],
   )
   const [rows, setRows] = useState<RowState[]>(initialRows)
@@ -334,7 +334,7 @@ export function RepeaterInput({
     // initialRows is a stable useMemo([]) ref so it's safe to omit. We
     // intentionally key only on rowBinding + formId — the reconciler is
     // tied to the submit lifecycle, not to row-state changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [rowBinding, formId])
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
     accordion ? {} : initSeedCollapsed(initialRows, formId, name, defaultCollapsed, collapsible),

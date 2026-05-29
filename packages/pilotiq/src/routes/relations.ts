@@ -4,8 +4,7 @@ import { view } from '@rudderjs/view'
 import type { Pilotiq } from '../Pilotiq.js'
 import type { ResourceClass } from '../Resource.js'
 import { Form } from '../elements/Form.js'
-import { type SchemaContext } from '../schema/resolveSchema.js'
-import { dispatchFormSubmit, findForms, selectForm } from '../elements/dispatchForm.js'
+import { dispatchFormSubmit } from '../elements/dispatchForm.js'
 import { dispatchAction, parseActionBody, type ResolveRecord } from '../elements/dispatchAction.js'
 import { Table } from '../elements/Table.js'
 import {
@@ -14,7 +13,6 @@ import {
   resolveRelationChain, type ResolvedChain,
 } from '../pageData.js'
 import {
-  RelationManager,
   normalizeRelationMode,
   type RelationMode,
 } from '../RelationManager.js'
@@ -169,7 +167,6 @@ export function registerRelationRoutes(
         const body = await readFormBody(req)
         const { values } = splitMeta(body)
 
-        const createUrl = `${parentBase}/create`.replace(':id', pre.recordId)
         const listUrl   = parentBase.replace(':id', pre.recordId)
         const form = M.form(Form.make(), {
           basePath:     base,
@@ -1038,7 +1035,7 @@ export function registerRelationRoutes(
           const pre = await requireNestedChain(req, res, json)
           if (!pre) return
           const { resolved } = pre
-          const { Related1, child1, M2, Related2, child2Mode } = resolved
+          const { child1, M2, Related2, child2Mode } = resolved
 
           const actionName = req.params['actionName']!
           const body  = await readFormBody(req)
@@ -1099,7 +1096,7 @@ export function registerRelationRoutes(
           if (!pre) return
           const childId2 = req.params['childId2']!
           const { resolved } = pre
-          const { Related1, child1, M2, Related2, child2Mode } = resolved
+          const { child1, M2, Related2, child2Mode } = resolved
 
           if (child2Mode !== 'belongsToMany' && child2Mode !== 'morphToMany' && child2Mode !== 'morphedByMany') {
             res.status(404)
@@ -1168,7 +1165,6 @@ export function registerRelationRoutes(
         // model carries `restore` / `forceDelete`. Mirrors the depth-1
         // routes at line 1804+. IDOR runs against child1.related(nestedRel)
         // broadened with `withTrashed()` so trashed grandchildren resolve.
-        const Related1ForSoft = Related1
         const Related2ForSoft = Related2
         if (Related2ForSoft?.softDeletes) {
           const RM2 = Related2ForSoft.model

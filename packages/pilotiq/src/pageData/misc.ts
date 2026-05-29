@@ -1,6 +1,5 @@
 import type { Pilotiq } from '../Pilotiq.js'
 import { livePanel } from '../PilotiqRegistry.js'
-import type { Page } from '../Page.js'
 import { globalBasePath, pageBasePath } from '../clusterPaths.js'
 import { Element } from '../schema/Element.js'
 import { resolveSchema, type SchemaContext, type RenderContext } from '../schema/resolveSchema.js'

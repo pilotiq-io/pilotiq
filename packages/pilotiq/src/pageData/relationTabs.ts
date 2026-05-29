@@ -1,10 +1,7 @@
-import type { ElementMeta } from '../schema/Element.js'
-import type { Page } from '../Page.js'
 import type { ResourceClass } from '../Resource.js'
 import {
   RelationManager,
   safeManagerPolicy as safeManagerPolicyImpl,
-  type ManagerCanMethod as ManagerCanMethodType,
 } from '../RelationManager.js'
 import { RelationTabs, relationTab, type RelationTabMeta } from '../schema/RelationTabs.js'
 import { resourceBasePath } from '../clusterPaths.js'

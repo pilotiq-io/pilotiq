@@ -1419,7 +1419,7 @@ describe('Action visibility through resolveSchema (non-row placements)', () => {
 describe('Action.export factory', () => {
   /** Lazily-resolved Column class — Column module imports Action, so a
    *  top-level static import would tighten the cycle. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   let ColumnClass: any
   beforeEach(async () => {
     if (!ColumnClass) ColumnClass = (await import('../Column.js')).Column
@@ -1448,7 +1448,7 @@ describe('Action.export factory', () => {
       // We mutate the passed table in-place, mirroring how user code does
       // it via the fluent builder. Returning the same `t` matches the
       // contract of `static table(t)`.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       table(t: any) {
         const cols = colNames.map(n => ColumnClass.make(n))
         // Records handler — pages 1..N where N covers all rows. Honors

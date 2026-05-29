@@ -1,5 +1,4 @@
 import type {
-  Pilotiq,
   PilotiqConfig,
   EditPageHydrator,
   EditPageHydratorContext,
@@ -9,7 +8,6 @@ import { Element } from '../schema/Element.js'
 import { Field } from '../fields/Field.js'
 import type { SchemaContext, RenderContext } from '../schema/resolveSchema.js'
 import { Form } from '../elements/Form.js'
-import { Table } from '../elements/Table.js'
 import { Column } from '../Column.js'
 import { SelectField } from '../fields/SelectField.js'
 import { isRepeaterField, RepeaterField } from '../fields/RepeaterField.js'

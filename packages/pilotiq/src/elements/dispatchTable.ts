@@ -1,6 +1,6 @@
 import { Element, type ElementMeta } from '../schema/Element.js'
 import { Table, type TableContext, type SortDirection } from './Table.js'
-import { TableGroup, bucketDateValue, formatDateBucketTitle } from './TableGroup.js'
+import { formatDateBucketTitle } from './TableGroup.js'
 import type { Filter } from '../filters/Filter.js'
 import { Action } from '../actions/Action.js'
 import { Column, type ColumnSelectOption } from '../Column.js'

@@ -78,7 +78,7 @@ const DEFAULT_CHUNK     = 1_000
  */
 export function resolveExportColumns(
   spec:    ExportOptions['columns'],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   R:       { table?(t: any): any },
 ): ResolvedColumn[] {
   if (spec && spec.length > 0) {
@@ -116,7 +116,7 @@ export function readRequestQuery(ctx: ActionContext): QueryParams {
  *  - `'page'`:     same as `'filtered'` but only the visible page
  */
 export async function collectExportRows(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   table:    any,
   ctx:      ActionContext,
   scope:    ExportOptions['scope'] = 'filtered',
@@ -154,7 +154,7 @@ export async function collectExportRows(
  */
 function buildTableCtxFromQuery(
   query: QueryParams,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   table: any,
 ): {
   search?:  string

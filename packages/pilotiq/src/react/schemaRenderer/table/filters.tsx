@@ -27,10 +27,6 @@ import {
 import type {
   ConstraintMeta, ConstraintOperator, ConstraintOperatorName, ConstraintValueKind,
 } from '../../../filters/queryBuilder/Constraint.js'
-import {
-  COLUMN_COLOR_CLASSES,
-} from '../constants.js'
-import { resolveIcon } from '../helpers.js'
 import { patchFilterUrl } from './url.js'
 
 // ─── Filter chrome + table-toolbar dropdowns ────────────────

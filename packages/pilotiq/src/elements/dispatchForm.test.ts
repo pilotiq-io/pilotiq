@@ -9,7 +9,7 @@ import { NumberField } from '../fields/NumberField.js'
 import { ToggleField } from '../fields/ToggleField.js'
 import { TagsInputField } from '../fields/TagsInputField.js'
 import { Section } from '../schema/Section.js'
-import { makeValidator, required } from '../validation/index.js'
+import { makeValidator } from '../validation/index.js'
 
 describe('dispatchFormSubmit', () => {
   it('happy path: validate → mutate → beforeSave → save → afterSave → redirect', async () => {

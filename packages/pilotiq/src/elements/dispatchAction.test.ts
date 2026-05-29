@@ -218,7 +218,7 @@ describe('Action modal-form dispatch', () => {
   it('does not run validation/coercion when action has no schema (confirm-only)', async () => {
     const a = Action.make('confirm-only')
       .modalHeading('Sure?')
-      .handler((ctx) => { /* values pass through untouched */ })
+      .handler((_ctx) => { /* values pass through untouched */ })
     const result = await dispatchAction(a, { ids: [], values: { foo: 'bar' } })
     assert.equal(result.ok, true, 'no schema means no validation gate')
   })

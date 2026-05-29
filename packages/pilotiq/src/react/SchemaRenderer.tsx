@@ -1,32 +1,21 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React from 'react'
 import type { ElementMeta } from '../schema/Element.js'
-import { getFieldRenderer } from './registry.js'
-import { getFieldLabelSlot } from './FieldLabelSlotRegistry.js'
-import { FormStateProvider, useFormState, FormIdContext } from './FormStateContext.js'
 import { CircleIcon } from 'lucide-react'
 import { useNavigate } from './navigate.js'
 import { useBreadcrumbsHoisted } from './breadcrumb-hoist.js'
 import { useIconFor } from './icon-context.js'
 import type { SerializedIcon } from '../icons/types.js'
-import { useToast } from './Toaster.js'
-import { pickEditableCell } from './cells/EditableCell.js'
 import { WidgetDataProvider } from './WidgetDataContext.js'
 import { StatsOverviewRenderer } from './widgets/StatsOverviewRenderer.js'
 import { TableWidgetRenderer } from './widgets/TableWidgetRenderer.js'
 import { ViewRenderer } from './widgets/ViewRenderer.js'
 import { getSlotComponent } from '../slot-components/registry.js'
 import { getWidgetRenderer } from './widgetRegistry.js'
-import type { NotificationMeta } from '../notifications/Notification.js'
 import {
   BADGE_COLOR_CLASSES,
-  COLUMN_COLOR_CLASSES,
-  COLUMN_WEIGHT_CLASSES,
 } from './schemaRenderer/constants.js'
 import {
-  layoutClasses,
-  renderChildren,
   resolveIcon,
-  withTooltip,
 } from './schemaRenderer/helpers.js'
 import { renderSimpleElement } from './schemaRenderer/SimpleElements.js'
 import { AlertRenderer } from './schemaRenderer/AlertRenderer.js'
@@ -34,7 +23,6 @@ import { SectionRenderer } from './schemaRenderer/SectionRenderer.js'
 import { TabsRenderer } from './schemaRenderer/TabsRenderer.js'
 import { WizardRenderer } from './schemaRenderer/WizardRenderer.js'
 import { renderEntry } from './schemaRenderer/EntryRenderer.js'
-import { applyColumnFormat } from './schemaRenderer/columnFormat.js'
 import type { RenderActionOptions } from './schemaRenderer/action/buttons.js'
 import {
   dispatchHandlerAction as actionDispatchHandlerAction,

@@ -36,7 +36,7 @@ export function KeyValueInput({
     return entries.length > 0
       ? entries.map(([k, v]) => ({ id: newId(), key: k, value: v }))
       : [{ id: newId(), key: '', value: '' }]
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [])
 
   const [localRows, setLocalRows] = useState<Row[]>(initialRows)

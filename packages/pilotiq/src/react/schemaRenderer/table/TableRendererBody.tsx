@@ -326,7 +326,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
       }
     }
     setHiddenColumns(next)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [currentPath, toggleableColumns.length])
   const toggleColumnHidden = (name: string, nextHidden: boolean): void => {
     setHiddenColumns(prev => {
@@ -396,7 +396,7 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
     setCollapsedGroups(next)
     // Re-run if the active group changes — different values, different
     // localStorage namespace.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [defaultGroup, groupCollapsible, groupDefaultCollapsed, currentPath])
   const toggleGroupCollapsed = (groupValue: string): void => {
     setCollapsedGroups(prev => {

@@ -111,7 +111,7 @@ async function runMiddleware(
   for (const mw of route.middleware as MiddlewareHandler[]) {
     let didCallNext = false
     const next = async () => { didCallNext = true }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     await mw(req as any, res as any, next)
     if (!didCallNext) {
       reached = false
