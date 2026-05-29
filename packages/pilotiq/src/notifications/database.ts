@@ -61,21 +61,29 @@ interface NotificationRow {
   updated_at:      string
 }
 
-/** Minimal query surface we use against the orm adapter. */
-interface QB {
-  where(column: string, value: unknown): QB
-  where(column: string, op: string, value: unknown): QB
-  orderBy(column: string, dir?: 'ASC' | 'DESC'): QB
-  paginate(page: number, perPage?: number): Promise<{ data: unknown[]; total: number }>
-  get?(): Promise<unknown[]>
+/** Minimal query surface we use against the orm adapter. `Row` is the
+ *  shape of a fetched record — threaded through so `paginate().data` and
+ *  `get()` come back typed instead of `unknown[]`. */
+interface QB<Row = unknown> {
+  where(column: string, value: unknown): QB<Row>
+  where(column: string, op: string, value: unknown): QB<Row>
+  orderBy(column: string, dir?: 'ASC' | 'DESC'): QB<Row>
+  paginate(page: number, perPage?: number): Promise<{ data: Row[]; total: number }>
+  get?(): Promise<Row[]>
   count?(): Promise<number>
   update?(data: Record<string, unknown>): Promise<unknown>
   updateAll?(data: Record<string, unknown>): Promise<number>
   create?(data: Record<string, unknown>): Promise<unknown>
 }
 
+/** The slice of the orm adapter we depend on — a single `query(table)`
+ *  entry point. Generic on the row type so call sites pick it per table. */
+interface OrmAdapter {
+  query<Row = unknown>(table: string): QB<Row>
+}
+
 /** Test-injected adapter override; `null` falls back to dynamic import. */
-let _testAdapter: { query: <T>(table: string) => QB } | null | 'unset' = 'unset'
+let _testAdapter: OrmAdapter | null | 'unset' = 'unset'
 
 /** Soft-resolved orm adapter. `null` when no orm adapter is registered.
  *
@@ -90,14 +98,14 @@ let _testAdapter: { query: <T>(table: string) => QB } | null | 'unset' = 'unset'
  *  resolve them at type-check time — pilotiq doesn't peer-depend on
  *  `@rudderjs/orm` or `@rudderjs/core` (the bell-icon is opt-in).
  */
-async function adapter(): Promise<{ query: <T>(table: string) => QB } | null> {
+async function adapter(): Promise<OrmAdapter | null> {
   if (_testAdapter !== 'unset') return _testAdapter
   const fromContainer = await resolveFromContainer()
   if (fromContainer) return fromContainer
   return resolveFromOrmModule()
 }
 
-async function resolveFromContainer(): Promise<{ query: <T>(table: string) => QB } | null> {
+async function resolveFromContainer(): Promise<OrmAdapter | null> {
   const moduleName = '@rudderjs/core'
   try {
     const mod = await import(/* @vite-ignore */ moduleName) as {
@@ -107,17 +115,17 @@ async function resolveFromContainer(): Promise<{ query: <T>(table: string) => QB
     const adapter = mod.app().make('db')
     if (!adapter || typeof adapter !== 'object') return null
     if (typeof (adapter as { query?: unknown }).query !== 'function') return null
-    return adapter as { query: <T>(table: string) => QB }
+    return adapter as OrmAdapter
   } catch {
     return null
   }
 }
 
-async function resolveFromOrmModule(): Promise<{ query: <T>(table: string) => QB } | null> {
+async function resolveFromOrmModule(): Promise<OrmAdapter | null> {
   const moduleName = '@rudderjs/orm'
   try {
     const mod = await import(/* @vite-ignore */ moduleName) as {
-      ModelRegistry?: { get(): { query: <T>(table: string) => QB } | null }
+      ModelRegistry?: { get(): OrmAdapter | null }
     }
     return mod.ModelRegistry?.get() ?? null
   } catch {
@@ -235,7 +243,7 @@ export async function listForUser(opts: ListOptions): Promise<ListResult> {
   if (!adp) return { notifications: [], unreadCount: 0 }
 
   const limit = opts.limit ?? 25
-  let q: QB = adp.query<NotificationRow>('notification')
+  let q: QB<NotificationRow> = adp.query<NotificationRow>('notification')
     .where('notifiable_type', opts.notifiableType)
     .where('notifiable_id',   opts.notifiableId)
   if (opts.unreadOnly) q = q.where('read_at', null)
@@ -245,7 +253,7 @@ export async function listForUser(opts: ListOptions): Promise<ListResult> {
     q.paginate(1, limit),
     unreadCount({ notifiableType: opts.notifiableType, notifiableId: opts.notifiableId }),
   ])
-  const rows = (page.data as NotificationRow[]).map(rowToMeta)
+  const rows = page.data.map(rowToMeta)
   return { notifications: rows, unreadCount: count }
 }
 
@@ -266,7 +274,7 @@ export async function findOneForUser(
     .where('notifiable_id',   opts.notifiableId)
     .where('id',              id)
   const page = await q.paginate(1, 1)
-  const row = (page.data as NotificationRow[])[0]
+  const row = page.data[0]
   if (!row) return undefined
   return rowToMeta(row)
 }
@@ -385,7 +393,7 @@ export async function persist(opts: {
  *  "store unavailable"). Pass `undefined` to clear and fall back to the
  *  dynamic `@rudderjs/orm` import. Tests should clear in `afterEach`. */
 export function _setTestAdapter(
-  adp: { query: <T>(table: string) => QB } | null | undefined,
+  adp: OrmAdapter | null | undefined,
 ): void {
   _testAdapter = adp === undefined ? 'unset' : adp
 }

@@ -63,7 +63,7 @@ function makeFakeAdapter() {
     }
     return qb
   }
-  return { adapter: { query: <T>(t: string) => buildQB(t) }, store }
+  return { adapter: { query: (t: string) => buildQB(t) }, store }
 }
 
 let fake = makeFakeAdapter()

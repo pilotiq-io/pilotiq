@@ -74,7 +74,7 @@ function makeFakeAdapter() {
   }
 
   const adapter = {
-    query: <T>(table: string) => buildQB(table),
+    query: (table: string) => buildQB(table),
   }
   return { adapter, store }
 }
