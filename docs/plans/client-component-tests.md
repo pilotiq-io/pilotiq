@@ -148,9 +148,19 @@ behavior that's left. Target the highest-traffic, highest-risk components first.
 - ✅ `cells/EditableCell.tsx` — DONE. CellTextInput debounced PATCH + rollback
   on reject + confirm-gate (accept/cancel) + disabled; CellToggle immediate
   PATCH + flip-back on reject. (`EditableCell.test.tsx`)
-- ☐ Remaining (Phase 2b): group banding + collapse, pagination, deferred-
-  skeleton branch (`TableRenderer.tsx`), CellSelect, `CardsLayoutBody.tsx`, and
-  `filters.tsx` (FilterPopover / SortByPicker / ColumnsToggleDropdown).
+- ✅ Phase 2b (second slice) — DONE. `TableRendererBody`: group banding
+  (one heading row per contiguous `_groupValue`), group collapse (chevron
+  folds a section's rows), pagination chrome (page indicator + Previous/
+  Next links by page position). `CardsLayoutBody`: card-per-row via the
+  injected `renderElement`, empty state, no-content placeholder, group
+  sections + collapse. `TableRenderer`: deferred-load shell — skeleton
+  first → fetched rows, error banner, and direct (non-deferred) pass-
+  through. (`TableRendererBody.test.tsx`, `CardsLayoutBody.test.tsx`,
+  `TableRenderer.test.tsx`)
+- ☐ Remaining (Phase 2c): `CellSelect` (base-ui Select popup — lazy label,
+  assert via hidden input like the Phase 1b SelectField test); `filters.tsx`
+  chrome (FilterPopover / SortByPicker / ColumnsToggleDropdown / the filter
+  widgets — popover-heavy, audit happy-dom portal behavior first).
 
 ### Phase 3 — Array fields + overlays
 - ✅ `fields/RepeaterInput.tsx` — DONE. Initial-row render, empty state, add /
