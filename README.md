@@ -139,10 +139,10 @@ export default {
 
 | Package | What it does |
 |---|---|
-| [`@pilotiq/pilotiq`](./packages/pilotiq) | The admin panel. Resources, forms, tables, filters, actions, dashboards, theme. |
-| [`@pilotiq/tiptap`](./packages/tiptap) | Rich-text field — slash menu, draggable blocks, mentions, custom blocks. |
-| [`@pilotiq/codemirror`](./packages/codemirror) | Code editor field — CodeMirror 6 with language registry and themes. |
-| [`@pilotiq/recharts`](./packages/recharts) | Chart widgets — line, bar, pie, doughnut. |
+| [`@pilotiq/pilotiq`](./packages/pilotiq) | The admin panel. Resources, forms, tables, filters, actions, dashboards, theme. [Docs →](./docs) |
+| [`@pilotiq/tiptap`](./packages/tiptap) | Rich-text field — slash menu, draggable blocks, mentions, custom blocks. [Docs →](./docs/packages/tiptap.md) |
+| [`@pilotiq/codemirror`](./packages/codemirror) | Code editor field — CodeMirror 6 with language registry and themes. [Docs →](./docs/packages/codemirror.md) |
+| [`@pilotiq/recharts`](./packages/recharts) | Chart widgets — line, bar, pie, doughnut. [Docs →](./docs/packages/recharts.md) |
 
 Pro extensions (`@pilotiq-pro/{ai,collab,workspaces}`) live in a separate commercial repo at [pilotiq.io](https://pilotiq.io).
 
@@ -162,25 +162,23 @@ Pilotiq declares these as peer dependencies. Install whichever your app needs.
 
 ## Documentation
 
-**Get started**
+📖 **[Full documentation index](./docs)** · **[Getting started](./docs/getting-started.md)** — the quickest path to a panel rendering at `/admin`.
 
-- [Resources](./docs/packages/pilotiq/resources.md) · [Pages](./docs/packages/pilotiq/pages.md) · [Globals](./docs/packages/pilotiq/globals.md) · [Schema elements](./docs/packages/pilotiq/schema.md)
+**Reference** — the API for each building block.
 
-**Forms & tables**
+- Core: [Resources](./docs/packages/pilotiq/resources.md) · [Pages](./docs/packages/pilotiq/pages.md) · [Globals](./docs/packages/pilotiq/globals.md) · [Schema](./docs/packages/pilotiq/schema.md) · [Layouts](./docs/packages/pilotiq/layouts.md)
+- Forms: [Forms](./docs/packages/pilotiq/forms.md) · [Fields](./docs/packages/pilotiq/fields.md) · [Validation](./docs/packages/pilotiq/validation.md) · [Reactive forms](./docs/packages/pilotiq/reactive.md)
+- Tables: [Tables](./docs/packages/pilotiq/tables.md) · [Columns](./docs/packages/pilotiq/columns.md) · [Filters](./docs/packages/pilotiq/filters.md)
+- More: [Actions](./docs/packages/pilotiq/actions.md) · [Authorization](./docs/packages/pilotiq/authorization.md) · [Global search](./docs/packages/pilotiq/global-search.md) · [Import / export](./docs/packages/pilotiq/import-export.md) · [Notifications](./docs/packages/pilotiq/notifications.md)
 
-- [Forms](./docs/packages/pilotiq/forms.md) · [Fields](./docs/packages/pilotiq/fields.md) · [Layouts](./docs/packages/pilotiq/layouts.md) · [Validation](./docs/packages/pilotiq/validation.md) · [Reactive forms](./docs/packages/pilotiq/reactive.md)
-- [Tables](./docs/packages/pilotiq/tables.md) · [Columns](./docs/packages/pilotiq/columns.md) · [Filters](./docs/packages/pilotiq/filters.md)
+**Guides** — how-tos for a specific feature.
 
-**Advanced**
+- Resources: [Relations](./docs/guide/relations.md) · [Clusters](./docs/guide/clusters.md) · [Record sub-pages](./docs/guide/record-sub-pages.md) · [Soft deletes](./docs/guide/soft-deletes.md)
+- Tables: [Card listing](./docs/guide/card-listing.md) · [Grouping](./docs/guide/grouping.md) · [Defer loading](./docs/guide/defer-loading.md) · [Filter persistence](./docs/guide/filter-persistence.md) · [Query builder](./docs/guide/query-builder.md) · [Query-string identifier](./docs/guide/query-string-identifier.md)
+- Forms & display: [Repeater](./docs/guide/repeater.md) · [Builder](./docs/guide/builder.md) · [Infolists](./docs/guide/infolists.md) · [Widgets](./docs/guide/widgets.md)
+- Chrome & customization: [Render hooks](./docs/guide/render-hooks.md) · [Component slots](./docs/guide/component-slots.md) · [Right sidebar](./docs/guide/right-sidebar.md) · [User menu](./docs/guide/user-menu.md) · [Database notifications](./docs/guide/database-notifications.md) · [Extending Pilotiq](./docs/guide/extending-pilotiq.md)
 
-- [Relations](./docs/guide/relations.md) · [Repeater](./docs/guide/repeater.md) · [Builder](./docs/guide/builder.md) · [Soft deletes](./docs/guide/soft-deletes.md) · [Infolists](./docs/guide/infolists.md) · [Widgets](./docs/guide/widgets.md) · [Clusters](./docs/guide/clusters.md)
-- [Render hooks](./docs/guide/render-hooks.md) · [Right sidebar](./docs/guide/right-sidebar.md) · [Extending pilotiq](./docs/guide/extending-pilotiq.md)
-- [Card listing](./docs/guide/card-listing.md) · [Defer loading](./docs/guide/defer-loading.md) · [Filter persistence](./docs/guide/filter-persistence.md) · [Query builder](./docs/guide/query-builder.md) · [Query-string identifier](./docs/guide/query-string-identifier.md)
-
-**Other**
-
-- [Actions](./docs/packages/pilotiq/actions.md) · [Import / export](./docs/packages/pilotiq/import-export.md) · [Authorization](./docs/packages/pilotiq/authorization.md) · [Global search](./docs/packages/pilotiq/global-search.md) · [Notifications](./docs/packages/pilotiq/notifications.md) · [Database notifications](./docs/guide/database-notifications.md)
-- [Architecture](./Architecture.md) · [Comparison vs other admin panels](./docs/comparison.md)
+**Background** — [Architecture](./Architecture.md) · [Comparison vs other admin panels](./docs/comparison.md)
 
 ---
 
