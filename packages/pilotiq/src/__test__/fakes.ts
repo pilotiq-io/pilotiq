@@ -22,6 +22,43 @@ export function fakeRecord(values: Record<string, unknown> = {}): Record<string,
   return { id: 1, ...values }
 }
 
+/** A resolved table-column meta. Label defaults to the capitalized name. */
+export function fakeColumnMeta(name: string, overrides: Record<string, unknown> = {}): ElementMeta {
+  return {
+    type: 'column',
+    name,
+    label: name.charAt(0).toUpperCase() + name.slice(1),
+    ...overrides,
+  }
+}
+
+/** A resolved table meta — `children` holds columns (+ any actions/filters),
+ *  `rows` the records. Stamps a `currentPath` so URL-building helpers work. */
+export function fakeTableMeta(
+  children: ElementMeta[] = [],
+  rows: Array<Record<string, unknown>> = [],
+  overrides: Record<string, unknown> = {},
+): ElementMeta {
+  return {
+    type: 'table',
+    children,
+    rows,
+    total: rows.length,
+    currentPath: '/admin/articles',
+    ...overrides,
+  }
+}
+
+/** No-op `TableBodyDeps` — the table body only invokes these for non-column
+ *  children (actions / form chrome); column-only tables never call them. */
+export function noopTableDeps(): {
+  renderElement: () => null
+  renderActionLike: () => null
+  renderFormChild: () => null
+} {
+  return { renderElement: () => null, renderActionLike: () => null, renderFormChild: () => null }
+}
+
 /**
  * A `fetch` stub for the form-state / cell-edit / reorder POST endpoints.
  * `handler` receives the parsed JSON body and returns the response payload

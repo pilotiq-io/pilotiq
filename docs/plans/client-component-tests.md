@@ -136,14 +136,14 @@ behavior that's left. Target the highest-traffic, highest-risk components first.
   `renderField.tsx` dispatch — controlled vs uncontrolled per type.
 
 ### Phase 2 — Tables (the most complex renderer)
-- `schemaRenderer/table/TableRendererBody.tsx` — sort toggle, search box, group
-  banding + collapse, bulk-select (select-all / per-row), pagination, the
-  empty-columns and deferred-skeleton branches. (This file held 4 of the 14
-  hook bugs — it earns priority.)
-- `cells/EditableCell.tsx` — debounced text PATCH, immediate toggle/select,
-  optimistic update + rollback on failure, `.confirm()` gate.
-- `schemaRenderer/table/CardsLayoutBody.tsx` and `filters.tsx` (FilterPopover,
-  SortByPicker, ColumnsToggleDropdown).
+- ✅ `schemaRenderer/table/TableRendererBody.tsx` — DONE (first slice). Empty-
+  columns guard (locks in the hook fix), column headers + row cells, empty /
+  filtered-empty states, sortable header link carrying the sort query, bulk
+  select-all + per-row toggle. (`TableRendererBody.test.tsx`)
+- ☐ Remaining (Phase 2b): group banding + collapse, pagination, deferred-
+  skeleton branch (`TableRenderer.tsx`), `cells/EditableCell.tsx` (debounced
+  PATCH, optimistic + rollback, `.confirm()` gate), `CardsLayoutBody.tsx`, and
+  `filters.tsx` (FilterPopover / SortByPicker / ColumnsToggleDropdown).
 
 ### Phase 3 — Array fields + overlays
 - `fields/RepeaterInput.tsx` / `fields/BuilderInput.tsx` — add / remove / clone /
