@@ -65,6 +65,11 @@ Three rules:
    sees, not internal state. See `src/react/fields/TextLikeInput.test.tsx` for a
    worked example.
 
+For a provider-free component you may use RTL's raw `render` directly — but
+then **register `cleanup` yourself** in an `afterEach`, or renders pile up
+across cases and queries throw "found multiple elements". `renderWithProviders`
+does this for you; raw `render` does not. See `src/react/cells/EditableCell.test.tsx`.
+
 ## Harness internals (`src/__test__/`)
 
 - **`dom.ts`** — registers happy-dom into the Node process and stubs the few

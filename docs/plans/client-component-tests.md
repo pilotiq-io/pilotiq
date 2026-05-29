@@ -140,9 +140,11 @@ behavior that's left. Target the highest-traffic, highest-risk components first.
   columns guard (locks in the hook fix), column headers + row cells, empty /
   filtered-empty states, sortable header link carrying the sort query, bulk
   select-all + per-row toggle. (`TableRendererBody.test.tsx`)
+- ✅ `cells/EditableCell.tsx` — DONE. CellTextInput debounced PATCH + rollback
+  on reject + confirm-gate (accept/cancel) + disabled; CellToggle immediate
+  PATCH + flip-back on reject. (`EditableCell.test.tsx`)
 - ☐ Remaining (Phase 2b): group banding + collapse, pagination, deferred-
-  skeleton branch (`TableRenderer.tsx`), `cells/EditableCell.tsx` (debounced
-  PATCH, optimistic + rollback, `.confirm()` gate), `CardsLayoutBody.tsx`, and
+  skeleton branch (`TableRenderer.tsx`), CellSelect, `CardsLayoutBody.tsx`, and
   `filters.tsx` (FilterPopover / SortByPicker / ColumnsToggleDropdown).
 
 ### Phase 3 — Array fields + overlays
