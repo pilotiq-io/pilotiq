@@ -206,9 +206,20 @@ behavior that's left. Target the highest-traffic, highest-risk components first.
   dispatch buttons. Pick up under Phase 4 chrome if wanted.
 
 ### Phase 4 — Chrome + cross-cutting
-- `layouts/SidebarLayout.tsx` / `TopbarLayout.tsx`, `AppShell.tsx`,
-  `ThemeProvider.tsx` — render with representative nav, collapse, active-route.
-- Keyboard-nav + a11y smoke pass (roles/labels) over the Phase 1–3 components.
+- ✅ `ThemeProvider.tsx` — DONE. `setTheme` applies the `<html>` class +
+  persists to localStorage + flips `resolved`; reads the persisted theme
+  on mount; injects the `:root` CSS-variable `<style>` from a resolved
+  theme. (`ThemeProvider.test.tsx`)
+- ✅ `AppShell.tsx` + `SidebarLayout.tsx` / `TopbarLayout.tsx` — DONE
+  (smoke). AppShell self-mounts every chrome provider, so one render
+  exercises the full sidebar/topbar tree: nav links render, the active
+  route highlights (sibling differs), brand + page body present, and the
+  topbar variant mounts (grouped nav folds into dropdowns). The pure
+  active-link matcher is unit-tested in `component-slots.test.ts`.
+  (`AppShell.test.tsx`)
+- ☐ Remaining (optional, low value): keyboard-nav + a11y smoke pass
+  (roles/labels) over the Phase 1–3 components; per-layout chrome detail
+  (sidebar collapse/rail, topbar dropdown open) beyond the mount smoke.
 
 ---
 
