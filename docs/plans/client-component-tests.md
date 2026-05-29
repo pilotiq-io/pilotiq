@@ -137,8 +137,14 @@ behavior that's left. Target the highest-traffic, highest-risk components first.
   the submitted value. (Note: base-ui `SelectValue` renders its label lazily
   with the popup, so the hidden input is the assertion target, not the trigger
   text.)
-- ☐ Remaining (Phase 1c): `toggleButtons` / `checkboxList` inputs,
-  `MarkdownInput`'s native path, and `renderField.tsx` dispatch.
+- ✅ Phase 1c — DONE. `ToggleButtonsInput` (segmented control → hidden
+  mirror; controlled value; disabled option no-op). `CheckboxListInput`
+  (per-value hidden inputs add/remove on toggle; controlled array).
+  `MarkdownInput` native path (Write/Preview tab switch, `marked` preview,
+  toolbar transform splices the value). `renderField.tsx` dispatch (each
+  `fieldType` mounts the right control; `hidden` renders bare).
+  (`ToggleButtonsInput.test.tsx`, `CheckboxListInput.test.tsx`,
+  `MarkdownInput.test.tsx`, `schemaRenderer/form/renderField.test.tsx`)
 
 ### Phase 2 — Tables (the most complex renderer)
 - ✅ `schemaRenderer/table/TableRendererBody.tsx` — DONE (first slice). Empty-
