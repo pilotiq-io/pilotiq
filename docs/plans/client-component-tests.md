@@ -163,10 +163,21 @@ behavior that's left. Target the highest-traffic, highest-risk components first.
   first → fetched rows, error banner, and direct (non-deferred) pass-
   through. (`TableRendererBody.test.tsx`, `CardsLayoutBody.test.tsx`,
   `TableRenderer.test.tsx`)
-- ☐ Remaining (Phase 2c): `CellSelect` (base-ui Select popup — lazy label,
-  assert via hidden input like the Phase 1b SelectField test); `filters.tsx`
-  chrome (FilterPopover / SortByPicker / ColumnsToggleDropdown / the filter
-  widgets — popover-heavy, audit happy-dom portal behavior first).
+- ✅ Phase 2c (popover slice) — DONE. Audited happy-dom + base-ui v1 portal
+  behavior first: `SelectPrimitive.Portal` renders into a `data-base-ui-portal`
+  div on `document.body`, `userEvent.click` on the trigger opens the popup, and
+  the options are queryable by role once open. The trigger's `SelectValue`
+  label stays the raw VALUE (lazy-label, no layout pass under happy-dom), so the
+  committed value is read off base-ui's hidden `…-hidden-input`. `CellSelect`:
+  reflects value on the hidden input, PATCHes the chosen option, rolls back on
+  reject, confirm-gate (accept/cancel), nullable-clear sends `null`, per-row
+  `rowOptions` override wins over static options, disabled trigger.
+  (`EditableCell.test.tsx`) `filters.tsx`: `SortByPicker` (open → pick → onChange
+  with column+dir; reflects active sort; renders nothing with no sortable
+  columns), `ColumnsToggleDropdown` (toggle direction both ways; stays open
+  across clicks so multiple columns toggle in one pass), `FilterPopover`
+  (trigger + active-count badge, reveals controls on open, pushes the URL patch
+  a filter widget emits via `useNavigate`). (`filters.test.tsx`)
 
 ### Phase 3 — Array fields + overlays
 - ✅ `fields/RepeaterInput.tsx` — DONE. Initial-row render, empty state, add /
