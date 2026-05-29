@@ -1,6 +1,18 @@
 # Text fields backed by Tiptap when collab is on
 
-> **Status:** planned (2026-05-15)
+> **Status:** ✅ SHIPPED (re-audited 2026-05-30 across both repos). The cursor-jump + two-peer concurrent-insert races are fixed: plain-text fields route through a y-prosemirror-backed Tiptap editor when collab is on, and the legacy `Y.Text` + `computeDelta` + `preserveCursor` path is **deleted** (`textDelta.ts` and the `BoundTextInput` inner component no longer exist).
+>
+> **Landed architecture (differs from the proposal below — a registry seam, not a widened binding contract):**
+> - **pilotiq core** — `react/CollabTextRendererRegistry.ts` exposes `registerCollabTextRenderer()` / `getCollabTextRenderer()` + the framework-agnostic `CollabTextRendererProps` (the renderer consumes the room's `ydoc` directly via `useCollabRoom()` + `getCollabExtensions()`, so core stays free of any `@tiptap/*` peer dep). `react/fields/TextLikeInput.tsx` dispatches to the registered renderer when a `<RecordCollabRoom>` is up-tree AND the field hasn't opted out via `.collab(false)` AND has no `.mask()` (specialized/masked inputs stay native + Y.Map LWW, as planned). `react/fields/MarkdownInput.tsx` does the same for its write pane (preview reads form-state).
+> - **`@pilotiq/tiptap`** (this repo) — `src/react/CollabTextRenderer.tsx` is the y-prosemirror plain-text editor; `registerTiptap()` (`src/register.ts:34`) calls `registerCollabTextRenderer(CollabTextRenderer)` at boot. Without the adapter installed, text fields fall back to plain controlled/uncontrolled inputs (collab no-ops cleanly).
+> - **`@pilotiq-pro/collab`** (sibling repo, owned by the parallel session) — `formCollabBinding` allocates **no `Y.Text`** for text fields; `getTextBinding(name)` returns `null` and text rides `Y.XmlFragment` through the renderer (the Phase D swap). Confirmed by read-only audit; not edited from this session.
+>
+> Open question #1 (Y.Text → Y.XmlFragment migration) resolved by the binding never creating Y.Text in the first place. The `CollaborationCursor` polish (Phase D/F) and bundle-splitting (open question #4) were not part of this landing.
+>
+> ---
+>
+> **Original proposal (planned 2026-05-15) preserved below for context.**
+
 > **Filed by:** pilotiq side, in response to recurring cursor-vs-value-vs-Y.Text desync bugs in `BoundTextInput` / `MarkdownInput`.
 > **Replaces:** the `Y.Text` + manual `computeDelta` + heuristic `preserveCursor` path documented in `feedback_ytext_no_client_seed.md` and the F.6 plan.
 > **Companion repos:** `@pilotiq-pro/collab` (rebind `getTextBinding` / `getRowTextBinding` to a y-prosemirror-backed binding); `@pilotiq/tiptap` (export a plain-text editor factory).
