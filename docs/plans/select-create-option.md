@@ -1,5 +1,7 @@
 # Plan: `SelectField.createOptionForm()` — inline create-from-select modal
 
+> **Status: ✅ SHIPPED.** API (`createOptionForm / createOptionUsing / createOptionAuthorize`), `formCreateOptionData` + `tagSelectCreateOptionUrls` walker, `POST …/_form/:formId/create-option/:fieldName` routes (globals / pages / resource create + edit), and the `SelectFieldInput.tsx` "+" → Dialog client flow are all live. Relation-scope routes and `editOptionForm()` stayed deferred as planned.
+
 **Surfaced by:** Filament v5 fresh audit pass 2026-05-07 cont'd⁸ (Tier 1).
 
 **Goal.** Let users click a "+" next to a `SelectField`, fill out a small form in a modal, submit, get the new option appended + selected — without leaving the parent form. Closes the dig-into-Resource-picker round-trip that hits every "pick an author / category / customer" flow.
