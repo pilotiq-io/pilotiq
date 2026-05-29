@@ -11,6 +11,7 @@ import { afterEach } from 'node:test'
 import React from 'react'
 import { render, cleanup, type RenderResult } from '@testing-library/react'
 import { FormStateProvider } from '../react/FormStateContext.js'
+import { NavigateProvider, type NavigateFn } from '../react/navigate.js'
 import type { ElementMeta } from '../schema/Element.js'
 import { fakeFormMeta } from './fakes.js'
 
@@ -25,8 +26,12 @@ export interface RenderProvidersOptions {
   errors?: Record<string, string[]>
   /** Test fetch stub for live-resolve POSTs — see `jsonFetch` in `fakes.ts`. */
   fetchImpl?: typeof fetch
-  /** Skip the `FormStateProvider` entirely to exercise the uncontrolled path. */
+  /** Skip the `FormStateProvider` entirely to exercise the uncontrolled path,
+   *  or to test a component (like `FormRenderer`) that mounts its own. */
   withoutFormState?: boolean
+  /** Provide a spy to capture SPA navigation. Without it, `useNavigate` falls
+   *  back to `window.location` (a real navigation under happy-dom). */
+  navigate?: NavigateFn
 }
 
 /** Render `ui` inside the standard provider stack. Returns RTL's result. */
@@ -34,17 +39,22 @@ export function renderWithProviders(
   ui: React.ReactElement,
   opts: RenderProvidersOptions = {},
 ): RenderResult {
-  const { formMeta, errors = {}, fetchImpl, withoutFormState } = opts
+  const { formMeta, errors = {}, fetchImpl, withoutFormState, navigate } = opts
 
-  if (withoutFormState) return render(ui)
-
-  return render(
-    <FormStateProvider
-      initialMeta={formMeta ?? fakeFormMeta()}
-      initialErrors={errors}
-      {...(fetchImpl ? { fetchImpl } : {})}
-    >
-      {ui}
-    </FormStateProvider>,
-  )
+  let tree = ui
+  if (!withoutFormState) {
+    tree = (
+      <FormStateProvider
+        initialMeta={formMeta ?? fakeFormMeta()}
+        initialErrors={errors}
+        {...(fetchImpl ? { fetchImpl } : {})}
+      >
+        {tree}
+      </FormStateProvider>
+    )
+  }
+  if (navigate) {
+    tree = <NavigateProvider navigate={navigate}>{tree}</NavigateProvider>
+  }
+  return render(tree)
 }

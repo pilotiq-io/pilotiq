@@ -45,3 +45,31 @@ export function jsonFetch(
     } as Response
   }) as typeof fetch
 }
+
+export interface FetchCall { url: string; init?: RequestInit }
+
+/**
+ * Replace the global `fetch` with a stub for components that call it directly
+ * (e.g. `FormRenderer`, which submits via the global `fetch`, not a seam).
+ * `responder` returns `{ status?, json? }` per call (defaults to 200 `{}`).
+ * Records every call; `restore()` puts the real `fetch` back — call it in an
+ * `afterEach`.
+ */
+export function installFetch(
+  responder: (call: FetchCall) => { status?: number; json?: unknown } = () => ({}),
+): { calls: FetchCall[]; restore: () => void } {
+  const calls: FetchCall[] = []
+  const original = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString()
+    calls.push({ url, ...(init ? { init } : {}) })
+    const { status = 200, json = {} } = responder({ url, ...(init ? { init } : {}) })
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => json,
+      text: async () => JSON.stringify(json),
+    } as Response
+  }) as typeof fetch
+  return { calls, restore: () => { globalThis.fetch = original } }
+}
