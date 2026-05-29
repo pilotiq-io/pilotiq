@@ -77,7 +77,15 @@ on it keeps `pnpm test` a single command.
 
 ---
 
-## Phase 0 — harness (prerequisite, ~half a day)
+## Phase 0 — harness (prerequisite, ~half a day) — ✅ DONE
+
+Shipped on branch `test/client-component-harness`. happy-dom + RTL + user-event
+run under `node:test`; full suite green at 3,110 tests (3,106 + 4 new), no leak
+into the DOM-free suite, typecheck clean. Per-file DOM import chosen over
+`--import` (the open question below is settled). Deliverables landed:
+`src/__test__/{dom.ts,renderWithProviders.tsx,fakes.ts}`, the toolchain smoke
+test, the first real-component test (`react/fields/TextLikeInput.test.tsx`), and
+`docs/contributing/testing.md`.
 
 Deliverables, all under `packages/pilotiq`:
 
@@ -104,10 +112,9 @@ Deliverables, all under `packages/pilotiq`:
 6. **Docs:** `docs/contributing/testing.md` — how to write a render test, the
    `import '../__test__/dom.js'` rule, the provider wrapper, the fetch stub.
 
-Open question to settle in Phase 0: whether to register the DOM per-file
-(`import './dom.js'`) or process-wide via `node --test --import ./dist-test/__test__/dom.js`.
-Per-file keeps the pure suite DOM-free and is the default recommendation; the
-`--import` flag is the fallback if per-file imports prove noisy.
+Resolved: DOM registers **per-file** (`import '../__test__/dom.js'` as the first
+import). It keeps the pure suite DOM-free and worked cleanly; the process-wide
+`--import` flag wasn't needed.
 
 ---
 
