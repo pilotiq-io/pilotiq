@@ -131,9 +131,14 @@ behavior that's left. Target the highest-traffic, highest-risk components first.
   `{ changed, values }` to `stateUrl`; server `form.values` overlays onto
   siblings; non-live change is a no-op. (`FormStateContext.test.tsx`)
 - ✅ `TextLikeInput` — DONE in Phase 0 (controlled render + typing).
-- ☐ Remaining (Phase 1b): `SelectFieldInput`, toggle / checkbox / radio /
-  toggleButtons / checkboxList inputs, `MarkdownInput`'s native path, and
-  `renderField.tsx` dispatch — controlled vs uncontrolled per type.
+- ✅ Phase 1b field inputs — DONE for `CheckboxInput`, `ToggleFieldInput`,
+  `RadioInput`, `SelectFieldInput`: uncontrolled toggle/select + hidden-input
+  mirror, controlled value from form state, and (Select) pick-an-option updates
+  the submitted value. (Note: base-ui `SelectValue` renders its label lazily
+  with the popup, so the hidden input is the assertion target, not the trigger
+  text.)
+- ☐ Remaining (Phase 1c): `toggleButtons` / `checkboxList` inputs,
+  `MarkdownInput`'s native path, and `renderField.tsx` dispatch.
 
 ### Phase 2 — Tables (the most complex renderer)
 - ✅ `schemaRenderer/table/TableRendererBody.tsx` — DONE (first slice). Empty-
