@@ -124,15 +124,16 @@ Each phase: extract any remaining pure logic first, then render-test the
 behavior that's left. Target the highest-traffic, highest-risk components first.
 
 ### Phase 1 — Forms (the submit path users hit most)
-- `schemaRenderer/form/FormRenderer.tsx` — submit → 422 inline error display →
-  correct → success/redirect; `force` redirect on create-another; double-submit
-  guard.
-- `schemaRenderer/form/renderField.tsx` + core field inputs
-  (`TextLikeInput`, `SelectFieldInput`, `MarkdownInput`'s native path,
-  toggle/checkbox/radio) — controlled vs uncontrolled, `live()` triggering a
-  state POST, `afterStateUpdated` overlay.
-- `FormStateContext.tsx` — the `$get`/`$set`/controlled-value contract that
-  every field depends on.
+- ✅ `schemaRenderer/form/FormRenderer.tsx` — DONE. Chrome (`_formId`/action),
+  server-error banner + inline errors, fetch submit → SPA navigate, 422 →
+  inline errors, double-submit guard, `force` redirect. (`FormRenderer.test.tsx`)
+- ✅ `FormStateContext.tsx` (reactive core) — DONE. `live()` change POSTs
+  `{ changed, values }` to `stateUrl`; server `form.values` overlays onto
+  siblings; non-live change is a no-op. (`FormStateContext.test.tsx`)
+- ✅ `TextLikeInput` — DONE in Phase 0 (controlled render + typing).
+- ☐ Remaining (Phase 1b): `SelectFieldInput`, toggle / checkbox / radio /
+  toggleButtons / checkboxList inputs, `MarkdownInput`'s native path, and
+  `renderField.tsx` dispatch — controlled vs uncontrolled per type.
 
 ### Phase 2 — Tables (the most complex renderer)
 - `schemaRenderer/table/TableRendererBody.tsx` — sort toggle, search box, group
