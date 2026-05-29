@@ -1,6 +1,18 @@
 # Notification actions plan
 
-**Status:** PROPOSED 2026-05-07. Shipping unblocks the last open item on the database-notifications surface (`Notification.actions([Action…])` slot + `Action.markAsRead()` chain modifier — both flagged in `project_pilotiq_database_notifications.md`).
+**Status:** ✅ SHIPPED (re-audited 2026-05-30 against `packages/pilotiq/src` — every file in the table below is live; closes the last open item on the database-notifications surface). The wiring landed across:
+- `notifications/types.ts` — `NotificationActionMeta` + `NotificationActionHandler` / `NotificationActionContext` / `NotificationActionResult`.
+- `notifications/Notification.ts` — `.actions([…])` slot, `toMeta()`/`toDatabase()` round-trip, `serializeForNotification()` (rejects modal/submit/bulk + closure-on-persist).
+- `actions/Action.ts` — `.handler(fn|name)` widen (`_handlerName`), `.payload({…})`, `.markAsRead()`, `.openUrlInNewTab()` + getters.
+- `Pilotiq.ts` — `.notificationHandlers({name: fn})` with `^[A-Za-z0-9_-]+$` validation + `getNotificationHandler()`.
+- `notifications/database.ts` — `DatabaseNotificationMeta.actions?` + `parseStoredActions()` (malformed entries dropped with `console.warn`).
+- `routes/panel.ts` — `POST {base}/_notifications/:id/_action/:actionName` via `dispatchNotificationAction`.
+- `pageData/navigation.ts` — `DatabaseNotificationsMeta.actionUrl` template emitted by `buildDatabaseNotificationsMeta`.
+- `react/NotificationActionStrip.tsx` (shared) → mounted in `react/NotificationBell.tsx` (bell rows) and `react/Toaster.tsx` (transient toasts; action toasts auto-extend to persistent).
+- Tests: `notifications/Notification.test.ts`, `actions/Action.test.ts`, `notifications/database.test.ts`, `notifications/dispatchNotificationAction.test.ts`, `react/NotificationActionStrip.test.tsx`.
+- Guide: `docs/guide/database-notifications.md` "Actions" + "Named handler registry" sections.
+
+Original proposal (PROPOSED 2026-05-07) preserved below for context. All four v2 deferreds remain deferred.
 
 **Goal:** let a notification — transient toast OR persisted bell row — carry a strip of actions the recipient can click. Match Filament's surface 1:1 on the API shape, beat it on closure-handler durability.
 
