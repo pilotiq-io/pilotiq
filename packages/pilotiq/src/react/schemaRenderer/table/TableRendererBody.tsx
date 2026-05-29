@@ -464,14 +464,6 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
   }
 
 
-  if (columns.length === 0) {
-    return (
-      <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
-        No columns configured for this table.
-      </div>
-    )
-  }
-
   const isCardsLayout = el['contentLayout'] === 'cards'
   const cardsPerRow   = el['cardsPerRow'] as Record<string, number> | undefined
   // Responsive fallback: table at/above the breakpoint, one card per row
@@ -565,6 +557,17 @@ export function TableRendererBody({ el, deps }: { el: ElementMeta; deps: TableBo
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
+
+  // Empty-columns guard lives below every hook so the rules-of-hooks call
+  // order stays identical whether or not the table has columns configured.
+  if (columns.length === 0) {
+    return (
+      <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
+        No columns configured for this table.
+      </div>
+    )
+  }
+
   function handleReorderDragEnd(event: DragEndEvent): void {
     const { active, over } = event
     if (!reorderUrl || over === null || active.id === over.id) return

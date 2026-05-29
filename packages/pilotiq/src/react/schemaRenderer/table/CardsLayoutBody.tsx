@@ -2,7 +2,7 @@ import React from 'react'
 import { ChevronDownIcon, InboxIcon } from 'lucide-react'
 import type { ElementMeta } from '../../../schema/Element.js'
 import { Checkbox } from '../../ui/checkbox.js'
-import { GroupHeadingLink, useSpaNavClick } from './links.js'
+import { GroupHeadingLink, makeSpaNavClick } from './links.js'
 import { GroupHeaderText } from './filters.js'
 import type { NavigateFn } from '../../navigate.js'
 
@@ -273,7 +273,7 @@ export function CardsLayoutBody({
                       {recordUrl !== undefined && (
                         <a
                           href={recordUrl}
-                          onClick={useSpaNavClick(recordUrl, navigate)}
+                          onClick={makeSpaNavClick(recordUrl, navigate)}
                           aria-label="Open record"
                           className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >

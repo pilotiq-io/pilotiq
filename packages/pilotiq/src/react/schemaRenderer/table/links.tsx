@@ -18,7 +18,7 @@ import type { NavigateFn } from '../../navigate.js'
  * fall through to the browser so "open in new tab" / "save link as"
  * semantics keep working on every real `<a href>` in the table body.
  */
-export function useSpaNavClick(
+export function makeSpaNavClick(
   href:     string,
   navigate: NavigateFn,
 ): (e: React.MouseEvent<HTMLAnchorElement>) => void {
@@ -37,7 +37,7 @@ export function RecordCellLink({
   navigate: NavigateFn
   children: React.ReactNode
 }) {
-  const onClick = useSpaNavClick(href, navigate)
+  const onClick = makeSpaNavClick(href, navigate)
   return (
     <a
       href={href}
@@ -65,7 +65,7 @@ export function ActiveGroupKeyChip({
   clearHref:    string
   navigate:     NavigateFn
 }) {
-  const onClick = useSpaNavClick(clearHref, navigate)
+  const onClick = makeSpaNavClick(clearHref, navigate)
   return (
     <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
       <span className="text-muted-foreground">Drilled into</span>
@@ -99,7 +99,7 @@ export function GroupHeadingLink({
   navigate: NavigateFn
   children: React.ReactNode
 }) {
-  const onClick = useSpaNavClick(href, navigate)
+  const onClick = makeSpaNavClick(href, navigate)
   return (
     <a
       href={href}

@@ -50,7 +50,6 @@ export function MarkdownInput({
   fileAttachmentsVisibility:  string | undefined
   uploadUrl:                  string | undefined
 }): React.ReactElement {
-  const fs = useFieldState(name)
   const room = useCollabRoom()
   const collabRenderer = getCollabTextRenderer()
   const markdownEditor = getMarkdownEditor()
@@ -126,6 +125,43 @@ export function MarkdownInput({
     )
   }
 
+  // Native textarea editor — the default path when no WYSIWYG/collab adapter
+  // claims the field. Its hooks live in a child component so they aren't
+  // sequenced after the conditional returns above (rules-of-hooks).
+  return (
+    <MarkdownNativeInput
+      name={name}
+      defaultValue={defaultValue}
+      disabled={disabled}
+      placeholder={placeholder}
+      toolbarButtons={toolbarButtons}
+      minHeight={minHeight}
+      maxHeight={maxHeight}
+      fileAttachmentsDirectory={fileAttachmentsDirectory}
+      fileAttachmentsVisibility={fileAttachmentsVisibility}
+      uploadUrl={uploadUrl}
+    />
+  )
+}
+
+function MarkdownNativeInput({
+  name, defaultValue, disabled, placeholder,
+  toolbarButtons, minHeight, maxHeight,
+  fileAttachmentsDirectory, fileAttachmentsVisibility,
+  uploadUrl,
+}: {
+  name:                       string
+  defaultValue:               unknown
+  disabled:                   boolean
+  placeholder:                string | undefined
+  toolbarButtons:             ToolbarButton[]
+  minHeight:                  string | undefined
+  maxHeight:                  string | undefined
+  fileAttachmentsDirectory:   string | undefined
+  fileAttachmentsVisibility:  string | undefined
+  uploadUrl:                  string | undefined
+}): React.ReactElement {
+  const fs = useFieldState(name)
   const { notify } = useToast()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 

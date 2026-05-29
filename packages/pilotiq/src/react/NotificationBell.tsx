@@ -258,7 +258,15 @@ export function NotificationList({
  * list into the user-menu submenu instead.
  */
 export function NotificationBell({ meta }: { meta?: DatabaseNotificationsMeta }) {
+  // Guard before any hooks — `panelInfo()` only ships `meta` when the panel
+  // opted in AND a user resolved, so render nothing otherwise. The hook-using
+  // body lives in `NotificationBellInner` so the rules-of-hooks order stays
+  // stable regardless of whether `meta` is present.
   if (!meta) return null
+  return <NotificationBellInner meta={meta} />
+}
+
+function NotificationBellInner({ meta }: { meta: DatabaseNotificationsMeta }) {
   const [open, setOpen] = React.useState(false)
   const { unreadCount, items, loading, markRead, markAllRead } = useNotifications(meta)
 
