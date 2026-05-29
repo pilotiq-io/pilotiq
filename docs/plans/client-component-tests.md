@@ -11,6 +11,17 @@ This plan adds a rendering test harness and rolls out component tests in risk-
 ordered phases. **No production behavior change** — this is test infrastructure
 plus new `*.test.tsx` files.
 
+> **Status: ✅ COMPLETE (closed 2026-05-30).** Phases 0–4 plus the Phase 2c
+> popover slice all landed (PRs #85–#96); full suite at 3,227 tests, green. The
+> original motivation — catching `rules-of-hooks` mount bugs that unit tests
+> can't — is fully covered: every high-risk renderer (forms, tables, array
+> fields, overlays, chrome, base-ui popovers) now mounts under test. Remaining
+> ideas (a11y/keyboard-nav smoke, the rest of the filter widgets, per-layout
+> chrome detail) are deliberately deferred as diminishing returns — pick them up
+> ad hoc if a regression or new feature touches that surface. New components
+> should ship with a render test in the same PR; the harness + conventions in
+> `docs/contributing/testing.md` are the entry point.
+
 ---
 
 ## Why now
