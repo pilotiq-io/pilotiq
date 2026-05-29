@@ -153,12 +153,16 @@ behavior that's left. Target the highest-traffic, highest-risk components first.
   `filters.tsx` (FilterPopover / SortByPicker / ColumnsToggleDropdown).
 
 ### Phase 3 — Array fields + overlays
-- `fields/RepeaterInput.tsx` / `fields/BuilderInput.tsx` — add / remove / clone /
-  collapse / `@dnd-kit` reorder, min/max items, item-label resolution.
-- Action confirm dialogs, modal-form actions, import/export modal.
-- `CommandPalette.tsx` / `SearchTrigger.tsx` — ⌘K open, query, result nav.
-- `NotificationBell.tsx` (now `NotificationBellInner`) — list, mark-read,
-  mark-all.
+- ✅ `fields/RepeaterInput.tsx` — DONE. Initial-row render, empty state, add /
+  remove, min/max gating (Add/Remove disabled at bounds).
+  (`RepeaterInput.render.test.tsx` — named to avoid clobbering the pure-logic
+  `RepeaterInput.test.ts`.)
+- ✅ `fields/BuilderInput.tsx` — DONE. Initial-row render, empty state, single-
+  block direct add, multi-block picker-menu add, remove. (`BuilderInput.render.test.tsx`)
+- ☐ Remaining (Phase 3b): clone, collapse/accordion, `@dnd-kit` reorder,
+  item-label resolution; action confirm dialogs / modal-form actions /
+  import-export modal; `CommandPalette.tsx` / `SearchTrigger.tsx` (⌘K); 
+  `NotificationBell.tsx` (list, mark-read, mark-all).
 
 ### Phase 4 — Chrome + cross-cutting
 - `layouts/SidebarLayout.tsx` / `TopbarLayout.tsx`, `AppShell.tsx`,
