@@ -105,3 +105,68 @@ describe('FormRenderer', () => {
     await waitFor(() => assert.equal(navigated[0], here))
   })
 })
+
+// Record-fill values must reach fields nested inside layout containers
+// (Section / Group / Split / …) — `renderFormChild` only enriches the
+// form's DIRECT children; nested fields ride `FormValuesContext` +
+// `NestedFormField` through the generic element recursion. Regression:
+// edit pages with structured forms rendered every nested field empty.
+describe('FormRenderer — nested-field value threading', () => {
+  const nestedForm = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    type:   'form',
+    formId: 'post-edit',
+    values: { title: 'Hello post', metaTitle: 'SEO hello', status: 'published' },
+    children: [
+      { type: 'field', fieldType: 'text', name: 'title', label: 'Title' },
+      {
+        type: 'group',
+        children: [
+          { type: 'field', fieldType: 'text', name: 'metaTitle', label: 'Meta title' },
+          {
+            type: 'section', title: 'Publishing', columns: 1, collapsible: false,
+            children: [
+              { type: 'field', fieldType: 'text', name: 'status', label: 'Status' },
+            ],
+          },
+        ],
+      },
+    ],
+    ...overrides,
+  })
+
+  it('fills fields nested inside layout containers from form values', async () => {
+    const { SchemaRenderer } = await import('../../SchemaRenderer.js')
+    renderWithProviders(
+      <SchemaRenderer elements={[nestedForm()] as never} />,
+      { withoutFormState: true },
+    )
+    // Direct child (renderFormChild path).
+    assert.ok(screen.getByDisplayValue('Hello post'))
+    // One container deep (group → NestedFormField path).
+    assert.ok(screen.getByDisplayValue('SEO hello'))
+    // Two containers deep (group → section).
+    assert.ok(screen.getByDisplayValue('published'))
+  })
+
+  it('renders inline errors for nested fields', async () => {
+    const { SchemaRenderer } = await import('../../SchemaRenderer.js')
+    renderWithProviders(
+      <SchemaRenderer elements={[nestedForm({ errors: { metaTitle: ['Too long'] } })] as never} />,
+      { withoutFormState: true },
+    )
+    assert.ok(screen.getByText('Too long'))
+  })
+
+  it('meta defaultValue survives when the form has no value for the field', async () => {
+    const { SchemaRenderer } = await import('../../SchemaRenderer.js')
+    const meta = nestedForm({ values: { title: 'Hello post' } })
+    const group = (meta['children'] as Array<Record<string, unknown>>)[1]!
+    const kids  = group['children'] as Array<Record<string, unknown>>
+    kids[0] = { ...kids[0], defaultValue: 'fallback seo' }
+    renderWithProviders(
+      <SchemaRenderer elements={[meta] as never} />,
+      { withoutFormState: true },
+    )
+    assert.ok(screen.getByDisplayValue('fallback seo'))
+  })
+})

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React, { createContext, useContext, useMemo, useRef, useState } from 'react'
 import type { ElementMeta } from '../../../schema/Element.js'
 import type { NotificationMeta } from '../../../notifications/Notification.js'
 import { FormIdContext, FormStateProvider, useFormState } from '../../FormStateContext.js'
@@ -16,6 +16,55 @@ import { renderField } from './renderField.js'
 // ─── Form ───────────────────────────────────────────────────
 
 type RenderElement = (el: ElementMeta, index: number) => React.ReactNode
+
+/**
+ * Form-scoped values + errors for fields nested inside layout containers
+ * (Section / Grid / Split / Group / Fieldset / Tabs…). `FormBody` /
+ * `renderFormChild` only enrich the form's DIRECT field children —
+ * nested fields render through the generic `renderElement` recursion,
+ * which used to drop the record-fill values entirely (fields showed
+ * empty on edit pages unless the form was flat or live). The provider
+ * mounts on every `<FormRenderer>`; `NestedFormField` consumes it from
+ * `SchemaRenderer`'s `case 'field'`.
+ *
+ * Repeater/Builder row fields are unaffected — their metas carry
+ * row-prefixed dotted names (`items.0.label`) that never collide with
+ * the top-level values map.
+ */
+export const FormValuesContext = createContext<{
+  values: Record<string, unknown>
+  errors: Record<string, string[]>
+} | null>(null)
+
+/**
+ * Field rendered from the generic element recursion (i.e. nested inside
+ * a layout container). When a surrounding form's `FormValuesContext` is
+ * present, the record-fill value wins over the meta's own
+ * `defaultValue`, and per-field validation errors render inline —
+ * mirroring what `renderFormChild` does for direct children.
+ */
+export function NestedFormField({ el, index, render }: {
+  el:     ElementMeta
+  index:  number
+  render: (el: ElementMeta, index: number) => React.ReactNode
+}): React.ReactElement {
+  const ctx  = useContext(FormValuesContext)
+  const name = String(el['name'] ?? '')
+  if (!ctx || !name) return <>{render(el, index)}</>
+
+  const value    = ctx.values[name]
+  const enriched = value !== undefined ? { ...el, defaultValue: value } : el
+  const fieldErrors = ctx.errors[name] ?? []
+  if (fieldErrors.length === 0) return <>{render(enriched, index)}</>
+  return (
+    <div className="flex flex-col gap-1">
+      {render(enriched, index)}
+      {fieldErrors.map((msg, i) => (
+        <p key={i} className="text-xs text-destructive">{msg}</p>
+      ))}
+    </div>
+  )
+}
 
 /**
  * Top-level `<form>` element. Owns:
@@ -75,6 +124,15 @@ export function FormRenderer({
 
   const formErrors = errors['_form'] ?? []
   const hasFieldErrors = Object.keys(errors).some(k => k !== '_form')
+
+  // Threads record-fill values + errors to fields nested inside layout
+  // containers (see FormValuesContext above).
+  const formValuesCtx = useMemo(
+    () => ({ values: serverValues, errors }),
+    // serverValues derives from `el` — keying the memo on `el` avoids a
+    // new identity every render from the `?? {}` fallback.
+    [el, errors],
+  )
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     if (!action) return                       // no action URL → fall through to native submit
@@ -188,20 +246,22 @@ export function FormRenderer({
           )}
         </div>
       )}
-      <FormIdContext.Provider value={formId}>
-        {useControlled ? (
-          <FormStateProvider initialMeta={el} initialErrors={errors} formRef={formRef}>
-            <FormBody
-              fallbackChildren={el.children ?? []}
-              fallbackValues={serverValues}
-              fallbackErrors={errors}
-              renderElement={renderElement}
-            />
-          </FormStateProvider>
-        ) : (
-          (el.children ?? []).map((child, i) => renderFormChild(child, i, serverValues, errors, renderElement))
-        )}
-      </FormIdContext.Provider>
+      <FormValuesContext.Provider value={formValuesCtx}>
+        <FormIdContext.Provider value={formId}>
+          {useControlled ? (
+            <FormStateProvider initialMeta={el} initialErrors={errors} formRef={formRef}>
+              <FormBody
+                fallbackChildren={el.children ?? []}
+                fallbackValues={serverValues}
+                fallbackErrors={errors}
+                renderElement={renderElement}
+              />
+            </FormStateProvider>
+          ) : (
+            (el.children ?? []).map((child, i) => renderFormChild(child, i, serverValues, errors, renderElement))
+          )}
+        </FormIdContext.Provider>
+      </FormValuesContext.Provider>
     </form>
   )
 }

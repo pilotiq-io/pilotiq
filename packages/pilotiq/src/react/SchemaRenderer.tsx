@@ -35,6 +35,7 @@ import {
 import {
   FormRenderer as FormRendererImpl,
   renderFormChild as renderFormChildImpl,
+  NestedFormField,
 } from './schemaRenderer/form/FormRenderer.js'
 import { TableRenderer as TableRendererImpl } from './schemaRenderer/table/TableRenderer.js'
 import type { TableBodyDeps } from './schemaRenderer/table/TableRendererBody.js'
@@ -212,7 +213,10 @@ function renderElement(el: ElementMeta, index: number): React.ReactNode {
       return null
 
     case 'field':
-      return renderField(el, index)
+      // Fields reached through the generic recursion live inside a
+      // layout container — thread the surrounding form's record-fill
+      // values + errors in via FormValuesContext (no-op outside a form).
+      return <NestedFormField key={index} el={el} index={index} render={renderField} />
 
     case 'entry':
       return renderEntry(el, index, renderElement)
