@@ -72,13 +72,22 @@ This wires the panel's controller routes through `@rudderjs/view`.
 > generated. Skip this and the panel renders unstyled (or with classes missing
 > at random — only those that happen to appear elsewhere in your project work).
 
-**Tailwind v4** — add an `@source` to your main CSS:
+**Tailwind v4** — add an `@source` AND the theme bridge to your main CSS:
 
 ```css
 @import "tailwindcss";
 @source "../node_modules/@pilotiq/pilotiq/dist";
+@import "@pilotiq/pilotiq/styles/theme.css";
 @plugin "@tailwindcss/typography";   /* for rich-text / markdown prose output */
 ```
+
+`theme.css` is required, not optional: it maps the CSS variables the panel
+injects (`--background`, `--sidebar`, …) into Tailwind v4 theme tokens so the
+utility classes pilotiq's components use (`bg-background`,
+`text-muted-foreground`, `border-border`, …) resolve, seeds the default
+Pilotiq-brand values for first paint, and registers the `dark` variant the
+ThemeProvider toggles. With only the `@source` line the panel renders with
+layout but no colors.
 
 Adjust the relative path so it resolves to the installed package's `dist`
 (workspace/monorepo setups can point at `src`).

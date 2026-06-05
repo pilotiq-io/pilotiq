@@ -63,7 +63,8 @@
       "import": "./dist/richtext/index.js",
       "types": "./dist/richtext/index.d.ts"
     },
-    "./styles/file-upload.css": "./dist/styles/file-upload.css"
+    "./styles/file-upload.css": "./dist/styles/file-upload.css",
+    "./styles/theme.css": "./dist/styles/theme.css"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && pnpm run copy-assets",
