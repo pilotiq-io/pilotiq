@@ -16,25 +16,35 @@ Resource opt in independently. This is intentional (apps can stage
 the rollout) but easy to forget; pilotiq throws a clear boot error
 when only the resource side is set.
 
-### 1. Prisma schema
+### 1. Schema / migration
 
-Add `deletedAt DateTime?` to the model:
+Add a `deletedAt` column to the table. The native engine exposes a
+`softDeletes()` column helper — on a fresh table:
 
-```prisma
-model Post {
-  id        String    @id @default(cuid())
-  title     String
-  // ...
-  deletedAt DateTime?
+```ts
+// app/Models/__migrations/<ts>_create_post.ts
+import { Migration, Schema } from '@rudderjs/database'
+
+export default class extends Migration {
+  async up() {
+    await Schema.create('post', (t) => {
+      t.string('id').primary()   // app-generated (Model keyType 'ulid')
+      t.string('title')
+      // ...
+      t.softDeletes()            // deletedAt DATETIME nullable
+    })
+  }
+  async down() { await Schema.dropIfExists('post') }
 }
 ```
 
-Run `pnpm exec prisma db push --schema prisma/schema` to apply,
-**then** `pnpm exec prisma generate --schema prisma/schema` to refresh
-the hoisted `@prisma/client` types — `db push` updates the database
-schema but does *not* regenerate the client. If you skip generate, the
-restore route 500s with `Unknown argument deletedAt`. Restart the dev
-server after generating; HMR doesn't pick up the new client.
+…or, to add it to an existing table, `await Schema.table('post', (t) => t.softDeletes())`.
+
+Run `pnpm rudder migrate` to apply. This also regenerates
+`app/Models/__schema/registry.d.ts`, so `Model.for<'post'>()` sees the
+new column with no extra step. (On a Prisma/Drizzle app, add
+`deletedAt DateTime?` to the schema and run that toolchain's push +
+generate instead.)
 
 ### 2. Rudder Model
 

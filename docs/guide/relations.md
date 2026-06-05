@@ -250,15 +250,21 @@ export class Article extends Model {
 }
 ```
 
-```prisma
-// prisma/schema/app.prisma — explicit pivot table required.
-// Implicit `_ArticleToTag` (Prisma's `@relation` arrays on both sides)
-// is NOT supported because the ORM writes pivot rows directly via
-// `insertMany / deleteAll`, not through Prisma's relation cascades.
-model Article    { id String @id @default(cuid()); /* … */ }
-model Tag        { id String @id @default(cuid()); name String @unique; /* … */ }
-model ArticleTag { articleId String; tagId String; @@id([articleId, tagId]); @@map("article_tag") }
+```ts
+// app/Models/__migrations/<ts>_create_article_tag.ts — explicit pivot table.
+// The pivot is a pure data container: rudder's belongsToMany writes its
+// rows directly via raw queries (`insertMany` / `deleteAll`), so no
+// relation declarations are needed on either model — just the table.
+await Schema.create('article_tag', (t) => {
+  t.string('articleId')
+  t.string('tagId')
+  t.primary(['articleId', 'tagId'])
+})
 ```
+
+Apply with `pnpm rudder migrate`. (On Prisma, declare an explicit
+`@@map("article_tag")` model — implicit `_ArticleToTag` relation arrays
+are not supported, for the same direct-write reason.)
 
 ```ts
 // app/Pilotiq/Articles/relations/TagsManager.ts

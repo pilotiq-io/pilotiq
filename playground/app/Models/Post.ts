@@ -3,8 +3,9 @@ import { User } from './User.js'
 import { Comment } from './Comment.js'
 import { Tag } from './Tag.js'
 
-export class Post extends Model {
+export class Post extends Model.for<'post'>() {
   static override table = 'post'
+  static override keyType = 'ulid' as const
   /** Plan #13 — opt the rudder side into soft-delete behavior. The
    *  matching `PostResource.softDeletes = true` opts pilotiq's
    *  TrashedFilter / Restore / ForceDelete UX in. Both flags are
@@ -25,17 +26,6 @@ export class Post extends Model {
     // Pivot table is shared with Video (both `morphToMany Tag`).
     tags:     { type: 'morphToMany' as const, model: () => Tag, pivotTable: 'taggable', morphName: 'taggable' },
   }
-
-  id!:          string
-  title!:       string
-  body!:        string | null
-  status!:      string
-  authorId!:    string
-  publishedAt!: Date | null
-  createdAt!:   Date
-  updatedAt!:   Date
-  deletedAt!:   Date | null
-  sort!:        number
 
   /** Reorderable rows — pilotiq's `Table.reorderable('sort')` POSTs the
    * new id order here. We re-stamp the `sort` column 1..n in array

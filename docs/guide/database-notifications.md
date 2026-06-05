@@ -22,15 +22,32 @@ immediately, if they click the bell to refetch.
 Pilotiq doesn't ship its own table. Rows live on the `notification`
 table that `@rudderjs/notification`'s `NotificationProvider` already
 publishes — the same one Laravel-style channel notifications write to.
-Add `NotificationProvider` to your providers list to vendor the schema:
+Add `NotificationProvider` to your providers list, then create the table
+with a native migration:
 
-```bash
-pnpm rudder vendor:publish --tag=notification-schema
-pnpm exec prisma db push --schema prisma/schema
+```ts
+// app/Models/__migrations/<ts>_create_notification.ts
+import { Migration, Schema } from '@rudderjs/database'
+
+export default class extends Migration {
+  async up() {
+    await Schema.create('notification', (t) => {
+      t.string('id').primary()
+      t.string('notifiable_id')
+      t.string('notifiable_type')
+      t.string('type')
+      t.text('data')                 // JSON blob
+      t.string('read_at').nullable()
+      t.string('created_at')
+      t.string('updated_at')
+      t.index(['notifiable_type', 'notifiable_id'])
+    })
+  }
+  async down() { await Schema.dropIfExists('notification') }
+}
 ```
 
-Or copy `prisma/schema/notification.prisma` from the package directly.
-Either way the table looks like:
+Apply with `pnpm rudder migrate`. The table looks like:
 
 | Column | Type | Notes |
 |---|---|---|
@@ -42,9 +59,9 @@ Either way the table looks like:
 | `read_at` | `String?` | ISO timestamp; null = unread |
 | `created_at` / `updated_at` | `String` | ISO timestamps |
 
-Pilotiq queries the table through `@rudderjs/orm`'s `ModelRegistry`
-adapter, so any orm-supported database works (SQLite / Postgres /
-MySQL via Prisma, Drizzle adapters too).
+Pilotiq queries the table through the `'db'` adapter, so the storage
+layer is ORM-agnostic — the native engine, Prisma, and Drizzle all work
+the same way (SQLite / Postgres / MySQL).
 
 ---
 

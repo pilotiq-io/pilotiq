@@ -10,9 +10,7 @@ import {
   TableGroup,
   type Table,
 } from '@pilotiq/pilotiq'
-import { app } from '@rudderjs/core/client'
-
-const prisma = (): any => app().make('prisma')
+import { Article } from '../../../Models/Article.js'
 
 export const ArticlesTable = {
   configure(table: Table): Table {
@@ -188,18 +186,14 @@ export const ArticlesTable = {
               .label('Archive all drafts')
               .confirm('Archive every draft article? This is reversible.')
               .handler(async () => {
-                await prisma().article.updateMany({
-                  where: { status: 'draft' },
-                  data:  { status: 'archived' },
-                })
+                await Article.where('status', 'draft').updateAll({ status: 'archived' })
               }),
             Action.make('clearFeatured')
               .label('Un-feature all')
               .handler(async () => {
-                await prisma().article.updateMany({
-                  where: { featured: true },
-                  data:  { featured: false },
-                })
+                // 0/1, not booleans — `featured` is the raw INTEGER column
+                // (see the cast note on the Article model).
+                await Article.where('featured', 1).updateAll({ featured: 0 })
               }),
           ]),
       ])
@@ -210,12 +204,9 @@ export const ArticlesTable = {
           .tooltip('Pin selected articles to the home feed')
           .confirm('Mark these articles as featured?')
           .handler(async (ctx) => {
-            const ids = (ctx.records as { id?: string }[] | undefined)?.map(r => r.id).filter(Boolean) ?? []
+            const ids = (ctx.records as { id?: string }[] | undefined)?.map(r => r.id).filter((v): v is string => Boolean(v)) ?? []
             if (ids.length === 0) return
-            await prisma().article.updateMany({
-              where: { id: { in: ids } },
-              data:  { featured: true },
-            })
+            await Article.whereIn('id', ids).updateAll({ featured: 1 })
             return {
               notify: Notification.make(`${ids.length} article${ids.length === 1 ? '' : 's'} featured`)
                 .body('They now appear in the home feed.')
@@ -229,12 +220,9 @@ export const ArticlesTable = {
           // Only show when article is published — drafts can't be featured.
           .visible(({ record }) => (record as { status?: string })?.status === 'published')
           .handler(async (ctx) => {
-            const r = ctx.record as { id?: string; featured?: boolean } | undefined
+            const r = ctx.record as { id?: string; featured?: number } | undefined
             if (!r?.id) return
-            await prisma().article.update({
-              where: { id: r.id },
-              data:  { featured: !r.featured },
-            })
+            await Article.update(r.id, { featured: r.featured ? 0 : 1 })
           }),
         Action.make('changeStatus')
           .label('Change status…')
@@ -255,12 +243,10 @@ export const ArticlesTable = {
             const r = ctx.record as { id?: string; title?: string } | undefined
             if (!r?.id) return
             const status = String(ctx.values?.['status'] ?? 'draft')
-            await prisma().article.update({
-              where: { id: r.id },
-              data:  status === 'published'
-                ? { status, publishedAt: new Date() }
-                : { status },
-            })
+            // ISO string, not a Date — better-sqlite3 can't bind Date objects.
+            await Article.update(r.id, status === 'published'
+              ? { status, publishedAt: new Date().toISOString() }
+              : { status })
             return {
               notify: Notification.make(`Status updated`)
                 .body(`"${r.title ?? 'Article'}" is now ${status}.`)

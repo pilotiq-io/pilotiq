@@ -6,12 +6,7 @@ import { Model } from '@rudderjs/orm'
  * walker reads at depth 2; this model itself stays plain since replies
  * have no further relations.
  */
-export class Reply extends Model {
+export class Reply extends Model.for<'reply'>() {
   static override table = 'reply'
-
-  id!:        string
-  commentId!: string
-  body!:      string
-  createdAt!: Date
-  updatedAt!: Date
+  static override keyType = 'ulid' as const
 }

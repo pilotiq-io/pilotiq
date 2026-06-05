@@ -32,3 +32,4 @@ public/storage
 
 # Playwright
 test-results/
+dev.db.prisma-bak

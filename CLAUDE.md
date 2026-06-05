@@ -42,19 +42,22 @@ cd playground      # pilotiq demo
 pnpm dev                   # vike dev on :3003 (HMR :24680 — conflicts with pilotiq-pro if both are up)
 ```
 
-> Always run `pnpm build` from the **rudderjs** root before running the playground — framework packages must be compiled first.
-
-Prisma (run from `playground/`):
+Database (native engine — run from `playground/`):
 ```bash
-pnpm exec prisma generate --schema prisma/schema
-pnpm exec prisma db push  --schema prisma/schema
+pnpm rudder migrate              # apply database/migrations/ + regen schema types
+pnpm rudder migrate:status       # ran / pending
+pnpm rudder migrate:fresh        # drop all tables + re-run
+pnpm rudder schema:types         # regen app/Models/__schema/registry.d.ts only
+pnpm rudder db:show --counts     # inspect the live database
 ```
+
+> The playground runs on rudder's **native database engine** (`@rudderjs/database`, `engine: 'native'` in `config/database.ts`) — no Prisma/Drizzle. Schema lives in `database/migrations/*.ts`; models bind generated column types via `Model.for<'table'>()`. Migrated off `@rudderjs/orm-prisma` 2026-06-05 (old sqlite data preserved in `dev.db.prisma-bak`).
 
 ---
 
 ## Cross-Repo Wiring
 
-All `@rudderjs/*` packages resolve to `link:../rudder/packages/<name>` via `pnpm.overrides` in the root `package.json`. No git submodules — sibling clones on disk.
+`@rudderjs/*` packages are consumed **from npm** with caret specs (the old `link:../rudder` overrides were dropped when pilotiq started publishing). The rudder repo is still a sibling clone on disk for reading source / filing upstream plans — never direct-edit it (the rudder agent owns it; file a plan in `~/Projects/rudder/docs/plans/` instead).
 
 ```
 ~/Projects/
@@ -73,7 +76,7 @@ All `@rudderjs/*` packages resolve to `link:../rudder/packages/<name>` via `pnpm
 | `pilotiq/playground` | 3003 | 24680 | Pilotiq demo — view-based panel + themeEditor |
 | `pilotiq-pro/playground` | 3002 | 24680 | Full stack — framework + pilotiq + AI + collab |
 
-**Providers** (`playground/`): log, orm-prisma, session, cache, pilotiq.
+**Providers** (`playground/`): log, native database (`@rudderjs/orm` + `@rudderjs/database`), session, cache, pilotiq.
 
 No AI / live / queue / mail / monitoring — those are framework demos in `rudderjs/playground`.
 
@@ -92,8 +95,8 @@ No AI / live / queue / mail / monitoring — those are framework demos in `rudde
 
 ## Common Pitfalls (cross-cutting)
 
-- **Stale `dist/`:** Run `pnpm build` from rudderjs root, then pilotiq root. Per-package: `pnpm -F <name> build` or `cd packages/<name> && pnpm dev` for watch mode.
-- **Prisma client cross-repo resolution:** `config/database.ts` passes `PrismaClient: PrismaClient as any` to fix it.
+- **Stale `dist/`:** Run `pnpm build` from the pilotiq root. Per-package: `pnpm -F <name> build` or `cd packages/<name> && pnpm dev` for watch mode.
+- **Native-engine writes from app code:** better-sqlite3 can't bind `Date` objects — pass ISO strings (`new Date().toISOString()`) in query-builder / `Model.update` payloads. Boolean columns are raw INTEGER 0/1 in the generated registry (cast-folding needs registered models — upstream gap, see `rudder/docs/plans/`).
 - **Port in use:** `lsof -ti :24680 -ti :3003 | xargs kill -9`.
 - **Pilotiq-specific pitfalls** (Vite plugin, page generation, layout persistence, Tailwind setup) live in `packages/pilotiq/CLAUDE.md`.
 - **Adapter peer ranges (`@pilotiq/{codemirror,recharts,tiptap}`):** declare `peerDependencies."@pilotiq/pilotiq"` as the literal range `">=0.6.0 <1.0.0"`, **not** `workspace:^`. `workspace:^` publishes as `^<version>`, which under pre-1.0 caret breaks on every pilotiq minor — and changesets' peer-cascade hardcodes a MAJOR bump on dependents when the range breaks (`@changesets/assemble-release-plan` source verified). devDep stays on `workspace:^` for local resolution. Adding a new adapter? Mirror this shape. Background in `~/.claude/projects/-Users-sleman-Projects-pilotiq/memory/project_pilotiq_npm_release.md`.

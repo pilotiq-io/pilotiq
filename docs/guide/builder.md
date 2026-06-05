@@ -252,22 +252,24 @@ The parent declares the relation in the rudder ORM convention; the
 child carries a discriminator column (`type`), a JSON payload column
 (`data`), the FK, and an optional sort column:
 
-```prisma
-model Page {
-  id     Int        @id @default(autoincrement())
-  title  String
-  blocks PageBlock[]
-}
+```ts
+// app/Models/__migrations/<ts>_create_page_block.ts
+await Schema.create('page', (t) => {
+  t.string('id').primary()
+  t.string('title')
+})
 
-model PageBlock {
-  id     Int    @id @default(autoincrement())
-  pageId Int
-  type   String
-  data   Json
-  sort   Int    @default(0)
-  page   Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
-}
+await Schema.create('page_block', (t) => {
+  t.string('id').primary()
+  t.string('pageId')           // FK back to page
+  t.string('type')             // discriminator
+  t.text('data')               // JSON payload
+  t.integer('sort').default(0) // 0-based row index
+})
 ```
+
+Apply with `pnpm rudder migrate`. (On Prisma/Drizzle, model the same
+columns plus an explicit `page` relation with `onDelete: Cascade`.)
 
 ```ts
 class Page {

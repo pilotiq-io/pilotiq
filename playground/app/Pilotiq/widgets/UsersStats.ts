@@ -1,9 +1,6 @@
 import { StatsOverview, Stat } from '@pilotiq/pilotiq'
-import { app } from '@rudderjs/core/client'
-
-function prisma(): any {
-  return app().make('prisma')
-}
+import { User } from '../../Models/User.js'
+import { Post } from '../../Models/Post.js'
 
 /**
  * Plan #15 Phase B demo — KPI cards row. Three stats: total users,
@@ -14,15 +11,16 @@ export class UsersStats extends StatsOverview {
   static override columns = 3
 
   static override async getStats(): Promise<Stat[]> {
-    const db = prisma()
-    const weekAgo = new Date(Date.now() - 7 * 86_400_000)
+    // ISO string, not a Date — better-sqlite3 can't bind Date objects,
+    // and the ORM stores ISO-8601/UTC timestamps.
+    const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString()
 
+    // Post.softDeletes = true → the default scope already excludes
+    // trashed rows; no explicit deletedAt filter needed.
     const [users, posts, recent] = await Promise.all([
-      db.user.count(),
-      db.post.count({ where: { deletedAt: null } }),
-      db.post.count({
-        where: { deletedAt: null, publishedAt: { gte: weekAgo } },
-      }),
+      User.count(),
+      Post.count(),
+      Post.query().where('publishedAt', '>=', weekAgo).count(),
     ])
 
     return [
