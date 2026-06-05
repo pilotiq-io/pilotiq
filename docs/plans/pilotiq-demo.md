@@ -64,8 +64,8 @@ Server-rendered, intentionally simple — the story is "rudder is a real full-st
 
 ## Phases
 
-- **A — repo + scaffold:** create-rudder, native sqlite, pin published deps, `.npmrc` pro scope, CI skeleton. *Exit: green install+build from clean clone on registries only.*
-- **B — blog admin:** models/migrations/resources per the feature map, seeding. *Exit: full admin walkthrough locally.*
+- **A — repo + scaffold** ✅ 2026-06-05: create-rudder (needed legacy `--orm=native`), pinned deps, `.npmrc` placeholder, CI with real-login boot smoke.
+- **B — blog admin** ✅ 2026-06-05: full feature map + seeder + role auth. Flushed 3 upstream bugs (pilotiq web-group routes → 0.29.0, codemirror fake-optional collab peers → 3.2.8, scaffold missing NODE_ENV=production on start).
 - **C — public frontend:** routes/views, tiptap rendering, RSS, comment intake. *Exit: blog readable end-to-end.*
 - **D — pro:** install `@pilotiq-pro/{ai,collab}` from verdaccio, AI caps, collab WS. *Exit: AI suggestion + two-tab co-edit work.*
 - **E — guardrails + deploy:** auth/policies/reset cron/banner, Forge, DNS, smoke in prod. *Exit: demo.pilotiq.io live.*
