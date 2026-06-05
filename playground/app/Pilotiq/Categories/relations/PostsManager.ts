@@ -5,12 +5,12 @@ import {
 } from '@pilotiq/pilotiq'
 
 /**
- * `User → Posts` (belongsToMany via `post_author`) manager — the posts
- * this user co-authors. M2M mode: Attach picker in the header, Detach
- * on rows; authorship is also editable from the post form's Authors
- * multi-select (same pivot).
+ * `Category → Posts` (belongsToMany via `category_post`) manager. Mode
+ * auto-detects as M2M, so the header gets an Attach picker and rows get
+ * Detach instead of create/delete — the posts themselves live under the
+ * Posts resource.
  */
-export class UserPostsManager extends RelationManager {
+export class CategoryPostsManager extends RelationManager {
   static override relationship         = 'posts'
   static override label                = 'Posts'
   static override labelSingular        = 'Post'
@@ -33,19 +33,19 @@ export class UserPostsManager extends RelationManager {
         return id ? `/admin/posts/${id}` : undefined
       })
       .headerActions([
-        Action.relationAttach(UserPostsManager, ctx),
+        Action.relationAttach(CategoryPostsManager, ctx),
       ])
       .recordActions([
-        Action.relationDetach(UserPostsManager, ctx),
+        Action.relationDetach(CategoryPostsManager, ctx),
       ])
       .bulkActions([
-        Action.relationBulkDetach(UserPostsManager, ctx),
+        Action.relationBulkDetach(CategoryPostsManager, ctx),
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
       .emptyState({
-        heading:     'No posts yet',
-        description: 'Attach posts this user co-authors.',
+        heading:     'No posts in this category',
+        description: 'Attach existing posts, or set categories from the post form.',
       })
   }
 }

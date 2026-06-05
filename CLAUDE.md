@@ -46,7 +46,8 @@ Database (native engine — run from `playground/`):
 ```bash
 pnpm rudder migrate              # apply database/migrations/ + regen schema types
 pnpm rudder migrate:status       # ran / pending
-pnpm rudder migrate:fresh        # drop all tables + re-run
+pnpm rudder migrate:fresh --seed # drop all tables + re-run + seed demo CMS content
+pnpm rudder db:seed              # run database/seeders/DatabaseSeeder (skips when users exist)
 pnpm rudder schema:types         # regen app/Models/__schema/registry.d.ts only
 pnpm rudder db:show --counts     # inspect the live database
 ```
@@ -73,7 +74,7 @@ pnpm rudder db:show --counts     # inspect the live database
 | Playground | Port | HMR | Purpose |
 |---|---|---|---|
 | `rudderjs/playground` | 3000 | 24678 | Framework demo — zero pilotiq deps |
-| `pilotiq/playground` | 3003 | 24680 | Pilotiq demo — view-based panel + themeEditor |
+| `pilotiq/playground` | 3003 | 24680 | Starter-shaped CMS demo at `/admin` (posts / pages / categories / comments / users) + themeEditor |
 | `pilotiq-pro/playground` | 3002 | 24680 | Full stack — framework + pilotiq + AI + collab |
 
 **Providers** (`playground/`): log, native database (`@rudderjs/orm` + `@rudderjs/database`), session, cache, pilotiq.
@@ -96,7 +97,7 @@ No AI / live / queue / mail / monitoring — those are framework demos in `rudde
 ## Common Pitfalls (cross-cutting)
 
 - **Stale `dist/`:** Run `pnpm build` from the pilotiq root. Per-package: `pnpm -F <name> build` or `cd packages/<name> && pnpm dev` for watch mode.
-- **Native-engine writes from app code:** better-sqlite3 can't bind `Date` objects — pass ISO strings (`new Date().toISOString()`) in query-builder / `Model.update` payloads. Boolean columns: declare `static casts = { col: 'boolean' }` on the model — `rudder schema:types` (orm ≥ 1.16.1) folds casts from models under `app/Models/**`; models elsewhere must `ModelRegistry.register()` in a provider.
+- **Native-engine writes from app code:** better-sqlite3 only binds primitives. Declare `static casts` on the model for anything richer — `'boolean'` (0/1), `'datetime'` (Date ↔ ISO string), `'json'` (object ↔ JSON string). Casts serialize on write AND revive on read, and `rudder schema:types` (orm ≥ 1.16.1) folds them into the generated registry types (sweeps `app/Models/**`; models elsewhere must `ModelRegistry.register()` in a provider). Pilotiq form fields REQUIRE this: `DateTimePicker` coerces to `Date` and `RichTextField` to a parsed object before `Model.update` — without the cast the save 500s with "SQLite3 can only bind numbers, strings…". Raw query-builder writes (no model) still need ISO strings by hand.
 - **Port in use:** `lsof -ti :24680 -ti :3003 | xargs kill -9`.
 - **Pilotiq-specific pitfalls** (Vite plugin, page generation, layout persistence, Tailwind setup) live in `packages/pilotiq/CLAUDE.md`.
 - **Adapter peer ranges (`@pilotiq/{codemirror,recharts,tiptap}`):** declare `peerDependencies."@pilotiq/pilotiq"` as the literal range `">=0.6.0 <1.0.0"`, **not** `workspace:^`. `workspace:^` publishes as `^<version>`, which under pre-1.0 caret breaks on every pilotiq minor — and changesets' peer-cascade hardcodes a MAJOR bump on dependents when the range breaks (`@changesets/assemble-release-plan` source verified). devDep stays on `workspace:^` for local resolution. Adding a new adapter? Mirror this shape. Background in `~/.claude/projects/-Users-sleman-Projects-pilotiq/memory/project_pilotiq_npm_release.md`.

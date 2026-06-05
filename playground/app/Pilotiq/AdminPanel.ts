@@ -2,79 +2,50 @@ import {
   Pilotiq, Global, TextField,
   Form,
   UserMenuItem,
-  Alert, Heading,
 } from '@pilotiq/pilotiq'
 import { themeEditor, databaseThemeStorage } from '@pilotiq/pilotiq/plugins'
 import { registerIcons } from '@pilotiq/pilotiq/icons'
 import {
-  Archive, AtSign, BookOpen, Check, CheckCircle2, Circle, FileText,
-  Heading as HeadingIcon, IdCard, ImageIcon, Inbox, Info, Link,
-  MessageCircle, MoreHorizontal, Palette, Pilcrow, Pencil, Quote, Send, Star,
-  Sticker, TrendingUp, TriangleAlert, User, UserPlus, Users, XCircle,
+  BookOpen, ChartBar, Check, CheckCircle2, Circle, FileText, Folder,
+  LayoutDashboard, MessageSquare, Newspaper, Palette, Send, Settings,
+  TrendingUp, UserCircle, Users,
 } from 'lucide-react'
-import { tiptap }      from '@pilotiq/tiptap'
-import { codeEditor }  from '@pilotiq/codemirror'
-import { recharts }    from '@pilotiq/recharts'
-import { json } from '@codemirror/lang-json'
-import { sql }  from '@codemirror/lang-sql'
+import { tiptap }     from '@pilotiq/tiptap'
+import { codeEditor, CodeEditorField } from '@pilotiq/codemirror'
+import { recharts }   from '@pilotiq/recharts'
+import { html } from '@codemirror/lang-html'
 import { app } from '@rudderjs/core/client'
-import { ArticleResource } from './Articles/ArticleResource.js'
-import { UserResource }    from './Users/UserResource.js'
-import { PostResource }    from './Posts/PostResource.js'
-import { TagResource }     from './Tags/TagResource.js'
-import { VideoResource }   from './Videos/VideoResource.js'
-import { CommentResource } from './Comments/CommentResource.js'
-import { ContentCluster }  from './Content/ContentCluster.js'
-import { SimplePage } from './pages/SimplePage.js'
-import { ElementsShowcase } from './pages/ElementsShowcase.js'
-import { ReactiveDemo } from './pages/ReactiveDemo.js'
-import { FieldTypesDemo } from './pages/FieldTypesDemo.js'
-import { LayoutsDemo } from './pages/LayoutsDemo.js'
-import { RepeaterDemo } from './pages/RepeaterDemo.js'
-import { BuilderDemo } from './pages/BuilderDemo.js'
+import { PostResource }     from './Posts/PostResource.js'
+import { PageResource }     from './SitePages/PageResource.js'
+import { CategoryResource } from './Categories/CategoryResource.js'
+import { CommentResource }  from './Comments/CommentResource.js'
+import { UserResource }     from './Users/UserResource.js'
 import { MyDashboard } from './pages/MyDashboard.js'
 import { ProfilePage } from './pages/ProfilePage.js'
-import { NotificationsDemo } from './pages/NotificationsDemo.js'
 
 // Register ONLY the string-typed icons this panel actually uses
-// (Action.icon('check'), Column.icon('star'), sidebar nav, badge cells,
-// framework defaults like BooleanColumn's 'circle', etc.) instead of the
-// full ~150-icon lucide baseline — keeps the client bundle lean since
-// importing `lucideIcons` pulls every icon in (it references them all).
-// Runs at module load on both server (provider boot) and client (the
-// auto-gen _components.ts re-imports this file). Resources that set a
-// component-typed icon (e.g. `static icon = Newspaper` in ArticleResource)
-// don't need an entry here — those resolve via the component registry.
+// (resource/page nav icons, action icons, framework defaults like
+// BooleanColumn's 'circle'/'check-circle-2') instead of the full
+// ~150-icon lucide baseline — keeps the client bundle lean. Runs at
+// module load on both server (provider boot) and client (the auto-gen
+// `_components.ts` re-imports this file).
 registerIcons({
-  'archive':         Archive,
-  'at-sign':         AtSign,
-  'book-open':       BookOpen,
-  'check':           Check,
-  'check-circle':    CheckCircle2,
-  'check-circle-2':  CheckCircle2,
-  'circle':          Circle,         // BooleanColumn's "false" default
-  'file-text':       FileText,
-  'heading':         HeadingIcon,
-  'id-card':         IdCard,
-  'image':           ImageIcon,
-  'inbox':           Inbox,
-  'info':            Info,
-  'link':            Link,
-  'message-circle':  MessageCircle,
-  'more-horizontal': MoreHorizontal,
-  'palette':         Palette,         // theme-editor nav link
-  'paragraph':       Pilcrow,
-  'pencil':          Pencil,
-  'quote':           Quote,
-  'send':            Send,
-  'star':            Star,
-  'sticker':         Sticker,
-  'trending-up':     TrendingUp,
-  'triangle-alert':  TriangleAlert,
-  'user':            User,
-  'user-plus':       UserPlus,
-  'users':           Users,
-  'x-circle':        XCircle,
+  'book-open':        BookOpen,
+  'chart-bar':        ChartBar,
+  'check':            Check,
+  'check-circle-2':   CheckCircle2,   // BooleanColumn "true" default
+  'circle':           Circle,         // BooleanColumn "false" default
+  'file-text':        FileText,
+  'folder':           Folder,
+  'layout-dashboard': LayoutDashboard,
+  'message-square':   MessageSquare,
+  'newspaper':        Newspaper,
+  'palette':          Palette,        // theme-editor nav link
+  'send':             Send,
+  'settings':         Settings,
+  'trending-up':      TrendingUp,
+  'user-circle':      UserCircle,
+  'users':            Users,
 })
 
 // Native-engine ORM adapter — the `'db'` binding the auto-discovered
@@ -95,6 +66,12 @@ class SiteSettings extends Global {
       .schema([
         TextField.make('siteName').label('Site name').required().placeholder('Pilotiq Demo'),
         TextField.make('tagline').label('Tagline').placeholder('Optional…'),
+        CodeEditorField.make('headSnippet')
+          .label('Head snippet')
+          .language('html')
+          .height('160px')
+          .placeholder('<!-- analytics / meta tags injected into <head> -->')
+          .helperText('Raw HTML injected into every public page’s <head>.'),
       ])
       .loadRecord(async () => {
         const row = await db().query('panelGlobal').where('slug', 'pilotiq-admin__site').first()
@@ -114,16 +91,14 @@ class SiteSettings extends Global {
 }
 
 export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
-  .path('/new-admin')
+  .path('/admin')
   .branding({ title: 'Pilotiq' })
   // App locale for built-in dateTime/money/numeric formatting. Keep in sync
   // with config/localization.ts (APP_LOCALE). A literal — not Env.get() —
-  // because this panel module is also bundled for the client, and reading
-  // server env here would pull server-only code into the browser.
+  // because this panel module is also bundled for the client.
   .locale('en')
-  // Pilotiq brand defaults. These are the panel's code-level theme, so they
-  // render by default AND are what the theme editor's "Reset to Defaults"
-  // snaps back to (it DELETEs DB overrides → server re-resolves to this).
+  // Pilotiq brand defaults — also what the theme editor's "Reset to
+  // Defaults" snaps back to.
   .theme({
     preset:     'vega',
     baseColor:  'taupe',
@@ -133,36 +108,25 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
     spacing:    'default',
     fonts:      { heading: 'Satoshi', body: 'Satoshi' },
   })
-  // Sidebar chrome: a floating rail that slides fully off-screen when
-  // toggled (instead of the default inset card + icon rail). `side`
-  // defaults to 'left'.
   .layout('sidebar', { variant: 'sidebar', collapsible: 'offcanvas' })
-  // Adapter packages register through the panel module — no separate
-  // `register*()` calls in `pages/+Layout.tsx`. AdminPanel.ts is re-imported
-  // on the client via the Vite plugin's `_components.ts` manifest, so each
-  // plugin's `register()` runs in both SSR + the browser. Idempotent
-  // (Map.set under the hood).
+  // Adapter packages register through the panel module — each plugin's
+  // `register()` runs in both SSR + the browser. Idempotent.
   .plugins([
     tiptap(),
-    codeEditor({ languages: { json, sql } }),
+    codeEditor({ languages: { html } }),
     recharts(),
-    // Explicit theme persistence over the native engine's `'db'` adapter.
-    // The resolver is a lazy thunk so `app().make('db')` only fires inside
-    // the adapter's server-side load/save, never at module-eval — keeps the
-    // panel module client-safe (it's re-imported in the browser via
-    // `_components.ts`). Slug matches the old implicit key so already-saved
-    // themes carry over.
+    // Theme persistence over the native engine's `'db'` adapter. Lazy
+    // thunk keeps the panel module client-safe.
     themeEditor({
       storage: databaseThemeStorage(() => db(), { slug: 'Pilotiq Admin__theme' }),
     }),
   ])
-  // Plan #10 demo — pretend everyone is an admin so the canDelete()
-  // check on `ArticleResource` shows the Delete row action. Real apps
-  // would pass `req => Auth.user()` (from `@rudderjs/auth`). The `id`
-  // matters for `Notification.sendToDatabase(user)` — the bell scopes
-  // every read/write through `String(user.id)`.
+  // Demo auth — a fixed admin identity. The id matches the user row the
+  // seeder creates, so the profile page's save writes through to a real
+  // record and `Notification.sendToDatabase(user)` scopes the bell
+  // correctly. Real apps pass `req => Auth.user()` (from `@rudderjs/auth`).
   .user(() => ({
-    id:    1,
+    id:    'demo-admin',
     role:  'admin',
     name:  'Demo Admin',
     email: 'admin@example.com',
@@ -175,46 +139,15 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
       .openUrlInNewTab(),
   ])
   .signOut('/logout')
-  // Bell-icon dropdown — reads from the `notification` table shipped by
-  // `@rudderjs/notification`'s `NotificationProvider` (already in the
-  // playground's providers list). Author rows via
-  // `Notification.make('…').sendToDatabase(user)` from any action handler.
+  // Bell-icon dropdown — rows authored via
+  // `Notification.make('…').sendToDatabase(user)` (see the Publish
+  // action on PostResource).
   .databaseNotifications({ polling: 30 })
   // Note: `.uploads(...)` is wired in `bootstrap/providers.ts` (server-only)
-  // because `localUpload` imports `node:fs/promises` and the panel module
-  // is read on the client through the auto-gen `_components.ts` manifest.
-  .clusters([ContentCluster])
-  .resources([ArticleResource, UserResource, PostResource, TagResource, VideoResource, CommentResource])
+  // because `localUpload` imports `node:fs/promises`.
+  .resources([PostResource, PageResource, CategoryResource, CommentResource, UserResource])
   .globals([SiteSettings])
-  .pages([MyDashboard, SimplePage, ElementsShowcase, ReactiveDemo, FieldTypesDemo, LayoutsDemo, RepeaterDemo, BuilderDemo, NotificationsDemo])
-  // Plan #15 — mark MyDashboard as the panel's root page. The custom
-  // root replaces the previous `.schema(async () => [...])` placeholder;
-  // panel.dashboard() registers MyDashboard, collapses its nav URL to
-  // `${base}`, and routes `${base}` to its schema.
+  .pages([MyDashboard])
   .dashboard(MyDashboard)
   // User-menu auto-injects "Edit profile" pointing at this page.
   .profile(ProfilePage)
-  // Render-hook smoke — chrome (Day 1) + page-role (Day 2):
-  // - body.start banner sits at the top of every page chrome
-  // - sidebar.footer label
-  // - list-records.table.before splices an Alert above the Articles list table
-  // .renderHook('panels::body.start', () => [
-  //   Alert.make('Render-hook demo: this banner is mounted via panel.renderHook(\'panels::body.start\').').info(),
-  // ])
-  // .renderHook('panels::sidebar.footer', () => [
-  //   Heading.make('Pilotiq playground').level(6),
-  // ])
-  // .renderHook(
-  //   'panels::resource.pages.list-records.table.before',
-  //   () => [Alert.make('Tip: scoped page-role hook — this Alert is only on the Articles list.').info()],
-  //   { resource: ArticleResource },
-  // )
-  // .renderHook('panels::global-search.results.before', () => [
-  //   Alert.make('Tip: press ESC to close the palette, or click any result to navigate.').info(),
-  // ])
-
-export const pilotiqSimple = Pilotiq.make('Pilotiq simple')
-  .path('/simple')
-  .layout('topbar')
-  .branding({ title: 'Simple' })
-  .resources([ArticleResource])

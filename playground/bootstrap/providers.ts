@@ -2,7 +2,7 @@ import type { Application, ServiceProvider } from '@rudderjs/core'
 import { defaultProviders } from '@rudderjs/core'
 import { pilotiq } from '@pilotiq/pilotiq'
 import { localUpload } from '@pilotiq/pilotiq/uploads'
-import { pilotiqAdmin, pilotiqSimple } from '../app/Pilotiq/AdminPanel.js'
+import { pilotiqAdmin } from '../app/Pilotiq/AdminPanel.js'
 import { AppServiceProvider } from '../app/Providers/AppServiceProvider.js'
 
 // Server-only adapter wiring — kept out of `AdminPanel.ts` because the
@@ -17,7 +17,7 @@ pilotiqAdmin.uploads({
 export default [
   ...(await defaultProviders()),
 
-  pilotiq([pilotiqAdmin, pilotiqSimple]),
+  pilotiq([pilotiqAdmin]),
 
   AppServiceProvider,
 ] satisfies (new (app: Application) => ServiceProvider)[]

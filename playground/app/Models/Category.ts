@@ -1,17 +1,15 @@
 import { Model } from '@rudderjs/orm'
 import { Post } from './Post.js'
 
-export class User extends Model.for<'user'>() {
-  static override table  = 'user'
+export class Category extends Model.for<'category'>() {
+  static override table = 'category'
   static override keyType = 'ulid' as const
-  static override hidden = ['password', 'rememberToken']
 
   static override relations = {
-    // M2M — posts this user co-authors (post_author pivot).
     posts: {
       type:       'belongsToMany' as const,
       model:      () => Post,
-      pivotTable: 'post_author',
+      pivotTable: 'category_post',
     },
   }
 }

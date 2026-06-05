@@ -4,36 +4,23 @@ import '@rudderjs/orm'
 
 declare module '@rudderjs/orm' {
   interface SchemaRegistry {
-    article: {
+    category: {
       id: string
-      title: string
-      slug: string | null
-      excerpt: string | null
-      coverImage: string | null
-      tags: string
-      status: string
-      draftStatus: string
-      featured: boolean
-      publishedAt: string | null
-      accentColor: string | null
-      metaTitle: string | null
-      metaDescription: string | null
-      content: string | null
-      body: string | null
-      metadata: string | null
-      deletedAt: string | null
+      name: string
+      slug: string
+      description: string | null
       createdAt: string | null
       updatedAt: string | null
     }
-    article_tag: {
-      articleId: string
-      tagId: string
+    category_post: {
+      categoryId: string
+      postId: string
     }
     comment: {
       id: string
+      postId: string
+      authorName: string | null
       body: string
-      commentableId: string
-      commentableType: string
       createdAt: string | null
       updatedAt: string | null
     }
@@ -47,6 +34,15 @@ declare module '@rudderjs/orm' {
       created_at: string
       updated_at: string
     }
+    page: {
+      id: string
+      title: string
+      slug: string
+      content: unknown | null
+      published: boolean
+      createdAt: string | null
+      updatedAt: string | null
+    }
     panelGlobal: {
       slug: string
       data: string
@@ -55,34 +51,24 @@ declare module '@rudderjs/orm' {
     post: {
       id: string
       title: string
-      body: string | null
-      status: string
-      authorId: string
-      publishedAt: string | null
-      deletedAt: string | null
-      sort: number
-      createdAt: string | null
-      updatedAt: string | null
-    }
-    reply: {
-      id: string
-      commentId: string
-      body: string
-      createdAt: string | null
-      updatedAt: string | null
-    }
-    tag: {
-      id: string
-      name: string
       slug: string
-      color: string | null
+      status: string
+      publishedAt: Date | null
+      image: string | null
+      content: unknown | null
+      metaTitle: string | null
+      metaDescription: string | null
+      deletedAt: string | null
       createdAt: string | null
       updatedAt: string | null
     }
-    taggable: {
-      tagId: string
-      taggableId: string
-      taggableType: string
+    post_author: {
+      postId: string
+      userId: string
+    }
+    post_related: {
+      postId: string
+      relatedId: string
     }
     user: {
       id: string
@@ -93,13 +79,6 @@ declare module '@rudderjs/orm' {
       image: string | null
       role: string
       rememberToken: string | null
-      createdAt: string | null
-      updatedAt: string | null
-    }
-    video: {
-      id: string
-      title: string
-      url: string
       createdAt: string | null
       updatedAt: string | null
     }

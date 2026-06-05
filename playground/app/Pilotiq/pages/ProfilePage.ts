@@ -1,13 +1,14 @@
 import { Page, Form, Heading, TextField, EmailField, Section } from '@pilotiq/pilotiq'
+import { User } from '../../Models/User.js'
 
 /**
- * Profile page demo. Wired to the panel via `Pilotiq.profile(ProfilePage)`
- * in `AdminPanel.ts` — that auto-prepends an "Edit profile" entry on
- * the top-right user menu pointing here, and registers the page route.
+ * Profile page. Wired via `Pilotiq.profile(ProfilePage)` in
+ * `AdminPanel.ts` — that auto-prepends an "Edit profile" entry on the
+ * user menu pointing here.
  *
- * `loadRecord(ctx)` reads from the resolved user. Real apps would
- * persist the changes against their auth model in `save()` (we no-op
- * the playground demo since there's no real user store to write back).
+ * The resolved panel user's id matches the seeded `demo-admin` row, so
+ * the form loads from and saves to a real user record. Falls back to
+ * the resolved user when the row is missing (fresh DB before seeding).
  */
 export class ProfilePage extends Page {
   static override slug  = 'profile'
@@ -28,11 +29,21 @@ export class ProfilePage extends Page {
             EmailField.make('email').label('Email').required(),
           ])
           .loadRecord(async (ctx) => {
-            const user = (ctx as any).user as { name?: string; email?: string } | null
+            const user = (ctx as { user?: { id?: string; name?: string; email?: string } | null }).user
+            if (user?.id) {
+              const row = await User.find(user.id)
+              if (row) return { name: row.name, email: row.email }
+            }
             return user ?? {}
           })
-          .save(async (data) => {
-            // Demo: no-op. In a real app, persist via Auth.user().update(data) or similar.
+          .save(async (data, ctx) => {
+            const user = (ctx as { user?: { id?: string } | null }).user
+            if (user?.id && await User.find(user.id)) {
+              await User.update(user.id, {
+                name:  String(data['name'] ?? ''),
+                email: String(data['email'] ?? ''),
+              })
+            }
             return data
           }),
       ]),

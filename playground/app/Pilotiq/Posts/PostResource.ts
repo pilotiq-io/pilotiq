@@ -1,34 +1,29 @@
 import {
-  Resource, Column, Action,
-  TextInputColumn, SelectColumn,
-  TextField, MarkdownField, SelectField, EmailField,
-  TernaryFilter, DateRangeFilter,
-  TableGroup, orderByKeys,
-  TextEntry, BadgeEntry, IconEntry, ComponentEntry,
-  Section, Grid,
-  email, minLength,
+  Resource, Action, Notification,
+  Column, TextColumn, BadgeColumn, ImageColumn,
+  TextField, TextareaField, SelectField, SlugField,
+  DateTimePicker, FileUpload,
+  MultiSelectFilter,
+  Section, Grid, Group, Split,
+  TextEntry, BadgeEntry, ImageEntry, ComponentEntry,
+  unique,
   type Form, type Table, type Element,
 } from '@pilotiq/pilotiq'
+import { RichTextField, Block } from '@pilotiq/tiptap'
 import { Post } from '../../Models/Post.js'
 import { User } from '../../Models/User.js'
-import { PostsCommentsManager } from './relations/CommentsManager.js'
-import { PostsTagsManager }     from './relations/TagsManager.js'
-import { ContentCluster }       from '../Content/ContentCluster.js'
-import { PostAnalyticsPage }    from './AnalyticsPage.js'
+import { Category } from '../../Models/Category.js'
+import { ListPosts } from './ListPosts.js'
+import { PostAnalyticsPage } from './AnalyticsPage.js'
+import { CommentsManager } from './relations/CommentsManager.js'
+import { tiptapText } from './tiptapText.js'
 
-const ADMIN = '/new-admin'
+const ADMIN = '/admin'
 
 /**
- * Plan #11 demo — top-level Posts resource. The `User → Posts` manager
- * defaults its row links to this resource's view URL
- * (`/new-admin/posts/:id`), so registering it lets the click-through
- * "drill into the full record context" pattern work end-to-end.
- *
- * Plan #13 demo — `softDeletes = true` opts in the TrashedFilter,
- * Restore + ForceDelete actions, and "moved to trash" delete framing.
- * Row actions wire all four explicitly (Filament-style); per-row
- * visibility shows Edit + Delete on live rows and Restore +
- * ForceDelete on trashed rows.
+ * The CMS flagship — posts with co-authors, categories, related posts
+ * (all M2M multi-selects synced through pivots), a Tiptap body with a
+ * custom block, SEO meta fields, soft-deletes, and a comments tab.
  */
 export class PostResource extends Resource {
   static override label                = 'Posts'
@@ -37,201 +32,202 @@ export class PostResource extends Resource {
   static override model                = Post
   static override recordTitleAttribute = 'title'
   static override softDeletes          = true
-  // Cluster demo — Posts lives under `/new-admin/content/posts`.
-  static override cluster              = ContentCluster
 
-  static override navigationSort  = 20
+  static override navigationGroup = 'Content'
+  static override navigationSort  = 10
+  static override navigationBadge = async () => {
+    const n = await Post.where('status', 'draft').count()
+    return n > 0 ? n : undefined
+  }
+  static override navigationBadgeColor = 'warning' as const
+
+  static override globalSearch = true
+  static override getGlobalSearchResultSubtitle(record: unknown): string | undefined {
+    const status = (record as { status?: string })?.status
+    return status ? status[0]!.toUpperCase() + status.slice(1) : undefined
+  }
+
+  // Only admins can delete (and force-delete inherits this).
+  static override async canDelete(user: unknown, _record: unknown): Promise<boolean> {
+    return (user as { role?: string })?.role === 'admin'
+  }
 
   static override form(form: Form): Form {
     return form.schema([
-      TextField.make('title').required(),
-      // Inline-create-from-select demo: pick an author, or click "+" to
-      // spawn a new User on the fly without leaving the post form. The
-      // sub-form runs the same validators (`required`, `email`, `unique`)
-      // as a regular User.create() route.
-      SelectField.make('authorId')
-        .label('Author')
-        .required()
-        .options(async () => {
-          const users = await User.query().paginate(1, 100)
-          return users.data.map((u) => ({ value: u.id, label: `${u.name} (${u.email})` }))
-        })
-        .createOptionForm([
-          TextField.make('name').required().validate(minLength(2)),
-          EmailField.make('email').required().validate(email()),
-        ])
-        .createOptionUsing(async ({ name, email: emailVal }) => {
-          const user = await User.create({
-            name:  String(name),
-            email: String(emailVal),
-          })
-          return { value: user.id, label: `${user.name} (${user.email})` }
-        }),
-      MarkdownField.make('body')
-        .placeholder('Write the post body in markdown…')
-        .minHeight('240px')
-        .helperText('Markdown formatting supported. Use the toolbar or ⌘B / ⌘I / ⌘K.'),
-      SelectField.make('status').default('draft').options([
-        { value: 'draft',     label: 'Draft' },
-        { value: 'published', label: 'Published' },
+      Split.make().schema([
+        // ── Main column ─────────────────────────────────
+        Group.make().schema([
+          TextField.make('title').required().placeholder('Post title…'),
+          SlugField.make('slug')
+            .from('title')
+            .required()
+            .validate(unique({ model: Post }))
+            .helperText('Auto-fills from the title; edit to override.'),
+          RichTextField.make('content')
+            .label('Content')
+            .placeholder('Start writing…')
+            .enableToolbarButtons(['attachFiles', 'table'])
+            .resizableImages()
+            .fileAttachmentsAcceptedFileTypes(['image/*'])
+            .fileAttachmentsMaxSize(2_000_000)
+            .fileAttachmentsDirectory('posts')
+            .blocks([
+              Block.make('callout').label('Callout').icon('💡').schema([
+                TextField.make('title').label('Title').placeholder('Callout title'),
+                TextareaField.make('content').label('Content').required(),
+                SelectField.make('tone').label('Tone').options([
+                  { value: 'info',    label: 'Info' },
+                  { value: 'warning', label: 'Warning' },
+                  { value: 'success', label: 'Success' },
+                ]),
+              ]),
+            ]),
+          Section.make('SEO')
+            .description('Search-engine metadata. Falls back to the title and an excerpt when empty.')
+            .collapsible()
+            .defaultCollapsed()
+            .schema([
+              TextField.make('metaTitle').label('Meta title'),
+              TextareaField.make('metaDescription').label('Meta description').rows(2),
+            ]),
+        ]),
+
+        // ── Aside ────────────────────────────────────────
+        Section.make('Publishing').aside().schema([
+          SelectField.make('status').required().default('draft').options([
+            { value: 'draft',     label: 'Draft' },
+            { value: 'published', label: 'Published' },
+            { value: 'archived',  label: 'Archived' },
+          ]),
+          DateTimePicker.make('publishedAt').label('Published at'),
+          FileUpload.make('image')
+            .label('Cover image')
+            .accept(['image/*'])
+            .maxSize(2_000_000)
+            .directory('covers'),
+          SelectField.make('authors')
+            .label('Authors')
+            .multiple()
+            .relationship('authors')
+            .options(async () => {
+              const users = await User.query().paginate(1, 200)
+              return users.data.map((u) => ({ value: u.id, label: u.name }))
+            }),
+          SelectField.make('categories')
+            .label('Categories')
+            .multiple()
+            .relationship('categories')
+            .options(async () => {
+              const rows = await Category.query().paginate(1, 200)
+              return rows.data.map((c) => ({ value: c.id, label: c.name }))
+            }),
+          SelectField.make('relatedPosts')
+            .label('Related posts')
+            .multiple()
+            .relationship('relatedPosts')
+            .options(async (ctx) => {
+              const selfId = (ctx?.record as { id?: string } | undefined)?.id
+              const rows = await Post.query().paginate(1, 200)
+              return rows.data
+                .filter((p) => p.id !== selfId)
+                .map((p) => ({ value: p.id, label: p.title }))
+            }),
+        ]),
       ]),
     ])
   }
 
   static override table(table: Table): Table {
     return table
-      .reorderable('sort')
       .columns([
-        // Inline-edit demo: typing in the title saves on blur (or after the
-        // 500 ms debounce). Validator runs server-side; failure shows a toast
-        // and rolls the input back to the persisted value.
-        TextInputColumn.make('title')
-          .sortable().searchable()
-          .validate(minLength(3))
-          .placeholder('Untitled')
-          .width('30%'),
-        // Inline-edit demo: pick a status from the dropdown — saves on each
-        // change with no debounce. Replaces the previous BadgeColumn since
-        // the cell IS the affordance.
-        SelectColumn.make('status')
-          .options({ draft: 'Draft', published: 'Published' })
-          .width('140px'),
-        Column.make('authorId').label('Author').color('muted'),
-        Column.make('createdAt').sortable().since(),
+        ImageColumn.make('image').label('').size(36),
+        TextColumn.make('title').sortable().searchable().weight('semibold').width('35%'),
+        BadgeColumn.make('status').colors({
+          draft:     'gray',
+          published: 'success',
+          archived:  'warning',
+        }),
+        Column.make('publishedAt').label('Published').sortable().since(),
+        Column.make('createdAt').label('Created').sortable().since().toggleable({ initiallyHidden: true }),
       ])
       .filters([
-        TernaryFilter.make('publishState')
-          .label('Publish state')
-          .trueLabel('Published')
-          .falseLabel('Unpublished')
-          .nullable(false)
-          .query((q, value) => {
-            if (value === 'yes') return q.where('publishedAt', '!=', null)
-            if (value === 'no')  return q.where('publishedAt', '=',  null)
-            return q
-          }),
-        DateRangeFilter.make('createdAt').label('Created'),
-      ])
-      // scopeQueryByKey demo — pick "Group by: Status" from the toolbar
-      // and rows band by status (draft/published). Click a heading
-      // ("Status: Draft") to drill into that bucket; banded layout
-      // collapses, a "Drilled into Status: Draft" chip mounts above
-      // the table, × to clear. The default scoper is exact-match
-      // `where('status', '=', key)` since we didn't override
-      // `.scopeQueryByKey(fn)`. `orderByKeys` pins Draft first.
-      .groups([
-        TableGroup.make('status')
-          .label('Status')
-          .collapsible()
-          .scopable()
-          .orderUsing(orderByKeys(['draft', 'published'])),
+        MultiSelectFilter.make('status').options([
+          { value: 'draft',     label: 'Draft' },
+          { value: 'published', label: 'Published' },
+          { value: 'archived',  label: 'Archived' },
+        ]),
       ])
       .headerActions([
         Action.create(PostResource, ADMIN),
-        // Import / Export demo. Export streams the table query (with
-        // current filters / search / sort applied) as CSV. Import opens
-        // a modal with a FileUpload; rows are upserted by `slug` so the
-        // same CSV can be re-uploaded without duplicates.
-        Action.export(PostResource, ADMIN, {
-          columns:  ['id', 'title', 'status', 'authorId', 'createdAt'],
-          filename: () => `posts-${new Date().toISOString().slice(0, 10)}.csv`,
-        }),
-        Action.import(PostResource, ADMIN, {
-          columns:  { Title: 'title', Status: 'status', Author: 'authorId' },
-          // No `upsertBy` — Post has no naturally-unique business key
-          // beyond `id` (which the user wouldn't typically supply on a
-          // CSV import). Toggling to create-only matches the demo's intent
-          // (drag a CSV in → new posts appear).
-        }),
       ])
       .recordActions([
+        Action.make('publish')
+          .label('Publish')
+          .icon('send')
+          .color('success')
+          .visible(({ record }) => (record as { status?: string })?.status !== 'published')
+          .confirm('Publish this post? It becomes visible to readers.')
+          .handler(async (ctx) => {
+            const r = ctx.record as { id?: string; title?: string } | undefined
+            if (!r?.id) return
+            // A real Date is fine here — the model's `datetime` cast
+            // serializes it to an ISO string at write time.
+            await Post.update(r.id, { status: 'published', publishedAt: new Date() })
+            const user = ctx.user as { id?: string | number } | undefined
+            if (user?.id !== undefined) {
+              // Lands in the bell dropdown (database notification).
+              await Notification.make('Post published')
+                .body(`“${r.title ?? 'Untitled'}” is now live.`)
+                .success()
+                .sendToDatabase({ id: user.id })
+            }
+            return { notify: Notification.make('Post published').success() }
+          }),
         Action.edit       (PostResource, ADMIN),
         Action.delete     (PostResource, ADMIN),
         Action.restore    (PostResource, ADMIN),
         Action.forceDelete(PostResource, ADMIN),
       ])
       .bulkActions([
-        Action.bulkExport     (PostResource, ADMIN, {
-          columns: ['id', 'title', 'status'],
-        }),
         Action.bulkDelete     (PostResource, ADMIN),
         Action.bulkRestore    (PostResource, ADMIN),
         Action.bulkForceDelete(PostResource, ADMIN),
       ])
-      // No `defaultSort()` — `reorderable('sort')` falls back to
-      // `(sort, asc)` so the visible order matches the persisted column
-      // and drag is enabled out of the box.
+      .defaultSort('createdAt', 'desc')
       .paginate(10)
   }
 
-  /** Plan #16 demo — read-only infolist entries on the ViewPage. Sibling
-   *  hierarchy to fields: each entry resolves its value from the loaded
-   *  record at meta-build time, runs through built-in formatters
-   *  (`since / dateTime / money / numeric / limit`) or a custom
-   *  `formatStateUsing`, and renders inside the same layout primitives
-   *  forms use (`Section`, `Grid`). Distinct from a "disabled form" — no
-   *  inputs, no submit, no validators. */
   static override detail(_record: unknown): Element[] {
     return [
       Section.make('Overview').schema([
         Grid.make().columns(2).schema([
           TextEntry.make('title').size('lg').weight('semibold'),
-          BadgeEntry.make('status').colors({ draft: 'gray', published: 'success' }),
+          BadgeEntry.make('status').colors({ draft: 'gray', published: 'success', archived: 'warning' }),
+          TextEntry.make('slug').inlineLabel().copyable('Copy slug'),
+          TextEntry.make('publishedAt').label('Published').since().default('Unpublished'),
         ]),
+        ImageEntry.make('image').label('Cover').width(320).rounded(),
       ]),
-      Section.make('Details').schema([
+      Section.make('SEO').schema([
         Grid.make().columns(2).schema([
-          TextEntry.make('authorId').label('Author').inlineLabel().copyable('Copy author id'),
-          // Function accessor — derives a value from the record without
-          // touching `record.authorIdShort`. String dotted-path also
-          // supported for joined fields (e.g. `.state('author.name')`).
-          TextEntry.make('authorIdShort')
-            .label('Author (short)')
-            .inlineLabel()
-            .state((r) => {
-              const id = (r as { authorId?: string }).authorId
-              return id ? `${id.slice(0, 6)}…` : '—'
-            }),
-          TextEntry.make('createdAt').label('Created').since().tooltip('Server timestamp'),
-          TextEntry.make('updatedAt').label('Updated').dateTime(),
-          IconEntry.make('status').label('Live?').options({
-            published: { icon: 'check-circle', color: 'success', label: 'Live'  },
-            draft:     { icon: 'x-circle',     color: 'warning', label: 'Draft' },
-          }),
+          TextEntry.make('metaTitle').label('Meta title').default('(falls back to title)'),
+          TextEntry.make('metaDescription').label('Meta description').default('(none)'),
         ]),
       ]),
-      Section.make('Body').schema([
-        TextEntry.make('body').wrap().lineClamp(8).default('No body yet.'),
-        // Escape-hatch entry — hands rendering off to the registered
-        // `ReadingStats` React component. The `state(r => r.body ?? '')`
-        // accessor pre-resolves the body text so the component receives
-        // a plain string in `value`.
+      Section.make('Content').schema([
         ComponentEntry.make('readingStats')
           .label('Reading stats')
           .component('ReadingStats')
-          .state((r) => (r as { body?: string }).body ?? ''),
+          .state((rec) => tiptapText((rec as { content?: unknown }).content)),
       ]),
     ]
   }
 
-  /** Polymorphic follow-up — Comments tab on the post's edit/view page,
-   *  scoped via the `commentable` morph. Mode auto-detects as
-   *  `'morphMany'`; create POST auto-fills the morph columns.
-   *
-   *  Polymorphic M2M follow-up — Tags tab via the shared `taggable`
-   *  pivot. Mode auto-detects as `'morphToMany'`; the M2M factories
-   *  (`relationAttach / Detach / BulkDetach`) work identically to the
-   *  `belongsToMany` Article ↔ Tag manager — the only difference is the
-   *  ORM stamps + filters `taggableType = 'Post'` on the shared pivot
-   *  so the same Tag rows can attach to either a Post or a Video. */
-  static override relations() { return [PostsCommentsManager, PostsTagsManager] }
+  static override relations() { return [CommentsManager] }
 
-  /** Record sub-pages demo — `Analytics` mounts at
-   *  `/new-admin/content/posts/:id/analytics` and surfaces as a tab
-   *  on the post's sub-nav strip (between Edit and the Comments /
-   *  Tags managers). Receives the loaded post on `ctx.record`. */
   static override pages() {
     return {
+      index: ListPosts,
       record: {
         analytics: PostAnalyticsPage,
       },

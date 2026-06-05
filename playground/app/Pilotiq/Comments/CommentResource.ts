@@ -1,21 +1,17 @@
 import {
   Resource, Column, Action,
-  TextField,
+  TextField, TextareaField, SelectField,
   type Form, type Table,
 } from '@pilotiq/pilotiq'
 import { Comment } from '../../Models/Comment.js'
+import { Post } from '../../Models/Post.js'
 
-const ADMIN = '/new-admin'
+const ADMIN = '/admin'
 
 /**
- * Polymorphic follow-up demo — top-level Comments resource.
- *
- * Lets row links from `PostsCommentsManager` / `VideosCommentsManager`
- * drill into the full record context (`/new-admin/comments/:id`). The
- * `commentableId` / `commentableType` columns surface read-only on the
- * list page so the polymorphic ownership is visible without dropping
- * into the morphTo `commentable` accessor (which would require an extra
- * round-trip per row).
+ * Top-level moderation surface for comments. Day-to-day commenting
+ * happens on the post's Comments tab; this list shows everything in
+ * one place so spam is easy to sweep.
  */
 export class CommentResource extends Resource {
   static override label                = 'Comments'
@@ -29,21 +25,31 @@ export class CommentResource extends Resource {
 
   static override form(form: Form): Form {
     return form.schema([
-      TextField.make('body').required().placeholder('Comment body…'),
+      SelectField.make('postId')
+        .label('Post')
+        .required()
+        .options(async () => {
+          const posts = await Post.query().paginate(1, 200)
+          return posts.data.map((p) => ({ value: p.id, label: p.title }))
+        }),
+      TextField.make('authorName').label('Author').placeholder('Jane Reader'),
+      TextareaField.make('body').required().rows(3).placeholder('Comment body…'),
     ])
   }
 
   static override table(table: Table): Table {
     return table
       .columns([
-        Column.make('body').limit(80).weight('semibold'),
-        Column.make('commentableType').label('On').color('muted').width('120px'),
-        Column.make('commentableId').label('Owner ID').color('muted').width('200px'),
+        Column.make('authorName').label('Author').width('160px'),
+        Column.make('body').limit(80).weight('semibold').searchable(),
         Column.make('createdAt').sortable().since(),
       ])
       .recordActions([
         Action.edit  (CommentResource, ADMIN),
         Action.delete(CommentResource, ADMIN),
+      ])
+      .bulkActions([
+        Action.bulkDelete(CommentResource, ADMIN),
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(15)

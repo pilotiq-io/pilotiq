@@ -8,7 +8,7 @@ import { Post } from '../../Models/Post.js'
  */
 export class RecentPosts extends TableWidget {
   static override label      = 'Recent posts'
-  static override viewAllUrl = '/new-admin/posts'
+  static override viewAllUrl = '/admin/posts'
   static override model      = Post
 
   static override async query(q: ModelQuery) {

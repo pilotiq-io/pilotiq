@@ -1,16 +1,14 @@
 import {
-  Resource, Column, TextField, EmailField, SelectField,
+  Resource, Column, Action,
+  TextField, EmailField, SelectField,
   unique,
   type Form, type Table,
 } from '@pilotiq/pilotiq'
 import { User } from '../../Models/User.js'
-import { PostsManager } from './relations/PostsManager.js'
+import { UserPostsManager } from './relations/PostsManager.js'
 
-/**
- * Plan #11 demo — UserResource hosts a `Posts` relation manager that
- * mounts as an extra tab on the user's Edit/View page. Visit
- * `/new-admin/users/:id/edit` and switch to the Posts tab.
- */
+const ADMIN = '/admin'
+
 export class UserResource extends Resource {
   static override label                 = 'Users'
   static override labelSingular         = 'User'
@@ -18,11 +16,11 @@ export class UserResource extends Resource {
   static override model                 = User
   static override recordTitleAttribute  = 'name'
 
-  static override navigationGroup = 'People'
+  static override navigationGroup = 'System'
   static override navigationSort  = 10
 
   static override relations() {
-    return [PostsManager]
+    return [UserPostsManager]
   }
 
   static override form(form: Form): Form {
@@ -40,18 +38,20 @@ export class UserResource extends Resource {
 
   static override table(table: Table): Table {
     return table
-      .heading('Users')
       .columns([
         Column.make('name').sortable().searchable().weight('semibold'),
         Column.make('email').searchable().color('muted'),
         Column.make('role').sortable(),
         Column.make('createdAt').sortable().since(),
       ])
+      .headerActions([
+        Action.create(UserResource, ADMIN),
+      ])
+      .recordActions([
+        Action.edit  (UserResource, ADMIN),
+        Action.delete(UserResource, ADMIN),
+      ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
-      .recordUrl(r => {
-        const id = (r as { id?: string })?.id
-        return id ? `/new-admin/users/${id}/edit` : undefined
-      })
   }
 }

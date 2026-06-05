@@ -2,13 +2,13 @@ import {
   Page, Heading, Text, Section, Grid, Alert,
   type SchemaContext,
 } from '@pilotiq/pilotiq'
+import { tiptapText } from './tiptapText.js'
 
 /**
- * Record sub-page demo — mounted under `PostResource.pages().record`
- * at `${resourceBase}/:id/analytics`. The post record arrives on
- * `ctx.record`; the schema derives a few read-only stats from the
- * body markdown. Click the "Analytics" tab on any post's edit/view
- * page to land here.
+ * Record sub-page — mounted under `PostResource.pages().record` at
+ * `${resourceBase}/:id/analytics` and surfaced as a tab on the post's
+ * sub-nav strip. The post record arrives on `ctx.record`; the schema
+ * derives read-only stats from the Tiptap content document.
  */
 export class PostAnalyticsPage extends Page {
   static override slug  = 'analytics'
@@ -16,34 +16,27 @@ export class PostAnalyticsPage extends Page {
   static override icon  = 'chart-bar'
 
   static override async canAccess(_user: unknown, record: unknown): Promise<boolean> {
-    // Demo gate — only allow analytics on records that actually exist.
-    // The framework loads the record before calling this; record
-    // missing (and the parent resource has no model) gets a stub
-    // `{ id }`. Real apps would gate on role / ownership / tenant.
     return record != null && typeof (record as { id?: unknown }).id !== 'undefined'
   }
 
   static override schema(ctx?: SchemaContext) {
-    const record = (ctx?.record ?? {}) as { id?: string; title?: string; body?: string; status?: string }
-    const body   = record.body ?? ''
+    const record = (ctx?.record ?? {}) as { id?: string; title?: string; content?: unknown; status?: string }
+    const body    = tiptapText(record.content)
     const trimmed = body.trim()
 
-    // Cheap word-split — splits on whitespace runs and drops empties.
-    // Same shape as `Column.words()` / `TextColumn.markdown` reading.
     const words = trimmed.length === 0
       ? 0
       : trimmed.split(/\s+/).filter(Boolean).length
     const characters = body.length
     const charactersNoSpaces = body.replace(/\s/g, '').length
-    // ~200 wpm read speed, rounded up to the nearest minute. Zero-body
-    // posts read in 0 minutes; floor of 1 min once there's any content.
+    // ~200 wpm read speed, rounded up to the nearest minute.
     const readMinutes = words === 0 ? 0 : Math.max(1, Math.ceil(words / 200))
 
     return [
       Heading.make(record.title ?? 'Post analytics')
-        .description('Read-only stats derived from the post body.'),
+        .description('Read-only stats derived from the post content.'),
 
-      Section.make('Body length').schema([
+      Section.make('Content length').schema([
         Grid.make().columns(3).schema([
           Text.make(`${words} words`).size('xl').weight('semibold'),
           Text.make(`${characters} characters`).size('xl').weight('semibold'),
@@ -58,13 +51,13 @@ export class PostAnalyticsPage extends Page {
       Section.make('Status').schema([
         Text.make(record.status === 'published'
           ? 'This post is published — visible to readers.'
-          : 'This post is still a draft.',
+          : 'This post is not published yet.',
         ),
       ]),
 
-      body === ''
-        ? Alert.make('No body yet — write something to see the stats fill in.').info()
-        : Alert.make('Analytics auto-refresh on every page load.').success(),
+      words === 0
+        ? Alert.make('No content yet — write something to see the stats fill in.').info()
+        : Alert.make('Analytics refresh on every page load.').success(),
     ]
   }
 }

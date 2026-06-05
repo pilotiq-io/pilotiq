@@ -1,39 +1,49 @@
 import { Model } from '@rudderjs/orm'
 import { User } from './User.js'
+import { Category } from './Category.js'
 import { Comment } from './Comment.js'
-import { Tag } from './Tag.js'
 
 export class Post extends Model.for<'post'>() {
   static override table = 'post'
   static override keyType = 'ulid' as const
-  /** Plan #13 — opt the rudder side into soft-delete behavior. The
-   *  matching `PostResource.softDeletes = true` opts pilotiq's
-   *  TrashedFilter / Restore / ForceDelete UX in. Both flags are
-   *  required (see `feedback_softdelete_two_sided_optin.md`). */
+  /** Opt the rudder side into soft-delete behavior. The matching
+   *  `PostResource.softDeletes = true` opts pilotiq's TrashedFilter /
+   *  Restore / ForceDelete UX in — both flags are required. */
   static override softDeletes = true
 
-  static override relations = {
-    author:   { type: 'belongsTo' as const, model: () => User, foreignKey: 'authorId' },
-    // Polymorphic follow-up — Post owns Comments via the
-    // `commentable` morph (parent side). Reads compose as
-    // `post.related('comments')` → Comment.where(commentableId, post.id)
-    //                                      .where(commentableType, 'Post')`.
-    comments: { type: 'morphMany' as const, model: () => Comment, morphName: 'commentable' },
-    // Polymorphic M2M follow-up — Post owns Tags via the shared
-    // `taggable` pivot (taggableId + taggableType). Reads + writes
-    // flow through `post.related('tags').{paginate, attach, detach}`;
-    // the ORM stamps + filters `taggableType = 'Post'` automatically.
-    // Pivot table is shared with Video (both `morphToMany Tag`).
-    tags:     { type: 'morphToMany' as const, model: () => Tag, pivotTable: 'taggable', morphName: 'taggable' },
+  // Write-side casts keep better-sqlite3 happy: the form pipeline
+  // coerces `publishedAt` to a Date and `content` to the parsed Tiptap
+  // object, and the native driver can only bind primitives — the casts
+  // serialize on write (ISO string / JSON string) and revive on read.
+  static override casts = {
+    publishedAt: 'datetime' as const,
+    content:     'json' as const,
   }
 
-  /** Reorderable rows — pilotiq's `Table.reorderable('sort')` POSTs the
-   * new id order here. We re-stamp the `sort` column 1..n in array
-   * order. A real app should run this inside a transaction and drop
-   * any unknown ids; the demo keeps it simple. */
-  static async reorder(ids: Array<string | number>): Promise<void> {
-    await Promise.all(ids.map((id, i) =>
-      Post.update(id, { sort: i + 1 } as Partial<Post>),
-    ))
+  static override relations = {
+    // M2M — a post can have many authors. Synced from the form via
+    // `SelectField.multiple().relationship('authors')`.
+    authors: {
+      type:       'belongsToMany' as const,
+      model:      () => User,
+      pivotTable: 'post_author',
+      // foreignPivotKey / relatedPivotKey default to `postId` / `userId`.
+    },
+    categories: {
+      type:       'belongsToMany' as const,
+      model:      () => Category,
+      pivotTable: 'category_post',
+    },
+    // Self-referencing M2M — both pivot columns point at `post`, so the
+    // default `${camelCase(class)}Id` naming would collide; declare the
+    // keys explicitly.
+    relatedPosts: {
+      type:            'belongsToMany' as const,
+      model:           () => Post,
+      pivotTable:      'post_related',
+      foreignPivotKey: 'postId',
+      relatedPivotKey: 'relatedId',
+    },
+    comments: { type: 'hasMany' as const, model: () => Comment, foreignKey: 'postId' },
   }
 }
