@@ -1,6 +1,6 @@
 {
   "name": "@pilotiq/pilotiq",
-  "version": "0.30.3",
+  "version": "0.30.4",
   "description": "View-based admin panel for RudderJS",
   "license": "MIT",
   "repository": {
