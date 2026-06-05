@@ -8,6 +8,7 @@ import { pilotiqAdmin, pilotiqSimple } from '../../app/Pilotiq/AdminPanel'
 const _all: Record<string, unknown> = {}
 const _clusters: Record<string, string[]> = {}
 const _rightPanels: Record<string, unknown> = {}
+const _bases: string[] = []
 const _layoutProviders: unknown[] = []
 const _slots: Record<string, unknown> = {}
 function _add(c: any) { if (typeof c === 'function' && c.name) _all[c.name] = c }
@@ -32,6 +33,7 @@ function _walk(p: any) {
       if (typeof _v === 'function' || (typeof _v === 'object' && _v !== null)) _slots[_k] = _v
     }
   }
+  if (typeof cfg?.path === 'string' && cfg.path) _bases.push(cfg.path)
   if (cfg?.path && Array.isArray(cfg?.clusters)) {
     const slugs = cfg.clusters.map((C: any) => (typeof C?.getSlug === 'function' ? C.getSlug() : '')).filter(Boolean)
     if (slugs.length > 0) _clusters[cfg.path] = slugs
@@ -44,3 +46,4 @@ export const clusterSlugsByBasePath: Record<string, string[]> = _clusters
 export const rightPanelRegistry: Record<string, unknown> = _rightPanels
 export const layoutProviderRegistry: unknown[] = _layoutProviders
 export const componentSlotRegistry: Record<string, unknown> = _slots
+export const panelBasePaths: string[] = _bases

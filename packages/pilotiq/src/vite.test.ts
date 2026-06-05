@@ -132,7 +132,19 @@ describe('generatePages — route stubs', () => {
     // theme is exactly 2 segments under the panel base — also unprefixed.
     for (const dir of ['slug', 'resource-create', 'resource-edit', 'resource-view', 'relation-list']) {
       const src = read(`${dir}/+route.ts`)
-      assert.match(src, /import { clusterOffset } from '\.\.\/_clusterOffset\.js'/, `${dir}: clusterOffset import`)
+      assert.match(src, /import { clusterOffset, isPanelBase } from '\.\.\/_clusterOffset\.js'/, `${dir}: clusterOffset import`)
+    }
+  })
+
+  it('every route stub gates on isPanelBase in BOTH passes', () => {
+    // The registry gate is SSR-only (the registry is empty in the browser),
+    // and Vike route FUNCTIONS outrank route strings — without a universal
+    // base-path gate the client tentatively matches ANY url of the same
+    // segment count and steals app pages (blank render of e.g.
+    // /articles/:slug on SPA nav; caught by pilotiq-demo's blog).
+    for (const dir of ['dashboard', 'slug', 'resource-create', 'resource-edit', 'resource-view', 'relation-list', 'theme']) {
+      const src = read(`${dir}/+route.ts`)
+      assert.match(src, /if \(!isPanelBase\(parts\[0\]\)\) return false/, `${dir}: isPanelBase gate`)
     }
   })
 })
