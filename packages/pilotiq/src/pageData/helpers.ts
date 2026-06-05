@@ -588,6 +588,51 @@ export function findRelationshipRepeaters(elements: ReadonlyArray<Element>): Rep
 }
 
 /**
+ * Walk the form's multi-selects and replace `values[fieldName]` with the
+ * related rows' primary keys for any relationship-backed select
+ * (`SelectField.multiple().relationship(name)`). The renderer then shows
+ * the matching option chips and the submit side syncs the pivot via
+ * `extractRelationshipSelects` + the M2M accessor.
+ *
+ * Mirrors `applyRelationshipRepeaterFill`'s posture: no-op when the
+ * parent record is null (create mode) or the resource has no `R.model`;
+ * a failed relation lookup falls back to whatever value
+ * `applyFillPipeline` produced rather than wiping the field.
+ */
+export async function applyRelationshipSelectFill(
+  form:        Form,
+  values:      Record<string, unknown>,
+  record:      unknown,
+  parentModel: ModelLike | undefined,
+): Promise<Record<string, unknown>> {
+  if (record == null) return values
+  if (!parentModel)  return values
+
+  const selects: SelectField[] = []
+  walkSelectFields((form.getChildren() ?? []) as Element[], (f) => {
+    if (f.isMultiple() && f.getRelationship()) selects.push(f)
+  })
+  if (selects.length === 0) return values
+
+  const out: Record<string, unknown> = { ...values }
+  for (const field of selects) {
+    const cfg = field.getRelationship()!
+    let rows: unknown[]
+    try {
+      rows = await loadRelationRows(parentModel, record, cfg.name)
+    } catch {
+      continue
+    }
+    const pkColumn = pickChildPrimaryKey(parentModel, cfg.name) ?? 'id'
+    out[field.name] = rows
+      .map(row => (row && typeof row === 'object') ? (row as Record<string, unknown>)[pkColumn] : undefined)
+      .filter((v): v is string | number => v !== undefined && v !== null)
+      .map(v => String(v))
+  }
+  return out
+}
+
+/**
  * Walk the form's top-level Builders and replace `values[fieldName]` with
  * rows fetched from `parent.related(name)` for any relationship-backed
  * Builder. Each loaded row stamps `__id` (child PK) + `type` (block

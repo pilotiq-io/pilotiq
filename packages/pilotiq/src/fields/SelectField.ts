@@ -55,8 +55,17 @@ export interface CreateOptionMeta {
   url?:   string
 }
 
+/** Server-only config for `.relationship(name)` — the field's value is
+ *  read from / synced to a relation on the parent record instead of a
+ *  column. Never serialized to the wire. */
+export interface SelectRelationshipConfig {
+  name: string
+}
+
 export class SelectField extends Field {
   private _options: SelectOption[] | OptionsResolver = []
+  private _multiple = false
+  private _relationship?: SelectRelationshipConfig
 
   /** Element subtree that renders inside the inline-create modal.
    *  Resolved at meta-build time via `Promise.all(toMeta)` so dependent
@@ -85,6 +94,41 @@ export class SelectField extends Field {
 
   static make(name: string): SelectField {
     return new SelectField(name)
+  }
+
+  /**
+   * Array mode — the field holds `string[]` (multiple option values).
+   * The renderer swaps the single-pick dropdown for a chips + searchable
+   * checkbox-list popover; the wire format mirrors `TagsInput` (the
+   * selected ids JSON-encode into a single hidden input and
+   * `coerceFormValues` parses them back to `string[]`).
+   */
+  multiple(value: boolean = true): this {
+    this._multiple = value
+    return this
+  }
+
+  isMultiple(): boolean {
+    return this._multiple
+  }
+
+  /**
+   * Relation-backed values. The selected ids are read from (edit fill)
+   * and written to (post-save `sync`) the named relation on the parent
+   * record instead of a parent column — the canonical shape for
+   * belongsToMany pivots (post ↔ categories, post ↔ authors, …).
+   *
+   * v1 requires `.multiple()` — a single-value `.relationship()`
+   * (belongsTo sugar) is deferred. Enforced at meta-build so the config
+   * error surfaces during dev, not at first save.
+   */
+  relationship(arg: string | SelectRelationshipConfig): this {
+    this._relationship = typeof arg === 'string' ? { name: arg } : arg
+    return this
+  }
+
+  getRelationship(): SelectRelationshipConfig | undefined {
+    return this._relationship
   }
 
   /**
@@ -171,6 +215,19 @@ export class SelectField extends Field {
   getCreateOptionUrl(): string | undefined { return this._createOptionUrl }
 
   override async toMeta(ctx?: RenderContext): Promise<FieldMeta & { options: SelectOption[]; createOption?: CreateOptionMeta }> {
+    if (this._relationship && !this._multiple) {
+      throw new Error(
+        `SelectField '${this.name}': relationship() requires multiple() in v1. ` +
+        `Single-value relationship selects (belongsTo sugar) are deferred — ` +
+        `bind the FK column directly instead.`,
+      )
+    }
+    if (this._multiple && this._createOptionForm !== undefined) {
+      throw new Error(
+        `SelectField '${this.name}': createOptionForm() is not supported together with multiple() in v1.`,
+      )
+    }
+
     const base    = this.buildMeta(ctx)
     const options = disableOptionsTakenInSiblings(
       await resolveOptions(this._options, ctx, this.name),
@@ -184,6 +241,7 @@ export class SelectField extends Field {
     return {
       ...base,
       options,
+      ...(this._multiple ? { multiple: true } : {}),
       ...(createOption ? { createOption } : {}),
     }
   }

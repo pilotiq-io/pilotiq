@@ -1,6 +1,13 @@
 import { makeValidator, type Validator } from './Validator.js'
 
-const isEmpty = (v: unknown): boolean => v === undefined || v === null || v === ''
+// `[]` (real array) and `'[]'` (the JSON-encoded empty-array wire shape
+// multi-selects + TagsInput post through their hidden input) count as
+// empty — validation runs BEFORE coercion, so the raw body string is
+// what `required()` sees.
+const isEmpty = (v: unknown): boolean =>
+  v === undefined || v === null || v === ''
+  || (Array.isArray(v) && v.length === 0)
+  || v === '[]'
 
 export function required(message = 'This field is required'): Validator {
   return makeValidator(

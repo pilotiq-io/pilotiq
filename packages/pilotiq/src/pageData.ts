@@ -26,6 +26,7 @@ export {
   applyFillPipeline,
   applyRelationshipBuilderFill,
   applyRelationshipRepeaterFill,
+  applyRelationshipSelectFill,
   callPageSchema,
   normalizeArrayFieldStrings,
   resolveServerDataElements,

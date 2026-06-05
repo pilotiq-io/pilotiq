@@ -702,7 +702,14 @@ export abstract class Field extends Element {
     const errors: string[] = []
 
     if (this._required && !this.hasRequiredValidator()) {
-      if (value === undefined || value === null || value === '') {
+      // `[]` / `'[]'` — array-valued fields (multi-select, TagsInput)
+      // post a JSON-encoded array through a single hidden input, and
+      // validation runs BEFORE coercion. Same emptiness contract as
+      // the `required()` rule in `validation/rules.ts`.
+      const empty = value === undefined || value === null || value === ''
+        || (Array.isArray(value) && value.length === 0)
+        || value === '[]'
+      if (empty) {
         errors.push(this.requiredMessage())
       }
     }

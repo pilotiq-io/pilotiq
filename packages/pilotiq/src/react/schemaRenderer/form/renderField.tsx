@@ -4,6 +4,7 @@ import { FieldShell } from '../../fields/FieldShell.js'
 import { TextLikeInput } from '../../fields/TextLikeInput.js'
 import { useTextInputControls } from '../../fields/textInputControls.js'
 import { SelectFieldInput } from '../../fields/SelectFieldInput.js'
+import { MultiSelectFieldInput } from '../../fields/MultiSelectFieldInput.js'
 import { ToggleFieldInput } from '../../fields/ToggleFieldInput.js'
 import { DateFieldInput } from '../../fields/DateFieldInput.js'
 import { HiddenInput } from '../../fields/HiddenInput.js'
@@ -228,6 +229,18 @@ function renderFieldInput(
       const options = (el['options'] as Array<{ value: string; label: string; disabled?: boolean }>) ?? []
       const createOption = el['createOption'] as { formId: string; schema: ElementMeta[]; url?: string } | undefined
       const fieldLabel   = String(el['label'] ?? name)
+      if (el['multiple'] === true) {
+        return (
+          <MultiSelectFieldInput
+            name={name}
+            defaultValue={defaultValue}
+            disabled={disabled}
+            placeholder={placeholder}
+            options={options}
+            fieldLabel={fieldLabel}
+          />
+        )
+      }
       return (
         <SelectFieldInput
           name={name}

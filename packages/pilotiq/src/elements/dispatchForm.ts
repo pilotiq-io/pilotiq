@@ -138,6 +138,10 @@ export async function dispatchFormSubmit<R = unknown>(
   // `{ __id?, type, data }` envelope persisted as a child carrying a
   // discriminator column + a JSON payload column.
   const builderRelationshipDeferrals = extractRelationshipBuilders(children as Element[], data)
+  // And for relationship-backed multi-selects — the selected ids sync
+  // through the M2M accessor after the parent save; the parent has no
+  // matching column.
+  const selectRelationshipDeferrals = extractRelationshipSelects(children as Element[], data)
 
   const mutate = form.getMutateData()
   if (mutate) data = await mutate(data, { ...ctx, values: data })
@@ -179,6 +183,14 @@ export async function dispatchFormSubmit<R = unknown>(
       const renames = await persistRelationshipBuilderRows(record, deferral, parentModel)
       relationshipRenames.push(...renames)
     }
+  }
+
+  // Sync relationship-backed multi-selects against the saved parent.
+  // Same placement contract as the Repeater/Builder persists: BEFORE
+  // `afterCreate / afterUpdate` so user hooks observe the synced pivots.
+  // No `parentModel` needed — the M2M accessor hangs off the record.
+  for (const deferral of selectRelationshipDeferrals) {
+    await syncRelationshipSelect(record, deferral)
   }
 
   const modeAfter = isCreate ? form.getAfterCreate() : form.getAfterUpdate()
@@ -324,6 +336,29 @@ export function coerceFormValues(
           out[name] = raw.map(v => String(v))
         } else {
           out[name] = [String(raw)]
+        }
+        break
+      }
+      case 'select': {
+        // Single-select stays a string passthrough. Multi-select mirrors
+        // `tagsInput` — the client serializes the selected ids as a
+        // JSON-encoded string in a single hidden input; parse back into
+        // `string[]`. Structural check, not `instanceof` (Vite SSR
+        // module-cache duplication).
+        if (!isMultiSelectField(field)) break
+        if (raw === undefined || raw === null || raw === '') {
+          out[name] = []
+        } else if (Array.isArray(raw)) {
+          out[name] = raw.map(v => String(v))
+        } else if (typeof raw === 'string') {
+          try {
+            const parsed = JSON.parse(raw)
+            out[name] = Array.isArray(parsed) ? parsed.map(v => String(v)) : []
+          } catch {
+            out[name] = []
+          }
+        } else {
+          out[name] = []
         }
         break
       }
@@ -1356,6 +1391,88 @@ async function applyBuilderStateUpdate<R>(
   }
 
   return { values: coerced, dirty: Array.from(dirty) }
+}
+
+// ─── SelectField.relationship — extraction + sync ────────────
+
+/** Structural multi-select probe. `instanceof SelectField` breaks under
+ *  Vite SSR module-cache duplication, so check the shape instead. */
+function isMultiSelectField(field: Field): boolean {
+  if (field.fieldType !== 'select') return false
+  const f = field as { isMultiple?: () => boolean }
+  return typeof f.isMultiple === 'function' && f.isMultiple()
+}
+
+interface SelectRelationshipDeferral {
+  /** Relation name on the parent model's static relations map. */
+  name: string
+  /** Field name on the form — usually equals `name`. */
+  field: string
+  /** The submitted (coerced) id set to sync the pivot to. */
+  ids:  string[]
+}
+
+/**
+ * Walk the form's fields and extract values for relationship-backed
+ * multi-selects (`SelectField.multiple().relationship(name)`). Returns
+ * the deferral list and mutates `data` in place by deleting each
+ * extracted key — the relation has no matching column on the parent, so
+ * the parent's save handler must never see the value.
+ *
+ * Recurses through layout containers but stops at Repeater / Builder
+ * boundaries (row-scoped selects can't address a parent relation).
+ */
+export function extractRelationshipSelects(
+  elements: Element[],
+  data:     Record<string, unknown>,
+): SelectRelationshipDeferral[] {
+  const out: SelectRelationshipDeferral[] = []
+  const visit = (els: Element[]): void => {
+    for (const el of els) {
+      if (isRepeaterField(el) || isBuilderField(el)) continue
+      if (el instanceof Field) {
+        if (!isMultiSelectField(el)) continue
+        const cfg = (el as { getRelationship?: () => { name: string } | undefined }).getRelationship?.()
+        if (!cfg) continue
+        const value = data[el.name]
+        delete data[el.name]
+        out.push({
+          name:  cfg.name,
+          field: el.name,
+          ids:   Array.isArray(value) ? value.map(v => String(v)) : [],
+        })
+        continue
+      }
+      const children = el.getChildren()
+      if (children && children.length > 0) visit(children as Element[])
+    }
+  }
+  visit(elements)
+  return out
+}
+
+/**
+ * Sync one relationship-backed multi-select against the saved parent.
+ * The pivot mutation goes through the ORM's M2M accessor
+ * (`parent[rel]().sync(ids)`); a missing accessor or missing `sync`
+ * is a configuration error (wrong relation name, non-M2M relation
+ * type, or a save handler that didn't return the model instance).
+ */
+async function syncRelationshipSelect(
+  record:   unknown,
+  deferral: SelectRelationshipDeferral,
+): Promise<void> {
+  const accessor = resolveM2MAccessor(record, deferral.name)
+  if (!accessor || typeof accessor.sync !== 'function') {
+    throw new Error(
+      `[Pilotiq] SelectField('${deferral.field}').relationship('${deferral.name}'): ` +
+      `the saved record exposes no M2M sync accessor for '${deferral.name}'. ` +
+      `Check that the relation is declared on the parent model's static relations map ` +
+      `with an M2M type (belongsToMany / morphToMany / morphedByMany), and that the ` +
+      `form's save handler returns the model instance.`,
+    )
+  }
+  await accessor.sync(deferral.ids)
 }
 
 // ─── Repeater.relationship — extraction + persistence ────────

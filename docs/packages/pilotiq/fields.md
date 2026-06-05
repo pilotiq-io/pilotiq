@@ -14,7 +14,7 @@ Every form field is a static `make(name)` builder that extends `Field`.
 | `MarkdownField` | textarea + preview | tabs Write / Preview |
 | `RichTextField` | Tiptap editor | from `@pilotiq/tiptap` |
 | `CodeEditorField` | CodeMirror 6 | from `@pilotiq/codemirror` |
-| `SelectField` | shadcn Select | `options(arr | fn)` |
+| `SelectField` | shadcn Select | `options(arr | fn) / multiple() / relationship()` |
 | `RadioField` | radio stack | sugar for single-select |
 | `ToggleButtons` | chip-style segmented | sugar over Radio |
 | `CheckboxField` | single checkbox | distinct from Toggle |
@@ -88,6 +88,56 @@ required"`. Explicit validators (`required('Custom message')`,
 > Combine `live()` + `afterStateUpdated()` to wire a reactive pair
 > (e.g. title → slug, country → state options). See
 > [Reactive fields](./reactive).
+
+## SelectField-specific setters
+
+### Multiple
+
+`multiple()` flips the field to array mode — the value is a `string[]` of
+option values, rendered as removable chips on a select-style trigger with a
+searchable checkbox dropdown:
+
+```ts
+SelectField.make('categories')
+  .label('Categories')
+  .multiple()
+  .options(async () => {
+    const rows = await Category.query().paginate(1, 200)
+    return rows.data.map(c => ({ value: c.id, label: c.name }))
+  })
+```
+
+The selected ids JSON-encode into a single hidden input (same wire shape as
+`TagsInput`); the server parses them back to `string[]`. `required()` fails
+on an empty selection. Stored as a JSON column unless paired with
+`relationship()`.
+
+### Relationship-backed values
+
+`relationship(name)` binds a multi-select to an M2M relation on the parent
+model instead of a column — the canonical post ↔ categories shape:
+
+```ts
+// Model
+static relations = {
+  categories: { type: 'belongsToMany', model: () => Category, pivotTable: 'category_post' },
+}
+
+// Resource form
+SelectField.make('categories').multiple().relationship('categories').options(…)
+```
+
+- **Edit fill:** the current ids load from `parent.related('categories')`.
+- **Save:** the ids are stripped from the parent payload and synced through
+  the ORM's pivot accessor (`post.categories().sync(ids)`) after the parent
+  save — both create and edit.
+
+Works for `belongsToMany` / `morphToMany` / `morphedByMany` relations
+(anything exposing `sync`). Self-referencing pivots work too — declare
+explicit `foreignPivotKey` / `relatedPivotKey` on the relation.
+
+v1 limits: `relationship()` requires `multiple()`; `createOptionForm()` is
+single-select only; no pivot ordering. Plan: `docs/plans/select-multiple.md`.
 
 ## TextField-specific setters
 

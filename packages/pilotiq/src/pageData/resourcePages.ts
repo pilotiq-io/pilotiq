@@ -23,6 +23,7 @@ import {
   applyFillPipeline,
   applyRelationshipBuilderFill,
   applyRelationshipRepeaterFill,
+  applyRelationshipSelectFill,
   callPageSchema,
   resolveServerDataElements,
   tagActionDispatch,
@@ -407,7 +408,8 @@ export async function resourceEditData(
     if (!prefill?.values && record != null) {
       const values = await applyFillPipeline(form, record)
       const withRelations  = await applyRelationshipRepeaterFill(form, values, record, R.model)
-      const withBuilders   = await applyRelationshipBuilderFill(form, withRelations, record, R.model)
+      const withBuilders0  = await applyRelationshipBuilderFill(form, withRelations, record, R.model)
+      const withBuilders   = await applyRelationshipSelectFill(form, withBuilders0, record, R.model)
       // Hydrators run AFTER the standard fill pipeline so they overlay
       // on top of DB-row + relationship-row values. Skipped on the
       // prefill branch (validation-error round-trip) — overlaying there
