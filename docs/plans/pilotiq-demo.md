@@ -1,6 +1,6 @@
 # pilotiq-demo — public demo at demo.pilotiq.io
 
-**Status:** plan (repo not created yet)
+**Status:** Phases A–C live (2026-06-05); D blocked on verdaccio + pro migration; E pending
 **Decided 2026-06-05:** SQLite in prod · shared-credentials login screen · pro = AI + collab (`@pilotiq-pro/workspaces` is stale and gets deleted from the pro repo, not installed here)
 
 ## Goal
@@ -66,7 +66,7 @@ Server-rendered, intentionally simple — the story is "rudder is a real full-st
 
 - **A — repo + scaffold** ✅ 2026-06-05: create-rudder (needed legacy `--orm=native`), pinned deps, `.npmrc` placeholder, CI with real-login boot smoke.
 - **B — blog admin** ✅ 2026-06-05: full feature map + seeder + role auth. Flushed 3 upstream bugs (pilotiq web-group routes → 0.29.0, codemirror fake-optional collab peers → 3.2.8, scaffold missing NODE_ENV=production on start).
-- **C — public frontend:** routes/views, tiptap rendering, RSS, comment intake. *Exit: blog readable end-to-end.*
+- **C — public frontend** ✅ 2026-06-05: blog index/article/category/tag + RSS + moderated comment intake (CSRF, rate-limit, honeypot). 4th upstream catch: shipped styles/theme.css in pilotiq 0.30.0 (fresh installs had no panel colors).
 - **D — pro:** install `@pilotiq-pro/{ai,collab}` from verdaccio, AI caps, collab WS. *Exit: AI suggestion + two-tab co-edit work.*
 - **E — guardrails + deploy:** auth/policies/reset cron/banner, Forge, DNS, smoke in prod. *Exit: demo.pilotiq.io live.*
 
