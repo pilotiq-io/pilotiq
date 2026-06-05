@@ -27,7 +27,15 @@ class PilotiqServiceProvider extends ServiceProvider {
   }
 
   async boot(): Promise<void> {
-    const { router } = await import('@rudderjs/router') as {
+    // Variable-specifier dynamic import (same idiom as notifications/database.ts)
+    // — boot() is server-only, but this provider rides the main barrel into the
+    // CLIENT graph via the generated `_components.ts` → AdminPanel chain. A
+    // literal `import('@rudderjs/router')` is statically analyzable, so Vite
+    // would lazily optimize @rudderjs/router into the browser deps mid-session
+    // (a "new dependencies optimized" reload) — and router must never be
+    // client-pre-bundled (its @rudderjs/console → @clack/prompts chain).
+    const routerModule = '@rudderjs/router'
+    const { router } = await import(/* @vite-ignore */ routerModule) as {
       router: Parameters<typeof registerPilotiqRoutes>[0]
     }
 

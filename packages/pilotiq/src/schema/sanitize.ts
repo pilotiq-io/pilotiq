@@ -42,9 +42,14 @@ export const DEFAULT_SANITIZE_CONFIG: SanitizeConfig = {
 // Lazy import — keeps `sanitize-html` (and its transitive `postcss` chain that
 // reaches into Node built-ins) out of the client bundle. Cached after first
 // resolve so per-call overhead is just the `sanitize-html` invocation itself.
+// Variable specifier + @vite-ignore so Vite's import analysis never DISCOVERS
+// the dep from the client graph either — a literal `import('sanitize-html')`
+// is statically analyzable and triggers a lazy "new dependencies optimized"
+// reload the first time this (server-only) module is crawled client-side.
 let sanitizerPromise: Promise<typeof sanitizeHtmlNs> | null = null
 function loadSanitizer(): Promise<typeof sanitizeHtmlNs> {
-  return sanitizerPromise ??= import('sanitize-html').then(m => m.default ?? m)
+  const moduleName = 'sanitize-html'
+  return sanitizerPromise ??= import(/* @vite-ignore */ moduleName).then(m => m.default ?? m)
 }
 
 /**
