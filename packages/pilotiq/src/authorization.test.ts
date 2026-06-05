@@ -292,12 +292,13 @@ interface FakeRes {
 // Cast to any when passing into route handlers: AppResponse demands
 // `header` + `raw`, neither of which the policy gate touches.
 function fakeRes(): any {
-  const r: FakeRes = {
+  const r: FakeRes & { header(k: string, v: string): FakeRes } = {
     statusCode: 200,
     status(code) { this.statusCode = code; return this },
     send(body)   { this.sentBody = body;   return this },
     json(body)   { this.sentBody = body;   return this },
     redirect()   { return this },
+    header()     { return this },
   }
   return r
 }
@@ -372,11 +373,10 @@ describe('routes 403 forbidden wiring', () => {
     // server-hono rewrites /x/index.pageContext.json → /x and stashes the
     // original URL on this header; pilotiq's policy gate must answer with
     // the abort envelope or Vike's client router crashes on Content-Type.
+    // Real AppRequest shape: headers is a plain lowercased Record.
     const res = fakeRes()
     await route.handler(fakeReq({
-      header: (n: string) => n === 'x-rudder-original-url'
-        ? 'http://x/admin/articles/index.pageContext.json'
-        : undefined,
+      headers: { 'x-rudder-original-url': 'http://x/admin/articles/index.pageContext.json' },
     }), res)
     assert.equal(res.statusCode, 403)
     assert.deepEqual(res.sentBody, {

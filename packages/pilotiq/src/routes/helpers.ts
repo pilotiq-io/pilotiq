@@ -224,8 +224,15 @@ export async function findInQueryWithTrashed(
  * Content-Type assertion ("Something went wrong" + console noise).
  */
 export function isPageContextRequest(req: AppRequest): boolean {
-  const r = req as { header?: (name: string) => string | undefined; url?: string }
-  const orig = typeof r.header === 'function' ? r.header('x-rudder-original-url') : undefined
+  // AppRequest exposes headers as a plain Record (adapter-lowercased);
+  // tolerate a header() accessor too for duck-typed test doubles.
+  const r = req as {
+    headers?: Record<string, string>
+    header?: (name: string) => string | undefined
+    url?: string
+  }
+  const orig = r.headers?.['x-rudder-original-url']
+    ?? (typeof r.header === 'function' ? r.header('x-rudder-original-url') : undefined)
   if (typeof orig === 'string' && orig.includes('.pageContext.json')) return true
   return typeof r.url === 'string' && r.url.includes('.pageContext.json')
 }
@@ -244,6 +251,7 @@ export function vikeAbort(res: AppResponse, status: 401 | 403, reason: string): 
 /** Minimal self-contained 403 page for direct (non-SPA, non-JSON) loads —
  *  a bare `res.send('Forbidden')` reads like a broken server. */
 export function forbiddenPage(res: AppResponse): unknown {
+  res.header('Content-Type', 'text/html; charset=utf-8')
   return res.send(`<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>403 — Forbidden</title>
 <style>body{font-family:system-ui,sans-serif;display:flex;min-height:100svh;align-items:center;justify-content:center;margin:0;background:#fafaf9;color:#1a1a1a}main{text-align:center;padding:2rem}h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#666;margin:0 0 1.25rem}a{color:#d97757}</style>

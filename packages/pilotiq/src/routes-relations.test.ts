@@ -61,12 +61,13 @@ interface FakeRes {
 }
 
 function fakeRes(): FakeRes {
-  const r: FakeRes = {
+  const r: FakeRes & { header(k: string, v: string): FakeRes } = {
     statusCode: 200,
     status(code) { this.statusCode = code; return this },
     redirect(url, code = 302) { this.redirectedTo = { url, code }; return this },
     send(body) { this.sentBody = body; return this },
     json(body) { this.sentBody = body; return this },
+    header() { return this },
   }
   return r
 }
