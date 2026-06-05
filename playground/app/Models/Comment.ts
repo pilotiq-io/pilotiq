@@ -17,8 +17,9 @@ import { Reply } from './Reply.js'
  * `PostsCommentsManager.relations() = [CommentRepliesManager]` so the
  * URL `posts/:postId/comments/:commentId/replies` mounts.
  */
-export class Comment extends Model {
+export class Comment extends Model.for<'comment'>() {
   static override table = 'comment'
+  static override keyType = 'ulid' as const
 
   static override relations = {
     commentable: {
@@ -28,11 +29,4 @@ export class Comment extends Model {
     },
     replies: { type: 'hasMany' as const, model: () => Reply, foreignKey: 'commentId' },
   }
-
-  id!:              string
-  body!:            string
-  commentableId!:   string
-  commentableType!: string
-  createdAt!:       Date
-  updatedAt!:       Date
 }

@@ -16,8 +16,9 @@ import { Model } from '@rudderjs/orm'
 import { Post } from './Post.js'
 import { Video } from './Video.js'
 
-export class Tag extends Model {
+export class Tag extends Model.for<'tag'>() {
   static override table = 'tag'
+  static override keyType = 'ulid' as const
 
   static override relations = {
     posts: {
@@ -33,11 +34,4 @@ export class Tag extends Model {
       morphName:  'taggable',
     },
   }
-
-  id!:        string
-  name!:      string
-  slug!:      string
-  color!:     string | null
-  createdAt!: Date
-  updatedAt!: Date
 }

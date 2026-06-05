@@ -1,9 +1,5 @@
 import { View } from '@pilotiq/pilotiq'
-import { app } from '@rudderjs/core/client'
-
-function prisma(): any {
-  return app().make('prisma')
-}
+import { Post } from '../../Models/Post.js'
 
 interface ActivityRow {
   title:  string
@@ -25,19 +21,18 @@ export class ActivityFeedView extends View {
   static override componentName = 'ActivityFeed'
 
   static override async getData(): Promise<{ rows: ActivityRow[] }> {
-    const recent = await prisma().post.findMany({
-      where:    { deletedAt: null },
-      orderBy:  { createdAt: 'desc' },
-      take:     8,
-      select:   { title: true, status: true, createdAt: true },
-    }) as Array<{ title: string; status: string; createdAt: Date }>
+    // Soft-delete default scope already excludes trashed rows.
+    const recent = await Post.query()
+      .orderBy('createdAt', 'DESC')
+      .limit(8)
+      .get() as Array<{ title: string; status: string; createdAt: Date | string }>
 
     const now = Date.now()
     return {
       rows: recent.map(r => ({
         title:  r.title,
         status: r.status,
-        ago:    formatAgo(now - r.createdAt.getTime()),
+        ago:    formatAgo(now - new Date(r.createdAt).getTime()),
       })),
     }
   }

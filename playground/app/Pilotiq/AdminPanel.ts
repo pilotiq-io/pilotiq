@@ -4,7 +4,7 @@ import {
   UserMenuItem,
   Alert, Heading,
 } from '@pilotiq/pilotiq'
-import { themeEditor, prismaThemeStorage } from '@pilotiq/pilotiq/plugins'
+import { themeEditor, databaseThemeStorage } from '@pilotiq/pilotiq/plugins'
 import { registerIcons } from '@pilotiq/pilotiq/icons'
 import {
   Archive, AtSign, BookOpen, Check, CheckCircle2, Circle, FileText,
@@ -77,8 +77,11 @@ registerIcons({
   'x-circle':        XCircle,
 })
 
-function prisma(): any {
-  return app().make('prisma')
+// Native-engine ORM adapter — the `'db'` binding the auto-discovered
+// NativeDatabaseProvider registers. Lazy so the panel module stays
+// client-safe (it's re-imported in the browser via `_components.ts`).
+function db(): any {
+  return app().make('db')
 }
 
 class SiteSettings extends Global {
@@ -94,15 +97,17 @@ class SiteSettings extends Global {
         TextField.make('tagline').label('Tagline').placeholder('Optional…'),
       ])
       .loadRecord(async () => {
-        const row = await prisma().panelGlobal.findUnique({ where: { slug: 'pilotiq-admin__site' } })
+        const row = await db().query('panelGlobal').where('slug', 'pilotiq-admin__site').first()
         return row?.data ? JSON.parse(row.data) : {}
       })
       .save(async (data) => {
-        await prisma().panelGlobal.upsert({
-          where:  { slug: 'pilotiq-admin__site' },
-          update: { data: JSON.stringify(data) },
-          create: { slug: 'pilotiq-admin__site', data: JSON.stringify(data) },
-        })
+        // ISO string, not a Date — better-sqlite3 can't bind Date objects.
+        const payload = { data: JSON.stringify(data), updatedAt: new Date().toISOString() }
+        const updated = await db().query('panelGlobal')
+          .where('slug', 'pilotiq-admin__site').updateAll(payload)
+        if (updated === 0) {
+          await db().query('panelGlobal').insertMany([{ slug: 'pilotiq-admin__site', ...payload }])
+        }
         return data
       })
   }
@@ -141,17 +146,14 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
     tiptap(),
     codeEditor({ languages: { json, sql } }),
     recharts(),
-    // Explicit theme persistence — opts out of `themeEditor()`'s deprecated
-    // implicit Prisma fallback. The Prisma delegate is a lazy getter so
-    // `prisma()` (→ `app().make('prisma')`) only fires inside the adapter's
-    // server-side load/save, never at module-eval — keeps the panel module
-    // client-safe (it's re-imported in the browser via `_components.ts`).
-    // Slug matches the old implicit key so already-saved themes carry over.
+    // Explicit theme persistence over the native engine's `'db'` adapter.
+    // The resolver is a lazy thunk so `app().make('db')` only fires inside
+    // the adapter's server-side load/save, never at module-eval — keeps the
+    // panel module client-safe (it's re-imported in the browser via
+    // `_components.ts`). Slug matches the old implicit key so already-saved
+    // themes carry over.
     themeEditor({
-      storage: prismaThemeStorage(
-        { get panelGlobal() { return prisma().panelGlobal } },
-        { slug: 'Pilotiq Admin__theme' },
-      ),
+      storage: databaseThemeStorage(() => db(), { slug: 'Pilotiq Admin__theme' }),
     }),
   ])
   // Plan #10 demo — pretend everyone is an admin so the canDelete()

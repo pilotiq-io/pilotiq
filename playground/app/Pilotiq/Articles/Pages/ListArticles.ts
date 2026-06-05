@@ -1,8 +1,6 @@
 import { ListPage, Action, ListTab, Heading } from '@pilotiq/pilotiq'
-import { app } from '@rudderjs/core/client'
+import { Article } from '../../../Models/Article.js'
 import { ArticleResource } from '../ArticleResource.js'
-
-const prisma = (): any => app().make('prisma')
 
 export class ListArticles extends ListPage {
   static override getResource() { return ArticleResource }
@@ -40,16 +38,16 @@ export class ListArticles extends ListPage {
       ListTab.make('drafts')
         .label('Drafts')
         .badgeColor('warning')
-        .badge(async () => prisma().article.count({ where: { status: 'draft' } }))
+        .badge(async () => Article.where('status', 'draft').count())
         .modifyQuery((q: any) => q.where('status', 'draft')),
       ListTab.make('published')
         .label('Published')
         .badgeColor('success')
-        .badge(async () => prisma().article.count({ where: { status: 'published' } }))
+        .badge(async () => Article.where('status', 'published').count())
         .modifyQuery((q: any) => q.where('status', 'published')),
       ListTab.make('archived')
         .label('Archived')
-        .badge(async () => prisma().article.count({ where: { status: 'archived' } }))
+        .badge(async () => Article.where('status', 'archived').count())
         .modifyQuery((q: any) => q.where('status', 'archived')),
     ]
   }

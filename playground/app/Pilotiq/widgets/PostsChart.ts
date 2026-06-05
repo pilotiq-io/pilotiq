@@ -1,10 +1,6 @@
 import { Chart } from '@pilotiq/recharts'
 import type { RenderContext } from '@pilotiq/pilotiq'
-import { app } from '@rudderjs/core/client'
-
-function prisma(): any {
-  return app().make('prisma')
-}
+import { Post } from '../../Models/Post.js'
 
 /**
  * Plan #15 Phase C demo — line chart of post counts per day, with a
@@ -39,10 +35,11 @@ export class PostsChart extends Chart {
     const since = new Date(Date.now() - days * 86_400_000)
     since.setHours(0, 0, 0, 0)
 
-    const rows = await prisma().post.findMany({
-      where: { deletedAt: null, createdAt: { gte: since } },
-      select: { createdAt: true },
-    }) as Array<{ createdAt: Date }>
+    // Soft-delete default scope already excludes trashed rows. ISO-string
+    // bound (not a Date) — better-sqlite3 can't bind Date objects.
+    const rows = await Post.query()
+      .where('createdAt', '>=', since.toISOString())
+      .get() as Array<{ createdAt: Date | string }>
 
     const buckets = new Map<string, number>()
     // Short, readable X-axis labels ("May 1") keyed by ISO day for matching —
@@ -55,7 +52,7 @@ export class PostsChart extends Chart {
       labelFor.set(key, d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
     }
     for (const row of rows) {
-      const key = toIsoDay(row.createdAt)
+      const key = toIsoDay(new Date(row.createdAt))
       if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1)
     }
 

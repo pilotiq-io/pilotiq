@@ -12,8 +12,9 @@ import { Tag } from './Tag.js'
  * `taggableType = 'Video'` so a single `Tag` row can attach to either
  * a Post or a Video.
  */
-export class Video extends Model {
+export class Video extends Model.for<'video'>() {
   static override table = 'video'
+  static override keyType = 'ulid' as const
 
   static override relations = {
     comments: {
@@ -28,10 +29,4 @@ export class Video extends Model {
       morphName:  'taggable',
     },
   }
-
-  id!:        string
-  title!:     string
-  url!:       string
-  createdAt!: Date
-  updatedAt!: Date
 }
