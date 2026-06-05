@@ -138,9 +138,16 @@ function ReorderProvider({
   onDragEnd: (e: DragEndEvent) => void
   children:  React.ReactNode
 }) {
+  // Stable across SSR + hydration — dnd-kit's default DndContext id comes
+  // from a module counter, which diverges between server and client and
+  // produces aria-describedby hydration-attribute warnings. useId is
+  // tree-position-derived, so both passes agree. Called before the
+  // early-return to keep hooks unconditional.
+  const dndId = React.useId()
   if (!enabled) return <>{children}</>
   return (
     <DndContext
+      id={dndId}
       sensors={sensors}
       collisionDetection={closestCenter}
       modifiers={[restrictToVerticalAxis]}

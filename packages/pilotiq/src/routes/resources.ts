@@ -31,6 +31,7 @@ import {
   normalizeRedirect,
   splitMeta,
   forbidden,
+  isPageContextRequest,
   cellHookErrorMessage,
   checkPolicy,
   policyAccess,
@@ -95,7 +96,22 @@ export function registerResourceRoutes(
             const stored = readPersistedListQuery(req, listFiltersKey(base, sessionSlug, restoreTab))
             if (stored) {
               const qs = encodePersistedQuery(stored, restoreTab)
-              if (qs !== '') return res.redirect(`${indexUrl}?${qs}`, 302)
+              if (qs !== '') {
+                const target = `${indexUrl}?${qs}`
+                // Vike SPA-nav pageContext fetches follow a plain 302 and
+                // land on the restored page's HTML — which crashes the
+                // client router's Content-Type assert. Answer with Vike's
+                // REDIRECT abort envelope instead: the client performs the
+                // redirect itself, so filter restoration keeps working on
+                // SPA navigation too.
+                if (isPageContextRequest(req)) {
+                  return res.json({
+                    _urlRedirect: { url: target, statusCode: 302 },
+                    _abortCall:   `redirect(${JSON.stringify(target)})`,
+                  })
+                }
+                return res.redirect(target, 302)
+              }
             }
           } else {
             const tab = typeof query['tab'] === 'string' ? query['tab'] : ''

@@ -70,9 +70,13 @@ export function SortableRows({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
+  // Stable across SSR + hydration — dnd-kit's default id is a module
+  // counter that diverges between passes (aria-describedby warnings).
+  const dndId = React.useId()
   if (!enabled) return <>{children}</>
   return (
     <DndContext
+      id={dndId}
       sensors={sensors}
       collisionDetection={closestCenter}
       modifiers={gridMode ? [] : [restrictToVerticalAxis]}
