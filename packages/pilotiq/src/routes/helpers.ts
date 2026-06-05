@@ -213,15 +213,54 @@ export async function findInQueryWithTrashed(
   return Array.isArray(result.data) ? result.data[0] : undefined
 }
 
-/** Plan #10 — send a 403 response. Branches on `Accept: application/json`
- * the same way the action / form dispatch paths do. Used by every route
- * after a `Resource.canX(...)` check fails. We deliberately do NOT
+/**
+ * Is this request Vike's client-router pageContext fetch? On SPA nav the
+ * client requests `/<path>/index.pageContext.json`; `@rudderjs/server-hono`
+ * rewrites it onto the matching controller route and stashes the original
+ * URL on `x-rudder-original-url` (the ViewResponse path hands it back to
+ * renderPage so Vike emits JSON). When a policy gate short-circuits the
+ * handler instead, the response must still be a Vike-parseable JSON
+ * envelope — a plain `text/plain` 403 crashes the client router with a
+ * Content-Type assertion ("Something went wrong" + console noise).
+ */
+export function isPageContextRequest(req: AppRequest): boolean {
+  const r = req as { header?: (name: string) => string | undefined; url?: string }
+  const orig = typeof r.header === 'function' ? r.header('x-rudder-original-url') : undefined
+  if (typeof orig === 'string' && orig.includes('.pageContext.json')) return true
+  return typeof r.url === 'string' && r.url.includes('.pageContext.json')
+}
+
+/**
+ * Vike abort envelope — the JSON shape `isAbortPageContext` accepts on the
+ * client (`abortStatusCode` + `_abortCall`), making the client router run
+ * its abort path and render the app's error page with the status, exactly
+ * as if the server had called Vike's `render(status)`.
+ */
+export function vikeAbort(res: AppResponse, status: 401 | 403, reason: string): unknown {
+  res.status(status)
+  return res.json({ abortStatusCode: status, _abortCall: `render(${status})`, abortReason: reason })
+}
+
+/** Minimal self-contained 403 page for direct (non-SPA, non-JSON) loads —
+ *  a bare `res.send('Forbidden')` reads like a broken server. */
+export function forbiddenPage(res: AppResponse): unknown {
+  return res.send(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>403 — Forbidden</title>
+<style>body{font-family:system-ui,sans-serif;display:flex;min-height:100svh;align-items:center;justify-content:center;margin:0;background:#fafaf9;color:#1a1a1a}main{text-align:center;padding:2rem}h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#666;margin:0 0 1.25rem}a{color:#d97757}</style>
+</head><body><main><h1>403 — You don't have access</h1><p>Your account isn't allowed to view this page.</p><a href="javascript:history.back()">&larr; Go back</a></main></body></html>`)
+}
+
+/** Plan #10 — send a 403 response. Branches three ways: Vike pageContext
+ * fetches get the abort envelope (clean SPA error page), JSON clients get
+ * the `{ ok:false }` shape the action / form dispatch paths use, and
+ * direct browser loads get a small styled page. We deliberately do NOT
  * redirect to login: 403 means "authenticated but not allowed"; the
  * 401-unauthenticated case is `Pilotiq.guard()`'s job. */
-export function forbidden(res: AppResponse, json: boolean): unknown {
+export function forbidden(req: AppRequest, res: AppResponse, json: boolean): unknown {
+  if (isPageContextRequest(req)) return vikeAbort(res, 403, 'Forbidden')
   res.status(403)
   if (json) return res.json({ ok: false, error: 'Forbidden' })
-  return res.send('Forbidden')
+  return forbiddenPage(res)
 }
 
 /** Extract a user-facing message from a thrown value inside an editable

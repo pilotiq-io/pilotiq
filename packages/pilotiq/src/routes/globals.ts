@@ -48,7 +48,7 @@ export function registerGlobalRoutes(
     // POST ${editUrl}/_form/:formId/state
     router.post(`${editUrl}/_form/:formId/state`, async (req, res) => {
       const user = await pilotiq.resolveUser(req)
-      if (!await policyGate(G, user, () => G.canEdit(user, undefined))) return forbidden(res, true)
+      if (!await policyGate(G, user, () => G.canEdit(user, undefined))) return forbidden(req, res, true)
       const formId = req.params['formId']!
       return handleFormState(req, res, pilotiq, { kind: 'global-edit', slug }, formId)
     })
@@ -56,7 +56,7 @@ export function registerGlobalRoutes(
     // Plan #8 wizard step-validate endpoint for the global's edit form.
     router.post(`${editUrl}/_form/:formId/wizard`, async (req, res) => {
       const user = await pilotiq.resolveUser(req)
-      if (!await policyGate(G, user, () => G.canEdit(user, undefined))) return forbidden(res, true)
+      if (!await policyGate(G, user, () => G.canEdit(user, undefined))) return forbidden(req, res, true)
       const formId = req.params['formId']!
       return handleFormWizard(req, res, pilotiq, { kind: 'global-edit', slug }, formId)
     })
@@ -64,7 +64,7 @@ export function registerGlobalRoutes(
     // Async-mention endpoint for the global's edit form.
     router.post(`${editUrl}/_form/:formId/mentions`, async (req, res) => {
       const user = await pilotiq.resolveUser(req)
-      if (!await policyGate(G, user, () => G.canEdit(user, undefined))) return forbidden(res, true)
+      if (!await policyGate(G, user, () => G.canEdit(user, undefined))) return forbidden(req, res, true)
       const formId = req.params['formId']!
       return handleFormMentions(req, res, pilotiq, { kind: 'global-edit', slug }, formId)
     })
@@ -72,7 +72,7 @@ export function registerGlobalRoutes(
     // SelectField inline-create modal endpoint for the global's edit form.
     router.post(`${editUrl}/_form/:formId/create-option/:fieldName`, async (req, res) => {
       const user = await pilotiq.resolveUser(req)
-      if (!await policyGate(G, user, () => G.canEdit(user, undefined))) return forbidden(res, true)
+      if (!await policyGate(G, user, () => G.canEdit(user, undefined))) return forbidden(req, res, true)
       const formId    = req.params['formId']!
       const fieldName = req.params['fieldName']!
       return handleFormCreateOption(req, res, pilotiq, { kind: 'global-edit', slug }, formId, fieldName)
@@ -83,7 +83,7 @@ export function registerGlobalRoutes(
       // Globals carry their record on the singleton form's `loadRecord`;
       // we don't pre-load here — pass a stub so canEdit's signature is
       // honored, and let user code decide whether to consult it.
-      if (!await policyGate(G, user, () => G.canEdit(user, undefined))) return forbidden(res, wantsJson(req))
+      if (!await policyGate(G, user, () => G.canEdit(user, undefined))) return forbidden(req, res, wantsJson(req))
       const data = await globalEditData(pilotiq, slug, undefined, req)
       return view('pilotiq.slug', data ?? {})
     })
@@ -94,7 +94,7 @@ export function registerGlobalRoutes(
       const json = wantsJson(req)
 
       const user = await pilotiq.resolveUser(req)
-      if (!await policyGate(G, user, () => G.canEdit(user, undefined))) return forbidden(res, json)
+      if (!await policyGate(G, user, () => G.canEdit(user, undefined))) return forbidden(req, res, json)
 
       const ctx: SchemaContext = { mode: 'edit', basePath: base, ...(user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}) }
       const elements = await callPageSchema(PageClass, ctx)
@@ -140,7 +140,7 @@ export function registerGlobalRoutes(
   if (pages.view) {
     router.get(`${editUrl}/view`, async (req, res) => {
       const user = await pilotiq.resolveUser(req)
-      if (!await policyGate(G, user, () => G.canView(user, undefined))) return forbidden(res, wantsJson(req))
+      if (!await policyGate(G, user, () => G.canView(user, undefined))) return forbidden(req, res, wantsJson(req))
       const data = await globalViewData(pilotiq, slug, req)
       return view('pilotiq.resource-view', data ?? {})
     })

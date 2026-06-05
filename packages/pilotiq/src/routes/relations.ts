@@ -116,9 +116,9 @@ export function registerRelationRoutes(
         // only on `user`, and the access check + parent existence check
         // happen on parallel round-trips instead of sequential.
         const { access, record: parent } = await loadAccessGated(R, recordId, user)
-        if (!access) { forbidden(res, json); return undefined }
+        if (!access) { forbidden(req, res, json); return undefined }
         if (!parent) { res.status(404); if (json) res.json({ ok: false, error: 'Parent not found' }); else res.send('Parent not found'); return undefined }
-        if (!await checkPolicy(() => R.canEdit(user, parent))) { forbidden(res, json); return undefined }
+        if (!await checkPolicy(() => R.canEdit(user, parent))) { forbidden(req, res, json); return undefined }
         return { user, parent, recordId }
       }
 
@@ -134,7 +134,7 @@ export function registerRelationRoutes(
           kind: 'relation-list', slug, recordId: ctx.recordId, relationship: rel, query: req.query as Record<string, string>,
         }, req)
         if (data === null)                            { res.status(404); return res.send('Not found') }
-        if ('ok' in data && data.ok === false)        return forbidden(res, json)
+        if ('ok' in data && data.ok === false)        return forbidden(req, res, json)
         return view('pilotiq.relation-list', data)
       })
 
@@ -147,7 +147,7 @@ export function registerRelationRoutes(
           kind: 'relation-create', slug, recordId: ctx.recordId, relationship: rel,
         }, req)
         if (data === null)                            { res.status(404); return res.send('Not found') }
-        if ('ok' in data && data.ok === false)        return forbidden(res, json)
+        if ('ok' in data && data.ok === false)        return forbidden(req, res, json)
         return view('pilotiq.relation-create', data)
       })
 
@@ -162,7 +162,7 @@ export function registerRelationRoutes(
           const msg = `RelationManager ${M.name}: cannot resolve related Resource for create`
           return json ? res.json({ ok: false, error: msg }) : res.send(msg)
         }
-        if (!await safeManagerPolicy(M, 'canCreate', Related, pre.user, pre.parent)) return forbidden(res, json)
+        if (!await safeManagerPolicy(M, 'canCreate', Related, pre.user, pre.parent)) return forbidden(req, res, json)
 
         const body = await readFormBody(req)
         const { values } = splitMeta(body)
@@ -248,7 +248,7 @@ export function registerRelationRoutes(
           kind: 'relation-view', slug, recordId: pre.recordId, relationship: rel, childId,
         }, req)
         if (data === null)                            { res.status(404); return res.send('Not found') }
-        if ('ok' in data && data.ok === false)        return forbidden(res, json)
+        if ('ok' in data && data.ok === false)        return forbidden(req, res, json)
         return view('pilotiq.relation-view', data)
       })
 
@@ -262,7 +262,7 @@ export function registerRelationRoutes(
           kind: 'relation-edit', slug, recordId: pre.recordId, relationship: rel, childId,
         }, req)
         if (data === null)                            { res.status(404); return res.send('Not found') }
-        if ('ok' in data && data.ok === false)        return forbidden(res, json)
+        if ('ok' in data && data.ok === false)        return forbidden(req, res, json)
         return view('pilotiq.relation-edit', data)
       })
 
@@ -285,7 +285,7 @@ export function registerRelationRoutes(
           kind: 'relation-edit', slug, recordId: pre.recordId, relationship: rel, childId,
         }, req)
         if (childCheck === null)                       { res.status(404); return res.send('Not found') }
-        if ('ok' in childCheck && childCheck.ok === false) return forbidden(res, json)
+        if ('ok' in childCheck && childCheck.ok === false) return forbidden(req, res, json)
 
         const body = await readFormBody(req)
         const { values } = splitMeta(body)
@@ -370,12 +370,12 @@ export function registerRelationRoutes(
           kind: 'relation-edit', slug, recordId: pre.recordId, relationship: rel, childId,
         }, req)
         if (childCheck === null)                       { res.status(404); return res.send('Not found') }
-        if ('ok' in childCheck && childCheck.ok === false) return forbidden(res, json)
+        if ('ok' in childCheck && childCheck.ok === false) return forbidden(req, res, json)
 
         const child = await findRecord(Related, childId, { user: pre.user }).catch(() => undefined)
         if (!child) { res.status(404); return res.send('Not found') }
 
-        if (!await safeManagerPolicy(M, 'canDelete', Related, pre.user, pre.parent, child)) return forbidden(res, json)
+        if (!await safeManagerPolicy(M, 'canDelete', Related, pre.user, pre.parent, child)) return forbidden(req, res, json)
 
         const listUrl = parentBase.replace(':id', pre.recordId)
         try {
@@ -438,7 +438,7 @@ export function registerRelationRoutes(
           const child = await loadTrashableChild(pre.parent, childId)
           if (!child) { res.status(404); return res.send('Not found') }
 
-          if (!await safeManagerPolicy(M, 'canRestore', RelatedForSoft, pre.user, pre.parent, child)) return forbidden(res, json)
+          if (!await safeManagerPolicy(M, 'canRestore', RelatedForSoft, pre.user, pre.parent, child)) return forbidden(req, res, json)
 
           const listUrl = parentBase.replace(':id', pre.recordId)
           try {
@@ -464,7 +464,7 @@ export function registerRelationRoutes(
           const child = await loadTrashableChild(pre.parent, childId)
           if (!child) { res.status(404); return res.send('Not found') }
 
-          if (!await safeManagerPolicy(M, 'canForceDelete', RelatedForSoft, pre.user, pre.parent, child)) return forbidden(res, json)
+          if (!await safeManagerPolicy(M, 'canForceDelete', RelatedForSoft, pre.user, pre.parent, child)) return forbidden(req, res, json)
 
           const listUrl = parentBase.replace(':id', pre.recordId)
           try {
@@ -602,7 +602,7 @@ export function registerRelationRoutes(
         }
         if (child === undefined) { res.status(404); return res.send('Not found') }
 
-        if (!await safeManagerPolicy(M, 'canDetach', undefined, pre.user, pre.parent, child)) return forbidden(res, json)
+        if (!await safeManagerPolicy(M, 'canDetach', undefined, pre.user, pre.parent, child)) return forbidden(req, res, json)
 
         // Real ORM: `parent[rel]()` returns the pivot accessor. Test
         // stubs: `parent.related(rel)` may carry `detach` directly.
@@ -678,7 +678,7 @@ export function registerRelationRoutes(
             query: req.query as Record<string, string>,
           }, req)
           if (data === null)                            { res.status(404); return res.send('Not found') }
-          if ('ok' in data && data.ok === false)        return forbidden(res, json)
+          if ('ok' in data && data.ok === false)        return forbidden(req, res, json)
           return view('pilotiq.nested-relation-list', data)
         })
 
@@ -693,7 +693,7 @@ export function registerRelationRoutes(
             chain: buildChain(id, childId1),
           }, req)
           if (data === null)                            { res.status(404); return res.send('Not found') }
-          if ('ok' in data && data.ok === false)        return forbidden(res, json)
+          if ('ok' in data && data.ok === false)        return forbidden(req, res, json)
           return view('pilotiq.nested-relation-create', data)
         })
 
@@ -710,7 +710,7 @@ export function registerRelationRoutes(
             chain: buildChain(id, childId1),
           }, req)
           if (pre === null)                             { res.status(404); return res.send('Not found') }
-          if ('ok' in pre && pre.ok === false)          return forbidden(res, json)
+          if ('ok' in pre && pre.ok === false)          return forbidden(req, res, json)
 
           // Re-resolve the leaf manager's bits for form submit. We need
           // the leaf parent record (`child1`) and the related class for
@@ -812,7 +812,7 @@ export function registerRelationRoutes(
             childId: childId2,
           }, req)
           if (data === null)                            { res.status(404); return res.send('Not found') }
-          if ('ok' in data && data.ok === false)        return forbidden(res, json)
+          if ('ok' in data && data.ok === false)        return forbidden(req, res, json)
           return view('pilotiq.nested-relation-view', data)
         })
 
@@ -829,7 +829,7 @@ export function registerRelationRoutes(
             childId: childId2,
           }, req)
           if (data === null)                            { res.status(404); return res.send('Not found') }
-          if ('ok' in data && data.ok === false)        return forbidden(res, json)
+          if ('ok' in data && data.ok === false)        return forbidden(req, res, json)
           return view('pilotiq.nested-relation-edit', data)
         })
 
@@ -848,7 +848,7 @@ export function registerRelationRoutes(
             childId: childId2,
           }, req)
           if (pre === null)                             { res.status(404); return res.send('Not found') }
-          if ('ok' in pre && pre.ok === false)          return forbidden(res, json)
+          if ('ok' in pre && pre.ok === false)          return forbidden(req, res, json)
 
           if (!Related1) {
             res.status(500)
@@ -950,7 +950,7 @@ export function registerRelationRoutes(
             childId: childId2,
           }, req)
           if (pre === null)                             { res.status(404); return res.send('Not found') }
-          if ('ok' in pre && pre.ok === false)          return forbidden(res, json)
+          if ('ok' in pre && pre.ok === false)          return forbidden(req, res, json)
 
           if (!Related1) {
             res.status(500)
@@ -972,7 +972,7 @@ export function registerRelationRoutes(
           if (!child1) { res.status(404); return res.send('Not found') }
           if (!child2) { res.status(404); return res.send('Not found') }
 
-          if (!await safeManagerPolicy(N, 'canDelete', Related2, user, child1, child2)) return forbidden(res, json)
+          if (!await safeManagerPolicy(N, 'canDelete', Related2, user, child1, child2)) return forbidden(req, res, json)
 
           const listUrl = nestedBase.replace(':id', id).replace(':childId', childId1)
           try {
@@ -1014,7 +1014,7 @@ export function registerRelationRoutes(
             ],
           }, user)
           if (resolved === null) { res.status(404); res.send('Not found'); return undefined }
-          if ('ok' in resolved) { forbidden(res, json); return undefined }
+          if ('ok' in resolved) { forbidden(req, res, json); return undefined }
           return { user, resolved, parentId: id, child1Id }
         }
 
@@ -1124,7 +1124,7 @@ export function registerRelationRoutes(
           } catch { /* fall through */ }
           if (child2 === undefined) { res.status(404); return res.send('Not found') }
 
-          if (!await safeManagerPolicy(M2, 'canDetach', Related2, pre.user, child1, child2)) return forbidden(res, json)
+          if (!await safeManagerPolicy(M2, 'canDetach', Related2, pre.user, child1, child2)) return forbidden(req, res, json)
 
           // Real ORM: child1[nestedRel]() returns the pivot accessor
           // with attach/detach/sync. Test stubs may collapse onto
@@ -1200,7 +1200,7 @@ export function registerRelationRoutes(
             const child2 = await loadTrashableGrandchild(pre.resolved.child1, childId2)
             if (!child2) { res.status(404); return res.send('Not found') }
 
-            if (!await safeManagerPolicy(N, 'canRestore', Related2ForSoft, pre.user, pre.resolved.child1, child2)) return forbidden(res, json)
+            if (!await safeManagerPolicy(N, 'canRestore', Related2ForSoft, pre.user, pre.resolved.child1, child2)) return forbidden(req, res, json)
 
             const listUrl = nestedListUrlFor(pre.parentId, pre.child1Id)
             try {
@@ -1225,7 +1225,7 @@ export function registerRelationRoutes(
             const child2 = await loadTrashableGrandchild(pre.resolved.child1, childId2)
             if (!child2) { res.status(404); return res.send('Not found') }
 
-            if (!await safeManagerPolicy(N, 'canForceDelete', Related2ForSoft, pre.user, pre.resolved.child1, child2)) return forbidden(res, json)
+            if (!await safeManagerPolicy(N, 'canForceDelete', Related2ForSoft, pre.user, pre.resolved.child1, child2)) return forbidden(req, res, json)
 
             const listUrl = nestedListUrlFor(pre.parentId, pre.child1Id)
             try {

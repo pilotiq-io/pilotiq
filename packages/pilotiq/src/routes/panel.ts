@@ -49,7 +49,7 @@ export function registerPanelRoutes(
     if (cfg.dashboardPage) {
       const user = await pilotiq.resolveUser(req)
       if (!await policyAccess(cfg.dashboardPage!, user)) {
-        return forbidden(res, wantsJson(req))
+        return forbidden(req, res, wantsJson(req))
       }
     }
     return view('pilotiq.dashboard', await dashboardData(pilotiq, req))
@@ -68,7 +68,7 @@ export function registerPanelRoutes(
   router.post(`${base}/_widget/:id`, async (req, res) => {
     if (cfg.dashboardPage) {
       const user = await pilotiq.resolveUser(req)
-      if (!await policyAccess(cfg.dashboardPage!, user)) return forbidden(res, true)
+      if (!await policyAccess(cfg.dashboardPage!, user)) return forbidden(req, res, true)
     }
     return handleWidgetData(req, res, pilotiq, { kind: 'panel' }, req.params['id']!)
   })

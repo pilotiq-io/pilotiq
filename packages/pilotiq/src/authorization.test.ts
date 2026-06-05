@@ -353,7 +353,37 @@ describe('routes 403 forbidden wiring', () => {
     const res = fakeRes()
     await route.handler(fakeReq(), res)
     assert.equal(res.statusCode, 403)
-    assert.equal(res.sentBody, 'Forbidden')
+    // Styled minimal page, not a bare 'Forbidden' string.
+    assert.match(String(res.sentBody), /403/)
+    assert.match(String(res.sentBody), /<!DOCTYPE html>/)
+  })
+
+  it('GET /:slug returns the Vike abort envelope for pageContext fetches', async () => {
+    class R extends Resource {
+      static override label = 'Articles'
+      static override labelSingular = 'Article'
+      static override slug = 'articles'
+      static override async canAccess() { return false }
+    }
+    const router = new Router()
+    registerPilotiqRoutes(router, Pilotiq.make('admin').path('/admin').resources([R]))
+    const route = getRoute(router, 'GET', '/admin/articles')
+
+    // server-hono rewrites /x/index.pageContext.json → /x and stashes the
+    // original URL on this header; pilotiq's policy gate must answer with
+    // the abort envelope or Vike's client router crashes on Content-Type.
+    const res = fakeRes()
+    await route.handler(fakeReq({
+      header: (n: string) => n === 'x-rudder-original-url'
+        ? 'http://x/admin/articles/index.pageContext.json'
+        : undefined,
+    }), res)
+    assert.equal(res.statusCode, 403)
+    assert.deepEqual(res.sentBody, {
+      abortStatusCode: 403,
+      _abortCall: 'render(403)',
+      abortReason: 'Forbidden',
+    })
   })
 
   it('GET /:slug returns 403 when canViewAny returns false', async () => {

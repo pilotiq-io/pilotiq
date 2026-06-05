@@ -7,7 +7,7 @@ import { RESERVED_RELATIONSHIP_TOKENS } from './RelationManager.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
 import type { ClusterClass } from './Cluster.js'
-import { wantsJson } from './routes/helpers.js'
+import { isPageContextRequest, vikeAbort, wantsJson } from './routes/helpers.js'
 
 // `routes.ts` is split into a directory of focused modules under
 // `./routes/`. This file is the orchestrator — boot-time validation
@@ -228,6 +228,9 @@ export function registerPilotiqRoutes(
     if (cfg.guard) {
       const allowed = await cfg.guard(req)
       if (!allowed) {
+        // Vike SPA-nav pageContext fetches need the abort envelope — a
+        // text/plain 401 crashes the client router's Content-Type assert.
+        if (isPageContextRequest(req)) return vikeAbort(res, 401, 'Unauthorized')
         res.status(401)
         if (wantsJson(req)) return res.json({ ok: false, error: 'Unauthorized' })
         return res.send('Unauthorized')

@@ -44,6 +44,17 @@ export function getCurrentSearchParams(): URLSearchParams | null {
 }
 
 export function SearchFormHiddenInputs({ prefix }: { prefix: string | undefined }): React.ReactElement {
+  // Hydration parity: `getCurrentSearchParams()` is window-only, so SSR
+  // renders zero hidden inputs — if the client rendered them during
+  // hydration, any URL with foreign params (?tab=…, filters, sort) would
+  // throw a hydration mismatch and force a client re-render of the whole
+  // tree. Render nothing on the server AND on the hydration pass, then
+  // inject the mirrors right after mount. The inputs only matter for a
+  // native GET submit of the search form, which can't happen before
+  // hydration completes.
+  const [mounted, setMounted] = React.useState(false)
+  React.useEffect(() => { setMounted(true) }, [])
+  if (!mounted) return <></>
   const sp = getCurrentSearchParams()
   if (!sp) return <></>
   const searchKey = prefixK(prefix, 'search')
