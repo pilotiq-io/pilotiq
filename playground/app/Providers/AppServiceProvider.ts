@@ -6,6 +6,6 @@ export class AppServiceProvider extends ServiceProvider {
   }
 
   async boot(): Promise<void> {
-    console.log(`[AppServiceProvider] booted — app: ${this.app.name}`)
+    // console.log(`[AppServiceProvider] booted — app: ${this.app.name}`)
   }
 }
