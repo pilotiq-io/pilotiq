@@ -7,11 +7,9 @@ import { Tag } from './Tag.js'
 export class Article extends Model.for<'article'>() {
   static override table = 'article'
   static override keyType = 'ulid' as const
-  // `featured` stays the raw 0/1 INTEGER (`featured: number` in the
-  // registry). A `casts = { featured: 'boolean' }` refinement would be
-  // nicer, but schema:types only folds casts from REGISTERED models and
-  // registration happens on first query — never during a CLI boot. Filed
-  // upstream; revisit once the generator sees import-time casts.
+  // Folded into the generated registry by `rudder schema:types`
+  // (`featured: boolean` instead of the raw 0/1 INTEGER).
+  static override casts = { featured: 'boolean' as const }
 
   // M2M demo — explicit pivot table named `article_tag` with
   // `articleId` / `tagId` columns. The rudder `belongsToMany` accessor

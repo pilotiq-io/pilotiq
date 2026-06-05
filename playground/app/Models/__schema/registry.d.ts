@@ -13,7 +13,7 @@ declare module '@rudderjs/orm' {
       tags: string
       status: string
       draftStatus: string
-      featured: number
+      featured: boolean
       publishedAt: string | null
       accentColor: string | null
       metaTitle: string | null

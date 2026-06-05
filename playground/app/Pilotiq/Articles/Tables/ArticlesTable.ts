@@ -191,9 +191,7 @@ export const ArticlesTable = {
             Action.make('clearFeatured')
               .label('Un-feature all')
               .handler(async () => {
-                // 0/1, not booleans — `featured` is the raw INTEGER column
-                // (see the cast note on the Article model).
-                await Article.where('featured', 1).updateAll({ featured: 0 })
+                await Article.where('featured', true).updateAll({ featured: false })
               }),
           ]),
       ])
@@ -206,7 +204,7 @@ export const ArticlesTable = {
           .handler(async (ctx) => {
             const ids = (ctx.records as { id?: string }[] | undefined)?.map(r => r.id).filter((v): v is string => Boolean(v)) ?? []
             if (ids.length === 0) return
-            await Article.whereIn('id', ids).updateAll({ featured: 1 })
+            await Article.whereIn('id', ids).updateAll({ featured: true })
             return {
               notify: Notification.make(`${ids.length} article${ids.length === 1 ? '' : 's'} featured`)
                 .body('They now appear in the home feed.')
@@ -220,9 +218,9 @@ export const ArticlesTable = {
           // Only show when article is published — drafts can't be featured.
           .visible(({ record }) => (record as { status?: string })?.status === 'published')
           .handler(async (ctx) => {
-            const r = ctx.record as { id?: string; featured?: number } | undefined
+            const r = ctx.record as { id?: string; featured?: boolean } | undefined
             if (!r?.id) return
-            await Article.update(r.id, { featured: r.featured ? 0 : 1 })
+            await Article.update(r.id, { featured: !r.featured })
           }),
         Action.make('changeStatus')
           .label('Change status…')
