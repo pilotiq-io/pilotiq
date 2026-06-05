@@ -26,6 +26,18 @@
     "yalc:push": "pnpm build:packages && pnpm -r --filter='./packages/*' exec yalc push && pnpm --dir=../pilotiq-pro install --prefer-offline --silent"
   },
   "pnpm": {
+    "overrides": {
+      "react": "19.2.6",
+      "react-dom": "19.2.6",
+      "@tiptap/core": "3.22.4",
+      "@tiptap/pm": "3.22.4",
+      "@tiptap/extensions": "3.22.4",
+      "@tiptap/starter-kit": "3.22.4",
+      "@tiptap/react": "3.22.4",
+      "@tiptap/suggestion": "3.22.4",
+      "@tiptap/extension-placeholder": "3.22.4",
+      "@tiptap/extension-link": "3.22.4"
+    },
     "onlyBuiltDependencies": [
       "@prisma/engines",
       "prisma",
