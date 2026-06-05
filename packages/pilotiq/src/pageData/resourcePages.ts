@@ -585,7 +585,10 @@ export async function resourceRecordPageData(
   if (!await safeBool(() => R.canView(user, record))) return { ok: false, status: 403 }
   if (!await safeBool(() => PageClass.canAccess(user, record))) return { ok: false, status: 403 }
 
-  const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'view', recordId, basePath: cfg.path }, user), cfg)
+  // `record` rides on the SchemaContext — the documented record sub-page
+  // contract is that `schema(ctx)` receives the loaded parent on
+  // `ctx.record` (the no-model fallback is the `{ id }` stub above).
+  const ctx: SchemaContext = uploadCtx(userCtx({ mode: 'view', recordId, basePath: cfg.path, record }, user), cfg)
   const elements = await callPageSchema(PageClass, ctx)
 
   // Insert the relation-tabs strip with the sub-page slug active so the

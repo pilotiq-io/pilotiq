@@ -1448,6 +1448,24 @@ describe('record sub-pages (pages().record)', () => {
     assert.equal(heading!['content'], 'Activity heading')
   })
 
+  it('resourceRecordPageData threads the loaded record onto ctx.record', async () => {
+    const { panel } = buildPanel()
+    let seenRecord: unknown = undefined
+    const original = ActivityPage.schema
+    ;(ActivityPage as unknown as { schema: (ctx?: { record?: unknown }) => unknown }).schema =
+      (ctx?: { record?: unknown }) => {
+        seenRecord = ctx?.record
+        return [Heading.make('Activity heading')]
+      }
+    try {
+      await resourceRecordPageData(panel, 'users', 'u1', 'activity')
+    } finally {
+      ;(ActivityPage as unknown as { schema: unknown }).schema = original
+    }
+    assert.ok(seenRecord, 'expected schema(ctx) to receive ctx.record')
+    assert.equal((seenRecord as { name?: string }).name, 'Alice')
+  })
+
   it('resourceRecordPageData 403s when R.canView returns false', async () => {
     const { panel } = buildPanel({ userCanView: async () => false })
     const out = await resourceRecordPageData(panel, 'users', 'u1', 'activity')
