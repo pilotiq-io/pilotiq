@@ -35,15 +35,28 @@ class PilotiqServiceProvider extends ServiceProvider {
     // (a "new dependencies optimized" reload) — and router must never be
     // client-pre-bundled (its @rudderjs/console → @clack/prompts chain).
     const routerModule = '@rudderjs/router'
-    const { router } = await import(/* @vite-ignore */ routerModule) as {
+    const { router, runWithGroup } = await import(/* @vite-ignore */ routerModule) as {
       router: Parameters<typeof registerPilotiqRoutes>[0]
+      runWithGroup?: <R>(group: 'web' | 'api', fn: () => R) => R
     }
 
     for (const panel of PilotiqRegistry.all()) {
       if (panel.getConfig().themeEditor) {
         await loadThemeOverrides(this.app, panel)
       }
-      registerPilotiqRoutes(router, panel)
+      // Panel pages are web pages — register them inside the 'web' route
+      // group so the framework's group middleware (Session / Auth) runs in
+      // front of every panel route. Without this, apps using @rudderjs/auth
+      // never see `req.user` on panel requests (`.user()` resolves null,
+      // `.guard()` 401s a logged-in browser) and `persistFiltersInSession`
+      // silently no-ops (no `req.session`). Routes register synchronously,
+      // which is the supported runWithGroup case. Optional-chained for
+      // @rudderjs/router versions that predate group tagging.
+      if (runWithGroup) {
+        runWithGroup('web', () => registerPilotiqRoutes(router, panel))
+      } else {
+        registerPilotiqRoutes(router, panel)
+      }
     }
   }
 }

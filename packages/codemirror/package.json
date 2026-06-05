@@ -49,14 +49,6 @@
     "y-codemirror.next": "^0.3",
     "yjs": "^13"
   },
-  "peerDependenciesMeta": {
-    "y-codemirror.next": {
-      "optional": true
-    },
-    "yjs": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@codemirror/commands": "^6",
     "@codemirror/language": "^6",
