@@ -204,6 +204,18 @@ export type FormatStateUsingHandler = (
 ) => string
 
 /**
+ * Submit-time transform passed to `Field.dehydrateStateUsing(fn)`. Receives
+ * the field's already-coerced value plus `{ record?, values }` and returns
+ * the value that should land in the persisted payload. `values` is the
+ * surrounding values map — the full form data for top-level fields, the
+ * row's own data inside a Repeater / Builder row. May be async.
+ */
+export type DehydrateStateUsingHandler = (
+  value: unknown,
+  ctx:   { record?: unknown; values: Record<string, unknown> },
+) => unknown | Promise<unknown>
+
+/**
  * Configuration for `Field.distinct()` — cross-row uniqueness inside a
  * Repeater or Builder. Outside an array-row context the flag is a no-op
  * (validators run per row's local values map; cross-row comparisons are
@@ -266,6 +278,7 @@ export abstract class Field extends Element {
   protected _default?: unknown
   protected _dehydrated = true
   protected _formatStateUsing?: FormatStateUsingHandler
+  protected _dehydrateStateUsing?: DehydrateStateUsingHandler
   // Cross-row uniqueness flag. Only consulted by `validateRepeater` and
   // `validateBuilder`; a no-op outside an array-row context.
   protected _distinct?: DistinctOptions
@@ -527,6 +540,24 @@ export abstract class Field extends Element {
   }
 
   /**
+   * Submit-time counterpart to `formatStateUsing` — transform the field's
+   * value before it enters the persisted payload. Runs AFTER type coercion
+   * (booleans / numbers / Dates are already real) and BEFORE the form-level
+   * `mutateData` hook, so the form hook sees the final per-field shape.
+   * Classic use: `ToggleField.make('active').dehydrateStateUsing(v => v ? 1 : 0)`
+   * for an integer column the ORM doesn't cast.
+   *
+   * Applies inside Repeater / Builder rows too (each row's value transforms
+   * independently; `ctx.values` is the row's own data there). Skipped when
+   * the field is `dehydrated(false)` (the value never reaches the payload)
+   * and when the field's key is absent from the submitted body. May be async.
+   */
+  dehydrateStateUsing(fn: DehydrateStateUsingHandler): this {
+    this._dehydrateStateUsing = fn
+    return this
+  }
+
+  /**
    * Cross-row uniqueness inside a Repeater / Builder. When the field is
    * resolved in a row context, every row's value is compared against
    * earlier rows; the second + subsequent occurrences fail validation.
@@ -592,6 +623,7 @@ export abstract class Field extends Element {
   getSuffix(): FieldDecoration | undefined { return this._suffix }
   getHelperText(): string | undefined { return this._helperText }
   getFormatStateUsing(): FormatStateUsingHandler | undefined { return this._formatStateUsing }
+  getDehydrateStateUsing(): DehydrateStateUsingHandler | undefined { return this._dehydrateStateUsing }
 
   // ─── Validation ───────────────────────────────────────
 

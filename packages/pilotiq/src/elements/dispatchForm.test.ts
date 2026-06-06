@@ -2,12 +2,15 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { Form } from './Form.js'
-import { applyStateUpdate, coerceFormValues, dispatchFormSubmit, findForms, findWizardStep, findWizardStepFields, selectForm, selectFormById } from './dispatchForm.js'
+import { applyDehydrateTransforms, applyStateUpdate, coerceFormValues, dispatchFormSubmit, findForms, findWizardStep, findWizardStepFields, selectForm, selectFormById } from './dispatchForm.js'
 import { Wizard, Step } from '../schema/Wizard.js'
 import { TextField } from '../fields/TextField.js'
 import { NumberField } from '../fields/NumberField.js'
 import { ToggleField } from '../fields/ToggleField.js'
 import { TagsInputField } from '../fields/TagsInputField.js'
+import { RepeaterField } from '../fields/RepeaterField.js'
+import { BuilderField } from '../fields/BuilderField.js'
+import { Block } from '../schema/Block.js'
 import { Section } from '../schema/Section.js'
 import { makeValidator } from '../validation/index.js'
 
@@ -473,5 +476,160 @@ describe('findWizardStep (Plan #8)', () => {
       Wizard.make().steps([Step.make('only').schema([])]),
     ])
     assert.equal(findWizardStep(form.getChildren()!, 5), undefined)
+  })
+})
+
+describe('dehydrateStateUsing — per-field submit transforms', () => {
+  it('transforms the coerced value before mutateData and save', async () => {
+    let mutateSaw: unknown
+    let saveSaw: unknown
+    const form = Form.make()
+      .schema([ToggleField.make('active').dehydrateStateUsing(v => (v ? 1 : 0))])
+      .mutateData(d => { mutateSaw = d['active']; return d })
+      .save(async data => { saveSaw = data['active']; return {} })
+
+    const result = await dispatchFormSubmit(form, { active: 'true' }, { values: { active: 'true' } })
+    assert.equal(result.ok, true)
+    assert.equal(mutateSaw, 1)  // coerce made it `true`, dehydrate made it 1
+    assert.equal(saveSaw, 1)
+  })
+
+  it('supports async handlers and exposes { record, values }', async () => {
+    const seen: { record?: unknown; slugAtCallTime?: unknown } = {}
+    const existing = { id: 'r1' }
+    const form = Form.make()
+      .schema([
+        TextField.make('slug').dehydrateStateUsing(async (v, ctx) => {
+          seen.record = ctx.record
+          seen.slugAtCallTime = ctx.values['slug']
+          return String(v).toLowerCase()
+        }),
+      ])
+      .save(async data => data)
+
+    const result = await dispatchFormSubmit(form, { slug: 'HELLO' }, { values: { slug: 'HELLO' }, record: existing })
+    assert.equal(result.ok, true)
+    if (result.ok) assert.equal((result.record as Record<string, unknown>)['slug'], 'hello')
+    assert.equal(seen.record, existing)
+    assert.equal(seen.slugAtCallTime, 'HELLO')
+  })
+
+  it('does not run for dehydrated(false) fields or absent keys', async () => {
+    let calls = 0
+    const form = Form.make()
+      .schema([
+        TextField.make('scratch').dehydrated(false).dehydrateStateUsing(() => { calls++; return 'x' }),
+        TextField.make('missing').dehydrateStateUsing(() => { calls++; return 'x' }),
+      ])
+      .save(async data => data)
+
+    const result = await dispatchFormSubmit(form, { scratch: 'noise' }, { values: { scratch: 'noise' } })
+    assert.equal(result.ok, true)
+    assert.equal(calls, 0)
+    if (result.ok) {
+      const rec = result.record as Record<string, unknown>
+      assert.equal('scratch' in rec, false)
+      assert.equal('missing' in rec, false)
+    }
+  })
+
+  it('applies inside nested containers', async () => {
+    const form = Form.make()
+      .schema([Section.make('Meta').schema([NumberField.make('priority').dehydrateStateUsing(v => Number(v) * 10)])])
+      .save(async data => data)
+
+    const result = await dispatchFormSubmit(form, { priority: '4' }, { values: { priority: '4' } })
+    assert.equal(result.ok, true)
+    if (result.ok) assert.equal((result.record as Record<string, unknown>)['priority'], 40)
+  })
+
+  it('transforms Repeater row fields with row-scoped ctx.values', async () => {
+    const rowValues: unknown[] = []
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('lines').schema([
+          TextField.make('label'),
+          ToggleField.make('done').dehydrateStateUsing((v, ctx) => { rowValues.push(ctx.values['label']); return v ? 1 : 0 }),
+        ]),
+      ])
+      .save(async data => data)
+
+    const body = { lines: [ { label: 'a', done: 'true' }, { label: 'b', done: '' } ] }
+    const result = await dispatchFormSubmit(form, body, { values: body })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      const rows = (result.record as Record<string, unknown>)['lines'] as Array<Record<string, unknown>>
+      assert.deepEqual(rows.map(r => r['done']), [1, 0])
+    }
+    assert.deepEqual(rowValues, ['a', 'b'])
+  })
+
+  it('maps the inner handler over simple() Repeater items', async () => {
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('tags').simple(TextField.make('tag').dehydrateStateUsing(v => String(v).toUpperCase())),
+      ])
+      .save(async data => data)
+
+    const body = { tags: [ { tag: 'one' }, { tag: 'two' } ] }
+    const result = await dispatchFormSubmit(form, body, { values: body })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.deepEqual((result.record as Record<string, unknown>)['tags'], ['ONE', 'TWO'])
+    }
+  })
+
+  it('runs the Repeater field\'s own handler last, over the whole array', async () => {
+    const form = Form.make()
+      .schema([
+        RepeaterField.make('lines')
+          .schema([NumberField.make('qty').dehydrateStateUsing(v => Number(v) * 2)])
+          .dehydrateStateUsing(rows => (rows as Array<Record<string, unknown>>).filter(r => Number(r['qty']) > 0)),
+      ])
+      .save(async data => data)
+
+    const body = { lines: [ { qty: '3' }, { qty: '0' } ] }
+    const result = await dispatchFormSubmit(form, body, { values: body })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      const rows = (result.record as Record<string, unknown>)['lines'] as Array<Record<string, unknown>>
+      assert.equal(rows.length, 1)
+      assert.equal(rows[0]!['qty'], 6)
+    }
+  })
+
+  it('transforms Builder row fields against the matching block schema', async () => {
+    const form = Form.make()
+      .schema([
+        BuilderField.make('blocks').blocks([
+          Block.make('heading').schema([TextField.make('text').dehydrateStateUsing(v => String(v).trim())]),
+          Block.make('quote').schema([TextField.make('text')]),
+        ]),
+      ])
+      .save(async data => data)
+
+    const body = { blocks: [
+      { type: 'heading', data: { text: '  Hi  ' } },
+      { type: 'quote',   data: { text: '  raw  ' } },
+    ] }
+    const result = await dispatchFormSubmit(form, body, { values: body })
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      const rows = (result.record as Record<string, unknown>)['blocks'] as Array<{ type: string; data: Record<string, unknown> }>
+      assert.equal(rows[0]!.data['text'], 'Hi')        // heading block's handler ran
+      assert.equal(rows[1]!.data['text'], '  raw  ')   // quote block has no handler
+    }
+  })
+
+  it('passes unknown block types through verbatim (direct apply)', async () => {
+    // Unknown types are rejected by submit-time validation, but the apply
+    // pass itself (exported for reuse) must not crash on or mutate them.
+    const builder = BuilderField.make('blocks').blocks([
+      Block.make('heading').schema([TextField.make('text').dehydrateStateUsing(v => String(v).trim())]),
+    ])
+    const data = { blocks: [{ type: 'ghost', data: { text: ' keep ' } }] }
+    const out = await applyDehydrateTransforms([builder], data)
+    const rows = out['blocks'] as Array<{ type: string; data: Record<string, unknown> }>
+    assert.equal(rows[0]!.data['text'], ' keep ')
   })
 })

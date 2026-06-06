@@ -385,6 +385,7 @@ export {
   type AfterStateUpdatedContext,
   type FieldDecoration,
   type FormatStateUsingHandler,
+  type DehydrateStateUsingHandler,
   type DistinctOptions,
 } from './fields/Field.js'
 export { resolveField, resolveFields } from './fields/resolveField.js'

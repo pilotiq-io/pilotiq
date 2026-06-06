@@ -52,6 +52,7 @@ Field.make('name')
   .afterStateUpdated((value, ctx) => ctx.$set('slug', slugify(value)))
   .dehydrated(false)                 // don't submit
   .formatStateUsing(v => `${v} px`)  // display transform
+  .dehydrateStateUsing(v => (v ? 1 : 0)) // submit transform (see below)
   .autofocus()                       // browser focuses on first paint
   .hiddenLabel()                     // sr-only label (a11y kept)
   .validationAttribute('email address') // tunes the implicit-required text
@@ -69,6 +70,28 @@ Field.make('name')
 routes (custom Pages) where mode is unset, matching the existing
 `hideFromCreate / hideFromEdit / hideFromView` behaviour. `readonly()`
 still wins over `disabledOn`.
+
+### Submit transform — `dehydrateStateUsing`
+
+The submit-time counterpart to `formatStateUsing`: transform the field's
+value before it enters the persisted payload.
+
+```ts
+ToggleField.make('active').dehydrateStateUsing(v => (v ? 1 : 0))   // integer column
+TextField.make('slug').dehydrateStateUsing(v => String(v).toLowerCase())
+```
+
+- Runs **after** type coercion (booleans / numbers / Dates are already
+  real values) and **before** the form-level `mutateData` hook.
+- The handler receives `(value, { record, values })` and may be async.
+  `values` is the surrounding values map — the full form data for
+  top-level fields, the row's own data inside a Repeater / Builder row.
+- Applies inside Repeater / Builder rows automatically; a handler on the
+  Repeater / Builder field itself runs last and receives the whole array.
+- Skipped for `dehydrated(false)` fields and for keys absent from the
+  submitted body (a transform never invents keys).
+- Relationship-backed Repeaters / Builders / multi-selects are exempt —
+  their values persist through the relation diff, not the parent payload.
 
 ### Validation attribute
 

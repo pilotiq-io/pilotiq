@@ -145,6 +145,12 @@ export async function dispatchFormSubmit<R = unknown>(
   // matching column.
   const selectRelationshipDeferrals = extractRelationshipSelects(children as Element[], data)
 
+  // Per-field submit transforms — `Field.dehydrateStateUsing(fn)`. Runs
+  // AFTER coercion + the relationship extracts (values are typed; relation-
+  // backed fields have already left `data`) and BEFORE the form-level
+  // `mutateData` hook so it observes the final per-field shapes.
+  data = await applyDehydrateTransforms(children as Element[], data, ctx.record)
+
   const mutate = form.getMutateData()
   if (mutate) data = await mutate(data, { ...ctx, values: data })
 
@@ -501,6 +507,110 @@ export function coerceFormValues(
     }
   })
   return out
+}
+
+/**
+ * Apply every field's `dehydrateStateUsing(fn)` transform to the coerced
+ * data map. Top-level fields transform `out[name]` in place; Repeater /
+ * Builder rows transform each row's own values against the inner schema
+ * (the row's data map is what `ctx.values` exposes there). `simple()`
+ * Repeaters map the inner field's handler over the flat item array. A
+ * handler set on the Repeater / Builder field itself runs LAST and
+ * receives the whole array.
+ *
+ * Skips fields that are `dehydrated(false)` (their key never reaches the
+ * payload) and fields whose key is absent from `data` (a transform must
+ * not invent keys the client never submitted). Relationship-backed
+ * Repeaters / Builders / multi-selects are skipped — their values are
+ * extracted off `data` before this pass and persist through the relation
+ * diff, not the parent payload.
+ */
+export async function applyDehydrateTransforms(
+  elements: Element[],
+  data:     Record<string, unknown>,
+  record?:  unknown,
+): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = { ...data }
+  await dehydrateWalk(elements, out, record)
+  return out
+}
+
+async function dehydrateWalk(
+  elements: Element[],
+  values:   Record<string, unknown>,
+  record:   unknown,
+): Promise<void> {
+  for (const el of elements) {
+    if (el instanceof Field) {
+      // Array-row fields own their rows' transforms — don't let the
+      // surrounding walk recurse into the inner schema against the
+      // wrong values map (mirrors `walkFields`' boundary).
+      if (el instanceof RepeaterField) { await dehydrateRepeaterRows(el, values, record); continue }
+      if (el instanceof BuilderField)  { await dehydrateBuilderRows(el, values, record);  continue }
+      await applyFieldDehydrate(el, values, record)
+    }
+    const children = el.getChildren()
+    if (children && children.length > 0) await dehydrateWalk(children as Element[], values, record)
+  }
+}
+
+async function applyFieldDehydrate(
+  field:  Field,
+  values: Record<string, unknown>,
+  record: unknown,
+): Promise<void> {
+  const fn = field.getDehydrateStateUsing()
+  if (!fn || field.isDehydrated() === false || !(field.name in values)) return
+  values[field.name] = await fn(values[field.name], { record, values })
+}
+
+async function dehydrateRepeaterRows(
+  repeater: RepeaterField,
+  values:   Record<string, unknown>,
+  record:   unknown,
+): Promise<void> {
+  const rows = values[repeater.name]
+  if (Array.isArray(rows) && !repeater.isRelationship()) {
+    if (repeater.isSimple()) {
+      // Flat `[v, v, …]` storage (already unwrapped) — map the single
+      // inner field's handler over each item.
+      const inner = repeater.getSimpleInnerField()
+      const fn = inner?.getDehydrateStateUsing()
+      if (inner && fn) {
+        for (let i = 0; i < rows.length; i++) {
+          rows[i] = await fn(rows[i], { record, values: { [inner.name]: rows[i] } })
+        }
+      }
+    } else {
+      for (const row of rows) {
+        if (row && typeof row === 'object' && !Array.isArray(row)) {
+          await dehydrateWalk((repeater.getChildren() ?? []) as Element[], row as Record<string, unknown>, record)
+        }
+      }
+    }
+  }
+  // The Repeater's own handler runs last — whole-array transform.
+  await applyFieldDehydrate(repeater, values, record)
+}
+
+async function dehydrateBuilderRows(
+  builder: BuilderField,
+  values:  Record<string, unknown>,
+  record:  unknown,
+): Promise<void> {
+  const rows = values[builder.name]
+  if (Array.isArray(rows) && !builder.isRelationship()) {
+    for (const row of rows) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+      const envelope = row as { type?: unknown; data?: unknown }
+      const block = builder.getBlocks().find(b => b.name === envelope.type)
+      const rowData = envelope.data
+      // Unknown block types round-trip verbatim (config-rollback safety).
+      if (!block || !rowData || typeof rowData !== 'object' || Array.isArray(rowData)) continue
+      await dehydrateWalk(block.getSchema(), rowData as Record<string, unknown>, record)
+    }
+  }
+  await applyFieldDehydrate(builder, values, record)
 }
 
 function walkFields(elements: Element[], visit: (f: Field) => void): void {
