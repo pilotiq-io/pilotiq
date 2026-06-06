@@ -7,7 +7,7 @@ import { RESERVED_RELATIONSHIP_TOKENS } from './RelationManager.js'
 import { Table } from './elements/Table.js'
 import { Column } from './Column.js'
 import type { ClusterClass } from './Cluster.js'
-import { isPageContextRequest, vikeAbort, wantsJson } from './routes/helpers.js'
+import { guardRedirectTarget, isPageContextRequest, vikeAbort, vikeRedirect, wantsJson } from './routes/helpers.js'
 
 // `routes.ts` is split into a directory of focused modules under
 // `./routes/`. This file is the orchestrator — boot-time validation
@@ -228,6 +228,19 @@ export function registerPilotiqRoutes(
     if (cfg.guard) {
       const allowed = await cfg.guard(req)
       if (!allowed) {
+        // `guard(fn, { redirectTo })` — send navigations to the login
+        // page instead of a bare 401. SPA pageContext fetches get
+        // Vike's redirect envelope; non-navigation fetches still 401
+        // but carry the target so clients can choose to follow it.
+        if (cfg.guardRedirectTo) {
+          const target = guardRedirectTarget(req, cfg.guardRedirectTo)
+          if (isPageContextRequest(req)) return vikeRedirect(res, target)
+          if (wantsJson(req)) {
+            res.status(401)
+            return res.json({ ok: false, error: 'Unauthorized', redirect: target })
+          }
+          return res.redirect(target, 302)
+        }
         // Vike SPA-nav pageContext fetches need the abort envelope — a
         // text/plain 401 crashes the client router's Content-Type assert.
         if (isPageContextRequest(req)) return vikeAbort(res, 401, 'Unauthorized')

@@ -264,6 +264,9 @@ export interface PilotiqConfig {
    */
   themeStorage?: ThemeStorageAdapter
   guard?:        (req: unknown) => boolean | Promise<boolean>
+  /** Where failed guards send browser requests instead of a bare 401 —
+   *  set via `guard(fn, { redirectTo: '/login' })`. */
+  guardRedirectTo?: string
   user?:         UserResolver
   uploads?:      UploadConfig
   /**
@@ -580,8 +583,22 @@ export class Pilotiq {
     return this
   }
 
-  guard(fn: (req: unknown) => boolean | Promise<boolean>): this {
+  /**
+   * Panel-wide unauthenticated gate — runs in front of every panel route.
+   * Return `false` to reject the request.
+   *
+   * By default a rejected request gets a bare 401 (JSON for fetch
+   * clients, Vike abort envelope for SPA navigations). Pass
+   * `{ redirectTo: '/login' }` to send browser requests to your login
+   * page instead — direct loads 302, SPA navigations get Vike's
+   * redirect envelope, and both carry the original URL as a
+   * `?redirect=` query param so the login flow can bounce back.
+   * Non-navigation fetches (form posts, action dispatches) still 401
+   * with the target under `redirect` in the JSON body.
+   */
+  guard(fn: (req: unknown) => boolean | Promise<boolean>, opts?: { redirectTo?: string }): this {
     this.config.guard = fn
+    if (opts?.redirectTo !== undefined) this.config.guardRedirectTo = opts.redirectTo
     return this
   }
 

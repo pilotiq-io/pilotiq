@@ -66,6 +66,7 @@ class ClusteredPage extends Page {
 interface FakeRes {
   statusCode: number
   sentBody?:  unknown
+  redirectedTo?: string
   status(code: number): FakeRes
   send(body: unknown): FakeRes
   json(body: unknown): FakeRes
@@ -78,7 +79,7 @@ function fakeRes(): FakeRes {
     status(code) { this.statusCode = code; return this },
     send(body)   { this.sentBody = body;   return this },
     json(body)   { this.sentBody = body;   return this },
-    redirect()   { return this },
+    redirect(url, code) { this.redirectedTo = url; this.statusCode = code ?? 302; return this },
     header()     { return this },
   }
   return r
@@ -222,6 +223,73 @@ describe('Pilotiq.guard() — router.group() middleware', () => {
     const { res } = await runMiddleware(route, fakeReq())
     assert.equal(res.statusCode, 401)
     assert.equal(res.sentBody, 'Unauthorized')
+  })
+
+  it('guard(fn, { redirectTo }) — browser loads 302 to the login page with ?redirect=', async () => {
+    const router = new Router()
+    const panel = Pilotiq.make('admin')
+      .path('/admin')
+      .resources([Article])
+      .guard(() => false, { redirectTo: '/login' })
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/articles')
+    assert.ok(route, 'articles list route missing')
+    const { reached, res } = await runMiddleware(route, fakeReq({ url: '/admin/articles' }))
+    assert.equal(reached, false)
+    assert.equal(res.statusCode, 302)
+    assert.equal(res.redirectedTo, '/login?redirect=%2Fadmin%2Farticles')
+  })
+
+  it('guard(fn, { redirectTo }) — SPA pageContext fetches get the Vike redirect envelope', async () => {
+    const router = new Router()
+    const panel = Pilotiq.make('admin')
+      .path('/admin')
+      .resources([Article])
+      .guard(() => false, { redirectTo: '/login' })
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/articles')
+    assert.ok(route, 'articles list route missing')
+    const { res } = await runMiddleware(route, fakeReq({
+      headers: { 'x-rudder-original-url': '/admin/articles/index.pageContext.json' },
+    }))
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(res.sentBody, {
+      _abortCall:   'redirect("/login?redirect=%2Fadmin%2Farticles")',
+      _urlRedirect: { url: '/login?redirect=%2Fadmin%2Farticles', statusCode: 302 },
+    })
+  })
+
+  it('guard(fn, { redirectTo }) — JSON fetches still 401 but carry the target', async () => {
+    const router = new Router()
+    const panel = Pilotiq.make('admin')
+      .path('/admin')
+      .resources([Article])
+      .guard(() => false, { redirectTo: '/login' })
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/articles')
+    assert.ok(route, 'articles list route missing')
+    const { res } = await runMiddleware(route, fakeReq({
+      url: '/admin/articles',
+      headers: { accept: 'application/json' },
+    }))
+    assert.equal(res.statusCode, 401)
+    assert.deepEqual(res.sentBody, {
+      ok: false, error: 'Unauthorized', redirect: '/login?redirect=%2Fadmin%2Farticles',
+    })
+  })
+
+  it('guard(fn, { redirectTo }) — skips ?redirect= when the target already has a query', async () => {
+    const router = new Router()
+    const panel = Pilotiq.make('admin')
+      .path('/admin')
+      .resources([Article])
+      .guard(() => false, { redirectTo: '/login?demo=1' })
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/articles')
+    assert.ok(route, 'articles list route missing')
+    const { res } = await runMiddleware(route, fakeReq({ url: '/admin/articles' }))
+    assert.equal(res.statusCode, 302)
+    assert.equal(res.redirectedTo, '/login?demo=1')
   })
 
   it('awaits async guard predicates', async () => {

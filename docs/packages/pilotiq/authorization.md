@@ -44,9 +44,22 @@ pilotiq([adminPanel])
 
 ## 401 vs 403
 
-`Pilotiq.guard()` is the 401 layer (unauthenticated → redirect to
-login). `can*` predicates produce 403 (authenticated but unauthorized).
-Don't conflate the two.
+`Pilotiq.guard()` is the 401 layer (unauthenticated). `can*` predicates
+produce 403 (authenticated but unauthorized). Don't conflate the two.
+
+By default a failed guard returns a bare 401. Pass `redirectTo` to send
+browser requests to your login page instead:
+
+```ts
+Pilotiq.make('Admin')
+  .guard((req: any) => Boolean(req?.user), { redirectTo: '/login' })
+```
+
+Direct loads 302; SPA navigations follow Vike's redirect envelope; both
+carry the original URL as `?redirect=<path>` so the login flow can
+bounce back after sign-in (skipped when `redirectTo` already has a query
+string). Non-navigation fetches (form posts, action dispatches) still
+401 with the target under `redirect` in the JSON body.
 
 ## Soft-delete extras
 

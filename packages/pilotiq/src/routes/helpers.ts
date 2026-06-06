@@ -248,6 +248,41 @@ export function vikeAbort(res: AppResponse, status: 401 | 403, reason: string): 
   return res.json({ abortStatusCode: status, _abortCall: `render(${status})`, abortReason: reason })
 }
 
+/**
+ * Vike redirect envelope — the pageContext-JSON sibling of `vikeAbort`.
+ * `isAbortPageContext` on the client accepts `_urlRedirect` (the shape
+ * `throw redirect(url)` serializes to), making the SPA router navigate
+ * to `url` instead of rendering an error page. Used by the guard's
+ * `redirectTo` path for SPA navigations.
+ */
+export function vikeRedirect(res: AppResponse, url: string): unknown {
+  res.status(200)
+  return res.json({ _abortCall: `redirect(${JSON.stringify(url)})`, _urlRedirect: { url, statusCode: 302 } })
+}
+
+/**
+ * Build the guard's redirect target, carrying the originally-requested
+ * URL as `?redirect=<path>` so the login flow can bounce back after
+ * sign-in. PageContext fetches rewrite onto `…/index.pageContext.json`
+ * — strip that suffix so the bounce lands on the real page URL. Skips
+ * the param when `redirectTo` already carries a query string or the
+ * original path can't be derived.
+ */
+export function guardRedirectTarget(req: AppRequest, redirectTo: string): string {
+  if (redirectTo.includes('?')) return redirectTo
+  const r = req as { headers?: Record<string, string>; url?: string }
+  let original = r.headers?.['x-rudder-original-url'] ?? r.url ?? ''
+  if (original.startsWith('http')) {
+    try {
+      const u = new URL(original)
+      original = u.pathname + u.search
+    } catch { return redirectTo }
+  }
+  original = original.replace(/\/index\.pageContext\.json[^?]*/, '') || '/'
+  if (!original.startsWith('/')) return redirectTo
+  return `${redirectTo}?redirect=${encodeURIComponent(original)}`
+}
+
 /** Minimal self-contained 403 page for direct (non-SPA, non-JSON) loads —
  *  a bare `res.send('Forbidden')` reads like a broken server. */
 export function forbiddenPage(res: AppResponse): unknown {
