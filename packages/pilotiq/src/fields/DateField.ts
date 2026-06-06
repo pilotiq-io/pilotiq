@@ -1,8 +1,10 @@
 import { Field, type FieldMeta } from './Field.js'
 import type { RenderContext } from '../schema/resolveSchema.js'
+import { assertTimezone } from './dateTimeWire.js'
 
 export class DateField extends Field {
   protected _withTime = false
+  protected _timezone: string | undefined
 
   protected constructor(name: string, fieldType: string = 'date') {
     super(name, fieldType)
@@ -27,10 +29,30 @@ export class DateField extends Field {
 
   hasTime(): boolean { return this._withTime }
 
+  /**
+   * Display and parse the time-of-day in an explicit IANA timezone
+   * (Filament idiom). The stored value stays a UTC instant — only the
+   * wall-clock shown in (and read back from) the picker shifts. Without
+   * this, both sides default to UTC wall time. No effect on date-only
+   * fields (a zone shift could move the calendar day).
+   */
+  timezone(tz: string): this {
+    try {
+      assertTimezone(tz)
+    } catch {
+      throw new Error(`DateField('${this.name}').timezone(): unknown IANA timezone '${tz}'`)
+    }
+    this._timezone = tz
+    return this
+  }
+
+  getTimezone(): string | undefined { return this._timezone }
+
   override toMeta(ctx?: RenderContext): FieldMeta {
     return {
       ...this.buildMeta(ctx),
       ...(this._withTime ? { withTime: true } : {}),
+      ...(this._timezone ? { timezone: this._timezone } : {}),
     }
   }
 }

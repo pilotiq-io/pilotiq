@@ -23,6 +23,7 @@ import { RepeaterInput } from '../../fields/RepeaterInput.js'
 import { BuilderInput } from '../../fields/BuilderInput.js'
 import { getFieldRenderer } from '../../registry.js'
 import { getFieldLabelSlot } from '../../FieldLabelSlotRegistry.js'
+import { toDateTimeWire } from '../../../fields/dateTimeWire.js'
 
 // ─── Field rendering ────────────────────────────────────────
 //
@@ -430,16 +431,13 @@ function renderFieldInput(
       return <BuilderInput el={el} name={name} disabled={disabled} />
 
     case 'dateTime': {
-      // Normalize various input shapes to YYYY-MM-DDTHH:mm.
-      let local: string | undefined
-      if (defaultValue instanceof Date) {
-        local = isNaN(defaultValue.getTime())
-          ? undefined
-          : defaultValue.toISOString().slice(0, 16)
-      } else if (typeof defaultValue === 'string' && defaultValue) {
-        const parsed = new Date(defaultValue)
-        local = isNaN(parsed.getTime()) ? undefined : parsed.toISOString().slice(0, 16)
-      }
+      // Normalize Date / ISO-string / naive-string shapes to the
+      // YYYY-MM-DDTHH:mm wire value — wall-clock UTC, or the field's
+      // `timezone()` zone when set (the coerce branch mirrors it).
+      const local = toDateTimeWire(
+        defaultValue,
+        typeof el['timezone'] === 'string' ? el['timezone'] : undefined,
+      )
       return (
         <DateTimeInput
           name={name}
@@ -483,15 +481,10 @@ function renderFieldInput(
       // `DateField.withTime()` keeps the 'date' fieldType but renders the
       // date-time picker (the coerce branch already accepts either shape).
       if (el['withTime'] === true) {
-        let local: string | undefined
-        if (defaultValue instanceof Date) {
-          local = isNaN(defaultValue.getTime())
-            ? undefined
-            : defaultValue.toISOString().slice(0, 16)
-        } else if (typeof defaultValue === 'string' && defaultValue) {
-          const parsed = new Date(defaultValue)
-          local = isNaN(parsed.getTime()) ? undefined : parsed.toISOString().slice(0, 16)
-        }
+        const local = toDateTimeWire(
+          defaultValue,
+          typeof el['timezone'] === 'string' ? el['timezone'] : undefined,
+        )
         return (
           <DateTimeInput
             name={name}

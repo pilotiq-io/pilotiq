@@ -23,7 +23,7 @@ Every form field is a static `make(name)` builder that extends `Field`.
 | `TagsInput` | chip multi-tag | `string[]` value, JSON-encoded |
 | `KeyValueField` | key/value rows | `Record<string, string>` |
 | `DateField` | calendar popover | `withTime()` adds the time input |
-| `DateTimePicker` | calendar + time popover | sugar for `DateField.withTime()` |
+| `DateTimePicker` | calendar + time popover | sugar for `DateField.withTime()`; `timezone(tz)` |
 | `ColorPicker` | hex input + swatch | |
 | `FileUpload` | drop zone | reads `RenderContext.uploadUrl` |
 | `Repeater` | nested rows | array-of-subschema |
@@ -233,6 +233,22 @@ sizes purely to content. `disableGrammarly()` adds
 data-enable-grammarly="false"` so the third-party extension skips the
 field — useful for sensitive content (slug source, code snippets, DB
 queries) where the overlay corrupts cursor placement.
+
+## Date / DateTimePicker setters
+
+```ts
+DateTimePicker.make('publishedAt')
+  .timezone('Asia/Jerusalem')   // display + parse wall-clock in this IANA zone
+```
+
+The stored value is always a UTC instant. By default the picker shows
+(and reads back) **UTC wall time** — saving without edits never shifts
+the value, regardless of the server's or visitor's timezone.
+`timezone()` shifts only the wall-clock shown in the picker: a stored
+`06:30Z` renders as `09:30` under `Asia/Jerusalem`, and a picked
+`09:30` saves back as `06:30Z`. Unknown IANA names throw at config
+time. No effect on date-only fields (a zone shift could move the
+calendar day).
 
 ## FileUpload-specific setters
 

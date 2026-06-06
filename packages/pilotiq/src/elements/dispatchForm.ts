@@ -19,6 +19,7 @@ import {
   type MorphRelationDescriptor,
 } from '../orm/modelDefaults.js'
 import { resolveM2MAccessor } from '../orm/m2mAccessor.js'
+import { parseDateTimeWire } from '../fields/dateTimeWire.js'
 
 /**
  * Server-emitted rename of a `Repeater.relationship` / `Builder.relationship`
@@ -320,11 +321,15 @@ export function coerceFormValues(
       case 'date':
       case 'dateTime': {
         // Both 'date' and 'dateTime' accept ISO strings and
-        // YYYY-MM-DD(THH:mm) shapes — `new Date()` handles both.
+        // YYYY-MM-DD(THH:mm) shapes. Naive date-times parse as
+        // wall-clock UTC (matching the renderer's wire formatting) or
+        // in the field's `timezone()` when set — structural getter
+        // probe, not `instanceof` (Vite SSR module-cache duplication).
         if (raw === undefined || raw === null || raw === '') {
           out[name] = null
         } else if (typeof raw === 'string') {
-          out[name] = new Date(raw)
+          const getTz = (field as { getTimezone?: () => string | undefined }).getTimezone
+          out[name] = parseDateTimeWire(raw, typeof getTz === 'function' ? getTz.call(field) : undefined)
         }
         break
       }
