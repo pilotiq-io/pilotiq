@@ -61,6 +61,7 @@ declare module '@rudderjs/orm' {
       deletedAt: string | null
       createdAt: string | null
       updatedAt: string | null
+      metaImage: string | null
     }
     post_author: {
       postId: string

@@ -4,7 +4,7 @@ import {
   TextField, TextareaField, SelectField, SlugField,
   DateTimePicker, FileUpload,
   MultiSelectFilter,
-  Section, Grid, Group, Split,
+  Section, Grid, Group, Split, Tabs, Tab,
   TextEntry, BadgeEntry, ImageEntry, ComponentEntry,
   unique,
   type Form, type Table, type Element,
@@ -54,42 +54,69 @@ export class PostResource extends Resource {
 
   static override form(form: Form): Form {
     return form.schema([
+      TextField.make('title').required().placeholder('Post title…'),
+
       Split.make().schema([
-        // ── Main column ─────────────────────────────────
+        // ── Main column: Content | Meta | Seo ────────────
         Group.make().schema([
-          TextField.make('title').required().placeholder('Post title…'),
-          SlugField.make('slug')
-            .from('title')
-            .required()
-            .validate(unique({ model: Post }))
-            .helperText('Auto-fills from the title; edit to override.'),
-          RichTextField.make('content')
-            .label('Content')
-            .placeholder('Start writing…')
-            .enableToolbarButtons(['attachFiles', 'table'])
-            .resizableImages()
-            .fileAttachmentsAcceptedFileTypes(['image/*'])
-            .fileAttachmentsMaxSize(2_000_000)
-            .fileAttachmentsDirectory('posts')
-            .blocks([
-              Block.make('callout').label('Callout').icon('💡').schema([
-                TextField.make('title').label('Title').placeholder('Callout title'),
-                TextareaField.make('content').label('Content').required(),
-                SelectField.make('tone').label('Tone').options([
-                  { value: 'info',    label: 'Info' },
-                  { value: 'warning', label: 'Warning' },
-                  { value: 'success', label: 'Success' },
+          Tabs.make().variant('underline').tabs([
+            Tab.make('Content').schema([
+              FileUpload.make('image')
+                .label('Image')
+                .accept(['image/*'])
+                .maxSize(2_000_000)
+                .directory('covers'),
+              RichTextField.make('content')
+                .label('Content')
+                .placeholder('Start writing…')
+                .enableToolbarButtons(['attachFiles', 'table'])
+                .resizableImages()
+                .fileAttachmentsAcceptedFileTypes(['image/*'])
+                .fileAttachmentsMaxSize(2_000_000)
+                .fileAttachmentsDirectory('posts')
+                .blocks([
+                  Block.make('callout').label('Callout').icon('💡').schema([
+                    TextField.make('title').label('Title').placeholder('Callout title'),
+                    TextareaField.make('content').label('Content').required(),
+                    SelectField.make('tone').label('Tone').options([
+                      { value: 'info',    label: 'Info' },
+                      { value: 'warning', label: 'Warning' },
+                      { value: 'success', label: 'Success' },
+                    ]),
+                  ]),
                 ]),
-              ]),
             ]),
-          Section.make('SEO')
-            .description('Search-engine metadata. Falls back to the title and an excerpt when empty.')
-            .collapsible()
-            .defaultCollapsed()
-            .schema([
-              TextField.make('metaTitle').label('Meta title'),
-              TextareaField.make('metaDescription').label('Meta description').rows(2),
+            Tab.make('Meta').schema([
+              SelectField.make('relatedPosts')
+                .label('Related posts')
+                .multiple()
+                .relationship('relatedPosts')
+                .options(async (ctx) => {
+                  const selfId = (ctx?.record as { id?: string } | undefined)?.id
+                  const rows = await Post.query().paginate(1, 200)
+                  return rows.data
+                    .filter((p) => p.id !== selfId)
+                    .map((p) => ({ value: p.id, label: p.title }))
+                }),
+              SelectField.make('categories')
+                .label('Categories')
+                .multiple()
+                .relationship('categories')
+                .options(async () => {
+                  const rows = await Category.query().paginate(1, 200)
+                  return rows.data.map((c) => ({ value: c.id, label: c.name }))
+                }),
             ]),
+            Tab.make('Seo').schema([
+              TextField.make('metaTitle').label('Title'),
+              TextareaField.make('metaDescription').label('Description').rows(2),
+              FileUpload.make('metaImage')
+                .label('Meta image')
+                .accept(['image/*'])
+                .maxSize(2_000_000)
+                .directory('seo'),
+            ]),
+          ]),
         ]),
 
         // ── Aside ────────────────────────────────────────
@@ -100,11 +127,6 @@ export class PostResource extends Resource {
             { value: 'archived',  label: 'Archived' },
           ]),
           DateTimePicker.make('publishedAt').label('Published at'),
-          FileUpload.make('image')
-            .label('Cover image')
-            .accept(['image/*'])
-            .maxSize(2_000_000)
-            .directory('covers'),
           SelectField.make('authors')
             .label('Authors')
             .multiple()
@@ -113,25 +135,11 @@ export class PostResource extends Resource {
               const users = await User.query().paginate(1, 200)
               return users.data.map((u) => ({ value: u.id, label: u.name }))
             }),
-          SelectField.make('categories')
-            .label('Categories')
-            .multiple()
-            .relationship('categories')
-            .options(async () => {
-              const rows = await Category.query().paginate(1, 200)
-              return rows.data.map((c) => ({ value: c.id, label: c.name }))
-            }),
-          SelectField.make('relatedPosts')
-            .label('Related posts')
-            .multiple()
-            .relationship('relatedPosts')
-            .options(async (ctx) => {
-              const selfId = (ctx?.record as { id?: string } | undefined)?.id
-              const rows = await Post.query().paginate(1, 200)
-              return rows.data
-                .filter((p) => p.id !== selfId)
-                .map((p) => ({ value: p.id, label: p.title }))
-            }),
+          SlugField.make('slug')
+            .from('title')
+            .required()
+            .validate(unique({ model: Post }))
+            .helperText('Auto-fills from the title; edit to override.'),
         ]),
       ]),
     ])

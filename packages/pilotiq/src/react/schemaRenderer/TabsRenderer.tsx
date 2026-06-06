@@ -53,7 +53,12 @@ export function TabsRenderer({
         ))}
       </TabsList>
       {tabs.map((tab, i) => (
-        <TabsContent key={i} value={tabValues[i]!} className="pt-2">
+        // keepMounted: inactive panels stay in the DOM (Base UI stamps
+        // `hidden`) so form fields inside non-active tabs keep their typed
+        // values AND still serialize into FormData on submit — without it
+        // every field outside the active tab would be dropped from the
+        // save body. Mirrors the Wizard renderer's display:none posture.
+        <TabsContent key={i} value={tabValues[i]!} className="pt-2" keepMounted>
           {renderChildren(tab['children'] as ElementMeta[] | undefined, 'gap-4', renderElement)}
         </TabsContent>
       ))}
