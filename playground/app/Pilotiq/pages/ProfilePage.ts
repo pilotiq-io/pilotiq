@@ -21,13 +21,17 @@ export class ProfilePage extends Page {
 
   static override schema() {
     return [
-      Heading.make('My profile').description('Update your account details.'),
+      Heading.make('My profile')
+        .description('Update your account details.')
+        .actions([
+          Action.make('submit').label('Update profile').submit().form('profile-form'),
+        ]),
       Section.make('Identity').schema([
         Form.make()
+          .formId('profile-form')
           .schema([
             TextField.make('name').label('Name').required(),
             EmailField.make('email').label('Email').required(),
-            Action.make('submit').label('Update profile').submit(),
           ])
           .loadRecord(async (_id, ctx) => {
             const user = (ctx as { user?: { id?: string; name?: string; email?: string } | null }).user
