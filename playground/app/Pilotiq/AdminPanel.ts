@@ -125,6 +125,9 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   // seeder creates, so the profile page's save writes through to a real
   // record and `Notification.sendToDatabase(user)` scopes the bell
   // correctly. Real apps pass `req => Auth.user()` (from `@rudderjs/auth`).
+  // NOTE: bootstrap/providers.ts overrides this with a DB-backed resolver
+  // (re-reads the row per request so profile edits reflect in the chrome);
+  // this static literal is the client-safe fresh-DB fallback.
   .user(() => ({
     id:    'demo-admin',
     role:  'admin',
