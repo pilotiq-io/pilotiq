@@ -50,7 +50,8 @@ export class ProfilePage extends Page {
               })
             }
             return data
-          }),
+          })
+          .savedNotification('Profile updated'),
       ]),
     ]
   }
