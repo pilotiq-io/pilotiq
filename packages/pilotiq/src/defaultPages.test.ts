@@ -356,6 +356,53 @@ describe('ListPage / CreatePage / EditPage / ViewPage base classes', () => {
     assert.equal(edit.getPlacement(), 'row', 'recordActions slot stamps row placement')
   })
 
+  it('subclasses can override getBulkActions to opt in', async () => {
+    class WithBulk extends ListPage {
+      static override getResource() { return ArticleResource }
+      static override getBulkActions(R: typeof ArticleResource, basePath: string) {
+        return [Action.bulkDelete(R, basePath)]
+      }
+    }
+    const table = (await WithBulk.schema({ basePath: '/admin' }))[1] as unknown as Table
+    const tableActions = (table.getChildren() ?? []).filter((c): c is Action => c instanceof Action)
+    const bulk = tableActions.find(a => a.name === 'bulkDelete')
+    assert.ok(bulk, 'bulkDelete should be added by the hook')
+    assert.equal(bulk!.getPlacement(), 'bulk', 'bulkActions slot stamps bulk placement')
+  })
+
+  it('getBulkActions defaults to [] — no bulk actions auto-inject', async () => {
+    class Bare extends ListPage {
+      static override getResource() { return ArticleResource }
+    }
+    const table = (await Bare.schema({ basePath: '/admin' }))[1] as unknown as Table
+    const bulky = (table.getChildren() ?? [])
+      .filter((c): c is Action => c instanceof Action)
+      .filter(a => a.getPlacement() === 'bulk')
+    assert.equal(bulky.length, 0)
+  })
+
+  it('Resource.table() bulk actions win over identically-named getBulkActions results', async () => {
+    class CustomBulk extends ArticleResource {
+      static override table(t: Table): Table {
+        return t.columns([Column.make('title')]).bulkActions([
+          Action.make('bulkDelete').label('Purge').handler(async () => ({})),
+        ])
+      }
+    }
+    class List extends ListPage {
+      static override getResource() { return CustomBulk }
+      static override getBulkActions(R: typeof CustomBulk, basePath: string) {
+        return [Action.bulkDelete(R, basePath)]
+      }
+    }
+    const table = (await List.schema({ basePath: '/admin' }))[1] as unknown as Table
+    const bulks = (table.getChildren() ?? [])
+      .filter((c): c is Action => c instanceof Action)
+      .filter(a => a.name === 'bulkDelete')
+    assert.equal(bulks.length, 1, 'only one bulkDelete action should exist')
+    assert.equal(bulks[0]!.getLabel(), 'Purge', 'user label in table() should win')
+  })
+
   it('Resource.table() actions win over identically-named page-level overrides', async () => {
     class CustomActions extends ArticleResource {
       static override table(t: Table): Table {

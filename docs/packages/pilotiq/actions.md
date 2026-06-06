@@ -127,7 +127,7 @@ class ListPosts extends ListPage {
 
 Visibility delegates to `R.canCreate(user)` — replicating writes a new row, so the gate is `canCreate`, not `canView`. Errors raised by `R.model.create` (e.g. unique-constraint violations) surface as a destructive toast and the user stays on the list.
 
-`Action.bulkReplicate(R, base, opts?)` is the bulk sibling — drop into `Resource.table().bulkActions([...])` to clone every selected row in one click. Same `excludeAttributes` + `beforeReplicaSaved` options as the row-level factory; iterates `ctx.records`, skips per-row `canCreate` denials and rows that throw, and notifies with the count actually replicated.
+`Action.bulkReplicate(R, base, opts?)` is the bulk sibling — drop into `Resource.table().bulkActions([...])` (or a `ListPage.getBulkActions(R, basePath)` override) to clone every selected row in one click. Same `excludeAttributes` + `beforeReplicaSaved` options as the row-level factory; iterates `ctx.records`, skips per-row `canCreate` denials and rows that throw, and notifies with the count actually replicated.
 
 ## ActionGroup (dropdown)
 

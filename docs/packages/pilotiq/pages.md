@@ -198,7 +198,7 @@ class EditArticle extends EditPage {
 ```
 
 Override surface:
-- **`ListPage`**: `getHeader(R)`, `getHeaderActions(R, basePath)`, `getRowActions(R, basePath)`.
+- **`ListPage`**: `getHeader(R)`, `getHeaderActions(R, basePath)`, `getRowActions(R, basePath)`, `getBulkActions(R, basePath)`, `getTabs(R)`.
 - **`CreatePage`**: `getHeader(R)`, `getFormActions(R, basePath)` plus form lifecycle (`mutateFormDataBefore/AfterFill`, `mutateData`, `mutateDataBeforeCreate`, `beforeSave`, `beforeCreate`, `afterCreate`, `afterSave`, `handleCreate`, `getRedirectUrl`, `getCreatedNotificationTitle`).
 - **`EditPage`**: same surface but with `getFormActions(R, basePath, recordId?)`, `…BeforeUpdate / handleUpdate / getSavedNotificationTitle`.
 - **`ViewPage`**: `getHeader(R, record)`, `getActions(R, recordId, basePath)`.

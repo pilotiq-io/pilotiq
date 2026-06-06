@@ -132,8 +132,10 @@ export class ListPage extends ResourcePage {
     )
     const headers = this.getHeaderActions(R, basePath).filter(a => !existing.has(a.name))
     const rows    = this.getRowActions(R, basePath).filter(a => !existing.has(a.name))
+    const bulks   = this.getBulkActions(R, basePath).filter(a => !existing.has(a.name))
     if (headers.length > 0) table.headerActions(headers)
     if (rows.length    > 0) table.recordActions(rows)
+    if (bulks.length   > 0) table.bulkActions(bulks)
 
     // Wrap the user's `getTabs()` array (if any) in a ListTabs container
     // and slot it between the heading and the Table. The page-data
@@ -197,6 +199,25 @@ export class ListPage extends ResourcePage {
    * use the `:id` template; the renderer fills it in for each row.
    */
   static getRowActions(_R: ResourceClass, _basePath: string): Action[] {
+    return []
+  }
+
+  /**
+   * Bulk actions shown in the selection toolbar when rows are checked.
+   * Returns `[]` by default — Filament-style explicit. Override to add
+   * a bulk delete:
+   *
+   * @example
+   * static override getBulkActions(R, basePath) {
+   *   return [Action.bulkDelete(R, basePath)]
+   * }
+   *
+   * Or call it explicitly inside `Resource.table()` via
+   * `table.bulkActions([Action.bulkDelete(R, basePath)])` — actions the
+   * user already added there win over same-named hook results (same
+   * dedup rule as `getHeaderActions` / `getRowActions`).
+   */
+  static getBulkActions(_R: ResourceClass, _basePath: string): Action[] {
     return []
   }
 

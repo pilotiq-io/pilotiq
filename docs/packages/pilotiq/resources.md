@@ -536,10 +536,15 @@ class ListArticles extends ListPage {
   static override getRowActions(R, basePath) {
     return [Action.edit(R, basePath), Action.delete(R, basePath)]
   }
+  static override getBulkActions(R, basePath) {
+    return [Action.bulkDelete(R, basePath)]
+  }
 }
 ```
 
 The page-subclass path is usually the right choice because `Resource.table()` doesn't have a `basePath` argument — it doesn't know which panel it's mounted on.
+
+All three hooks default to `[]` (explicit opt-in) and share the same dedup rule: actions you already added inside `Resource.table()` win over same-named hook results.
 
 **`CreatePage` / `EditPage` form submit:**
 
