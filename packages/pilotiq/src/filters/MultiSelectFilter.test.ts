@@ -117,3 +117,16 @@ describe('MultiSelectFilter ORM integration', () => {
     assert.equal(ops.find(o => o.op === 'where' && (o.args as unknown[])[0] === 'status'), undefined)
   })
 })
+
+describe('MultiSelectFilter — numeric option values', () => {
+  it('normalizes numeric values to strings at the setter', () => {
+    const f = MultiSelectFilter.make('categoryId').options([
+      { value: 1, label: 'News' },
+      { value: 2, label: 'Sports' },
+    ])
+    assert.deepEqual(f.getOptions(), [
+      { value: '1', label: 'News' },
+      { value: '2', label: 'Sports' },
+    ])
+  })
+})

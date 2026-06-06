@@ -756,7 +756,7 @@ describe('formCreateOptionData (audit row 2026-05-07 cont\'d⁸)', () => {
     const r = result as { ok: false; status: number; error: string }
     assert.equal(r.ok, false)
     assert.equal(r.status, 500)
-    assert.match(r.error, /\{ value: string, label: string \}/)
+    assert.match(r.error, /\{ value: string \| number, label: string \}/)
   })
 })
 

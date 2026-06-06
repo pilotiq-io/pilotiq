@@ -1,8 +1,11 @@
 import { Filter, type FilterKind, type FilterMeta } from './Filter.js'
 import type { ModelQuery } from '../orm/modelDefaults.js'
 
+/** `value` accepts `number` (integer-PK / enum-int columns) — normalized
+ * to the string wire shape at the `.options()` setter (URL filter values
+ * are strings; the default `IN` handler passes the tokens through). */
 export interface MultiSelectFilterOption {
-  value: string
+  value: string | number
   label: string
 }
 
@@ -40,7 +43,7 @@ export function encodeMultiSelectValue(values: ReadonlyArray<string>): string {
  * ])
  */
 export class MultiSelectFilter extends Filter {
-  private _options: MultiSelectFilterOption[] = []
+  private _options: Array<{ value: string; label: string }> = []
 
   static make(name: string): MultiSelectFilter {
     const f = new MultiSelectFilter(name)
@@ -53,11 +56,11 @@ export class MultiSelectFilter extends Filter {
   }
 
   options(opts: MultiSelectFilterOption[]): this {
-    this._options = opts
+    this._options = opts.map(o => ({ ...o, value: String(o.value) }))
     return this
   }
 
-  getOptions(): MultiSelectFilterOption[] { return this._options }
+  getOptions(): Array<{ value: string; label: string }> { return this._options }
 
   override getKind(): FilterKind { return 'multiSelect' }
 

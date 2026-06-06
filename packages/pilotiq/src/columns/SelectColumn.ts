@@ -1,10 +1,12 @@
 import { Column, type ColumnMeta, type ColumnSelectOption } from '../Column.js'
 
 /** Accepted shapes for `SelectColumn.options(...)`. The map form
- * (`{ draft: 'Draft' }`) is convenience sugar for the array form. */
+ * (`{ draft: 'Draft' }`) is convenience sugar for the array form.
+ * Array-form `value` accepts `number` (integer-PK apps) — normalized
+ * to the string wire shape by `normalizeSelectOptions`. */
 export type SelectColumnOptionsInput =
   | Record<string, string>
-  | Array<ColumnSelectOption>
+  | Array<{ value: string | number; label: string }>
 
 /** Per-row resolver — runs once per visible row at table-data time and
  * stamps the resolved options on the row under `_cellSelectOptions[col]`
@@ -18,7 +20,7 @@ export type SelectColumnOptionsResolver =
  * inside `dispatchTable.ts`. */
 export function normalizeSelectOptions(opts: SelectColumnOptionsInput): ColumnSelectOption[] {
   return Array.isArray(opts)
-    ? opts.map(o => ({ value: o.value, label: o.label }))
+    ? opts.map(o => ({ value: String(o.value), label: o.label }))
     : Object.entries(opts).map(([value, label]) => ({ value, label }))
 }
 

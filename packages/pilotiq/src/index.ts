@@ -456,6 +456,7 @@ export type {
 } from './uploads/index.js'
 export {
   type SelectOption,
+  type ResolvedSelectOption,
   type OptionsResolver,
   resolveOptions,
 } from './fields/optionsResolver.js'

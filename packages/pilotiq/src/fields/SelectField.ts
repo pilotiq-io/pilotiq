@@ -4,6 +4,7 @@ import {
   disableOptionsTakenInSiblings,
   type OptionsResolver,
   type SelectOption,
+  type ResolvedSelectOption,
 } from './optionsResolver.js'
 import type { Element, ElementMeta } from '../schema/Element.js'
 import { resolveSchema, type RenderContext } from '../schema/resolveSchema.js'
@@ -21,7 +22,7 @@ export type { OptionsResolver, SelectOption }
  *  in the option list. The handler is user-supplied — pilotiq does not
  *  auto-create against any model. */
 export interface CreateOptionResult {
-  value: string
+  value: string | number
   label: string
 }
 
@@ -225,7 +226,7 @@ export class SelectField extends Field {
   }
   getCreateOptionUrl(): string | undefined { return this._createOptionUrl }
 
-  override async toMeta(ctx?: RenderContext): Promise<FieldMeta & { options: SelectOption[]; createOption?: CreateOptionMeta }> {
+  override async toMeta(ctx?: RenderContext): Promise<FieldMeta & { options: ResolvedSelectOption[]; createOption?: CreateOptionMeta }> {
     if (this._relationship && !this._multiple) {
       throw new Error(
         `SelectField '${this.name}': relationship() requires multiple() in v1. ` +

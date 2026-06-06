@@ -1,7 +1,10 @@
 import { Filter, type FilterKind, type FilterMeta } from './Filter.js'
 
+/** `value` accepts `number` (integer-PK / enum-int columns) — normalized
+ * to the string wire shape at the `.options()` setter (URL filter values
+ * are strings; the default query handler passes the string through). */
 export interface SelectFilterOption {
-  value: string
+  value: string | number
   label: string
 }
 
@@ -17,18 +20,18 @@ export interface SelectFilterOption {
  * ])
  */
 export class SelectFilter extends Filter {
-  private _options: SelectFilterOption[] = []
+  private _options: Array<{ value: string; label: string }> = []
 
   static make(name: string): SelectFilter {
     return new SelectFilter(name)
   }
 
   options(opts: SelectFilterOption[]): this {
-    this._options = opts
+    this._options = opts.map(o => ({ ...o, value: String(o.value) }))
     return this
   }
 
-  getOptions(): SelectFilterOption[] { return this._options }
+  getOptions(): Array<{ value: string; label: string }> { return this._options }
 
   override getKind(): FilterKind { return 'select' }
 

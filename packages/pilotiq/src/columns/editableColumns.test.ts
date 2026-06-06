@@ -236,3 +236,15 @@ describe('SelectColumn', () => {
     })
   })
 })
+
+describe('SelectColumn — numeric option values', () => {
+  it('normalizes array-form numeric values to strings', () => {
+    const meta = SelectColumn.make('assigneeId')
+      .options([{ value: 3, label: 'Ada' }, { value: 'none', label: '—' }])
+      .toMeta()
+    assert.deepEqual(meta.selectOptions, [
+      { value: '3', label: 'Ada' },
+      { value: 'none', label: '—' },
+    ])
+  })
+})

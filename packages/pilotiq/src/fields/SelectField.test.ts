@@ -190,3 +190,27 @@ describe('SelectField', () => {
     })
   })
 })
+
+describe('numeric option values (string | number widening)', () => {
+  it('normalizes static numeric values to the string wire shape', async () => {
+    const f = SelectField.make('categoryId').options([
+      { value: 1, label: 'News' },
+      { value: 2, label: 'Sports', disabled: true },
+      { value: 'misc', label: 'Misc' },
+    ])
+    const meta = await f.toMeta()
+    assert.deepEqual(meta.options, [
+      { value: '1', label: 'News' },
+      { value: '2', label: 'Sports', disabled: true },
+      { value: 'misc', label: 'Misc' },
+    ])
+  })
+
+  it('normalizes resolver-returned numeric values', async () => {
+    const f = SelectField.make('authorId').options(async () => [
+      { value: 7, label: 'Ada' },
+    ])
+    const meta = await f.toMeta()
+    assert.deepEqual(meta.options, [{ value: '7', label: 'Ada' }])
+  })
+})

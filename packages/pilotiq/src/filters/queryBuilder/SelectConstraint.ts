@@ -11,8 +11,8 @@ export class SelectConstraint extends Constraint {
 
   private _options: Array<{ value: string; label: string }> = []
 
-  options(opts: Array<{ value: string; label: string }>): this {
-    this._options = opts
+  options(opts: Array<{ value: string | number; label: string }>): this {
+    this._options = opts.map(o => ({ value: String(o.value), label: o.label }))
     return this
   }
 

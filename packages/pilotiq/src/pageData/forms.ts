@@ -392,18 +392,24 @@ export async function formCreateOptionData(
     values: coerced,
     ...(record !== undefined ? { record } : {}),
   }
-  let option: { value: string; label: string }
+  let option: { value: string | number; label: string }
   try {
     option = await handler(coerced, ctx)
   } catch (e) {
     return { ok: false, status: 500, error: e instanceof Error ? e.message : String(e) }
   }
 
-  if (!option || typeof option.value !== 'string' || typeof option.label !== 'string') {
-    return { ok: false, status: 500, error: `createOptionUsing must return { value: string, label: string }` }
+  if (
+    !option ||
+    (typeof option.value !== 'string' && typeof option.value !== 'number') ||
+    typeof option.label !== 'string'
+  ) {
+    return { ok: false, status: 500, error: `createOptionUsing must return { value: string | number, label: string }` }
   }
 
-  return { ok: true, option }
+  // Numeric values (integer-PK apps returning the fresh row's id) normalize
+  // to the string wire shape — same boundary as `resolveOptions`.
+  return { ok: true, option: { value: String(option.value), label: option.label } }
 }
 
 // ─── Async-mention resolve data builder ──────────────────────

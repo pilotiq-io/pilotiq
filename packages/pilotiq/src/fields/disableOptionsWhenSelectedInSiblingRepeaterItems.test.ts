@@ -10,7 +10,7 @@ import { RepeaterField, type RepeaterFieldMeta } from './RepeaterField.js'
 import { BuilderField, type BuilderFieldMeta } from './BuilderField.js'
 import { Block } from '../schema/Block.js'
 import { resolveSchema } from '../schema/resolveSchema.js'
-import { disableOptionsTakenInSiblings, type SelectOption } from './optionsResolver.js'
+import { disableOptionsTakenInSiblings, type ResolvedSelectOption } from './optionsResolver.js'
 
 const colours = [
   { value: 'red',   label: 'Red'   },
@@ -18,12 +18,12 @@ const colours = [
   { value: 'blue',  label: 'Blue'  },
 ]
 
-function rowOptions(meta: RepeaterFieldMeta | BuilderFieldMeta, rowIdx: number, fieldName: string): SelectOption[] {
+function rowOptions(meta: RepeaterFieldMeta | BuilderFieldMeta, rowIdx: number, fieldName: string): ResolvedSelectOption[] {
   const row = meta.rows[rowIdx]
   if (!row) throw new Error(`row ${rowIdx} missing`)
   const child = row.children.find(c => c['name'] === fieldName)
   if (!child) throw new Error(`field "${fieldName}" missing in row ${rowIdx}`)
-  return (child['options'] as SelectOption[]) ?? []
+  return (child['options'] as ResolvedSelectOption[]) ?? []
 }
 
 describe('disableOptionsWhenSelectedInSiblingRepeaterItems', () => {
@@ -105,7 +105,7 @@ describe('disableOptionsWhenSelectedInSiblingRepeaterItems', () => {
     })
 
     it('preserves user-set option.disabled (does not toggle it back to undefined)', () => {
-      const opts: SelectOption[] = [
+      const opts: ResolvedSelectOption[] = [
         { value: 'red', label: 'Red', disabled: true },
         { value: 'green', label: 'Green' },
       ]
@@ -203,7 +203,7 @@ describe('disableOptionsWhenSelectedInSiblingRepeaterItems', () => {
     it('top-level (non-Repeater) Select with the flag set is a no-op', async () => {
       const top = SelectField.make('color').options(colours).disableOptionsWhenSelectedInSiblingRepeaterItems()
       const [raw] = await resolveSchema([top], { values: { color: 'red' } })
-      const opts = (raw?.['options'] as SelectOption[]) ?? []
+      const opts = (raw?.['options'] as ResolvedSelectOption[]) ?? []
       assert.equal(opts.every(o => !o.disabled), true)
     })
 

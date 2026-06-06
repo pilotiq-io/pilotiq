@@ -135,6 +135,26 @@ The selected ids JSON-encode into a single hidden input (same wire shape as
 on an empty selection. Stored as a JSON column unless paired with
 `relationship()`.
 
+### Numeric option values
+
+Option `value`s accept `number` as well as `string` — integer-PK apps can
+return ids directly instead of wrapping every one in `String(...)`:
+
+```ts
+SelectField.make('authorId').options(async () => {
+  const rows = await User.query().paginate(1, 100)
+  return rows.data.map(u => ({ value: u.id, label: u.name }))  // numeric ids OK
+})
+```
+
+HTML form bodies are string-only, so numeric values are normalized to
+strings at the wire boundary — what the renderer sees, and what comes back
+on submit, is always a string. Coerce it back with `dehydrateStateUsing`
+(or lean on the ORM's casts) when the column is numeric. The same widening
+applies to `RadioField` / `CheckboxList` / `ToggleButtons` options,
+`SelectColumn.options(...)`, `SelectFilter` / `MultiSelectFilter` /
+`SelectConstraint` options, and `createOptionUsing`'s returned `value`.
+
 ### Relationship-backed values
 
 `relationship(name)` binds a multi-select to an M2M relation on the parent
