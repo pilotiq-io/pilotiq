@@ -1,4 +1,4 @@
-import { Page, Form, Heading, TextField, EmailField, Section } from '@pilotiq/pilotiq'
+import { Page, Form, Heading, TextField, EmailField, Section, Action } from '@pilotiq/pilotiq'
 import { User } from '../../Models/User.js'
 
 /**
@@ -27,6 +27,7 @@ export class ProfilePage extends Page {
           .schema([
             TextField.make('name').label('Name').required(),
             EmailField.make('email').label('Email').required(),
+            Action.make('submit').label('Update profile').submit(),
           ])
           .loadRecord(async (_id, ctx) => {
             const user = (ctx as { user?: { id?: string; name?: string; email?: string } | null }).user
