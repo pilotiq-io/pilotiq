@@ -180,20 +180,18 @@ describe('SelectField.relationship — full pipeline', () => {
     )
   })
 
-  it('loose-diffs against numeric pivot PKs when parentModel is on the ctx', async () => {
-    // Form ids are strings but the pivot stores numbers — a strict
-    // accessor.sync would re-attach "3" over 3 and trip the pivot's
-    // UNIQUE constraint. With parentModel available, pilotiq diffs
-    // itself: attach coerced to numbers, detach with the raw PKs,
-    // sync never called.
-    const attachCalls: unknown[] = []
-    const detachCalls: unknown[] = []
+  it('delegates string ids straight to accessor.sync even with parentModel on the ctx', async () => {
+    // Form ids are strings while numeric-PK pivots store numbers — the
+    // ORM's sync compares ids loosely (String() form) and writes
+    // DB-typed values since @rudderjs/orm 1.17.1, so pilotiq no longer
+    // diffs manually; the submitted ids go to sync() as-is.
+    const syncCalls: Array<ReadonlyArray<string | number>> = []
     const savedRecord = {
       id: 1,
       categories: () => ({
-        attach: async (ids: unknown) => { attachCalls.push(ids) },
-        detach: async (ids: unknown) => { detachCalls.push(ids) },
-        sync:   async () => { throw new Error('sync must not be called when the manual diff runs') },
+        attach: async () => { throw new Error('attach must not be called — sync owns the diff') },
+        detach: async () => { throw new Error('detach must not be called — sync owns the diff') },
+        sync:   async (ids: ReadonlyArray<string | number>) => { syncCalls.push(ids) },
       }),
     }
     const childModel: ModelLike = {
@@ -204,8 +202,6 @@ describe('SelectField.relationship — full pipeline', () => {
       delete: async () => {},
       query:  () => ({} as never),
     }
-    // `relations` isn't on the structural ModelLike — pilotiq reads it
-    // off the static via pickChildPrimaryKey, so widen through unknown.
     const parentModel = {
       ...childModel,
       relations: { categories: { type: 'belongsToMany', model: () => childModel } },
@@ -222,8 +218,7 @@ describe('SelectField.relationship — full pipeline', () => {
     )
 
     assert.equal(result.ok, true)
-    assert.deepEqual(attachCalls, [[2]])
-    assert.deepEqual(detachCalls, [[3]])
+    assert.deepEqual(syncCalls, [['1', '2']])
   })
 })
 

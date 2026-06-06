@@ -13,7 +13,6 @@ import {
   getM2MRelationDescriptor,
   computeMorphPayload,
   getPrimaryKey,
-  pickChildPrimaryKey,
   resolveRelatedQuery,
   type ModelLike,
   type MorphRelationDescriptor,
@@ -196,10 +195,8 @@ export async function dispatchFormSubmit<R = unknown>(
   // Sync relationship-backed multi-selects against the saved parent.
   // Same placement contract as the Repeater/Builder persists: BEFORE
   // `afterCreate / afterUpdate` so user hooks observe the synced pivots.
-  // `parentModel` is optional here (unlike the Repeater path) — without
-  // it the sync falls back to the accessor's own diff.
   for (const deferral of selectRelationshipDeferrals) {
-    await syncRelationshipSelect(record, deferral, (ctx as { parentModel?: ModelLike }).parentModel)
+    await syncRelationshipSelect(record, deferral)
   }
 
   const modeAfter = isCreate ? form.getAfterCreate() : form.getAfterUpdate()
@@ -1571,26 +1568,18 @@ export function extractRelationshipSelects(
 /**
  * Sync one relationship-backed multi-select against the saved parent.
  * The pivot mutation goes through the ORM's M2M accessor
- * (`parent[rel]().attach/detach`); a missing accessor is a
- * configuration error (wrong relation name, non-M2M relation type, or
- * a save handler that didn't return the model instance).
+ * (`parent[rel]().sync(ids)`); a missing accessor is a configuration
+ * error (wrong relation name, non-M2M relation type, or a save handler
+ * that didn't return the model instance).
  *
- * Pilotiq diffs the submitted ids against the currently-attached rows
- * itself rather than calling `accessor.sync(ids)`: form values are
- * always strings, while numeric-PK pivots store numbers, and the ORM's
- * sync compares strictly — `"3" !== 3` makes it re-attach existing
- * rows and trip the pivot's UNIQUE constraint. The loose String() diff
- * here detaches with the RAW loaded PK values and coerces numeric-
- * string attach ids to numbers when the loaded PKs are numeric, so
- * both writes land typed like the rest of the pivot table. Falls back
- * to `accessor.sync(ids)` when the current rows can't be read (no
- * parentModel on the FormContext — e.g. custom pages — or a relation
- * the parent model can't resolve).
+ * Form values are always strings while numeric-PK pivots store
+ * numbers — the ORM's sync/attach/detach compare ids loosely (String()
+ * form) and write DB-typed values since @rudderjs/orm 1.17.1, so the
+ * submitted string ids can be handed over as-is.
  */
 async function syncRelationshipSelect(
-  record:      unknown,
-  deferral:    SelectRelationshipDeferral,
-  parentModel: ModelLike | undefined,
+  record:   unknown,
+  deferral: SelectRelationshipDeferral,
 ): Promise<void> {
   const accessor = resolveM2MAccessor(record, deferral.name)
   if (!accessor) {
@@ -1602,41 +1591,13 @@ async function syncRelationshipSelect(
       `form's save handler returns the model instance.`,
     )
   }
-
-  let currentPks: Array<string | number> | undefined
-  if (parentModel && typeof accessor.attach === 'function' && typeof accessor.detach === 'function') {
-    try {
-      const rows = await loadRelationRows(parentModel, record, deferral.name)
-      const pkColumn = pickChildPrimaryKey(parentModel, deferral.name) ?? 'id'
-      currentPks = rows
-        .map(row => (row && typeof row === 'object') ? (row as Record<string, unknown>)[pkColumn] : undefined)
-        .filter((v): v is string | number => typeof v === 'string' || typeof v === 'number')
-    } catch {
-      currentPks = undefined
-    }
+  if (typeof accessor.sync !== 'function') {
+    throw new Error(
+      `[Pilotiq] SelectField('${deferral.field}').relationship('${deferral.name}'): ` +
+      `the M2M accessor for '${deferral.name}' has no sync().`,
+    )
   }
-
-  if (currentPks === undefined) {
-    if (typeof accessor.sync !== 'function') {
-      throw new Error(
-        `[Pilotiq] SelectField('${deferral.field}').relationship('${deferral.name}'): ` +
-        `the M2M accessor for '${deferral.name}' has no sync() and the current relation ` +
-        `rows could not be read for a manual diff.`,
-      )
-    }
-    await accessor.sync(deferral.ids)
-    return
-  }
-
-  const desired    = new Set(deferral.ids)
-  const currentStr = new Set(currentPks.map(pk => String(pk)))
-  const numericPks = currentPks.some(pk => typeof pk === 'number')
-  const toAttach = deferral.ids
-    .filter(id => !currentStr.has(id))
-    .map(id => (numericPks && /^\d+$/.test(id) ? Number(id) : id))
-  const toDetach = currentPks.filter(pk => !desired.has(String(pk)))
-  if (toAttach.length > 0) await accessor.attach!(toAttach)
-  if (toDetach.length > 0) await accessor.detach!(toDetach)
+  await accessor.sync(deferral.ids)
 }
 
 // ─── Repeater.relationship — extraction + persistence ────────
