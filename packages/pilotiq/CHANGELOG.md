@@ -1,5 +1,19 @@
 # @pilotiq/pilotiq
 
+## 0.33.0
+
+### Minor Changes
+
+- 3ba1548: `registerCollabCodeExtensions(factory)` / `getCollabCodeExtensions()` — CodeMirror sibling of the Tiptap `registerCollabExtensions` registry slot. A collab plugin registers a factory `({ ytext, awareness }) => extensions[]` once at boot; `@pilotiq/codemirror`'s editor reads it at mount to decide local vs collab branch, so the adapter never carries `y-codemirror.next` / `yjs` peers itself.
+- 2a9b831: `Field.dehydrateStateUsing(fn)` — submit-time counterpart to `formatStateUsing`. The handler receives the already-coerced value plus `{ record, values }` and returns the value that lands in the persisted payload (classic: `ToggleField.make('active').dehydrateStateUsing(v => v ? 1 : 0)` for an integer column the ORM doesn't cast). Runs after type coercion and before the form-level `mutateData` hook; applies inside Repeater/Builder rows (row-scoped `ctx.values`); `simple()` Repeaters map the inner field's handler over the flat items; a handler on the Repeater/Builder field itself runs last over the whole array. Skipped for `dehydrated(false)` fields, keys absent from the submitted body, and relationship-backed fields (their values persist through the relation diff, not the parent payload). May be async.
+- 9230c14: `ListPage.getBulkActions(R, basePath)` — page-level hook for the selection-toolbar bulk actions, mirroring `getHeaderActions` / `getRowActions`. Returns `[]` by default (Filament-style explicit opt-in); results merge with the same dedup rule — actions you already added inside `Resource.table()` win over same-named hook results — and land through `table.bulkActions()` so `placement: 'bulk'` stamps automatically.
+- e7cdcb3: `ModelQuery` gains `with(...relations)` and `withCount(arg)` as required members, so eager loading typechecks when chaining on pilotiq-typed builders — `Resource.query()` overrides, `TableWidget.query(q => q.with('author'))`, `ListTab.modifyQuery`, `Filter.query`, etc. Rudder Models stay structurally assignable (the ORM `QueryBuilder` always ships both). The `whereGroup` / `orWhereGroup` callback sub-builder is now typed as the narrower `ModelQueryGroup` (where-family subset, newly exported) — matching what rudder's contracts-level builder actually provides inside a group. Type-level breaking for hand-rolled `ModelLike` implementations and test stubs: add `with() { return this }` / `withCount() { return this }`.
+- 5e93043: Option values accept `string | number` — integer-PK apps no longer wrap every id in `String(...)`. Widened: `SelectOption.value` (SelectField / Radio / CheckboxList / ToggleButtons, static arrays and `options(fn)` resolvers), `SelectColumn.options(...)` array form, `SelectFilter` / `MultiSelectFilter` / query-builder `SelectConstraint` options, and `createOptionUsing`'s returned `value`. Numeric values normalize to strings at the wire boundary (HTML form bodies are string-only), so the rendered options — and the value that comes back on submit — are always strings; coerce back with `dehydrateStateUsing` or ORM casts when the column is numeric. New `ResolvedSelectOption` type describes the normalized wire shape.
+
+### Patch Changes
+
+- f0096ea: Fix datetime UTC/local round-trip skew + `DateField.timezone(tz)`. The renderer formatted stored Dates as UTC wall time while the coerce branch parsed the submitted `YYYY-MM-DDTHH:mm` as server-local — saving 09:30 on a UTC+3 server stored 06:30Z and re-rendered shifted. Both sides now share the `dateTimeWire` helpers and default to wall-clock UTC (consistent round-trip); the new Filament-style `timezone('Asia/Jerusalem')` setter displays + parses the picker in an explicit IANA zone while the stored value stays a UTC instant. Naive strings on 422 re-renders pass through without re-parsing; date-only fields are unaffected.
+
 ## 0.32.0
 
 ### Minor Changes
