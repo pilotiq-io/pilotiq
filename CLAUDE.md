@@ -48,11 +48,14 @@ pnpm rudder migrate              # apply database/migrations/ + regen schema typ
 pnpm rudder migrate:status       # ran / pending
 pnpm rudder migrate:fresh --seed # drop all tables + re-run + seed demo CMS content
 pnpm rudder db:seed              # run database/seeders/DatabaseSeeder (skips when users exist)
-pnpm rudder schema:types         # regen app/Models/__schema/registry.d.ts only
+pnpm rudder schema:types         # regen .rudder/types/models.d.ts only
 pnpm rudder db:show --counts     # inspect the live database
+pnpm rudder providers:discover   # regen bootstrap/cache/providers.json (machine-local, gitignored)
 ```
 
-> The playground runs on rudder's **native database engine** (`@rudderjs/database`, `engine: 'native'` in `config/database.ts`) — no Prisma/Drizzle. Schema lives in `database/migrations/*.ts`; models bind generated column types via `Model.for<'table'>()`. Migrated off `@rudderjs/orm-prisma` 2026-06-05 (old sqlite data preserved in `dev.db.prisma-bak`).
+> The playground runs on rudder's **native database engine** (`@rudderjs/database`, `engine: 'native'` in `config/database.ts`) — no Prisma/Drizzle. Schema lives in `database/migrations/*.ts`; models bind generated column types via `Model.for<'table'>()`. Migrated off `@rudderjs/orm-prisma` 2026-06-05 (old sqlite data preserved in `dev.db.prisma-bak`). Generated type registries live in the **committed** `.rudder/types/` dir (`models.d.ts` / `routes.d.ts` / `views.d.ts`, since the 2026-06-06 rudder releases) and `.rudder/**/*` is in the tsconfig `include` (dot-dirs are invisible to `**/*` globs).
+>
+> **Gotcha — `Cannot resolve "db" from the DI container` on any `rudder` command:** core's built-in provider registry only knows `orm-prisma`; the native `NativeDatabaseProvider` resolves through `bootstrap/cache/providers.json`, which is machine-local + gitignored. Run `pnpm rudder providers:discover` once per clone (or after adding/removing `@rudderjs/*` packages).
 
 ---
 
