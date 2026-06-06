@@ -19,6 +19,10 @@ import type { ModelLike, ModelQuery } from './orm/modelDefaults.js'
 interface QueryRow extends Record<string, unknown> { id: string | number }
 
 class StubQuery implements ModelQuery {
+  // `with` / `withCount` are required on ModelQuery (eager-load surface);
+  // stubs no-op them.
+  with(): ModelQuery { return this }
+  withCount(): ModelQuery { return this }
   private filters: Array<{ col: string; op?: string; val: unknown }> = []
   constructor(private rows: QueryRow[]) {}
 
@@ -78,6 +82,8 @@ function makeParentWithChildren(parentId: string | number, childRows: QueryRow[]
 function findAdapter(find: (id: string) => Promise<unknown>): ModelQuery {
   let captured: unknown
   const q: ModelQuery = {
+    with: () => q,
+    withCount: () => q,
     where(...args: unknown[]): ModelQuery {
       captured = args.length === 2 ? args[1] : args[2]
       return q

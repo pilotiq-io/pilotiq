@@ -62,6 +62,10 @@ function makeFakeModel(opts: {
 }
 
 class FakeQuery implements ModelQuery {
+  // `with` / `withCount` are required on ModelQuery (eager-load surface);
+  // stubs no-op them.
+  with(): ModelQuery { return this }
+  withCount(): ModelQuery { return this }
   ops: Array<{ op: string; args: unknown[] }> = []
   constructor(private readonly _paginateResult: { data: unknown[]; total: number }) {}
 
@@ -672,5 +676,30 @@ describe('findRecord helper', () => {
     assert.deepEqual(ops[0], { op: 'where',    args: ['tenantId', 'other-tenant'] })
     assert.deepEqual(ops[1], { op: 'where',    args: ['id', '=', '7'] })
     assert.deepEqual(ops[2], { op: 'paginate', args: [1, 1] })
+  })
+})
+
+describe('ModelQuery.with / withCount (eager-load typing)', () => {
+  it('chains with(...) and withCount(...) without assertions', async () => {
+    // The roadmap gap: `TableWidget.query(q => q.with('author'))` and
+    // friends receive a pilotiq-typed ModelQuery — the eager-load pair
+    // must be REQUIRED members so chaining typechecks without `!`.
+    const q: ModelQuery = new FakeQuery({ data: [], total: 0 })
+    const chained = q.with('author', 'tags').withCount('comments').where('status', 'published')
+    const result = await chained.paginate(1, 5)
+    assert.deepEqual(result, { data: [], total: 0 })
+  })
+
+  it('whereGroup callbacks receive the where-chain subset (ModelQueryGroup)', () => {
+    // Compile-time contract: the group sub-builder only promises the
+    // where family — mirroring rudder's contracts-level QueryBuilder,
+    // which lacks the hydrating extras inside group callbacks.
+    const calls: string[] = []
+    const group: import('./modelDefaults.js').ModelQueryGroup = {
+      where:   (..._args: unknown[]) => { calls.push('where');   return group },
+      orWhere: (..._args: unknown[]) => { calls.push('orWhere'); return group },
+    }
+    group.where('a', 1).orWhere('b', 2)
+    assert.deepEqual(calls, ['where', 'orWhere'])
   })
 })

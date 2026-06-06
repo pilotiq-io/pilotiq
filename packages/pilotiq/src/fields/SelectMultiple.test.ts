@@ -16,6 +16,8 @@ import type { ModelLike, ModelQuery } from '../orm/modelDefaults.js'
 
 function makeQuery(rows: Array<Record<string, unknown>>): ModelQuery {
   const q: ModelQuery = {
+    with: () => q,
+    withCount: () => q,
     where:   () => q,
     orWhere: () => q,
     orderBy: () => q,

@@ -304,11 +304,13 @@ export interface ModelLike {
   create(data): Promise<unknown>
   update(id, data): Promise<unknown>
   delete(id):  Promise<void>
-  query():     ModelQuery   // .where / .orWhere / .orderBy / .paginate
+  query():     ModelQuery   // .where / .orWhere / .orderBy / .paginate / .with / .withCount
 }
 ```
 
 Any class extending `@rudderjs/orm`'s `Model` satisfies this structurally via its static methods. Pilotiq doesn't import `@rudderjs/orm` at runtime — the contract is pilotiq-internal — so users with a different stack can plug in a hand-rolled object.
+
+`ModelQuery` includes the eager-load pair `with(...relations)` / `withCount(arg)` as **required** members (the rudder `QueryBuilder` always ships them), so chaining them on pilotiq-typed builders — `Resource.query()` overrides, `TableWidget.query(q => …)`, `ListTab.modifyQuery(q => …)` — typechecks directly. A hand-rolled builder without eager-load support can stub them as `with() { return this }` / `withCount() { return this }`. The sub-builder inside `whereGroup` / `orWhereGroup` callbacks is the narrower `ModelQueryGroup` (where-family only — matching what rudder actually passes there).
 
 ---
 
@@ -323,7 +325,7 @@ export class ArticleResource extends Resource {
   static override model = Article
 
   static override query(ctx?: QueryContext): ModelQuery {
-    return super.query(ctx).orderBy('createdAt', 'DESC')
+    return super.query(ctx).with('author').withCount('comments').orderBy('createdAt', 'DESC')
   }
 }
 ```

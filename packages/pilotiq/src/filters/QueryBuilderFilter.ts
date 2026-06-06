@@ -317,9 +317,14 @@ function applyTreeGrouped(
     if (isQueryBuilderTree(child)) {
       // Nested group — recurse inside whereGroup / orWhereGroup so the
       // sub-tree's clauses stay parenthesized.
+      // The group sub-builder is typed `ModelQueryGroup` (where-chain
+      // subset). The recursion + `Constraint.apply` want the full
+      // `ModelQuery` — safe to cast here: rudder hands the callback a
+      // full QueryBuilder at runtime, and this walker only ever emits
+      // where-family calls on it.
       q = useOr
-        ? q.orWhereGroup!(g => { applyTreeGrouped(g, child, map, false) })
-        : q.whereGroup!  (g => { applyTreeGrouped(g, child, map, false) })
+        ? q.orWhereGroup!(g => { applyTreeGrouped(g as ModelQuery, child, map, false) })
+        : q.whereGroup!  (g => { applyTreeGrouped(g as ModelQuery, child, map, false) })
     } else {
       const c = map.get(child.constraint)
       if (!c) continue
@@ -354,7 +359,8 @@ function applyAsOr(q: ModelQuery, c: Constraint, rule: QueryBuilderRule): ModelQ
     // No grouping support — fall back to flat AND so the page still loads.
     return c.apply(q, rule.operator, rule.value)
   }
-  return q.orWhereGroup(g => { c.apply(g, rule.operator, rule.value) })
+  // Same `ModelQueryGroup` → `ModelQuery` cast rationale as applyTreeGrouped.
+  return q.orWhereGroup(g => { c.apply(g as ModelQuery, rule.operator, rule.value) })
 }
 
 /**

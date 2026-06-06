@@ -59,6 +59,8 @@ function makeFakeChildModel(initial: FakeRecord[] = []) {
 
 function makeQuery(rows: FakeRecord[]): ModelQuery {
   const q: ModelQuery = {
+    with: () => q,
+    withCount: () => q,
     where: () => q,
     orWhere: () => q,
     orderBy: () => q,

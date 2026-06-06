@@ -13,6 +13,10 @@ import type { ModelLike, ModelQuery, ModelWhereOperator } from '../orm/modelDefa
 
 interface FakeOp { op: string; args: unknown[] }
 class FakeQuery implements ModelQuery {
+  // `with` / `withCount` are required on ModelQuery (eager-load surface);
+  // stubs no-op them.
+  with(): ModelQuery { return this }
+  withCount(): ModelQuery { return this }
   ops: FakeOp[] = []
   where(...args: unknown[]): ModelQuery   { this.ops.push({ op: 'where', args });   return this }
   orWhere(...args: unknown[]): ModelQuery { this.ops.push({ op: 'orWhere', args }); return this }

@@ -14,6 +14,10 @@ import type { ModelLike, ModelQuery } from '../orm/modelDefaults.js'
 // ─── Test stubs ──────────────────────────────────────────────
 
 class StubQuery implements ModelQuery {
+  // `with` / `withCount` are required on ModelQuery (eager-load surface);
+  // stubs no-op them.
+  with(): ModelQuery { return this }
+  withCount(): ModelQuery { return this }
   public readonly ops: Array<{ op: string; args: unknown[] }> = []
   constructor(private readonly rows: unknown[], private readonly total = rows.length) {}
   where(...args: unknown[]): this { this.ops.push({ op: 'where', args }); return this }

@@ -9,6 +9,10 @@ import type { ModelLike, ModelQuery } from '../orm/modelDefaults.js'
 interface FakeQueryOp { op: string; args: unknown[] }
 
 class FakeQuery implements ModelQuery {
+  // `with` / `withCount` are required on ModelQuery (eager-load surface);
+  // stubs no-op them.
+  with(): ModelQuery { return this }
+  withCount(): ModelQuery { return this }
   ops: FakeQueryOp[] = []
   constructor(private readonly _data: unknown[]) {}
 

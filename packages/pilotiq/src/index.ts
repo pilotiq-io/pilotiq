@@ -143,7 +143,7 @@ export {
 export {
   modelSave, modelLoadRecord, modelTableRecords, findRecord, getPrimaryKey,
   defaultRelatedQuery, resolveRelatedQuery, modelRelationTableRecords,
-  type ModelLike, type ModelQuery, type ModelWhereOperator,
+  type ModelLike, type ModelQuery, type ModelQueryGroup, type ModelWhereOperator,
   type QueryContext, type ResourceLike,
 } from './orm/modelDefaults.js'
 

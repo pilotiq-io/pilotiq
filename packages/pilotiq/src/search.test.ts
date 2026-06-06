@@ -44,6 +44,8 @@ function fakeModel(rows: FakeRow[]): ModelLike & {
         })
       }
       const q: ModelQuery = {
+        with: () => q,
+        withCount: () => q,
         where(col: string, opOrVal: unknown, val?: unknown): ModelQuery {
           wheres.push([col, val !== undefined ? opOrVal : undefined, val !== undefined ? val : opOrVal])
           return q

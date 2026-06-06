@@ -62,6 +62,8 @@ function makeFakeChildModel(initial: FakeRecord[] = []) {
  * query so `where` / `orderBy` are silently ignored. */
 function makeQuery(rows: FakeRecord[]): ModelQuery {
   const q: ModelQuery = {
+    with: () => q,
+    withCount: () => q,
     where: () => q,
     orWhere: () => q,
     orderBy: () => q,
@@ -1402,6 +1404,8 @@ function makeM2MParentSetupWithPivot(opts: {
   function makePivotAwareQuery(rows: FakeRecord[]): ModelQuery {
     let pivotCols: string[] | undefined
     const q: ModelQuery = {
+      with: () => q,
+      withCount: () => q,
       where:    () => q,
       orWhere:  () => q,
       orderBy:  () => q,
@@ -1704,6 +1708,8 @@ describe('Repeater.relationship — pivotColumns', () => {
   it('loadRelationRows — passes pivotColumns into withPivot when supported', async () => {
     let seenCols: string[] | undefined
     const q: ModelQuery = {
+      with: () => q,
+      withCount: () => q,
       where:    () => q,
       orWhere:  () => q,
       orderBy:  () => q,
@@ -1730,6 +1736,8 @@ describe('Repeater.relationship — pivotColumns', () => {
     // A model whose query has no `withPivot` method — pilotiq should
     // call paginate without throwing.
     const q: ModelQuery = {
+      with: () => q,
+      withCount: () => q,
       where:    () => q,
       orWhere:  () => q,
       orderBy:  () => q,

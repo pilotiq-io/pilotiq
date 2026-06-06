@@ -51,6 +51,28 @@ export interface ModelQuery {
   paginate(page: number, perPage?: number): Promise<{ data: unknown[]; total: number }>
 
   /**
+   * Eager-load one or more relations onto the query results — the
+   * standard N+1 guard for `Resource.query()` overrides and
+   * `TableWidget.query(q => …)` hooks. Required (not optional like the
+   * soft-delete scopes) because the rudder `QueryBuilder` always ships
+   * it and user code chains it directly — an optional member would force
+   * `q.with!(…)` at every call site. Custom `ModelLike` implementations
+   * that don't support eager loading can stub it as `with() { return this }`.
+   */
+  with(...relations: string[]): ModelQuery
+
+  /**
+   * Eager-load relation aggregate counts onto each result row
+   * (`withCount('posts')` → `row.postsCount`). Mirrors the rudder
+   * `QueryBuilder` overload set: a single relation name, a list of
+   * names, or a constraint map (`{ posts: q => q.where('published', true) }`
+   * — the rudder builder also supports `.as('alias')` on the constraint).
+   * Required for the same chaining reason as {@link with}; stub as
+   * `withCount() { return this }` on builders without aggregate support.
+   */
+  withCount(arg: string | readonly string[] | Record<string, (query: any) => unknown>): ModelQuery
+
+  /**
    * Single-row `LIMIT 1` SELECT — Laravel-parity sibling of `paginate`
    * for the "first matching row" case. Optional on the structural shape;
    * the `@rudderjs/orm` `QueryBuilder` ships it, test stubs typically
@@ -97,14 +119,38 @@ export interface ModelQuery {
    * or implicitly (`void`); in either case the clauses recorded inside
    * are spliced back into this builder as one composite clause.
    *
+   * The callback's builder is typed {@link ModelQueryGroup} — the
+   * where-chain subset — NOT the full `ModelQuery`. This mirrors the
+   * rudder contracts: the group sub-builder is a plain `QueryBuilder`
+   * without the hydrating extras (`withCount` etc.), and only where
+   * clauses belong inside a parenthesized group anyway.
+   *
    * Optional on the structural shape — when missing, `applyTreeToQuery`
    * falls back to flat AND chaining (v1 behaviour). The rudder ORM ships
    * this on every QueryBuilder; test stubs don't have to.
    */
-  whereGroup?(fn: (q: ModelQuery) => ModelQuery | void): ModelQuery
+  whereGroup?(fn: (q: ModelQueryGroup) => ModelQueryGroup | void): ModelQuery
 
   /** OR-rooted variant of {@link whereGroup}. */
-  orWhereGroup?(fn: (q: ModelQuery) => ModelQuery | void): ModelQuery
+  orWhereGroup?(fn: (q: ModelQueryGroup) => ModelQueryGroup | void): ModelQuery
+}
+
+/**
+ * The sub-builder passed to `whereGroup` / `orWhereGroup` callbacks —
+ * the where-chain subset of {@link ModelQuery}. Kept narrower than the
+ * full shape on purpose: rudder's group callback hands over a plain
+ * contracts-level `QueryBuilder` (no `withCount` / `with` hydrating
+ * extras), so requiring the full `ModelQuery` there would make every
+ * rudder Model structurally UN-assignable to `ModelLike`.
+ */
+export interface ModelQueryGroup {
+  where(column: string, value: unknown): ModelQueryGroup
+  where(column: string, operator: ModelWhereOperator, value: unknown): ModelQueryGroup
+  orWhere(column: string, value: unknown): ModelQueryGroup
+  orWhere(column: string, operator: ModelWhereOperator, value: unknown): ModelQueryGroup
+  whereNull?(column: string): ModelQueryGroup
+  whereGroup?(fn: (q: ModelQueryGroup) => ModelQueryGroup | void): ModelQueryGroup
+  orWhereGroup?(fn: (q: ModelQueryGroup) => ModelQueryGroup | void): ModelQueryGroup
 }
 
 /**
@@ -125,7 +171,7 @@ export interface ModelQuery {
  * `orWhere` chain — the legacy shape — for those callers.
  */
 export function applyColumnSearch(q: ModelQuery, columns: string[], needle: string): ModelQuery {
-  const build = (qb: ModelQuery): void => {
+  const build = (qb: ModelQueryGroup): void => {
     columns.forEach((col, i) => {
       if (i === 0) qb.where(col, 'LIKE', needle)
       else         qb.orWhere(col, 'LIKE', needle)

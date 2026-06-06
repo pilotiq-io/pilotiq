@@ -20,6 +20,10 @@ import type { ModelQuery } from '../orm/modelDefaults.js'
 
 interface FakeOp { op: string; args: unknown[]; sub?: FakeOp[] }
 class FakeQuery implements ModelQuery {
+  // `with` / `withCount` are required on ModelQuery (eager-load surface);
+  // stubs no-op them.
+  with(): ModelQuery { return this }
+  withCount(): ModelQuery { return this }
   ops: FakeOp[] = []
   where(...args: unknown[]): ModelQuery     { this.ops.push({ op: 'where', args });     return this }
   orWhere(...args: unknown[]): ModelQuery   { this.ops.push({ op: 'orWhere', args });   return this }
@@ -42,6 +46,10 @@ class FakeQuery implements ModelQuery {
 
 /** Stub without `whereGroup` — used to verify the v1-compat fallback. */
 class FlatFakeQuery implements ModelQuery {
+  // `with` / `withCount` are required on ModelQuery (eager-load surface);
+  // stubs no-op them.
+  with(): ModelQuery { return this }
+  withCount(): ModelQuery { return this }
   ops: FakeOp[] = []
   where(...args: unknown[]): ModelQuery     { this.ops.push({ op: 'where', args });     return this }
   orWhere(...args: unknown[]): ModelQuery   { this.ops.push({ op: 'orWhere', args });   return this }

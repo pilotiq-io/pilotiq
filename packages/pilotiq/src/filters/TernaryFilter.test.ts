@@ -9,6 +9,10 @@ import type { ModelLike, ModelQuery } from '../orm/modelDefaults.js'
 
 interface FakeOp { op: string; args: unknown[] }
 class FakeQueryWithNull implements ModelQuery {
+  // `with` / `withCount` are required on ModelQuery (eager-load surface);
+  // stubs no-op them.
+  with(): ModelQuery { return this }
+  withCount(): ModelQuery { return this }
   ops: FakeOp[] = []
   where(...args: unknown[]): ModelQuery   { this.ops.push({ op: 'where', args });   return this }
   orWhere(...args: unknown[]): ModelQuery { this.ops.push({ op: 'orWhere', args }); return this }
@@ -18,6 +22,10 @@ class FakeQueryWithNull implements ModelQuery {
 }
 
 class FakeQueryNoNull implements ModelQuery {
+  // `with` / `withCount` are required on ModelQuery (eager-load surface);
+  // stubs no-op them.
+  with(): ModelQuery { return this }
+  withCount(): ModelQuery { return this }
   ops: FakeOp[] = []
   where(...args: unknown[]): ModelQuery   { this.ops.push({ op: 'where', args });   return this }
   orWhere(...args: unknown[]): ModelQuery { this.ops.push({ op: 'orWhere', args }); return this }
