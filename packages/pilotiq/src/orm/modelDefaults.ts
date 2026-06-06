@@ -621,6 +621,22 @@ export function resolveRelatedQuery(
   return defaultRelatedQuery(parent, relationName)
 }
 
+/** Read the child model's PK column from the parent's relations map, when present. */
+export function pickChildPrimaryKey(parentModel: ModelLike, name: string): string | undefined {
+  const relations = (parentModel as unknown as Record<string, unknown>)['relations']
+  if (!relations || typeof relations !== 'object') return undefined
+  const entry = (relations as Record<string, unknown>)[name]
+  if (!entry || typeof entry !== 'object') return undefined
+  const e = entry as Record<string, unknown>
+  if (typeof e['model'] !== 'function') return undefined
+  try {
+    const child = (e['model'] as () => ModelLike)()
+    return getPrimaryKey(child)
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Sibling of `modelTableRecords` for `RelationManager` tables. Drives
  * pagination/search/sort/filters against `parent.related(relationName)`

@@ -174,8 +174,54 @@ describe('SelectField.relationship — full pipeline', () => {
     const form = makeForm().save(async () => ({ id: 'p1' }))
     await assert.rejects(
       () => dispatchFormSubmit(form, { categories: '["a"]' }, { values: {} }),
-      /no M2M sync accessor for 'categories'/,
+      /no M2M accessor for 'categories'/,
     )
+  })
+
+  it('loose-diffs against numeric pivot PKs when parentModel is on the ctx', async () => {
+    // Form ids are strings but the pivot stores numbers — a strict
+    // accessor.sync would re-attach "3" over 3 and trip the pivot's
+    // UNIQUE constraint. With parentModel available, pilotiq diffs
+    // itself: attach coerced to numbers, detach with the raw PKs,
+    // sync never called.
+    const attachCalls: unknown[] = []
+    const detachCalls: unknown[] = []
+    const savedRecord = {
+      id: 1,
+      categories: () => ({
+        attach: async (ids: unknown) => { attachCalls.push(ids) },
+        detach: async (ids: unknown) => { detachCalls.push(ids) },
+        sync:   async () => { throw new Error('sync must not be called when the manual diff runs') },
+      }),
+    }
+    const childModel: ModelLike = {
+      primaryKey: 'id',
+      find:   async () => undefined,
+      create: async (d) => d,
+      update: async (_id, d) => d,
+      delete: async () => {},
+      query:  () => ({} as never),
+    }
+    // `relations` isn't on the structural ModelLike — pilotiq reads it
+    // off the static via pickChildPrimaryKey, so widen through unknown.
+    const parentModel = {
+      ...childModel,
+      relations: { categories: { type: 'belongsToMany', model: () => childModel } },
+      relatedQuery: () => ({
+        paginate: async () => ({ data: [{ id: 1 }, { id: 3 }], total: 2 }),
+      }) as never,
+    } as unknown as ModelLike
+
+    const form = makeForm().save(async () => savedRecord)
+    const result = await dispatchFormSubmit(
+      form,
+      { title: 'Post', categories: '["1","2"]' },
+      { values: {}, parentModel } as never,
+    )
+
+    assert.equal(result.ok, true)
+    assert.deepEqual(attachCalls, [[2]])
+    assert.deepEqual(detachCalls, [[3]])
   })
 })
 

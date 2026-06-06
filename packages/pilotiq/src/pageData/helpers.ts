@@ -19,8 +19,11 @@ import { findTables } from '../elements/dispatchTable.js'
 import {
   getMorphRelationDescriptor,
   getPrimaryKey,
+  pickChildPrimaryKey,
   type ModelLike,
 } from '../orm/modelDefaults.js'
+
+export { pickChildPrimaryKey }
 
 // ─── pageData shared helpers ────────────────────────────────
 //
@@ -752,21 +755,9 @@ export function findRelationshipBuilders(elements: ReadonlyArray<Element>): Buil
   return out
 }
 
-/** Read the child model's PK column from the parent's relations map, when present. */
-export function pickChildPrimaryKey(parentModel: ModelLike, name: string): string | undefined {
-  const relations = (parentModel as unknown as Record<string, unknown>)['relations']
-  if (!relations || typeof relations !== 'object') return undefined
-  const entry = (relations as Record<string, unknown>)[name]
-  if (!entry || typeof entry !== 'object') return undefined
-  const e = entry as Record<string, unknown>
-  if (typeof e['model'] !== 'function') return undefined
-  try {
-    const child = (e['model'] as () => ModelLike)()
-    return getPrimaryKey(child)
-  } catch {
-    return undefined
-  }
-}
+// `pickChildPrimaryKey` moved to `orm/modelDefaults.ts` (the save-side
+// select sync in `dispatchForm.ts` needs it too, and elements/ importing
+// pageData/ would be a cycle). Re-exported below for back-compat.
 
 /** Read the FK column from the parent's relations map, when present. */
 export function pickChildForeignKey(parentModel: ModelLike, name: string): string | undefined {
