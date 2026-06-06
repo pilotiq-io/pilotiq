@@ -1,5 +1,23 @@
 # @pilotiq/pilotiq
 
+## 0.31.0
+
+### Minor Changes
+
+- 429f255: `DateTimePicker` now renders a shadcn popover calendar with a time input instead of the bare native `datetime-local` input — same `YYYY-MM-DDTHH:mm` wire format, so coercion and model `datetime` casts are unaffected. `DateField.withTime()` is now wired in the renderer (was documented but rendered date-only). Both date pickers pin display formatting to `en-US` (locale-dependent `toLocaleDateString` failed hydration when server and browser locales differ) and register pending-suggestion appliers so AI suggestions update the visible trigger, not just the hidden input.
+- 950c044: `SelectField.multiple()` + `.relationship(name)` — multi-select fields. `multiple()` flips the value to `string[]` (chips trigger + searchable checkbox dropdown; JSON-array wire shape like TagsInput). `relationship(name)` binds the selection to an M2M relation: edit pages fill from `parent.related(name)`, saves strip the ids from the parent payload and `sync()` the pivot after persist. `required()` now treats `[]` / `'[]'` as empty (also fixes required-on-empty TagsInput).
+
+### Patch Changes
+
+- 10231f7: Custom pages now run `Form.loadRecord` on GET (values pre-fill like global edit pages) and thread the resolved panel user + loaded record onto the `FormContext` for both `loadRecord` and the save lifecycle — fixes profile-style pages rendering empty inputs and saves that couldn't see `ctx.user`.
+- 67c2840: Form values now reach fields nested inside layout containers (Section / Grid / Split / Group / Fieldset / Tabs). `FormBody` only enriched the form's direct field children — a structured edit form (e.g. fields in a `Split` aside) rendered every nested field empty unless the form happened to be live/controlled. `FormRenderer` now provides a `FormValuesContext` and the generic field recursion consumes it via `NestedFormField`, which also surfaces inline validation errors for nested fields.
+- 07a8222: - New `Resource.recordSubNavigation = false` opt-out drops the per-record sub-nav strip (View / Edit / sub-pages / relation managers) from all record-mode pages of a resource; routes stay registered.
+  - Fix `Split` never going side-by-side at the top level: the `@container` declaration now lives on a wrapper div so the inner `@3xl:flex-row` resolves against it (container queries match against the nearest _ancestor_ container — co-locating both on one element left the layout permanently stacked with a 320px aside).
+- 94d6d7d: Record sub-pages: `resourceRecordPageData` now threads the loaded parent record onto `SchemaContext.record`, matching the documented contract — `schema(ctx)` previously received `ctx.record === undefined` even though the record was loaded for gating and breadcrumbs.
+- 2e555a5: Fix relationship-backed multi-selects (`SelectField.multiple().relationship()`) showing empty on edit pages: `walkSelectFields` used `instanceof`, which fails under Vite SSR module-cache duplication, so the M2M fill silently found zero fields. Walkers now use structural checks (new `isSelectField` export, mirroring `isRepeaterField`/`isBuilderField`); the live-field probe and editable-column probe in pageData were hardened the same way.
+- b6ab7a1: Keep inactive `Tabs` panels mounted (hidden) so form fields inside non-active tabs retain their values and serialize into the submit body — previously every field outside the active tab was silently dropped from the save.
+- 1ad472f: Underline-variant `Tabs` list now spans the full available width so the bottom border runs across the content column; triggers stay compact at the start (`flex-none`).
+
 ## 0.30.4
 
 ### Patch Changes
