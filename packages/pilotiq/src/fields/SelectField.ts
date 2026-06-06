@@ -62,6 +62,17 @@ export interface SelectRelationshipConfig {
   name: string
 }
 
+/**
+ * Structural type-check — mirrors `isRepeaterField` / `isBuilderField`.
+ * Walkers must use this instead of `instanceof SelectField`: Vite SSR
+ * module-cache duplication can hand the walker a different class object
+ * than the one the panel module constructed fields from, making
+ * `instanceof` silently false (see feedback_vite_ssr_module_dup_instanceof).
+ */
+export function isSelectField(el: { getType(): string; fieldType?: string }): boolean {
+  return el.getType() === 'field' && el['fieldType'] === 'select'
+}
+
 export class SelectField extends Field {
   private _options: SelectOption[] | OptionsResolver = []
   private _multiple = false

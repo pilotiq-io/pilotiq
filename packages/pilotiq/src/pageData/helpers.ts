@@ -9,7 +9,7 @@ import { Field } from '../fields/Field.js'
 import type { SchemaContext, RenderContext } from '../schema/resolveSchema.js'
 import { Form } from '../elements/Form.js'
 import { Column } from '../Column.js'
-import { SelectField } from '../fields/SelectField.js'
+import { SelectField, isSelectField } from '../fields/SelectField.js'
 import { isRepeaterField, RepeaterField } from '../fields/RepeaterField.js'
 import { isBuilderField, BuilderField } from '../fields/BuilderField.js'
 import { isServerDataElement, type ServerDataElement } from '../schema/ServerDataElement.js'
@@ -155,7 +155,9 @@ export function tagCellEditUrls(
     const rows = table.getRows() as ReadonlyArray<Record<string, unknown>> | undefined
     if (!rows || rows.length === 0) continue
     // Optimisation: skip the table when none of its columns are editable.
-    const editable = (table.getChildren() ?? []).some(c => c instanceof Column && c.isEditable())
+    // Structural check — see walkSelectFields comment on instanceof.
+    const editable = (table.getChildren() ?? [])
+      .some(c => c.getType() === 'column' && (c as Column).isEditable())
     if (!editable) continue
     for (const row of rows) {
       const editableMap = row['_cellEditable'] as Record<string, true> | undefined
@@ -251,14 +253,17 @@ export function tagSelectCreateOptionUrls(
 
 export function walkSelectFields(elements: Element[], visit: (f: SelectField) => void): void {
   for (const el of elements) {
-    if (el instanceof SelectField) {
-      visit(el)
+    // Structural checks, not instanceof — Vite SSR module duplication
+    // can hand this walker a different class object than the one the
+    // panel constructed fields from (see CLAUDE.md walker convention).
+    if (isSelectField(el)) {
+      visit(el as SelectField)
       // SelectField has no children of its own — no recursion needed.
       continue
     }
     // Stop at row-array boundaries — see comment on `tagSelectCreateOptionUrls`.
-    if (el instanceof RepeaterField) continue
-    if (el instanceof BuilderField)  continue
+    if (isRepeaterField(el)) continue
+    if (isBuilderField(el))  continue
     const children = el.getChildren()
     if (children && children.length > 0) walkSelectFields(children as Element[], visit)
   }
@@ -337,9 +342,15 @@ export function formHasLiveField(form: Form): boolean {
       // network POST on `live` separately. Cost of the over-stamp for
       // JS-only forms is one unused endpoint URL per form — endpoint
       // never gets hit because the client only POSTs on `live`.
-      if (el instanceof Field && (el.isLive() || el.getAfterStateUpdatedJs() !== undefined)) {
-        found = true
-        return
+      // Structural check (getType, not instanceof) — same module-dup
+      // hazard as walkSelectFields; a missed live field here means the
+      // form never gets its stateUrl and reactive fields silently die.
+      if (el.getType() === 'field') {
+        const f = el as Field
+        if (f.isLive() || f.getAfterStateUpdatedJs() !== undefined) {
+          found = true
+          return
+        }
       }
       const children = el.getChildren()
       if (children) visit(children)
