@@ -8,6 +8,8 @@ import {
   useCollabRoom,
   useRowCoords,
   parseRowFieldPath,
+  getCollabCodeExtensions,
+  type CollabCodeExtensionFactory,
 } from '@pilotiq/pilotiq/react'
 import { getCodeLanguage } from '../languageRegistry.js'
 import type { CodeEditorTheme } from '../CodeEditorField.js'
@@ -75,8 +77,13 @@ function ClientEditor(props: FieldRendererProps): React.ReactElement {
   const { el, name } = props
 
   // Collab branch — y-codemirror.next binding against the room's Y.Doc.
-  // Mounts when a `<RecordCollabRoom>` is up-tree AND the field hasn't
-  // opted out via `.collab(false)`. Top-level fields bind to bare `name`;
+  // Mounts when a `<RecordCollabRoom>` is up-tree AND a collab plugin has
+  // registered the CodeMirror extension factory (`@pilotiq-pro/collab`'s
+  // `registerCollabCodeExtensions` — mirrors how `@pilotiq/tiptap` reads
+  // `getCollabExtensions()`) AND the field hasn't opted out via
+  // `.collab(false)`. This package never imports `y-codemirror.next` /
+  // `yjs` itself — without a registered factory, code fields stay local
+  // even inside a collab room. Top-level fields bind to bare `name`;
   // Repeater / Builder row leaves bind to `${arrayName}.${rowId}.${fieldName}`
   // so the Y.Text share survives row reorders. Each branch lives in its own
   // component so the hook count stays stable across renders — entering or
@@ -84,21 +91,23 @@ function ClientEditor(props: FieldRendererProps): React.ReactElement {
   // hooks under one component instance.
   const room = useCollabRoom()
   const rowCoords = useRowCoords()
+  const factory = getCollabCodeExtensions()
   const fieldCollab = el['collab'] as boolean | undefined
   const fragmentKey = composeFragmentKey(name, rowCoords)
-  if (room && fieldCollab !== false && fragmentKey !== null) {
-    return <CollabBranch {...props} fragmentKey={fragmentKey} room={room} />
+  if (room && factory && fieldCollab !== false && fragmentKey !== null) {
+    return <CollabBranch {...props} fragmentKey={fragmentKey} room={room} factory={factory} />
   }
   return <LocalBranch {...props} />
 }
 
-function CollabBranch(props: FieldRendererProps & { fragmentKey: string; room: { ydoc: unknown; provider: unknown; synced?: Promise<void> } }): React.ReactElement {
-  const { el, name, defaultValue, disabled, placeholder, fragmentKey, room } = props
+function CollabBranch(props: FieldRendererProps & { fragmentKey: string; room: { ydoc: unknown; provider: unknown; synced?: Promise<void> }; factory: CollabCodeExtensionFactory }): React.ReactElement {
+  const { el, name, defaultValue, disabled, placeholder, fragmentKey, room, factory } = props
   return (
     <CollabCodeMirrorEditor
       ydoc={room.ydoc}
       provider={room.provider}
       synced={room.synced ?? null}
+      collabExtensions={factory}
       fragmentKey={fragmentKey}
       hiddenInputName={name}
       defaultValue={stringValue(defaultValue)}

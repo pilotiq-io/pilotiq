@@ -46,6 +46,12 @@ export {
   type CollabExtensionFactoryArgs,
 } from './CollabExtensionFactoryRegistry.js'
 export {
+  registerCollabCodeExtensions,
+  getCollabCodeExtensions,
+  type CollabCodeExtensionFactory,
+  type CollabCodeExtensionFactoryArgs,
+} from './CollabCodeExtensionFactoryRegistry.js'
+export {
   registerCollabTextRenderer,
   getCollabTextRenderer,
   type CollabTextRenderer,

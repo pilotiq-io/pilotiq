@@ -139,7 +139,9 @@ CodeEditorField.make('query')
 
 ## Collaborative editing
 
-When `@pilotiq-pro/collab` is installed and a `<RecordCollabRoom>` is mounted up-tree (the standard pilotiq-pro form chrome), every `CodeEditorField` in the form automatically binds to a per-field `Y.Text` via [`y-codemirror.next`](https://github.com/yjs/y-codemirror.next). Two peers editing the same record see character-level convergence with proper undo/redo and (when the room exposes awareness) remote cursor decorations.
+When `@pilotiq-pro/collab` (>= 0.2) is installed and a `<RecordCollabRoom>` is mounted up-tree (the standard pilotiq-pro form chrome), every `CodeEditorField` in the form automatically binds to a per-field `Y.Text` via [`y-codemirror.next`](https://github.com/yjs/y-codemirror.next). Two peers editing the same record see character-level convergence with proper undo/redo and (when the room exposes awareness) remote cursor decorations.
+
+The binding arrives through a registry, mirroring how `@pilotiq/tiptap` receives its `Collaboration` extensions: the collab plugin calls `registerCollabCodeExtensions(...)` (from `@pilotiq/pilotiq/react`) once at boot, and `CodeMirrorEditor` reads the factory at mount to decide between the local and collab branches. **This package never imports `y-codemirror.next` or `yjs` itself** — without a registered factory, code fields stay local even inside a collab room.
 
 Opt out per-field — useful for read-only or private content:
 
@@ -151,13 +153,9 @@ CodeEditorField.make('debug_log')
 
 Top-level fields bind to a doc-root share keyed by the bare field name. Repeater / Builder row leaves bind to `${arrayName}.${rowId}.${fieldName}` so the shared text survives row reorders (keyed by stable rowId, not array index).
 
-### Install the optional peers
+### Dependencies
 
-```bash
-pnpm add y-codemirror.next yjs
-```
-
-Both are declared as **optional** peer deps on `@pilotiq/codemirror` — panels that don't ship realtime collab (most of them) leave them out entirely and the local editor path runs as before.
+`@pilotiq/codemirror` carries **no** `y-codemirror.next` / `yjs` peer deps — panels that don't ship realtime collab (most of them) install nothing extra and the local editor path runs as before. The Yjs stack rides in with `@pilotiq-pro/collab`, which declares `y-codemirror.next` (and `@codemirror/view`) as its own peers — same posture as its `@tiptap/extension-collaboration` peers.
 
 ### Relationship-row text on PK switch
 

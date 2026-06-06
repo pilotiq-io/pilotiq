@@ -4,16 +4,23 @@ import { EditorState, Compartment, type Extension } from '@codemirror/state'
 import { indentUnit } from '@codemirror/language'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { basicSetup } from 'codemirror'
-import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
-import { type CollabRoom } from '@pilotiq/pilotiq/react'
+import { type CollabRoom, type CollabCodeExtensionFactory } from '@pilotiq/pilotiq/react'
 import { useCollabSeedText, type CollabRoom as FrameworkCollabRoom } from '@rudderjs/sync/react'
-// Type-only import keeps the value-import surface inside `y-codemirror.next`
-// (a peer dep), so consumers without `yjs` installed still type-check this
-// file via TS' module-omission rules for type-only imports.
-import type * as Y from 'yjs'
 import { getCodeLanguage } from '../languageRegistry.js'
 import type { CodeEditorTheme } from '../CodeEditorField.js'
 import { useThemeIsDark } from './useThemeIsDark.js'
+
+/**
+ * Structural stand-in for `Y.Text` — this package no longer imports
+ * `yjs` (even type-only): the `y-codemirror.next` binding arrives via
+ * the registered {@link CollabCodeExtensionFactory}, and the seed path
+ * only needs length + insert.
+ */
+interface YTextLike {
+  toString(): string
+  readonly length: number
+  insert(index: number, content: string): void
+}
 
 export interface CollabCodeMirrorEditorProps {
   /**
@@ -37,6 +44,15 @@ export interface CollabCodeMirrorEditorProps {
   synced?:         Promise<void> | null
   /** Doc-root share key — top-level: bare field name; row-leaf: `${arrayName}.${rowId}.${fieldName}`. */
   fragmentKey:     string
+  /**
+   * The registered CodeMirror collab factory (from
+   * `getCollabCodeExtensions()` in `@pilotiq/pilotiq/react`). Receives
+   * the resolved `Y.Text` + awareness and returns the `y-codemirror.next`
+   * binding extensions. Threaded as a prop so this component carries no
+   * `y-codemirror.next` / `yjs` imports of its own — `@pilotiq-pro/collab`
+   * owns those (mirrors how Tiptap's `Collaboration` extensions arrive).
+   */
+  collabExtensions: CollabCodeExtensionFactory
   /** Hidden-input name for FormData submission. */
   hiddenInputName: string
   /** Server-rendered initial value. Used to seed the Y.Text once if it's empty after first sync. */
@@ -81,7 +97,7 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
   const {
     ydoc, provider, synced, fragmentKey, hiddenInputName, defaultValue,
     language, height, lineNumbers, lineWrapping, indentWithTabs, indentSize,
-    theme, readOnly, disabled, placeholder,
+    theme, readOnly, disabled, placeholder, collabExtensions,
   } = props
 
   // Synthetic `CollabRoom` for `useCollabSeed` — this component takes
@@ -126,13 +142,13 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
       return undefined
     }
 
-    const yText = ydocAny.getText(fragmentKey) as Y.Text
+    const yText = ydocAny.getText(fragmentKey) as YTextLike
     const awareness = providerAny?.awareness ?? null
 
     const extensions: Extension[] = []
     extensions.push(basicSetup)
     extensions.push(history())
-    extensions.push(keymap.of([...defaultKeymap, ...historyKeymap, ...yUndoManagerKeymap]))
+    extensions.push(keymap.of([...defaultKeymap, ...historyKeymap]))
     extensions.push(lineNumbersCompartment.current.of(buildLineNumbersExtension(lineNumbers)))
     extensions.push(lineWrappingCompartment.current.of(buildLineWrappingExtension(lineWrapping)))
     extensions.push(indentCompartment.current.of(buildIndentExtension(indentWithTabs, indentSize)))
@@ -141,16 +157,13 @@ export function CollabCodeMirrorEditor(props: CollabCodeMirrorEditorProps): Reac
     extensions.push(editableCompartment.current.of(buildEditableExtension(disabled, readOnly)))
     extensions.push(themeCompartment.current.of(buildThemeExtension(themeIsDark, height)))
 
-    // y-codemirror.next: bind editor doc to Y.Text + (optional) awareness for
-    // remote cursors. Pass `awareness ?? undefined` — the implementation
-    // wraps remote-selection wiring in `if (awareness)` so undefined disables
-    // cursor decorations cleanly. `undoManager: false` lets our own
-    // `historyKeymap` run on the plain CodeMirror history (Yjs maintains its
-    // own per-client undo stack via the keymap we already added). The option
-    // key is `undoManager` (verified against y-codemirror.next's
-    // `index.d.ts` — `{ undoManager: Y.UndoManager | false }`); the prior
-    // `as never` cast was bypassing typecheck for no reason and is gone.
-    extensions.push(yCollab(yText, awareness, { undoManager: false }))
+    // The registered factory supplies the `y-codemirror.next` binding
+    // (`yCollab(yText, awareness, { undoManager: false })` + the Yjs undo
+    // keymap). Appended AFTER the main keymap above, so `historyKeymap`
+    // keeps Mod-z precedence — same relative order as when both lived in
+    // one `keymap.of([...])` array. The returned refs are opaque to this
+    // package; trust them as CodeMirror extensions and spread them in.
+    extensions.push(...(collabExtensions({ ytext: yText, awareness }) as Extension[]))
 
     // Mirror editor text into React state on every change. `update.docChanged`
     // can fire with an identical `doc.toString()` (IME composition, cursor-only
