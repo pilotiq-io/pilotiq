@@ -102,6 +102,21 @@ If the user navigates directly to a sub-page URL when its gate fails,
 the route returns 403 (the chrome was hidden as a hint, but the route
 is the source of truth).
 
+## Hiding the strip entirely
+
+Set `static recordSubNavigation = false` on the resource to drop the
+whole sub-nav strip (View / Edit / sub-pages / relation managers) from
+every record-mode page of that resource. Routes stay registered and
+reachable by URL — only the tab chrome disappears. Useful when the
+record form carries its own tab navigation and a second strip would
+compete with it.
+
+```ts
+export class PostResource extends Resource {
+  static override recordSubNavigation = false
+}
+```
+
 ## Slug rules
 
 Sub-page slugs are validated at panel boot:

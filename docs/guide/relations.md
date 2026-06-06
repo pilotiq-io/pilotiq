@@ -156,6 +156,10 @@ link. The strip itself is suppressed entirely when a Resource has no
 relation managers (a record with no relations doesn't need a sub-nav
 of one tab).
 
+To drop the strip even when managers exist, set
+`static recordSubNavigation = false` on the Resource — routes stay
+registered and reachable by URL, only the tab chrome disappears.
+
 ## Reserved relationship tokens
 
 A manager's `relationship` cannot collide with one of these reserved URL

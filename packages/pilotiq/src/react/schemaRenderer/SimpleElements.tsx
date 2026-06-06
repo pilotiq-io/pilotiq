@@ -264,22 +264,28 @@ export function renderSimpleElement(
       const asideChild    = asideIdx >= 0 ? children[asideIdx] : undefined
 
       const orderClasses  = from === 'left'
-        ? { aside: '@md:order-first', main: '@md:order-last' }
-        : { aside: '@md:order-last',  main: '@md:order-first' }
+        ? { aside: '@3xl:order-first', main: '@3xl:order-last' }
+        : { aside: '@3xl:order-last',  main: '@3xl:order-first' }
 
+      // The container-query declaration lives on a WRAPPER div, not on
+      // the flex element itself — `@3xl:flex-row` resolves against the
+      // nearest ANCESTOR container, so putting `@container` on the same
+      // element means the row flip silently never matches at the top
+      // level (while the children's `@3xl:` rules DO match against it,
+      // leaving a stacked layout with a 320px aside). 48rem breakpoint:
+      // below that, a 320px aside + gap would starve the main column.
       return (
-        <div
-          key={index}
-          className={`@container flex flex-col @md:flex-row gap-${gap} ${layoutClasses(el)}`.trim()}
-        >
-          <div className={`flex flex-col gap-4 flex-1 min-w-0 ${orderClasses.main}`}>
-            {mainChildren.map((c, i) => renderElement(c, i))}
+        <div key={index} className={`@container ${layoutClasses(el)}`.trim()}>
+          <div className={`flex flex-col @3xl:flex-row gap-${gap}`}>
+            <div className={`flex flex-col gap-4 flex-1 min-w-0 ${orderClasses.main}`}>
+              {mainChildren.map((c, i) => renderElement(c, i))}
+            </div>
+            {asideChild && (
+              <aside className={`flex flex-col gap-4 @3xl:w-80 @3xl:shrink-0 ${orderClasses.aside}`}>
+                {renderElement(asideChild, asideIdx)}
+              </aside>
+            )}
           </div>
-          {asideChild && (
-            <aside className={`flex flex-col gap-4 @md:w-80 @md:shrink-0 ${orderClasses.aside}`}>
-              {renderElement(asideChild, asideIdx)}
-            </aside>
-          )}
         </div>
       )
     }

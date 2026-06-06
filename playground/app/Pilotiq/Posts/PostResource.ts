@@ -32,6 +32,9 @@ export class PostResource extends Resource {
   static override model                = Post
   static override recordTitleAttribute = 'title'
   static override softDeletes          = true
+  // Drop the View/Edit/Analytics/Comments strip — the tabbed form is
+  // the page's own sub-navigation. Routes stay reachable by URL.
+  static override recordSubNavigation  = false
 
   static override navigationGroup = 'Content'
   static override navigationSort  = 10

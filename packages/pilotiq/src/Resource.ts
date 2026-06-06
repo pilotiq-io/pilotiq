@@ -250,6 +250,13 @@ export abstract class Resource {
    *  on the SSR pass so the skeleton frame doesn't reset visible state. */
   static deferLoading: boolean = false
 
+  /** Mount the per-record sub-navigation strip (View / Edit / record
+   *  sub-pages / relation managers) on record-mode pages. Default
+   *  `true`. Set `false` to drop the strip everywhere for this
+   *  resource — relation-manager and sub-page routes stay registered
+   *  and reachable by URL, only the tab chrome disappears. */
+  static recordSubNavigation: boolean = true
+
   // ─── Plan #12: global search ───────────────────────────────
   // Opt-in: resources with `globalSearch = false` are skipped by the
   // panel-level Cmd+K palette. Defaults below derive everything from

@@ -47,6 +47,9 @@ export async function buildNestedRelationTabs(
   user:          unknown,
   child1Record:  unknown,
 ): Promise<RelationTabs | undefined> {
+  // Same resource-level opt-out as the depth-1 strip.
+  if (R.recordSubNavigation === false) return undefined
+
   const siblings = M.relations()
   if (siblings.length === 0) return undefined
 
@@ -138,6 +141,10 @@ export async function buildRelationTabs(
   user:         unknown,
   parentRecord: unknown,
 ): Promise<RelationTabs | undefined> {
+  // Resource-level opt-out — drop the strip entirely (routes stay
+  // registered; only the tab chrome disappears).
+  if (R.recordSubNavigation === false) return undefined
+
   const managers       = R.relations()
   const recordPageMap  = R.getRecordPages()
   const recordPageSlugs = Object.keys(recordPageMap)
