@@ -129,6 +129,11 @@ export default defineConfig({
       '@codemirror/commands',
       '@codemirror/lang-json',
       '@codemirror/lang-sql',
+      // AdminPanel.ts imports this directly for the page-content editor; the
+      // schema files reach the client via the excluded '@pilotiq/pilotiq', so
+      // the initial scan misses it → lazy discovery → mid-session re-optimize
+      // reload that 404s every already-hashed dep chunk.
+      '@codemirror/lang-html',
       'codemirror',
       // y-codemirror.next bridges the CodeEditor field to the collab Y.Doc.
       'y-codemirror.next',
