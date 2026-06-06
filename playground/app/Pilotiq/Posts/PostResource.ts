@@ -57,11 +57,10 @@ export class PostResource extends Resource {
 
   static override form(form: Form): Form {
     return form.schema([
-      TextField.make('title').required().placeholder('Post title…'),
-
       Split.make().schema([
-        // ── Main column: Content | Meta | Seo ────────────
+        // ── Main column: Title + Content | Meta | Seo ────
         Group.make().schema([
+          TextField.make('title').required().placeholder('Post title…'),
           Tabs.make().variant('underline').tabs([
             Tab.make('Content').schema([
               FileUpload.make('image')
