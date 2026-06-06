@@ -22,8 +22,8 @@ Every form field is a static `make(name)` builder that extends `Field`.
 | `ToggleField` | switch | `bool` value |
 | `TagsInput` | chip multi-tag | `string[]` value, JSON-encoded |
 | `KeyValueField` | key/value rows | `Record<string, string>` |
-| `DateField` | calendar popover | |
-| `DateTimePicker` | calendar + time | |
+| `DateField` | calendar popover | `withTime()` adds the time input |
+| `DateTimePicker` | calendar + time popover | sugar for `DateField.withTime()` |
 | `ColorPicker` | hex input + swatch | |
 | `FileUpload` | drop zone | reads `RenderContext.uploadUrl` |
 | `Repeater` | nested rows | array-of-subschema |

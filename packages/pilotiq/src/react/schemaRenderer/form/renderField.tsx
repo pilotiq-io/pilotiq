@@ -480,6 +480,27 @@ function renderFieldInput(
       )
 
     case 'date': {
+      // `DateField.withTime()` keeps the 'date' fieldType but renders the
+      // date-time picker (the coerce branch already accepts either shape).
+      if (el['withTime'] === true) {
+        let local: string | undefined
+        if (defaultValue instanceof Date) {
+          local = isNaN(defaultValue.getTime())
+            ? undefined
+            : defaultValue.toISOString().slice(0, 16)
+        } else if (typeof defaultValue === 'string' && defaultValue) {
+          const parsed = new Date(defaultValue)
+          local = isNaN(parsed.getTime()) ? undefined : parsed.toISOString().slice(0, 16)
+        }
+        return (
+          <DateTimeInput
+            name={name}
+            defaultValue={local}
+            disabled={disabled}
+            placeholder={placeholder}
+          />
+        )
+      }
       // SSR may hand us a JS Date object directly; SPA JSON nav arrives as
       // an ISO string. Normalize both into a `YYYY-MM-DD` slice — naive
       // string slicing on `Date.toString()` ("Mon Apr 27 2026 ...") gives

@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useContext, useEffect, useRef, useState } from 'react'
 import { CalendarIcon } from 'lucide-react'
-import { useFieldState } from '../FormStateContext.js'
+import { useFieldState, FormIdContext } from '../FormStateContext.js'
+import { registerPendingSuggestionApplier, type PendingSuggestionApplier } from '../PendingSuggestionApplierRegistry.js'
 import { Calendar } from '../ui/calendar.js'
 import { Popover, PopoverTrigger, PopoverContent } from '../ui/popover.js'
 
@@ -27,6 +28,31 @@ export function DateFieldInput({
   } else {
     date = localDate
   }
+  // Cross-tree applier — visible state is React-driven (hidden input +
+  // popover button), so FieldShell's generic DOM-write applier would
+  // leave the button label stale. FieldShell skips its registration
+  // for fieldType === 'date'.
+  const fsRef = useRef(fs)
+  useEffect(() => { fsRef.current = fs }, [fs])
+  const formId = useContext(FormIdContext) || undefined
+  useEffect(() => {
+    if (name.includes('.')) return
+    const applier: PendingSuggestionApplier = (suggestion) => {
+      const v = suggestion.suggestedValue
+      const next = v == null || v === '' ? '' : String(v).slice(0, 10)
+      const cur = fsRef.current
+      if (cur.controlled) {
+        cur.setValue(next)
+        cur.triggerLive(next)
+      } else {
+        const parsed = next ? new Date(next) : undefined
+        setLocalDate(parsed && !isNaN(parsed.getTime()) ? parsed : undefined)
+        cur.triggerLive(next)
+      }
+    }
+    return registerPendingSuggestionApplier(formId, name, applier)
+  }, [name, formId])
+
   const onSelect = (next: Date | undefined): void => {
     const iso = next ? next.toISOString().slice(0, 10) : ''
     if (fs.controlled) {
@@ -38,8 +64,10 @@ export function DateFieldInput({
     }
   }
   const formatted = date ? date.toISOString().slice(0, 10) : ''
+  // Locale pinned — `undefined` resolves differently on server vs client
+  // (Node vs browser locale) and the mismatch fails hydration.
   const display   = date
-    ? date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    ? date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
     : (placeholder ?? 'Pick a date')
 
   return (

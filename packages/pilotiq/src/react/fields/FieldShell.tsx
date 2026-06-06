@@ -27,6 +27,7 @@ const SELF_APPLIER_FIELD_TYPES = new Set<string>([
   'keyValue',
   'fileUpload',
   'tagsInput',
+  'date',
   'dateTime',
   'radio',
   'checkboxList',
