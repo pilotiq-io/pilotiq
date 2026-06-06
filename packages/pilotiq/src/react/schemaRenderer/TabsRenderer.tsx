@@ -31,11 +31,15 @@ export function TabsRenderer({
   // Underline variant overrides the primitive's pill chrome with a bottom
   // border on the list and per-trigger underline-on-selected. No
   // `<TabsIndicator>` is rendered, so there's no sliding pill to hide.
+  // The list is `w-full` so the bottom border runs across the whole
+  // available width (Filament-style); triggers pin to `flex-none` to
+  // stay compact at the start instead of stretching into equal columns
+  // (the base TabsTrigger ships `flex-1` for the pills variant).
   const listClass = variant === 'underline'
-    ? 'relative flex h-auto w-fit justify-start gap-0 rounded-none bg-transparent p-0 text-muted-foreground border-b border-border'
+    ? 'relative flex h-auto w-full justify-start gap-0 rounded-none bg-transparent p-0 text-muted-foreground border-b border-border'
     : undefined
   const triggerClass = variant === 'underline'
-    ? 'rounded-none border-0 border-b-2 border-transparent bg-transparent px-4 py-2 text-sm font-medium -mb-px data-[active]:border-primary data-[active]:text-foreground data-[active]:bg-transparent data-[active]:shadow-none'
+    ? 'flex-none rounded-none border-0 border-b-2 border-transparent bg-transparent px-4 py-2 text-sm font-medium -mb-px data-[active]:border-primary data-[active]:text-foreground data-[active]:bg-transparent data-[active]:shadow-none'
     : undefined
 
   return (
