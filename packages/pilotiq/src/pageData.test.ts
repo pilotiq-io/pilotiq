@@ -7,6 +7,7 @@ import { ListTabs } from './elements/ListTabs.js'
 import {
   applyEditPageHydrators,
   applyFillPipeline,
+  customPageData,
   formCreateOptionData,
   formStateData,
   formWizardData,
@@ -1560,5 +1561,83 @@ describe('panelInfo — pageCollab map (custom-page collab opt-in)', () => {
     assert.deepEqual(map, {
       settings: { room: 'settings', presence: false },
     })
+  })
+})
+
+describe('customPageData — Form.loadRecord fill', () => {
+  const findFormMeta = (metas: unknown[]): Record<string, unknown> | undefined => {
+    for (const meta of metas as Array<Record<string, unknown>>) {
+      if (meta['type'] === 'form') return meta
+      const children = meta['children']
+      if (Array.isArray(children)) {
+        const found = findFormMeta(children)
+        if (found) return found
+      }
+    }
+    return undefined
+  }
+
+  it('runs loadRecord with the resolved user on ctx and stamps form values', async () => {
+    let seenUser: unknown = undefined
+    class ProfilePage extends Page {
+      static override slug  = 'profile'
+      static override label = 'Profile'
+      static override schema() {
+        return [
+          Section.make('Identity').schema([
+            Form.make()
+              .schema([TextField.make('name'), TextField.make('email')])
+              .loadRecord(async (_id, ctx) => {
+                seenUser = ctx['user']
+                return { name: 'Demo Admin', email: 'admin@example.com' }
+              }),
+          ]),
+        ]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin')
+      .user(() => ({ id: 'demo-admin' }))
+      .pages([ProfilePage])
+    const data = await customPageData(panel, 'profile')
+    assert.ok(data)
+    assert.deepEqual(seenUser, { id: 'demo-admin' })
+    const form = findFormMeta(data!['schemaData'] as unknown[])
+    assert.ok(form, 'expected a form meta in schemaData')
+    assert.deepEqual(form!['values'], { name: 'Demo Admin', email: 'admin@example.com' })
+  })
+
+  it('leaves form values unset when the page form has no loadRecord', async () => {
+    class PlainPage extends Page {
+      static override slug  = 'plain'
+      static override label = 'Plain'
+      static override schema() {
+        return [Form.make().schema([TextField.make('name')])]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([PlainPage])
+    const data = await customPageData(panel, 'plain')
+    const form = findFormMeta(data!['schemaData'] as unknown[])
+    assert.ok(form)
+    assert.equal(form!['values'], undefined)
+  })
+
+  it('throwing loadRecord fails soft — page renders without values', async () => {
+    class BrokenPage extends Page {
+      static override slug  = 'broken'
+      static override label = 'Broken'
+      static override schema() {
+        return [
+          Form.make()
+            .schema([TextField.make('name')])
+            .loadRecord(async () => { throw new Error('boom') }),
+        ]
+      }
+    }
+    const panel = Pilotiq.make('T').path('/admin').pages([BrokenPage])
+    const data = await customPageData(panel, 'broken')
+    assert.ok(data)
+    const form = findFormMeta(data!['schemaData'] as unknown[])
+    assert.ok(form)
+    assert.equal(form!['values'], undefined)
   })
 })

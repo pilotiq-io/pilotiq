@@ -28,7 +28,7 @@ export class ProfilePage extends Page {
             TextField.make('name').label('Name').required(),
             EmailField.make('email').label('Email').required(),
           ])
-          .loadRecord(async (ctx) => {
+          .loadRecord(async (_id, ctx) => {
             const user = (ctx as { user?: { id?: string; name?: string; email?: string } | null }).user
             if (user?.id) {
               const row = await User.find(user.id)

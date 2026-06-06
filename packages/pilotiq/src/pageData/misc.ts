@@ -154,13 +154,31 @@ export async function customPageData(
   tagWidgetUrls(elements, id => `${pageUrl}/_widget/${id}`)
   const resolvedWidgets = await resolveServerDataElements(elements, ctx)
 
+  // Custom pages can carry a Form with a `loadRecord` handler (e.g. a
+  // profile page loading the panel user's row). Mirror globalEditData's
+  // fill: run the loader, push values through the fill pipeline, stamp
+  // them on the form. `user` rides on the FormContext so loaders can
+  // key off the resolved panel user.
+  const form = findForms(elements)[0]
+  let record: unknown = undefined
+  if (form?.getLoadRecord()) {
+    try {
+      record = await form.getLoadRecord()!('', { values: {}, ...(user != null ? { user } : {}) })
+    } catch { /* ignore */ }
+    if (record != null) {
+      const values = await applyFillPipeline(form, record)
+      form.withValues(values)
+    }
+  }
+
   const breadcrumbs = customPageBreadcrumbs(cfg, PageClass)
   if (breadcrumbs) elements.unshift(breadcrumbs)
 
   const customRoute: PanelInfoRoute = { page: PageClass }
+  const customCtx = record !== undefined ? { ...ctx, record } : ctx
   const [panel, schemaData] = await Promise.all([
     panelInfo(pilotiq, req, customRoute),
-    resolveSchema(elements, ctx).then(metas => applyRoleHooks(pilotiq, user, 'page', metas, customRoute)),
+    resolveSchema(elements, customCtx).then(metas => applyRoleHooks(pilotiq, user, 'page', metas, customRoute)),
   ])
 
   return {

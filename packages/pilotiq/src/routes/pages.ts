@@ -146,7 +146,20 @@ export function registerCustomPageRoutes(
       return res.send('No form found on page')
     }
 
-    const result = await dispatchFormSubmit(form, values, { values, basePath: base })
+    // Provide the loaded record + resolved user to the lifecycle context
+    // so loadRecord-backed forms (e.g. a profile page) can save against
+    // the same row they loaded from.
+    let record: unknown = undefined
+    if (form.getLoadRecord()) {
+      try { record = await form.getLoadRecord()!('', { values, ...(user != null ? { user } : {}) }) } catch { /* ignore */ }
+    }
+
+    const result = await dispatchFormSubmit(form, values, {
+      values,
+      basePath: base,
+      ...(record !== undefined ? { record } : {}),
+      ...(user != null ? { user } : {}),
+    })
 
     if (!result.ok) {
       if (json) {

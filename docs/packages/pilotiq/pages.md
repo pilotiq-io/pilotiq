@@ -118,6 +118,21 @@ class FeedbackPage extends Page {
 }
 ```
 
+`Form.loadRecord` works on custom pages too — the GET handler runs it (id is `''`, there's no record URL segment) and stamps the returned record's values onto the form, so inputs render pre-filled. The resolved panel user rides on the `FormContext` for both `loadRecord` and the save lifecycle, which makes the self-serve profile-page pattern a one-liner:
+
+```ts
+Form.make()
+  .schema([TextField.make('name'), EmailField.make('email')])
+  .loadRecord(async (_id, ctx) => {
+    const user = ctx.user as { id: string }
+    return await User.find(user.id)
+  })
+  .save(async (data, ctx) => {
+    const user = ctx.user as { id: string }
+    return await User.update(user.id, data)
+  })
+```
+
 ---
 
 ## Mode discriminator
