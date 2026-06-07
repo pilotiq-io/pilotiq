@@ -12,7 +12,7 @@ Guidance for Claude Code when working in this repository. Deep, package-specific
 - **Language:** TypeScript (strict, ESM, NodeNext)
 - **npm scope:** `@pilotiq/*`
 - **Status:** Early development
-- **Pro extensions:** `@pilotiq-pro/{ai,collab,workspaces}` in the `pilotiq-pro` repo
+- **Pro extensions:** `@pilotiq-pro/{ai,collab}` in the `pilotiq-pro` repo (licensed per project — one runtime token per deployed website/domain)
 
 ### Packages
 
@@ -67,7 +67,7 @@ pnpm rudder providers:discover   # regen bootstrap/cache/providers.json (machine
 ~/Projects/
 ├── rudder/         # Framework
 ├── pilotiq/        # This repo (open-source admin panel)
-└── pilotiq-pro/    # Pro extensions (AI, collab, workspaces)
+└── pilotiq-pro/    # Pro extensions (AI, collab)
 ```
 
 ---

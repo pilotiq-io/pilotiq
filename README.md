@@ -144,7 +144,7 @@ export default {
 | [`@pilotiq/codemirror`](./packages/codemirror) | Code editor field — CodeMirror 6 with language registry and themes. [Docs →](./docs/packages/codemirror.md) |
 | [`@pilotiq/recharts`](./packages/recharts) | Chart widgets — line, bar, pie, doughnut. [Docs →](./docs/packages/recharts.md) |
 
-Pro extensions (`@pilotiq-pro/{ai,collab,workspaces}`) live in a separate commercial repo at [pilotiq.io](https://pilotiq.io).
+Pro extensions (`@pilotiq-pro/{ai,collab}`) live in a separate commercial repo at [pilotiq.io](https://pilotiq.io).
 
 ---
 
