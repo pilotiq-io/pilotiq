@@ -236,7 +236,7 @@ export class BuilderField extends Field {
   }
 
   static make(name: string): BuilderField {
-    return new BuilderField(name)
+    return this.configured(new BuilderField(name))
   }
 
   /** Register the block types the user can pick from. Order = picker order. */

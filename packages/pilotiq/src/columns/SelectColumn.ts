@@ -58,7 +58,7 @@ export class SelectColumn extends Column {
   static override make(name: string): SelectColumn {
     const c = new SelectColumn(name)
     c.setColumnType('select')
-    return c
+    return this.configured(c)
   }
 
   /** Static options OR a per-row resolver. Function form receives the

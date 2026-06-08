@@ -16,7 +16,7 @@ export class CheckboxField extends Field {
   }
 
   static make(name: string): CheckboxField {
-    return new CheckboxField(name)
+    return this.configured(new CheckboxField(name))
   }
 
   override toMeta(ctx?: RenderContext): FieldMeta {

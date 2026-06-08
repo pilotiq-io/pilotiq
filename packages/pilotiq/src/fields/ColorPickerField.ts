@@ -14,7 +14,7 @@ export class ColorPickerField extends Field {
   }
 
   static make(name: string): ColorPickerField {
-    return new ColorPickerField(name)
+    return this.configured(new ColorPickerField(name))
   }
 
   override toMeta(ctx?: RenderContext): FieldMeta {

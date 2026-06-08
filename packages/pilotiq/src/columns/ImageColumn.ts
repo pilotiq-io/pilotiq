@@ -12,7 +12,7 @@ export class ImageColumn extends Column {
   static override make(name: string): ImageColumn {
     const c = new ImageColumn(name)
     c.setColumnType('image')
-    return c
+    return this.configured(c)
   }
 
   /** Width = height in px. Default 32. */

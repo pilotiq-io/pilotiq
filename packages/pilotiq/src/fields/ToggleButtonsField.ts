@@ -25,7 +25,7 @@ export class ToggleButtonsField extends Field {
   }
 
   static make(name: string): ToggleButtonsField {
-    return new ToggleButtonsField(name)
+    return this.configured(new ToggleButtonsField(name))
   }
 
   options(opts: SelectOption[] | OptionsResolver): this {

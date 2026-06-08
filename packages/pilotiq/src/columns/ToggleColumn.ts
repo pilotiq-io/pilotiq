@@ -22,7 +22,7 @@ export class ToggleColumn extends Column {
   static override make(name: string): ToggleColumn {
     const c = new ToggleColumn(name)
     c.setColumnType('toggle')
-    return c
+    return this.configured(c)
   }
 
   /** Color preset applied to the switch when on. Defaults to `'primary'`

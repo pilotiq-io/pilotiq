@@ -11,7 +11,7 @@ export class DateField extends Field {
   }
 
   static make(name: string): DateField {
-    return new DateField(name)
+    return this.configured(new DateField(name))
   }
 
   /**
@@ -69,7 +69,7 @@ export class DateTimePickerField extends DateField {
   }
 
   static make(name: string): DateTimePickerField {
-    return new DateTimePickerField(name)
+    return this.configured(new DateTimePickerField(name))
   }
 }
 

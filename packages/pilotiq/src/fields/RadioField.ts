@@ -25,7 +25,7 @@ export class RadioField extends Field {
   }
 
   static make(name: string): RadioField {
-    return new RadioField(name)
+    return this.configured(new RadioField(name))
   }
 
   options(opts: SelectOption[] | OptionsResolver): this {

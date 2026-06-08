@@ -29,7 +29,7 @@ export class TextInputColumn extends Column {
   static override make(name: string): TextInputColumn {
     const c = new TextInputColumn(name)
     c.setColumnType('textInput')
-    return c
+    return this.configured(c)
   }
 
   /** Map to `<input type=…>`. Default `'text'`. `'number'` parses to

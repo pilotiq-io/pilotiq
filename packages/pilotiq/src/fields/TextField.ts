@@ -49,7 +49,7 @@ export class TextField extends Field {
   }
 
   static make(name: string): TextField {
-    return new TextField(name)
+    return this.configured(new TextField(name))
   }
 
   maxLength(n: number): this { this._maxLength = n; return this }

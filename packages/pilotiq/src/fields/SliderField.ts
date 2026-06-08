@@ -21,7 +21,7 @@ export class SliderField extends Field {
   }
 
   static make(name: string): SliderField {
-    return new SliderField(name)
+    return this.configured(new SliderField(name))
   }
 
   min(n: number): this  { this._min  = n; return this }

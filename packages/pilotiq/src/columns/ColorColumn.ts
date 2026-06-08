@@ -18,7 +18,7 @@ export class ColorColumn extends Column {
   static override make(name: string): ColorColumn {
     const c = new ColorColumn(name)
     c.setColumnType('color')
-    return c
+    return this.configured(c)
   }
 
   /** Default — slightly rounded swatch. */

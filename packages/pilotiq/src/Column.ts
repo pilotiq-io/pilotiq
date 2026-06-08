@@ -270,7 +270,7 @@ export class Column extends Element {
   }
 
   static make(name: string): Column {
-    return new Column(name)
+    return this.configured(new Column(name))
   }
 
   // ─── Identity ─────────────────────────────────────────

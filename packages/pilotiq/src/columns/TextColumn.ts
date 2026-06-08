@@ -15,6 +15,6 @@ import { Column } from '../Column.js'
  */
 export class TextColumn extends Column {
   static override make(name: string): TextColumn {
-    return new TextColumn(name)
+    return this.configured(new TextColumn(name))
   }
 }

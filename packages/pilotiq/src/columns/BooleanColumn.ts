@@ -13,6 +13,6 @@ export class BooleanColumn extends IconColumn {
       true:  { icon: 'check-circle-2', color: 'success' },
       false: { icon: 'circle',         color: 'muted'   },
     })
-    return c
+    return this.configured(c)
   }
 }

@@ -24,7 +24,7 @@ export class CheckboxListField extends Field {
   }
 
   static make(name: string): CheckboxListField {
-    return new CheckboxListField(name)
+    return this.configured(new CheckboxListField(name))
   }
 
   options(opts: SelectOption[] | OptionsResolver): this {

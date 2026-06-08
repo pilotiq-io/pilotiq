@@ -21,7 +21,7 @@ export class IconColumn extends Column {
   static override make(name: string): IconColumn {
     const c = new IconColumn(name)
     c.setColumnType('icon')
-    return c
+    return this.configured(c)
   }
 
   options(map: Record<string, IconOption>): this {

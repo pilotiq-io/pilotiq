@@ -22,7 +22,7 @@ export class KeyValueField extends Field {
   }
 
   static make(name: string): KeyValueField {
-    return new KeyValueField(name)
+    return this.configured(new KeyValueField(name))
   }
 
   keyLabel(label: string): this   { this._keyLabel = label; return this }

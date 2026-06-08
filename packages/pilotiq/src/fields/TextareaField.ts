@@ -12,7 +12,7 @@ export class TextareaField extends Field {
   }
 
   static make(name: string): TextareaField {
-    return new TextareaField(name)
+    return this.configured(new TextareaField(name))
   }
 
   rows(n: number): this { this._rows = n; return this }

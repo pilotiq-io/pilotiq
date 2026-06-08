@@ -7,7 +7,7 @@ export class EmailField extends Field {
   }
 
   static make(name: string): EmailField {
-    return new EmailField(name)
+    return this.configured(new EmailField(name))
   }
 
   override toMeta(ctx?: RenderContext): FieldMeta {

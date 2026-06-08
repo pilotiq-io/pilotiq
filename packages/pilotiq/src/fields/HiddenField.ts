@@ -16,7 +16,7 @@ export class HiddenField extends Field {
   }
 
   static make(name: string): HiddenField {
-    return new HiddenField(name)
+    return this.configured(new HiddenField(name))
   }
 
   override toMeta(ctx?: RenderContext): FieldMeta {

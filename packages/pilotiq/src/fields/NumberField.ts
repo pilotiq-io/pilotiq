@@ -11,7 +11,7 @@ export class NumberField extends Field {
   }
 
   static make(name: string): NumberField {
-    return new NumberField(name)
+    return this.configured(new NumberField(name))
   }
 
   min(n: number): this { this._min = n; return this }

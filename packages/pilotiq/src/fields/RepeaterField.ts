@@ -350,7 +350,7 @@ export class RepeaterField extends Field {
   }
 
   static make(name: string): RepeaterField {
-    return new RepeaterField(name)
+    return this.configured(new RepeaterField(name))
   }
 
   /** Inner schema rendered per row. Each row resolves these elements. */

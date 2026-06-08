@@ -134,6 +134,80 @@ export abstract class Element {
     return this
   }
 
+  // ─── Global defaults — `configureUsing()` (Filament parity) ─────
+
+  /**
+   * Register a global default configurator for this element class. The
+   * callback runs at `.make()` time on every freshly-created instance of
+   * this class (and its subclasses), AFTER the framework's built-in
+   * defaults but BEFORE any per-instance setters — so a global default set
+   * here is overridden by an explicit `.columnSpan(2)` on one instance.
+   * Mirrors Filament's `Component::configureUsing`.
+   *
+   * Configurators are keyed by class NAME on `globalThis`, so a
+   * registration survives Vite SSR module duplication (a second module copy
+   * of the class still resolves the same registry — see
+   * `feedback_vite_ssr_module_dup_instanceof` for why module-scoped state is
+   * unsafe here). Multiple registrations on one class stack in call order;
+   * ancestor-class configurators run before descendant-class ones so the
+   * more specific class wins.
+   *
+   * v1 is wired on `Field` + `Column` subclasses (the primitives most
+   * commonly configured app-wide). Other Element subclasses can opt in by
+   * funnelling their `make()` through `this.configured(...)`.
+   *
+   * @example
+   * TextColumn.configureUsing(c => c.toggleable())
+   * TextField.configureUsing(f => f.columnSpan(1).maxLength(255))
+   */
+  static configureUsing<I extends Element>(
+    // Infer the instance type `I` from the class's `prototype` rather than a
+    // construct signature — subclass constructors are protected/private, so a
+    // `new (...) => I` bound would reject them. `name` is the registry key.
+    this: { name: string; prototype: I },
+    fn:   (el: I) => void,
+  ): void {
+    const reg = configuratorRegistry()
+    const list = reg.get(this.name) ?? []
+    list.push(fn as Configurator)
+    reg.set(this.name, list)
+  }
+
+  /**
+   * Apply every registered configurator to a freshly-made instance, walking
+   * the prototype chain so ancestor-class configurators run before
+   * descendant-class ones (specific wins on conflicting defaults). Every
+   * wired `make()` factory funnels its new instance through this. No-op (and
+   * allocation-free) when nothing is registered. Public so subclass `make()`
+   * statics can call `this.configured(new X(...))`.
+   */
+  static configured<T extends Element>(instance: T): T {
+    const reg = configuratorRegistry()
+    if (reg.size === 0) return instance
+    const chain: string[] = []
+    let proto: unknown = Object.getPrototypeOf(instance)
+    while (proto) {
+      const ctor = (proto as { constructor?: { name?: string } }).constructor
+      if (!ctor || !ctor.name || ctor.name === 'Object') break
+      chain.push(ctor.name)
+      proto = Object.getPrototypeOf(proto)
+    }
+    // chain = [Concrete, …, Element]; apply Element→Concrete (reverse) so
+    // the most specific class's configurators run last and win.
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const list = reg.get(chain[i]!)
+      if (list) for (const fn of list) fn(instance)
+    }
+    return instance
+  }
+
+  /** Test seam — clear all registered configurators, or just one class's. */
+  static resetConfigurators(className?: string): void {
+    const reg = configuratorRegistry()
+    if (className === undefined) reg.clear()
+    else reg.delete(className)
+  }
+
   hasVisibilityRule(): boolean {
     return this._visibleRule !== undefined
   }
@@ -203,6 +277,23 @@ export abstract class Element {
     if (this._columnOrder !== undefined) out.columnOrder = this._columnOrder
     return out
   }
+}
+
+/** A `configureUsing` callback. Receives the freshly-made element. */
+type Configurator = (el: Element) => void
+
+/**
+ * `globalThis`-backed registry of `configureUsing` callbacks keyed by class
+ * name. Lives on `globalThis` (not module scope) so registrations survive
+ * Vite SSR module duplication — a second bundled copy of `Element` resolves
+ * the same Map. Same posture as rudder's cross-bundle singletons.
+ */
+function configuratorRegistry(): Map<string, Configurator[]> {
+  const KEY = '__pilotiq_element_configurators__'
+  const g = globalThis as Record<string, unknown>
+  let reg = g[KEY] as Map<string, Configurator[]> | undefined
+  if (!reg) { reg = new Map<string, Configurator[]>(); g[KEY] = reg }
+  return reg
 }
 
 /**

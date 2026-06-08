@@ -59,7 +59,7 @@ export class TagsInputField extends Field {
   }
 
   static make(name: string): TagsInputField {
-    return new TagsInputField(name)
+    return this.configured(new TagsInputField(name))
   }
 
   suggestions(opts: string[] | TagsSuggestionsResolver): this {

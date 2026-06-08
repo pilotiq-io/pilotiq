@@ -7,7 +7,7 @@ export class ToggleField extends Field {
   }
 
   static make(name: string): ToggleField {
-    return new ToggleField(name)
+    return this.configured(new ToggleField(name))
   }
 
   override toMeta(ctx?: RenderContext): FieldMeta {

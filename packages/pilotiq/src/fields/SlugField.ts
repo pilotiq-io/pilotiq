@@ -9,7 +9,7 @@ export class SlugField extends Field {
   }
 
   static make(name: string): SlugField {
-    return new SlugField(name)
+    return this.configured(new SlugField(name))
   }
 
   from(field: string): this { this._from = field; return this }

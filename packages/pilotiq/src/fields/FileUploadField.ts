@@ -43,7 +43,7 @@ export class FileUploadField extends Field {
   }
 
   static make(name: string): FileUploadField {
-    return new FileUploadField(name)
+    return this.configured(new FileUploadField(name))
   }
 
   /** Restrict accepted MIME types — passed verbatim to the file input + validated server-side. */

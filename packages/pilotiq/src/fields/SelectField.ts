@@ -105,7 +105,7 @@ export class SelectField extends Field {
   }
 
   static make(name: string): SelectField {
-    return new SelectField(name)
+    return this.configured(new SelectField(name))
   }
 
   /**

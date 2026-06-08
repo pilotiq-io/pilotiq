@@ -15,7 +15,7 @@ export class BadgeColumn extends Column {
   static override make(name: string): BadgeColumn {
     const c = new BadgeColumn(name)
     c.setColumnType('badge')
-    return c
+    return this.configured(c)
   }
 
   /** value-to-color map. */

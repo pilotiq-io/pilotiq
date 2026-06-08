@@ -84,7 +84,7 @@ export class MarkdownField extends Field {
   }
 
   static make(name: string): MarkdownField {
-    return new MarkdownField(name)
+    return this.configured(new MarkdownField(name))
   }
 
   /**
