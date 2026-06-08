@@ -160,6 +160,10 @@ export function sendActionResult(
   fallbackUrl: string,
 ): unknown {
   if (!result.ok) {
+    // The action's own authorize/visible predicate denied dispatch — 403,
+    // not the 500 a generic handler failure gets. `forbidden()` branches
+    // JSON vs Vike-pageContext vs styled-page on its own.
+    if (result.forbidden) return forbidden(req, res, json)
     if (json) {
       res.status(result.errors ? 422 : 500)
       return res.json({

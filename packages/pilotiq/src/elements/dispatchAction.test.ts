@@ -13,6 +13,8 @@ import { RepeaterField } from '../fields/RepeaterField.js'
 import { BuilderField } from '../fields/BuilderField.js'
 import { Block } from '../schema/Block.js'
 import { TextField } from '../fields/TextField.js'
+import { relationAttachAction } from '../actions/m2mFactories.js'
+import { RelationManager, type RelationManagerContext } from '../RelationManager.js'
 
 describe('findActions', () => {
   it('returns top-level actions', () => {
@@ -141,6 +143,148 @@ describe('dispatchAction', () => {
     const result = await dispatchAction(a, { ids: [], values: {} })
     assert.deepEqual(result, { ok: true })
     assert.equal(ran, true)
+  })
+})
+
+describe('dispatchAction authorization gate', () => {
+  it('rejects with forbidden when .authorize() returns false — handler never runs', async () => {
+    let ran = false
+    const a = Action.make('secret')
+      .authorize(() => false)
+      .handler(() => { ran = true })
+    const result = await dispatchAction(a, { ids: [], values: {}, user: { id: 1 } })
+    assert.equal(result.ok, false)
+    if (!result.ok) {
+      assert.equal(result.forbidden, true)
+      assert.equal(result.error, 'Forbidden')
+    }
+    assert.equal(ran, false)
+  })
+
+  it('rejects when .visible() returns false', async () => {
+    let ran = false
+    const a = Action.make('hidden')
+      .visible(() => false)
+      .handler(() => { ran = true })
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, false)
+    if (!result.ok) assert.equal(result.forbidden, true)
+    assert.equal(ran, false)
+  })
+
+  it('rejects when .hidden() returns true', async () => {
+    let ran = false
+    const a = Action.make('hide')
+      .hidden(() => true)
+      .handler(() => { ran = true })
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, false)
+    if (!result.ok) assert.equal(result.forbidden, true)
+    assert.equal(ran, false)
+  })
+
+  it('fails closed — a throwing predicate denies dispatch', async () => {
+    let ran = false
+    const a = Action.make('flaky')
+      .authorize(() => { throw new Error('policy blew up') })
+      .handler(() => { ran = true })
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, false)
+    if (!result.ok) assert.equal(result.forbidden, true)
+    assert.equal(ran, false)
+  })
+
+  it('evaluates the predicate against the resolved record', async () => {
+    let ran = false
+    const a = Action.make('archive')
+      .authorize(({ record }) => (record as { archivable?: boolean }).archivable === true)
+      .handler(() => { ran = true })
+    const denied = await dispatchAction(
+      a, { ids: ['7'], values: {} }, () => ({ id: '7', archivable: false }),
+    )
+    assert.equal(denied.ok, false)
+    if (!denied.ok) assert.equal(denied.forbidden, true)
+    assert.equal(ran, false)
+
+    const allowed = await dispatchAction(
+      a, { ids: ['8'], values: {} }, () => ({ id: '8', archivable: true }),
+    )
+    assert.equal(allowed.ok, true)
+    assert.equal(ran, true)
+  })
+
+  it('runs the handler when no visibility rule is set (back-compat)', async () => {
+    let ran = false
+    const a = Action.make('plain').handler(() => { ran = true })
+    const result = await dispatchAction(a, { ids: [], values: {} })
+    assert.equal(result.ok, true)
+    assert.equal(ran, true)
+  })
+
+  it('M2M relationAttach rejects at dispatch when canAttach is false — pivot accessor never touched', async () => {
+    let attachCalled = false
+    const parent = {
+      id: '1',
+      // `resolveM2MAccessor` reads the relation accessor off the parent;
+      // the spy asserts the handler (and thus attach) never fires.
+      tags() { return { attach: async () => { attachCalled = true } } },
+    }
+    class TagsManager extends RelationManager {
+      static override relationship = 'tags'
+      static override async canAttach(): Promise<boolean> { return false }
+    }
+    const ctx: RelationManagerContext = {
+      basePath:     '/admin',
+      parentSlug:   'posts',
+      parentId:     '1',
+      relationship: 'tags',
+      parentRecord: parent,
+      mode:         'belongsToMany',
+    }
+    const action = relationAttachAction(TagsManager, ctx)
+    // The route prelude (parent canEdit) is assumed already passed; dispatch
+    // must still re-check the action's own canAttach predicate.
+    const result = await dispatchAction(action, {
+      ids:      [],
+      values:   { _attachId: '99' },
+      user:     { id: 1 },
+      relation: { parent, parentId: '1', relationship: 'tags' },
+    })
+    assert.equal(result.ok, false)
+    if (!result.ok) assert.equal(result.forbidden, true)
+    assert.equal(attachCalled, false)
+  })
+
+  it('M2M relationAttach runs the attach when canAttach is true', async () => {
+    let attachedIds: string[] | undefined
+    const parent = {
+      id: '1',
+      tags() { return { attach: async (ids: string[]) => { attachedIds = ids } } },
+    }
+    class TagsManager extends RelationManager {
+      static override relationship = 'tags'
+      static override async canAttach(): Promise<boolean> { return true }
+    }
+    const ctx: RelationManagerContext = {
+      basePath:     '/admin',
+      parentSlug:   'posts',
+      parentId:     '1',
+      relationship: 'tags',
+      parentRecord: parent,
+      mode:         'belongsToMany',
+      // The handler short-circuits unless the related Resource has a model;
+      // a truthy stub is enough — the pivot accessor lives on the parent.
+      related:      { model: {} } as unknown as RelationManagerContext['related'],
+    }
+    const action = relationAttachAction(TagsManager, ctx)
+    const result = await dispatchAction(action, {
+      ids:      [],
+      values:   { _attachId: '99' },
+      user:     { id: 1 },
+      relation: { parent, parentId: '1', relationship: 'tags' },
+    })
+    assert.equal(result.ok, true)
+    assert.deepEqual(attachedIds, ['99'])
   })
 })
 

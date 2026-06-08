@@ -16,6 +16,7 @@ export type ConstraintValueKind =
   | 'boolean'
   | 'numberRange'
   | 'dateRange'
+  | 'dateTimeRange'
   | 'none'
 
 /**

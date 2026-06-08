@@ -179,6 +179,11 @@ export interface DispatchActionFailure {
    * rejected the submitted values. Populated only on validation failure;
    * absent for handler exceptions. */
   errors?: ValidationErrors
+  /** Set when the action's own `.authorize() / .visible()` predicate denied
+   * dispatch (evaluated server-side before the handler runs). The route
+   * layer maps this to a 403 instead of the 500 a generic handler failure
+   * gets. */
+  forbidden?: boolean
 }
 
 export type DispatchActionResult = DispatchActionSuccess | DispatchActionFailure
@@ -224,6 +229,22 @@ export async function dispatchAction(
     ctx.records = resolveRecord
       ? await Promise.all(input.ids.map(id => Promise.resolve(resolveRecord(id))))
       : input.ids.map(id => ({ id }))
+  }
+
+  // Authorization gate — evaluate the action's own `.authorize() / .visible()
+  // / .hidden()` predicate server-side BEFORE running the handler. The route
+  // preludes only gate coarsely (resource `canAccess`, record `canEdit`), so
+  // an action guarded with `.authorize(({ user }) => user.isAdmin)` would
+  // otherwise be enforced in the UI alone — a crafted POST to the `_action`
+  // endpoint could run a restricted handler. Fail closed: `Action.evaluate`
+  // already maps a throwing predicate to `visible: false`.
+  const visibility = await action.evaluate({
+    ...(input.user   !== undefined ? { user:    input.user }              : {}),
+    ...(ctx.record   !== undefined ? { record:  ctx.record }             : {}),
+    ...(ctx.records  !== undefined ? { records: ctx.records as unknown[] } : {}),
+  })
+  if (!visibility.visible) {
+    return { ok: false, error: 'Forbidden', forbidden: true }
   }
 
   // Row-scoped dispatch (Repeater / Builder `extraItemActions`). Coerce

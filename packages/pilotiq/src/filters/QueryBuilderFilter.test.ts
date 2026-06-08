@@ -262,6 +262,23 @@ describe('DateConstraint', () => {
     const equalsOp = ops.find(o => o.name === 'equals')
     assert.equal(equalsOp?.valueKind, 'dateTime')
   })
+
+  it('includesTime() advertises Between as a dateTimeRange pair-kind (not a scalar)', () => {
+    const ops = DateConstraint.make('createdAt').includesTime().getOperators()
+    const betweenOp = ops.find(o => o.name === 'dateBetween')
+    // A scalar 'dateTime' kind would mount a single input → parseDatePair
+    // gets a non-array → [undefined, undefined] → no WHERE → matches all rows.
+    assert.equal(betweenOp?.valueKind, 'dateTimeRange')
+  })
+
+  it('dateBetween + includesTime() emits paired where clauses from a [from, to] value', () => {
+    const q = new FakeQuery()
+    DateConstraint.make('createdAt').includesTime()
+      .apply(q, 'dateBetween', ['2026-01-01T09:00', '2026-12-31T17:00'])
+    assert.equal(q.ops.length, 2)
+    assert.deepEqual(q.ops[0]!.args, ['createdAt', '>=', '2026-01-01T09:00'])
+    assert.deepEqual(q.ops[1]!.args, ['createdAt', '<=', '2026-12-31T17:00'])
+  })
 })
 
 describe('SelectConstraint', () => {

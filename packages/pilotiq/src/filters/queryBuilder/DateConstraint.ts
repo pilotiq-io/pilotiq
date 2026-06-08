@@ -18,7 +18,11 @@ export class DateConstraint extends Constraint {
 
   override getOperators(): ConstraintOperator[] {
     const kind = this._includesTime ? 'dateTime' : 'date'
-    const range = this._includesTime ? 'dateTime' : 'dateRange'
+    // Between needs a from/to PAIR. With time enabled the pair must be the
+    // `dateTimeRange` kind (a scalar `dateTime` would feed `parseDatePair`
+    // a non-array → `[undefined, undefined]` → no WHERE clause → the filter
+    // silently matches every row).
+    const range = this._includesTime ? 'dateTimeRange' : 'dateRange'
     return [
       { name: 'equals',      label: 'On',          valueKind: kind  },
       { name: 'before',      label: 'Before',      valueKind: kind  },

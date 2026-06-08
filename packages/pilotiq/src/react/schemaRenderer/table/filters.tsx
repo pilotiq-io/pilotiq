@@ -859,7 +859,7 @@ export function QueryBuilderRow({
  * `valueKind` and mounts the matching input. Value shapes:
  * - `text / number / date / dateTime / select`  → scalar
  * - `multiSelect`                                → string[]
- * - `numberRange / dateRange`                    → [string, string]
+ * - `numberRange / dateRange / dateTimeRange`     → [string, string]
  * - `boolean / none`                              → null / undefined
  */
 export function QueryBuilderValueInput({
@@ -943,20 +943,22 @@ export function QueryBuilderValueInput({
     )
   }
 
-  if (kind === 'dateRange') {
+  if (kind === 'dateRange' || kind === 'dateTimeRange') {
     const [from, to] = Array.isArray(value) ? [value[0], value[1]] : [undefined, undefined]
+    const inputType = kind === 'dateTimeRange' ? 'datetime-local' : 'date'
+    const width     = kind === 'dateTimeRange' ? 'w-44' : 'w-36'
     return (
       <div className="flex items-center gap-1">
         <Input
-          type="date"
-          className="h-8 w-36 text-xs"
+          type={inputType}
+          className={`h-8 ${width} text-xs`}
           value={from === undefined || from === null ? '' : String(from)}
           onChange={(e) => onChange([e.target.value, to ?? ''])}
         />
         <span className="text-muted-foreground text-xs">→</span>
         <Input
-          type="date"
-          className="h-8 w-36 text-xs"
+          type={inputType}
+          className={`h-8 ${width} text-xs`}
           value={to === undefined || to === null ? '' : String(to)}
           onChange={(e) => onChange([from ?? '', e.target.value])}
         />
