@@ -321,6 +321,13 @@ Builder.make('content')
 
 ### Caveats
 
+- **The injected columns must be fillable on the child model.** New rows
+  are written with `PageBlock.create({ [typeColumn]: type, [dataColumn]:
+  data, [foreignKey]: parentId, [orderColumn]: idx })`. If the child
+  model's `fillable` omits the type / data / FK / order columns, rudder
+  silently drops them — you get a row with a null FK (orphaned, never
+  re-loaded under the parent) or empty type / data. Add every injected
+  column to the child's `fillable` (or use an unguarded model).
 - **`hasMany` only.** Same v1 scope as Repeater — `belongsTo`, `hasOne`,
   `belongsToMany`, polymorphic relations are deferred.
 - **No transaction wrapper.** Partial failure leaves the parent saved.

@@ -665,6 +665,15 @@ That declaration is everything. The pilotiq pipeline does the rest:
   payload stamps the row's 0-based index into that column. Reordering
   via drag-and-drop simply rewrites the column on save.
 
+> **The FK (and order / morph) columns must be fillable on the child
+> model.** New rows are written with `Attachment.create({ ...row, postId:
+> parentId })` — pilotiq injects `postId` (plus `<morphName>Id` /
+> `<morphName>Type` for `morphMany`, and `orderColumn` when set) into the
+> payload. If the child model's `fillable` omits those columns, rudder
+> silently drops them and you get an **orphaned row with a null FK** that
+> never shows up under the parent again. Add every injected column to the
+> child's `fillable` (or use an unguarded model).
+
 ### Object form
 
 Pass an object instead of a string for explicit overrides — useful when

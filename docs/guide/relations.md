@@ -217,6 +217,31 @@ fields onto `FormContext`:
 Use them to default foreign keys (`mutateDataBeforeCreate` above) or stamp
 audit fields (`beforeSave`).
 
+### Foreign keys on `hasMany` create
+
+Unlike the polymorphic path — where `relation-create` / `relation-edit`
+**force-pin** the morph columns after your hooks run as anti-tamper
+protection (see [Auto-injection of morph columns](#auto-injection-of-morph-columns)) —
+the plain `hasMany` create path does **not** force-pin the parent foreign
+key. The **form owns it**: the FK is whatever your form submits, defaulted
+by `mutateDataBeforeCreate` (the `User → Posts` example above sets
+`authorId` from `ctx.parentId`). This matches Filament.
+
+Two consequences worth knowing:
+
+- **The FK column must stay fillable** on the child rudder Model. The
+  manager writes the child through `M.create(...)`; if the FK is absent
+  from the model's `fillable`, rudder silently drops it and you get an
+  orphaned row with a null FK.
+- **A form that exposes the FK lets a submitted value win.** Don't put the
+  parent FK in the manager's form schema (or leave it ungated by a
+  `mutateDataBeforeCreate` that re-stamps `ctx.parentId`) unless you mean
+  to let the user choose the parent — a crafted POST can otherwise set it
+  to any value. The convention is to omit the FK from the form and default
+  it from `ctx.parentId`, so the URL-scoped parent always wins. If you
+  need belt-and-suspenders pinning, re-stamp it in `mutateDataBeforeCreate`
+  (which runs last, like the morph injection).
+
 ## Reactive integration (limitation)
 
 When the parent record's edit page has `live()` fields and the manager's tab
