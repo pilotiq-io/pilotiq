@@ -76,7 +76,7 @@ declare module '@rudderjs/orm' {
       name: string
       email: string
       password: string | null
-      emailVerified: number
+      emailVerified: boolean
       image: string | null
       role: string
       rememberToken: string | null
