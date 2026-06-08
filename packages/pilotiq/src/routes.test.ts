@@ -356,6 +356,52 @@ describe('registerPilotiqRoutes — POST submit lifecycle', () => {
     assert.equal(res.statusCode, 500)
   })
 
+  it('delete POST 404s (and never deletes) when Resource.query() scopes the record out', async () => {
+    // A scoped query (tenant/owner filter) that returns no row for any id —
+    // the record is "out of scope". With a default `canDelete`, the route
+    // must 404 rather than delete the raw id (scope-bypass guard).
+    let deleteCalled = false
+    const emptyQuery: any = {
+      where() { return this },
+      async first() { return null },
+      async paginate() { return { data: [], total: 0 } },
+    }
+    class Scoped extends ArticleResource {
+      static override model = {
+        query() { return emptyQuery },
+        async delete() { deleteCalled = true },
+      } as any
+      static override query() { return emptyQuery }
+    }
+    registerPilotiqRoutes(router, panelWith(Scoped))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/:id/delete')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({ params: { id: 'abc' } }))
+    assert.equal(res.statusCode, 404)
+    assert.equal(deleteCalled, false)
+  })
+
+  it('delete POST still deletes an in-scope record (guard does not block normal deletes)', async () => {
+    let deletedId: string | null = null
+    const row = { id: 'abc', title: 'x' }
+    const scopedQuery: any = {
+      where() { return this },
+      async first() { return row },
+      async paginate() { return { data: [row], total: 1 } },
+    }
+    class InScope extends ArticleResource {
+      static override model = {
+        query() { return scopedQuery },
+        async delete(id: string) { deletedId = id },
+      } as any
+      static override query() { return scopedQuery }
+    }
+    registerPilotiqRoutes(router, panelWith(InScope))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/articles/:id/delete')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({ params: { id: 'abc' } }))
+    assert.equal(deletedId, 'abc')
+    assert.deepEqual(res.redirectedTo, { url: '/admin/articles', code: 303 })
+  })
+
   it('happy path: validates, runs save, redirects 303 to edit URL', async () => {
     let savedWith: unknown = null
     class Saver extends ArticleResource {

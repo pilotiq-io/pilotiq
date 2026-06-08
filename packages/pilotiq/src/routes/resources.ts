@@ -231,8 +231,12 @@ export function registerResourceRoutes(
           // here (same probe shape used by the boot guard + reorder route)
           // so the column instance carries its validators / discriminator.
           const probe = R.table(Table.make())
+          // Structural `getType()` check (not `instanceof`) — the Column
+          // instance comes from the user's `R.table()` configurator, whose
+          // `Column` import can be a different module copy than this route's
+          // under Vite SSR duplication, which would make `instanceof` miss.
           const col = (probe.getChildren() ?? [])
-            .find((c): c is Column => c instanceof Column && c.name === colName)
+            .find((c): c is Column => c.getType() === 'column' && (c as Column).name === colName)
           if (!col) {
             res.status(400)
             return res.json({ ok: false, error: `Unknown column "${colName}"` })
@@ -527,6 +531,18 @@ export function registerResourceRoutes(
         const user = await pilotiq.resolveUser(req)
         const { access, record } = await loadAccessGated(R, recordId, user)
         if (!access) return forbidden(req, res, json)
+        // Scope guard: `loadAccessGated` loads through `R.query()` (which may
+        // be tenant/owner-scoped via `Resource.query()`), so an out-of-scope
+        // id resolves to `undefined`. `deleteRecord` runs against the RAW
+        // model, so without this 404 a default-`canDelete` resource would let
+        // a user delete a record outside their scope by posting its id. Only
+        // applies to model-backed resources (no model → `{ id }` stub, never
+        // undefined). Mirrors the relation routes' missing-record 404.
+        if (R.model && (record === undefined || record === null)) {
+          res.status(404)
+          if (json) return res.json({ ok: false, error: 'Record not found' })
+          return res.send('Record not found')
+        }
         if (!await checkPolicy(() => R.canDelete(user, record))) return forbidden(req, res, json)
 
         try {

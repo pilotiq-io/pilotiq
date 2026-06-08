@@ -224,11 +224,17 @@ function injectManagerTrashedFilter(
   Related: ResourceClass | undefined,
 ): void {
   if (!Related?.softDeletes) return
-  const children = table.getChildren() ?? []
-  const hasTrashed = children.some(c => c instanceof TrashedFilter)
+  // Structural checks (not `instanceof`) so the dedup + existing-filter
+  // preservation survive Vite SSR module duplication (mirrors
+  // `defaultPages.ts` injectListTrashedFilter).
+  const filters = (table.getChildren() ?? []).filter(
+    (c): c is Filter => c.getType() === 'filter',
+  )
+  const hasTrashed = filters.some(
+    c => typeof (c as { isTrashedFilter?: () => boolean }).isTrashedFilter === 'function',
+  )
   if (hasTrashed) return
-  const existing = children.filter(c => c instanceof Filter) as Filter[]
-  table.filters([...existing, TrashedFilter.make()])
+  table.filters([...filters, TrashedFilter.make()])
 }
 
 /**

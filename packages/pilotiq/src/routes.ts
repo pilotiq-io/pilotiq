@@ -202,7 +202,7 @@ export function registerPilotiqRoutes(
     }
 
     const hasEditable = (probe.getChildren() ?? [])
-      .some(c => c instanceof Column && c.isEditable())
+      .some(c => c.getType() === 'column' && (c as Column).isEditable())
     if (hasEditable) {
       if (!R.model || typeof R.model.update !== 'function') {
         throw new Error(

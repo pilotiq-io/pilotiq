@@ -538,13 +538,14 @@ async function dehydrateWalk(
   record:   unknown,
 ): Promise<void> {
   for (const el of elements) {
-    if (el instanceof Field) {
+    if (el.getType() === 'field') {
       // Array-row fields own their rows' transforms — don't let the
       // surrounding walk recurse into the inner schema against the
-      // wrong values map (mirrors `walkFields`' boundary).
-      if (el instanceof RepeaterField) { await dehydrateRepeaterRows(el, values, record); continue }
-      if (el instanceof BuilderField)  { await dehydrateBuilderRows(el, values, record);  continue }
-      await applyFieldDehydrate(el, values, record)
+      // wrong values map (mirrors `walkFields`' boundary). Structural
+      // checks (not `instanceof`) survive Vite SSR module duplication.
+      if (isRepeaterField(el)) { await dehydrateRepeaterRows(el as RepeaterField, values, record); continue }
+      if (isBuilderField(el))  { await dehydrateBuilderRows(el as BuilderField, values, record);  continue }
+      await applyFieldDehydrate(el as Field, values, record)
     }
     const children = el.getChildren()
     if (children && children.length > 0) await dehydrateWalk(children as Element[], values, record)
@@ -612,15 +613,16 @@ async function dehydrateBuilderRows(
 
 function walkFields(elements: Element[], visit: (f: Field) => void): void {
   for (const el of elements) {
-    if (el instanceof Field) {
-      visit(el)
+    if (el.getType() === 'field') {
+      visit(el as Field)
       // Plan #14 — don't recurse into Repeater / Builder children. Their
       // inner schemas belong to row bodies, not the parent form's body,
       // so the parent walker would coerce siblings against the wrong
       // values map. The dedicated Repeater + Builder passes in
       // `coerceFormValues` recurse into rows with the proper per-row body.
-      if (el instanceof RepeaterField) continue
-      if (el instanceof BuilderField)  continue
+      // Structural checks survive Vite SSR module duplication.
+      if (isRepeaterField(el)) continue
+      if (isBuilderField(el))  continue
     }
     const children = el.getChildren()
     if (children && children.length > 0) walkFields(children as Element[], visit)
@@ -639,13 +641,13 @@ function walkRepeatersTopLevel(
   visit:    (f: RepeaterField) => void,
 ): void {
   for (const el of elements) {
-    if (el instanceof RepeaterField) {
-      visit(el)
+    if (isRepeaterField(el)) {
+      visit(el as RepeaterField)
       continue
     }
     // Builder boundaries are also opaque — its inner schemas live per-row
     // and never need to be visited by the Repeater pass.
-    if (el instanceof BuilderField) continue
+    if (isBuilderField(el)) continue
     const children = el.getChildren()
     if (children && children.length > 0) walkRepeatersTopLevel(children as Element[], visit)
   }
@@ -663,11 +665,11 @@ function walkBuildersTopLevel(
   visit:    (f: BuilderField) => void,
 ): void {
   for (const el of elements) {
-    if (el instanceof BuilderField) {
-      visit(el)
+    if (isBuilderField(el)) {
+      visit(el as BuilderField)
       continue
     }
-    if (el instanceof RepeaterField) continue
+    if (isRepeaterField(el)) continue
     const children = el.getChildren()
     if (children && children.length > 0) walkBuildersTopLevel(children as Element[], visit)
   }
@@ -1107,8 +1109,8 @@ export async function applyStateUpdate<R = unknown>(
     // schema to dispatch.
     const head = changed.split('.', 1)[0]!
     const headField = findFieldDirect(children, head)
-    if (headField instanceof BuilderField) {
-      return applyBuilderStateUpdate(headField, values, changed, ctx)
+    if (headField && isBuilderField(headField)) {
+      return applyBuilderStateUpdate(headField as BuilderField, values, changed, ctx)
     }
     return applyRepeaterStateUpdate(children, values, changed, ctx)
   }
@@ -1148,13 +1150,13 @@ export async function applyStateUpdate<R = unknown>(
 
 function findFieldByName(elements: Element[], name: string): Field | undefined {
   for (const el of elements) {
-    if (el instanceof Field && el.name === name) return el
+    if (el.getType() === 'field' && (el as Field).name === name) return el as Field
     // Plan #14 — don't dive into Repeater / Builder inner schemas when
     // looking for a top-level field; row-local fields are addressed via
     // dotted paths through `applyRepeaterStateUpdate` /
     // `applyBuilderStateUpdate`.
-    if (el instanceof RepeaterField) continue
-    if (el instanceof BuilderField)  continue
+    if (isRepeaterField(el)) continue
+    if (isBuilderField(el))  continue
     const children = el.getChildren()
     if (children && children.length > 0) {
       const hit = findFieldByName(children as Element[], name)
@@ -1271,14 +1273,15 @@ function resolveRepeaterPath(elements: Element[], path: string): ResolvedPath | 
       return { field, rowPath }
     }
 
-    if (!(field instanceof RepeaterField)) return null
+    if (!isRepeaterField(field)) return null
+    const repeaterField = field as RepeaterField
     const idxStr = segments[i + 1]
     if (idxStr === undefined) return null
     const idx = Number(idxStr)
     if (!Number.isInteger(idx) || idx < 0) return null
 
-    rowPath.push({ repeater: field, index: idx })
-    currentElements = field.getInnerSchema()
+    rowPath.push({ repeater: repeaterField, index: idx })
+    currentElements = repeaterField.getInnerSchema()
     i += 2
   }
 
@@ -1292,8 +1295,8 @@ function resolveRepeaterPath(elements: Element[], path: string): ResolvedPath | 
  */
 function findFieldDirect(elements: Element[], name: string): Field | undefined {
   for (const el of elements) {
-    if (el instanceof Field && el.name === name) return el
-    if (el instanceof RepeaterField) continue
+    if (el.getType() === 'field' && (el as Field).name === name) return el as Field
+    if (isRepeaterField(el)) continue
     const children = el.getChildren()
     if (children && children.length > 0) {
       const hit = findFieldDirect(children as Element[], name)
@@ -1544,15 +1547,16 @@ export function extractRelationshipSelects(
   const visit = (els: Element[]): void => {
     for (const el of els) {
       if (isRepeaterField(el) || isBuilderField(el)) continue
-      if (el instanceof Field) {
-        if (!isMultiSelectField(el)) continue
-        const cfg = (el as { getRelationship?: () => { name: string } | undefined }).getRelationship?.()
+      if (el.getType() === 'field') {
+        const f = el as Field
+        if (!isMultiSelectField(f)) continue
+        const cfg = (f as { getRelationship?: () => { name: string } | undefined }).getRelationship?.()
         if (!cfg) continue
-        const value = data[el.name]
-        delete data[el.name]
+        const value = data[f.name]
+        delete data[f.name]
         out.push({
           name:  cfg.name,
-          field: el.name,
+          field: f.name,
           ids:   Array.isArray(value) ? value.map(v => String(v)) : [],
         })
         continue

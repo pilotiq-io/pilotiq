@@ -39,6 +39,12 @@ export class TrashedFilter extends Filter {
 
   override getKind(): FilterKind { return 'select' }
 
+  /** Structural marker for the soft-delete auto-injection dedup. Probed
+   *  instead of `instanceof TrashedFilter` so the check survives Vite SSR
+   *  module duplication (a second module copy of this class would make
+   *  `instanceof` miss and inject a duplicate filter). */
+  isTrashedFilter(): boolean { return true }
+
   override toMeta(): FilterMeta {
     return {
       ...this.buildBaseMeta(),

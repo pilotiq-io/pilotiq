@@ -59,14 +59,20 @@ export function applyFormDefaults(R: ResourceClass, form: Form, mode: 'create' |
 export function applyTableDefaults(R: ResourceClass, table: Table): void {
   // Plan #13 — auto-inject `TrashedFilter` for soft-delete resources
   // unless the user already added one. The filter drives `withTrashed /
-  // onlyTrashed` on the model query via its built-in `query(fn)` handler;
-  // matching against the class catches user-renamed instances too.
+  // onlyTrashed` on the model query via its built-in `query(fn)` handler.
+  // Structural checks (not `instanceof`) so the dedup AND the existing-
+  // filter preservation survive Vite SSR module duplication — under dup,
+  // `instanceof Filter` would miss and SILENTLY DROP every user filter,
+  // replacing the set with just the injected TrashedFilter.
   if (R.softDeletes) {
-    const hasTrashedFilter = (table.getChildren() ?? [])
-      .some(c => c instanceof TrashedFilter)
+    const filters = (table.getChildren() ?? []).filter(
+      (c): c is Filter => c.getType() === 'filter',
+    )
+    const hasTrashedFilter = filters.some(
+      c => typeof (c as { isTrashedFilter?: () => boolean }).isTrashedFilter === 'function',
+    )
     if (!hasTrashedFilter) {
-      const existing = (table.getChildren() ?? []).filter(c => c instanceof Filter) as Filter[]
-      table.filters([...existing, TrashedFilter.make()])
+      table.filters([...filters, TrashedFilter.make()])
     }
   }
 
@@ -127,7 +133,7 @@ export class ListPage extends ResourcePage {
     // already added in `Resource.table()` so customization wins.
     const existing = new Set(
       (table.getChildren() ?? [])
-        .filter((c): c is Action => c instanceof Action)
+        .filter((c): c is Action => c.getType() === 'action')
         .map(a => a.name),
     )
     const headers = this.getHeaderActions(R, basePath).filter(a => !existing.has(a.name))
