@@ -1,5 +1,57 @@
 # @pilotiq/pilotiq
 
+## 0.34.0
+
+### Minor Changes
+
+- 3c35fdc: `Element.configureUsing()` now works on **every Element primitive**, not just `Field` and `Column`. Register an app-wide default once and it applies to every instance made afterward:
+
+  ```ts
+  Action.configureUsing((a) => a.icon("plus"));
+  Section.configureUsing((s) => s.compact());
+  TextEntry.configureUsing((e) => e.weight("semibold"));
+  SelectFilter.configureUsing((f) => f.searchable());
+  ```
+
+  Wired across all entries, filters (including the stateful `make()`s that install a default query — the configurator runs after, Filament order), `Action` / `ActionGroup`, every schema layout/display element (`Section`/`Card`/`Grid`/`Group`/`Fieldset`/`Split`/`Tabs`/`Tab`/`Wizard`/`Step`/`Text`/`Heading`/`Alert`/`Divider`/`Image`/`Icon`/`Markdown`/`Html`/`UnorderedList`/`EmptyState`/`SlotComponent`/head-tags), the dashboard widgets (`StatsOverview`/`View`/`TableWidget`), and `ListTabs`/`Breadcrumbs`/`RelationTabs`. The polymorphic `make(this: …)` factories (component entry + widgets) resolve registrations off the instance's prototype chain, so subclass-made instances pick up ancestor-class defaults too.
+
+  Value-objects that aren't Elements remain excluded (set their defaults inline): table `Summarizer`s, query-builder `Constraint`s, `Stat`, builder `Block`, `TableGroup`, `RowButton`.
+
+- b7ecdef: Add `Element.configureUsing()` — Filament-style app-wide defaults for a primitive class. Register a callback once and it runs on every instance created via `.make()` afterward, before any per-instance setter (so an explicit call still overrides the default):
+
+  ```ts
+  TextColumn.configureUsing((c) => c.toggleable());
+  TextField.configureUsing((f) => f.columnSpan(1).maxLength(255));
+  ```
+
+  Configurators are keyed by class name on `globalThis` (survives Vite SSR module duplication), stack in call order, and apply ancestor-class registrations before descendant-class ones so the more specific class wins (`Field.configureUsing` runs before `TextField.configureUsing`). `Element.resetConfigurators(className?)` clears them (test seam). v1 is wired on `Field` and `Column` subclasses — the primitives most commonly configured app-wide; other Element subclasses opt in by funnelling their `make()` through `this.configured(...)`.
+
+- 35e3ffd: `Column.summarize([…])` now aggregates over the **full filtered set** instead of just the rendered page. A `Sum`/`Average`/`Count`/`Range` in the table footer of a model-backed resource reflects every matching row (respecting the active search / filters / tab / group-drill), not the 15 rows currently on screen — closing a footgun where a "Total" silently totalled page 1.
+
+  ```ts
+  Column.make("amount").summarize([Sum.make().label("Total")]);
+  // footer "Total" = SUM(amount) over the whole filtered query, not the page
+  ```
+
+  Mechanism: the model-backed records handler runs a second aggregate query (`SUM`/`AVG`/`MIN`/`MAX`, reusing the paginator's `total` for `COUNT`) and stamps the results on the new optional `TableRecordsResult.summaries`. The dispatcher prefers those per column and **falls back to per-page** for any column the handler can't aggregate (virtual / `formatStateUsing` / relationship columns) and for custom `records()` handlers that don't stamp summaries — so existing behaviour degrades gracefully rather than breaking.
+
+  No API change for the common case — `.summarize()` just becomes correct. Two new abstract methods (`aggregates()` / `resultFromScalars()`) are added to the `Summarizer` base for custom summarizer subclasses; the four built-ins implement them. Optional scalar terminals (`sum`/`avg`/`min`/`max`) were added to the structural `ModelQuery` shape (the rudder QueryBuilder ships them; test stubs need not).
+
+  v1 covers the global `<tfoot>` summary; per-group (banded) summary rows stay per-page.
+
+### Patch Changes
+
+- fff08c9: Security + correctness fixes:
+
+  - **Authorization bypass (P0):** `dispatchAction` now evaluates the action's own `.authorize() / .visible() / .hidden()` predicate server-side before running the handler, returning a 403 when it denies. Previously these predicates were enforced in the UI only — a crafted POST to `{base}/.../_action/:name` could run a handler the author intended to restrict (the route preludes gate coarsely on resource `canAccess` / record `canEdit`). This closes the M2M `relationAttach` asymmetry too (the attach handler had no server-side `canAttach` re-check, unlike detach / bulk-detach). Fails closed: a throwing predicate denies.
+  - **DateConstraint Between + `includesTime()` (P1):** the time-enabled "Between" operator advertised a scalar `dateTime` value-kind, so the renderer mounted a single input while `apply()` expected a `[from, to]` pair — the filter parsed `[undefined, undefined]` and silently matched every row. Added a `dateTimeRange` value-kind that renders a from/to `datetime-local` pair and parses as a pair.
+  - **Peer floor (P2):** raised `@rudderjs/core` / `@rudderjs/router` peer floors from `^1.1.2` to `^1.3.2` — the first router release where `runWithGroup` reliably tags panel routes under Vite SSR bundle duplication (its "current group" slot was hoisted to `globalThis` in 1.3.2). Below that floor, panel routes could resolve untagged — no session/auth middleware, `req.user` null, `persistFiltersInSession` a no-op.
+
+- 3b054d6: Two robustness fixes from an internal audit:
+
+  - **Delete scope-bypass guard:** the resource delete route loads the record through `Resource.query()` (which may be tenant/owner-scoped) but `deleteRecord` runs against the raw model — so a resource that scopes rows via `Resource.query()` while leaving `canDelete` at its default could let a user delete an out-of-scope record by POSTing its id. The route now returns 404 when the scoped load misses (model-backed resources only), matching the relation routes and treating `Resource.query()` as an authorization boundary (Filament `getEloquentQuery()` parity). In-scope deletes are unaffected.
+  - **Structural walker checks (Vite SSR hardening):** replaced `instanceof Field/RepeaterField/BuilderField/Column/Filter/Action` with the codebase's structural `getType()` / `isRepeaterField` / `isBuilderField` convention across the form-coerce, dehydrate, and state-update walkers (`dispatchForm.ts`), the editable-cell column lookup and delete/editable boot guards (`routes.ts`, `routes/resources.ts`), and the soft-delete `TrashedFilter` auto-injection (`defaultPages.ts`, `relationPages.ts`). These sites compare framework classes against user-constructed schema objects, where Vite SSR module duplication can make `instanceof` silently miss — which would drop form-field coercion (500 on save), break inline-cell edits, or replace a resource's entire filter set with just the injected TrashedFilter. `TrashedFilter` gained an `isTrashedFilter()` structural marker for the dedup.
+
 ## 0.33.1
 
 ### Patch Changes
