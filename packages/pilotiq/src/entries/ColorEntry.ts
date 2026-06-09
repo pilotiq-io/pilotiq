@@ -23,7 +23,7 @@ export class ColorEntry extends Entry {
   }
 
   static make(name: string): ColorEntry {
-    return new ColorEntry(name)
+    return this.configured(new ColorEntry(name))
   }
 
   width(px: number): this  { this._width  = px; return this }

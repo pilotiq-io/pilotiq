@@ -25,7 +25,7 @@ export class Alert extends Element {
   }
 
   static make(content: string): Alert {
-    return new Alert(content)
+    return this.configured(new Alert(content))
   }
 
   alertType(t: AlertType): this { this._alertType = t; return this }

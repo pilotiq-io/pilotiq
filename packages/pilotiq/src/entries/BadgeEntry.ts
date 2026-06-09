@@ -18,7 +18,7 @@ export class BadgeEntry extends Entry {
   }
 
   static make(name: string): BadgeEntry {
-    return new BadgeEntry(name)
+    return this.configured(new BadgeEntry(name))
   }
 
   /** value→color preset map. Unknown values render as `gray`. */

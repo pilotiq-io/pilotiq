@@ -64,7 +64,7 @@ export class ActionGroup extends Element {
   }
 
   static make(name: string): ActionGroup {
-    return new ActionGroup(name)
+    return this.configured(new ActionGroup(name))
   }
 
   // ─── Children ─────────────────────────────────────────

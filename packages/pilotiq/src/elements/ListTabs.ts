@@ -10,7 +10,7 @@ export class ListTabs extends Element {
   private constructor() { super() }
 
   static make(): ListTabs {
-    return new ListTabs()
+    return this.configured(new ListTabs())
   }
 
   /** Set the tab list. Each entry is a `ListTab` instance with its own

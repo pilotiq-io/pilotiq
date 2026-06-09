@@ -120,7 +120,7 @@ export class TableWidget extends ServerDataElement {
   }
 
   static make(this: new (id?: string) => TableWidget, id?: string): TableWidget {
-    return new this(id)
+    return ServerDataElement.configured(new this(id))
   }
 
   // ─── Fluent setters ──────────────────────────────────────

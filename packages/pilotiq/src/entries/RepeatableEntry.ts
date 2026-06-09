@@ -83,7 +83,7 @@ export class RepeatableEntry extends Entry {
   }
 
   static make(name: string): RepeatableEntry {
-    return new RepeatableEntry(name)
+    return this.configured(new RepeatableEntry(name))
   }
 
   protected override getEntryType(): string { return 'repeatable' }

@@ -62,7 +62,7 @@ export class StatsOverview extends ServerDataElement {
   }
 
   static make(this: new (id?: string) => StatsOverview, id?: string): StatsOverview {
-    return new this(id)
+    return ServerDataElement.configured(new this(id))
   }
 
   /** Cards-per-row. Falls back to the static `columns` if the fluent

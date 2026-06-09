@@ -30,7 +30,7 @@ export class LinkTag extends Element {
   private constructor(private attrs: LinkTagAttrs) { super() }
 
   static make(attrs: LinkTagAttrs): LinkTag {
-    return new LinkTag(attrs)
+    return this.configured(new LinkTag(attrs))
   }
 
   getType(): string { return 'link' }

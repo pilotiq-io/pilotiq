@@ -14,7 +14,7 @@ export class Tab extends Element {
   }
 
   static make(label: string): Tab {
-    return new Tab(label)
+    return this.configured(new Tab(label))
   }
 
   icon(i: string): this { this._icon = i; return this }
@@ -53,7 +53,7 @@ export class Tabs extends Element {
   }
 
   static make(): Tabs {
-    return new Tabs()
+    return this.configured(new Tabs())
   }
 
   /** Set the tab list. Each entry is a `Tab` instance with its own schema. */

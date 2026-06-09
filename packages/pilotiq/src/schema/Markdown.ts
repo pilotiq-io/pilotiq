@@ -33,7 +33,7 @@ export class Markdown extends Element {
   }
 
   static make(source: string): Markdown {
-    return new Markdown(source)
+    return this.configured(new Markdown(source))
   }
 
   /** GitHub-flavored markdown. Default `true`. */

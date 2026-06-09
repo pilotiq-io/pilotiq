@@ -19,7 +19,7 @@ export class Fieldset extends Element {
   }
 
   static make(label: string): Fieldset {
-    return new Fieldset(label)
+    return this.configured(new Fieldset(label))
   }
 
   /** Number of columns the fieldset's children are laid out in. Default 1. */

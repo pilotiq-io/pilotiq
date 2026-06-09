@@ -25,7 +25,7 @@ export class Text extends Element {
   }
 
   static make(content: string): Text {
-    return new Text(content)
+    return this.configured(new Text(content))
   }
 
   color(c: TextColor): this   { this._color = c; return this }

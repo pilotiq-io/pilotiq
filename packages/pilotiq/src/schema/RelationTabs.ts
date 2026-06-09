@@ -33,7 +33,7 @@ export class RelationTabs extends Element {
   }
 
   static make(tabs: RelationTabMeta[]): RelationTabs {
-    return new RelationTabs(tabs)
+    return this.configured(new RelationTabs(tabs))
   }
 
   getType(): string { return 'relation-tabs' }

@@ -53,7 +53,7 @@ export class Step extends Element {
   }
 
   static make(label: string): Step {
-    return new Step(label)
+    return this.configured(new Step(label))
   }
 
   /** Icon shown next to the step label (registry key). */
@@ -131,7 +131,7 @@ export class Wizard extends Element {
   private constructor() { super() }
 
   static make(): Wizard {
-    return new Wizard()
+    return this.configured(new Wizard())
   }
 
   /** Set the step list. Each entry is a `Step` instance with its own schema. */

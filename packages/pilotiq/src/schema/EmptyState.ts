@@ -25,7 +25,7 @@ export class EmptyState extends Element {
   }
 
   static make(heading: string): EmptyState {
-    return new EmptyState(heading)
+    return this.configured(new EmptyState(heading))
   }
 
   description(d: string): this { this._description = d; return this }

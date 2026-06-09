@@ -20,7 +20,7 @@ export class StyleTag extends Element {
   private constructor(private css: string, private nonce?: string) { super() }
 
   static make(css: string, opts?: { nonce?: string }): StyleTag {
-    return new StyleTag(css, opts?.nonce)
+    return this.configured(new StyleTag(css, opts?.nonce))
   }
 
   getType(): string { return 'style' }

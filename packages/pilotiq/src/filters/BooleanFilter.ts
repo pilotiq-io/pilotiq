@@ -12,7 +12,7 @@ import { Filter, type FilterKind, type FilterMeta } from './Filter.js'
  */
 export class BooleanFilter extends Filter {
   static make(name: string): BooleanFilter {
-    return new BooleanFilter(name)
+    return this.configured(new BooleanFilter(name))
   }
 
   override getKind(): FilterKind { return 'boolean' }

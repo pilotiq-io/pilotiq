@@ -30,7 +30,7 @@ export class MetaTag extends Element {
   private constructor(private attrs: MetaTagAttrs) { super() }
 
   static make(attrs: MetaTagAttrs): MetaTag {
-    return new MetaTag(attrs)
+    return this.configured(new MetaTag(attrs))
   }
 
   getType(): string { return 'meta' }

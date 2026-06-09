@@ -13,7 +13,7 @@ export class Group extends Element {
   private constructor() { super() }
 
   static make(): Group {
-    return new Group()
+    return this.configured(new Group())
   }
 
   /** Set the children. Any Element type is accepted. */

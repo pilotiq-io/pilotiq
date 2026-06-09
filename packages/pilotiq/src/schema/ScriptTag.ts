@@ -44,7 +44,7 @@ export class ScriptTag extends Element {
   private constructor(private attrs: ScriptTagAttrs) { super() }
 
   static make(attrs: ScriptTagAttrs): ScriptTag {
-    return new ScriptTag(attrs)
+    return this.configured(new ScriptTag(attrs))
   }
 
   getType(): string { return 'script' }

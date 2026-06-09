@@ -31,7 +31,7 @@ export class CodeEntry extends Entry {
   }
 
   static make(name: string): CodeEntry {
-    return new CodeEntry(name)
+    return this.configured(new CodeEntry(name))
   }
 
   /**

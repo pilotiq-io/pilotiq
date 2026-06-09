@@ -24,7 +24,7 @@ export class Split extends Element {
   private constructor() { super() }
 
   static make(): Split {
-    return new Split()
+    return this.configured(new Split())
   }
 
   /** Which side the aside child sits on. Defaults to `'right'`. */

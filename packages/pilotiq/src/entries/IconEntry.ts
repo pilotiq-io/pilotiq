@@ -29,7 +29,7 @@ export class IconEntry extends Entry {
   }
 
   static make(name: string): IconEntry {
-    return new IconEntry(name)
+    return this.configured(new IconEntry(name))
   }
 
   options(map: Record<string, IconEntryOption>): this {

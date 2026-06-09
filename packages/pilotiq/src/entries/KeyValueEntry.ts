@@ -27,7 +27,7 @@ export class KeyValueEntry extends Entry {
   }
 
   static make(name: string): KeyValueEntry {
-    return new KeyValueEntry(name)
+    return this.configured(new KeyValueEntry(name))
   }
 
   keyLabel(label: string): this   { this._keyLabel = label; return this }

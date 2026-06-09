@@ -6,7 +6,7 @@ export class Divider extends Element {
   }
 
   static make(label?: string): Divider {
-    return new Divider(label)
+    return this.configured(new Divider(label))
   }
 
   getType(): string { return 'divider' }

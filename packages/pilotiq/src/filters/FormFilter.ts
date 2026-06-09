@@ -109,7 +109,7 @@ export class FormFilter extends Filter {
     // otherwise the default `where(name, jsonString)` clause would fire
     // with a JSON blob and most ORMs would NOT enjoy that.
     f.query((q) => q)
-    return f
+    return this.configured(f)
   }
 
   /**

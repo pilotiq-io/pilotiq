@@ -8,7 +8,7 @@ export class Card extends Element {
   }
 
   static make(title?: string): Card {
-    return new Card(title)
+    return this.configured(new Card(title))
   }
 
   description(d: string): this { this._description = d; return this }

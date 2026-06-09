@@ -76,7 +76,7 @@ export class View extends ServerDataElement {
    * derive a name from).
    */
   static make(this: new (id?: string) => View, id?: string): View {
-    return new this(id)
+    return ServerDataElement.configured(new this(id))
   }
 
   /** Set / override the registered component name. */

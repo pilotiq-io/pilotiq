@@ -23,7 +23,7 @@ export class SelectFilter extends Filter {
   private _options: Array<{ value: string; label: string }> = []
 
   static make(name: string): SelectFilter {
-    return new SelectFilter(name)
+    return this.configured(new SelectFilter(name))
   }
 
   options(opts: SelectFilterOption[]): this {

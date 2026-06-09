@@ -9,7 +9,7 @@ export class Heading extends Element {
   }
 
   static make(content: string): Heading {
-    return new Heading(content)
+    return this.configured(new Heading(content))
   }
 
   level(l: 1 | 2 | 3): this { this._level = l; return this }

@@ -524,7 +524,7 @@ export class Action extends Element {
   }
 
   static make(name: string): Action {
-    return new Action(name)
+    return this.configured(new Action(name))
   }
 
   // ─── Resource-aware factories ─────────────────────────

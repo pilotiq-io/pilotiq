@@ -18,7 +18,7 @@ export class Grid extends Element {
   }
 
   static make(): Grid {
-    return new Grid()
+    return this.configured(new Grid())
   }
 
   columns(n: number): this { this._columns = n; return this }

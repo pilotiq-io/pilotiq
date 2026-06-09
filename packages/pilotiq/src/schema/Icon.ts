@@ -28,7 +28,7 @@ export class Icon extends Element {
   }
 
   static make(name: string): Icon {
-    return new Icon(name)
+    return this.configured(new Icon(name))
   }
 
   /** Pixel size — drives both width and height. Default 16. */

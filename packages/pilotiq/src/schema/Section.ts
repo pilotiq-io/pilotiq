@@ -38,7 +38,7 @@ export class Section extends Element {
   }
 
   static make(title?: string): Section {
-    return new Section(title)
+    return this.configured(new Section(title))
   }
 
   description(d: string): this { this._description = d; return this }

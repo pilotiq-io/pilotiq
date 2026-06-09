@@ -35,7 +35,7 @@ export class TernaryFilter extends Filter {
       }
       return q
     })
-    return f
+    return this.configured(f)
   }
 
   trueLabel(label: string):  this { this._trueLabel  = label; return this }

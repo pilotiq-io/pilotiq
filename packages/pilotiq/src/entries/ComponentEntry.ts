@@ -59,7 +59,7 @@ export class ComponentEntry extends Entry {
     this: new (name: string) => ComponentEntry,
     name: string,
   ): ComponentEntry {
-    return new this(name)
+    return Entry.configured(new this(name))
   }
 
   /** Set / override the registered component name. */

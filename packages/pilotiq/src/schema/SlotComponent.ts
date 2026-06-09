@@ -42,7 +42,7 @@ export class SlotComponent extends Element {
   }
 
   static make(componentName: string): SlotComponent {
-    return new SlotComponent(componentName)
+    return this.configured(new SlotComponent(componentName))
   }
 
   /**

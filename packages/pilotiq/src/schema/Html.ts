@@ -27,7 +27,7 @@ export class Html extends Element {
   }
 
   static make(html: string): Html {
-    return new Html(html)
+    return this.configured(new Html(html))
   }
 
   /** Wrap output in a `prose` Tailwind Typography container. Default `true`. */

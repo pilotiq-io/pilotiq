@@ -38,7 +38,7 @@ export class TextEntry extends Entry {
   }
 
   static make(name: string): TextEntry {
-    return new TextEntry(name)
+    return this.configured(new TextEntry(name))
   }
 
   protected override getEntryType(): string { return 'text' }

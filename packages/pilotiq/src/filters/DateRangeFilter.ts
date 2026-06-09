@@ -85,7 +85,7 @@ export class DateRangeFilter extends Filter {
       if (to)   next = next.where(f.name, '<=', to)
       return next
     })
-    return f
+    return this.configured(f)
   }
 
   /** Switch the inputs to `<input type="datetime-local">` and the URL

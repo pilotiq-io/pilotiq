@@ -51,9 +51,14 @@ TextField.make('slug').helperText('Custom')   // helperText = 'Custom'
 name to clear just one, or omit it to clear everything. Mainly a test seam;
 the registry otherwise lives for the process lifetime.
 
-## v1 scope
+## Scope
 
-Wired on `Field` and `Column` subclasses (the primitives most commonly
-configured app-wide). Other Element subclasses — layout containers, entries,
-filters, actions — don't yet apply configurators; they opt in by routing
-their `make()` factory through `this.configured(...)`.
+Wired on **every Element primitive** — fields, columns, infolist entries,
+filters, actions, layout containers (`Section` / `Grid` / `Tabs` / `Wizard` /
+…), display primitives (`Text` / `Heading` / `Image` / …), and the dashboard
+widgets. So `Action.configureUsing(a => a.icon('plus'))` or
+`Section.configureUsing(s => s.compact())` work the same way as on a field.
+
+The only things you can't configure this way are the value-objects that aren't
+Elements — table `Summarizer`s, query-builder `Constraint`s, `Stat`, builder
+`Block`, `TableGroup`, and `RowButton`. Set their defaults inline.

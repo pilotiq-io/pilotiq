@@ -34,7 +34,7 @@ export class TrashedFilter extends Filter {
       }
       return q
     })
-    return f
+    return this.configured(f)
   }
 
   override getKind(): FilterKind { return 'select' }

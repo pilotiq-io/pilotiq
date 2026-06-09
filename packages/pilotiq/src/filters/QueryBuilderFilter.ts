@@ -200,7 +200,7 @@ export class QueryBuilderFilter extends Filter {
       const tree = parseQueryBuilderValue(value)
       return applyTreeToQuery(q, tree, f._constraints)
     })
-    return f
+    return this.configured(f)
   }
 
   constraints(list: Constraint[]): this {

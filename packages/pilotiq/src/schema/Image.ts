@@ -21,7 +21,7 @@ export class Image extends Element {
   }
 
   static make(url: string): Image {
-    return new Image(url)
+    return this.configured(new Image(url))
   }
 
   alt(text: string): this { this._alt = text; return this }

@@ -52,7 +52,7 @@ export class MultiSelectFilter extends Filter {
       if (values.length === 0) return q
       return q.where(f.name, 'IN', values)
     })
-    return f
+    return this.configured(f)
   }
 
   options(opts: MultiSelectFilterOption[]): this {

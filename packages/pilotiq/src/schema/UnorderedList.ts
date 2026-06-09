@@ -25,7 +25,7 @@ export class UnorderedList extends Element {
 
   /** Create a list. Pass the items inline or via `.items()` later. */
   static make(items: string[] = []): UnorderedList {
-    return new UnorderedList(items)
+    return this.configured(new UnorderedList(items))
   }
 
   /** Replace the items array. Last call wins. */

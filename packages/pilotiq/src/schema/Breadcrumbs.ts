@@ -26,7 +26,7 @@ export class Breadcrumbs extends Element {
   }
 
   static make(items: BreadcrumbItem[]): Breadcrumbs {
-    return new Breadcrumbs(items)
+    return this.configured(new Breadcrumbs(items))
   }
 
   getType(): string { return 'breadcrumbs' }

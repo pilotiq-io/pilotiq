@@ -26,7 +26,7 @@ export class ImageEntry extends Entry {
   }
 
   static make(name: string): ImageEntry {
-    return new ImageEntry(name)
+    return this.configured(new ImageEntry(name))
   }
 
   width(px: number): this  { this._width  = px; return this }
