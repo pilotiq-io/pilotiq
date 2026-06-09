@@ -1235,13 +1235,31 @@ describe('Reorderable rows — POST /:slug/_reorder', () => {
 
   function makeStubReorderModel(initial: Array<{ id: string; sort: number }> = []) {
     const calls = { reorder: [] as Array<Array<string | number>> }
+    // Query stub honoring `where(pk, 'IN', ids)` — the reorder route's scope
+    // guard resolves every posted id through `R.query()` before mutating.
+    function query() {
+      let idFilter: Array<string | number> | null = null
+      const q: any = {
+        where(_col: string, _op?: unknown, vals?: unknown) {
+          if (Array.isArray(vals)) idFilter = vals
+          return q
+        },
+        async paginate() {
+          const rows = idFilter === null
+            ? initial
+            : initial.filter(r => idFilter!.map(String).includes(r.id))
+          return { data: rows, total: rows.length }
+        },
+      }
+      return q
+    }
     const M = {
       primaryKey: 'id',
       find:   async (id: string) => initial.find(r => r.id === id) ?? null,
       create: async () => ({}),
       update: async () => ({}),
       delete: async () => undefined,
-      query:  () => ({} as any),
+      query,
       reorder: async (ids: Array<string | number>) => {
         calls.reorder.push(ids)
       },
@@ -1295,7 +1313,9 @@ describe('Reorderable rows — POST /:slug/_reorder', () => {
   })
 
   it('reorder POST forwards ids to model.reorder and returns { ok: true }', async () => {
-    const { M, calls } = makeStubReorderModel()
+    const { M, calls } = makeStubReorderModel([
+      { id: '1', sort: 0 }, { id: '2', sort: 1 }, { id: '3', sort: 2 },
+    ])
     class Posts extends Resource {
       static override label = 'Posts'
       static override slug  = 'posts'
@@ -1345,15 +1365,8 @@ describe('Reorderable rows — POST /:slug/_reorder', () => {
   })
 
   it('reorder POST returns 422 when model.reorder throws', async () => {
-    const M = {
-      primaryKey: 'id',
-      find:   async () => null,
-      create: async () => ({}),
-      update: async () => ({}),
-      delete: async () => undefined,
-      query:  () => ({} as any),
-      reorder: async () => { throw new Error('row 7 missing') },
-    }
+    const { M } = makeStubReorderModel([{ id: '7', sort: 0 }, { id: '8', sort: 1 }])
+    ;(M as any).reorder = async () => { throw new Error('row 7 missing') }
     class Posts extends Resource {
       static override label = 'Posts'
       static override slug  = 'posts'
@@ -1367,6 +1380,62 @@ describe('Reorderable rows — POST /:slug/_reorder', () => {
     const body = res.sentBody as { ok: boolean; error: string }
     assert.equal(body.ok, false)
     assert.match(body.error, /row 7 missing/)
+  })
+
+  it('reorder POST 404s (and never reorders) when an id falls outside Resource.query() scope', async () => {
+    // Rows 1+2 are in scope; '999' is not (different tenant / scoped out).
+    // `model.reorder` runs against the RAW model, so the route must refuse
+    // the whole batch rather than write order values onto a foreign row.
+    const { M, calls } = makeStubReorderModel([{ id: '1', sort: 0 }, { id: '2', sort: 1 }])
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override table(t: Table): Table { return t.reorderable('sort').columns([Column.make('id')]) }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/posts/_reorder')!
+    const { res } = await callHandlerCapturing(route.handler, fakeReq({ body: { ids: ['2', '999', '1'] } }))
+    assert.equal(res.statusCode, 404)
+    assert.equal(calls.reorder.length, 0, 'model.reorder skipped on out-of-scope ids')
+  })
+
+  it('reorder POST resolves ids through a Resource.query() override (scope applies, not raw model.query)', async () => {
+    // The override scopes to a single tenant's rows — ids the OVERRIDE
+    // returns pass, even though the raw model would also know id '3'.
+    const { M, calls } = makeStubReorderModel([
+      { id: '1', sort: 0 }, { id: '2', sort: 1 }, { id: '3', sort: 2 },
+    ])
+    const tenantRows = [{ id: '1', sort: 0 }, { id: '2', sort: 1 }]
+    const scopedQuery: any = {
+      where(_col: string, _op?: unknown, vals?: unknown) {
+        this._ids = Array.isArray(vals) ? vals : null
+        return this
+      },
+      async paginate() {
+        const rows = this._ids === null
+          ? tenantRows
+          : tenantRows.filter((r: { id: string }) => this._ids.map(String).includes(r.id))
+        return { data: rows, total: rows.length }
+      },
+    }
+    class Posts extends Resource {
+      static override label = 'Posts'
+      static override slug  = 'posts'
+      static override model = M as any
+      static override query() { return scopedQuery }
+      static override table(t: Table): Table { return t.reorderable('sort').columns([Column.make('id')]) }
+    }
+    registerPilotiqRoutes(router, panelWith(Posts))
+    const route = router.list().find(r => r.method === 'POST' && r.path === '/admin/posts/_reorder')!
+
+    const ok = await callHandlerCapturing(route.handler, fakeReq({ body: { ids: ['2', '1'] } }))
+    assert.deepEqual(ok.res.sentBody, { ok: true })
+    assert.deepEqual(calls.reorder, [['2', '1']])
+
+    const denied = await callHandlerCapturing(route.handler, fakeReq({ body: { ids: ['3', '1'] } }))
+    assert.equal(denied.res.statusCode, 404, 'id known to the raw model but outside the override scope is refused')
+    assert.equal(calls.reorder.length, 1)
   })
 })
 

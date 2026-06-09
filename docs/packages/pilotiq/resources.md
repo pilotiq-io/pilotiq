@@ -350,7 +350,8 @@ static override query(ctx?: QueryContext): ModelQuery {
 | Policy lookup before `canX`    | `model.find(id)`     | same — find-by-PK now scoped             |
 | Action dispatch record load    | `model.find(id)`     | same                                     |
 | Global search (Cmd+K results)  | `model.query().where(…LIKE…)` | `R.query(ctx).where(…LIKE…)`    |
-| `Resource.deleteRecord(id)`    | `model.delete(id)`   | unchanged — operates by PK directly      |
+| Reorder (`Table.reorderable()`) | `model.reorder(ids)` | ids first validated via `R.query(ctx).where(pk, 'IN', ids)` — any out-of-scope id 404s the whole batch |
+| `Resource.deleteRecord(id)`    | `model.delete(id)`   | unchanged — operates by PK directly (the delete *route* 404s first when `R.query()` can't resolve the id) |
 
 The `findRecord(R, id, ctx?)` helper exported from `@pilotiq/pilotiq` is what pilotiq's routes call for find-by-PK loads. You can use it from your own code (handlers, custom pages) to keep scope semantics consistent:
 

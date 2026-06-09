@@ -19,7 +19,7 @@ import {
   resourceCreateData, resourceEditData,
   resourceViewData, resourceRecordPageData,
 } from '../pageData.js'
-import { findRecord } from '../orm/modelDefaults.js'
+import { findRecord, getPrimaryKey } from '../orm/modelDefaults.js'
 import { Table } from '../elements/Table.js'
 import { Column } from '../Column.js'
 import { coerceCellValue, CellCoerceError } from '../cells/coerce.js'
@@ -198,6 +198,27 @@ export function registerResourceRoutes(
           if (ids.length !== raw.length) {
             res.status(400)
             return res.json({ ok: false, error: 'ids must contain only strings or numbers' })
+          }
+
+          // Scope guard (mirrors the delete route's 404): every id must
+          // resolve through `R.query()` — which may be tenant/owner-scoped
+          // via a `Resource.query()` override — because `model.reorder`
+          // runs against the RAW model. Without this, posting out-of-scope
+          // ids would write order-column values onto records the user
+          // can't even list. Soft-delete resources check via
+          // `withTrashed()` so reordering a trashed-filtered list isn't
+          // blocked by the default scope.
+          const pk = getPrimaryKey(R.model!)
+          let scoped = R.query({ user })
+          if (R.softDeletes && scoped.withTrashed) scoped = scoped.withTrashed()
+          const unique = [...new Set(ids.map(String))]
+          const page  = await scoped.where(pk, 'IN', ids).paginate(1, unique.length)
+          const found = new Set(
+            ((page?.data ?? []) as Array<Record<string, unknown>>).map(r => String(r[pk])),
+          )
+          if (unique.some(id => !found.has(id))) {
+            res.status(404)
+            return res.json({ ok: false, error: 'One or more records not found' })
           }
 
           try {
