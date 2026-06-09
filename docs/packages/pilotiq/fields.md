@@ -38,6 +38,8 @@ Every field inherits these from `Field`:
 Field.make('name')
   .label('Display label')
   .helperText('Shown below the input')
+  .aboveLabel('Caption above the label')   // muted small text
+  .belowLabel('Caption below the label, above the input')
   .placeholder('e.g. Hello world')
   .default('initial value')
   .prefix('$')                       // or .prefix({ icon: 'dollar' })

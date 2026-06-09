@@ -36,7 +36,8 @@ export function coerceCellValue(col: Column, raw: unknown): unknown {
       if (raw === null || raw === undefined) return null
       return typeof raw === 'string' ? raw : String(raw)
     }
-    case 'toggle': {
+    case 'toggle':
+    case 'checkbox': {
       // Accept boolean, number, and the common string truthy markers
       // ('true', '1', 'on'). Falsy strings ('', 'false', '0') → false.
       if (typeof raw === 'boolean') return raw

@@ -378,6 +378,23 @@ describe('Field cross-field plumbing (Plan #6)', () => {
     })
   })
 
+  describe('aboveLabel() / belowLabel()', () => {
+    it('emits both captions when set', () => {
+      const meta = TextField.make('email')
+        .aboveLabel('Step 2 of 3')
+        .belowLabel('We never share this')
+        .toMeta()
+      assert.equal(meta.aboveLabel, 'Step 2 of 3')
+      assert.equal(meta.belowLabel, 'We never share this')
+    })
+
+    it('omits both keys when unset (sparse meta)', () => {
+      const meta = TextField.make('x').toMeta()
+      assert.equal('aboveLabel' in meta, false)
+      assert.equal('belowLabel' in meta, false)
+    })
+  })
+
   describe('inlineLabel()', () => {
     it('emits inlineLabel=true on meta when set', () => {
       const meta = TextField.make('amount').inlineLabel().toMeta()

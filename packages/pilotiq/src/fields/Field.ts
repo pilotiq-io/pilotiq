@@ -93,6 +93,10 @@ export interface FieldMeta extends ElementMeta {
   prefix?:      FieldDecoration
   suffix?:      FieldDecoration
   helperText?:  string
+  /** Caption rendered above the label (Filament parity). */
+  aboveLabel?:  string
+  /** Caption rendered below the label, above the input (Filament parity). */
+  belowLabel?:  string
   /**
    * Render the label to the left of the input rather than above it.
    * Mirrors `Entry.inlineLabel()` for cross-surface symmetry — same flag
@@ -274,6 +278,8 @@ export abstract class Field extends Element {
   protected _prefix?: FieldDecoration
   protected _suffix?: FieldDecoration
   protected _helperText?: string
+  protected _aboveLabel?: string
+  protected _belowLabel?: string
   protected _inlineLabel?: boolean
   protected _default?: unknown
   protected _dehydrated = true
@@ -479,6 +485,21 @@ export abstract class Field extends Element {
   helperText(text: string): this { this._helperText = text; return this }
 
   /**
+   * Caption rendered above the field's label (Filament idiom). Muted
+   * small text — use for section-style context that should read before
+   * the label ("Step 2 of 3", "Optional"). v1 accepts a plain string.
+   */
+  aboveLabel(text: string): this { this._aboveLabel = text; return this }
+
+  /**
+   * Caption rendered below the field's label, above the input (Filament
+   * idiom). Sits closer to the label than `helperText` (which renders
+   * under the input) — use for instructions users should read BEFORE
+   * interacting with the control. v1 accepts a plain string.
+   */
+  belowLabel(text: string): this { this._belowLabel = text; return this }
+
+  /**
    * Render the label to the left of the input rather than above it.
    * Mirrors `Entry.inlineLabel()`. Default is label-above; pass `false`
    * to clear the flag — including overriding a cascading default set
@@ -622,6 +643,8 @@ export abstract class Field extends Element {
   getPrefix(): FieldDecoration | undefined { return this._prefix }
   getSuffix(): FieldDecoration | undefined { return this._suffix }
   getHelperText(): string | undefined { return this._helperText }
+  getAboveLabel(): string | undefined { return this._aboveLabel }
+  getBelowLabel(): string | undefined { return this._belowLabel }
   getFormatStateUsing(): FormatStateUsingHandler | undefined { return this._formatStateUsing }
   getDehydrateStateUsing(): DehydrateStateUsingHandler | undefined { return this._dehydrateStateUsing }
 
@@ -838,6 +861,8 @@ export abstract class Field extends Element {
       ...(this._prefix !== undefined ? { prefix: this._prefix } : {}),
       ...(this._suffix !== undefined ? { suffix: this._suffix } : {}),
       ...(this._helperText !== undefined ? { helperText: this._helperText } : {}),
+      ...(this._aboveLabel !== undefined ? { aboveLabel: this._aboveLabel } : {}),
+      ...(this._belowLabel !== undefined ? { belowLabel: this._belowLabel } : {}),
       ...(this._inlineLabel === true || (this._inlineLabel === undefined && ctx?.inlineLabelDefault === true) ? { inlineLabel: true } : {}),
       ...(this._default !== undefined ? { defaultValue: this._default } : {}),
       ...(formattedValue !== undefined ? { formattedValue } : {}),

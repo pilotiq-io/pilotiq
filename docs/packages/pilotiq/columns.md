@@ -49,6 +49,7 @@ serializable or needs to combine multiple fields.
 | `ImageColumn` | Avatar / thumbnail — `.size(48)`, `.circular()` |
 | `TextInputColumn` | Inline `<input>` — saves on blur (or after a 500 ms debounce). Supports `.type('number'\|'email'\|...)`, `.placeholder()`, `.step / .min / .max`, `.debounce(ms)`. |
 | `ToggleColumn` | Inline switch — saves on every change. Supports `.onColor / .offColor / .onIcon / .offIcon`. |
+| `CheckboxColumn` | Inline checkbox — same save semantics as `ToggleColumn`, lighter chrome for dense tables. |
 | `SelectColumn` | Inline `<select>` — saves on every change. Supports `.options({ key: label })` (static) or `.options(record => …)` (per-row resolver, may be async), `.nullable()`, `.selectablePlaceholder(false)`. |
 
 ## TextColumn formatters
@@ -185,10 +186,10 @@ Table.make()
 
 ## Editable cell columns
 
-`TextInputColumn`, `ToggleColumn`, and `SelectColumn` turn the cell into
-an inline edit control. Each change PATCHes a single column on a single
-record via `POST {base}/{slug}/:id/_cell/:column`; the row never enters
-a full edit form.
+`TextInputColumn`, `ToggleColumn`, `CheckboxColumn`, and `SelectColumn`
+turn the cell into an inline edit control. Each change PATCHes a single
+column on a single record via `POST {base}/{slug}/:id/_cell/:column`;
+the row never enters a full edit form.
 
 ```ts
 Resource.table = (t) => t.columns([
@@ -200,8 +201,15 @@ Resource.table = (t) => t.columns([
     .nullable(),
   ToggleColumn.make('featured')
     .onColor('success'),
+  CheckboxColumn.make('approved')
+    .confirm('Approve this comment?'),
 ])
 ```
+
+`CheckboxColumn` is `ToggleColumn` with a checkbox instead of a switch —
+same immediate save, optimistic rollback, and `.confirm(message)` gate.
+Reach for it when a row of switches reads too heavy or the boolean is a
+"mark done"-style flag.
 
 **Auth.** Per-row `Resource.canEdit(user, record)` gates every cell —
 forbidden rows render the read-only formatter. Pair with

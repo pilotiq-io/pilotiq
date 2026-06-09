@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { TextInputColumn, ToggleColumn, SelectColumn } from './index.js'
+import { TextInputColumn, ToggleColumn, CheckboxColumn, SelectColumn } from './index.js'
 import { Column } from '../Column.js'
 import { required, minLength, makeValidator } from '../validation/index.js'
 
@@ -10,10 +10,11 @@ describe('Column — editable surface', () => {
     assert.equal(Column.make('x').isEditable(), false)
   })
 
-  it('isEditable() is true for TextInput / Toggle / Select', () => {
+  it('isEditable() is true for TextInput / Toggle / Checkbox / Select', () => {
     assert.equal(TextInputColumn.make('a').isEditable(), true)
     assert.equal(ToggleColumn.make('b').isEditable(),    true)
-    assert.equal(SelectColumn.make('c').isEditable(),    true)
+    assert.equal(CheckboxColumn.make('c').isEditable(),  true)
+    assert.equal(SelectColumn.make('d').isEditable(),    true)
   })
 
   it('required() + validate() compose like Field', async () => {
@@ -140,6 +141,18 @@ describe('ToggleColumn', () => {
     assert.equal(meta.toggleOffColor, 'muted')
     assert.equal(meta.toggleOnIcon, 'star')
     assert.equal(meta.toggleOffIcon, 'star-off')
+  })
+})
+
+describe('CheckboxColumn', () => {
+  it('defaults columnType=checkbox', () => {
+    const meta = CheckboxColumn.make('approved').toMeta()
+    assert.equal(meta.columnType, 'checkbox')
+  })
+
+  it('confirm() round-trips on the meta (shared editable chrome)', () => {
+    const meta = CheckboxColumn.make('approved').confirm('Approve?').toMeta()
+    assert.equal(meta.confirm, 'Approve?')
   })
 })
 

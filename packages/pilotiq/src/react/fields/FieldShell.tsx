@@ -68,6 +68,8 @@ export function FieldShell({ el, name, label, required, children, before, after,
   const prefix     = el['prefix']     as string | { icon: string } | undefined
   const suffix     = el['suffix']     as string | { icon: string } | undefined
   const helperText = el['helperText'] as string | undefined
+  const aboveLabel = el['aboveLabel'] as string | undefined
+  const belowLabel = el['belowLabel'] as string | undefined
   const inline     = el['inlineLabel'] === true
   const hiddenLabel = el['hiddenLabel'] === true
   const wrapperAttrs = pickWrapperAttrs(el)
@@ -190,6 +192,16 @@ export function FieldShell({ el, name, label, required, children, before, after,
     </label>
   ) : null
 
+  // aboveLabel / belowLabel captions hug the label, not the input —
+  // hidden labels (sr-only) hide their captions with them so the chrome
+  // doesn't float next to an invisible label.
+  const aboveLabelEl = aboveLabel && !hiddenLabel
+    ? <p className="text-xs text-muted-foreground">{aboveLabel}</p>
+    : null
+  const belowLabelEl = belowLabel && !hiddenLabel
+    ? <p className="text-xs text-muted-foreground">{belowLabel}</p>
+    : null
+
   const hasDecoration = !!(prefix || suffix || before || after)
   const input = hasDecoration
     ? (
@@ -238,7 +250,13 @@ export function FieldShell({ el, name, label, required, children, before, after,
         {...(onFocusCapture ? { onFocusCapture } : {})}
         {...(onBlurCapture  ? { onBlurCapture  } : {})}
       >
-        {labelEl && <div className="min-w-32 pt-2">{labelEl}</div>}
+        {labelEl && (
+          <div className="min-w-32 pt-2">
+            {aboveLabelEl}
+            {labelEl}
+            {belowLabelEl}
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           {inputBlock}
           {helperText && (
@@ -256,7 +274,9 @@ export function FieldShell({ el, name, label, required, children, before, after,
       {...(onFocusCapture ? { onFocusCapture } : {})}
       {...(onBlurCapture  ? { onBlurCapture  } : {})}
     >
+      {aboveLabelEl}
       {labelEl}
+      {belowLabelEl}
       {inputBlock}
       {helperText && (
         <p className="text-xs text-muted-foreground">{helperText}</p>

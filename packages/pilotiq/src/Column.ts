@@ -19,12 +19,12 @@ export type ColumnBreakpoint = 'sm' | 'md' | 'lg' | 'xl' | '2xl'
  * (dateTime / money / since / numeric / limit) layer on top.
  * `badge` / `icon` / `boolean` / `image` are subclasses that change
  * how the cell is *rendered* rather than just *formatted*.
- * `textInput` / `toggle` / `select` are inline-edit subclasses — the
- * renderer mounts an interactive control that PATCHes a single column
- * via `POST {base}/{slug}/:id/_cell/:column`. */
+ * `textInput` / `toggle` / `checkbox` / `select` are inline-edit
+ * subclasses — the renderer mounts an interactive control that PATCHes
+ * a single column via `POST {base}/{slug}/:id/_cell/:column`. */
 export type ColumnType =
   | 'text' | 'badge' | 'icon' | 'boolean' | 'image' | 'color'
-  | 'textInput' | 'toggle' | 'select'
+  | 'textInput' | 'toggle' | 'checkbox' | 'select'
 
 /** Per-row predicate for `Column.disabled(fn)` — evaluated server-side
  * inside `loadTableRecords` so the renderer just reads the result. */
@@ -638,11 +638,13 @@ export class Column extends Element {
 
   // ─── Editable getters ─────────────────────────────────
 
-  /** True for `TextInputColumn / ToggleColumn / SelectColumn`. The route
-   * handler + `dispatchTable` per-row stamping consult this. */
+  /** True for `TextInputColumn / ToggleColumn / CheckboxColumn /
+   * SelectColumn`. The route handler + `dispatchTable` per-row stamping
+   * consult this. */
   isEditable(): boolean {
     return this._columnType === 'textInput'
       || this._columnType === 'toggle'
+      || this._columnType === 'checkbox'
       || this._columnType === 'select'
   }
 

@@ -122,6 +122,7 @@ export {
   TextInputColumn,
   type TextInputColumnType,
   ToggleColumn,
+  CheckboxColumn,
   SelectColumn,
   type SelectColumnOptionsInput,
 } from './columns/index.js'

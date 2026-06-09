@@ -6,4 +6,5 @@ export { ImageColumn }                                    from './ImageColumn.js
 export { ColorColumn }                                    from './ColorColumn.js'
 export { TextInputColumn, type TextInputColumnType }      from './TextInputColumn.js'
 export { ToggleColumn }                                   from './ToggleColumn.js'
+export { CheckboxColumn }                                 from './CheckboxColumn.js'
 export { SelectColumn,    type SelectColumnOptionsInput } from './SelectColumn.js'

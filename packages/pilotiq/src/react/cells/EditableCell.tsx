@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 
 import { Input } from '../ui/input.js'
 import { Switch } from '../ui/switch.js'
+import { Checkbox } from '../ui/checkbox.js'
 import {
   Select,
   SelectContent,
@@ -224,10 +225,20 @@ export function CellTextInput(props: EditableCellProps): React.ReactElement {
   )
 }
 
-// ─── Toggle cell ───────────────────────────────────────
+// ─── Toggle + Checkbox cells ───────────────────────────
+// Same boolean commit semantics (immediate PATCH, optimistic with
+// rollback, optional confirm gate) — only the control differs.
 
 export function CellToggle(props: EditableCellProps): React.ReactElement {
-  const { url, value, disabled, col } = props
+  return <CellBoolean {...props} control="switch" />
+}
+
+export function CellCheckbox(props: EditableCellProps): React.ReactElement {
+  return <CellBoolean {...props} control="checkbox" />
+}
+
+function CellBoolean(props: EditableCellProps & { control: 'switch' | 'checkbox' }): React.ReactElement {
+  const { url, value, disabled, col, control } = props
   const confirmMsg = col['confirm'] as string | undefined
   const [localValue, setLocalValue] = useState<boolean>(() => Boolean(value))
   const committedRef = useRef<boolean>(localValue)
@@ -262,11 +273,21 @@ export function CellToggle(props: EditableCellProps): React.ReactElement {
 
   return (
     <div className="px-2 py-2" data-no-row-nav>
-      <Switch
-        checked={localValue}
-        disabled={disabled}
-        onCheckedChange={onChange}
-      />
+      {control === 'switch'
+        ? (
+          <Switch
+            checked={localValue}
+            disabled={disabled}
+            onCheckedChange={onChange}
+          />
+        )
+        : (
+          <Checkbox
+            checked={localValue}
+            disabled={disabled}
+            onCheckedChange={(checked) => onChange(checked === true)}
+          />
+        )}
       <ConfirmDialog
         open={pendingConfirm !== null}
         message={confirmMsg ?? ''}
@@ -276,7 +297,7 @@ export function CellToggle(props: EditableCellProps): React.ReactElement {
           void commit(next)
         }}
         onCancel={() => {
-          // Roll back to the committed value — flips the switch back.
+          // Roll back to the committed value — flips the control back.
           setLocalValue(committedRef.current)
           setPendingConfirm(null)
         }}
@@ -383,6 +404,7 @@ export function pickEditableCell(columnType: string): React.FC<EditableCellProps
   switch (columnType) {
     case 'textInput': return CellTextInput
     case 'toggle':    return CellToggle
+    case 'checkbox':  return CellCheckbox
     case 'select':    return CellSelect
     default:          return null
   }

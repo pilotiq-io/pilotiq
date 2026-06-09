@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { TextInputColumn, ToggleColumn, SelectColumn } from '../columns/index.js'
+import { TextInputColumn, ToggleColumn, CheckboxColumn, SelectColumn } from '../columns/index.js'
 import { coerceCellValue, CellCoerceError } from './coerce.js'
 
 describe('coerceCellValue — TextInputColumn', () => {
@@ -56,6 +56,18 @@ describe('coerceCellValue — ToggleColumn', () => {
     const col = ToggleColumn.make('featured')
     assert.equal(coerceCellValue(col, 1), true)
     assert.equal(coerceCellValue(col, 0), false)
+  })
+})
+
+describe('coerceCellValue — CheckboxColumn', () => {
+  it('shares the toggle boolean coercion branch', () => {
+    const col = CheckboxColumn.make('approved')
+    assert.equal(coerceCellValue(col, true),    true)
+    assert.equal(coerceCellValue(col, 'true'),  true)
+    assert.equal(coerceCellValue(col, '1'),     true)
+    assert.equal(coerceCellValue(col, 'false'), false)
+    assert.equal(coerceCellValue(col, ''),      false)
+    assert.equal(coerceCellValue(col, 0),       false)
   })
 })
 
