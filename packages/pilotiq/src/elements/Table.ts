@@ -66,6 +66,15 @@ export type TableQueryHandler<Q = unknown> = (
 export interface TableRecordsResult<R = unknown> {
   rows:   R[]
   total?: number
+  /**
+   * Cross-page column summaries — `SummaryResult[]` per column name, computed
+   * by the records handler via a second aggregate query over the full
+   * filtered set (`modelTableRecords` does this for model-backed tables).
+   * `loadTableRecords` prefers these over the per-page `<tfoot>` computation;
+   * columns absent here (un-aggregatable / custom handler) fall back to
+   * per-page. Sparse — omitted entirely when no column has summarizers.
+   */
+  summaries?: Record<string, SummaryResult[]>
 }
 
 export type TableRecordsHandler<R = unknown> = (

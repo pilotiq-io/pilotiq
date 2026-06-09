@@ -329,6 +329,10 @@ export async function loadTableRecords(
       const result = await handler(finalCtx)
       const rawRows = Array.isArray(result) ? result : result.rows
       const total   = Array.isArray(result) ? rawRows.length : (result.total ?? rawRows.length)
+      // Cross-page summaries — model-backed handlers aggregate over the full
+      // filtered set and stamp this; absent for custom/array handlers (those
+      // fall back to the per-page computation below, per column).
+      const handlerSummaries = Array.isArray(result) ? undefined : result.summaries
 
       // Per-row visibility evaluation for row-placement actions with rules.
       // Static row actions (no rules) are always visible/enabled, so we
@@ -718,17 +722,26 @@ export async function loadTableRecords(
             activeGroup?.getKeyComparator(),
           )
 
-      // Per-column summaries. Compute over the rows we just rendered
-      // (per-page only in v1; cross-page aggregation is deferred). Pulls
-      // raw column values — summarizers coerce to numbers internally.
+      // Per-column footer summaries. The model-backed records handler
+      // computes these over the FULL filtered set (cross-page) and hands them
+      // back on `handlerSummaries`; we prefer those per column. Any column the
+      // handler couldn't aggregate (un-aggregatable virtual / relationship
+      // columns, or a custom/array `records()` handler that stamps nothing)
+      // falls back to computing over the rendered page rows. Summarizers
+      // coerce to numbers internally.
       const columnsWithSummaries = (table.getChildren() ?? [])
         .filter((c): c is Column => isColumnEl(c) && c.hasSummarizers())
       if (columnsWithSummaries.length > 0) {
         const summaries: Record<string, SummaryResult[]> = {}
         for (const col of columnsWithSummaries) {
-          const values = (finalRows as Array<Record<string, unknown>>)
-            .map(r => r[col.name])
-          summaries[col.name] = col.getSummarizers().map(s => s.toResult(values))
+          const fromHandler = handlerSummaries?.[col.name]
+          if (fromHandler) {
+            summaries[col.name] = fromHandler
+          } else {
+            const values = (finalRows as Array<Record<string, unknown>>)
+              .map(r => r[col.name])
+            summaries[col.name] = col.getSummarizers().map(s => s.toResult(values))
+          }
         }
         table.withSummaries(summaries)
 

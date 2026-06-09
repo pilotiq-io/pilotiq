@@ -565,6 +565,46 @@ describe('loadTableRecords', () => {
       assert.equal(meta['summaries'], undefined)
     })
 
+    it('prefers cross-page summaries stamped by the records handler over the page rows', async () => {
+      // Handler returns only page-1 rows (sum 300) but stamps cross-page
+      // summaries computed over the full filtered set (sum 9999) — the
+      // dispatcher must surface the handler's value, not recompute from rows.
+      const t = Table.make<{ amount: number }>()
+        .columns([Column.make('amount').summarize([Sum.make().label('Total')])])
+        .records(async () => ({
+          rows:  [{ amount: 100 }, { amount: 200 }],
+          total: 50,
+          summaries: { amount: [{ kind: 'sum', label: 'Total', value: '9999' }] },
+        }))
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const summaries = meta['summaries'] as Record<string, Array<{ value: string }>>
+      assert.equal(summaries['amount']![0]!.value, '9999')
+    })
+
+    it('falls back to per-page per column for columns the handler omits', async () => {
+      // Handler stamps a cross-page summary for `amount` only; `tax` has a
+      // summarizer but no handler entry (e.g. an un-aggregatable column), so
+      // it computes per-page over the rendered rows.
+      const t = Table.make<{ amount: number; tax: number }>()
+        .columns([
+          Column.make('amount').summarize([Sum.make()]),
+          Column.make('tax').summarize([Sum.make()]),
+        ])
+        .records(async () => ({
+          rows:  [{ amount: 100, tax: 10 }, { amount: 200, tax: 25 }],
+          total: 2,
+          summaries: { amount: [{ kind: 'sum', value: '9999' }] },
+        }))
+
+      await loadTableRecords([t], {})
+      const meta = (await resolveSchema([t]))[0]!
+      const summaries = meta['summaries'] as Record<string, Array<{ value: string }>>
+      assert.equal(summaries['amount']![0]!.value, '9999')  // cross-page
+      assert.equal(summaries['tax']![0]!.value,    '35')    // per-page (10 + 25)
+    })
+
     it('summaries respect the grouped row order (compute over final rendered rows)', async () => {
       const t = Table.make<{ amount: number; status: string }>()
         .columns([

@@ -304,9 +304,19 @@ Column.make('amount')
   .summarize([Sum.make().label('Total'), Average.make().label('Avg')])
 ```
 
-`loadTableRecords` computes the aggregate over the rendered rows and
-stamps it on `meta.summaries`. Per-page only in v1 — cross-page
-aggregation comes later.
+The footer aggregate covers the **full filtered set**, not just the rows
+on screen — so a "Total" over 4,000 filtered rows is the real total, not
+page 1's. For model-backed resources this runs as a second aggregate
+query (`SUM`/`AVG`/`MIN`/`MAX`; `Count` reuses the row count) that
+respects the active search, filters, tab, and group drill-in. The result
+is stamped on `meta.summaries` for the `<tfoot>` row.
+
+> [!NOTE]
+> Columns that aren't real database columns — virtual columns,
+> `formatStateUsing` outputs, relationship columns — and tables with a
+> custom `Table.records()` handler fall back to summarizing the rendered
+> page (the previous behaviour). Per-group (banded) summary rows are also
+> per-page for now; the global footer is the cross-page one.
 
 ## Per-cell links
 

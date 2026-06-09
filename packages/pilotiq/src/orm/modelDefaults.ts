@@ -1,6 +1,7 @@
 import type { Column } from '../Column.js'
-import type { Table, TableRecordsHandler, TableRecordsResult } from '../elements/Table.js'
+import type { Table, TableContext, TableRecordsHandler, TableRecordsResult } from '../elements/Table.js'
 import type { SaveHandler, LoadRecordHandler, FormContext } from '../elements/Form.js'
+import { computeCrossPageSummaries } from './tableSummaries.js'
 
 /**
  * SQL-style operators understood by `ModelLike.query()`. Mirrors the
@@ -133,6 +134,22 @@ export interface ModelQuery {
 
   /** OR-rooted variant of {@link whereGroup}. */
   orWhereGroup?(fn: (q: ModelQueryGroup) => ModelQueryGroup | void): ModelQuery
+
+  /**
+   * Scalar aggregate terminals — used by the cross-page `Column.summarize`
+   * path to compute `SUM`/`AVG`/`MIN`/`MAX` over the full filtered set
+   * (`computeCrossPageSummaries`). Each runs its own `SELECT … FROM` and
+   * resolves to a scalar (`null` when the set is empty / non-numeric).
+   * Optional on the structural shape — the `@rudderjs/orm` QueryBuilder ships
+   * all four; when absent (test stubs, bare drivers), the summary computation
+   * skips the cross-page path and the dispatcher falls back to per-page.
+   * `count` is intentionally not declared here — the records handler reuses
+   * the paginator's `total` instead of a separate `COUNT(*)`.
+   */
+  sum?(column: string): Promise<number>
+  avg?(column: string): Promise<number | null>
+  min?(column: string): Promise<number | null>
+  max?(column: string): Promise<number | null>
 }
 
 /**
@@ -343,6 +360,55 @@ export async function findRecord<T = unknown>(
  * — tenant filters, default ordering, soft-delete-default behavior —
  * apply to list pages out of the box.
  */
+/**
+ * Apply the page's search / filters / active-tab / group-drill scope to a
+ * query — everything EXCEPT sort + pagination. Shared by the page query and
+ * each cross-page aggregate query so the `<tfoot>` summary reflects exactly
+ * the rows being paged. Extracted from the two records handlers (resource +
+ * relation) so they stay in lockstep.
+ *
+ * - Filters: each contributes a `where` with `kind`-based coercion (boolean
+ *   casts '1'/'true' → bool); custom `Filter.query(fn)` overrides.
+ * - Tab modifier runs AFTER filters — tabs are the primary axis, filters
+ *   refine within a tab, so a tab's narrower `where` wins on collision.
+ * - Group drill scoper runs last so the bucket narrows on top of everything;
+ *   throwing scopers propagate (a config bug surfaces loudly, not silently).
+ */
+function applyTableScope(
+  q:   ModelQuery,
+  ctx: TableContext,
+  cfg: { searchable: string[]; filters: ReturnType<Table['getFilters']> },
+): ModelQuery {
+  if (ctx.search && cfg.searchable.length > 0) {
+    q = applyColumnSearch(q, cfg.searchable, `%${ctx.search}%`)
+  }
+
+  const filterValues = ctx.filters ?? {}
+  for (const filter of cfg.filters) {
+    const value = filterValues[filter.name]
+    if (value === undefined || value === '') continue
+    const customQuery = filter.getQuery()
+    if (customQuery) {
+      q = customQuery(q, value)
+    } else if (filter.getKind() === 'boolean') {
+      const bool = value === '1' || value === 'true' || value === 'yes' || value === 'on'
+      q = q.where(filter.name, bool)
+    } else {
+      q = q.where(filter.name, value)
+    }
+  }
+
+  if (ctx.tabQuery) q = ctx.tabQuery(q)
+
+  if (ctx.groupScope) {
+    const scope  = ctx.groupScope
+    const scoper = scope.group.resolveScoper<ModelQuery>()
+    q = scoper(q, scope.key)
+  }
+
+  return q
+}
+
 export function modelTableRecords(R: ResourceLike, table: Table): TableRecordsHandler {
   // Snapshot the column-derived config at handler-construction time so
   // we don't re-walk the children on every request.
@@ -352,50 +418,12 @@ export function modelTableRecords(R: ResourceLike, table: Table): TableRecordsHa
 
   return async (ctx): Promise<TableRecordsResult> => {
     const user = (ctx as { user?: unknown }).user
-    let q = R.query(user !== undefined ? { user } : undefined)
+    // A thunk so the cross-page aggregate path can build a FRESH scoped query
+    // per aggregate (scalar terminals execute — a builder isn't reusable).
+    const makeScoped = (): ModelQuery =>
+      applyTableScope(R.query(user !== undefined ? { user } : undefined), ctx, { searchable, filters })
 
-    if (ctx.search && searchable.length > 0) {
-      q = applyColumnSearch(q, searchable, `%${ctx.search}%`)
-    }
-
-    // Apply filters. Each Filter contributes a `where` clause with type
-    // coercion based on its `kind` — boolean filters cast '1'/'true' to
-    // a real boolean. Custom `Filter.query(fn)` overrides the default.
-    const filterValues = ctx.filters ?? {}
-    for (const filter of filters) {
-      const value = filterValues[filter.name]
-      if (value === undefined || value === '') continue
-      const customQuery = filter.getQuery()
-      if (customQuery) {
-        q = customQuery(q, value)
-      } else if (filter.getKind() === 'boolean') {
-        const bool = value === '1' || value === 'true' || value === 'yes' || value === 'on'
-        q = q.where(filter.name, bool)
-      } else {
-        q = q.where(filter.name, value)
-      }
-    }
-
-    // Apply the active list-page tab's query modifier (from
-    // `ListTab.modifyQuery(fn)`). Tabs are the primary axis (status,
-    // type) and filters are secondary refinements within a tab — running
-    // the tab's predicate after filters keeps that mental model intact
-    // and lets a tab's narrower `where` win on collision.
-    if (ctx.tabQuery) q = ctx.tabQuery(q)
-
-    // Apply group drill-in scoper when the user clicked a banded heading.
-    // Runs after filters + tab so the bucket narrowing composes on top of
-    // whatever scope the page already had. User-supplied
-    // `TableGroup.scopeQueryByKey(fn)` wins over the framework default
-    // (exact-match `where(column, '=', key)` / whole-day range for date
-    // groups); throwing scopers propagate so a config bug surfaces loudly
-    // rather than silently rendering every row.
-    if (ctx.groupScope) {
-      const scope = ctx.groupScope
-      const scoper = scope.group.resolveScoper<ModelQuery>()
-      q = scoper(q, scope.key)
-    }
-
+    let q = makeScoped()
     if (ctx.sort) {
       q = q.orderBy(ctx.sort.column, ctx.sort.direction === 'desc' ? 'DESC' : 'ASC')
     }
@@ -403,8 +431,9 @@ export function modelTableRecords(R: ResourceLike, table: Table): TableRecordsHa
     const page    = ctx.page    ?? 1
     const perPage = ctx.perPage ?? table.getPerPage() ?? 15
 
-    const result = await q.paginate(page, perPage)
-    return { rows: result.data, total: result.total }
+    const result    = await q.paginate(page, perPage)
+    const summaries = await computeCrossPageSummaries(table, result.total, makeScoped)
+    return { rows: result.data, total: result.total, ...(summaries ? { summaries } : {}) }
   }
 }
 
@@ -705,37 +734,13 @@ export function modelRelationTableRecords(
   const filters             = table.getFilters()
 
   return async (ctx): Promise<TableRecordsResult> => {
-    let q = resolveRelatedQuery(parentModel, parent, relationName)
+    // Fresh scoped query per call — base is the parent's relation accessor,
+    // then the shared search / filters / tab / group-drill scope. Reused by
+    // the cross-page summary aggregates (see `modelTableRecords`).
+    const makeScoped = (): ModelQuery =>
+      applyTableScope(resolveRelatedQuery(parentModel, parent, relationName), ctx, { searchable, filters })
 
-    if (ctx.search && searchable.length > 0) {
-      q = applyColumnSearch(q, searchable, `%${ctx.search}%`)
-    }
-
-    const filterValues = ctx.filters ?? {}
-    for (const filter of filters) {
-      const value = filterValues[filter.name]
-      if (value === undefined || value === '') continue
-      const customQuery = filter.getQuery()
-      if (customQuery) {
-        q = customQuery(q, value)
-      } else if (filter.getKind() === 'boolean') {
-        const bool = value === '1' || value === 'true' || value === 'yes' || value === 'on'
-        q = q.where(filter.name, bool)
-      } else {
-        q = q.where(filter.name, value)
-      }
-    }
-
-    if (ctx.tabQuery) q = ctx.tabQuery(q)
-
-    // Group drill-in scoper — same shape as `modelTableRecords`. Composes
-    // with `relatedQuery` since the scoper just chains another `where`.
-    if (ctx.groupScope) {
-      const scope  = ctx.groupScope
-      const scoper = scope.group.resolveScoper<ModelQuery>()
-      q = scoper(q, scope.key)
-    }
-
+    let q = makeScoped()
     if (ctx.sort) {
       q = q.orderBy(ctx.sort.column, ctx.sort.direction === 'desc' ? 'DESC' : 'ASC')
     }
@@ -743,7 +748,8 @@ export function modelRelationTableRecords(
     const page    = ctx.page    ?? 1
     const perPage = ctx.perPage ?? table.getPerPage() ?? 15
 
-    const result = await q.paginate(page, perPage)
-    return { rows: result.data, total: result.total }
+    const result    = await q.paginate(page, perPage)
+    const summaries = await computeCrossPageSummaries(table, result.total, makeScoped)
+    return { rows: result.data, total: result.total, ...(summaries ? { summaries } : {}) }
   }
 }

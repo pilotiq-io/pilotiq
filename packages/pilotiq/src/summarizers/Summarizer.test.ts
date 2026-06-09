@@ -81,4 +81,48 @@ describe('Summarizers', () => {
       assert.deepEqual(r, { kind: 'average', label: 'Avg', value: '15' })
     })
   })
+
+  describe('cross-page contract (aggregates / resultFromScalars)', () => {
+    it('Sum requests sum and renders the scalar', () => {
+      assert.deepEqual(Sum.make().aggregates(), ['sum'])
+      assert.deepEqual(Sum.make().label('Total').resultFromScalars({ sum: 42 }),
+        { kind: 'sum', label: 'Total', value: '42' })
+    })
+
+    it('Sum renders 0 when the filtered set is empty (null scalar)', () => {
+      assert.equal(Sum.make().resultFromScalars({ sum: null }).value, '0')
+      assert.equal(Sum.make().resultFromScalars({}).value, '0')
+    })
+
+    it('Sum applies the custom formatter to the scalar', () => {
+      const r = Sum.make()
+        .format((n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n))
+        .resultFromScalars({ sum: 6.75 })
+      assert.equal(r.value, '$6.75')
+    })
+
+    it('Average requests avg and renders the scalar', () => {
+      assert.deepEqual(Average.make().aggregates(), ['avg'])
+      assert.equal(Average.make().resultFromScalars({ avg: 15 }).value, '15')
+      assert.equal(Average.make().resultFromScalars({ avg: null }).value, '0')
+    })
+
+    it('Count requests count and renders it as an integer string', () => {
+      assert.deepEqual(Count.make().aggregates(), ['count'])
+      assert.equal(Count.make().resultFromScalars({ count: 4000 }).value, '4000')
+      assert.equal(Count.make().resultFromScalars({ count: null }).value, '0')
+    })
+
+    it('Range requests min + max and renders the span', () => {
+      assert.deepEqual(Range.make().aggregates(), ['min', 'max'])
+      assert.equal(Range.make().resultFromScalars({ min: 1, max: 9 }).value, '1..9')
+      assert.equal(Range.make().format((n) => `$${n}`).resultFromScalars({ min: 5, max: 25 }).value, '$5..$25')
+    })
+
+    it('Range renders "—" when either end is null/absent', () => {
+      assert.equal(Range.make().resultFromScalars({ min: null, max: null }).value, '—')
+      assert.equal(Range.make().resultFromScalars({ min: 1 }).value, '—')
+      assert.equal(Range.make().resultFromScalars({}).value, '—')
+    })
+  })
 })
