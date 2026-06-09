@@ -1,5 +1,12 @@
 # @pilotiq/tiptap
 
+## 3.10.8
+
+### Patch Changes
+
+- 0d346bd: Stop emitting JS sourcemaps in the build (`sourceMap` removed from tsconfig.base.json). The previous release excluded `dist/*.js.map` from the tarball but left the trailing `//# sourceMappingURL=` comment in every `.js` file, so Vite dev in consumer apps chased the pointer and logged an ENOENT stack trace per module — louder than the warning it replaced. `declarationMap` stays on (editors silently skip missing `.d.ts.map`; Vite never reads `.d.ts`).
+- c7d62e9: Relax the exact `3.22.4` pins on the ten `@tiptap/extension-*` peer (and dev) dependencies to `^3.22.4`. The exact pins were an accident of pinning the installed version when each extension feature landed, not an intentional ceiling — and because Tiptap extensions peer-pin `@tiptap/core` exactly per release train, the pins made it impossible for consumers to align on core ≥3.23 (required by `@tiptap/extension-collaboration@^3.23`), producing unavoidable `unmet peer` warnings. Consumers should keep their whole `@tiptap/*` set on one release train.
+
 ## 3.10.7
 
 ### Patch Changes
