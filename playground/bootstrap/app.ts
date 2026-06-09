@@ -3,7 +3,6 @@ import 'dotenv/config'
 import { Application } from '@rudderjs/core'
 import { hono } from '@rudderjs/server-hono'
 import { RateLimit } from '@rudderjs/middleware'
-import { sessionMiddleware } from '@rudderjs/session'
 import { requestIdMiddleware } from '../app/Middleware/RequestIdMiddleware.ts'
 import { AppError } from '../app/Exceptions/AppError.ts'
 import configs from '../config/index.ts'
@@ -24,7 +23,10 @@ export default Application.configure({
   .withMiddleware((m) => {
     // Global middlewares
     // m.use(RateLimit.perMinute(60))
-    m.use(sessionMiddleware(configs.session))
+    // NOTE: no sessionMiddleware here — the session() provider auto-installs
+    // it on the `web` group; a second global install double-appends
+    // Set-Cookie and can clobber the login cookie (rudder warns since
+    // session@2.4.0).
     m.use(requestIdMiddleware)
   })
   .withExceptions((e) => {
