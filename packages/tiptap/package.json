@@ -12,6 +12,7 @@
   "type": "module",
   "files": [
     "dist",
+    "!dist/**/*.map",
     "boost",
     "CHANGELOG.md"
   ],
