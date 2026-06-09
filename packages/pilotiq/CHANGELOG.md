@@ -1,5 +1,15 @@
 # @pilotiq/pilotiq
 
+## 0.35.0
+
+### Minor Changes
+
+- 507fdea: Two Filament-parity additions: `Field.aboveLabel(text)` / `Field.belowLabel(text)` render muted captions hugging the field label (above it / between it and the input — distinct from `helperText`, which stays under the input; both compose with `inlineLabel()`), and `CheckboxColumn` — an inline-edit boolean cell column sharing `ToggleColumn`'s immediate-PATCH semantics (optimistic with rollback, `.confirm(message)` gate, per-row `canEdit` gating) rendered as a checkbox instead of a switch.
+
+### Patch Changes
+
+- 9cbfecd: Reorder scope guard: `POST /:slug/_reorder` now resolves every posted id through `Resource.query()` before calling `model.reorder(ids)` — any id outside the scoped query (tenant/owner filters, status guards) 404s the whole batch instead of writing order-column values onto records the user can't list. Mirrors the delete route's scope-bypass guard; soft-delete resources check via `withTrashed()` so reordering a trashed-filtered list still works.
+
 ## 0.34.0
 
 ### Minor Changes
