@@ -1,13 +1,12 @@
 import {
-  Resource, Column, BooleanColumn, Action,
+  Resource, Column, BooleanColumn,
   TextField, ToggleField, SlugField,
   unique,
   type Form, type Table,
 } from '@pilotiq/pilotiq'
 import { RichTextField } from '@pilotiq/tiptap'
 import { Page } from '../../Models/Page.js'
-
-const ADMIN = '/admin'
+import { ListSitePages } from './ListSitePages.js'
 
 /**
  * Static site pages (About, Contact, Privacy…) — title, slug, rich
@@ -43,14 +42,13 @@ export class PageResource extends Resource {
         BooleanColumn.make('published'),
         Column.make('updatedAt').label('Updated').sortable().since(),
       ])
-      .headerActions([
-        Action.create(PageResource, ADMIN),
-      ])
-      .recordActions([
-        Action.edit  (PageResource, ADMIN),
-        Action.delete(PageResource, ADMIN),
-      ])
       .defaultSort('title', 'asc')
       .paginate(15)
+  }
+
+  // Actions live on ListSitePages — its hooks receive the requesting
+  // panel's basePath (this resource serves both /admin and /guest).
+  static override pages() {
+    return { index: ListSitePages }
   }
 }

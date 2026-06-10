@@ -1,12 +1,11 @@
 import {
-  Resource, Column, Action,
+  Resource, Column,
   TextField, TextareaField, SelectField,
   type Form, type Table,
 } from '@pilotiq/pilotiq'
 import { Comment } from '../../Models/Comment.js'
 import { Post } from '../../Models/Post.js'
-
-const ADMIN = '/admin'
+import { ListComments } from './ListComments.js'
 
 /**
  * Top-level moderation surface for comments. Day-to-day commenting
@@ -44,14 +43,13 @@ export class CommentResource extends Resource {
         Column.make('body').limit(80).weight('semibold').searchable(),
         Column.make('createdAt').sortable().since(),
       ])
-      .recordActions([
-        Action.edit  (CommentResource, ADMIN),
-        Action.delete(CommentResource, ADMIN),
-      ])
-      .bulkActions([
-        Action.bulkDelete(CommentResource, ADMIN),
-      ])
       .defaultSort('createdAt', 'desc')
       .paginate(15)
+  }
+
+  // Actions live on ListComments — its hooks receive the requesting
+  // panel's basePath (this resource serves both /admin and /guest).
+  static override pages() {
+    return { index: ListComments }
   }
 }

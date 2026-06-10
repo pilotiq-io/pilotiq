@@ -30,7 +30,7 @@ export class CategoryPostsManager extends RelationManager {
       ])
       .recordUrl((r) => {
         const id = (r as { id?: string })?.id
-        return id ? `/admin/posts/${id}` : undefined
+        return id ? `${ctx.basePath}/posts/${id}` : undefined
       })
       .headerActions([
         Action.relationAttach(CategoryPostsManager, ctx),

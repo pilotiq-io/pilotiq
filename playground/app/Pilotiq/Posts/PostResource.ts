@@ -18,8 +18,6 @@ import { PostAnalyticsPage } from './AnalyticsPage.js'
 import { CommentsManager } from './relations/CommentsManager.js'
 import { tiptapText } from './tiptapText.js'
 
-const ADMIN = '/admin'
-
 /**
  * The CMS flagship — posts with co-authors, categories, related posts
  * (all M2M multi-selects synced through pivots), a Tiptap body with a
@@ -167,9 +165,10 @@ export class PostResource extends Resource {
           { value: 'archived',  label: 'Archived' },
         ]),
       ])
-      .headerActions([
-        Action.create(PostResource, ADMIN),
-      ])
+      // Create / Edit / Delete / restore + bulk variants live in
+      // `ListPosts` — the page hooks receive the requesting panel's
+      // basePath (this resource serves both /admin and /guest). Publish
+      // stays here: handler actions carry no URL, so they're panel-safe.
       .recordActions([
         Action.make('publish')
           .label('Publish')
@@ -193,15 +192,6 @@ export class PostResource extends Resource {
             }
             return { notify: Notification.make('Post published').success() }
           }),
-        Action.edit       (PostResource, ADMIN),
-        Action.delete     (PostResource, ADMIN),
-        Action.restore    (PostResource, ADMIN),
-        Action.forceDelete(PostResource, ADMIN),
-      ])
-      .bulkActions([
-        Action.bulkDelete     (PostResource, ADMIN),
-        Action.bulkRestore    (PostResource, ADMIN),
-        Action.bulkForceDelete(PostResource, ADMIN),
       ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)

@@ -1,13 +1,12 @@
 import {
-  Resource, Column, Action,
+  Resource, Column,
   TextField, EmailField, SelectField,
   unique,
   type Form, type Table,
 } from '@pilotiq/pilotiq'
 import { User } from '../../Models/User.js'
 import { UserPostsManager } from './relations/PostsManager.js'
-
-const ADMIN = '/admin'
+import { ListUsers } from './ListUsers.js'
 
 export class UserResource extends Resource {
   static override label                 = 'Users'
@@ -44,14 +43,13 @@ export class UserResource extends Resource {
         Column.make('role').sortable(),
         Column.make('createdAt').sortable().since(),
       ])
-      .headerActions([
-        Action.create(UserResource, ADMIN),
-      ])
-      .recordActions([
-        Action.edit  (UserResource, ADMIN),
-        Action.delete(UserResource, ADMIN),
-      ])
       .defaultSort('createdAt', 'desc')
       .paginate(10)
+  }
+
+  // Actions live on ListUsers — its hooks receive the requesting
+  // panel's basePath, keeping the resource panel-portable.
+  static override pages() {
+    return { index: ListUsers }
   }
 }

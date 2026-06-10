@@ -1,13 +1,12 @@
 import {
-  Resource, Column, Action,
+  Resource, Column,
   TextField, TextareaField, SlugField,
   unique,
   type Form, type Table,
 } from '@pilotiq/pilotiq'
 import { Category } from '../../Models/Category.js'
 import { CategoryPostsManager } from './relations/PostsManager.js'
-
-const ADMIN = '/admin'
+import { ListCategories } from './ListCategories.js'
 
 export class CategoryResource extends Resource {
   static override label                = 'Categories'
@@ -36,16 +35,15 @@ export class CategoryResource extends Resource {
         Column.make('slug').searchable().color('muted'),
         Column.make('createdAt').sortable().since(),
       ])
-      .headerActions([
-        Action.create(CategoryResource, ADMIN),
-      ])
-      .recordActions([
-        Action.edit  (CategoryResource, ADMIN),
-        Action.delete(CategoryResource, ADMIN),
-      ])
       .defaultSort('name', 'asc')
       .paginate(15)
   }
 
   static override relations() { return [CategoryPostsManager] }
+
+  // Actions live on ListCategories — its hooks receive the requesting
+  // panel's basePath (this resource serves both /admin and /guest).
+  static override pages() {
+    return { index: ListCategories }
+  }
 }
