@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useEditor, EditorContent, type Extension } from '@tiptap/react'
 import type { AnyExtension } from '@tiptap/core'
+import { Slice } from '@tiptap/pm/model'
 import {
   useCollabRoom,
   getCollabExtensions,
@@ -9,7 +10,10 @@ import {
 import { useCollabSeed, type CollabRoom as FrameworkCollabRoom } from '@rudderjs/sync/react'
 import { createPlainTextEditor, plainTextOf, plainTextToDoc } from '../PlainTextEditor.js'
 import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
+import { AiInlineDiffExtension } from '../extensions/AiInlineDiffExtension.js'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
+import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
+import { AiSuggestionBanner } from './AiSuggestionBanner.js'
 
 /**
  * Tiptap-backed plain-text editor for pilotiq's `TextField` / `TextareaField`
@@ -114,12 +118,14 @@ export function CollabTextRenderer({
         // seeds the fragment on first connect when it's still empty. When
         // collab is off, seed from defaultValue directly.
         content: collabActive ? '' : defaultValue,
-        // AI suggestions — always-on extension that tracks suggested edits as
-        // inline strikethrough + Approve/Reject chip widgets. Idle until the
-        // host calls `editor.commands.addAiSuggestion(...)` via the bridge below.
-        // Matches the `TiptapEditor` wiring so suggestion mode works uniformly
+        // AI suggestions — chip extension (producer-supplied range
+        // suggestions) + inline-diff extension (whole-field suggestions:
+        // red strikethrough on removed runs, green on inserted, with the
+        // `<AiSuggestionBanner>` Accept / Reject below). Both idle until
+        // a suggestion arrives via the bridges below. Matches the
+        // `TiptapEditor` wiring so the review surface reads identically
         // across RichTextField / MarkdownField / TextField+TextareaField.
-        extensions: [...collabExtensions, AiSuggestionExtension],
+        extensions: [...collabExtensions, AiSuggestionExtension, AiInlineDiffExtension],
         onUpdate: (text) => onChange(text),
         ...(onSubmit ? { onSubmit: () => { onSubmit(); return false } } : {}),
         ...(className || editorAttributes
@@ -148,25 +154,32 @@ export function CollabTextRenderer({
   // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
   // extension. No-op when no provider is mounted (default no-op context).
   //
-  // Whole-field fallback: chat-driven suggestions (e.g. `update_form_state`)
-  // arrive without `meta.editorRange`. Plain-text editors opt into a
-  // synthesized full-doc range so the inline-diff chip (red strikethrough on
-  // the current value + green chip with the suggested text + ✓/✕ buttons)
-  // renders BEFORE the user approves. The extension's `applyApprove` is
-  // text-node-based which fits the plain-text schema exactly. The
-  // `onApplyWholeField` callback stays as a fallback for cases that don't
-  // synthesize (e.g. an empty doc — `from === to` skips the chip but the
-  // applier still needs to swap content).
+  // Whole-field suggestions do NOT synthesize a chip range anymore —
+  // they render through `useAiInlineDiff` below (same red/green inline
+  // diff + banner as `TiptapEditor`), replacing the old green-pill chip
+  // that read differently from the rich-text surface. The bridge stays
+  // mounted for producer-supplied `meta.editorRange` suggestions (precise
+  // anchors worth visualizing in place) and as the `onApplyWholeField`
+  // fallback when the diff path can't parse a suggestion.
+  const applyWholeField = (value: string): void => {
+    if (!editor || editor.isDestroyed) return
+    editor.commands.setContent(plainTextToDoc(value, !!multiline))
+  }
   useAiSuggestionBridge(editor ?? null, name, {
-    synthesizeWholeFieldRange: (ed) => ({
-      from: 0,
-      to:   ed.state.doc.content.size,
-    }),
-    onApplyWholeField: (value) => {
-      if (!editor || editor.isDestroyed) return
-      editor.commands.setContent(plainTextToDoc(value, !!multiline))
+    onApplyWholeField: applyWholeField,
+  })
+
+  // Inline diff for whole-field suggestions — plain-text shape: each
+  // line wraps in a `paragraph` node, mirroring `plainTextToDoc`.
+  useAiInlineDiff(editor ?? null, name, {
+    parseSuggestion: (ed, value) => {
+      try {
+        const node = ed.schema.nodeFromJSON(plainTextToDoc(value, !!multiline))
+        return new Slice(node.content, 0, 0)
+      } catch { return null }
     },
   })
+  const isDiffActive = useIsAiInlineDiffActive(editor ?? null)
 
   // First-load seed when collab is active. Collaboration starts the editor
   // empty regardless of `defaultValue`; once the room's first sync
@@ -224,5 +237,22 @@ export function CollabTextRenderer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor])
 
-  return <EditorContent editor={editor} />
+  // Banner mounts below the editor exactly like `TiptapEditor`'s — it
+  // renders nothing while no suggestion is pending for this field, so
+  // the single-line text surface keeps its normal footprint.
+  return (
+    <>
+      <EditorContent editor={editor} />
+      <AiSuggestionBanner
+        fieldName={name}
+        onApplyWholeField={applyWholeField}
+        {...(isDiffActive && editor
+          ? {
+              onAcceptViaEditor: () => editor.commands.acceptAiInlineDiff(),
+              onRejectViaEditor: () => editor.commands.rejectAiInlineDiff(),
+            }
+          : {})}
+      />
+    </>
+  )
 }
