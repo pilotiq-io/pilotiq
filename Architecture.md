@@ -185,7 +185,7 @@ Pilotiq.make('Admin')
 
 - **Plugin system**: `PilotiqPlugin` interface + `.use()` on builder. `@pilotiq/pilotiq/plugins` export path.
 - **ThemeSettingsPage**: Controls sidebar (preset, base/accent color, chart palette, fonts, icons, radius) + live iframe preview via `srcDoc` (client-only, mounted guard for hydration).
-- **API routes**: GET/PUT/DELETE `{base}/api/_theme` — persisted to `panelGlobal` table via Prisma.
+- **API routes**: GET/PUT/DELETE `{base}/api/_theme` — persisted to the `panelGlobal` table through the theme-storage adapter (the app's `'db'` ORM adapter by default; `prismaThemeStorage()` for Prisma apps).
 - **Runtime merging**: Service provider loads overrides on boot. `getMergedTheme()` = code defaults + DB overrides.
 - **Instant feedback**: `applyToParent()` updates `<style id="pilotiq-theme">` on save, then `navigate()` re-fetches server data.
 - **Navigation**: Generated page passes `vike/client/router` `navigate` via `onNavigate` prop. Route functions for `resource-index` and `page` exclude `'theme'` slug to avoid catching the built-in route.
@@ -216,7 +216,7 @@ All `@rudderjs/*` packages resolve to `link:../rudderjs/packages/<name>` via `pn
 
 ### Playground providers
 
-- **playground/** (pilotiq): log, orm-prisma, session, cache, pilotiq
+- **playground/** (pilotiq): log, native database (`@rudderjs/orm` + `@rudderjs/database`), session, cache, pilotiq
 
 ```bash
 cd ~/Projects/rudderjs && pnpm build                       # build framework first

@@ -170,7 +170,7 @@ Each registered `Block` becomes a slash item that inserts an inline form. The bl
 
 ## Storage
 
-The hidden form input carries either a JSON string or an HTML fragment, depending on `.storage(...)`. The form lifecycle's `coerceFormValues('richtext')` parses JSON before save; HTML mode passes through as a string. Both formats round-trip through Prisma `String` columns.
+The hidden form input carries either a JSON string or an HTML fragment, depending on `.storage(...)`. The form lifecycle's `coerceFormValues('richtext')` parses JSON before save; HTML mode passes through as a string. Both formats round-trip through plain string / TEXT columns. On rudder's native engine, JSON mode needs `static casts = { body: 'json' }` on the model — the form pipeline hands `Model.update` a parsed object, and without the cast better-sqlite3 can't bind it.
 
 ## Read-side rendering
 

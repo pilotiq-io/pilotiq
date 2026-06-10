@@ -11,7 +11,7 @@ import react from '@vitejs/plugin-react'
 // eval → React never hydrates → Vike's client router never attaches → every
 // navigation becomes a full page reload).
 //
-// The panel schema files (`app/Pilotiq/**`) call `app().make('prisma')` inside
+// The panel schema files (`app/Pilotiq/**`) call `app().make('db')` inside
 // SERVER-side data callbacks, but those files are also pulled into the CLIENT
 // bundle by the generated `pages/(pilotiq)/_components.ts` (it imports AdminPanel
 // to harvest component-typed icons). They therefore import `app` from the
