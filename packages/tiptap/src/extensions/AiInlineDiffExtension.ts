@@ -156,6 +156,10 @@ export const AiInlineDiffExtension = Extension.create<AiInlineDiffExtensionOptio
         border-radius: 2px;
         padding-left: 1.25em;
         position: relative;
+        /* Some text surfaces style the editor root as a flex row (input
+           mimic); full-basis keeps each diff row on its own line there. */
+        flex: 0 0 100%;
+        width: 100%;
       }
       .${prefix}-inserted-line::before {
         content: '+';
@@ -164,7 +168,8 @@ export const AiInlineDiffExtension = Extension.create<AiInlineDiffExtensionOptio
         color: rgb(20, 83, 45);
         opacity: 0.7;
       }
-      .${prefix}-deleted-lines { display: block; }
+      .${prefix}-deleted-lines { display: block; flex: 0 0 100%; width: 100%; }
+      .${prefix}-lines-active { display: block !important; }
       .${prefix}-deleted-line {
         background-color: rgba(254, 226, 226, 0.55);
         color: rgb(153, 27, 27);
@@ -263,6 +268,17 @@ export const AiInlineDiffExtension = Extension.create<AiInlineDiffExtensionOptio
             if (!ds) return DecorationSet.empty
             return buildDiffDecorations(state, ds, ext.options.classPrefix ?? 'pilotiq-ai-diff')
           },
+          // While a LINES-mode diff is active, force the editor root to
+          // block layout. Some text surfaces style the root as a flex row
+          // (single-line input mimic) — without this the stacked diff
+          // rows lay out as overflowing columns. Drops automatically on
+          // accept / reject.
+          attributes(state) {
+            const ds = aiInlineDiffPluginKey.getState(state)
+            return ds?.displayMode === 'lines'
+              ? { class: `${ext.options.classPrefix ?? 'pilotiq-ai-diff'}-lines-active` }
+              : {}
+          },
         },
       }),
     ]
@@ -330,12 +346,19 @@ function buildDeletedWidget(text: string, prefix: string, id: string): HTMLEleme
 }
 
 /**
- * GitHub-style line rendering. Every top-level block touched by an
- * inserted range gets a full-width green row (node decoration with a `+`
- * gutter via CSS `::before`); deleted content renders as a block widget
- * of red rows — one per line — above the change. The block ≈ line
- * equivalence holds for the surfaces that opt in (plain-text and
- * markdown-ish docs where each line is its own paragraph).
+ * GitHub-style line rendering. Unlike the inline mode (which walks the
+ * changeset's MINIMAL change ranges), lines mode treats whole top-level
+ * blocks as the diff unit — an LCS over the baseline's block texts vs
+ * the current doc's block texts. A partially-edited line therefore
+ * renders as one full red row (the old line) above one full green row
+ * (the new line), instead of fragmented word-level shards. Mark-only
+ * changes (same text, different formatting) read as "kept" here — the
+ * block unit is text; use inline mode when formatting deltas matter.
+ *
+ * The changeset state still drives baseline capture / accept / reject;
+ * lines mode just re-derives its presentation from baseline-vs-current
+ * on every decoration pass, so remote collab edits during review stay
+ * correct for free.
  */
 function buildLineDiffDecorations(
   state:  EditorState,
@@ -343,47 +366,91 @@ function buildLineDiffDecorations(
   prefix: string,
 ): DecorationSet {
   const decos: Decoration[] = []
-  const docSize = state.doc.content.size
-  // A block may intersect several changes — decorate it once.
-  const decoratedBlocks = new Set<number>()
 
-  for (const change of ds.changeset.changes) {
-    const fromB = Math.max(0, Math.min(change.fromB, docSize))
-    const toB   = Math.max(fromB, Math.min(change.toB,   docSize))
+  const baseTexts = topLevelBlockTexts(ds.baseline)
+  const current: Array<{ text: string; pos: number; nodeSize: number }> = []
+  state.doc.forEach((node, pos) => {
+    current.push({ text: node.textContent, pos, nodeSize: node.nodeSize })
+  })
 
-    if (toB > fromB) {
-      state.doc.nodesBetween(fromB, toB, (node, pos) => {
-        if (!node.isBlock) return false
-        if (!decoratedBlocks.has(pos)) {
-          decoratedBlocks.add(pos)
-          decos.push(
-            Decoration.node(pos, pos + node.nodeSize, {
-              class: `${prefix}-inserted-line`,
-              'data-pilotiq-ai-diff-id': ds.id,
-            }),
-          )
-        }
-        // Top-level rows only — don't descend into list items etc.; the
-        // outer block row is the reviewable unit.
-        return false
-      })
-    }
-
-    if (change.toA > change.fromA) {
-      const deletedText = ds.baseline.textBetween(change.fromA, change.toA, '\n', ' ')
-      if (deletedText.length > 0) {
-        decos.push(
-          Decoration.widget(fromB, () => buildDeletedLinesWidget(deletedText, prefix, ds.id), {
-            side: -1,
-            ignoreSelection: true,
-            key: `pilotiq-ai-diff:deleted-lines:${change.fromA}:${change.toA}`,
-          }),
-        )
-      }
-    }
+  // Walk tokens with a pointer into the CURRENT doc's blocks. Removed
+  // baseline lines accumulate and flush as ONE widget anchored before
+  // the next current block (or at doc end), so consecutive deletions
+  // render as a contiguous red row group.
+  let j = 0
+  let pendingRemoved: string[] = []
+  const flushRemoved = (anchor: number): void => {
+    if (pendingRemoved.length === 0) return
+    const lines = pendingRemoved
+    pendingRemoved = []
+    decos.push(
+      Decoration.widget(anchor, () => buildDeletedLinesWidget(lines.join('\n'), prefix, ds.id), {
+        side: -1,
+        ignoreSelection: true,
+        key: `pilotiq-ai-diff:deleted-lines:${anchor}:${lines.length}`,
+      }),
+    )
   }
 
+  for (const tok of lcsBlockDiffTokens(baseTexts, current.map(c => c.text))) {
+    if (tok.kind === 'kept') {
+      flushRemoved(current[j]!.pos)
+      j++
+      continue
+    }
+    if (tok.kind === 'added') {
+      flushRemoved(current[j]!.pos)
+      decos.push(
+        Decoration.node(current[j]!.pos, current[j]!.pos + current[j]!.nodeSize, {
+          class: `${prefix}-inserted-line`,
+          'data-pilotiq-ai-diff-id': ds.id,
+        }),
+      )
+      j++
+      continue
+    }
+    // removed — baseline-only line; accumulate for the next flush.
+    pendingRemoved.push(tok.text)
+  }
+  flushRemoved(state.doc.content.size)
+
   return DecorationSet.create(state.doc, decos)
+}
+
+function topLevelBlockTexts(doc: ProseMirrorNode): string[] {
+  const out: string[] = []
+  doc.forEach((node) => { out.push(node.textContent) })
+  return out
+}
+
+interface BlockDiffToken { kind: 'kept' | 'added' | 'removed'; text: string }
+
+/** Standard LCS walk over two block-text arrays, emitting tokens in
+ *  presentation order with removed-before-added on replacements. */
+function lcsBlockDiffTokens(a: string[], b: string[]): BlockDiffToken[] {
+  const n = a.length
+  const m = b.length
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0))
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      if (a[i - 1] === b[j - 1]) dp[i]![j] = dp[i - 1]![j - 1]! + 1
+      else                       dp[i]![j] = Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!)
+    }
+  }
+  const out: BlockDiffToken[] = []
+  let i = n
+  let j = m
+  while (i > 0 && j > 0) {
+    if (a[i - 1] === b[j - 1]) { out.push({ kind: 'kept', text: a[i - 1]! }); i--; j-- }
+    // Strict `>` ties toward pushing `added` first in this backward walk,
+    // which renders removed-before-added after the final reverse.
+    else if (dp[i - 1]![j]! > dp[i]![j - 1]!) { out.push({ kind: 'removed', text: a[i - 1]! }); i-- }
+    else { out.push({ kind: 'added', text: b[j - 1]! }); j-- }
+  }
+  while (i > 0) { out.push({ kind: 'removed', text: a[i - 1]! }); i-- }
+  while (j > 0) { out.push({ kind: 'added',   text: b[j - 1]! }); j-- }
+  out.reverse()
+  return out
 }
 
 function buildDeletedLinesWidget(text: string, prefix: string, id: string): HTMLElement {
