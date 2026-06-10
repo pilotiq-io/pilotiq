@@ -123,8 +123,9 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
   // Stamp the panel-wide AI suggestion mode on a window global so the
   // AI plugin's `update_form_state` client-tool handler can read it
   // without context plumbing. Singleton flag — doesn't change between
-  // pages within the same panel. Plan: `docs/plans/ai-review-mode.md`.
-  const aiSuggestionsMode = props.panel.aiSuggestionsMode ?? 'auto'
+  // pages within the same panel. Absent on the wire means the default
+  // ('review' — panelInfo emits sparsely). Plan: `docs/plans/ai-review-mode.md`.
+  const aiSuggestionsMode = props.panel.aiSuggestionsMode ?? 'review'
   useEffect(() => {
     if (typeof window === 'undefined') return
     ;(window as unknown as { __pilotiqAiSuggestionsMode?: 'auto' | 'review' }).__pilotiqAiSuggestionsMode = aiSuggestionsMode

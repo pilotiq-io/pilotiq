@@ -270,11 +270,11 @@ export async function panelInfo(
   const databaseNotifications = buildDatabaseNotificationsMeta(cfg, user)
   const recordCollab = buildRecordCollabMap(cfg)
   const pageCollab = buildPageCollabMap(cfg)
-  // AI suggestion mode — sparse: omit when 'auto' (the default) so the
-  // wire shape stays minimal for panels that don't opt into review mode.
-  // Plugin clients (e.g. @pilotiq-pro/ai's `AiClientToolBindings`) read
-  // this to decide whether to apply writes immediately or stage them as
-  // PendingSuggestions for user approval.
+  // AI suggestion mode — sparse: omit when 'review' (the default — AppShell
+  // falls back to it) so the wire shape stays minimal for panels that don't
+  // opt into auto mode. Plugin clients (e.g. @pilotiq-pro/ai's
+  // `AiClientToolBindings`) read this to decide whether to apply writes
+  // immediately or stage them as PendingSuggestions for user approval.
   const aiSuggestionsMode = pilotiq.getAiSuggestionsMode()
   return {
     name: cfg.name,
@@ -289,7 +289,7 @@ export async function panelInfo(
     ...(recordCollab ? { recordCollab } : {}),
     ...(pageCollab ? { pageCollab } : {}),
     ...(Object.keys(renderHooks).length > 0 ? { renderHooks } : {}),
-    ...(aiSuggestionsMode !== 'auto' ? { aiSuggestionsMode } : {}),
+    ...(aiSuggestionsMode !== 'review' ? { aiSuggestionsMode } : {}),
   }
 }
 
