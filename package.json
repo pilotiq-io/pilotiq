@@ -25,38 +25,6 @@
     "release": "pnpm build:packages && pnpm changeset publish",
     "yalc:push": "pnpm build:packages && pnpm -r --filter='./packages/*' exec yalc push && pnpm --dir=../pilotiq-pro install --prefer-offline --silent"
   },
-  "pnpm": {
-    "overrides": {
-      "react": "19.2.6",
-      "react-dom": "19.2.6",
-      "@tiptap/core": "3.26.0",
-      "@tiptap/pm": "3.26.0",
-      "@tiptap/extensions": "3.26.0",
-      "@tiptap/starter-kit": "3.26.0",
-      "@tiptap/react": "3.26.0",
-      "@tiptap/suggestion": "3.26.0",
-      "@tiptap/extension-placeholder": "3.26.0",
-      "@tiptap/extension-link": "3.26.0",
-      "@tiptap/extension-color": "3.26.0",
-      "@tiptap/extension-details": "3.26.0",
-      "@tiptap/extension-highlight": "3.26.0",
-      "@tiptap/extension-image": "3.26.0",
-      "@tiptap/extension-subscript": "3.26.0",
-      "@tiptap/extension-superscript": "3.26.0",
-      "@tiptap/extension-table": "3.26.0",
-      "@tiptap/extension-text-align": "3.26.0",
-      "@tiptap/extension-text-style": "3.26.0",
-      "@tiptap/extension-underline": "3.26.0"
-    },
-    "onlyBuiltDependencies": [
-      "@prisma/engines",
-      "prisma",
-      "msgpackr-extract",
-      "protobufjs",
-      "better-sqlite3",
-      "sharp"
-    ]
-  },
   "devDependencies": {
     "@changesets/cli": "^2.27.0",
     "@eslint/js": "^10.0.1",
