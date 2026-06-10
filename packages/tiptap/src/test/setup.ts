@@ -43,6 +43,9 @@ const globals: Record<string, unknown> = {
   KeyboardEvent:      window.KeyboardEvent,
   CustomEvent:        window.CustomEvent,
   DocumentFragment:   window.DocumentFragment,
+  // prosemirror-view ≥1.41 probes `root instanceof ShadowRoot` while
+  // resolving the editor's event root.
+  ShadowRoot:         window.ShadowRoot,
   Range:              window.Range,
   Selection:          window.Selection,
   MutationObserver:   window.MutationObserver,
@@ -56,6 +59,16 @@ const globals: Record<string, unknown> = {
 
 for (const [k, v] of Object.entries(globals)) {
   Object.defineProperty(globalThis, k, { value: v, writable: true, configurable: true })
+}
+
+// jsdom has no layout engine and never implements elementFromPoint;
+// prosemirror-view ≥1.41 calls it during view initialization.
+if (typeof window.document.elementFromPoint !== 'function') {
+  Object.defineProperty(window.document, 'elementFromPoint', {
+    value: () => null,
+    writable: true,
+    configurable: true,
+  })
 }
 
 // React 19 + RTL require `IS_REACT_ACT_ENVIRONMENT` so `act()` warnings
