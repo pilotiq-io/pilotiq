@@ -84,7 +84,7 @@ static override schema(ctx) {
   return [
     Form.make()
       .schema([TextField.make('title').required()])
-      .save(async data => prisma.article.update({ where: { id }, data }))
+      .save(async data => Article.update(id, data))
       .redirectAfterSave(() => `${ctx?.basePath}/articles/${id}/edit`),
   ]
 }

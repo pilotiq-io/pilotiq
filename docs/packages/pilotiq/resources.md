@@ -49,7 +49,7 @@ export class ArticleResource extends Resource {
 import { Model } from '@rudderjs/orm'
 
 export class Article extends Model {
-  static override table = 'article'      // matches the Prisma client delegate
+  static override table = 'article'      // database table name
 
   id!:        string
   title!:     string
@@ -223,7 +223,7 @@ export class CreateArticle extends Page {
             TextareaField.make('body'),
           ]),
         ])
-        .save(async data => prisma.article.create({ data }))
+        .save(async data => Article.create(data))
         .redirectAfterSave(rec => `/admin/articles/${rec.id}/edit`),
     ]
   }
@@ -266,15 +266,13 @@ static override form(form: Form): Form {
       TextField.make('title').required(),
       TextareaField.make('body'),
     ])
-    .loadRecord(async (id) =>
-      prisma.article.findUnique({ where: { id } })
-    )
+    .loadRecord(async (id) => articleService.find(id))
     .save(async (data, ctx) => {
       const existing = ctx.record as { id?: string } | undefined
       if (existing?.id) {
-        return prisma.article.update({ where: { id: existing.id }, data })
+        return articleService.update(existing.id, data)
       }
-      return prisma.article.create({ data })
+      return articleService.create(data)
     })
 }
 ```
@@ -285,7 +283,7 @@ For deletion:
 
 ```ts
 static override async deleteRecord(id: string): Promise<void> {
-  await prisma.article.delete({ where: { id } })
+  await Article.delete(id)
 }
 ```
 
@@ -383,10 +381,7 @@ static override table(table: Table): Table {
         .confirm('Mark these articles as featured?')
         .handler(async (ctx) => {
           const ids = (ctx.records as { id: string }[]).map(r => r.id)
-          await prisma.article.updateMany({
-            where: { id: { in: ids } },
-            data:  { featured: true },
-          })
+          await Article.whereIn('id', ids).updateAll({ featured: true })
         }),
     ])
 }

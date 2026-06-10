@@ -41,7 +41,7 @@ themeEditor({ storage: prismaThemeStorage({
 }) })
 ```
 
-Without explicit storage the editor uses the default `panelGlobal`-backed storage (and emits a deprecation warning for the implicit Prisma fallback — pass `storage` to silence it).
+Without explicit storage the editor persists through the app's `'db'` ORM adapter (native engine, Drizzle) to the same `panelGlobal` table — no warning, this is the supported default. Apps with a `'prisma'` container binding hit the implicit Prisma fallback instead, which emits a one-time deprecation warning — pass `storage: prismaThemeStorage(...)` explicitly to silence it.
 
 ## Notes
 

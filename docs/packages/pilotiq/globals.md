@@ -110,10 +110,10 @@ Hand-wired `Form.loadRecord` / `Form.save` always win — the auto-wire only fil
 Skip the `static model` shortcut when the singleton's storage doesn't fit a `ModelLike` — JSON file, key-value blob, external service. The `Form.loadRecord` signature is `(id, ctx) => Promise<R | null>`. Globals ignore the `id` — the framework calls it with an empty string. Common patterns:
 
 ```ts
-.loadRecord(async () => prisma.siteConfig.findFirst())
+.loadRecord(async () => SiteConfig.first())
 .loadRecord(async () => readJson('config/site.json'))
 .loadRecord(async () => {
-  const row = await prisma.panelGlobal.findUnique({ where: { slug: 'panel__site' } })
+  const row = await PanelGlobal.where('slug', 'panel__site').first()
   return row?.data ? JSON.parse(row.data) : {}      // empty object on first visit
 })
 ```
@@ -139,7 +139,7 @@ validateSchema(form.children, body)
   → redirectAfterSave(record, ctx) → url   ← defaults to the same edit URL
 ```
 
-`save()` is responsible for upsert semantics — typically `prisma.foo.upsert()` keyed by a fixed slug or singleton row id. Validation failures re-render the form with errors + 422, just like resources.
+`save()` is responsible for upsert semantics — typically `Model.updateOrCreate(...)` (or your store's upsert) keyed by a fixed slug or singleton row id. Validation failures re-render the form with errors + 422, just like resources.
 
 A success toast is auto-emitted (default `"${G.labelSingular} saved"`); customize via `Form.savedNotification(...)`. Notifications persist across the 303 redirect via `@rudderjs/session`'s flash primitive — see `docs/packages/pilotiq/resources.md#submit-lifecycle` for full details.
 

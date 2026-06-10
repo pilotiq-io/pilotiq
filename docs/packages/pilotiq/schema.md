@@ -250,15 +250,15 @@ Form.make()
   .mutateDataBeforeCreate(d => ({ ...d, createdBy: 'system' }))         // create-only
   .beforeSave(async (data, ctx) => { /* hooks */ })                     // both modes
   .beforeUpdate(async (data, ctx) => { /* update-only */ })
-  .save(async (data, ctx) => prisma.article.create({ data }))           // shared persistence
-  .handleCreate(async (data) => prisma.article.create({ data }))        // create-only override
+  .save(async (data, ctx) => Article.create(data))                      // shared persistence
+  .handleCreate(async (data) => Article.create(data))                   // create-only override
   .handleUpdate(async (data, ctx) =>
-    prisma.article.update({ where: { id: ctx.record.id }, data }))      // update-only override
+    Article.update((ctx.record as { id: string }).id, data))            // update-only override
   .afterSave(async (record, ctx) => { /* hooks */ })
   .redirectAfterSave(rec => `/admin/articles/${rec.id}/edit`)
   .savedNotification('Saved')               // string | Notification | NotificationMeta | fn | null
   .createdNotification('Created')           // create-mode override; falls back to savedNotification
-  .loadRecord(async (id) => prisma.article.findUnique({ where: { id } }))
+  .loadRecord(async (id) => Article.find(id))
   .mutateFormDataBeforeFill((values, ctx) => values)  // edit-mode load path
   .fillFromRecord(record => ({ ...record }))          // optional — defaults to spread
   .mutateFormDataAfterFill((values, ctx) => values)
@@ -336,12 +336,11 @@ Table.make()
   .defaultSort('createdAt', 'desc')
   .paginate(10)
   .records(async (ctx) => {
-    const where = ctx.search ? { title: { contains: ctx.search } } : undefined
-    const orderBy = ctx.sort ? { [ctx.sort.column]: ctx.sort.direction } : undefined
-    return {
-      rows:  await prisma.article.findMany({ where, orderBy, take: ctx.perPage, skip: (ctx.page - 1) * ctx.perPage }),
-      total: await prisma.article.count({ where }),
-    }
+    let q = Article.query()
+    if (ctx.search) q = q.where('title', 'like', `%${ctx.search}%`)
+    if (ctx.sort)   q = q.orderBy(ctx.sort.column, ctx.sort.direction)
+    const page = await q.paginate(ctx.page, ctx.perPage)
+    return { rows: page.data, total: page.total }
   })
 ```
 
