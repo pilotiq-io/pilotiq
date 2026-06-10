@@ -61,6 +61,12 @@ export type NavigationBadgeHandler =
  *              value-sync would be moot). Defaults to `['edit']`.
  *   presence — when false, suppress the awareness layer (focus chips,
  *              cursor positions) while keeping value-sync. Defaults to true.
+ *   guests   — per-resource override for anonymous collab peers. The
+ *              server-side gate (`@pilotiq-pro/collab`'s `collabAuthorize`)
+ *              reads it: `true` admits guests to this resource's rooms
+ *              (still subject to `canView(null, record)`), `false` denies
+ *              them even when the gate's panel-wide `allowGuests` is on.
+ *              Omitted = inherit the panel-wide setting (default: deny).
  *
  * Field-level `.collab(false)` always wins over this setting — opting the
  * resource in then opting individual fields out is the supported shape.
@@ -68,6 +74,8 @@ export type NavigationBadgeHandler =
 export interface ResourceCollabConfig {
   pages:    ReadonlyArray<'edit' | 'view'>
   presence: boolean
+  /** Tri-state: absent = inherit the collab gate's panel-wide `allowGuests`. */
+  guests?:  boolean
 }
 
 /** Raw shape accepted by `static collab` before normalization. `true` is a
@@ -75,6 +83,7 @@ export interface ResourceCollabConfig {
 export type ResourceCollabInput = boolean | {
   pages?:    ReadonlyArray<'edit' | 'view'>
   presence?: boolean
+  guests?:   boolean
 }
 
 /**
@@ -370,6 +379,10 @@ export abstract class Resource {
     return {
       pages:    raw.pages    ?? ['edit'],
       presence: raw.presence ?? true,
+      // Tri-state — only emit when the resource took a stance, so the
+      // collab gate can distinguish "inherit panel default" from an
+      // explicit per-resource allow/deny.
+      ...(raw.guests !== undefined ? { guests: raw.guests } : {}),
     }
   }
 

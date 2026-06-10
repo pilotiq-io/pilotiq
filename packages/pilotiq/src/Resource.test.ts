@@ -280,5 +280,26 @@ describe('Resource (static API)', () => {
         presence: false,
       })
     })
+
+    it('guests is tri-state — omitted from the resolved config unless set', () => {
+      class Inherit extends Resource {
+        static override collab = true as const
+      }
+      assert.equal('guests' in (Inherit.getResolvedCollabConfig() ?? {}), false)
+
+      class Open extends Resource {
+        static override collab = { guests: true }
+      }
+      assert.deepEqual(Open.getResolvedCollabConfig(), {
+        pages:    ['edit'],
+        presence: true,
+        guests:   true,
+      })
+
+      class Closed extends Resource {
+        static override collab = { guests: false }
+      }
+      assert.equal(Closed.getResolvedCollabConfig()?.guests, false)
+    })
   })
 })
