@@ -65,6 +65,30 @@ export interface UseAiInlineDiffOptions {
    *   - HTML       → DOMParser + ProseMirror's DOMParser.parse
    */
   parseSuggestion: (editor: Editor, value: string) => Slice | null
+  /**
+   * Resolve the diff rendering mode at diff-start time. Return `'lines'`
+   * for the GitHub-style stacked rows, anything else / omitted keeps the
+   * default `'inline'` word-flow. Called lazily per diff so DOM-marker
+   * readers (`readAiDiffViewMarker`) see the mounted field wrapper.
+   */
+  resolveDisplayMode?: (editor: Editor) => 'inline' | 'lines'
+}
+
+/**
+ * Read the field's `.aiDiffView(...)` choice off the DOM — the
+ * `@pilotiq-pro/ai` field augmentation stamps `data-ai-diff-view` onto
+ * the FieldShell wrapper via `extraAttributes` (same channel as
+ * `data-ai-suggestions-mode`). Walks up from the field's named input.
+ * Defaults to `'inline'` when no marker is present — including in
+ * open-core installs where the augmentation never runs.
+ */
+export function readAiDiffViewMarker(fieldName: string): 'inline' | 'lines' {
+  if (typeof document === 'undefined') return 'inline'
+  const els = document.getElementsByName(fieldName)
+  const el  = els[0]
+  if (!(el instanceof Element)) return 'inline'
+  const wrapper = el.closest('[data-ai-diff-view]')
+  return wrapper?.getAttribute('data-ai-diff-view') === 'lines' ? 'lines' : 'inline'
 }
 
 /**
@@ -99,6 +123,8 @@ export function useAiInlineDiff(
 
   const parseRef = useRef(options.parseSuggestion)
   useEffect(() => { parseRef.current = options.parseSuggestion }, [options.parseSuggestion])
+  const modeRef = useRef(options.resolveDisplayMode)
+  useEffect(() => { modeRef.current = options.resolveDisplayMode }, [options.resolveDisplayMode])
 
   // Track which ids we've handed off to the editor's diff extension
   // so we don't re-start the diff every render or for already-active
@@ -164,10 +190,12 @@ export function useAiInlineDiff(
         continue
       }
 
+      const displayMode = modeRef.current?.(editor) ?? 'inline'
+
       if (surgical) {
         const modifier = planSurgicalModifier(editor, surgical)
         if (!modifier) continue
-        editor.commands.applySurgicalAiInlineDiff(s.id, modifier)
+        editor.commands.applySurgicalAiInlineDiff(s.id, modifier, displayMode)
         startedRef.current.add(s.id)
         continue
       }
@@ -175,7 +203,7 @@ export function useAiInlineDiff(
       if (typeof s.suggestedValue !== 'string') continue
       const slice = parseRef.current(editor, s.suggestedValue)
       if (!slice) continue
-      editor.commands.startAiInlineDiff(s.id, slice)
+      editor.commands.startAiInlineDiff(s.id, slice, displayMode)
       startedRef.current.add(s.id)
     }
     // Cleanup: when a suggestion leaves the context AND we previously

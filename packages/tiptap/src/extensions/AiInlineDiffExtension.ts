@@ -51,7 +51,7 @@ declare module '@tiptap/core' {
        * banner / approve handlers can correlate the editor state with
        * the queue entry.
        */
-      startAiInlineDiff:  (id: string, newDocSlice: Slice) => ReturnType
+      startAiInlineDiff:  (id: string, newDocSlice: Slice, displayMode?: AiDiffDisplayMode) => ReturnType
       /**
        * Start the inline-diff review session for a surgical edit.
        * Snapshots the current doc as the baseline, then runs
@@ -65,7 +65,7 @@ declare module '@tiptap/core' {
        * `delete_block` / `update_block_mark` AI ops. Returns false (no
        * dispatch) when `applyFn` produced no doc change.
        */
-      applySurgicalAiInlineDiff: (id: string, applyFn: (tr: Transaction) => void) => ReturnType
+      applySurgicalAiInlineDiff: (id: string, applyFn: (tr: Transaction) => void, displayMode?: AiDiffDisplayMode) => ReturnType
       /** Clear diff state. Current doc IS the accepted state. */
       acceptAiInlineDiff: () => ReturnType
       /** Revert doc to the captured baseline and clear diff state. */
@@ -74,12 +74,25 @@ declare module '@tiptap/core' {
   }
 }
 
+/**
+ * How the pending diff renders:
+ *   - `'inline'` (default) — word-flow: green inline decorations on
+ *     inserted ranges, deleted text struck through in place.
+ *   - `'lines'` — GitHub-style: every block touched by an insert gets a
+ *     full-width green row (`+` gutter), deleted content renders as a
+ *     full-width red row (`−` gutter) above the change. Suits markdown
+ *     sources / structured text where lines are the meaningful unit.
+ */
+export type AiDiffDisplayMode = 'inline' | 'lines'
+
 interface DiffState {
   id:        string
   /** Original doc captured at `startAiInlineDiff` time — used for revert. */
   baseline:  ProseMirrorNode
   /** ChangeSet accumulating diffs since baseline. */
   changeset: ChangeSet
+  /** Rendering mode for the decorations — see `AiDiffDisplayMode`. */
+  displayMode: AiDiffDisplayMode
 }
 
 export const aiInlineDiffPluginKey = new PluginKey<DiffState | null>('pilotiqAiInlineDiff')
@@ -90,7 +103,7 @@ export function getAiInlineDiffState(state: EditorState): DiffState | null {
   return aiInlineDiffPluginKey.getState(state) ?? null
 }
 
-interface StartMeta { type: 'start';  id: string; baseline: ProseMirrorNode }
+interface StartMeta { type: 'start';  id: string; baseline: ProseMirrorNode; displayMode?: AiDiffDisplayMode }
 interface ClearMeta { type: 'clear' }
 type DiffMeta = StartMeta | ClearMeta
 
@@ -137,29 +150,58 @@ export const AiInlineDiffExtension = Extension.create<AiInlineDiffExtensionOptio
         color: rgb(153, 27, 27);
         padding: 0 0.125em;
       }
+      .${prefix}-inserted-line {
+        display: block;
+        background-color: rgba(187, 247, 208, 0.45);
+        border-radius: 2px;
+        padding-left: 1.25em;
+        position: relative;
+      }
+      .${prefix}-inserted-line::before {
+        content: '+';
+        position: absolute;
+        left: 0.25em;
+        color: rgb(20, 83, 45);
+        opacity: 0.7;
+      }
+      .${prefix}-deleted-lines { display: block; }
+      .${prefix}-deleted-line {
+        background-color: rgba(254, 226, 226, 0.55);
+        color: rgb(153, 27, 27);
+        border-radius: 2px;
+        padding-left: 1.25em;
+        position: relative;
+        white-space: pre-wrap;
+      }
+      .${prefix}-deleted-line::before {
+        content: '−';
+        position: absolute;
+        left: 0.25em;
+        opacity: 0.7;
+      }
     `
     document.head.appendChild(style)
   },
 
   addCommands() {
     return {
-      startAiInlineDiff: (id, newDocSlice) => ({ tr, state, dispatch }) => {
+      startAiInlineDiff: (id, newDocSlice, displayMode) => ({ tr, state, dispatch }) => {
         const baseline = state.doc
         const docEnd   = state.doc.content.size
         // Replace the whole doc body with the proposed content. The
         // schema enforces validity — if the slice doesn't fit, ProseMirror
         // throws (callers should pre-validate via `editor.schema`).
         tr.replaceRange(0, docEnd, newDocSlice)
-        const meta: StartMeta = { type: 'start', id, baseline }
+        const meta: StartMeta = { type: 'start', id, baseline, ...(displayMode ? { displayMode } : {}) }
         tr.setMeta(aiInlineDiffPluginKey, meta)
         if (dispatch) dispatch(tr)
         return true
       },
-      applySurgicalAiInlineDiff: (id, applyFn) => ({ tr, state, dispatch }) => {
+      applySurgicalAiInlineDiff: (id, applyFn, displayMode) => ({ tr, state, dispatch }) => {
         const baseline = state.doc
         applyFn(tr)
         if (!tr.docChanged) return false
-        const meta: StartMeta = { type: 'start', id, baseline }
+        const meta: StartMeta = { type: 'start', id, baseline, ...(displayMode ? { displayMode } : {}) }
         tr.setMeta(aiInlineDiffPluginKey, meta)
         if (dispatch) dispatch(tr)
         return true
@@ -201,7 +243,7 @@ export const AiInlineDiffExtension = Extension.create<AiInlineDiffExtensionOptio
               // the transaction's step list to compute the diff between
               // the baseline doc and the post-transaction doc.
               const cs = ChangeSet.create(meta.baseline).addSteps(tr.doc, tr.mapping.maps, null)
-              return { id: meta.id, baseline: meta.baseline, changeset: cs }
+              return { id: meta.id, baseline: meta.baseline, changeset: cs, displayMode: meta.displayMode ?? 'inline' }
             }
             if (meta?.type === 'clear') return null
             if (!value) return value
@@ -232,6 +274,8 @@ function buildDiffDecorations(
   ds:        DiffState,
   prefix:    string,
 ): DecorationSet {
+  if (ds.displayMode === 'lines') return buildLineDiffDecorations(state, ds, prefix)
+
   const decos: Decoration[] = []
   const docSize = state.doc.content.size
 
@@ -282,5 +326,76 @@ function buildDeletedWidget(text: string, prefix: string, id: string): HTMLEleme
   inner.className   = `${prefix}-deleted-text`
   inner.textContent = text
   root.appendChild(inner)
+  return root
+}
+
+/**
+ * GitHub-style line rendering. Every top-level block touched by an
+ * inserted range gets a full-width green row (node decoration with a `+`
+ * gutter via CSS `::before`); deleted content renders as a block widget
+ * of red rows — one per line — above the change. The block ≈ line
+ * equivalence holds for the surfaces that opt in (plain-text and
+ * markdown-ish docs where each line is its own paragraph).
+ */
+function buildLineDiffDecorations(
+  state:  EditorState,
+  ds:     DiffState,
+  prefix: string,
+): DecorationSet {
+  const decos: Decoration[] = []
+  const docSize = state.doc.content.size
+  // A block may intersect several changes — decorate it once.
+  const decoratedBlocks = new Set<number>()
+
+  for (const change of ds.changeset.changes) {
+    const fromB = Math.max(0, Math.min(change.fromB, docSize))
+    const toB   = Math.max(fromB, Math.min(change.toB,   docSize))
+
+    if (toB > fromB) {
+      state.doc.nodesBetween(fromB, toB, (node, pos) => {
+        if (!node.isBlock) return false
+        if (!decoratedBlocks.has(pos)) {
+          decoratedBlocks.add(pos)
+          decos.push(
+            Decoration.node(pos, pos + node.nodeSize, {
+              class: `${prefix}-inserted-line`,
+              'data-pilotiq-ai-diff-id': ds.id,
+            }),
+          )
+        }
+        // Top-level rows only — don't descend into list items etc.; the
+        // outer block row is the reviewable unit.
+        return false
+      })
+    }
+
+    if (change.toA > change.fromA) {
+      const deletedText = ds.baseline.textBetween(change.fromA, change.toA, '\n', ' ')
+      if (deletedText.length > 0) {
+        decos.push(
+          Decoration.widget(fromB, () => buildDeletedLinesWidget(deletedText, prefix, ds.id), {
+            side: -1,
+            ignoreSelection: true,
+            key: `pilotiq-ai-diff:deleted-lines:${change.fromA}:${change.toA}`,
+          }),
+        )
+      }
+    }
+  }
+
+  return DecorationSet.create(state.doc, decos)
+}
+
+function buildDeletedLinesWidget(text: string, prefix: string, id: string): HTMLElement {
+  const root = document.createElement('div')
+  root.className = `${prefix}-deleted-lines`
+  root.setAttribute('data-pilotiq-ai-diff-id', id)
+  root.contentEditable = 'false'
+  for (const line of text.split('\n')) {
+    const row = document.createElement('div')
+    row.className   = `${prefix}-deleted-line`
+    row.textContent = line || ' '
+    root.appendChild(row)
+  }
   return root
 }
