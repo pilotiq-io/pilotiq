@@ -343,12 +343,13 @@ export interface PilotiqConfig {
    * AI suggestion mode — controls what happens when an AI agent calls a
    * write tool against a form field.
    *
-   * - `'auto'` (default): the write applies immediately to the form state.
-   *   Existing behavior — agents take effect as soon as the tool returns.
-   * - `'review'`: the write is staged as a `PendingSuggestion` and the
-   *   field shows an inline diff (text fields) or current → suggested
-   *   comparison (other types) with Approve / Reject buttons. Approve
-   *   runs the field's registered applier; Reject discards.
+   * - `'review'` (default): the write is staged as a `PendingSuggestion`
+   *   and the field shows an inline diff (text fields) or current →
+   *   suggested comparison (other types) with Approve / Reject buttons.
+   *   Approve runs the field's registered applier; Reject discards.
+   *   Consent-by-default — silent form mutation is the opt-in.
+   * - `'auto'`: the write applies immediately to the form state, just
+   *   like a user typing.
    *
    * VS Code-style review flow. Plan: `docs/plans/ai-review-mode.md`.
    */
@@ -1045,10 +1046,11 @@ export class Pilotiq {
   /**
    * Set the panel-wide AI suggestion mode.
    *
-   * - `'auto'` (default) — agent writes apply immediately.
-   * - `'review'` — agent writes stage as `PendingSuggestion`s; the user
-   *   approves/rejects via inline diff (text) or value-comparison panel
-   *   (non-text). Reuses the Phase 8.5 applier registry on approve.
+   * - `'review'` (default) — agent writes stage as `PendingSuggestion`s;
+   *   the user approves/rejects via inline diff (text) or
+   *   value-comparison panel (non-text). Reuses the Phase 8.5 applier
+   *   registry on approve.
+   * - `'auto'` — agent writes apply immediately.
    *
    * Plan: `docs/plans/ai-review-mode.md`.
    */
@@ -1060,7 +1062,7 @@ export class Pilotiq {
   /** @internal — read by `panelInfo()` and stamped onto the wire shape so
    *  the AI client tool knows which branch (apply vs queue) to take. */
   getAiSuggestionsMode(): 'auto' | 'review' {
-    return this.config.aiSuggestionsMode ?? 'auto'
+    return this.config.aiSuggestionsMode ?? 'review'
   }
 
   /** @internal */
