@@ -4,6 +4,7 @@
 // The renderer uses this to resolve component-typed icons.
 
 import { pilotiqAdmin } from '../../app/Pilotiq/AdminPanel'
+import { pilotiqGuest } from '../../app/Pilotiq/GuestPanel'
 
 const _all: Record<string, unknown> = {}
 const _clusters: Record<string, string[]> = {}
@@ -39,7 +40,7 @@ function _walk(p: any) {
     if (slugs.length > 0) _clusters[cfg.path] = slugs
   }
 }
-for (const _p of [pilotiqAdmin]) _walk(_p)
+for (const _p of [pilotiqAdmin, pilotiqGuest]) _walk(_p)
 
 export const componentRegistry: Record<string, unknown> = _all
 export const clusterSlugsByBasePath: Record<string, string[]> = _clusters

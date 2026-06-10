@@ -5,8 +5,11 @@ export default function Page() {
       <p style={{ color: '#666', margin: 0 }}>View-based admin panel demo</p>
       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
         <a href="/admin" style={{ padding: '0.5rem 1rem', background: '#d97757', color: 'white', borderRadius: '0.5rem', textDecoration: 'none', fontWeight: 500 }}>Open /admin</a>
-        <a href="/simple" style={{ padding: '0.5rem 1rem', background: 'transparent', color: '#1a1a1a', border: '1px solid #ccc', borderRadius: '0.5rem', textDecoration: 'none', fontWeight: 500 }}>Open /simple</a>
+        <a href="/guest" style={{ padding: '0.5rem 1rem', background: 'transparent', color: '#1a1a1a', border: '1px solid #ccc', borderRadius: '0.5rem', textDecoration: 'none', fontWeight: 500 }}>Open /guest</a>
       </div>
+      <p style={{ color: '#999', fontSize: '0.8rem', margin: 0 }}>
+        /admin requires sign-in (admin@example.com / password) — /guest is open to everyone
+      </p>
     </div>
   )
 }

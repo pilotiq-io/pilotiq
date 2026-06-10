@@ -21,13 +21,13 @@ const pagesRoot = path.join(playgroundRoot, 'pages')
 
 const { pilotiq } = await import('@pilotiq/pilotiq/vite')
 
-// Construct the plugin from the playground's cwd so its panel-discovery
-// defaults (./app/Pilotiq/AdminPanel) resolve. Plugin construction calls
-// generatePages + writeComponentsManifest([], pagesRoot) +
+// Construct the plugin from the playground's cwd so panel paths resolve.
+// Keep the panels list in sync with vite.config.ts. Plugin construction
+// calls generatePages + writeComponentsManifest([], pagesRoot) +
 // writeLayoutWithManifest(pagesRoot) — enough for typecheck. For the
 // real component manifest, vite dev/build runs buildStart later.
 process.chdir(playgroundRoot)
-const plugin = pilotiq()
+const plugin = pilotiq({ panels: ['./app/Pilotiq/AdminPanel', './app/Pilotiq/GuestPanel'] })
 
 // Best-effort: run buildStart to populate the manifest with actual
 // panel classes. Failures here (e.g., panel module not import-safe in

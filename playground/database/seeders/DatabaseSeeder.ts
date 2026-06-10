@@ -4,6 +4,7 @@ import { Category } from '../../app/Models/Category.js'
 import { Post } from '../../app/Models/Post.js'
 import { Page } from '../../app/Models/Page.js'
 import { Comment } from '../../app/Models/Comment.js'
+import { hashPassword } from '../../app/Support/password.js'
 
 /**
  * Demo CMS content — users, categories, pages, posts (with authors /
@@ -21,14 +22,17 @@ export default class DatabaseSeeder extends Seeder {
     }
 
     // ── Users ──────────────────────────────────────────────
-    // `demo-admin` matches the panel's resolved user (AdminPanel.user()),
-    // so the profile page and bell notifications hit a real row.
+    // `demo-admin` is the account the /login page signs in with
+    // (admin@example.com / password) — the guarded /admin panel resolves
+    // its user from the session, so the profile page and bell
+    // notifications hit this real row.
+    const password = hashPassword('password')
     const admin = await User.create({
-      id: 'demo-admin', name: 'Demo Admin', email: 'admin@example.com', role: 'admin',
+      id: 'demo-admin', name: 'Demo Admin', email: 'admin@example.com', role: 'admin', password,
     })
-    const maya  = await User.create({ name: 'Maya Lindholm',  email: 'maya@example.com',  role: 'user' })
-    const tariq = await User.create({ name: 'Tariq Haddad',   email: 'tariq@example.com', role: 'user' })
-    const june  = await User.create({ name: 'June Park',      email: 'june@example.com',  role: 'user' })
+    const maya  = await User.create({ name: 'Maya Lindholm',  email: 'maya@example.com',  role: 'user', password })
+    const tariq = await User.create({ name: 'Tariq Haddad',   email: 'tariq@example.com', role: 'user', password })
+    const june  = await User.create({ name: 'June Park',      email: 'june@example.com',  role: 'user', password })
     const writers = [admin, maya, tariq, june]
 
     // ── Categories ─────────────────────────────────────────

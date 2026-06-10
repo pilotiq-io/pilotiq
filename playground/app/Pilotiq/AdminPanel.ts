@@ -121,19 +121,18 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
       storage: databaseThemeStorage(() => db(), { slug: 'Pilotiq Admin__theme' }),
     }),
   ])
-  // Demo auth — a fixed admin identity. The id matches the user row the
-  // seeder creates, so the profile page's save writes through to a real
-  // record and `Notification.sendToDatabase(user)` scopes the bell
-  // correctly. Real apps pass `req => Auth.user()` (from `@rudderjs/auth`).
-  // NOTE: bootstrap/providers.ts overrides this with a DB-backed resolver
-  // (re-reads the row per request so profile edits reflect in the chrome);
-  // this static literal is the client-safe fresh-DB fallback.
-  .user(() => ({
-    id:    'demo-admin',
-    role:  'admin',
-    name:  'Demo Admin',
-    email: 'admin@example.com',
-  }))
+  // Demo auth — session-backed. POST /login (routes/web.ts) stashes the
+  // user id under the session's `userId` key; the guard turns every
+  // signed-out request away to the login page (carrying the original URL
+  // as ?redirect= so sign-in bounces back). The matching user resolver
+  // lives in bootstrap/providers.ts (server-only — it reads the User
+  // model). Real apps pass `req => Auth.user()` (from `@rudderjs/auth`)
+  // and guard on the same. The /guest panel (GuestPanel.ts) is the
+  // no-login counterpart.
+  .guard(
+    (req) => Boolean((req as { session?: { get?: (k: string) => unknown } })?.session?.get?.('userId')),
+    { redirectTo: '/login' },
+  )
   .userMenuItems([
     UserMenuItem.make('docs')
       .label('Documentation')

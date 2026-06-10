@@ -77,7 +77,7 @@ pnpm rudder providers:discover   # regen bootstrap/cache/providers.json (machine
 | Playground | Port | HMR | Purpose |
 |---|---|---|---|
 | `rudderjs/playground` | 3000 | 24678 | Framework demo — zero pilotiq deps |
-| `pilotiq/playground` | 3003 | 24680 | Starter-shaped CMS demo at `/admin` (posts / pages / categories / comments / users) + themeEditor |
+| `pilotiq/playground` | 3003 | 24680 | Starter-shaped CMS demo — two panels: `/admin` (session login at `/login`, `admin@example.com` / `password`, via `Pilotiq.guard()`) and `/guest` (no guard — anonymous guests). Posts / pages / categories / comments / users + themeEditor |
 | `pilotiq-pro/playground` | 3002 | 24680 | Full stack — framework + pilotiq + AI + collab |
 
 **Providers** (`playground/`): log, native database (`@rudderjs/orm` + `@rudderjs/database`), session, cache, pilotiq.

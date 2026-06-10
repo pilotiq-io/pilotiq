@@ -22,7 +22,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [
-    pilotiq(),
+    // Two panels: /admin (session login via Pilotiq.guard) and /guest
+    // (no guard — anonymous visitors browse as guests).
+    pilotiq({ panels: ['./app/Pilotiq/AdminPanel', './app/Pilotiq/GuestPanel'] }),
     rudderjs(),
     vike(),
     tailwindcss(),

@@ -3,34 +3,36 @@ import { defaultProviders } from '@rudderjs/core'
 import { pilotiq } from '@pilotiq/pilotiq'
 import { localUpload } from '@pilotiq/pilotiq/uploads'
 import { pilotiqAdmin } from '../app/Pilotiq/AdminPanel.js'
+import { pilotiqGuest } from '../app/Pilotiq/GuestPanel.js'
 import { AppServiceProvider } from '../app/Providers/AppServiceProvider.js'
 import { User } from '../app/Models/User.js'
 
-// Server-only adapter wiring — kept out of `AdminPanel.ts` because the
+// Server-only adapter wiring — kept out of the panel modules because the
 // Vite plugin's auto-generated `_components.ts` manifest re-imports
-// the panel module on the client to resolve component icons, and
-// `localUpload` pulls in `node:fs/promises` which Vite externalizes
-// in the browser bundle.
-pilotiqAdmin.uploads({
-  adapter: localUpload({ root: 'public/uploads', urlPrefix: '/uploads' }),
-})
+// them on the client to resolve component icons, and `localUpload`
+// pulls in `node:fs/promises` which Vite externalizes in the browser
+// bundle.
+const uploads = { adapter: localUpload({ root: 'public/uploads', urlPrefix: '/uploads' }) }
+pilotiqAdmin.uploads(uploads)
+pilotiqGuest.uploads(uploads)
 
-// Demo auth, DB-backed — re-resolve the fixed admin identity against
-// the real `user` row on every request so profile edits show up in the
-// user-menu chrome. Overrides the static identity AdminPanel.ts sets
-// (kept there as the fresh-DB fallback before seeding). Real apps pass
-// `req => Auth.user()` instead.
-pilotiqAdmin.user(async () => {
-  const row = await User.find('demo-admin').catch(() => null)
-  return row
-    ? { id: row.id, role: row.role, name: row.name, email: row.email }
-    : { id: 'demo-admin', role: 'admin', name: 'Demo Admin', email: 'admin@example.com' }
+// Demo auth, session-backed — POST /login (routes/web.ts) stashes the
+// user id under `userId`; resolve it against the `user` row on every
+// request so profile edits show up in the user-menu chrome. Signed-out
+// requests resolve null and AdminPanel's `.guard()` bounces them to
+// /login. Real apps pass `req => Auth.user()` instead. The guest panel
+// deliberately has NO resolver — everyone is a guest there.
+pilotiqAdmin.user(async (req) => {
+  const id = (req as { session?: { get?: (key: string) => unknown } })?.session?.get?.('userId')
+  if (typeof id !== 'string' || id === '') return null
+  const row = await User.find(id).catch(() => null)
+  return row ? { id: row.id, role: row.role, name: row.name, email: row.email } : null
 })
 
 export default [
   ...(await defaultProviders()),
 
-  pilotiq([pilotiqAdmin]),
+  pilotiq([pilotiqAdmin, pilotiqGuest]),
 
   AppServiceProvider,
 ] satisfies (new (app: Application) => ServiceProvider)[]
