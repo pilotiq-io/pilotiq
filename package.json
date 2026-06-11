@@ -2,7 +2,7 @@
   "name": "pilotiq",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.29.3",
+  "packageManager": "pnpm@11.5.3",
   "description": "Pilotiq — open-source admin and CMS for RudderJS, with a built-in agent",
   "repository": {
     "type": "git",
