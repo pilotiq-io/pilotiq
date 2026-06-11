@@ -12,7 +12,7 @@ import { createPlainTextEditor, plainTextOf, plainTextToDoc } from '../PlainText
 import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
 import { AiInlineDiffExtension } from '../extensions/AiInlineDiffExtension.js'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
-import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
+import { useAiInlineDiff, useIsAiInlineDiffActive, readAiDiffViewMarker } from './useAiInlineDiff.js'
 import { AiSuggestionBanner } from './AiSuggestionBanner.js'
 
 /**
@@ -178,6 +178,7 @@ export function CollabTextRenderer({
         return new Slice(node.content, 0, 0)
       } catch { return null }
     },
+    resolveDisplayMode: () => readAiDiffViewMarker(name),
   })
   const isDiffActive = useIsAiInlineDiffActive(editor ?? null)
 

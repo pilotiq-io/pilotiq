@@ -21,7 +21,7 @@ import { useCollabSeed, type CollabRoom as FrameworkCollabRoom } from '@rudderjs
 import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
 import { AiInlineDiffExtension, aiInlineDiffPluginKey } from '../extensions/AiInlineDiffExtension.js'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
-import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
+import { useAiInlineDiff, useIsAiInlineDiffActive, readAiDiffViewMarker } from './useAiInlineDiff.js'
 import { AiSuggestionBanner } from './AiSuggestionBanner.js'
 import { getMarkdownString, parseMarkdownToHtml } from '../markdownStorage.js'
 
@@ -299,6 +299,7 @@ export function MarkdownEditor({
         return ProseMirrorDOMParser.fromSchema(ed.schema).parseSlice(container)
       } catch { return null }
     },
+    resolveDisplayMode: () => readAiDiffViewMarker(name),
   })
   const isDiffActive = useIsAiInlineDiffActive(editor ?? null)
 

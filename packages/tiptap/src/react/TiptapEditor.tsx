@@ -22,7 +22,7 @@ import type {
 import { useCollabRoom, getCollabExtensions, useRowCoords, parseRowFieldPath } from '@pilotiq/pilotiq/react'
 import { useCollabSeed, type CollabRoom as FrameworkCollabRoom } from '@rudderjs/sync/react'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
-import { useAiInlineDiff, useIsAiInlineDiffActive } from './useAiInlineDiff.js'
+import { useAiInlineDiff, useIsAiInlineDiffActive, readAiDiffViewMarker } from './useAiInlineDiff.js'
 import { AiSuggestionBanner } from './AiSuggestionBanner.js'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import type { BlockMeta } from '../Block.js'
@@ -542,6 +542,7 @@ function ClientEditor(props: ClientEditorProps) {
         return ProseMirrorDOMParser.fromSchema(ed.schema).parseSlice(container)
       } catch { return null }
     },
+    resolveDisplayMode: () => readAiDiffViewMarker(name),
   })
   const isDiffActive = useIsAiInlineDiffActive(editor ?? null)
 
