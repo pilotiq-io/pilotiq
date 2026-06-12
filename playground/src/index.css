@@ -76,7 +76,7 @@
  * .pilotiq-faq* classes. No outer border — items are split by thin dividers;
  * the chevron sits at the inline-end (right in LTR, left in RTL — logical). */
 .pilotiq-faq {
-  margin: 1.25rem 0;
+  margin: 1.25rem auto;        /* centered */
   max-width: 42rem;            /* not full-width */
 }
 /* Divider under each item. In the editor every faqItem is wrapped in a
@@ -84,7 +84,7 @@
  * matched EVERY item and stripped all dividers — scope the "no divider" to the
  * real last item of each render path instead. */
 .pilotiq-faq > * { display: block; }
-.pilotiq-faq-item { border-bottom: 1px solid rgba(0, 0, 0, 0.1); }
+.pilotiq-faq-item { border-bottom: 1px solid var(--color-border, #e4e4e7); }
 .pilotiq-faq > details.pilotiq-faq-item:last-child { border-bottom: 0; } /* read-side last */
 .pilotiq-faq > :last-child .pilotiq-faq-item { border-bottom: 0; }       /* editor last */
 .pilotiq-faq-question {
