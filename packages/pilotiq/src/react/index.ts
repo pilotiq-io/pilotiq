@@ -175,6 +175,12 @@ export {
   type CurrentUser,
 } from './CurrentUserContext.js'
 
+export {
+  PanelI18nProvider,
+  usePanelI18n,
+  type PanelI18nBundle,
+} from './PanelI18nContext.js'
+
 export { ThemeProvider, useTheme } from './ThemeProvider.js'
 export { ThemeToggle } from './ThemeToggle.js'
 export { ThemeSettingsPage } from './ThemeSettingsPage.js'

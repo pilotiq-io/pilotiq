@@ -514,6 +514,13 @@ export {
   type UniqueOptions,
 } from './validation/index.js'
 
+// ─── Panel i18n (translation delivery channel) ────────
+export {
+  registerPanelI18n,
+  type PanelI18nResolver,
+  type PanelI18nBundle,
+} from './i18n/index.js'
+
 // ─── Theme ────────────────────────────────────────────
 export { resolveTheme, generateThemeCSS, iconMap, resolveIconName } from './theme/index.js'
 export {

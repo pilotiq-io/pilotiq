@@ -7,6 +7,7 @@ import type { ClusterClass } from '../Cluster.js'
 import { resourceBasePath, globalBasePath, pageBasePath } from '../clusterPaths.js'
 import type { ElementMeta } from '../schema/Element.js'
 import { resolveTheme } from '../theme/resolve.js'
+import { resolvePanelI18n } from '../i18n/resolve.js'
 import type { ThemeMeta } from '../theme/types.js'
 import { serializeIcon, type SerializedIcon } from '../icons/types.js'
 import {
@@ -261,11 +262,12 @@ export async function panelInfo(
   const merged = pilotiq.getMergedTheme()
   const theme: ThemeMeta | undefined = merged ? resolveTheme(merged) : undefined
   const user = await pilotiq.resolveUser(req)
-  const [navigation, userMenu, renderHooks, rightSidebar] = await Promise.all([
+  const [navigation, userMenu, renderHooks, rightSidebar, i18n] = await Promise.all([
     buildNavigation(pilotiq, user),
     buildUserMenu(pilotiq, user),
     resolveChromeHooks(pilotiq, user, route),
     buildRightSidebarMeta(cfg, user),
+    resolvePanelI18n(),
   ])
   const databaseNotifications = buildDatabaseNotificationsMeta(cfg, user)
   const recordCollab = buildRecordCollabMap(cfg)
@@ -290,6 +292,7 @@ export async function panelInfo(
     ...(pageCollab ? { pageCollab } : {}),
     ...(Object.keys(renderHooks).length > 0 ? { renderHooks } : {}),
     ...(aiSuggestionsMode !== 'review' ? { aiSuggestionsMode } : {}),
+    ...(i18n ? { i18n } : {}),
   }
 }
 
