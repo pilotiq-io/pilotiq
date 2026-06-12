@@ -3,24 +3,16 @@ import { Popover } from '@base-ui/react/popover'
 
 /**
  * Reusable in-block **width** toggle — `contained` (max-width, centered) vs
- * `full` (full bleed). Mirrors the Alert variant picker's shape so any content
- * block can host the same control (FAQ today; Alert / future blocks next). The
- * caller owns the `width` attr + the matching `data-width` / CSS; this is just
- * the picker chrome.
+ * `full` (full bleed). Sits outset in the inline-end gutter (mirroring the
+ * drag handle on the start side), above the content with a z-index so the
+ * trigger is clickable (the block's own content would otherwise capture the
+ * click). The caller owns the `width` attr + the matching `data-width` / CSS.
  */
 export type BlockWidth = 'contained' | 'full'
 
-const WIDTHS: { value: BlockWidth; label: string; icon: ReactElement }[] = [
-  {
-    value: 'contained',
-    label: 'Contained',
-    icon: <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="6" y="4" width="12" height="16" rx="1" /></svg>,
-  },
-  {
-    value: 'full',
-    label: 'Full width',
-    icon: <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="4" width="18" height="16" rx="1" /></svg>,
-  },
+const WIDTHS: { value: BlockWidth; label: string }[] = [
+  { value: 'contained', label: 'Contained' },
+  { value: 'full', label: 'Full width' },
 ]
 
 export function BlockWidthControl(
@@ -36,19 +28,20 @@ export function BlockWidthControl(
             type="button"
             contentEditable={false}
             aria-label="Block width"
+            style={{ insetInlineEnd: '-2.25rem' }}
             className={
-              'absolute end-0 top-0 flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground opacity-0 transition-opacity ' +
-              'hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 ' + hoverClass
+              'absolute top-0 z-10 flex items-center gap-1 whitespace-nowrap rounded border bg-background px-1.5 py-0.5 text-xs text-muted-foreground shadow-sm ' +
+              'opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 ' + hoverClass
             }
           >
-            {active.icon}
+            {active.label}
             <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden><path d="m6 9 6 6 6-6" /></svg>
           </button>
         }
       />
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="end" sideOffset={4} className="isolate z-50">
-          <Popover.Popup className="min-w-36 rounded-md border bg-popover p-1 text-popover-foreground shadow-md outline-hidden">
+          <Popover.Popup className="min-w-32 rounded-md border bg-popover p-1 text-popover-foreground shadow-md outline-hidden">
             {WIDTHS.map((w) => (
               <Popover.Close
                 key={w.value}
@@ -57,11 +50,10 @@ export function BlockWidthControl(
                     type="button"
                     onClick={() => onChange(w.value)}
                     className={
-                      'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-accent hover:text-accent-foreground ' +
+                      'flex w-full items-center rounded px-2 py-1 text-left text-sm hover:bg-accent hover:text-accent-foreground ' +
                       (w.value === width ? 'bg-accent/50' : '')
                     }
                   >
-                    {w.icon}
                     {w.label}
                   </button>
                 }
