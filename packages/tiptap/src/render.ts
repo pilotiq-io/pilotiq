@@ -33,6 +33,10 @@
  *           data-attrs="...">` so consumers can replay or style by data-type.
  */
 
+// Pure variant primitives (no Tiptap runtime) — keeps render.ts server-safe
+// while sharing the alert icon/label source of truth with the editor NodeView.
+import { coerceAlertType, ALERT_VARIANT_LABEL, buildAlertIconSvg } from './extensions/alertVariants.js'
+
 export interface RenderRichTextOptions {
   /**
    * Override the rendering of a custom block (anything that isn't a
@@ -410,18 +414,44 @@ function labeledBlockHtml(cssClass: string, label: string, n: TiptapNode, opts: 
   )
 }
 
-const ALERT_NODE_TYPES = new Set(['info', 'warning', 'success', 'tip'])
-const ALERT_NODE_LABEL: Record<string, string> = { info: 'Info', warning: 'Warning', success: 'Success', tip: 'Tip' }
-
+// shadcn-style callout: icon + editable title + description. Mirrors the
+// editor NodeView (`AlertNodeView`); `coerceAlertType` / `ALERT_ICON_INNER` /
+// labels are shared from `alertVariants` so the two never drift. Consumer owns
+// the `.pilotiq-alert*` CSS.
 function renderAlertNode(n: TiptapNode, opts: RenderRichTextOptions): string {
-  let type = String(n.attrs?.['type'] ?? '').trim().toLowerCase()
-  if (!ALERT_NODE_TYPES.has(type)) type = 'info'
+  const type    = coerceAlertType(n.attrs?.['type'])
+  const icon    = typeof n.attrs?.['icon'] === 'string' ? (n.attrs['icon'] as string) : ''
+  const iconSvg = typeof n.attrs?.['iconSvg'] === 'string' ? (n.attrs['iconSvg'] as string) : ''
+  const color   = typeof n.attrs?.['color'] === 'string' ? (n.attrs['color'] as string) : ''
+  const kids    = Array.isArray(n.content) ? n.content : []
+  const title = kids.find((k) => k?.type === 'alertTitle')
+  const body  = kids.find((k) => k?.type === 'alertBody')
+  const titleHtml = title ? renderChildren(title, opts) : escapeHtml(ALERT_VARIANT_LABEL[type])
+  const bodyHtml  = body  ? renderChildren(body, opts)  : ''
+  // Custom variant paints from the chosen color (mirrors the editor's
+  // `color-mix` tint); CSS-injection-safe because the value is the parsed
+  // attr, only emitted when it matches a strict color literal.
+  const tinted = type === 'custom' && isSafeColor(color)
+  const style  = tinted
+    ? ` style="border-color:color-mix(in srgb,${color} 35%,transparent);background-color:color-mix(in srgb,${color} 8%,transparent)"`
+    : ''
+  const iconStyle = tinted ? ` style="color:${color}"` : ''
   return (
-    `<div class="pilotiq-alert pilotiq-alert-${type}" role="note">` +
-    `<div class="pilotiq-block-label">${ALERT_NODE_LABEL[type]}</div>` +
-    `<div class="pilotiq-block-body">${renderChildren(n, opts)}</div>` +
+    `<div class="pilotiq-alert pilotiq-alert-${type}" data-alert-type="${type}" role="note"${style}>` +
+    `<span class="pilotiq-alert-icon" aria-hidden="true"${iconStyle}>${buildAlertIconSvg(icon, iconSvg, type)}</span>` +
+    `<div class="pilotiq-alert-title">${titleHtml}</div>` +
+    `<div class="pilotiq-alert-description">${bodyHtml}</div>` +
     `</div>`
   )
+}
+
+// Only emit a color into inline CSS when it's a plain literal (hex / rgb(a) /
+// hsl(a) / a CSS keyword) — defends the `style="…"` interpolation against
+// injection via a tampered `color` attr.
+function isSafeColor(value: string): boolean {
+  return /^#[0-9a-fA-F]{3,8}$/.test(value)
+    || /^(rgb|hsl)a?\([0-9.,%\s/]+\)$/.test(value)
+    || /^[a-zA-Z]+$/.test(value)
 }
 
 // ─── Merge tags + mentions ───────────────────────────────────────────

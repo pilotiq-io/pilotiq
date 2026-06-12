@@ -97,6 +97,8 @@
     "@types/react-dom": "^19",
     "esbuild": "^0.27",
     "jsdom": "^29.1.1",
+    "markdown-it": "^14",
+    "@types/markdown-it": "^14",
     "react": "^19",
     "react-dom": "^19",
     "tiptap-markdown": "^0.9",

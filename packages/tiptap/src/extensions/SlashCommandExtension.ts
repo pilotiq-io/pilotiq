@@ -272,28 +272,20 @@ export function buildSlashItems(
         }).run(),
     },
     {
-      key: 'alert-info', label: 'Alert: Info', icon: 'ⓘ', group: 'Content',
-      searchKey: 'alert callout notice info note',
+      // One Alert block — the variant (info/warning/success/tip/custom) is
+      // switched in-block via the NodeView's picker. Defaults to Info with the
+      // label pre-filled as the editable title.
+      key: 'alert', label: 'Alert', icon: '⚠️', group: 'Content',
+      searchKey: 'alert callout notice info warning success tip note custom caution danger hint',
       command: ({ editor, range }) =>
-        editor.chain().focus().deleteRange(range).insertContent({ type: 'alert', attrs: { type: 'info' }, content: [{ type: 'paragraph' }] }).run(),
-    },
-    {
-      key: 'alert-warning', label: 'Alert: Warning', icon: '⚠️', group: 'Content',
-      searchKey: 'alert callout notice warning caution danger',
-      command: ({ editor, range }) =>
-        editor.chain().focus().deleteRange(range).insertContent({ type: 'alert', attrs: { type: 'warning' }, content: [{ type: 'paragraph' }] }).run(),
-    },
-    {
-      key: 'alert-success', label: 'Alert: Success', icon: '✅', group: 'Content',
-      searchKey: 'alert callout notice success ok done',
-      command: ({ editor, range }) =>
-        editor.chain().focus().deleteRange(range).insertContent({ type: 'alert', attrs: { type: 'success' }, content: [{ type: 'paragraph' }] }).run(),
-    },
-    {
-      key: 'alert-tip', label: 'Alert: Tip', icon: '💡', group: 'Content',
-      searchKey: 'alert callout notice tip hint',
-      command: ({ editor, range }) =>
-        editor.chain().focus().deleteRange(range).insertContent({ type: 'alert', attrs: { type: 'tip' }, content: [{ type: 'paragraph' }] }).run(),
+        editor.chain().focus().deleteRange(range).insertContent({
+          type:    'alert',
+          attrs:   { type: 'info' },
+          content: [
+            { type: 'alertTitle', content: [{ type: 'text', text: 'Info' }] },
+            { type: 'alertBody',  content: [{ type: 'paragraph' }] },
+          ],
+        }).run(),
     },
     // Image entry shares the toolbar's attach-files dialog; only surfaced
     // when the panel has wired an `UploadAdapter`. Without one, the dialog

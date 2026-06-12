@@ -1,7 +1,7 @@
 import {
   Resource, Action, Notification,
   Column, TextColumn, BadgeColumn, ImageColumn,
-  TextField, TextareaField, SelectField, SlugField,
+  TextField, TextareaField, SelectField, SlugField, MarkdownField,
   DateTimePicker, FileUpload,
   MultiSelectFilter,
   Section, Grid, Group, Split, Tabs, Tab,
@@ -85,6 +85,12 @@ export class PostResource extends Resource {
                     ]),
                   ]),
                 ]),
+              // Markdown editor demo — type a `:::alert{type=warning}` block
+              // (or any of info/success/tip) and it round-trips through the
+              // markdown source via the content-block directive.
+              MarkdownField.make('excerpt')
+                .label('Excerpt (markdown)')
+                .placeholder('Write in markdown… try :::alert{type=warning}'),
             ]),
             Tab.make('Meta').schema([
               SelectField.make('relatedPosts')

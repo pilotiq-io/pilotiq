@@ -18,6 +18,7 @@ export type MarkdownToolbarButton =
   | 'orderedList'
   | 'blockquote'
   | 'codeBlock'
+  | 'alert'
   | 'attachFiles'
 
 export type MarkdownAttachmentVisibility = 'public' | 'private'
@@ -32,6 +33,7 @@ export const DEFAULT_MARKDOWN_TOOLBAR: readonly MarkdownToolbarButton[] = [
   'orderedList',
   'blockquote',
   'codeBlock',
+  'alert',
   'attachFiles',
 ] as const
 

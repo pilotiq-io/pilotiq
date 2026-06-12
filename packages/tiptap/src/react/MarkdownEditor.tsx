@@ -20,6 +20,7 @@ import {
 import { useCollabSeed, type CollabRoom as FrameworkCollabRoom } from '@rudderjs/sync/react'
 import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
 import { AiInlineDiffExtension, aiInlineDiffPluginKey } from '../extensions/AiInlineDiffExtension.js'
+import { Alert, AlertTitle, AlertBody, ContentBlockKeymap } from '../extensions/contentBlocks.js'
 import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
 import { useAiInlineDiff, useIsAiInlineDiffActive, readAiDiffViewMarker } from './useAiInlineDiff.js'
 import { AiSuggestionBanner } from './AiSuggestionBanner.js'
@@ -97,6 +98,13 @@ const SvgIcons: Record<string, React.ReactElement> = {
     <svg {...ICON_PROPS}>
       <polyline points="16 18 22 12 16 6" />
       <polyline points="8 6 2 12 8 18" />
+    </svg>
+  ),
+  alert: (
+    <svg {...ICON_PROPS}>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
     </svg>
   ),
   attachFiles: (
@@ -240,6 +248,12 @@ export function MarkdownEditor({
         // for deleted text. Host's `<AiSuggestionBanner>` drives Accept /
         // Reject via the extension's commands.
         AiInlineDiffExtension,
+        // Alert content block — round-trips to `:::alert{type=…} Title` via the
+        // node's `markdown` storage spec; renders the same shadcn NodeView.
+        Alert,
+        AlertTitle,
+        AlertBody,
+        ContentBlockKeymap,
         ...collabExtensions,
       ],
       // Collab takes ownership of the document — passing `content` would
@@ -446,6 +460,16 @@ export function MarkdownEditor({
       case 'orderedList': c.toggleOrderedList().run();  break
       case 'blockquote':  c.toggleBlockquote().run();   break
       case 'codeBlock':   c.toggleCodeBlock().run();    break
+      case 'alert':
+        c.insertContent({
+          type:    'alert',
+          attrs:   { type: 'info' },
+          content: [
+            { type: 'alertTitle', content: [{ type: 'text', text: 'Info' }] },
+            { type: 'alertBody',  content: [{ type: 'paragraph' }] },
+          ],
+        }).run()
+        break
       case 'attachFiles': onAttachClick();              break
       default:            /* unknown id — skip */       break
     }
@@ -477,6 +501,7 @@ export function MarkdownEditor({
     orderedList: 'Numbered list',
     blockquote:  'Quote',
     codeBlock:   'Code block',
+    alert:       'Alert',
     attachFiles: 'Attach file',
   }
 
