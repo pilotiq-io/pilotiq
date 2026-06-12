@@ -11,3 +11,55 @@
  * consumers need it). The local block this replaced lives in git history. */
 @import "@pilotiq/pilotiq/styles/file-upload.css";
 @import "@pilotiq/pilotiq/styles/theme.css";
+
+/* ── Inline content blocks ──────────────────────────────────────────────
+ * No border, no background: each reads like normal content, with a small
+ * muted label marking the start of the region. */
+.pilotiq-key-takeaways,
+.pilotiq-summary,
+.pilotiq-faq,
+.pilotiq-alert,
+.pilotiq-pros-cons {
+  margin: 1.25rem 0;
+}
+.pilotiq-block-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground, #6b7280);
+  margin-bottom: 0.25rem;
+  user-select: none;
+}
+/* Alert — tint the label by type (still no box). */
+.pilotiq-alert-info > .pilotiq-block-label    { color: #2563eb; }
+.pilotiq-alert-warning > .pilotiq-block-label { color: #d97706; }
+.pilotiq-alert-success > .pilotiq-block-label { color: #16a34a; }
+.pilotiq-alert-tip > .pilotiq-block-label     { color: #7c3aed; }
+/* Pros & cons — two side-by-side columns. */
+.pilotiq-pros-cons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+.pilotiq-pros > .pilotiq-block-label { color: #16a34a; }
+.pilotiq-cons > .pilotiq-block-label { color: #dc2626; }
+/* FAQ — structured Q/A items, each marker BESIDE its text (grid is robust
+ * against the typography/prose styles applied to editor content). */
+.pilotiq-faq-item { margin: 0.5rem 0; }
+.pilotiq-faq-question,
+.pilotiq-faq-answer {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  gap: 0.5rem;
+  align-items: start;
+}
+.pilotiq-faq-question { font-weight: 600; }
+.pilotiq-faq-marker {
+  font-weight: 700;
+  color: var(--color-muted-foreground, #6b7280);
+  user-select: none;
+}
+/* Collapse the answer paragraph's default margins so it lines up with "A". */
+.pilotiq-faq-body > :first-child { margin-top: 0; }
+.pilotiq-faq-body > :last-child { margin-bottom: 0; }

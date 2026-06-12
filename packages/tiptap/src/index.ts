@@ -12,6 +12,14 @@ export {
 } from './RichTextField.js'
 export { Block, type BlockMeta } from './Block.js'
 export {
+  defaultBlocks,
+  faqBlock,
+  alertBlock,
+  summaryBlock,
+  keyTakeawaysBlock,
+  prosConsBlock,
+} from './blocks/index.js'
+export {
   MentionProvider,
   type MentionItem,
   type MentionProviderMeta,

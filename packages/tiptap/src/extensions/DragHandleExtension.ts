@@ -43,11 +43,14 @@ function createDragHandleView(view: EditorView): {
   update?: () => void
   destroy: () => void
 } {
-  const handle = document.createElement('button')
-  handle.type = 'button'
+  // A <div> (not <button>): a button grabs DOM focus on click, which yanks
+  // focus out of the editor so a follow-up Backspace/Delete on the selected
+  // block goes nowhere. A div doesn't steal focus, so click-to-select works.
+  const handle = document.createElement('div')
+  handle.setAttribute('role', 'button')
   handle.setAttribute('data-pilotiq-drag-handle', '')
   handle.setAttribute('contenteditable', 'false')
-  handle.setAttribute('aria-label', 'Drag block')
+  handle.setAttribute('aria-label', 'Drag or select block')
   handle.setAttribute('draggable', 'true')
   handle.style.cssText = [
     'position: absolute',
@@ -167,10 +170,22 @@ function createDragHandleView(view: EditorView): {
     handle.style.cursor = 'grab'
   }
 
+  // A plain click (no drag) selects the hovered block as a NodeSelection, so
+  // the whole block can be deleted (Backspace / Delete) or replaced — the only
+  // affordance for removing atom-ish custom blocks (FAQ, callout, grid, …).
+  const onClick = (event: MouseEvent): void => {
+    event.preventDefault()
+    if (activePos === null) return
+    if (!view.state.doc.nodeAt(activePos)) return
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, activePos)))
+    view.focus()
+  }
+
   view.dom.addEventListener('mousemove', onMouseMove)
   view.dom.addEventListener('mouseleave', onMouseLeave)
   handle.addEventListener('dragstart', onDragStart)
   handle.addEventListener('dragend', onDragEnd)
+  handle.addEventListener('click', onClick)
 
   return {
     destroy: () => {
@@ -178,6 +193,7 @@ function createDragHandleView(view: EditorView): {
       view.dom.removeEventListener('mouseleave', onMouseLeave)
       handle.removeEventListener('dragstart', onDragStart)
       handle.removeEventListener('dragend', onDragEnd)
+      handle.removeEventListener('click', onClick)
       handle.remove()
     },
   }
