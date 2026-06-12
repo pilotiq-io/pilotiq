@@ -372,6 +372,10 @@ export interface PilotiqConfig {
 export type LayoutProviderComponent = React.ComponentType<{
   children: React.ReactNode
   basePath?: string
+  /** Live pathname, re-passed on every SPA navigation. Lets a layout
+   *  provider derive the current record / page from the URL without
+   *  depending on the (open-only) right-sidebar chat context. */
+  currentPath?: string
 }>
 
 /**

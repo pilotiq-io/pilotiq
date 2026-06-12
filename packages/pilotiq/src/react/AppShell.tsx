@@ -92,7 +92,7 @@ export interface AppShellProps {
    * plugin harvests refs into this array. Empty `[]` is the no-op
    * default — chrome renders without any extra wrapping.
    */
-  layoutProviderRegistry?: ReadonlyArray<React.ComponentType<{ children: React.ReactNode; basePath?: string }>>
+  layoutProviderRegistry?: ReadonlyArray<React.ComponentType<{ children: React.ReactNode; basePath?: string; currentPath?: string }>>
   /**
    * Build-time chrome-slot overrides from the Vite plugin. Populated
    * when the panel module calls `Pilotiq.components({ nav, … })`.
@@ -211,6 +211,7 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
     </ComponentRegistryProvider>,
     layoutProviderRegistry,
     props.basePath,
+    props.currentPath,
   )
 
   // `CurrentUserProvider` sits OUTSIDE the layout-provider chain so
@@ -232,15 +233,16 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
  * intuition documented on `Pilotiq.layoutProvider`.
  */
 function wrapInLayoutProviders(
-  tree:     React.ReactElement,
-  registry: ReadonlyArray<React.ComponentType<{ children: React.ReactNode; basePath?: string }>> | undefined,
-  basePath: string,
+  tree:       React.ReactElement,
+  registry:   ReadonlyArray<React.ComponentType<{ children: React.ReactNode; basePath?: string; currentPath?: string }>> | undefined,
+  basePath:   string,
+  currentPath?: string,
 ): React.ReactElement {
   if (!registry || registry.length === 0) return tree
   let acc: React.ReactElement = tree
   for (let i = registry.length - 1; i >= 0; i--) {
     const Provider = registry[i]!
-    acc = <Provider basePath={basePath}>{acc}</Provider>
+    acc = <Provider basePath={basePath} {...(currentPath !== undefined ? { currentPath } : {})}>{acc}</Provider>
   }
   return acc
 }
