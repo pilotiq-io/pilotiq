@@ -28,9 +28,9 @@ export function BlockWidthControl(
             type="button"
             contentEditable={false}
             aria-label="Block width"
-            style={{ insetInlineEnd: '-2.25rem' }}
+            style={{ insetInlineEnd: 0 }}
             className={
-              'absolute top-0 z-10 flex items-center gap-1 whitespace-nowrap rounded border bg-background px-1.5 py-0.5 text-xs text-muted-foreground shadow-sm ' +
+              'absolute top-0 z-10 flex w-max items-center gap-1 whitespace-nowrap rounded border bg-background px-1.5 py-0.5 text-xs text-muted-foreground shadow-sm ' +
               'opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 ' + hoverClass
             }
           >

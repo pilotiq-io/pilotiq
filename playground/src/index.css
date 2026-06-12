@@ -75,22 +75,20 @@
  * JS); the editor renders a NodeView <div> with a React chevron. Both share the
  * .pilotiq-faq* classes. No outer border — items are split by thin dividers;
  * the chevron sits at the inline-end (right in LTR, left in RTL — logical). */
-.pilotiq-faq {
-  margin: 1.25rem auto;        /* contained: centered within max-width */
-  max-width: 42rem;
-}
-.pilotiq-faq[data-width="full"] {  /* full bleed */
-  max-width: none;
-  margin-inline: 0;
-}
+/* Outer wrapper is ALWAYS full editor width (a stable anchor for the width
+ * control, so the control doesn't move when the width toggles); the inner
+ * `.pilotiq-faq-content` carries the max-width / centering. */
+.pilotiq-faq { position: relative; margin-block: 1.25rem; }
+.pilotiq-faq-content { max-width: 42rem; margin-inline: auto; }       /* contained */
+.pilotiq-faq[data-width="full"] .pilotiq-faq-content { max-width: none; } /* full bleed */
 /* Divider under each item. In the editor every faqItem is wrapped in a
  * `.react-renderer` (data-node-view-wrapper inside), so a plain `:last-child`
  * matched EVERY item and stripped all dividers — scope the "no divider" to the
  * real last item of each render path instead. */
-.pilotiq-faq > * { display: block; }
+.pilotiq-faq-content > * { display: block; }
 .pilotiq-faq-item { border-bottom: 1px solid var(--color-border, #e4e4e7); }
-.pilotiq-faq > details.pilotiq-faq-item:last-child { border-bottom: 0; } /* read-side last */
-.pilotiq-faq > :last-child .pilotiq-faq-item { border-bottom: 0; }       /* editor last */
+.pilotiq-faq-content > details.pilotiq-faq-item:last-child { border-bottom: 0; } /* read-side last */
+.pilotiq-faq-content > :last-child .pilotiq-faq-item { border-bottom: 0; }       /* editor last */
 .pilotiq-faq-question {
   font-weight: 500;
   padding-block: 0.475rem;

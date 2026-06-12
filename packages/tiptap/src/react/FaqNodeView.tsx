@@ -18,7 +18,7 @@ export function FaqNodeView({ node, updateAttributes, editor }: NodeViewProps): 
       {editor.isEditable && (
         <BlockWidthControl width={width} onChange={(w) => updateAttributes({ width: w })} />
       )}
-      <NodeViewContent />
+      <NodeViewContent className="pilotiq-faq-content" />
     </NodeViewWrapper>
   )
 }

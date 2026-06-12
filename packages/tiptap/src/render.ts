@@ -420,7 +420,7 @@ function labeledBlockHtml(cssClass: string, label: string, n: TiptapNode, opts: 
 function renderFaqNode(n: TiptapNode, opts: RenderRichTextOptions): string {
   const items = (Array.isArray(n.content) ? n.content : []).filter((k) => k?.type === 'faqItem')
   const width = n.attrs?.['width'] === 'full' ? ' data-width="full"' : ''
-  return `<div class="pilotiq-faq"${width}>${items.map((it) => renderFaqItem(it, opts)).join('')}</div>`
+  return `<div class="pilotiq-faq"${width}><div class="pilotiq-faq-content">${items.map((it) => renderFaqItem(it, opts)).join('')}</div></div>`
 }
 
 function renderFaqItem(n: TiptapNode, opts: RenderRichTextOptions): string {
