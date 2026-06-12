@@ -48,6 +48,10 @@
       "import": "./dist/uploads/index.js",
       "types": "./dist/uploads/index.d.ts"
     },
+    "./i18n": {
+      "import": "./dist/i18n/index.js",
+      "types": "./dist/i18n/index.d.ts"
+    },
     "./widgets": {
       "import": "./dist/widgets/index.js",
       "types": "./dist/widgets/index.d.ts"

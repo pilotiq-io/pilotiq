@@ -18,6 +18,7 @@ import type { RenderHookMap } from '../RenderHook.js'
 import { RenderHookSlot } from './RenderHookSlot.js'
 import type { ComponentSlotRegistry } from './component-slots.js'
 import { CurrentUserProvider } from './CurrentUserContext.js'
+import { PanelI18nProvider, type PanelI18nBundle } from './PanelI18nContext.js'
 
 export interface AppShellProps {
   panel: {
@@ -63,6 +64,10 @@ export interface AppShellProps {
      *  `PendingSuggestion`s for user approval instead of applying
      *  immediately. Plan: `docs/plans/ai-review-mode.md`. */
     aiSuggestionsMode?: 'auto' | 'review'
+    /** Server-resolved panel-i18n bundle (`{ [namespace]: mergedStrings }`).
+     *  Absent when no package called `registerPanelI18n()`. Mounted via
+     *  `<PanelI18nProvider>`; client components read with `usePanelI18n(ns)`. */
+    i18n?: PanelI18nBundle
   }
   basePath: string
   /** Pathname used to compute active-link state in the sidebar/topbar. */
@@ -219,10 +224,15 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
   // CollabProvider, which threads the user into CollaborationCaret
   // presence labels) can read the active user via `useCurrentUser()`.
   // Value source mirrors what the top-right user dropdown renders.
+  // `PanelI18nProvider` sits outermost so every chrome + page + plugin
+  // component (incl. layout-provider-wrapped subtrees) reads the same
+  // server-resolved i18n bundle via `usePanelI18n()`. No-op when absent.
   return (
-    <CurrentUserProvider value={props.panel.userMenu?.user ?? null}>
-      {wrapped}
-    </CurrentUserProvider>
+    <PanelI18nProvider {...(props.panel.i18n ? { i18n: props.panel.i18n } : {})}>
+      <CurrentUserProvider value={props.panel.userMenu?.user ?? null}>
+        {wrapped}
+      </CurrentUserProvider>
+    </PanelI18nProvider>
   )
 }
 
