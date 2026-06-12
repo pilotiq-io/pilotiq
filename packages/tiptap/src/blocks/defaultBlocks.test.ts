@@ -68,6 +68,14 @@ test('faq node renders a native <details> accordion, honoring the open attr', ()
   assert.match(html, /<details class="pilotiq-faq-item"><summary class="pilotiq-faq-question">Collapsed\?</)
 })
 
+test('faq node emits data-width only when set to full', () => {
+  const item = { type: 'faqItem', content: [{ type: 'faqQuestion', content: [{ type: 'text', text: 'Q' }] }, { type: 'faqAnswer', content: [para('A')] }] }
+  const contained = renderRichTextToHtml(doc({ type: 'faq', content: [item] }))
+  assert.match(contained, /^<div class="pilotiq-faq">/) // no data-width
+  const full = renderRichTextToHtml(doc({ type: 'faq', attrs: { width: 'full' }, content: [item] }))
+  assert.match(full, /^<div class="pilotiq-faq" data-width="full">/)
+})
+
 test('alert node renders icon + editable title + description, defaulting unknown types to info', () => {
   const warn = renderRichTextToHtml(doc({
     type: 'alert', attrs: { type: 'warning' },

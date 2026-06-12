@@ -2,6 +2,7 @@ import { Node, Extension, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 
 import { AlertNodeView } from '../react/AlertNodeView.js'
+import { FaqNodeView } from '../react/FaqNodeView.js'
 import { FaqItemNodeView } from '../react/FaqItemNodeView.js'
 import { coerceAlertType, type AlertType } from './alertVariants.js'
 
@@ -73,11 +74,27 @@ export const Faq = Node.create({
   group: 'block',
   content: 'faqItem+',
   defining: true,
+
+  // Block width — `contained` (max-width, centered) or `full` (full bleed).
+  // Generic block-layout attr; the in-block toggle lives in `FaqNodeView`.
+  addAttributes() {
+    return {
+      width: {
+        default:    'contained',
+        parseHTML:  (el) => (el.getAttribute('data-width') === 'full' ? 'full' : 'contained'),
+        renderHTML: (attrs) => (attrs['width'] === 'full' ? { 'data-width': 'full' } : {}),
+      },
+    }
+  },
+
   parseHTML() {
     return [{ tag: 'div[data-type="faq"]' }]
   },
   renderHTML({ HTMLAttributes }) {
     return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'faq', class: 'pilotiq-faq' }), 0]
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(FaqNodeView)
   },
   addKeyboardShortcuts() {
     return {

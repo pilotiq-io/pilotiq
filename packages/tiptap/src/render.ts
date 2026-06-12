@@ -419,7 +419,8 @@ function labeledBlockHtml(cssClass: string, label: string, n: TiptapNode, opts: 
 // `open` attribute. Consumer owns the `.pilotiq-faq*` CSS.
 function renderFaqNode(n: TiptapNode, opts: RenderRichTextOptions): string {
   const items = (Array.isArray(n.content) ? n.content : []).filter((k) => k?.type === 'faqItem')
-  return `<div class="pilotiq-faq">${items.map((it) => renderFaqItem(it, opts)).join('')}</div>`
+  const width = n.attrs?.['width'] === 'full' ? ' data-width="full"' : ''
+  return `<div class="pilotiq-faq"${width}>${items.map((it) => renderFaqItem(it, opts)).join('')}</div>`
 }
 
 function renderFaqItem(n: TiptapNode, opts: RenderRichTextOptions): string {

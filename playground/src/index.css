@@ -76,8 +76,12 @@
  * .pilotiq-faq* classes. No outer border — items are split by thin dividers;
  * the chevron sits at the inline-end (right in LTR, left in RTL — logical). */
 .pilotiq-faq {
-  margin: 1.25rem auto;        /* centered */
-  max-width: 42rem;            /* not full-width */
+  margin: 1.25rem auto;        /* contained: centered within max-width */
+  max-width: 42rem;
+}
+.pilotiq-faq[data-width="full"] {  /* full bleed */
+  max-width: none;
+  margin-inline: 0;
 }
 /* Divider under each item. In the editor every faqItem is wrapped in a
  * `.react-renderer` (data-node-view-wrapper inside), so a plain `:last-child`
