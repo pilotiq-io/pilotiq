@@ -18,7 +18,6 @@
 .pilotiq-key-takeaways,
 .pilotiq-summary,
 .pilotiq-faq,
-.pilotiq-alert,
 .pilotiq-pros-cons {
   margin: 1.25rem 0;
 }
@@ -31,11 +30,40 @@
   margin-bottom: 0.25rem;
   user-select: none;
 }
-/* Alert — tint the label by type (still no box). */
-.pilotiq-alert-info > .pilotiq-block-label    { color: #2563eb; }
-.pilotiq-alert-warning > .pilotiq-block-label { color: #d97706; }
-.pilotiq-alert-success > .pilotiq-block-label { color: #16a34a; }
-.pilotiq-alert-tip > .pilotiq-block-label     { color: #7c3aed; }
+/* Alert — shadcn-style callout: icon column + title/description, tinted by
+ * variant. The `custom` variant paints from an inline color set by the
+ * renderer; presets get their accent here. */
+.pilotiq-alert {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0.125rem 0.75rem;
+  margin: 1.25rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius, 0.5rem);
+  font-size: 0.875rem;
+}
+.pilotiq-alert-icon {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.125rem;
+  color: var(--color-muted-foreground, #6b7280);
+}
+.pilotiq-alert-icon > svg { width: 100%; height: 100%; }
+.pilotiq-alert-title       { grid-column: 2; font-weight: 500; line-height: 1.3; }
+.pilotiq-alert-description { grid-column: 2; color: var(--color-muted-foreground, #6b7280); }
+.pilotiq-alert-description > :first-child { margin-top: 0; }
+.pilotiq-alert-description > :last-child  { margin-bottom: 0; }
+.pilotiq-alert-info    { border-color: rgba(37, 99, 235, 0.30);  background: rgba(37, 99, 235, 0.05); }
+.pilotiq-alert-info    .pilotiq-alert-icon { color: #2563eb; }
+.pilotiq-alert-warning { border-color: rgba(217, 119, 6, 0.30);  background: rgba(217, 119, 6, 0.05); }
+.pilotiq-alert-warning .pilotiq-alert-icon { color: #d97706; }
+.pilotiq-alert-success { border-color: rgba(22, 163, 74, 0.30);  background: rgba(22, 163, 74, 0.05); }
+.pilotiq-alert-success .pilotiq-alert-icon { color: #16a34a; }
+.pilotiq-alert-tip     { border-color: rgba(124, 58, 237, 0.30); background: rgba(124, 58, 237, 0.05); }
+.pilotiq-alert-tip     .pilotiq-alert-icon { color: #7c3aed; }
 /* Pros & cons — two side-by-side columns. */
 .pilotiq-pros-cons {
   display: grid;

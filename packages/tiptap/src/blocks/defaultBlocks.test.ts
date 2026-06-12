@@ -60,12 +60,58 @@ test('faq node renders structured Q/A items with Q/A markers', () => {
   assert.match(html, /pilotiq-faq-answer"><span class="pilotiq-faq-marker">A<\/span><div class="pilotiq-faq-body"><p>Yes\.<\/p>/)
 })
 
-test('alert node maps type → class + label, defaulting unknown types to info', () => {
-  const warn = renderRichTextToHtml(doc({ type: 'alert', attrs: { type: 'warning' }, content: [para('Careful')] }))
-  assert.match(warn, /class="pilotiq-alert pilotiq-alert-warning"[^>]*><div class="pilotiq-block-label">Warning</)
-  assert.match(warn, /Careful/)
-  const bad = renderRichTextToHtml(doc({ type: 'alert', attrs: { type: 'nope' }, content: [para('x')] }))
+test('alert node renders icon + editable title + description, defaulting unknown types to info', () => {
+  const warn = renderRichTextToHtml(doc({
+    type: 'alert', attrs: { type: 'warning' },
+    content: [
+      { type: 'alertTitle', content: [{ type: 'text', text: 'Heads up' }] },
+      { type: 'alertBody',  content: [para('Careful')] },
+    ],
+  }))
+  assert.match(warn, /class="pilotiq-alert pilotiq-alert-warning" data-alert-type="warning"/)
+  assert.match(warn, /<span class="pilotiq-alert-icon"[^>]*><svg /)
+  assert.match(warn, /<div class="pilotiq-alert-title">Heads up<\/div>/)
+  assert.match(warn, /<div class="pilotiq-alert-description"><p>Careful<\/p><\/div>/)
+
+  // Title falls back to the variant label when the alertTitle child is absent.
+  const noTitle = renderRichTextToHtml(doc({ type: 'alert', attrs: { type: 'success' }, content: [{ type: 'alertBody', content: [para('Done')] }] }))
+  assert.match(noTitle, /<div class="pilotiq-alert-title">Success<\/div>/)
+
+  // Unknown variant → info.
+  const bad = renderRichTextToHtml(doc({ type: 'alert', attrs: { type: 'nope' }, content: [{ type: 'alertBody', content: [para('x')] }] }))
   assert.match(bad, /pilotiq-alert-info/)
+})
+
+test('alert node renders a chosen icon + custom-variant color', () => {
+  const html = renderRichTextToHtml(doc({
+    type: 'alert', attrs: { type: 'custom', icon: 'rocket', color: '#3b82f6' },
+    content: [
+      { type: 'alertTitle', content: [{ type: 'text', text: 'Launch' }] },
+      { type: 'alertBody',  content: [para('Go')] },
+    ],
+  }))
+  assert.match(html, /pilotiq-alert pilotiq-alert-custom/)
+  assert.match(html, /M4\.5 16\.5c/)                          // rocket icon path
+  assert.match(html, /border-color:color-mix\(in srgb,#3b82f6 35%/) // tinted box
+  assert.match(html, /<span class="pilotiq-alert-icon"[^>]*style="color:#3b82f6"/)
+})
+
+test('alert node drops an unsafe custom color (injection guard)', () => {
+  const html = renderRichTextToHtml(doc({
+    type: 'alert', attrs: { type: 'custom', color: 'red"><script>alert(1)</script>' },
+    content: [{ type: 'alertBody', content: [para('x')] }],
+  }))
+  assert.doesNotMatch(html, /<script>/)
+  assert.doesNotMatch(html, /color-mix/)
+})
+
+test('alert node renders a sanitized custom SVG icon, stripping scripts', () => {
+  const html = renderRichTextToHtml(doc({
+    type: 'alert', attrs: { type: 'info', iconSvg: '<svg><script>alert(1)</script><path d="M2 2h4"/></svg>' },
+    content: [{ type: 'alertBody', content: [para('x')] }],
+  }))
+  assert.match(html, /<span class="pilotiq-alert-icon"[^>]*><svg><path d="M2 2h4" \/><\/svg><\/span>/)
+  assert.doesNotMatch(html, /<script>/)
 })
 
 test('prosCons node renders two labelled columns', () => {

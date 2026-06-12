@@ -320,6 +320,9 @@ importers:
       '@types/jsdom':
         specifier: ^28.0.3
         version: 28.0.3
+      '@types/markdown-it':
+        specifier: ^14
+        version: 14.1.2
       '@types/node':
         specifier: ^20
         version: 20.19.41
@@ -335,6 +338,9 @@ importers:
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1
+      markdown-it:
+        specifier: ^14
+        version: 14.2.0
       react:
         specifier: 19.2.6
         version: 19.2.6

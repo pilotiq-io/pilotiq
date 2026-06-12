@@ -1,4 +1,12 @@
 import { Node, Extension, mergeAttributes } from '@tiptap/core'
+import { ReactNodeViewRenderer } from '@tiptap/react'
+
+import { AlertNodeView } from '../react/AlertNodeView.js'
+import { coerceAlertType, type AlertType } from './alertVariants.js'
+
+// Re-exported for back-compat — the canonical definitions live in
+// `alertVariants.ts` (shared with the React NodeView + the read-side renderer).
+export { ALERT_VARIANTS, ALERT_VARIANT_LABEL, coerceAlertType, type AlertType } from './alertVariants.js'
 
 /**
  * Inline content blocks — labelled, editable-in-place regions. No card, no
@@ -184,22 +192,195 @@ export const FaqAnswer = Node.create({
   },
 })
 
-// ── Alert — a typed notice; the label IS the type (Info/Warning/Success/Tip) ──
+// ── Markdown round-trip — `:::alert{type=…}` container directive ──────────────
+//
+// The Markdown editor (`MarkdownEditor`) stores CommonMark, round-tripped via
+// `tiptap-markdown`. Its parse path is HTML-based: it runs markdown-it to HTML,
+// then feeds that HTML through each node's normal `parseHTML`. So Alert only
+// needs (a) a markdown-it block rule that renders `:::alert{type=…}` into the
+// node's `<div data-type="alert">` wire HTML — picked up by `Alert.parseHTML`
+// unchanged — and (b) a serializer that emits the directive back. Generalised
+// directive syntax (`:::name{attrs}`), the remark-directive convention. Kept
+// dependency-free (no `markdown-it-container`) so the rich-text bundle stays
+// lean and there's no CJS interop to vendor.
+//
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyMd = any
+const DIRECTIVE_MARKER = 0x3a // ':'
+const DIRECTIVE_MIN_MARKERS = 3
 
-export const ALERT_TYPES = ['info', 'warning', 'success', 'tip'] as const
-export type AlertType = (typeof ALERT_TYPES)[number]
-const ALERT_LABEL: Record<AlertType, string> = { info: 'Info', warning: 'Warning', success: 'Success', tip: 'Tip' }
-
-/** Exported so `render.ts` shares the same coercion at the server boundary. */
-export function coerceAlertType(value: unknown): AlertType {
-  return (ALERT_TYPES as readonly string[]).includes(String(value)) ? (value as AlertType) : 'info'
+/** Parse a directive info string (`alert{type=warning}`) into an attrs map. */
+export function parseDirectiveAttrs(info: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const m = /\{([^}]*)\}/.exec(info)
+  if (!m || !m[1]) return out
+  for (const pair of m[1].split(/[\s,]+/)) {
+    const eq = pair.indexOf('=')
+    if (eq === -1) continue
+    out[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim().replace(/^["']|["']$/g, '')
+  }
+  return out
 }
+
+/** The directive name — the token before the first `{` or whitespace. */
+function directiveName(info: string): string {
+  return info.trim().split(/[\s{]/, 1)[0] ?? ''
+}
+
+/**
+ * The directive title — the free text after `{attrs}` on the opening fence
+ * line (Docusaurus-admonition style: `:::alert{type=warning} Heads up`).
+ * Empty when omitted.
+ */
+function directiveTitle(info: string): string {
+  const close = info.lastIndexOf('}')
+  const rest = close === -1 ? info.replace(/^\S+/, '') : info.slice(close + 1)
+  return rest.trim()
+}
+
+/** Minimal HTML escape for text interpolated into the directive's HTML. */
+function escapeDirectiveHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+/**
+ * Register the `:::alert{…}` block rule + HTML renderers on a markdown-it
+ * instance. Idempotent per instance. Wired as `Alert`'s `markdown.parse.setup`.
+ */
+export function setupAlertDirective(md: AnyMd): void {
+  if (md.__pilotiqAlertDirective) return
+  md.__pilotiqAlertDirective = true
+
+  md.block.ruler.before(
+    'fence',
+    'pilotiqAlert',
+    (state: AnyMd, startLine: number, endLine: number, silent: boolean): boolean => {
+      let pos = state.bMarks[startLine] + state.tShift[startLine]
+      let max = state.eMarks[startLine]
+      if (state.src.charCodeAt(pos) !== DIRECTIVE_MARKER) return false
+
+      const memStart = pos
+      while (pos <= max && state.src.charCodeAt(pos) === DIRECTIVE_MARKER) pos++
+      const markerCount = pos - memStart
+      if (markerCount < DIRECTIVE_MIN_MARKERS) return false
+
+      const info = state.src.slice(pos, max).trim()
+      if (directiveName(info) !== 'alert') return false
+      if (silent) return true
+
+      // Scan for the closing fence (>= as many markers, nothing but space after).
+      let nextLine = startLine
+      let autoClosed = false
+      for (;;) {
+        nextLine++
+        if (nextLine >= endLine) break
+        pos = state.bMarks[nextLine] + state.tShift[nextLine]
+        max = state.eMarks[nextLine]
+        if (state.src.charCodeAt(pos) !== DIRECTIVE_MARKER) continue
+        if (state.sCount[nextLine] - state.blkIndent >= 4) continue
+        let closePos = pos
+        while (closePos <= max && state.src.charCodeAt(closePos) === DIRECTIVE_MARKER) closePos++
+        if (closePos - pos < markerCount) continue
+        if (state.src.slice(closePos, max).trim() !== '') continue
+        autoClosed = true
+        break
+      }
+
+      const oldParent = state.parentType
+      const oldLineMax = state.lineMax
+      state.parentType = 'pilotiqAlert'
+      state.lineMax = nextLine
+
+      const attrs = parseDirectiveAttrs(info)
+      let token = state.push('pilotiq_alert_open', 'div', 1)
+      token.markup = ':'.repeat(markerCount)
+      token.block = true
+      token.info = info
+      token.meta = { type: attrs['type'], icon: attrs['icon'], color: attrs['color'], title: directiveTitle(info) }
+      token.map = [startLine, nextLine]
+
+      state.md.block.tokenize(state, startLine + 1, nextLine)
+
+      token = state.push('pilotiq_alert_close', 'div', -1)
+      token.markup = ':'.repeat(markerCount)
+      token.block = true
+
+      state.parentType = oldParent
+      state.lineMax = oldLineMax
+      state.line = nextLine + (autoClosed ? 1 : 0)
+      return true
+    },
+    { alt: ['paragraph', 'reference', 'blockquote', 'list'] },
+  )
+
+  // Open emits the alert wrapper + the (closed) title div + the OPEN body div;
+  // the tokenized content renders into the body; close shuts body + wrapper.
+  // The data-types match `Alert`/`AlertTitle`/`AlertBody`'s `parseHTML`, so the
+  // HTML-based tiptap-markdown parse path revives the full node structure.
+  md.renderer.rules['pilotiq_alert_open'] = (tokens: AnyMd[], idx: number): string => {
+    const meta  = tokens[idx].meta ?? {}
+    const type  = coerceAlertType(meta.type)
+    const title = escapeDirectiveHtml(String(meta.title ?? ''))
+    const icon  = meta.icon  ? ` data-icon="${escapeDirectiveHtml(String(meta.icon))}"`   : ''
+    const color = meta.color ? ` data-color="${escapeDirectiveHtml(String(meta.color))}"` : ''
+    return (
+      `<div data-type="alert" class="pilotiq-alert pilotiq-alert-${type}" data-alert-type="${type}"${icon}${color}>` +
+      `<div data-type="alertTitle" class="pilotiq-alert-title">${title}</div>` +
+      `<div data-type="alertBody" class="pilotiq-alert-description">\n`
+    )
+  }
+  md.renderer.rules['pilotiq_alert_close'] = (): string => '</div></div>\n'
+}
+
+/**
+ * `tiptap-markdown` serializer for the Alert node → `:::alert{type=…} Title`.
+ * The title rides the opening fence line (admonition style); the body markdown
+ * sits between the fences.
+ */
+export function serializeAlertMarkdown(state: AnyMd, node: AnyMd): void {
+  const type  = coerceAlertType(node.attrs?.type)
+  const icon  = String(node.attrs?.icon ?? '').trim()
+  const color = String(node.attrs?.color ?? '').trim()
+  const title = String(node.firstChild?.textContent ?? '').replace(/\s+/g, ' ').trim()
+  const body  = node.childCount > 1 ? node.child(node.childCount - 1) : null
+  // `icon` / `color` are space-free tokens (icon keys + hex), so they ride the
+  // whitespace-split directive attrs cleanly.
+  const attrs = [`type=${type}`]
+  if (icon)  attrs.push(`icon=${icon}`)
+  if (color) attrs.push(`color=${color}`)
+  state.write(`:::alert{${attrs.join(' ')}}${title ? ' ' + title : ''}\n`)
+  if (body) state.renderContent(body)
+  state.ensureNewLine()
+  state.write(':::')
+  state.closeBlock(node)
+}
+
+// ── Alert — shadcn-style callout: icon + editable title + editable body ───────
+//
+// `alert` wraps two editable children: `alertTitle` (the heading, defaults to
+// the variant label) and `alertBody` (the description). The in-editor chrome —
+// icon, variant picker, theme styling — lives in the React NodeView
+// (`AlertNodeView`); `renderHTML` here is the headless / clipboard / getHTML
+// fallback, and `render.ts` owns the published read-side HTML. Variant lives on
+// the `type` attr (info/warning/success/tip/custom); `icon` / `color` back the
+// Phase-2 per-block pickers.
 
 export const Alert = Node.create({
   name:     'alert',
   group:    'block',
-  content:  'block+',
+  content:  'alertTitle alertBody',
   defining: true,
+
+  // Markdown round-trip — `:::alert{type=…} Title` (only consulted when the
+  // `tiptap-markdown` extension is present, i.e. the Markdown editor).
+  addStorage() {
+    return {
+      markdown: {
+        serialize: serializeAlertMarkdown,
+        parse:     { setup: setupAlertDirective },
+      },
+    }
+  },
 
   addAttributes() {
     return {
@@ -208,21 +389,72 @@ export const Alert = Node.create({
         parseHTML:  (el) => coerceAlertType(el.getAttribute('data-alert-type')),
         renderHTML: (attrs) => ({ 'data-alert-type': coerceAlertType(attrs['type']) }),
       },
+      icon: {
+        default:    '',
+        parseHTML:  (el) => el.getAttribute('data-icon') ?? '',
+        renderHTML: (attrs) => (attrs['icon'] ? { 'data-icon': String(attrs['icon']) } : {}),
+      },
+      // User-pasted custom SVG (sanitized). Wins over `icon` when set; not
+      // carried in markdown (would bloat the source) — rich-text only.
+      iconSvg: {
+        default:    '',
+        parseHTML:  (el) => el.getAttribute('data-icon-svg') ?? '',
+        renderHTML: (attrs) => (attrs['iconSvg'] ? { 'data-icon-svg': String(attrs['iconSvg']) } : {}),
+      },
+      color: {
+        default:    '',
+        parseHTML:  (el) => el.getAttribute('data-color') ?? '',
+        renderHTML: (attrs) => (attrs['color'] ? { 'data-color': String(attrs['color']) } : {}),
+      },
     }
   },
 
   parseHTML() {
-    return [{ tag: 'div[data-type="alert"]', contentElement: '.pilotiq-block-body' }]
+    return [{ tag: 'div[data-type="alert"]' }]
   },
 
-  renderHTML({ node, HTMLAttributes }) {
-    const type = coerceAlertType(node.attrs['type'])
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'alert', class: 'pilotiq-alert' }), 0]
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(AlertNodeView)
+  },
+})
+
+/** The Alert heading — a single editable line, defaults to the variant label. */
+export const AlertTitle = Node.create({
+  name:     'alertTitle',
+  content:  'inline*',
+  defining: true,
+  parseHTML() {
     return [
-      'div',
-      mergeAttributes(HTMLAttributes, { 'data-type': 'alert', class: `pilotiq-alert pilotiq-alert-${type}` }),
-      ['div', { class: 'pilotiq-block-label', contenteditable: 'false' }, ALERT_LABEL[type]],
-      ['div', { class: 'pilotiq-block-body' }, 0],
+      { tag: 'div[data-type="alertTitle"]' },
+      { tag: '.pilotiq-alert-title' },
+      // Back-compat: the pre-redesign alert's non-editable label.
+      { tag: '[data-type="alert"] > .pilotiq-block-label' },
     ]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'alertTitle', class: 'pilotiq-alert-title' }), 0]
+  },
+})
+
+/** The Alert body — the editable description (`block+`). */
+export const AlertBody = Node.create({
+  name:     'alertBody',
+  content:  'block+',
+  defining: true,
+  parseHTML() {
+    return [
+      { tag: 'div[data-type="alertBody"]' },
+      { tag: '.pilotiq-alert-description' },
+      // Back-compat: the pre-redesign alert's body wrapper.
+      { tag: '[data-type="alert"] > .pilotiq-block-body' },
+    ]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'alertBody', class: 'pilotiq-alert-description' }), 0]
   },
 })
 
@@ -309,6 +541,8 @@ export const contentBlockNodes = [
   FaqQuestion,
   FaqAnswer,
   Alert,
+  AlertTitle,
+  AlertBody,
   ProsCons,
   ProsColumn,
   ConsColumn,
