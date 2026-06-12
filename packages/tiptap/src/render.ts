@@ -189,10 +189,10 @@ function renderNode(node: unknown, opts: RenderRichTextOptions): string {
     case 'gridColumn':     return wrap('div', n, opts)
     case 'keyTakeaways':   return labeledBlockHtml('pilotiq-key-takeaways', 'Key takeaways', n, opts)
     case 'summary':        return labeledBlockHtml('pilotiq-summary', 'Summary', n, opts)
-    case 'faq':            return labeledBlockHtml('pilotiq-faq', 'FAQ', n, opts)
-    case 'faqItem':        return `<div class="pilotiq-faq-item">${renderChildren(n, opts)}</div>`
-    case 'faqQuestion':    return `<div class="pilotiq-faq-question"><span class="pilotiq-faq-marker">Q</span><span class="pilotiq-faq-text">${renderChildren(n, opts)}</span></div>`
-    case 'faqAnswer':      return `<div class="pilotiq-faq-answer"><span class="pilotiq-faq-marker">A</span><div class="pilotiq-faq-body">${renderChildren(n, opts)}</div></div>`
+    case 'faq':            return renderFaqNode(n, opts)
+    case 'faqItem':        return renderFaqItem(n, opts)
+    case 'faqQuestion':    return `<summary class="pilotiq-faq-question">${renderChildren(n, opts)}</summary>`
+    case 'faqAnswer':      return `<div class="pilotiq-faq-answer">${renderChildren(n, opts)}</div>`
     case 'alert':          return renderAlertNode(n, opts)
     case 'prosCons':       return `<div class="pilotiq-pros-cons">${renderChildren(n, opts)}</div>`
     case 'prosColumn':     return labeledBlockHtml('pilotiq-pros', 'Pros', n, opts)
@@ -411,6 +411,28 @@ function labeledBlockHtml(cssClass: string, label: string, n: TiptapNode, opts: 
     `<div class="pilotiq-block-label">${escapeHtml(label)}</div>` +
     `<div class="pilotiq-block-body">${renderChildren(n, opts)}</div>` +
     `</div>`
+  )
+}
+
+// FAQ accordion — native, zero-JS `<details>`/`<summary>` per item (mirrors the
+// editor's FaqItem NodeView). Each item's `open` attr drives the platform
+// `open` attribute. Consumer owns the `.pilotiq-faq*` CSS.
+function renderFaqNode(n: TiptapNode, opts: RenderRichTextOptions): string {
+  const items = (Array.isArray(n.content) ? n.content : []).filter((k) => k?.type === 'faqItem')
+  const width = n.attrs?.['width'] === 'full' ? ' data-width="full"' : ''
+  return `<div class="pilotiq-faq"${width}><div class="pilotiq-faq-content">${items.map((it) => renderFaqItem(it, opts)).join('')}</div></div>`
+}
+
+function renderFaqItem(n: TiptapNode, opts: RenderRichTextOptions): string {
+  const kids = Array.isArray(n.content) ? n.content : []
+  const q    = kids.find((k) => k?.type === 'faqQuestion')
+  const a    = kids.find((k) => k?.type === 'faqAnswer')
+  const open = n.attrs?.['open'] !== false
+  return (
+    `<details class="pilotiq-faq-item"${open ? ' open' : ''}>` +
+    `<summary class="pilotiq-faq-question">${q ? renderChildren(q, opts) : ''}</summary>` +
+    `<div class="pilotiq-faq-answer">${a ? renderChildren(a, opts) : ''}</div>` +
+    `</details>`
   )
 }
 

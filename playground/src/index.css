@@ -17,7 +17,6 @@
  * muted label marking the start of the region. */
 .pilotiq-key-takeaways,
 .pilotiq-summary,
-.pilotiq-faq,
 .pilotiq-pros-cons {
   margin: 1.25rem 0;
 }
@@ -72,22 +71,64 @@
 }
 .pilotiq-pros > .pilotiq-block-label { color: #16a34a; }
 .pilotiq-cons > .pilotiq-block-label { color: #dc2626; }
-/* FAQ — structured Q/A items, each marker BESIDE its text (grid is robust
- * against the typography/prose styles applied to editor content). */
-.pilotiq-faq-item { margin: 0.5rem 0; }
-.pilotiq-faq-question,
+/* FAQ — shadcn-style accordion. The read-side renders native <details> (zero
+ * JS); the editor renders a NodeView <div> with a React chevron. Both share the
+ * .pilotiq-faq* classes. No outer border — items are split by thin dividers;
+ * the chevron sits at the inline-end (right in LTR, left in RTL — logical). */
+/* Outer wrapper is ALWAYS full editor width (a stable anchor for the width
+ * control, so the control doesn't move when the width toggles); the inner
+ * `.pilotiq-faq-content` carries the max-width / centering. */
+.pilotiq-faq { position: relative; margin-block: 1.25rem; }
+.pilotiq-faq-content { max-width: 42rem; margin-inline: auto; }       /* contained */
+.pilotiq-faq[data-width="full"] .pilotiq-faq-content { max-width: none; } /* full bleed */
+/* Make the React node-view wrappers full-width blocks so each item's divider
+ * spans the row (the editor nests items in wrapper divs that can be inline). */
+.pilotiq-faq-content > *,
+.pilotiq-faq-content > * > * { display: block; }
+/* A divider under every item; drop it on the LAST item per render path.
+ * Read-side: the last <details> is a direct child of .pilotiq-faq-content.
+ * Editor: each item is wrapped in a node-view renderer div; only the LAST
+ * renderer is a `:last-child` that has a `.pilotiq-faq-item` as a direct
+ * child — so this matches exactly the last item and never over-matches (the
+ * content wrapper / inner items don't have an item as a direct child). */
+.pilotiq-faq-item { border-bottom: 1px solid var(--color-border, #e4e4e7); }
+.pilotiq-faq-content > details.pilotiq-faq-item:last-child,
+.pilotiq-faq-content :last-child > .pilotiq-faq-item { border-bottom: 0; }
+.pilotiq-faq-question {
+  font-weight: 500;
+  padding-block: 0.475rem;
+  padding-inline: 1.625rem 0.5rem; /* room for the chevron at the inline-start */
+  cursor: pointer;
+}
+/* read-side <summary> only: hide the native marker + draw the chevron at the
+ * inline-start (scoped to `summary` so it never doubles up with the editor's
+ * React chevron, which lives on the NodeView's <div>). */
+summary.pilotiq-faq-question { position: relative; list-style: none; }
+summary.pilotiq-faq-question::-webkit-details-marker { display: none; }
+summary.pilotiq-faq-question::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0.35rem;
+  top: 1.05rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  opacity: 0.55;
+  transform: rotate(45deg);              /* points down — collapsed */
+  transition: transform 0.2s ease;
+}
+details.pilotiq-faq-item[open] > summary.pilotiq-faq-question::after {
+  transform: rotate(-135deg);            /* points up — open */
+}
 .pilotiq-faq-answer {
-  display: grid;
-  grid-template-columns: 1.5rem 1fr;
-  gap: 0.5rem;
-  align-items: start;
-}
-.pilotiq-faq-question { font-weight: 600; }
-.pilotiq-faq-marker {
-  font-weight: 700;
+  padding-block: 0 0.875rem;
+  padding-inline: 1.625rem 0.5rem;
   color: var(--color-muted-foreground, #6b7280);
-  user-select: none;
+  font-size: 0.9375rem;
 }
-/* Collapse the answer paragraph's default margins so it lines up with "A". */
-.pilotiq-faq-body > :first-child { margin-top: 0; }
-.pilotiq-faq-body > :last-child { margin-bottom: 0; }
+.pilotiq-faq-answer > :first-child { margin-top: 0; }
+.pilotiq-faq-answer > :last-child { margin-bottom: 0; }
+/* editor collapse — the NodeView wrapper carries data-open; hide the answer
+ * when closed (the read-side <details> collapses natively). */
+.pilotiq-faq-item[data-open="false"] .pilotiq-faq-answer { display: none; }
