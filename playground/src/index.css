@@ -75,24 +75,27 @@
  * JS); the editor renders a NodeView <div> with a React chevron. Both share the
  * .pilotiq-faq* classes. No outer border — items are split by thin dividers;
  * the chevron sits at the inline-end (right in LTR, left in RTL — logical). */
-.pilotiq-faq { margin: 1.25rem 0; }
-.pilotiq-faq-item { border-bottom: 1px solid var(--color-border, #e5e7eb); }
+.pilotiq-faq {
+  margin: 1.25rem 0;
+  max-width: 42rem;            /* not full-width */
+}
+.pilotiq-faq-item { border-bottom: 1px solid rgba(0, 0, 0, 0.1); }
 .pilotiq-faq-item:last-child { border-bottom: 0; }
 .pilotiq-faq-question {
   font-weight: 500;
   padding-block: 0.875rem;
-  padding-inline: 0.25rem 2.5rem; /* room for the chevron at the inline-end */
+  padding-inline: 1.625rem 0.5rem; /* room for the chevron at the inline-start */
   cursor: pointer;
 }
 /* read-side <summary> only: hide the native marker + draw the chevron at the
- * inline-end (scoped to `summary` so it never doubles up with the editor's
+ * inline-start (scoped to `summary` so it never doubles up with the editor's
  * React chevron, which lives on the NodeView's <div>). */
 summary.pilotiq-faq-question { position: relative; list-style: none; }
 summary.pilotiq-faq-question::-webkit-details-marker { display: none; }
 summary.pilotiq-faq-question::after {
   content: "";
   position: absolute;
-  inset-inline-end: 0.5rem;
+  inset-inline-start: 0.35rem;
   top: 1.05rem;
   width: 0.5rem;
   height: 0.5rem;
@@ -107,7 +110,7 @@ details.pilotiq-faq-item[open] > summary.pilotiq-faq-question::after {
 }
 .pilotiq-faq-answer {
   padding-block: 0 0.875rem;
-  padding-inline: 0.25rem;
+  padding-inline: 1.625rem 0.5rem;
   color: var(--color-muted-foreground, #6b7280);
   font-size: 0.9375rem;
 }
