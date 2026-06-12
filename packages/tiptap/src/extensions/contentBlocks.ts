@@ -2,6 +2,7 @@ import { Node, Extension, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 
 import { AlertNodeView } from '../react/AlertNodeView.js'
+import { FaqItemNodeView } from '../react/FaqItemNodeView.js'
 import { coerceAlertType, type AlertType } from './alertVariants.js'
 
 // Re-exported for back-compat — the canonical definitions live in
@@ -73,15 +74,10 @@ export const Faq = Node.create({
   content: 'faqItem+',
   defining: true,
   parseHTML() {
-    return [{ tag: 'div[data-type="faq"]', contentElement: '.pilotiq-block-body' }]
+    return [{ tag: 'div[data-type="faq"]' }]
   },
   renderHTML({ HTMLAttributes }) {
-    return [
-      'div',
-      mergeAttributes(HTMLAttributes, { 'data-type': 'faq', class: 'pilotiq-faq' }),
-      ['div', { class: 'pilotiq-block-label', contenteditable: 'false' }, 'FAQ'],
-      ['div', { class: 'pilotiq-block-body' }, 0],
-    ]
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'faq', class: 'pilotiq-faq' }), 0]
   },
   addKeyboardShortcuts() {
     return {
@@ -150,11 +146,27 @@ export const FaqItem = Node.create({
   group: 'faqItem',
   content: 'faqQuestion faqAnswer',
   defining: true,
+
+  // Collapsed/expanded state — drives the editor accordion AND the read-side
+  // `<details open>`; defaults open so authored content is visible.
+  addAttributes() {
+    return {
+      open: {
+        default:    true,
+        parseHTML:  (el) => el.getAttribute('data-open') !== 'false',
+        renderHTML: (attrs) => ({ 'data-open': attrs['open'] === false ? 'false' : 'true' }),
+      },
+    }
+  },
+
   parseHTML() {
     return [{ tag: 'div[data-type="faqItem"]' }]
   },
   renderHTML({ HTMLAttributes }) {
     return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'faqItem', class: 'pilotiq-faq-item' }), 0]
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(FaqItemNodeView)
   },
 })
 
@@ -163,15 +175,14 @@ export const FaqQuestion = Node.create({
   content: 'inline*',
   defining: true,
   parseHTML() {
-    return [{ tag: 'div[data-type="faqQuestion"]', contentElement: '.pilotiq-faq-text' }]
+    // Back-compat: the pre-accordion question wrapped its text in `.pilotiq-faq-text`.
+    return [
+      { tag: 'div[data-type="faqQuestion"]', contentElement: '.pilotiq-faq-text' },
+      { tag: 'div[data-type="faqQuestion"]' },
+    ]
   },
   renderHTML({ HTMLAttributes }) {
-    return [
-      'div',
-      mergeAttributes(HTMLAttributes, { 'data-type': 'faqQuestion', class: 'pilotiq-faq-question' }),
-      ['span', { class: 'pilotiq-faq-marker', contenteditable: 'false' }, 'Q'],
-      ['span', { class: 'pilotiq-faq-text' }, 0],
-    ]
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'faqQuestion', class: 'pilotiq-faq-question' }), 0]
   },
 })
 
@@ -180,15 +191,14 @@ export const FaqAnswer = Node.create({
   content: 'block+',
   defining: true,
   parseHTML() {
-    return [{ tag: 'div[data-type="faqAnswer"]', contentElement: '.pilotiq-faq-body' }]
+    // Back-compat: the pre-accordion answer wrapped its body in `.pilotiq-faq-body`.
+    return [
+      { tag: 'div[data-type="faqAnswer"]', contentElement: '.pilotiq-faq-body' },
+      { tag: 'div[data-type="faqAnswer"]' },
+    ]
   },
   renderHTML({ HTMLAttributes }) {
-    return [
-      'div',
-      mergeAttributes(HTMLAttributes, { 'data-type': 'faqAnswer', class: 'pilotiq-faq-answer' }),
-      ['span', { class: 'pilotiq-faq-marker', contenteditable: 'false' }, 'A'],
-      ['div', { class: 'pilotiq-faq-body' }, 0],
-    ]
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'faqAnswer', class: 'pilotiq-faq-answer' }), 0]
   },
 })
 

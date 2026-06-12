@@ -17,7 +17,6 @@
  * muted label marking the start of the region. */
 .pilotiq-key-takeaways,
 .pilotiq-summary,
-.pilotiq-faq,
 .pilotiq-pros-cons {
   margin: 1.25rem 0;
 }
@@ -72,22 +71,40 @@
 }
 .pilotiq-pros > .pilotiq-block-label { color: #16a34a; }
 .pilotiq-cons > .pilotiq-block-label { color: #dc2626; }
-/* FAQ — structured Q/A items, each marker BESIDE its text (grid is robust
- * against the typography/prose styles applied to editor content). */
-.pilotiq-faq-item { margin: 0.5rem 0; }
-.pilotiq-faq-question,
+/* FAQ — native <details> accordion (zero JS): custom chevron + dividers. */
+.pilotiq-faq {
+  margin: 1.25rem 0;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius, 0.5rem);
+  overflow: hidden;
+}
+.pilotiq-faq-item { border-bottom: 1px solid var(--color-border, #e5e7eb); }
+.pilotiq-faq-item:last-child { border-bottom: 0; }
+.pilotiq-faq-question {
+  position: relative;
+  list-style: none;
+  cursor: pointer;
+  padding: 0.75rem 1rem 0.75rem 2.25rem;
+  font-weight: 500;
+}
+.pilotiq-faq-question::-webkit-details-marker { display: none; }
+.pilotiq-faq-question::before {
+  content: "";
+  position: absolute;
+  left: 1.1rem;
+  top: 1.05rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 2px solid var(--color-muted-foreground, #6b7280);
+  border-bottom: 2px solid var(--color-muted-foreground, #6b7280);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.pilotiq-faq-item[open] > .pilotiq-faq-question::before { transform: rotate(45deg); }
 .pilotiq-faq-answer {
-  display: grid;
-  grid-template-columns: 1.5rem 1fr;
-  gap: 0.5rem;
-  align-items: start;
-}
-.pilotiq-faq-question { font-weight: 600; }
-.pilotiq-faq-marker {
-  font-weight: 700;
+  padding: 0 1rem 0.75rem 2.25rem;
   color: var(--color-muted-foreground, #6b7280);
-  user-select: none;
+  font-size: 0.875rem;
 }
-/* Collapse the answer paragraph's default margins so it lines up with "A". */
-.pilotiq-faq-body > :first-child { margin-top: 0; }
-.pilotiq-faq-body > :last-child { margin-bottom: 0; }
+.pilotiq-faq-answer > :first-child { margin-top: 0; }
+.pilotiq-faq-answer > :last-child { margin-bottom: 0; }

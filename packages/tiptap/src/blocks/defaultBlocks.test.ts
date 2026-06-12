@@ -40,24 +40,32 @@ test('summary node renders a labelled body', () => {
   assert.match(html, /The gist\./)
 })
 
-test('faq node renders structured Q/A items with Q/A markers', () => {
+test('faq node renders a native <details> accordion, honoring the open attr', () => {
   const html = renderRichTextToHtml(
     doc({
       type: 'faq',
       content: [
         {
-          type: 'faqItem',
+          type: 'faqItem', // default open
           content: [
             { type: 'faqQuestion', content: [{ type: 'text', text: 'Is it strong?' }] },
             { type: 'faqAnswer', content: [para('Yes.')] },
           ],
         },
+        {
+          type: 'faqItem', attrs: { open: false },
+          content: [
+            { type: 'faqQuestion', content: [{ type: 'text', text: 'Collapsed?' }] },
+            { type: 'faqAnswer', content: [para('This one starts closed.')] },
+          ],
+        },
       ],
     }),
   )
-  assert.match(html, /pilotiq-faq"><div class="pilotiq-block-label">FAQ</)
-  assert.match(html, /pilotiq-faq-question"><span class="pilotiq-faq-marker">Q<\/span><span class="pilotiq-faq-text">Is it strong\?</)
-  assert.match(html, /pilotiq-faq-answer"><span class="pilotiq-faq-marker">A<\/span><div class="pilotiq-faq-body"><p>Yes\.<\/p>/)
+  assert.match(html, /^<div class="pilotiq-faq">/)
+  assert.match(html, /<details class="pilotiq-faq-item" open><summary class="pilotiq-faq-question">Is it strong\?<\/summary><div class="pilotiq-faq-answer"><p>Yes\.<\/p><\/div><\/details>/)
+  // open:false → no `open` attribute on the <details>
+  assert.match(html, /<details class="pilotiq-faq-item"><summary class="pilotiq-faq-question">Collapsed\?</)
 })
 
 test('alert node renders icon + editable title + description, defaulting unknown types to info', () => {
