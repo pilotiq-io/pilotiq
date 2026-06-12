@@ -79,11 +79,17 @@
   margin: 1.25rem 0;
   max-width: 42rem;            /* not full-width */
 }
+/* Divider under each item. In the editor every faqItem is wrapped in a
+ * `.react-renderer` (data-node-view-wrapper inside), so a plain `:last-child`
+ * matched EVERY item and stripped all dividers — scope the "no divider" to the
+ * real last item of each render path instead. */
+.pilotiq-faq > * { display: block; }
 .pilotiq-faq-item { border-bottom: 1px solid rgba(0, 0, 0, 0.1); }
-.pilotiq-faq-item:last-child { border-bottom: 0; }
+.pilotiq-faq > details.pilotiq-faq-item:last-child { border-bottom: 0; } /* read-side last */
+.pilotiq-faq > :last-child .pilotiq-faq-item { border-bottom: 0; }       /* editor last */
 .pilotiq-faq-question {
   font-weight: 500;
-  padding-block: 0.875rem;
+  padding-block: 0.475rem;
   padding-inline: 1.625rem 0.5rem; /* room for the chevron at the inline-start */
   cursor: pointer;
 }
