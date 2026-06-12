@@ -27,7 +27,7 @@ export function FaqItemNodeView({ node, updateAttributes, editor }: NodeViewProp
         aria-expanded={open}
         disabled={!editable}
         onClick={() => updateAttributes({ open: !open })}
-        className="absolute right-3.5 top-3 flex size-5 items-center justify-center rounded text-muted-foreground/60 transition-transform hover:text-foreground"
+        className="absolute end-1.5 top-2.5 flex size-5 items-center justify-center text-muted-foreground/60 transition-transform hover:text-foreground"
         style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
       >
         <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
