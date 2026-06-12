@@ -71,40 +71,50 @@
 }
 .pilotiq-pros > .pilotiq-block-label { color: #16a34a; }
 .pilotiq-cons > .pilotiq-block-label { color: #dc2626; }
-/* FAQ — native <details> accordion (zero JS): custom chevron + dividers. */
+/* FAQ — shadcn-style accordion. The read-side renders native <details> (zero
+ * JS); the editor renders a NodeView <div> with a React chevron. Both share the
+ * .pilotiq-faq* classes; chevron sits on the right. */
 .pilotiq-faq {
   margin: 1.25rem 0;
   border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: var(--radius, 0.5rem);
+  border-radius: var(--radius, 0.625rem);
   overflow: hidden;
 }
 .pilotiq-faq-item { border-bottom: 1px solid var(--color-border, #e5e7eb); }
 .pilotiq-faq-item:last-child { border-bottom: 0; }
 .pilotiq-faq-question {
-  position: relative;
-  list-style: none;
-  cursor: pointer;
-  padding: 0.75rem 1rem 0.75rem 2.25rem;
   font-weight: 500;
+  padding: 0.875rem 2.75rem 0.875rem 1.25rem;
+  cursor: pointer;
 }
-.pilotiq-faq-question::-webkit-details-marker { display: none; }
-.pilotiq-faq-question::before {
+/* read-side <summary> only: hide the native marker + draw the chevron on the
+ * right (scoped to `summary` so it never doubles up with the editor's React
+ * chevron, which lives on the NodeView's <div>). */
+summary.pilotiq-faq-question { position: relative; list-style: none; }
+summary.pilotiq-faq-question::-webkit-details-marker { display: none; }
+summary.pilotiq-faq-question::after {
   content: "";
   position: absolute;
-  left: 1.1rem;
+  right: 1.25rem;
   top: 1.05rem;
-  width: 0.45rem;
-  height: 0.45rem;
-  border-right: 2px solid var(--color-muted-foreground, #6b7280);
-  border-bottom: 2px solid var(--color-muted-foreground, #6b7280);
-  transform: rotate(-45deg);
-  transition: transform 0.15s ease;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  opacity: 0.55;
+  transform: rotate(45deg);              /* points down — collapsed */
+  transition: transform 0.2s ease;
 }
-.pilotiq-faq-item[open] > .pilotiq-faq-question::before { transform: rotate(45deg); }
+details.pilotiq-faq-item[open] > summary.pilotiq-faq-question::after {
+  transform: rotate(-135deg);            /* points up — open */
+}
 .pilotiq-faq-answer {
-  padding: 0 1rem 0.75rem 2.25rem;
+  padding: 0 1.25rem 0.875rem 1.25rem;
   color: var(--color-muted-foreground, #6b7280);
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
 }
 .pilotiq-faq-answer > :first-child { margin-top: 0; }
 .pilotiq-faq-answer > :last-child { margin-bottom: 0; }
+/* editor collapse — the NodeView wrapper carries data-open; hide the answer
+ * when closed (the read-side <details> collapses natively). */
+.pilotiq-faq-item[data-open="false"] .pilotiq-faq-answer { display: none; }
