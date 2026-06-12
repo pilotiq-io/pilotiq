@@ -217,6 +217,84 @@ export function buildSlashItems(
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).setGrid({ columns: 3 }).run(),
     },
+    // Inline content blocks — labelled, editable-in-place regions (nodes in
+    // contentBlocks.ts). Inserted via insertContent; no custom commands.
+    {
+      key: 'key-takeaways', label: 'Key takeaways', icon: '🔑', group: 'Content',
+      searchKey: 'key takeaways points highlights tldr',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).insertContent({
+          type: 'keyTakeaways',
+          content: [{ type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }] }],
+        }).run(),
+    },
+    {
+      key: 'summary', label: 'Summary', icon: '📝', group: 'Content',
+      searchKey: 'summary tldr abstract overview',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).insertContent({ type: 'summary', content: [{ type: 'paragraph' }] }).run(),
+    },
+    {
+      key: 'faq', label: 'FAQ', icon: '❓', group: 'Content',
+      searchKey: 'faq questions answers frequently asked',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).insertContent({
+          type: 'faq',
+          content: [
+            {
+              type: 'faqItem',
+              content: [{ type: 'faqQuestion' }, { type: 'faqAnswer', content: [{ type: 'paragraph' }] }],
+            },
+          ],
+        }).run()
+        // insertContent leaves the cursor in the answer — move it into the first
+        // question. Resolve the enclosing faqItem and select its question start
+        // (before(faqItem) +1 into the item +1 into the question = +2).
+        const { $from } = editor.state.selection
+        for (let d = $from.depth; d > 0; d--) {
+          if ($from.node(d).type.name === 'faqItem') {
+            editor.chain().setTextSelection($from.before(d) + 2).focus().run()
+            break
+          }
+        }
+      },
+    },
+    {
+      key: 'pros-cons', label: 'Pros & cons', icon: '⚖️', group: 'Content',
+      searchKey: 'pros cons advantages disadvantages comparison',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).insertContent({
+          type: 'prosCons',
+          content: [
+            { type: 'prosColumn', content: [{ type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }] }] },
+            { type: 'consColumn', content: [{ type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }] }] },
+          ],
+        }).run(),
+    },
+    {
+      key: 'alert-info', label: 'Alert: Info', icon: 'ⓘ', group: 'Content',
+      searchKey: 'alert callout notice info note',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).insertContent({ type: 'alert', attrs: { type: 'info' }, content: [{ type: 'paragraph' }] }).run(),
+    },
+    {
+      key: 'alert-warning', label: 'Alert: Warning', icon: '⚠️', group: 'Content',
+      searchKey: 'alert callout notice warning caution danger',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).insertContent({ type: 'alert', attrs: { type: 'warning' }, content: [{ type: 'paragraph' }] }).run(),
+    },
+    {
+      key: 'alert-success', label: 'Alert: Success', icon: '✅', group: 'Content',
+      searchKey: 'alert callout notice success ok done',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).insertContent({ type: 'alert', attrs: { type: 'success' }, content: [{ type: 'paragraph' }] }).run(),
+    },
+    {
+      key: 'alert-tip', label: 'Alert: Tip', icon: '💡', group: 'Content',
+      searchKey: 'alert callout notice tip hint',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).insertContent({ type: 'alert', attrs: { type: 'tip' }, content: [{ type: 'paragraph' }] }).run(),
+    },
     // Image entry shares the toolbar's attach-files dialog; only surfaced
     // when the panel has wired an `UploadAdapter`. Without one, the dialog
     // would post to a missing endpoint — the slash item degrades the same

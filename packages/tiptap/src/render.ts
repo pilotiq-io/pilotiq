@@ -26,8 +26,11 @@
  *           / image.src + alt + title + width + height
  *           / tableCell.colspan + rowspan + colwidth (also tableHeader)
  *           / mergeTag.id / mention.id + label + trigger
- *   custom blocks — render to `<div data-type="..." data-attrs="...">` so
- *           consumers can replay or style by data-type.
+ *   default blocks — the `pilotiqBlock` node's built-in types (faq / alert /
+ *           summary / key-takeaways / pros-cons) render to semantic
+ *           `<div class="pilotiq-...">` markup; consumers own the CSS.
+ *   custom blocks — any other type renders to `<div data-type="..."
+ *           data-attrs="...">` so consumers can replay or style by data-type.
  */
 
 export interface RenderRichTextOptions {
@@ -180,9 +183,20 @@ function renderNode(node: unknown, opts: RenderRichTextOptions): string {
     case 'detailsContent': return renderChildren(n, opts)
     case 'grid':           return renderGrid(n, opts)
     case 'gridColumn':     return wrap('div', n, opts)
+    case 'keyTakeaways':   return labeledBlockHtml('pilotiq-key-takeaways', 'Key takeaways', n, opts)
+    case 'summary':        return labeledBlockHtml('pilotiq-summary', 'Summary', n, opts)
+    case 'faq':            return labeledBlockHtml('pilotiq-faq', 'FAQ', n, opts)
+    case 'faqItem':        return `<div class="pilotiq-faq-item">${renderChildren(n, opts)}</div>`
+    case 'faqQuestion':    return `<div class="pilotiq-faq-question"><span class="pilotiq-faq-marker">Q</span><span class="pilotiq-faq-text">${renderChildren(n, opts)}</span></div>`
+    case 'faqAnswer':      return `<div class="pilotiq-faq-answer"><span class="pilotiq-faq-marker">A</span><div class="pilotiq-faq-body">${renderChildren(n, opts)}</div></div>`
+    case 'alert':          return renderAlertNode(n, opts)
+    case 'prosCons':       return `<div class="pilotiq-pros-cons">${renderChildren(n, opts)}</div>`
+    case 'prosColumn':     return labeledBlockHtml('pilotiq-pros', 'Pros', n, opts)
+    case 'consColumn':     return labeledBlockHtml('pilotiq-cons', 'Cons', n, opts)
     case 'mergeTag':       return renderMergeTag(n, opts)
     case 'mention':        return renderMention(n, opts)
     case 'text':           return renderText(n)
+    case 'pilotiqBlock':   return renderPilotiqBlock(n, opts)
     default:
       if (opts.renderBlock) return opts.renderBlock(n)
       return renderCustomBlock(n)
@@ -381,6 +395,35 @@ function clampGridColumnsForRender(raw: unknown): 2 | 3 {
   return trunc === 3 ? 3 : 2
 }
 
+// ─── Inline content blocks (labelled editable nodes) ─────────────────
+//
+// Mirrors the editor's `renderHTML` (extensions/contentBlocks.ts): a small
+// label above an editable body. Consumer owns the `pilotiq-*` CSS. Covers
+// keyTakeaways / summary / faq / alert / prosCons (+ pros/cons columns).
+
+function labeledBlockHtml(cssClass: string, label: string, n: TiptapNode, opts: RenderRichTextOptions): string {
+  return (
+    `<div class="${cssClass}">` +
+    `<div class="pilotiq-block-label">${escapeHtml(label)}</div>` +
+    `<div class="pilotiq-block-body">${renderChildren(n, opts)}</div>` +
+    `</div>`
+  )
+}
+
+const ALERT_NODE_TYPES = new Set(['info', 'warning', 'success', 'tip'])
+const ALERT_NODE_LABEL: Record<string, string> = { info: 'Info', warning: 'Warning', success: 'Success', tip: 'Tip' }
+
+function renderAlertNode(n: TiptapNode, opts: RenderRichTextOptions): string {
+  let type = String(n.attrs?.['type'] ?? '').trim().toLowerCase()
+  if (!ALERT_NODE_TYPES.has(type)) type = 'info'
+  return (
+    `<div class="pilotiq-alert pilotiq-alert-${type}" role="note">` +
+    `<div class="pilotiq-block-label">${ALERT_NODE_LABEL[type]}</div>` +
+    `<div class="pilotiq-block-body">${renderChildren(n, opts)}</div>` +
+    `</div>`
+  )
+}
+
 // ─── Merge tags + mentions ───────────────────────────────────────────
 
 /**
@@ -430,6 +473,106 @@ function renderCustomBlock(n: TiptapNode): string {
   const dataAttrs = n.attrs ? ` data-attrs="${escapeAttr(JSON.stringify(n.attrs))}"` : ''
   const inner = n.content ? renderChildren(n, {}) : ''
   return `<div data-type="${escapeAttr(type)}"${dataAttrs}>${inner}</div>`
+}
+
+// ─── Default blocks (pilotiqBlock node, keyed on attrs.blockType) ─────
+//
+// The custom-block node (`pilotiqBlock`) carries `blockType` + `blockData`.
+// The blocks shipped by default in `RichTextField` (FAQ / Alert / Summary /
+// Key takeaways / Pros & cons) render to semantic HTML here; every other
+// (host-defined) block type falls back to `opts.renderBlock` or the generic
+// `data-attrs` div. Consumers own the CSS for the `pilotiq-*` classes.
+
+function renderPilotiqBlock(n: TiptapNode, opts: RenderRichTextOptions): string {
+  const attrs = (n.attrs ?? {}) as Record<string, unknown>
+  const blockType = String(attrs['blockType'] ?? '')
+  let data = attrs['blockData']
+  if (typeof data === 'string') {
+    try { data = JSON.parse(data) } catch { data = {} }
+  }
+  const d = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>
+
+  switch (blockType) {
+    case 'faq':           return renderFaqBlock(d)
+    case 'alert':         return renderAlertBlock(d)
+    case 'summary':       return renderSummaryBlock(d)
+    case 'key-takeaways': return renderKeyTakeawaysBlock(d)
+    case 'pros-cons':     return renderProsConsBlock(d)
+    default:
+      if (opts.renderBlock) return opts.renderBlock(n)
+      return renderCustomBlock(n)
+  }
+}
+
+/** Escape a plain-text field value and split blank-line-separated paragraphs. */
+function blockParagraphs(raw: unknown): string {
+  const s = String(raw ?? '').trim()
+  if (s === '') return ''
+  return s
+    .split(/\n{2,}/)
+    .map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
+    .join('')
+}
+
+/** Coerce a field value to a clean `string[]` (TagsInput stores an array). */
+function blockStringList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((x) => String(x ?? '').trim()).filter((s) => s !== '')
+}
+
+function renderFaqBlock(d: Record<string, unknown>): string {
+  const items = Array.isArray(d['items']) ? (d['items'] as Array<Record<string, unknown>>) : []
+  const body = items
+    .map((it) => {
+      const q = escapeHtml(String(it['question'] ?? '').trim())
+      if (q === '') return ''
+      const a = blockParagraphs(it['answer'])
+      return `<details class="pilotiq-faq-item"><summary>${q}</summary><div class="pilotiq-faq-answer">${a}</div></details>`
+    })
+    .join('')
+  if (body === '') return ''
+  return `<div class="pilotiq-faq">${body}</div>`
+}
+
+const ALERT_TYPES = new Set(['info', 'warning', 'success', 'tip'])
+
+function renderAlertBlock(d: Record<string, unknown>): string {
+  let type = String(d['type'] ?? '').trim().toLowerCase()
+  if (!ALERT_TYPES.has(type)) type = 'info'
+  const content = blockParagraphs(d['content'])
+  return `<div class="pilotiq-alert pilotiq-alert-${type}" role="note">${content}</div>`
+}
+
+function renderSummaryBlock(d: Record<string, unknown>): string {
+  const content = blockParagraphs(d['content'])
+  if (content === '') return ''
+  return (
+    `<div class="pilotiq-summary">` +
+    `<div class="pilotiq-summary-label">Summary</div>` +
+    `<div class="pilotiq-summary-body">${content}</div>` +
+    `</div>`
+  )
+}
+
+function renderKeyTakeawaysBlock(d: Record<string, unknown>): string {
+  const points = blockStringList(d['points'])
+  if (points.length === 0) return ''
+  const lis = points.map((p) => `<li>${escapeHtml(p)}</li>`).join('')
+  return (
+    `<div class="pilotiq-key-takeaways">` +
+    `<div class="pilotiq-key-takeaways-label">Key takeaways</div>` +
+    `<ul>${lis}</ul>` +
+    `</div>`
+  )
+}
+
+function renderProsConsBlock(d: Record<string, unknown>): string {
+  const pros = blockStringList(d['pros'])
+  const cons = blockStringList(d['cons'])
+  if (pros.length === 0 && cons.length === 0) return ''
+  const column = (label: string, cls: string, items: string[]): string =>
+    `<div class="pilotiq-${cls}"><h4>${label}</h4><ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ul></div>`
+  return `<div class="pilotiq-pros-cons">${column('Pros', 'pros', pros)}${column('Cons', 'cons', cons)}</div>`
 }
 
 // ─── Escapers + sanitizers ───────────────────────────────────────────

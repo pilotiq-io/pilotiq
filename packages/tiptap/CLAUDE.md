@@ -68,6 +68,44 @@ When a user clicks **Edit** on an inserted custom block, a floating right-docked
 
 **editorRef.** `TiptapEditor` mirrors the `useEditor` instance into a ref so `handleEditBlock` (created before the editor exists) reads the live editor lazily. Re-creating the callback every render would force the editor to rebuild from scratch.
 
+## Default content blocks (2026-06-12) — inline nodes
+
+Five content blocks ship **on by default** in every `RichTextField` (free + pro):
+**FAQ**, **Alert** (info/warning/success/tip), **Summary**, **Key takeaways**,
+**Pros & cons**. They are **inline editable nodes**, NOT schema-form blocks —
+a small non-editable label on top, content typed straight into the block in
+place (no card, no popup, no border/background). Generalised from arincen's
+Filament content blocks. Quote and Table stay on the native `blockquote`
+(StarterKit) / table extensions.
+
+- **Nodes:** `extensions/contentBlocks.ts`. `labeledBlock()` factory builds the
+  simple ones (`keyTakeaways` / `summary` / `faq`); `Alert` carries a `type`
+  attribute (the label IS the type); `ProsCons` wraps two `prosColumn` /
+  `consColumn` nodes. All pure `renderHTML` (mirrors `GridExtension`) — a
+  `contenteditable=false` label div + a `.pilotiq-block-body` content hole, with
+  `parseHTML` `contentElement` so the label never re-parses into content.
+  Registered via `...contentBlockNodes` in `TiptapEditor`'s extension list.
+- **Insert:** slash menu **"Content"** group (`SlashCommandExtension`), via
+  `insertContent` (no custom commands). Alert has one entry per type.
+- **Read-side render:** `render.ts` cases `keyTakeaways` / `summary` / `faq` /
+  `alert` / `prosCons` / `prosColumn` / `consColumn` → `labeledBlockHtml()` +
+  `renderAlertNode()`, emitting `<div class="pilotiq-...">…`. Consumer owns the
+  CSS (playground demo styles live in `playground/src/index.css`).
+
+### Schema-form blocks (`Block.make().schema([...])`) — custom only
+
+The `Block` API + side-panel form still exists for **custom** blocks via
+`RichTextField.blocks([...])` (`src/blocks/` keeps the old factories exported),
+but `defaultBlocks` is now empty — no schema block ships as a default.
+
+- **`Block.toMeta()` and `RichTextField.toMeta()` are `async`.** Option-fields
+  (`SelectField` / `RadioField` / `ToggleButtonsField`) resolve their options at
+  meta-build time and return `Promise<FieldMeta>`; the old sync `Block.toMeta()`
+  left those unresolved (a Promise that JSON-stringifies to `{}`). Both now
+  `await Promise.all(...)` the field metas. Runtime-safe — the core resolves
+  every field via `await field.toMeta(ctx)` (`resolveField`). **Any new sync
+  caller of these `toMeta`s must `await`.**
+
 ---
 
 ## Other key surfaces

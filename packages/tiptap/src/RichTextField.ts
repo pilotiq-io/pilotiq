@@ -1,5 +1,6 @@
 import { Field, type FieldMeta, type FieldType, type RenderContext } from '@pilotiq/pilotiq'
 import { Block, type BlockMeta } from './Block.js'
+import { defaultBlocks } from './blocks/index.js'
 import {
   MentionProvider,
   type MentionItem,
@@ -176,6 +177,7 @@ export interface RichTextFieldMeta extends FieldMeta {
  */
 export class RichTextField extends Field {
   private _blocks:          Block[] = []
+  private _includeDefaultBlocks = true
   private _slashCommand    = true
   /** `undefined` = use default, `null` = hidden, array = explicit override. */
   private _toolbarOverride: ToolbarGroups | null | undefined = undefined
@@ -203,10 +205,36 @@ export class RichTextField extends Field {
     return new RichTextField(name)
   }
 
-  /** Custom blocks available via the slash menu. */
+  /** Custom blocks available via the slash menu (merged on top of the defaults). */
   blocks(blocks: Block[]): this {
     this._blocks = blocks
     return this
+  }
+
+  /**
+   * Toggle the built-in default blocks (FAQ, Alert, Summary, Key takeaways,
+   * Pros & cons) for this field. On by default — every field gets them in the
+   * slash menu and the agent block catalog. Pass `false` to ship only the
+   * blocks declared via `.blocks([...])`.
+   */
+  withDefaultBlocks(enabled = true): this {
+    this._includeDefaultBlocks = enabled
+    return this
+  }
+
+  /**
+   * The blocks this field actually exposes — the default set (unless opted
+   * out) merged with the field's own `.blocks([...])`. A field block with the
+   * same name overrides the default. This is what the editor slash menu, the
+   * side panel, and the agent block catalog all consume.
+   */
+  private resolveBlocks(): Block[] {
+    const byName = new Map<string, Block>()
+    if (this._includeDefaultBlocks) {
+      for (const b of defaultBlocks) byName.set(b.getName(), b)
+    }
+    for (const b of this._blocks) byName.set(b.getName(), b)
+    return [...byName.values()]
   }
 
   /** Toggle the slash menu (`/`) on/off. Defaults to `true`. */
@@ -392,7 +420,7 @@ export class RichTextField extends Field {
     return this
   }
 
-  getBlocks():       readonly Block[] { return this._blocks }
+  getBlocks():       readonly Block[] { return this.resolveBlocks() }
   getMergeTags():    readonly string[] { return this._mergeTags }
   getMentionProviders(): readonly MentionProvider[] { return this._mentions }
   /**
@@ -466,10 +494,13 @@ export class RichTextField extends Field {
     return this._floatingToolbar
   }
 
-  override toMeta(ctx?: RenderContext): RichTextFieldMeta {
-    // RichTextField has no async resolvers, so the parent always returns
-    // the sync FieldMeta branch — cast away the union for the spread.
-    const base = super.toMeta(ctx) as FieldMeta
+  override async toMeta(ctx?: RenderContext): Promise<RichTextFieldMeta> {
+    // Block fields can be async — Select / Radio / ToggleButtons resolve their
+    // options at meta-build time and return `Promise<FieldMeta>`. So block
+    // metas, and therefore this method, are async. The core resolves every
+    // field via `await field.toMeta(ctx)` (`resolveField`), so returning a
+    // Promise is the supported path.
+    const base = (await Promise.resolve(super.toMeta(ctx))) as FieldMeta
     // Strip `attachFiles` server-side when the panel hasn't registered an
     // upload adapter — same posture as `MarkdownField` and the editor
     // chrome stays clean. `uploadUrl` is the wire-side URL for the picker
@@ -482,7 +513,7 @@ export class RichTextField extends Field {
                 .filter(g => g.length > 0) ?? null
     return {
       ...base,
-      blocks:           this._blocks.map((b) => b.toMeta()),
+      blocks:           await Promise.all(this.resolveBlocks().map((b) => b.toMeta())),
       slashCommand:     this._slashCommand,
       toolbarGroups:    filteredGroups,
       floatingToolbar:  this._floatingToolbar,

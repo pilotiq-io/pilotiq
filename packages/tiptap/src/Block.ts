@@ -63,13 +63,19 @@ export class Block {
   getIcon():   string | undefined { return this._icon }
   getSchema(): readonly Field[] { return this._schema }
 
-  /** @internal */
-  toMeta(): BlockMeta {
+  /**
+   * @internal
+   * Async because schema fields can be async — `SelectField` / `RadioField` /
+   * `ToggleButtonsField` resolve their options at meta-build time and return a
+   * `Promise<FieldMeta>`. We await every field so the serialized schema never
+   * contains an unresolved Promise (which would JSON-stringify to `{}`).
+   */
+  async toMeta(): Promise<BlockMeta> {
     return {
       name:   this._name,
       label:  this._label ?? this._name,
       icon:   this._icon,
-      schema: this._schema.map((f) => f.toMeta() as FieldMeta),
+      schema: (await Promise.all(this._schema.map((f) => f.toMeta()))) as FieldMeta[],
     }
   }
 }

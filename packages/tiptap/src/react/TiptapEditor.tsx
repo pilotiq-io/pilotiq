@@ -13,6 +13,7 @@ import Image from '@tiptap/extension-image'
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
 import { Details, DetailsSummary, DetailsContent } from '@tiptap/extension-details'
 import { Grid, GridColumn } from '../extensions/GridExtension.js'
+import { contentBlockNodes } from '../extensions/contentBlocks.js'
 import { Popover } from '@base-ui/react/popover'
 import type {
   FieldRendererProps,
@@ -321,6 +322,9 @@ function ClientEditor(props: ClientEditorProps) {
       // `pilotiq-grid-cols-N`.
       Grid,
       GridColumn,
+      // Inline content blocks — labelled, editable-in-place regions:
+      // Key takeaways / Summary / FAQ / Alert / Pros & cons.
+      ...contentBlockNodes,
       Placeholder.configure({ placeholder: placeholder ?? 'Start writing…' }),
       // BlockNodeExtension carries the block registry on its options —
       // NodeViews mount in a separate React tree and can't see context.
