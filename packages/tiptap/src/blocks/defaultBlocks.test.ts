@@ -84,7 +84,8 @@ test('alert node renders icon + editable title + description, defaulting unknown
       { type: 'alertBody',  content: [para('Careful')] },
     ],
   }))
-  assert.match(warn, /class="pilotiq-alert pilotiq-alert-warning" data-alert-type="warning"/)
+  assert.match(warn, /<div class="pilotiq-alert" data-alert-type="warning">/)
+  assert.match(warn, /<div class="pilotiq-alert-box pilotiq-alert-warning" role="note">/)
   assert.match(warn, /<span class="pilotiq-alert-icon"[^>]*><svg /)
   assert.match(warn, /<div class="pilotiq-alert-title">Heads up<\/div>/)
   assert.match(warn, /<div class="pilotiq-alert-description"><p>Careful<\/p><\/div>/)
@@ -98,6 +99,14 @@ test('alert node renders icon + editable title + description, defaulting unknown
   assert.match(bad, /pilotiq-alert-info/)
 })
 
+test('alert node emits data-width only when set to full', () => {
+  const body = { type: 'alertBody', content: [para('x')] }
+  const contained = renderRichTextToHtml(doc({ type: 'alert', attrs: { type: 'info' }, content: [body] }))
+  assert.doesNotMatch(contained, /data-width/)
+  const full = renderRichTextToHtml(doc({ type: 'alert', attrs: { type: 'info', width: 'full' }, content: [body] }))
+  assert.match(full, /data-alert-type="info" data-width="full"/)
+})
+
 test('alert node renders a chosen icon + custom-variant color', () => {
   const html = renderRichTextToHtml(doc({
     type: 'alert', attrs: { type: 'custom', icon: 'rocket', color: '#3b82f6' },
@@ -106,7 +115,7 @@ test('alert node renders a chosen icon + custom-variant color', () => {
       { type: 'alertBody',  content: [para('Go')] },
     ],
   }))
-  assert.match(html, /pilotiq-alert pilotiq-alert-custom/)
+  assert.match(html, /pilotiq-alert-box pilotiq-alert-custom/)
   assert.match(html, /M4\.5 16\.5c/)                          // rocket icon path
   assert.match(html, /border-color:color-mix\(in srgb,#3b82f6 35%/) // tinted box
   assert.match(html, /<span class="pilotiq-alert-icon"[^>]*style="color:#3b82f6"/)
