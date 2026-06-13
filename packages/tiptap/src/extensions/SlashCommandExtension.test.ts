@@ -144,4 +144,56 @@ describe('SlashCommandExtension built-ins', () => {
       )
     }
   })
+
+  it('ranks a label match above a searchKey-only mention ("/summary")', () => {
+    // The Details entry lists "summary" in its searchKey and is defined BEFORE
+    // the Summary block, so a naive substring filter surfaced Collapsible block
+    // first. Relevance ranking must put the Summary block (exact label) on top.
+    const items = buildSlashItems([], [], 'summary', {
+      hasUpload: false,
+      onInsertImage: () => {},
+    })
+    assert.equal(items[0]?.key, 'summary',
+      'expected the Summary block (label match) to rank first for "summary"')
+    const summaryIdx = items.findIndex((i) => i.key === 'summary')
+    const detailsIdx = items.findIndex((i) => i.key === 'details')
+    assert.ok(detailsIdx > summaryIdx,
+      'expected Collapsible block (searchKey mention) to rank below Summary')
+  })
+
+  it('keeps the Details entry matchable by its searchKey, just lower', () => {
+    // Membership unchanged: "summary" still returns Details (regression guard
+    // for the existing searchKey behaviour).
+    const items = buildSlashItems([], [], 'summary', {
+      hasUpload: false,
+      onInsertImage: () => {},
+    })
+    assert.ok(items.some((i) => i.key === 'details'),
+      'expected Details to remain in the results for "summary"')
+  })
+
+  it('prefix label matches outrank substring/searchKey matches', () => {
+    // "pros" is a label-word prefix of "Pros & cons" — it should lead even
+    // though other entries mention comparison words.
+    const items = buildSlashItems([], [], 'pros', {
+      hasUpload: false,
+      onInsertImage: () => {},
+    })
+    assert.equal(items[0]?.key, 'pros-cons',
+      'expected Pros & cons to rank first for "pros"')
+  })
+
+  it('ties preserve original menu order (stable sort)', () => {
+    // Both Key takeaways and Summary list "tldr" in their searchKey (equal
+    // score); Key takeaways is defined first, so it must stay first.
+    const items = buildSlashItems([], [], 'tldr', {
+      hasUpload: false,
+      onInsertImage: () => {},
+    })
+    const keyIdx = items.findIndex((i) => i.key === 'key-takeaways')
+    const sumIdx = items.findIndex((i) => i.key === 'summary')
+    assert.ok(keyIdx !== -1 && sumIdx !== -1, 'expected both entries to match "tldr"')
+    assert.ok(keyIdx < sumIdx,
+      'expected stable order: Key takeaways (defined first) before Summary')
+  })
 })
