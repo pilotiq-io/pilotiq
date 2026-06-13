@@ -1,7 +1,16 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Editor } from '@tiptap/core'
+import type { ResolvedPos } from '@tiptap/pm/model'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { Dialog } from '@base-ui/react/dialog'
+
+/** True when `$pos` sits inside an `alert` (callout) block at any ancestor depth. */
+function isInsideAlert($pos: ResolvedPos): boolean {
+  for (let d = $pos.depth; d > 0; d--) {
+    if ($pos.node(d).type.name === 'alert') return true
+  }
+  return false
+}
 
 interface FloatingToolbarProps {
   editor: Editor
@@ -20,8 +29,11 @@ export function FloatingToolbar({ editor }: FloatingToolbarProps) {
 
   useEffect(() => {
     const update = (): void => {
-      const { from, to, empty } = editor.state.selection
+      const { from, to, empty, $from, $to } = editor.state.selection
       if (empty) { setPos(null); return }
+      // The callout/alert block owns its content + chrome (the in-block gear
+      // menu); the inline mark toolbar shouldn't appear inside it (#155).
+      if (isInsideAlert($from) || isInsideAlert($to)) { setPos(null); return }
       // Don't show on full-block selections (e.g. clicking a custom block).
       const slice = editor.state.doc.slice(from, to)
       if (slice.content.childCount === 0) { setPos(null); return }
