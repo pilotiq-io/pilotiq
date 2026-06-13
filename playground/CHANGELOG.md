@@ -1,5 +1,12 @@
 # pilotiq-playground
 
+## 0.0.80
+
+### Patch Changes
+
+- Updated dependencies [2bc1e54]
+  - @pilotiq/tiptap@3.15.1
+
 ## 0.0.79
 
 ### Patch Changes
