@@ -30,14 +30,21 @@ test('a bare RichTextField has no default schema blocks', async () => {
 
 test('keyTakeaways node renders a labelled list', () => {
   const html = renderRichTextToHtml(doc({ type: 'keyTakeaways', content: [list('First')] }))
-  assert.match(html, /^<div class="pilotiq-key-takeaways"><div class="pilotiq-block-label">Key takeaways<\/div>/)
+  assert.match(html, /^<div class="pilotiq-key-takeaways"><div class="pilotiq-block-content"><div class="pilotiq-block-label">Key takeaways<\/div>/)
   assert.match(html, /<li><p>First<\/p><\/li>/)
 })
 
 test('summary node renders a labelled body', () => {
   const html = renderRichTextToHtml(doc({ type: 'summary', content: [para('The gist.')] }))
-  assert.match(html, /pilotiq-summary"><div class="pilotiq-block-label">Summary</)
+  assert.match(html, /pilotiq-summary"><div class="pilotiq-block-content"><div class="pilotiq-block-label">Summary</)
   assert.match(html, /The gist\./)
+})
+
+test('labelled blocks emit data-width only when set to full', () => {
+  const contained = renderRichTextToHtml(doc({ type: 'summary', content: [para('x')] }))
+  assert.doesNotMatch(contained, /data-width/)
+  const full = renderRichTextToHtml(doc({ type: 'summary', attrs: { width: 'full' }, content: [para('x')] }))
+  assert.match(full, /^<div class="pilotiq-summary" data-width="full"><div class="pilotiq-block-content">/)
 })
 
 test('faq node renders a native <details> accordion, honoring the open attr', () => {
@@ -149,9 +156,20 @@ test('prosCons node renders two labelled columns', () => {
       ],
     }),
   )
-  assert.match(html, /^<div class="pilotiq-pros-cons">/)
+  assert.match(html, /^<div class="pilotiq-pros-cons"><div class="pilotiq-pros-cons-content">/)
   assert.match(html, /pilotiq-pros"><div class="pilotiq-block-label">Pros<\/div>.*Good/s)
   assert.match(html, /pilotiq-cons"><div class="pilotiq-block-label">Cons<\/div>.*Bad/s)
+})
+
+test('prosCons node emits data-width only when set to full', () => {
+  const cols = [
+    { type: 'prosColumn', content: [para('g')] },
+    { type: 'consColumn', content: [para('b')] },
+  ]
+  const contained = renderRichTextToHtml(doc({ type: 'prosCons', content: cols }))
+  assert.doesNotMatch(contained, /data-width/)
+  const full = renderRichTextToHtml(doc({ type: 'prosCons', attrs: { width: 'full' }, content: cols }))
+  assert.match(full, /^<div class="pilotiq-pros-cons" data-width="full"><div class="pilotiq-pros-cons-content">/)
 })
 
 test('inline-block body content is HTML-escaped', () => {

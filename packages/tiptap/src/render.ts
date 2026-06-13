@@ -187,14 +187,14 @@ function renderNode(node: unknown, opts: RenderRichTextOptions): string {
     case 'detailsContent': return renderChildren(n, opts)
     case 'grid':           return renderGrid(n, opts)
     case 'gridColumn':     return wrap('div', n, opts)
-    case 'keyTakeaways':   return labeledBlockHtml('pilotiq-key-takeaways', 'Key takeaways', n, opts)
-    case 'summary':        return labeledBlockHtml('pilotiq-summary', 'Summary', n, opts)
+    case 'keyTakeaways':   return labeledBlockHtml('pilotiq-key-takeaways', 'Key takeaways', n, opts, true)
+    case 'summary':        return labeledBlockHtml('pilotiq-summary', 'Summary', n, opts, true)
     case 'faq':            return renderFaqNode(n, opts)
     case 'faqItem':        return renderFaqItem(n, opts)
     case 'faqQuestion':    return `<summary class="pilotiq-faq-question">${renderChildren(n, opts)}</summary>`
     case 'faqAnswer':      return `<div class="pilotiq-faq-answer">${renderChildren(n, opts)}</div>`
     case 'alert':          return renderAlertNode(n, opts)
-    case 'prosCons':       return `<div class="pilotiq-pros-cons">${renderChildren(n, opts)}</div>`
+    case 'prosCons':       return renderProsCons(n, opts)
     case 'prosColumn':     return labeledBlockHtml('pilotiq-pros', 'Pros', n, opts)
     case 'consColumn':     return labeledBlockHtml('pilotiq-cons', 'Cons', n, opts)
     case 'mergeTag':       return renderMergeTag(n, opts)
@@ -405,13 +405,25 @@ function clampGridColumnsForRender(raw: unknown): 2 | 3 {
 // label above an editable body. Consumer owns the `pilotiq-*` CSS. Covers
 // keyTakeaways / summary / faq / alert / prosCons (+ pros/cons columns).
 
-function labeledBlockHtml(cssClass: string, label: string, n: TiptapNode, opts: RenderRichTextOptions): string {
-  return (
-    `<div class="${cssClass}">` +
+function labeledBlockHtml(cssClass: string, label: string, n: TiptapNode, opts: RenderRichTextOptions, wrap = false): string {
+  const inner =
     `<div class="pilotiq-block-label">${escapeHtml(label)}</div>` +
-    `<div class="pilotiq-block-body">${renderChildren(n, opts)}</div>` +
-    `</div>`
-  )
+    `<div class="pilotiq-block-body">${renderChildren(n, opts)}</div>`
+  // Top-level labelled blocks (summary / keyTakeaways) carry the gear menu, so
+  // they get the two-layer anchor: a full-width outer + an inner
+  // `.pilotiq-block-content` that holds the max-width / width toggle. Columns
+  // inside Pros & cons render flat (no width of their own).
+  if (!wrap) return `<div class="${cssClass}">${inner}</div>`
+  const width = n.attrs?.['width'] === 'full' ? ' data-width="full"' : ''
+  return `<div class="${cssClass}"${width}><div class="pilotiq-block-content">${inner}</div></div>`
+}
+
+// Pros & cons — two labelled columns. Same two-layer anchor as the labelled
+// blocks: a full-width outer (`.pilotiq-pros-cons`) + an inner
+// `.pilotiq-pros-cons-content` that carries the grid + width toggle.
+function renderProsCons(n: TiptapNode, opts: RenderRichTextOptions): string {
+  const width = n.attrs?.['width'] === 'full' ? ' data-width="full"' : ''
+  return `<div class="pilotiq-pros-cons"${width}><div class="pilotiq-pros-cons-content">${renderChildren(n, opts)}</div></div>`
 }
 
 // FAQ accordion — native, zero-JS `<details>`/`<summary>` per item (mirrors the
