@@ -92,6 +92,7 @@ export {
   ContentBlockKeymap,
   LabeledBlockExitKeymap,
   planExitLabeledBlock,
+  isSelectionInAlert,
   ALERT_VARIANTS,
   ALERT_VARIANT_LABEL,
   coerceAlertType,

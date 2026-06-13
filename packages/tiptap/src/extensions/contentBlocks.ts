@@ -1,6 +1,7 @@
 import { Node, Extension, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
-import { TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
+import { TextSelection, NodeSelection, type EditorState, type Transaction, type Selection } from '@tiptap/pm/state'
+import type { ResolvedPos } from '@tiptap/pm/model'
 
 import { AlertNodeView } from '../react/AlertNodeView.js'
 import { FaqNodeView } from '../react/FaqNodeView.js'
@@ -572,6 +573,29 @@ export const AlertBody = Node.create({
     return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'alertBody', class: 'pilotiq-alert-description' }), 0]
   },
 })
+
+/** True when `$pos` sits inside an `alert` (callout) block at any ancestor depth. */
+function isInsideAlert($pos: ResolvedPos): boolean {
+  for (let d = $pos.depth; d > 0; d--) {
+    if ($pos.node(d).type.name === 'alert') return true
+  }
+  return false
+}
+
+/**
+ * True when `selection` is the callout (`alert`) block or sits inside it.
+ * Used by `FloatingToolbar` to suppress the inline mark toolbar in callouts
+ * (#155). Two distinct cases:
+ *  - a text/range selection WITHIN the alert — its endpoints resolve to an
+ *    `alert` ancestor;
+ *  - the whole block PICKED via the drag handle — a `NodeSelection` on the
+ *    alert, whose `$from` resolves to *before* the node, so its ancestors are
+ *    the doc (not the alert) and the endpoint walk alone would miss it.
+ */
+export function isSelectionInAlert(selection: Selection): boolean {
+  if (selection instanceof NodeSelection && selection.node.type.name === 'alert') return true
+  return isInsideAlert(selection.$from) || isInsideAlert(selection.$to)
+}
 
 // ── Pros & cons — two labelled columns (each a `block+` body, list by default) ──
 
