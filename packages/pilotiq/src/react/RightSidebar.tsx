@@ -38,6 +38,9 @@ export interface RightSidebarProps {
   /** Live pathname — re-renders the panel body on SPA nav so consumers
    *  can react to which page the user is on. */
   currentPath?: string
+  /** Breadcrumb-resolved leaf title of the current page (record title on
+   *  record pages). Forwarded to panes as `RightPanelProps.recordTitle`. */
+  recordTitle?: string
 }
 
 function PanelIcon({ value }: { value: SerializedIcon | undefined }) {
@@ -50,10 +53,12 @@ function PanelBody({
   contribution,
   basePath,
   currentPath,
+  recordTitle,
 }: {
   contribution: RightPanelMeta
   basePath:     string
   currentPath?: string
+  recordTitle?: string
 }) {
   const Component = useRightPanelComponent(contribution.id)
   if (!Component) {
@@ -73,11 +78,12 @@ function PanelBody({
   // `RightPanel.ts` so plugin authors don't have to plumb it themselves.
   // `currentPath` is conditionally spread so an absent value does not
   // collide with the prop's `undefined`-disallowed (exactOptional) shape.
-  const props: { basePath: string; activeId: string; currentPath?: string } = {
+  const props: { basePath: string; activeId: string; currentPath?: string; recordTitle?: string } = {
     basePath,
     activeId: contribution.id,
   }
   if (currentPath !== undefined) props.currentPath = currentPath
+  if (recordTitle !== undefined) props.recordTitle = recordTitle
   return <Component {...props} />
 }
 
@@ -155,7 +161,7 @@ function PanelHeader({
  * mobile. Reads its open / width / active state from the surrounding
  * `RightSidebarProvider`.
  */
-export function RightSidebar({ basePath, currentPath }: RightSidebarProps): React.ReactElement | null {
+export function RightSidebar({ basePath, currentPath, recordTitle }: RightSidebarProps): React.ReactElement | null {
   const sidebar  = useRightSidebar()
   const isMobile = useIsMobile()
 
@@ -206,6 +212,7 @@ export function RightSidebar({ basePath, currentPath }: RightSidebarProps): Reac
                 contribution={active}
                 basePath={basePath}
                 {...(currentPath !== undefined ? { currentPath } : {})}
+                {...(recordTitle !== undefined ? { recordTitle } : {})}
               />
             )}
           </div>
@@ -249,6 +256,7 @@ export function RightSidebar({ basePath, currentPath }: RightSidebarProps): Reac
             contribution={active}
             basePath={basePath}
             {...(currentPath !== undefined ? { currentPath } : {})}
+            {...(recordTitle !== undefined ? { recordTitle } : {})}
           />
         )}
       </div>

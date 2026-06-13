@@ -5,6 +5,7 @@ import React from 'react'
 import { render, screen, cleanup } from '@testing-library/react'
 import { AppShell, type AppShellProps } from './AppShell.js'
 import type { NavItem } from '../pageData.js'
+import type { RightPanelProps } from '../RightPanel.js'
 
 // Phase 4 — chrome smoke. AppShell self-mounts every chrome provider
 // (Toaster / CommandPalette / ComponentRegistry / RightPanelRegistry /
@@ -16,6 +17,7 @@ import type { NavItem } from '../pageData.js'
 afterEach(() => {
   cleanup()
   document.documentElement.className = ''
+  window.localStorage.clear()
 })
 
 const NAV: NavItem[] = [
@@ -50,6 +52,35 @@ describe('AppShell chrome', () => {
       </AppShell>,
     )
     assert.ok(screen.getByText('Acme Admin'))
+  })
+
+  it('forwards the breadcrumb leaf as recordTitle to the active right panel', () => {
+    // The breadcrumb's last crumb is the record title on a record page; it
+    // should reach the right-panel pane as `RightPanelProps.recordTitle`.
+    let captured: RightPanelProps | undefined
+    const Pane = (props: RightPanelProps): React.ReactElement => {
+      captured = props
+      return <div>pane</div>
+    }
+    // Open the panel (provider rehydrates from localStorage on mount; activeId
+    // defaults to the first contribution).
+    window.localStorage.setItem('pilotiq.rightSidebar./admin.open', 'true')
+
+    render(
+      <AppShell
+        panel={panel({ rightSidebar: { panels: [{ id: 'ai.chat', label: 'AI', defaultWidth: 360 }], defaultWidth: 360, minWidth: 240, maxWidth: 800 } })}
+        basePath="/admin"
+        currentPath="/admin/posts/42"
+        breadcrumb={{ type: 'breadcrumbs', items: [{ label: 'Posts', url: '/admin/posts' }, { label: 'My First Post' }] }}
+        rightPanelRegistry={{ 'ai.chat': Pane }}
+      >
+        <div>Body</div>
+      </AppShell>,
+    )
+
+    assert.equal(captured?.recordTitle, 'My First Post')
+    assert.equal(captured?.currentPath, '/admin/posts/42')
+    assert.equal(captured?.basePath, '/admin')
   })
 
   it('mounts the topbar layout variant (grouped nav folds into dropdowns)', () => {
