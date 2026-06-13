@@ -20,7 +20,7 @@
 
 import type { Editor } from '@tiptap/core'
 import type { Transaction } from '@tiptap/pm/state'
-import type { Mark, MarkType, Node as ProseMirrorNode } from '@tiptap/pm/model'
+import type { Mark, MarkType, NodeType, Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { DOMParser as PMDOMParser } from '@tiptap/pm/model'
 import { parseMarkdownToHtml } from './markdownStorage.js'
 
@@ -120,6 +120,57 @@ export function planDeleteBlock(
   if (doc.childCount <= 1) return null
   const end = start + doc.child(blockIndex).nodeSize
   return (tr) => { tr.delete(start, end) }
+}
+
+/**
+ * Wrap the contiguous top-level blocks `[fromIndex .. toIndex]` (inclusive)
+ * into a single `wrapperType` container node — content-preserving, no HTML
+ * round-trip. Used by the Normalizer agent to turn a run of prose into a
+ * landmark block (`intro` / `summary` / `keyTakeaways`) WITHOUT rewriting the
+ * text (the existing replace/insert ops would need the slice re-serialized to
+ * HTML, which has no clean utility here and risks dropping marks/attrs).
+ *
+ * Returns `null` for an out-of-range or inverted range, an unknown wrapper
+ * type, or when the wrapper's content schema can't hold the wrapped blocks
+ * (`createAndFill` yields null). Batches sort DESC by `fromIndex` (carried as
+ * `blockIndex` by the caller) so disjoint wraps planned against the original
+ * doc stay position-valid.
+ */
+export function planWrapBlocks(
+  editor:      Editor,
+  fromIndex:   number,
+  toIndex:     number,
+  wrapperType: string,
+  attrs?:      Record<string, unknown>,
+): TransactionModifier | null {
+  const doc = editor.state.doc
+  if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) return null
+  if (fromIndex < 0 || toIndex < fromIndex || toIndex >= doc.childCount) return null
+  const nodeType: NodeType | undefined = editor.schema.nodes[wrapperType]
+  if (!nodeType) return null
+
+  const start = blockStartPos(doc, fromIndex)
+  if (start === null) return null
+
+  const children: ProseMirrorNode[] = []
+  let end = start
+  for (let i = fromIndex; i <= toIndex; i++) {
+    const child = doc.child(i)
+    children.push(child)
+    end += child.nodeSize
+  }
+
+  // Build the wrapper with the existing blocks as its content; bail if the
+  // schema rejects them (so a bad request never produces an invalid doc).
+  // Pass the raw node array (NOT a separately-imported `Fragment`) — `createAndFill`
+  // builds the fragment with the EDITOR's prosemirror-model, so the wrapped nodes
+  // and the wrapper share one model instance. Mixing a `Fragment` from this
+  // module's own `@tiptap/pm/model` import throws "Can not convert … to a Fragment"
+  // whenever two prosemirror-model copies are loaded (e.g. a yalc-linked build).
+  const wrapped = nodeType.createAndFill(attrs ?? null, children)
+  if (!wrapped) return null
+
+  return (tr) => { tr.replaceWith(start, end, wrapped) }
 }
 
 export interface BlockMarkRange {

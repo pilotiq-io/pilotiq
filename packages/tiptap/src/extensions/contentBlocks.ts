@@ -42,6 +42,17 @@ function widthAttribute() {
   }
 }
 
+/** A `variant` attr spec: one labelled block, several modes (different label
+ * per variant). Used by `summary` — `section` (in-content) vs `article`
+ * (end-of-article landmark). `data-variant` round-trips; the read-side
+ * renderer + the Normalizer agent read it to know placement. */
+interface LabeledVariantSpec {
+  /** Default variant value (e.g. `section`). */
+  default: string
+  /** Label shown per variant value (e.g. `{ section: 'Summary', article: 'In summary' }`). */
+  labels: Record<string, string>
+}
+
 interface LabeledBlockSpec {
   /** Node + `data-type` name (camelCase, e.g. `keyTakeaways`). */
   name: string
@@ -49,6 +60,16 @@ interface LabeledBlockSpec {
   label: string
   /** Wrapper class; consumer styles `.pilotiq-block-label` + this. */
   cssClass: string
+  /**
+   * Render as PLAIN content — no `.pilotiq-block-label`, no
+   * `.pilotiq-block-content` max-width wrapper. The body sits directly inside
+   * the anchor so the block reads as ordinary prose (used by `intro`, which is
+   * purely a semantic landmark). The NodeView shows a faint affordance instead
+   * of a persistent label.
+   */
+  plain?: boolean
+  /** Make this block multi-variant (different label per `variant` attr value). */
+  variant?: LabeledVariantSpec
 }
 
 /**
@@ -56,7 +77,8 @@ interface LabeledBlockSpec {
  * editor renders `LabeledBlockNodeView` (shared across every labelled block —
  * label + gear menu + width); the `renderHTML` below is the serialized/read
  * shape and mirrors it: outer anchor + inner `.pilotiq-block-content` wrapper.
- * `label`/`cssClass` ride `addOptions()` so the shared NodeView can read them.
+ * `label`/`cssClass`/`plain`/`variant` ride `addOptions()` so the shared
+ * NodeView can read them.
  */
 function labeledBlock(spec: LabeledBlockSpec) {
   return Node.create({
@@ -65,20 +87,41 @@ function labeledBlock(spec: LabeledBlockSpec) {
     content:  'block+',
     defining: true,
     addOptions() {
-      return { label: spec.label, cssClass: spec.cssClass }
+      return { label: spec.label, cssClass: spec.cssClass, plain: spec.plain ?? false, variant: spec.variant ?? null }
     },
     addAttributes() {
-      return { width: widthAttribute() }
+      const attrs: Record<string, unknown> = { width: widthAttribute() }
+      if (spec.variant) {
+        const v = spec.variant
+        attrs['variant'] = {
+          default:    v.default,
+          parseHTML:  (el: HTMLElement) => el.getAttribute('data-variant') ?? v.default,
+          renderHTML: (a: Record<string, unknown>) =>
+            a['variant'] && a['variant'] !== v.default ? { 'data-variant': a['variant'] } : {},
+        }
+      }
+      return attrs
     },
     parseHTML() {
       return [{ tag: `div[data-type="${spec.name}"]`, contentElement: '.pilotiq-block-body' }]
     },
-    renderHTML({ HTMLAttributes }) {
+    renderHTML({ node, HTMLAttributes }) {
+      // Plain (intro): no label, no content wrapper — body sits in the anchor.
+      if (spec.plain) {
+        return [
+          'div',
+          mergeAttributes(HTMLAttributes, { 'data-type': spec.name, class: spec.cssClass }),
+          ['div', { class: 'pilotiq-block-body' }, 0],
+        ]
+      }
+      const label = spec.variant
+        ? (spec.variant.labels[node.attrs['variant'] as string] ?? spec.label)
+        : spec.label
       return [
         'div',
         mergeAttributes(HTMLAttributes, { 'data-type': spec.name, class: spec.cssClass }),
         ['div', { class: 'pilotiq-block-content' },
-          ['div', { class: 'pilotiq-block-label', contenteditable: 'false' }, spec.label],
+          ['div', { class: 'pilotiq-block-label', contenteditable: 'false' }, label],
           ['div', { class: 'pilotiq-block-body' }, 0],
         ],
       ]
@@ -90,7 +133,20 @@ function labeledBlock(spec: LabeledBlockSpec) {
 }
 
 export const KeyTakeaways = labeledBlock({ name: 'keyTakeaways', label: 'Key takeaways', cssClass: 'pilotiq-key-takeaways' })
-export const Summary = labeledBlock({ name: 'summary', label: 'Summary', cssClass: 'pilotiq-summary' })
+// `summary` has two purposes, switched by the `variant` attr: `section` (a
+// paragraph/section summary used inside the body) and `article` (the
+// end-of-article summary landmark that sits before the FAQ). One block, two
+// labels — the Normalizer + future block agents read `variant` for placement.
+export const Summary = labeledBlock({
+  name: 'summary',
+  label: 'Summary',
+  cssClass: 'pilotiq-summary',
+  variant: { default: 'section', labels: { section: 'Summary', article: 'In summary' } },
+})
+// `intro` is the article's opening landmark — a labelled region ("Introduction"
+// above the body, like Summary / Key takeaways) so the landmark is visible to
+// authors and block agents (e.g. key-takeaways) know to place after it.
+export const Intro = labeledBlock({ name: 'intro', label: 'Introduction', cssClass: 'pilotiq-intro' })
 
 // ── FAQ — structured question / answer items ──
 //
@@ -580,7 +636,7 @@ export const ConsColumn = prosConsColumn('consColumn', 'Cons', 'pilotiq-cons')
 // way to delete one (the drag handle's click-to-select is the mouse way).
 
 // faq is excluded — it handles Backspace itself (empty-question → remove item).
-const DELETABLE_BLOCKS = new Set(['summary', 'keyTakeaways', 'alert', 'prosCons'])
+const DELETABLE_BLOCKS = new Set(['summary', 'keyTakeaways', 'intro', 'alert', 'prosCons'])
 
 export const ContentBlockKeymap = Extension.create({
   name: 'pilotiqContentBlockKeymap',
@@ -612,6 +668,7 @@ export const ContentBlockKeymap = Extension.create({
 export const contentBlockNodes = [
   KeyTakeaways,
   Summary,
+  Intro,
   Faq,
   FaqItem,
   FaqQuestion,

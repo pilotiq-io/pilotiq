@@ -68,13 +68,14 @@ export {
   type TiptapNode,
   type TiptapMark,
 } from './render.js'
-// Default content-block node specs (FAQ / Alert / Summary / Key takeaways /
+// Default content-block node specs (Intro / FAQ / Alert / Summary / Key takeaways /
 // Pros & cons). `contentBlockNodes` is the exact array `TiptapEditor` registers,
 // so a consumer can build a headless editor whose schema matches the live
 // editor — e.g. to parse the content-block HTML or drive the surgical-op
 // planners (`planInsertBlockBefore` & co.) in a test, without mounting React.
 export {
   contentBlockNodes,
+  Intro,
   Faq,
   FaqItem,
   FaqQuestion,

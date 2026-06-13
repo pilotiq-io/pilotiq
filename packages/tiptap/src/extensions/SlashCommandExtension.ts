@@ -220,6 +220,12 @@ export function buildSlashItems(
     // Inline content blocks — labelled, editable-in-place regions (nodes in
     // contentBlocks.ts). Inserted via insertContent; no custom commands.
     {
+      key: 'intro', label: 'Intro', icon: '✍️', group: 'Content',
+      searchKey: 'intro introduction lead opening preamble',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).insertContent({ type: 'intro', content: [{ type: 'paragraph' }] }).run(),
+    },
+    {
       key: 'key-takeaways', label: 'Key takeaways', icon: '🔑', group: 'Content',
       searchKey: 'key takeaways points highlights tldr',
       command: ({ editor, range }) =>
@@ -233,6 +239,14 @@ export function buildSlashItems(
       searchKey: 'summary tldr abstract overview',
       command: ({ editor, range }) =>
         editor.chain().focus().deleteRange(range).insertContent({ type: 'summary', content: [{ type: 'paragraph' }] }).run(),
+    },
+    {
+      // Same `summary` node, `article` variant — the end-of-article summary
+      // landmark (renders "In summary", sits before the FAQ).
+      key: 'article-summary', label: 'Article summary', icon: '📋', group: 'Content',
+      searchKey: 'article summary conclusion wrap up in summary closing landmark',
+      command: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).insertContent({ type: 'summary', attrs: { variant: 'article' }, content: [{ type: 'paragraph' }] }).run(),
     },
     {
       key: 'faq', label: 'FAQ', icon: '❓', group: 'Content',
