@@ -67,17 +67,17 @@ describe('SlashCommandExtension built-ins', () => {
       'expected unrelated entries to drop out of the filtered list')
   })
 
-  it('exposes lead + small entries under the Style group', () => {
+  it('omits the align / lead / small / clear-format entries (toolbar-only)', () => {
     const items = buildSlashItems([], [], '', {
       hasUpload: false,
       onInsertImage: () => {},
     })
-    const lead  = items.find((i) => i.key === 'lead')
-    const small = items.find((i) => i.key === 'small')
-    assert.ok(lead,  'expected a "lead" slash entry')
-    assert.ok(small, 'expected a "small" slash entry')
-    assert.equal(lead!.group,  'Style')
-    assert.equal(small!.group, 'Style')
+    // These stay reachable via the toolbar buttons, but were removed from the
+    // slash menu to keep it focused on real content blocks (issues #151/#152).
+    for (const key of ['align-left', 'align-center', 'align-right', 'lead', 'small', 'clear-format']) {
+      assert.equal(items.some((i) => i.key === key), false,
+        `expected "${key}" to be absent from the slash menu`)
+    }
   })
 
   it('always exposes the Details entry under the Insert group', () => {

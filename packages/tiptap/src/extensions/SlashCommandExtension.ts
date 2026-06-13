@@ -317,44 +317,6 @@ export function buildSlashItems(
         insert.onInsertImage()
       },
     }] satisfies SlashItem[] : []),
-    {
-      key: 'align-left', label: 'Align left', icon: '⇤', group: 'Align',
-      searchKey: 'align left start',
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setTextAlign('left').run(),
-    },
-    {
-      key: 'align-center', label: 'Align center', icon: '⇔', group: 'Align',
-      searchKey: 'align center middle',
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setTextAlign('center').run(),
-    },
-    {
-      key: 'align-right', label: 'Align right', icon: '⇥', group: 'Align',
-      searchKey: 'align right end',
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setTextAlign('right').run(),
-    },
-    {
-      key: 'clear-format', label: 'Clear formatting', icon: '⌫', group: 'Basic',
-      searchKey: 'clear formatting reset',
-      command: ({ editor, range }) =>
-        editor.chain().focus().deleteRange(range).clearNodes().unsetAllMarks().run(),
-    },
-    // Inline-mark size variants. Slash-menu form leaves the slash range in
-    // place rather than swallowing it, so the user runs the command on the
-    // word they were just typing — the alternative ("/lead" deletes the
-    // range, then user types more) requires re-positioning the cursor and
-    // breaks the "type-toggle-keep-typing" rhythm authors use most.
-    {
-      key: 'lead', label: 'Lead', icon: 'P+', group: 'Style',
-      searchKey: 'lead lede intro paragraph emphasis',
-      command: ({ editor, range }) =>
-        editor.chain().focus().deleteRange(range).toggleMark('lead').run(),
-    },
-    {
-      key: 'small', label: 'Small', icon: 'P-', group: 'Style',
-      searchKey: 'small fine print footnote caption',
-      command: ({ editor, range }) =>
-        editor.chain().focus().deleteRange(range).toggleMark('small').run(),
-    },
   ]
 
   const customs: SlashItem[] = blocks.map((b) => ({
