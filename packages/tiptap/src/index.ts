@@ -56,6 +56,7 @@ export {
   planReplaceBlock,
   planInsertBlockBefore,
   planDeleteBlock,
+  planWrapBlocks,
   planUpdateBlockMark,
   summarizeBlockStructure,
   type BlockMarkRange,
