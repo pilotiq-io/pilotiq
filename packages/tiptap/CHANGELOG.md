@@ -1,5 +1,27 @@
 # @pilotiq/tiptap
 
+## 3.19.0
+
+### Minor Changes
+
+- 75875da: Slash menu: remove the Align left/center/right, Lead, Small, and Clear formatting
+  entries. These remain available as toolbar buttons; dropping them from the `/`
+  menu keeps it focused on real content blocks (closes #151, #152).
+
+### Patch Changes
+
+- 4b82d23: Don't show the inline mark toolbar inside the callout (alert) block.
+
+  The selection-based `FloatingToolbar` (bold / italic / strike / code / link) was appearing when text was selected inside an `alert` block, even though the callout owns its own content + chrome through the in-block gear menu (#155). Its `shouldShow` now bails when either selection endpoint sits inside an `alert` at any ancestor depth.
+
+- 4013010: Also hide the inline mark toolbar when the whole callout block is "picked".
+
+  Follow-up to the previous callout fix (#155): the `FloatingToolbar` still appeared when the entire `alert` block was selected via the drag handle, because that is a `NodeSelection` whose `$from` resolves to _before_ the node — so walking ancestors from `$from` never sees the `alert`. The alert-detection is now an exported `isSelectionInAlert(selection)` predicate that handles both a text/range selection inside the alert AND a whole-block `NodeSelection` on it, pinned by `contentBlockAlertSelection.dom.test.ts` against the real schema (including a real `NodeSelection` on the alert).
+
+- d09373b: Fix double-Enter trapping an empty node inside landmark blocks (`keyTakeaways` / `summary` / `intro`).
+
+  These blocks use `content: 'block+'`, so the default list-exit on double-Enter only _lifted_ the empty list item into a paragraph — a valid `block+` child — which stayed trapped inside the block instead of escaping it (#150). A new `LabeledBlockExitKeymap` (high priority, so it runs before `ListItem`'s `splitListItem`) intercepts the gesture: an empty trailing node (a paragraph, or the empty paragraph of a last list item) inside a landmark block is dropped and the cursor lands in a fresh paragraph _after_ the block, mirroring the FAQ block's Enter-flow. The empty-chain-only case replaces the now-useless block with a paragraph. The logic is exported as `planExitLabeledBlock` and pinned by a `contentBlockExit.dom.test.ts` contract test against the real schema.
+
 ## 3.18.0
 
 ### Minor Changes
