@@ -3,17 +3,19 @@ import type { Editor } from '@tiptap/core'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { Dialog } from '@base-ui/react/dialog'
 
-import { isSelectionInAlert } from '../extensions/contentBlocks.js'
+import { shouldShowFloatingToolbar } from './floatingToolbarVisibility.js'
 
 interface FloatingToolbarProps {
   editor: Editor
 }
 
 /**
- * Selection-based formatting toolbar. Visible whenever the editor has a
- * non-empty range selection inside text content. Inline marks (B/I/S/Code)
- * are grouped together; Link sits after a separator since it's a different
- * kind of action.
+ * Selection-based formatting toolbar. Visible on a non-empty range inside
+ * text content, AND on a bare caret sitting inside a formatting mark (so a
+ * link / bold span can be edited without selecting it first — #156). Inline
+ * marks (B/I/S/Code) are grouped together; Link sits after a separator since
+ * it's a different kind of action. Visibility is decided by the pure
+ * `shouldShowFloatingToolbar` predicate; this component only positions.
  */
 export function FloatingToolbar({ editor }: FloatingToolbarProps) {
   const [pos,      setPos]      = useState<{ top: number; left: number } | null>(null)
@@ -22,15 +24,10 @@ export function FloatingToolbar({ editor }: FloatingToolbarProps) {
 
   useEffect(() => {
     const update = (): void => {
-      const { from, to, empty } = editor.state.selection
-      if (empty) { setPos(null); return }
-      // The callout/alert block owns its content + chrome (the in-block gear
-      // menu); the inline mark toolbar shouldn't appear inside it — or when the
-      // whole block is picked via the drag handle (a NodeSelection) (#155).
-      if (isSelectionInAlert(editor.state.selection)) { setPos(null); return }
-      // Don't show on full-block selections (e.g. clicking a custom block).
-      const slice = editor.state.doc.slice(from, to)
-      if (slice.content.childCount === 0) { setPos(null); return }
+      if (!shouldShowFloatingToolbar(editor.state)) { setPos(null); return }
+      const { from, to } = editor.state.selection
+      // For a bare caret `from === to`, so both coords resolve to the caret
+      // point and the toolbar centers above it.
       const start = editor.view.coordsAtPos(from)
       const end   = editor.view.coordsAtPos(to)
       // Viewport-relative — pair with `position: fixed` below. The wrapper

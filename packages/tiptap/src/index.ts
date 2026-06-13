@@ -98,3 +98,4 @@ export {
   coerceAlertType,
   type AlertType,
 } from './extensions/contentBlocks.js'
+export { shouldShowFloatingToolbar, TOOLBAR_MARKS } from './react/floatingToolbarVisibility.js'
