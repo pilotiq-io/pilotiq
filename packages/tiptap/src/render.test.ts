@@ -688,6 +688,31 @@ describe('renderRichTextToHtml — mentions', () => {
   })
 })
 
+describe('renderRichTextToHtml — intro / summary landmarks', () => {
+  const para = (t: string): TiptapNode => ({ type: 'paragraph', content: [{ type: 'text', text: t }] })
+
+  it('intro renders a labelled block ("Introduction" above the body)', () => {
+    const doc: TiptapNode = { type: 'doc', content: [{ type: 'intro', content: [para('Opening line.')] }] }
+    const html = renderRichTextToHtml(doc)
+    assert.match(html, /<div class="pilotiq-intro"><div class="pilotiq-block-content"><div class="pilotiq-block-label">Introduction<\/div>/)
+    assert.match(html, /<div class="pilotiq-block-body"><p>Opening line\.<\/p><\/div>/)
+  })
+
+  it('summary defaults to the section label', () => {
+    const doc: TiptapNode = { type: 'doc', content: [{ type: 'summary', content: [para('A recap.')] }] }
+    const html = renderRichTextToHtml(doc)
+    assert.match(html, /<div class="pilotiq-summary"><div class="pilotiq-block-content"><div class="pilotiq-block-label">Summary<\/div>/)
+    assert.ok(!html.includes('data-variant'))
+  })
+
+  it('summary variant="article" renders the landmark label + data-variant', () => {
+    const doc: TiptapNode = { type: 'doc', content: [{ type: 'summary', attrs: { variant: 'article' }, content: [para('Wrap up.')] }] }
+    const html = renderRichTextToHtml(doc)
+    assert.match(html, /<div class="pilotiq-summary" data-variant="article">/)
+    assert.match(html, /<div class="pilotiq-block-label">In summary<\/div>/)
+  })
+})
+
 describe('renderRichTextToHtml — custom blocks', () => {
   it('unknown nodes emit a data-type wrapper carrying attrs', () => {
     const doc: TiptapNode = {

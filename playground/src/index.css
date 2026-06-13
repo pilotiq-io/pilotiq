@@ -20,6 +20,7 @@
  * carries the max-width / centering (mirrors FAQ's outer/`-content` split). */
 .pilotiq-key-takeaways,
 .pilotiq-summary,
+.pilotiq-intro,
 .pilotiq-pros-cons {
   position: relative;
   margin: 1.25rem 0;
@@ -34,6 +35,17 @@
   color: var(--color-muted-foreground, #6b7280);
   margin-bottom: 0.25rem;
   user-select: none;
+}
+/* Intro — the article's opening landmark. Plain prose (no label, no max-width
+ * wrapper): it reads exactly like normal content; the `data-type="intro"`
+ * marker + class are the only signal. */
+.pilotiq-intro > :first-child { margin-top: 0; }
+.pilotiq-intro > :last-child { margin-bottom: 0; }
+/* Article-level summary (`variant="article"`) — the end-of-article landmark.
+ * A subtle accent distinguishes it from an in-content section summary. */
+.pilotiq-summary[data-variant="article"] > .pilotiq-block-content {
+  border-left: 3px solid var(--color-border, #e5e7eb);
+  padding-left: 0.875rem;
 }
 /* Alert — shadcn-style callout: icon column + title/description, tinted by
  * variant. The `custom` variant paints from an inline color set by the

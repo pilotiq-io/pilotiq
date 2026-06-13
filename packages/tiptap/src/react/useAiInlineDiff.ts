@@ -47,6 +47,7 @@ import {
   planInsertBlockBefore,
   planDeleteBlock,
   planUpdateBlockMark,
+  planWrapBlocks,
   type BlockMarkRange,
   type TransactionModifier,
 } from '../surgicalOps.js'
@@ -270,6 +271,9 @@ type SurgicalOp =
   | { op: 'insert_block_before'; blockIndex: number; content: string }
   | { op: 'delete_block';        blockIndex: number }
   | { op: 'update_block_mark';   blockIndex: number; mark: string; range: BlockMarkRange; apply: boolean; attrs?: Record<string, unknown> }
+  // `blockIndex` is the range START (fromIndex) so the DESC-by-blockIndex batch
+  // sort keeps disjoint wraps position-valid; `toIndex` is the inclusive end.
+  | { op: 'wrap_blocks';         blockIndex: number; toIndex: number; wrapperType: string; attrs?: Record<string, unknown> }
 
 /**
  * Either a single op (when the AI emitted only one surgical change) or
@@ -292,6 +296,20 @@ function parseSurgicalOp(obj: Record<string, unknown>): SurgicalOp | null {
     }
     case 'delete_block':
       return { op, blockIndex }
+    case 'wrap_blocks': {
+      const toIndex     = obj['toIndex']
+      const wrapperType = obj['wrapperType']
+      if (typeof toIndex !== 'number') return null
+      if (typeof wrapperType !== 'string') return null
+      const attrs = obj['attrs']
+      return {
+        op,
+        blockIndex,
+        toIndex,
+        wrapperType,
+        ...(attrs && typeof attrs === 'object' ? { attrs: attrs as Record<string, unknown> } : {}),
+      }
+    }
     case 'update_block_mark': {
       const mark  = obj['mark']
       const range = obj['range'] as { from?: unknown; to?: unknown } | undefined
@@ -339,6 +357,7 @@ function planOp(editor: Editor, op: SurgicalOp): TransactionModifier | null {
     case 'insert_block_before': return planInsertBlockBefore(editor, op.blockIndex, op.content)
     case 'delete_block':        return planDeleteBlock(editor, op.blockIndex)
     case 'update_block_mark':   return planUpdateBlockMark(editor, op.blockIndex, op.mark, op.range, op.apply, op.attrs)
+    case 'wrap_blocks':         return planWrapBlocks(editor, op.blockIndex, op.toIndex, op.wrapperType, op.attrs)
   }
 }
 

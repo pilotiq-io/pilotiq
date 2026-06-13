@@ -188,7 +188,8 @@ function renderNode(node: unknown, opts: RenderRichTextOptions): string {
     case 'grid':           return renderGrid(n, opts)
     case 'gridColumn':     return wrap('div', n, opts)
     case 'keyTakeaways':   return labeledBlockHtml('pilotiq-key-takeaways', 'Key takeaways', n, opts, true)
-    case 'summary':        return labeledBlockHtml('pilotiq-summary', 'Summary', n, opts, true)
+    case 'summary':        return renderSummary(n, opts)
+    case 'intro':          return labeledBlockHtml('pilotiq-intro', 'Introduction', n, opts, true)
     case 'faq':            return renderFaqNode(n, opts)
     case 'faqItem':        return renderFaqItem(n, opts)
     case 'faqQuestion':    return `<summary class="pilotiq-faq-question">${renderChildren(n, opts)}</summary>`
@@ -405,7 +406,7 @@ function clampGridColumnsForRender(raw: unknown): 2 | 3 {
 // label above an editable body. Consumer owns the `pilotiq-*` CSS. Covers
 // keyTakeaways / summary / faq / alert / prosCons (+ pros/cons columns).
 
-function labeledBlockHtml(cssClass: string, label: string, n: TiptapNode, opts: RenderRichTextOptions, wrap = false): string {
+function labeledBlockHtml(cssClass: string, label: string, n: TiptapNode, opts: RenderRichTextOptions, wrap = false, extraAttr = ''): string {
   const inner =
     `<div class="pilotiq-block-label">${escapeHtml(label)}</div>` +
     `<div class="pilotiq-block-body">${renderChildren(n, opts)}</div>`
@@ -413,9 +414,20 @@ function labeledBlockHtml(cssClass: string, label: string, n: TiptapNode, opts: 
   // they get the two-layer anchor: a full-width outer + an inner
   // `.pilotiq-block-content` that holds the max-width / width toggle. Columns
   // inside Pros & cons render flat (no width of their own).
-  if (!wrap) return `<div class="${cssClass}">${inner}</div>`
+  if (!wrap) return `<div class="${cssClass}"${extraAttr}>${inner}</div>`
   const width = n.attrs?.['width'] === 'full' ? ' data-width="full"' : ''
-  return `<div class="${cssClass}"${width}><div class="pilotiq-block-content">${inner}</div></div>`
+  return `<div class="${cssClass}"${width}${extraAttr}><div class="pilotiq-block-content">${inner}</div></div>`
+}
+
+// `summary` carries a `variant` attr (`section` default | `article`). The label
+// + a `data-variant` styling hook differ per variant; otherwise it's the shared
+// labelled-block shape. The Normalizer + block agents use `article` as the
+// end-of-article landmark (sits before the FAQ).
+function renderSummary(n: TiptapNode, opts: RenderRichTextOptions): string {
+  const isArticle = n.attrs?.['variant'] === 'article'
+  const label     = isArticle ? 'In summary' : 'Summary'
+  const extraAttr = isArticle ? ' data-variant="article"' : ''
+  return labeledBlockHtml('pilotiq-summary', label, n, opts, true, extraAttr)
 }
 
 // Pros & cons — two labelled columns. Same two-layer anchor as the labelled
