@@ -4,6 +4,8 @@ import { ReactNodeViewRenderer } from '@tiptap/react'
 import { AlertNodeView } from '../react/AlertNodeView.js'
 import { FaqNodeView } from '../react/FaqNodeView.js'
 import { FaqItemNodeView } from '../react/FaqItemNodeView.js'
+import { LabeledBlockNodeView } from '../react/LabeledBlockNodeView.js'
+import { ProsConsNodeView } from '../react/ProsConsNodeView.js'
 import { coerceAlertType, type AlertType } from './alertVariants.js'
 
 // Re-exported for back-compat — the canonical definitions live in
@@ -25,6 +27,21 @@ export { ALERT_VARIANTS, ALERT_VARIANT_LABEL, coerceAlertType, type AlertType } 
  * `insertContent` — no custom commands needed.
  */
 
+/**
+ * Shared `width` attr (`contained` default | `full` bleed) — surfaced through
+ * the in-block gear menu on every content block, mirrored to `data-width` for
+ * the consumer CSS (editor NodeView + read-side `render.ts`). One definition so
+ * the four blocks that carry it (FAQ / Alert / labelled blocks / Pros & cons)
+ * never drift.
+ */
+function widthAttribute() {
+  return {
+    default:    'contained',
+    parseHTML:  (el: HTMLElement) => (el.getAttribute('data-width') === 'full' ? 'full' : 'contained'),
+    renderHTML: (attrs: Record<string, unknown>) => (attrs['width'] === 'full' ? { 'data-width': 'full' } : {}),
+  }
+}
+
 interface LabeledBlockSpec {
   /** Node + `data-type` name (camelCase, e.g. `keyTakeaways`). */
   name: string
@@ -34,13 +51,25 @@ interface LabeledBlockSpec {
   cssClass: string
 }
 
-/** A labelled region whose body is ordinary editable content (`block+`). */
+/**
+ * A labelled region whose body is ordinary editable content (`block+`). The
+ * editor renders `LabeledBlockNodeView` (shared across every labelled block —
+ * label + gear menu + width); the `renderHTML` below is the serialized/read
+ * shape and mirrors it: outer anchor + inner `.pilotiq-block-content` wrapper.
+ * `label`/`cssClass` ride `addOptions()` so the shared NodeView can read them.
+ */
 function labeledBlock(spec: LabeledBlockSpec) {
   return Node.create({
     name:     spec.name,
     group:    'block',
     content:  'block+',
     defining: true,
+    addOptions() {
+      return { label: spec.label, cssClass: spec.cssClass }
+    },
+    addAttributes() {
+      return { width: widthAttribute() }
+    },
     parseHTML() {
       return [{ tag: `div[data-type="${spec.name}"]`, contentElement: '.pilotiq-block-body' }]
     },
@@ -48,9 +77,14 @@ function labeledBlock(spec: LabeledBlockSpec) {
       return [
         'div',
         mergeAttributes(HTMLAttributes, { 'data-type': spec.name, class: spec.cssClass }),
-        ['div', { class: 'pilotiq-block-label', contenteditable: 'false' }, spec.label],
-        ['div', { class: 'pilotiq-block-body' }, 0],
+        ['div', { class: 'pilotiq-block-content' },
+          ['div', { class: 'pilotiq-block-label', contenteditable: 'false' }, spec.label],
+          ['div', { class: 'pilotiq-block-body' }, 0],
+        ],
       ]
+    },
+    addNodeView() {
+      return ReactNodeViewRenderer(LabeledBlockNodeView)
     },
   })
 }
@@ -78,13 +112,7 @@ export const Faq = Node.create({
   // Block width — `contained` (max-width, centered) or `full` (full bleed).
   // Generic block-layout attr; the in-block toggle lives in `FaqNodeView`.
   addAttributes() {
-    return {
-      width: {
-        default:    'contained',
-        parseHTML:  (el) => (el.getAttribute('data-width') === 'full' ? 'full' : 'contained'),
-        renderHTML: (attrs) => (attrs['width'] === 'full' ? { 'data-width': 'full' } : {}),
-      },
-    }
+    return { width: widthAttribute() }
   },
 
   parseHTML() {
@@ -418,11 +446,7 @@ export const Alert = Node.create({
       },
       // Block width — `contained` (default) or `full` (full bleed). Same generic
       // layout attr as the FAQ block; surfaced through the in-block gear menu.
-      width: {
-        default:    'contained',
-        parseHTML:  (el) => (el.getAttribute('data-width') === 'full' ? 'full' : 'contained'),
-        renderHTML: (attrs) => (attrs['width'] === 'full' ? { 'data-width': 'full' } : {}),
-      },
+      width: widthAttribute(),
       icon: {
         default:    '',
         parseHTML:  (el) => el.getAttribute('data-icon') ?? '',
@@ -499,11 +523,29 @@ export const ProsCons = Node.create({
   group:    'block',
   content:  'prosColumn consColumn',
   defining: true,
+  addAttributes() {
+    return { width: widthAttribute() }
+  },
   parseHTML() {
-    return [{ tag: 'div[data-type="prosCons"]' }]
+    return [
+      {
+        tag: 'div[data-type="prosCons"]',
+        // New shape nests the columns in `.pilotiq-pros-cons-content`; old
+        // stored content had them as direct children — fall back to the element.
+        contentElement: (el) =>
+          (el as HTMLElement).querySelector('.pilotiq-pros-cons-content') ?? (el as HTMLElement),
+      },
+    ]
   },
   renderHTML({ HTMLAttributes }) {
-    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'prosCons', class: 'pilotiq-pros-cons' }), 0]
+    return [
+      'div',
+      mergeAttributes(HTMLAttributes, { 'data-type': 'prosCons', class: 'pilotiq-pros-cons' }),
+      ['div', { class: 'pilotiq-pros-cons-content' }, 0],
+    ]
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(ProsConsNodeView)
   },
 })
 
