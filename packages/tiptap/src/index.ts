@@ -90,6 +90,8 @@ export {
   ProsColumn,
   ConsColumn,
   ContentBlockKeymap,
+  LabeledBlockExitKeymap,
+  planExitLabeledBlock,
   ALERT_VARIANTS,
   ALERT_VARIANT_LABEL,
   coerceAlertType,

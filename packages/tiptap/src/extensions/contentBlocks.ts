@@ -1,5 +1,6 @@
 import { Node, Extension, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
+import { TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
 
 import { AlertNodeView } from '../react/AlertNodeView.js'
 import { FaqNodeView } from '../react/FaqNodeView.js'
@@ -664,6 +665,113 @@ export const ContentBlockKeymap = Extension.create({
   },
 })
 
+// ── Keyboard: Enter exits a landmark block from an empty trailing node ──
+//
+// Landmark blocks (`keyTakeaways` / `summary` / `intro`) use `content: 'block+'`.
+// The default double-Enter list-exit only *lifts* the empty list item into a
+// paragraph, which is a valid `block+` child — so it stays trapped inside the
+// block instead of escaping it (#150). This handler intercepts the gesture: an
+// empty trailing node (a paragraph, or an empty last list item) inside a
+// landmark block → drop it and land the cursor in a fresh paragraph AFTER the
+// block, mirroring the FAQ block's Enter-flow.
+
+const LANDMARK_BLOCKS = new Set(['keyTakeaways', 'summary', 'intro'])
+const LIST_CONTAINERS = new Set(['bulletList', 'orderedList', 'taskList'])
+const LIST_ITEMS = new Set(['listItem', 'taskItem'])
+
+/**
+ * Plan the "exit a landmark block" Enter gesture. Returns a transaction
+ * modifier when the cursor sits in an EMPTY trailing node (a paragraph, or the
+ * empty paragraph of a last list item) inside a `block+` landmark block — the
+ * modifier removes that empty node and places the cursor in a paragraph after
+ * the block. Returns `null` when the gesture doesn't apply, so the keymap
+ * yields to the default Enter / list-split behaviour. Exported (alongside the
+ * `surgicalOps` planners) so it can be exercised against a real editor in a
+ * test without mounting React.
+ */
+export function planExitLabeledBlock(state: EditorState): ((tr: Transaction) => void) | null {
+  const { $from, empty } = state.selection
+  if (!empty) return null
+  // Cursor must be in an empty textblock (an empty paragraph / list-item body).
+  if (!$from.parent.isTextblock || $from.parent.content.size !== 0) return null
+
+  // Nearest landmark-block ancestor.
+  let blockDepth = -1
+  for (let d = $from.depth - 1; d > 0; d--) {
+    if (LANDMARK_BLOCKS.has($from.node(d).type.name)) { blockDepth = d; break }
+  }
+  if (blockDepth === -1) return null
+
+  // The empty textblock must be the LAST descendant at every level down from
+  // the block — i.e. genuinely trailing, not an empty node mid-block.
+  for (let d = $from.depth; d > blockDepth; d--) {
+    if ($from.index(d - 1) !== $from.node(d - 1).childCount - 1) return null
+  }
+
+  // Climb past only-child LIST wrappers (the listItem / list holding the empty
+  // paragraph) so we drop the whole empty item, not just its inner paragraph —
+  // but never past a non-list single-child wrapper (e.g. a blockquote), which
+  // we'd leave illegally empty; bail to the default Enter in that case.
+  let removeDepth = $from.depth
+  while (
+    removeDepth > blockDepth + 1 &&
+    $from.node(removeDepth - 1).childCount === 1 &&
+    (LIST_ITEMS.has($from.node(removeDepth - 1).type.name) ||
+      LIST_CONTAINERS.has($from.node(removeDepth - 1).type.name))
+  ) {
+    removeDepth--
+  }
+  // Removing this node would strand an empty non-list parent → let the default
+  // Enter handle it.
+  if (removeDepth > blockDepth + 1 && $from.node(removeDepth - 1).childCount === 1) return null
+
+  const block      = $from.node(blockDepth)
+  const blockStart = $from.before(blockDepth)
+  const blockEnd   = blockStart + block.nodeSize
+  const paragraph  = state.schema.nodes['paragraph']?.createAndFill()
+  if (!paragraph) return null
+
+  // The empty chain is the block's ONLY content → replace the whole (now
+  // useless) block with the empty paragraph.
+  if (removeDepth === blockDepth + 1 && block.childCount === 1) {
+    return (tr) => {
+      tr.replaceWith(blockStart, blockEnd, paragraph)
+      tr.setSelection(TextSelection.create(tr.doc, blockStart + 1))
+    }
+  }
+
+  // Otherwise drop the trailing empty node and add a paragraph after the block.
+  const removeStart = $from.before(removeDepth)
+  const removeEnd   = removeStart + $from.node(removeDepth).nodeSize
+  return (tr) => {
+    tr.delete(removeStart, removeEnd)
+    const after = tr.mapping.map(blockEnd)
+    tr.insert(after, paragraph)
+    tr.setSelection(TextSelection.create(tr.doc, after + 1))
+  }
+}
+
+/**
+ * Enter-to-exit for landmark blocks. A dedicated keymap at high priority so it
+ * runs BEFORE `ListItem`'s Enter (`splitListItem`, default priority 100) — and
+ * kept separate from `ContentBlockKeymap` so it doesn't change that keymap's
+ * Backspace priority (which would alter delete-block behaviour). Returns
+ * `false` when `planExitLabeledBlock` declines, yielding to the default Enter.
+ */
+export const LabeledBlockExitKeymap = Extension.create({
+  name:     'pilotiqLabeledBlockExitKeymap',
+  priority: 1000,
+  addKeyboardShortcuts() {
+    return {
+      Enter: ({ editor }) => {
+        const plan = planExitLabeledBlock(editor.state)
+        if (!plan) return false
+        return editor.commands.command(({ tr }) => { plan(tr); return true })
+      },
+    }
+  },
+})
+
 /** All inline content-block extensions — registered in the editor's list. */
 export const contentBlockNodes = [
   KeyTakeaways,
@@ -680,4 +788,5 @@ export const contentBlockNodes = [
   ProsColumn,
   ConsColumn,
   ContentBlockKeymap,
+  LabeledBlockExitKeymap,
 ]
