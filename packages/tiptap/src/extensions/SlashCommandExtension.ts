@@ -388,9 +388,42 @@ export function buildSlashItems(
   if (!query) return all
 
   const needle = query.toLowerCase()
-  return all.filter((item) =>
-    `${item.label} ${item.searchKey} ${item.group ?? ''}`.toLowerCase().includes(needle),
-  )
+  // Membership is unchanged from a plain substring match (an item shows iff the
+  // query appears anywhere in its label / searchKey / group). On top of that we
+  // RANK by relevance so a query that hits an item's LABEL beats one that only
+  // mentions the word in some other item's searchKey — otherwise "/summary"
+  // surfaces "Collapsible block" first (its searchKey lists "summary") instead
+  // of the Summary block. Stable: equal scores keep their original menu order.
+  return all
+    .map((item, i) => ({ item, i, score: slashRelevance(item, needle) }))
+    .filter((m) => m.score > 0)
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map((m) => m.item)
+}
+
+/**
+ * Score a slash item against the lowercased query. Higher = more relevant.
+ * Returns 0 when nothing matches (the item is filtered out). The tiers mirror
+ * how people expect a command palette to rank: an exact/prefix LABEL hit wins,
+ * then any label word, then label substring, then searchKey words, then a bare
+ * searchKey/group substring. `needle` is assumed already lowercased.
+ */
+function slashRelevance(item: SlashItem, needle: string): number {
+  const label = item.label.toLowerCase()
+  const labelWords = label.split(/\s+/).filter(Boolean)
+  if (label === needle) return 7
+  if (label.startsWith(needle)) return 6
+  if (labelWords.some((w) => w.startsWith(needle))) return 5
+  if (label.includes(needle)) return 4
+
+  const searchWords = item.searchKey.toLowerCase().split(/\s+/).filter(Boolean)
+  if (searchWords.some((w) => w === needle)) return 3
+  if (searchWords.some((w) => w.startsWith(needle))) return 2
+
+  // Matched only via a searchKey / group substring (no word boundary) — still
+  // shown, but ranked below every label and word-boundary hit.
+  if (`${item.searchKey} ${item.group ?? ''}`.toLowerCase().includes(needle)) return 1
+  return 0
 }
 
 function defaultsFromSchema(block: BlockMeta): Record<string, unknown> {
