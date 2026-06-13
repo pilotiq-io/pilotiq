@@ -445,6 +445,7 @@ function renderAlertNode(n: TiptapNode, opts: RenderRichTextOptions): string {
   const icon    = typeof n.attrs?.['icon'] === 'string' ? (n.attrs['icon'] as string) : ''
   const iconSvg = typeof n.attrs?.['iconSvg'] === 'string' ? (n.attrs['iconSvg'] as string) : ''
   const color   = typeof n.attrs?.['color'] === 'string' ? (n.attrs['color'] as string) : ''
+  const width   = n.attrs?.['width'] === 'full' ? ' data-width="full"' : ''
   const kids    = Array.isArray(n.content) ? n.content : []
   const title = kids.find((k) => k?.type === 'alertTitle')
   const body  = kids.find((k) => k?.type === 'alertBody')
@@ -458,11 +459,16 @@ function renderAlertNode(n: TiptapNode, opts: RenderRichTextOptions): string {
     ? ` style="border-color:color-mix(in srgb,${color} 35%,transparent);background-color:color-mix(in srgb,${color} 8%,transparent)"`
     : ''
   const iconStyle = tinted ? ` style="color:${color}"` : ''
+  // Two layers (mirrors the FAQ block): a full-width `.pilotiq-alert` anchor
+  // and an inner `.pilotiq-alert-box` that carries the visual box + the
+  // contained/full width. Keeps in-block controls anchored to a stable edge.
   return (
-    `<div class="pilotiq-alert pilotiq-alert-${type}" data-alert-type="${type}" role="note"${style}>` +
+    `<div class="pilotiq-alert" data-alert-type="${type}"${width}>` +
+    `<div class="pilotiq-alert-box pilotiq-alert-${type}" role="note"${style}>` +
     `<span class="pilotiq-alert-icon" aria-hidden="true"${iconStyle}>${buildAlertIconSvg(icon, iconSvg, type)}</span>` +
     `<div class="pilotiq-alert-title">${titleHtml}</div>` +
     `<div class="pilotiq-alert-description">${bodyHtml}</div>` +
+    `</div>` +
     `</div>`
   )
 }

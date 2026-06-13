@@ -32,17 +32,23 @@
 /* Alert — shadcn-style callout: icon column + title/description, tinted by
  * variant. The `custom` variant paints from an inline color set by the
  * renderer; presets get their accent here. */
-.pilotiq-alert {
+/* Outer `.pilotiq-alert` stays full width — the stable anchor for the in-block
+ * gear control; the inner `.pilotiq-alert-box` carries the visual box + width
+ * (mirrors the FAQ outer/`.pilotiq-faq-content` split). */
+.pilotiq-alert { position: relative; margin-block: 1.25rem; }
+.pilotiq-alert-box {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: start;
   gap: 0.125rem 0.75rem;
-  margin: 1.25rem 0;
   padding: 0.75rem 1rem;
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: var(--radius, 0.5rem);
   font-size: 0.875rem;
+  max-width: 42rem;            /* contained (default) */
+  margin-inline: auto;
 }
+.pilotiq-alert[data-width="full"] .pilotiq-alert-box { max-width: none; } /* full bleed */
 .pilotiq-alert-icon {
   display: inline-flex;
   width: 1rem;

@@ -416,6 +416,13 @@ export const Alert = Node.create({
         parseHTML:  (el) => coerceAlertType(el.getAttribute('data-alert-type')),
         renderHTML: (attrs) => ({ 'data-alert-type': coerceAlertType(attrs['type']) }),
       },
+      // Block width — `contained` (default) or `full` (full bleed). Same generic
+      // layout attr as the FAQ block; surfaced through the in-block gear menu.
+      width: {
+        default:    'contained',
+        parseHTML:  (el) => (el.getAttribute('data-width') === 'full' ? 'full' : 'contained'),
+        renderHTML: (attrs) => (attrs['width'] === 'full' ? { 'data-width': 'full' } : {}),
+      },
       icon: {
         default:    '',
         parseHTML:  (el) => el.getAttribute('data-icon') ?? '',
