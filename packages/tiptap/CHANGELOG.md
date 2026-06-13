@@ -1,5 +1,43 @@
 # @pilotiq/tiptap
 
+## 3.15.0
+
+### Minor Changes
+
+- c3816ae: In-block content-block controls now live behind a single **gear menu**.
+
+  Blocks with multiple variations used to scatter their controls (a width chip in one corner, a variant dropdown + color swatch + click-the-icon picker in another). They now share one consistent entry point — a gear button in the block's inline-end gutter that opens a **nested settings menu**, one submenu per setting.
+
+  - **New reusable `BlockSettingsMenu`** (replaces `BlockWidthControl`): a gear trigger + a Base UI `Menu` with a `SubmenuRoot` per setting. Two setting kinds — `select` (a radio submenu, e.g. Width / Type) and `custom` (caller-supplied submenu body, e.g. the icon grid / color swatches). The active value rides each row as a hint.
+  - **Alert** routes Width, Type, Icon (curated SVG library + Custom SVG paste), and Color (custom variant only) through the gear; the icon in column one is now static and changed from the menu.
+  - **Alert gains a `width` attr** (`contained` / `full`), mirroring the FAQ block — emitted read-side as `data-width`. To keep the gear from shifting when width changes, Alert now renders in **two layers** (same as FAQ): a full-width `.pilotiq-alert` anchor wrapping an inner `.pilotiq-alert-box` that carries the box chrome + width. Consumer CSS that targeted `.pilotiq-alert` for the box (border/background/padding/`pilotiq-alert-<type>`) should move to `.pilotiq-alert-box`; full-width is `.pilotiq-alert[data-width="full"] .pilotiq-alert-box`.
+  - **FAQ** moves its width toggle into the same gear menu.
+
+  Back-compat: node structures are unchanged; existing Alert/FAQ content loads as-is (alerts default to `contained`).
+
+- b6b28bd: The **FAQ** content block is now a collapsible **accordion**.
+
+  - **Editor:** each Q&A item is a collapsible row (a React NodeView) — the question is the always-visible trigger with a chevron, the answer folds below it. The question stays editable on click; only the chevron toggles. New `open` attr on `faqItem` (defaults open) stores per-item state.
+  - **Read-side** (`renderRichTextToHtml`): renders as native **`<details>`/`<summary>`** — a real, accessible, **zero-JS** accordion the browser collapses on its own. Each item's `open` attr drives the platform `open` attribute. Consumer owns the `.pilotiq-faq*` CSS.
+  - Dropped the old "Q"/"A" markers in favor of the accordion chrome.
+  - **Block width:** an in-block toggle (a reusable `BlockWidthControl`) switches the FAQ between **contained** (max-width, centered) and **full** width — a `width` attr on the `faq` node, emitted read-side as `data-width`. Generic enough to reuse on other blocks.
+
+  Back-compat: the node structure is unchanged (`faq > faqItem > faqQuestion faqAnswer`), so existing FAQ content loads as-is and gains the default-open state; old HTML question/answer wrappers still parse via fallback rules.
+
+- af935e7: The remaining inline content blocks (**Summary**, **Key takeaways**, **Pros & cons**) now use the React NodeView + gear-menu pattern, matching Alert and FAQ.
+
+  - Each gains an in-block **gear menu** with a **Width** setting (`contained` / `full`), surfaced read-side as `data-width`.
+  - **Summary** and **Key takeaways** share one new `LabeledBlockNodeView` (they're structurally identical — a label above a `block+` body), driven by the existing `labeledBlock()` factory, which now attaches the NodeView + `width` attr and carries the per-block `label` / `cssClass` on `addOptions()`.
+  - **Pros & cons** gets its own `ProsConsNodeView`; the gear lives on the container, the two columns keep their plain label markup.
+  - The `width` attr is consolidated into one shared `widthAttribute()` helper (FAQ, Alert, the labelled blocks, and Pros & cons all reuse it, so they can't drift).
+
+  **Read-side / consumer CSS:** each block now renders a full-width outer anchor wrapping an inner content layer (mirrors the FAQ outer/`-content` split, so the gear doesn't move on a width toggle):
+
+  - Summary / Key takeaways: the label + body now sit inside a `.pilotiq-block-content` wrapper; that wrapper carries the max-width / centering (full-width via `[data-width="full"] > .pilotiq-block-content`).
+  - Pros & cons: the two-column grid moves from `.pilotiq-pros-cons` onto a new inner `.pilotiq-pros-cons-content`; the outer becomes the full-width anchor.
+
+  Back-compat: node structures are unchanged and parsing is tolerant of the old (unwrapped) HTML, so existing stored content loads as-is and defaults to `contained`.
+
 ## 3.14.0
 
 ### Minor Changes
