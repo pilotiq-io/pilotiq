@@ -85,6 +85,12 @@
   margin-inline: auto;
 }
 .pilotiq-pros-cons[data-width="full"] > .pilotiq-pros-cons-content { max-width: none; } /* full bleed */
+/* Editor only: @tiptap/react's NodeViewContent nests the columns in an extra
+ * wrapper div, so the grid's only direct child would be that wrapper (columns
+ * stack). Flatten it with `display: contents` so the columns become the grid
+ * items. The read-side has no wrapper (columns are direct children), so this
+ * selector matches nothing there. */
+.pilotiq-pros-cons-content > div:not(.pilotiq-pros):not(.pilotiq-cons) { display: contents; }
 .pilotiq-pros > .pilotiq-block-label { color: #16a34a; }
 .pilotiq-cons > .pilotiq-block-label { color: #dc2626; }
 /* FAQ — shadcn-style accordion. The read-side renders native <details> (zero
