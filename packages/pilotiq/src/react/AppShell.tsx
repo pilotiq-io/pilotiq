@@ -154,6 +154,11 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
 
   const hooks = props.panel.renderHooks
   const rightSidebarMeta = props.panel.rightSidebar
+  // The breadcrumb's last crumb is the current page's leaf title — the record
+  // title on a record edit/view page. Forward it to right-panel panes (e.g.
+  // the AI chat) so they can label the active record by title, not id.
+  const crumbs = props.breadcrumb?.items
+  const recordTitle = crumbs && crumbs.length > 0 ? crumbs[crumbs.length - 1]?.label : undefined
 
   // Record-scoped wrapper (collab room, audit trail, …) — pass-through
   // when no plugin registered a wrapper or when the URL isn't a
@@ -192,6 +197,7 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
           <RightSidebar
             basePath={props.basePath}
             {...(props.currentPath !== undefined ? { currentPath: props.currentPath } : {})}
+            {...(recordTitle !== undefined ? { recordTitle } : {})}
           />
         )}
       </CommandPaletteProvider>

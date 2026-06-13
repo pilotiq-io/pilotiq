@@ -35,6 +35,11 @@ export interface RightPanelProps {
   /** Live pathname — re-renders on SPA navigation so panes can react to
    *  which page the user is on (record id, resource slug, etc). */
   currentPath?: string
+  /** Resolved human title of the current page's leaf — the breadcrumb's
+   *  last crumb, which is the record title on a record edit/view page.
+   *  Absent when the page has no breadcrumb. Lets panes label the active
+   *  record by title instead of id. */
+  recordTitle?: string
   /** Active contribution id (this contribution's `id` when mounted).
    *  Useful for consumers that share a single context across multiple
    *  registered panes. */
