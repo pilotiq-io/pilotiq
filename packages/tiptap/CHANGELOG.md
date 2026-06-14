@@ -1,5 +1,42 @@
 # @pilotiq/tiptap
 
+## 4.0.0
+
+### Major Changes
+
+- 58794c1: Rename the AI suggestion/diff primitives to provider-neutral names. These are generic inline-diff machinery the package exposes — they contain no AI logic and can be driven by any producer (the actual AI lives in `@pilotiq-pro/ai`), so the `Ai*` prefix oversold them.
+
+  **Renamed exports** (no aliases — direct importers must update):
+
+  | Old                                                                    | New                                                              |
+  | ---------------------------------------------------------------------- | ---------------------------------------------------------------- |
+  | `AiSuggestionExtension`                                                | `SuggestionChipExtension`                                        |
+  | `AiSuggestion`                                                         | `InlineSuggestion`                                               |
+  | `AiSuggestionExtensionOptions`                                         | `SuggestionChipExtensionOptions`                                 |
+  | `aiSuggestionPluginKey`                                                | `suggestionChipPluginKey`                                        |
+  | `useAiSuggestionBridge`                                                | `useSuggestionBridge`                                            |
+  | `AiInlineDiffExtension`                                                | `InlineDiffExtension`                                            |
+  | `AiInlineDiffExtensionOptions`                                         | `InlineDiffExtensionOptions`                                     |
+  | `aiInlineDiffPluginKey`                                                | `inlineDiffPluginKey`                                            |
+  | `getAiInlineDiffState`                                                 | `getInlineDiffState`                                             |
+  | `AiDiffDisplayMode`                                                    | `DiffDisplayMode`                                                |
+  | `useAiInlineDiff` / `useIsAiInlineDiffActive` / `readAiDiffViewMarker` | `useInlineDiff` / `useIsInlineDiffActive` / `readDiffViewMarker` |
+  | `AiSuggestionBanner` / `useAiSuggestionBanner`                         | `SuggestionBanner` / `useSuggestionBanner`                       |
+
+  **Renamed editor commands**: `addAiSuggestion` → `addSuggestion`, `approveAiSuggestion` → `approveSuggestion`, `rejectAiSuggestion` → `rejectSuggestion`, `approveAllAiSuggestions` → `approveAllSuggestions`, `rejectAllAiSuggestions` → `rejectAllSuggestions`, `clearAiSuggestions` → `clearSuggestions`; `startAiInlineDiff` → `startInlineDiff`, `applySurgicalAiInlineDiff` → `applySurgicalInlineDiff`, `acceptAiInlineDiff` → `acceptInlineDiff`, `rejectAiInlineDiff` → `rejectInlineDiff`.
+
+  **Renamed CSS classes / DOM markers** (consumers with custom stylesheets must update; the injected defaults follow the new names automatically): `pilotiq-ai-suggestion-*` → `pilotiq-suggestion-*`, `pilotiq-ai-banner-*` → `pilotiq-suggestion-banner-*`, `pilotiq-ai-diff-*` → `pilotiq-diff-*`, and the matching `data-pilotiq-ai-*` attributes → `data-pilotiq-*`.
+
+  **Deliberately unchanged**: the cross-package field-config markers `data-ai-suggestions-mode` / `data-ai-diff-view` (written by `@pilotiq-pro/ai`'s `.aiSuggestionsMode()` / `.aiDiffView()` field API) stay `ai`-prefixed — they configure genuinely AI-specific behavior, not provider-neutral primitives.
+
+### Minor Changes
+
+- 0096a7f: Add an in-block text find→replace surgical op — `planReplaceText` plus a `replace_text` case in the inline-diff dispatch.
+
+  It swaps the first occurrence of a `search` string with `replace`, preserving the surrounding node structure. This lets a producer (e.g. `@pilotiq-pro/ai`) fix a word, number, or typo **inside** a custom block (alert / prosCons / faq / keyTakeaways) or a table cell without rebuilding the block as HTML — which `replace_block` would force, flattening the block. The op is index-free: the match position resolves at apply time, so it composes safely after the index-based block ops in a batch. Returns `null` when `search` isn't present, so a stale or guessed search string changes nothing rather than corrupting the doc.
+
+  New export: `planReplaceText`. Surgical meta op: `{ op: 'replace_text', search, replace }`.
+
 ## 3.20.0
 
 ### Minor Changes
