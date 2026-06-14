@@ -51,12 +51,16 @@ export type {
   PanelInfoRoute,
   RightPanelMeta,
   RightSidebarMeta,
+  SettingsMeta,
+  SettingsPaneMeta,
   UserMenuMeta,
 } from './pageData/navigation.js'
 export {
   applyRoleHooks,
+  buildSettingsMeta,
   panelInfo,
   resolvePageHooks,
+  resolveSettingsPanePage,
 } from './pageData/navigation.js'
 
 import {
@@ -121,6 +125,7 @@ import {
   customPageData,
   globalEditData,
   globalViewData,
+  settingsData,
 } from './pageData/misc.js'
 
 // Re-export the misc page builders for external callsites (routes.ts
@@ -130,6 +135,7 @@ export {
   globalEditData,
   globalViewData,
   searchData,
+  settingsData,
   widgetData,
 } from './pageData/misc.js'
 export type {
@@ -167,6 +173,11 @@ export async function dispatchPageData(pageContext: PageContextLike): Promise<un
   switch (pageId) {
     case '/pages/(pilotiq)/dashboard':
       return dashboardData(panel)
+
+    case '/pages/(pilotiq)/settings': {
+      const paneId = routeParams['paneId']
+      return settingsData(panel, paneId || undefined)
+    }
 
     case '/pages/(pilotiq)/slug': {
       // 2-segment URL: could be a resource list, a global edit, or a custom page.

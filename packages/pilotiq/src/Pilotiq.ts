@@ -22,6 +22,11 @@ import {
   findDuplicateRightPanelId,
   type RightPanelContribution,
 } from './RightPanel.js'
+import {
+  validateSettingsPane,
+  findDuplicateSettingsPaneId,
+  type SettingsPaneContribution,
+} from './SettingsPane.js'
 import type {
   NavComponentProps,
   HeaderComponentProps,
@@ -315,6 +320,23 @@ export interface PilotiqConfig {
    * absent and the chrome doesn't mount.
    */
   rightPanels?:  RightPanelContribution[]
+  /**
+   * System Settings panes registered via `Pilotiq.settingsPane(c)` /
+   * `Pilotiq.settingsPanes([…])`. Each entry is auth-gated, sorted, and
+   * serialized into `panel.settings` under `panelInfo()`; the gear
+   * "Settings" nav entry appears whenever at least one accessible pane
+   * exists. The React `render` reference never travels over the wire —
+   * the Vite plugin harvests it into `_components.ts`
+   * (`settingsPaneRegistry`) keyed by `id`.
+   */
+  settingsPanes?:  SettingsPaneContribution[]
+  /**
+   * Where the "Settings" entry surfaces. `'sidebar'` (default) renders a
+   * gear nav item in the sidebar; `'user-menu'` drops the sidebar item
+   * and adds "Settings" to the top-right user dropdown instead (next to
+   * the profile entry). The shell + routes are identical either way.
+   */
+  settingsPlacement?: 'sidebar' | 'user-menu'
   /**
    * Layout-level provider components registered via
    * `Pilotiq.layoutProvider(C)` / `Pilotiq.layoutProviders([…])`. Plugins
@@ -953,6 +975,77 @@ export class Pilotiq {
   /** @internal — `panelInfo()` reads this to build `RightSidebarMeta`. */
   getRightPanels(): readonly RightPanelContribution[] {
     return this.config.rightPanels ?? []
+  }
+
+  /**
+   * Register a single System Settings pane. This is the iOS-style
+   * extension seam — installed packages surface their own settings
+   * sections through it (the built-in `themeEditor()` adds the "Theme"
+   * pane; `@pilotiq-pro/ai` adds an "AI" pane; …). Pilotiq core ships the
+   * settings shell (gear nav entry + section rail); each pane provides
+   * only its body component (or an `href` to cross-link an existing page).
+   *
+   * @example
+   * ```ts
+   * Pilotiq.make('Admin').settingsPane({
+   *   id:     'ai',
+   *   label:  'AI',
+   *   icon:   'sparkles',
+   *   group:  'Integrations',
+   *   render: AiSettingsPane,
+   * })
+   * ```
+   *
+   * Adapter packages typically call this from inside their plugin's
+   * `register(panel)` so consumers wire everything via `.plugins([…])`.
+   *
+   * @throws when `id`/`label` is missing/invalid, when neither (or both)
+   *         of `render` / `href` is set, or when the same `id` was already
+   *         registered.
+   */
+  settingsPane(contribution: SettingsPaneContribution): this {
+    validateSettingsPane(contribution)
+    const existing = this.config.settingsPanes ?? []
+    const dup = findDuplicateSettingsPaneId(existing, contribution)
+    if (dup) {
+      throw new Error(
+        `[Pilotiq] settingsPane: contribution id "${contribution.id}" is already ` +
+        `registered. Each settings pane must use a unique id.`,
+      )
+    }
+    this.config.settingsPanes = [...existing, contribution]
+    return this
+  }
+
+  /**
+   * Bulk variant of {@link settingsPane}. Registers each pane in array
+   * order; throws on the first invalid or duplicate id.
+   */
+  settingsPanes(list: SettingsPaneContribution[]): this {
+    for (const c of list) this.settingsPane(c)
+    return this
+  }
+
+  /** @internal — `panelInfo()` / route handlers read this to build the
+   *  settings shell. */
+  getSettingsPanes(): readonly SettingsPaneContribution[] {
+    return this.config.settingsPanes ?? []
+  }
+
+  /**
+   * Choose where the "Settings" entry appears: `'sidebar'` (default — a
+   * gear nav item) or `'user-menu'` (the top-right user dropdown, next to
+   * the profile entry; the sidebar item is dropped). The settings shell
+   * and routes are identical either way.
+   *
+   * @example
+   * ```ts
+   * Pilotiq.make('Admin').settingsPlacement('user-menu')
+   * ```
+   */
+  settingsPlacement(placement: 'sidebar' | 'user-menu'): this {
+    this.config.settingsPlacement = placement
+    return this
   }
 
   /**

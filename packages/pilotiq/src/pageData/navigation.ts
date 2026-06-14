@@ -142,6 +142,35 @@ export interface RightSidebarMeta {
 }
 
 /**
+ * One System Settings pane's rail metadata, shipped under
+ * `viewProps.panel.settings.panes`. The `render` component reference does
+ * NOT travel here — only its rail meta. The body is resolved client-side
+ * from the Vite plugin's `settingsPaneRegistry` keyed by `id`, mirroring
+ * the right-panel + icon round-trip. `href` panes link away instead.
+ */
+export interface SettingsPaneMeta {
+  id:     string
+  label:  string
+  icon?:  SerializedIcon
+  group?: string
+  href?:  string
+}
+
+/**
+ * Settings shell meta shipped under `viewProps.panel.settings`. Sparse —
+ * absent from `panelInfo()` when no panes are registered (and no profile
+ * page), every pane failed `canAccess(user)`, or every survivor is
+ * `hidden`. The gear "Settings" nav entry mirrors this presence.
+ *
+ * `defaultPaneId` is the first render-type pane (the one
+ * `${base}/settings` redirects to).
+ */
+export interface SettingsMeta {
+  panes:          SettingsPaneMeta[]
+  defaultPaneId?: string
+}
+
+/**
  * Single nav-tree entry. `name` is the JS class name (`R.name` /
  * `G.name` / `P.name`) — also the lookup key into the build-time
  * `_components.ts` manifest the Vite plugin emits, so component-typed
@@ -262,11 +291,12 @@ export async function panelInfo(
   const merged = pilotiq.getMergedTheme()
   const theme: ThemeMeta | undefined = merged ? resolveTheme(merged) : undefined
   const user = await pilotiq.resolveUser(req)
-  const [navigation, userMenu, renderHooks, rightSidebar, i18n] = await Promise.all([
+  const [navigation, userMenu, renderHooks, rightSidebar, settings, i18n] = await Promise.all([
     buildNavigation(pilotiq, user),
     buildUserMenu(pilotiq, user),
     resolveChromeHooks(pilotiq, user, route),
     buildRightSidebarMeta(cfg, user),
+    buildSettingsMeta(cfg, user),
     resolvePanelI18n(),
   ])
   const databaseNotifications = buildDatabaseNotificationsMeta(cfg, user)
@@ -288,6 +318,7 @@ export async function panelInfo(
     ...(userMenu ? { userMenu } : {}),
     ...(databaseNotifications ? { databaseNotifications } : {}),
     ...(rightSidebar ? { rightSidebar } : {}),
+    ...(settings ? { settings } : {}),
     ...(recordCollab ? { recordCollab } : {}),
     ...(pageCollab ? { pageCollab } : {}),
     ...(Object.keys(renderHooks).length > 0 ? { renderHooks } : {}),
@@ -425,6 +456,104 @@ export async function buildRightSidebarMeta(
 }
 
 /**
+ * Build the System Settings shell meta — the section-rail panes for the
+ * current user. Mirrors `buildRightSidebarMeta`: gate each pane by
+ * `canAccess(user)` in parallel (fail-closed + warn), drop hidden, sort
+ * by `sort` ascending (registration order ties).
+ *
+ * Two pane sources merge: the registered `cfg.settingsPanes`
+ * contributions (render + href) AND a synthesized "Profile" href pane
+ * when `cfg.profilePage` is set — surfacing the existing profile editor
+ * in Settings without a rebuild. The synthesized pane is gated by the
+ * profile Page's own `canAccess`.
+ *
+ * Returns `null` when no accessible, non-hidden pane survives — the gear
+ * nav entry + route both key off this.
+ */
+export async function buildSettingsMeta(
+  cfg:  Readonly<PilotiqConfig>,
+  user: unknown,
+): Promise<SettingsMeta | null> {
+  const list = cfg.settingsPanes ?? []
+
+  const indexed = list.map((c, idx) => ({ c, idx }))
+  const gated = await Promise.all(
+    indexed.map(async ({ c, idx }) => {
+      if (c.canAccess) {
+        try {
+          const ok = await c.canAccess(user)
+          if (!ok) return null
+        } catch (err) {
+          console.warn(`[Pilotiq] settingsPane "${c.id}" canAccess threw — dropping`, err)
+          return null
+        }
+      }
+      return { c, idx }
+    }),
+  )
+
+  const visible = gated
+    .filter((x): x is { c: typeof list[number]; idx: number } => x !== null)
+    .filter((x) => !x.c.hidden)
+    .sort((a, b) => {
+      const sa = a.c.sort ?? 100
+      const sb = b.c.sort ?? 100
+      if (sa !== sb) return sa - sb
+      return a.idx - b.idx
+    })
+
+  const panes: SettingsPaneMeta[] = visible.map(({ c }) => {
+    const meta: SettingsPaneMeta = { id: c.id, label: c.label }
+    if (c.icon !== undefined)  meta.icon  = serializeIcon(c.icon, c.id)
+    if (c.group !== undefined) meta.group = c.group
+    if (c.href !== undefined)  meta.href  = c.href
+    return meta
+  })
+
+  // Synthesize the Profile pane from `cfg.profilePage` — a page-backed
+  // pane that renders the profile Page's schema INSIDE the settings shell
+  // (rail persists), rather than linking away. Gated by the Page's own
+  // canAccess. The Page's standalone route still works.
+  const P = cfg.profilePage
+  if (P) {
+    let ok: boolean
+    try { ok = await P.canAccess(user) } catch { ok = false }
+    if (ok) {
+      const profilePane: SettingsPaneMeta = {
+        id:    P.getSlug(),   // e.g. 'profile' → /settings/profile (not '__profile')
+        label: P.getLabel(),
+        group: 'General',
+      }
+      const icon = serializeIcon(P.getNavigationIcon() ?? 'user-circle', P.name)
+      if (icon !== undefined) profilePane.icon = icon
+      panes.push(profilePane)
+    }
+  }
+
+  if (panes.length === 0) return null
+
+  const defaultPaneId = panes.find(p => !p.href)?.id
+  const meta: SettingsMeta = { panes }
+  if (defaultPaneId !== undefined) meta.defaultPaneId = defaultPaneId
+  return meta
+}
+
+/**
+ * Map a settings pane id to its backing `Page` (for page-backed panes
+ * that render in-shell). Returns `undefined` for render / href panes.
+ * The synthesized profile pane uses `cfg.profilePage`'s slug as its id;
+ * registered panes resolve via their `page` field. Used by `settingsData`
+ * to resolve the in-shell schema.
+ */
+export function resolveSettingsPanePage(
+  cfg:    Readonly<PilotiqConfig>,
+  paneId: string,
+): typeof Page | undefined {
+  if (cfg.profilePage && cfg.profilePage.getSlug() === paneId) return cfg.profilePage
+  return cfg.settingsPanes?.find(p => p.id === paneId)?.page
+}
+
+/**
  * Resolve every chrome render hook (body / topbar / sidebar / user-menu
  * / footer / head). Returns a sparse map — slots with no matching
  * registered entries are omitted so the wire payload stays minimal on
@@ -554,7 +683,18 @@ export async function buildUserMenu(pilotiq: Pilotiq, user: unknown): Promise<Us
   // its own `canAccess(user)` so per-user gating works without the
   // user repeating the predicate at the menu level.
   const profileItem = await buildProfileMenuItem(cfg, user)
-  const finalItems  = profileItem ? [profileItem, ...visibleItems] : visibleItems
+
+  // Settings entry — only when `settingsPlacement: 'user-menu'` (the
+  // sidebar gear is dropped in that mode). Gated on the same per-user pane
+  // resolution as the sidebar entry. Sits right after the profile entry.
+  let settingsItem: UserMenuItemMeta | null = null
+  if ((cfg.settingsPlacement ?? 'sidebar') === 'user-menu') {
+    const settings = await buildSettingsMeta(cfg, user)
+    if (settings) settingsItem = { name: '__settings', label: 'Settings', url: `${cfg.path}/settings`, icon: 'settings' }
+  }
+
+  const lead = [profileItem, settingsItem].filter((x): x is UserMenuItemMeta => x !== null)
+  const finalItems = [...lead, ...visibleItems]
 
   const meta: UserMenuMeta = {
     user:  extractUserIdentity(user),
@@ -709,6 +849,9 @@ export async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<
   for (let i = 0; i < cfg.pages.length; i++) {
     if (!pageAccess[i]) continue
     const P = cfg.pages[i]!
+    // The profile page is surfaced in the user menu + the Settings rail —
+    // never as a standalone sidebar entry. (Routing stays registered.)
+    if (cfg.profilePage === P) continue
     if (P.cluster && !clusterAccessByClass.get(P.cluster)) continue
     // The dashboard page collapses its nav URL to `${base}` so the
     // sidebar entry deep-links to the panel root rather than
@@ -764,19 +907,25 @@ export async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<
     raw.push(item)
   }
 
-  // Theme editor — surfaced as a regular top-level nav link (not bespoke
-  // footer chrome) so it reads like any other page. Appended last so it
-  // sorts to the end of the ungrouped items. The route is mounted
-  // unconditionally when themeEditor is enabled, so there's no canAccess gate.
-  if (cfg.themeEditor) {
-    raw.push({
-      name:  '__theme',
-      label: 'Theme',
-      url:   `${base}/theme`,
-      icon:  'palette',
-      // Last raw entry pushed — no further `idx` reads, so no increment.
-      _idx:  idx,
-    })
+  // System Settings — a single top-level "Settings" gear entry that opens
+  // the settings shell. Replaces the old standalone "Theme" nav link
+  // (Theme is now a pane inside Settings). Appended last so it sorts to
+  // the end of the ungrouped items. Gated on the same per-user pane
+  // resolution the shell + route use, so it disappears when every pane is
+  // inaccessible. Skipped when `settingsPlacement: 'user-menu'` — the
+  // entry lives in the user dropdown instead (see `buildUserMenu`).
+  if ((cfg.settingsPlacement ?? 'sidebar') === 'sidebar') {
+    const settings = await buildSettingsMeta(cfg, user)
+    if (settings) {
+      raw.push({
+        name:  '__settings',
+        label: 'Settings',
+        url:   `${base}/settings`,
+        icon:  'settings',
+        // Last raw entry pushed — no further `idx` reads, so no increment.
+        _idx:  idx,
+      })
+    }
   }
 
   await Promise.all(pushBadge.map(async ({ item, handler, owner }) => {
