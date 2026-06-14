@@ -58,6 +58,7 @@ export {
   planDeleteBlock,
   planWrapBlocks,
   planUpdateBlockMark,
+  planReplaceText,
   summarizeBlockStructure,
   type BlockMarkRange,
   type TransactionModifier,

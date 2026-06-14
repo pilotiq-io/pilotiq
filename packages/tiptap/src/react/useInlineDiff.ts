@@ -48,6 +48,7 @@ import {
   planDeleteBlock,
   planUpdateBlockMark,
   planWrapBlocks,
+  planReplaceText,
   type BlockMarkRange,
   type TransactionModifier,
 } from '../surgicalOps.js'
@@ -274,6 +275,12 @@ type SurgicalOp =
   // `blockIndex` is the range START (fromIndex) so the DESC-by-blockIndex batch
   // sort keeps disjoint wraps position-valid; `toIndex` is the inclusive end.
   | { op: 'wrap_blocks';         blockIndex: number; toIndex: number; wrapperType: string; attrs?: Record<string, unknown> }
+  // In-block text find→replace. Index-free: it resolves the match position at
+  // apply time, so it never depends on (or shifts) a blockIndex — that's what
+  // lets it edit text INSIDE a custom block (alert/prosCons/faq/table cell)
+  // without rebuilding and flattening the block. Sorts last in a batch (see
+  // `opBlockIndex`); applied after the index-based ops, against the live tr doc.
+  | { op: 'replace_text';        search: string; replace: string }
 
 /**
  * Either a single op (when the AI emitted only one surgical change) or
@@ -285,6 +292,14 @@ type SurgicalMeta = SurgicalOp | { ops: SurgicalOp[] }
 
 function parseSurgicalOp(obj: Record<string, unknown>): SurgicalOp | null {
   const op = obj['op']
+  // `replace_text` carries no `blockIndex` — parse it before the index guard.
+  if (op === 'replace_text') {
+    const search  = obj['search']
+    const replace = obj['replace']
+    if (typeof search !== 'string' || search.length === 0) return null
+    if (typeof replace !== 'string') return null
+    return { op, search, replace }
+  }
   const blockIndex = obj['blockIndex']
   if (typeof blockIndex !== 'number') return null
   switch (op) {
@@ -358,6 +373,7 @@ function planOp(editor: Editor, op: SurgicalOp): TransactionModifier | null {
     case 'delete_block':        return planDeleteBlock(editor, op.blockIndex)
     case 'update_block_mark':   return planUpdateBlockMark(editor, op.blockIndex, op.mark, op.range, op.apply, op.attrs)
     case 'wrap_blocks':         return planWrapBlocks(editor, op.blockIndex, op.toIndex, op.wrapperType, op.attrs)
+    case 'replace_text':        return planReplaceText(editor, op.search, op.replace)
   }
 }
 
@@ -374,9 +390,15 @@ function planOp(editor: Editor, op: SurgicalOp): TransactionModifier | null {
  * still runs whatever did plan, so a single bad op doesn't kill the
  * whole batch.
  */
+/** Sort key for batch ordering. Index-free ops (`replace_text`) sort last so the
+ * index-based ops apply first at their original positions; the text swap then
+ * resolves against the live tr doc. */
+function opBlockIndex(op: SurgicalOp): number {
+  return 'blockIndex' in op ? op.blockIndex : Number.NEGATIVE_INFINITY
+}
 function planSurgicalModifier(editor: Editor, surgical: SurgicalMeta): TransactionModifier | null {
   if ('ops' in surgical) {
-    const sorted = [...surgical.ops].sort((a, b) => b.blockIndex - a.blockIndex)
+    const sorted = [...surgical.ops].sort((a, b) => opBlockIndex(b) - opBlockIndex(a))
     const modifiers: TransactionModifier[] = []
     for (const op of sorted) {
       const mod = planOp(editor, op)

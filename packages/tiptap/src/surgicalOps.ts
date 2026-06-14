@@ -248,6 +248,42 @@ export function summarizeBlockStructure(doc: ProseMirrorNode, maxChars = 80): st
   return lines.join('\n')
 }
 
+/**
+ * In-block text find→replace. Swaps the FIRST occurrence of `search` with
+ * `replace`, preserving the surrounding node structure — so it can fix a word,
+ * number, or typo INSIDE a custom block (alert / prosCons / faq / keyTakeaways)
+ * or a table cell without rebuilding (and flattening) the block, which is what
+ * `replace_block` would force. Index-free: the match position is resolved at
+ * apply time against the live transaction doc, so it composes safely after the
+ * index-based block ops in a batch.
+ *
+ * Returns `null` when `search` isn't present (the caller surfaces "no change")
+ * so a stale/guessed search string can never silently corrupt the doc.
+ */
+export function planReplaceText(editor: Editor, search: string, replace: string): TransactionModifier | null {
+  if (typeof search !== 'string' || search.length === 0) return null
+  if (typeof replace !== 'string') return null
+  let present = false
+  editor.state.doc.descendants((node) => {
+    if (present) return false
+    if (node.isText && node.text && node.text.includes(search)) { present = true; return false }
+    return true
+  })
+  if (!present) return null
+  return (tr) => {
+    let foundFrom = -1
+    tr.doc.descendants((node, pos) => {
+      if (foundFrom >= 0) return false
+      if (node.isText && node.text) {
+        const i = node.text.indexOf(search)
+        if (i !== -1) { foundFrom = pos + i; return false }
+      }
+      return true
+    })
+    if (foundFrom >= 0) tr.insertText(replace, foundFrom, foundFrom + search.length)
+  }
+}
+
 function describeStructuralNode(node: ProseMirrorNode): string {
   const kids = node.childCount
   if (kids === 0) return '(empty)'
