@@ -13,6 +13,7 @@ import {
 import { tiptap }     from '@pilotiq/tiptap'
 import { codeEditor, CodeEditorField } from '@pilotiq/codemirror'
 import { recharts }   from '@pilotiq/recharts'
+import { GeneralSettingsPane } from '@pilotiq/pilotiq/react'
 import { html } from '@codemirror/lang-html'
 import { app } from '@rudderjs/core/client'
 import { PostResource }     from './Posts/PostResource.js'
@@ -153,3 +154,14 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .dashboard(MyDashboard)
   // User-menu auto-injects "Edit profile" pointing at this page.
   .profile(ProfilePage)
+  // System Settings — General is the index pane (sort 0, before the
+  // theme-editor's "Appearance" pane). Shows framework/panel versions
+  // today; home for general panel settings going forward.
+  .settingsPane({
+    id:     'general',
+    label:  'General',
+    icon:   'settings',
+    group:  'General',
+    sort:   0,
+    render: GeneralSettingsPane,
+  })

@@ -9,6 +9,7 @@ export const route: RouteSync = (pageContext) => {
   if (parts.length !== 3 + off) return false
   if (parts[2 + off] === 'create') return false
   if (parts[1 + off] === 'theme')  return false
+  if (parts[1 + off] === 'settings') return false
   if (!isPanelBase(parts[0])) return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
   return { routeParams: { basePath: parts[0]!, slug: parts[1 + off]!, id: parts[2 + off]! } }

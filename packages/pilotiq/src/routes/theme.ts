@@ -1,5 +1,4 @@
 import type { Router } from '@rudderjs/router'
-import { view } from '@rudderjs/view'
 import type { Pilotiq } from '../Pilotiq.js'
 import type { ThemeConfig } from '../theme/types.js'
 import { presets } from '../theme/presets.js'
@@ -7,7 +6,6 @@ import { baseColors } from '../theme/base-colors.js'
 import { HUE_NAMES } from '../theme/colors.js'
 import { migrateThemeOverrides } from '../theme/migrate.js'
 import { radiusMap } from '../theme/radius.js'
-import { panelInfo } from '../pageData.js'
 
 /**
  * Register the theme editor routes — the `${base}/theme` editor page
@@ -26,16 +24,11 @@ export function registerThemeRoutes(
 ): void {
   const cfg = pilotiq.getConfig()
 
-  router.get(`${base}/theme`, async (req) => {
-    return view('pilotiq.theme', {
-      panel:       await panelInfo(pilotiq, req),
-      basePath:    base,
-      layout:      cfg.layout,
-      themeConfig: pilotiq.getMergedTheme() ?? {},
-      // Pure code-level defaults (the panel's `.theme()` config, sans DB
-      // overrides) — the editor's "Reset to Defaults" snaps back to these.
-      codeTheme:   cfg.theme ?? {},
-    })
+  // The theme editor now lives at `${base}/settings/appearance` (a System
+  // Settings pane). Keep `${base}/theme` as a 302 redirect so old
+  // bookmarks / deep links don't break.
+  router.get(`${base}/theme`, async (_req, res) => {
+    return res.redirect(`${base}/settings/appearance`, 302)
   })
 
   router.get(`${base}/api/_theme`, async (_req, res) => {

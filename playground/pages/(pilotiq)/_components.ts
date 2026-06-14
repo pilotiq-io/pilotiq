@@ -9,6 +9,7 @@ import { pilotiqGuest } from '../../app/Pilotiq/GuestPanel'
 const _all: Record<string, unknown> = {}
 const _clusters: Record<string, string[]> = {}
 const _rightPanels: Record<string, unknown> = {}
+const _settingsPanes: Record<string, unknown> = {}
 const _bases: string[] = []
 const _layoutProviders: unknown[] = []
 const _slots: Record<string, unknown> = {}
@@ -21,6 +22,11 @@ function _walk(p: any) {
   if (Array.isArray(cfg?.rightPanels)) {
     for (const _c of cfg.rightPanels) {
       if (_c && typeof _c.id === 'string' && _c.render) _rightPanels[_c.id] = _c.render
+    }
+  }
+  if (Array.isArray(cfg?.settingsPanes)) {
+    for (const _c of cfg.settingsPanes) {
+      if (_c && typeof _c.id === 'string' && _c.render) _settingsPanes[_c.id] = _c.render
     }
   }
   if (Array.isArray(cfg?.layoutProviders)) {
@@ -45,6 +51,7 @@ for (const _p of [pilotiqAdmin, pilotiqGuest]) _walk(_p)
 export const componentRegistry: Record<string, unknown> = _all
 export const clusterSlugsByBasePath: Record<string, string[]> = _clusters
 export const rightPanelRegistry: Record<string, unknown> = _rightPanels
+export const settingsPaneRegistry: Record<string, unknown> = _settingsPanes
 export const layoutProviderRegistry: unknown[] = _layoutProviders
 export const componentSlotRegistry: Record<string, unknown> = _slots
 export const panelBasePaths: string[] = _bases

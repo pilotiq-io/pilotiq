@@ -23,6 +23,10 @@ export {
   RIGHT_PANEL_MAX_WIDTH,
 } from './RightPanel.js'
 export {
+  type SettingsPaneContribution,
+  type SettingsPaneProps,
+} from './SettingsPane.js'
+export {
   resolveRenderHooks,
   CHROME_HOOK_NAMES,
   PAGE_HOOK_NAMES,

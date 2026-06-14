@@ -318,7 +318,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, codeTheme, onNavig
   }))
 
   return (
-    <div className="flex items-start h-full gap-6">
+    <div className="flex h-full gap-6">
       {/* Controls Sidebar — frosted-glass card on top of the page surface,
           matching shadcn's customizer panel. `dark` scopes the inner
           `bg-card/90`, `text-card-foreground`, etc. to the dark variants. */}
@@ -440,7 +440,7 @@ export function ThemeSettingsPage({ panelPath, initialConfig, codeTheme, onNavig
       </div>
 
       {/* Preview Area — isolated iframe, syncs with panel dark/light toggle */}
-      <div className="flex-1 overflow-hidden h-full ring ring-foreground/10 md:ring-muted bg-muted dark:bg-background rounded-xl">
+      <div className="flex-1 overflow-hidden ring ring-foreground/10 md:ring-muted bg-muted dark:bg-background rounded-xl">
         <PreviewIframe config={config} mode={previewMode} />
       </div>
     </div>

@@ -483,13 +483,13 @@ describe('routes 403 forbidden wiring', () => {
   it('Global edit returns 403 when canAccess fails', async () => {
     class G extends Global {
       static override label = 'Settings'
-      static override slug = 'settings'
+      static override slug = 'site-settings' // 'settings' is reserved (System Settings route)
       static override async canAccess() { return false }
     }
     const panel = Pilotiq.make('admin').path('/admin').globals([G])
     const router = new Router()
     registerPilotiqRoutes(router, panel)
-    const route = getRoute(router, 'GET', '/admin/settings')
+    const route = getRoute(router, 'GET', '/admin/site-settings')
 
     const res = fakeRes()
     await route.handler(fakeReq({ headers: { accept: 'application/json' } }), res)

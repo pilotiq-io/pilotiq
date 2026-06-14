@@ -150,6 +150,20 @@ export {
 } from './right-panel-registry.js'
 
 export {
+  SettingsPaneRegistryProvider,
+  useSettingsPaneRegistry,
+  useSettingsPaneComponent,
+  type SettingsPaneRegistry,
+} from './settings-pane-registry.js'
+export {
+  SettingsShell,
+  type SettingsShellProps,
+  type SettingsPaneMeta,
+} from './SettingsShell.js'
+export { ThemeSettingsPane } from './ThemeSettingsPane.js'
+export { GeneralSettingsPane } from './GeneralSettingsPane.js'
+
+export {
   RightSidebarProvider,
   useRightSidebar,
   useRightSidebarOptional,

@@ -8,6 +8,8 @@ import type { ComponentRegistry } from './icon-context.js'
 import { ComponentRegistryProvider } from './icon-context.js'
 import type { RightPanelRegistry } from './right-panel-registry.js'
 import { RightPanelRegistryProvider } from './right-panel-registry.js'
+import type { SettingsPaneRegistry } from './settings-pane-registry.js'
+import { SettingsPaneRegistryProvider } from './settings-pane-registry.js'
 import { RightSidebarProvider, useRightSidebarOptional } from './RightSidebarContext.js'
 import { RightSidebar } from './RightSidebar.js'
 import { RecordWrapperGate, type RecordCollabMap } from './RecordWrapperGate.js'
@@ -91,6 +93,13 @@ export interface AppShellProps {
    */
   rightPanelRegistry?: RightPanelRegistry
   /**
+   * Build-time settings-pane registry from the Vite plugin. Maps each
+   * render-type `SettingsPaneContribution.id` to the React component
+   * supplied as `render`. The `SettingsShell` page reads this via
+   * `useSettingsPaneComponent(id)`. Sparse `{}` is a valid value.
+   */
+  settingsPaneRegistry?: SettingsPaneRegistry
+  /**
    * Build-time layout-provider registry from the Vite plugin. Each entry
    * is a React component that wraps the panel's layout tree at the
    * root. Plugins register via `Pilotiq.layoutProvider(C)`; the Vite
@@ -120,7 +129,7 @@ export interface BreadcrumbMeta {
   items: { label: string; url?: string }[]
 }
 
-export function AppShell({ layout = 'sidebar', notifications, componentRegistry, rightPanelRegistry, layoutProviderRegistry, ...props }: AppShellProps) {
+export function AppShell({ layout = 'sidebar', notifications, componentRegistry, rightPanelRegistry, settingsPaneRegistry, layoutProviderRegistry, ...props }: AppShellProps) {
   const Layout = layout === 'topbar' ? TopbarLayout : SidebarLayout
   // exactOptionalPropertyTypes: only spread `initialNotifications` when set.
   const toasterProps = notifications ? { initialNotifications: notifications } : {}
@@ -211,13 +220,15 @@ export function AppShell({ layout = 'sidebar', notifications, componentRegistry,
   const wrapped = wrapInLayoutProviders(
     <ComponentRegistryProvider value={componentRegistry}>
       <RightPanelRegistryProvider value={rightPanelRegistry}>
-        {rightSidebarMeta ? (
-          <RightSidebarProvider meta={rightSidebarMeta} basePath={props.basePath}>
-            {inner}
-          </RightSidebarProvider>
-        ) : (
-          inner
-        )}
+        <SettingsPaneRegistryProvider value={settingsPaneRegistry}>
+          {rightSidebarMeta ? (
+            <RightSidebarProvider meta={rightSidebarMeta} basePath={props.basePath}>
+              {inner}
+            </RightSidebarProvider>
+          ) : (
+            inner
+          )}
+        </SettingsPaneRegistryProvider>
       </RightPanelRegistryProvider>
     </ComponentRegistryProvider>,
     layoutProviderRegistry,

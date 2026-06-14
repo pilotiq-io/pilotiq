@@ -2,7 +2,7 @@
 import { usePageContext } from 'vike-react/usePageContext'
 import { AppShell, ThemeProvider, generateThemeCSS, NavigateProvider } from '@pilotiq/pilotiq/react'
 import { navigate as vikeNavigate } from 'vike/client/router'
-import { componentRegistry, rightPanelRegistry, layoutProviderRegistry, componentSlotRegistry } from './_components.js'
+import { componentRegistry, rightPanelRegistry, settingsPaneRegistry, layoutProviderRegistry, componentSlotRegistry } from './_components.js'
 import type { ReactNode } from 'react'
 
 // Wrap vike's async navigate so the NavigateProvider's fire-and-forget
@@ -17,7 +17,10 @@ export default function PilotiqLayout({ children }: { children: ReactNode }) {
   const data = (ctx.data ?? ctx.viewProps) as any ?? {}
   const { panel, basePath, layout, notifications } = data
   // Hoist the page breadcrumb into the layout header (sidebar layout).
-  const breadcrumb = Array.isArray(data.schemaData) ? data.schemaData.find((e: any) => e && e.type === 'breadcrumbs') : undefined
+  // Prefer a breadcrumbs element in schemaData; fall back to a dedicated
+  // `data.breadcrumb` (used by the settings shell, whose render panes
+  // carry no schemaData).
+  const breadcrumb = (Array.isArray(data.schemaData) ? data.schemaData.find((e: any) => e && e.type === 'breadcrumbs') : undefined) ?? data.breadcrumb
   const currentPath = ctx.urlPathname
   if (!panel) return <NavigateProvider navigate={navigate}>{children}</NavigateProvider>
 
@@ -28,7 +31,7 @@ export default function PilotiqLayout({ children }: { children: ReactNode }) {
     <NavigateProvider navigate={navigate}>
       <ThemeProvider theme={panel.theme}>
         {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
-        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} breadcrumb={breadcrumb} currentPath={currentPath ?? ''} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any} layoutProviderRegistry={layoutProviderRegistry as any} componentSlotRegistry={componentSlotRegistry as any}>
+        <AppShell panel={panel} basePath={basePath} layout={layout} notifications={notifications} breadcrumb={breadcrumb} currentPath={currentPath ?? ''} componentRegistry={componentRegistry as any} rightPanelRegistry={rightPanelRegistry as any} settingsPaneRegistry={settingsPaneRegistry as any} layoutProviderRegistry={layoutProviderRegistry as any} componentSlotRegistry={componentSlotRegistry as any}>
           {children}
         </AppShell>
       </ThemeProvider>

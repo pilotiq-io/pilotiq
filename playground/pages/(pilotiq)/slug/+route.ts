@@ -7,8 +7,9 @@ export const route: RouteSync = (pageContext) => {
   const parts = pageContext.urlPathname.split('/').filter(Boolean)
   const off = clusterOffset(parts)
   if (parts.length !== 2 + off) return false
-  // Don't match built-in slugs (theme editor, etc.)
+  // Don't match built-in slugs (theme editor, settings shell, etc.)
   if (parts[1 + off] === 'theme') return false
+  if (parts[1 + off] === 'settings') return false
   if (!isPanelBase(parts[0])) return false
   if (import.meta.env.SSR && !PilotiqRegistry.findByPath('/' + parts[0])) return false
   return { routeParams: { basePath: parts[0]!, slug: parts[1 + off]! } }

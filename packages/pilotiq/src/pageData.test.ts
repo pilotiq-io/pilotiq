@@ -7,6 +7,7 @@ import { ListTabs } from './elements/ListTabs.js'
 import {
   applyEditPageHydrators,
   applyFillPipeline,
+  buildSettingsMeta,
   customPageData,
   formCreateOptionData,
   formStateData,
@@ -494,22 +495,28 @@ describe('panelInfo — navigation tree (Plan #9)', () => {
     assert.equal(info.navigation[0]!.badgeColor, 'warning')
   })
 
-  it('appends a top-level "Theme" nav item when the theme editor is enabled', async () => {
+  it('appends a top-level "Settings" nav item + Theme pane when the theme editor is enabled', async () => {
     class Articles extends Resource { static override label = 'Articles' }
     const panel = Pilotiq.make('T').path('/admin').resources([Articles]).use(themeEditor())
     const info  = await panelInfo(panel)
-    const theme = info.navigation.at(-1)!
-    assert.equal(theme.name,  '__theme')
-    assert.equal(theme.label, 'Theme')
-    assert.equal(theme.url,   '/admin/theme')
-    assert.equal(theme.icon,  'palette')
-    assert.equal(theme.group, undefined) // top-level, like any other page
+    const settings = info.navigation.at(-1)!
+    assert.equal(settings.name,  '__settings')
+    assert.equal(settings.label, 'Settings')
+    assert.equal(settings.url,   '/admin/settings')
+    assert.equal(settings.icon,  'settings')
+    assert.equal(settings.group, undefined) // top-level, like any other page
+    // Theme is now the "Appearance" pane inside Settings (no standalone
+    // __theme nav entry).
+    assert.ok(!info.navigation.some(n => n.name === '__theme'))
+    const s = (info as { settings?: { panes: { id: string; label: string }[] } }).settings
+    assert.ok(s?.panes.some(p => p.id === 'appearance' && p.label === 'Appearance'))
   })
 
-  it('omits the "Theme" nav item when the theme editor is not enabled', async () => {
+  it('omits the "Settings" nav item when no settings panes (or profile) exist', async () => {
     class Articles extends Resource { static override label = 'Articles' }
     const info = await panelInfo(Pilotiq.make('T').path('/admin').resources([Articles]))
-    assert.ok(!info.navigation.some(n => n.name === '__theme'))
+    assert.ok(!info.navigation.some(n => n.name === '__settings'))
+    assert.equal((info as { settings?: unknown }).settings, undefined)
   })
 })
 
@@ -1639,5 +1646,81 @@ describe('customPageData — Form.loadRecord fill', () => {
     const form = findFormMeta(data!['schemaData'] as unknown[])
     assert.ok(form)
     assert.equal(form!['values'], undefined)
+  })
+})
+
+describe('buildSettingsMeta (System Settings)', () => {
+  const Pane: any = () => null
+
+  it('returns null when no panes and no profile are registered', async () => {
+    const panel = Pilotiq.make('T').path('/admin')
+    assert.equal(await buildSettingsMeta(panel.getConfig(), null), null)
+  })
+
+  it('builds panes sorted by sort then registration order', async () => {
+    const panel = Pilotiq.make('T').path('/admin')
+      .settingsPane({ id: 'b', label: 'B', sort: 20, render: Pane })
+      .settingsPane({ id: 'a', label: 'A', sort: 10, render: Pane })
+      .settingsPane({ id: 'c', label: 'C', render: Pane }) // default sort 100
+    const meta = await buildSettingsMeta(panel.getConfig(), null)
+    assert.deepEqual(meta!.panes.map(p => p.id), ['a', 'b', 'c'])
+    assert.equal(meta!.defaultPaneId, 'a')
+  })
+
+  it('drops panes whose canAccess returns false (fail-closed on throw)', async () => {
+    const panel = Pilotiq.make('T').path('/admin')
+      .settingsPane({ id: 'open',   label: 'Open',   render: Pane })
+      .settingsPane({ id: 'denied', label: 'Denied', render: Pane, canAccess: () => false })
+      .settingsPane({ id: 'throws', label: 'Throws', render: Pane, canAccess: () => { throw new Error('x') } })
+    const meta = await buildSettingsMeta(panel.getConfig(), null)
+    assert.deepEqual(meta!.panes.map(p => p.id), ['open'])
+  })
+
+  it('omits hidden panes', async () => {
+    const panel = Pilotiq.make('T').path('/admin')
+      .settingsPane({ id: 'shown',  label: 'Shown',  render: Pane })
+      .settingsPane({ id: 'hidden', label: 'Hidden', render: Pane, hidden: true })
+    const meta = await buildSettingsMeta(panel.getConfig(), null)
+    assert.deepEqual(meta!.panes.map(p => p.id), ['shown'])
+  })
+
+  it('synthesizes a page-backed Profile pane from cfg.profilePage', async () => {
+    class ProfilePage extends Page { static override slug = 'profile'; static override label = 'My profile' }
+    const panel = Pilotiq.make('T').path('/admin').profile(ProfilePage)
+    const meta = await buildSettingsMeta(panel.getConfig(), null)
+    const profile = meta!.panes.find(p => p.id === '__profile')!
+    assert.equal(profile.label, 'My profile')
+    assert.equal(profile.href,  undefined)   // page-backed (renders in-shell), not a link
+    assert.equal(profile.group, 'General')
+    // page-backed pane is non-href → eligible as the default pane
+    assert.equal(meta!.defaultPaneId, '__profile')
+  })
+
+  it('drops the Profile pane when the profile page canAccess fails', async () => {
+    class ProfilePage extends Page {
+      static override slug = 'profile'
+      static override async canAccess() { return false }
+    }
+    const panel = Pilotiq.make('T').path('/admin').profile(ProfilePage)
+    assert.equal(await buildSettingsMeta(panel.getConfig(), null), null)
+  })
+})
+
+describe('Pilotiq.settingsPane validation', () => {
+  const Pane: any = () => null
+
+  it('throws on a duplicate pane id', () => {
+    const panel = Pilotiq.make('T').path('/admin').settingsPane({ id: 'x', label: 'X', render: Pane })
+    assert.throws(() => panel.settingsPane({ id: 'x', label: 'X2', render: Pane }), /already/)
+  })
+
+  it('throws when no body source (render/page/href) is set', () => {
+    const panel = Pilotiq.make('T').path('/admin')
+    assert.throws(() => panel.settingsPane({ id: 'y', label: 'Y' } as never), /render.*page.*href|one of/)
+  })
+
+  it('throws when more than one body source is set', () => {
+    const panel = Pilotiq.make('T').path('/admin')
+    assert.throws(() => panel.settingsPane({ id: 'z', label: 'Z', render: Pane, href: '/x' }), /more than one/)
   })
 })

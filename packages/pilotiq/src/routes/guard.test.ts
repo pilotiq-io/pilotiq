@@ -42,7 +42,7 @@ class Article extends Resource {
 
 class Settings extends Global {
   static override label = 'Settings'
-  static override slug  = 'settings'
+  static override slug  = 'site-settings' // 'settings' is reserved (System Settings route)
 }
 
 class Analytics extends Page {

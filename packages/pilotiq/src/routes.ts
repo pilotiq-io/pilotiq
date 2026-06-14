@@ -18,6 +18,7 @@ import { registerResourceRoutes }    from './routes/resources.js'
 import { registerGlobalRoutes }      from './routes/globals.js'
 import { registerCustomPageRoutes }  from './routes/pages.js'
 import { registerThemeRoutes }       from './routes/theme.js'
+import { registerSettingsRoutes }    from './routes/settings.js'
 
 export function registerPilotiqRoutes(
   router: Router,
@@ -52,10 +53,10 @@ export function registerPilotiqRoutes(
     const seenClusterSlug = new Set<string>()
     for (const C of cfg.clusters) {
       const s = C.getSlug()
-      if (s === '' || /^_/.test(s) || s === 'theme' || s === 'api') {
+      if (s === '' || /^_/.test(s) || s === 'theme' || s === 'api' || s === 'settings') {
         throw new Error(
           `[Pilotiq] Cluster ${C.name} uses reserved slug "${s}". ` +
-          `Cluster slugs cannot be empty, start with "_", or equal "theme" / "api".`,
+          `Cluster slugs cannot be empty, start with "_", or equal "theme" / "api" / "settings".`,
         )
       }
       if (seenClusterSlug.has(s)) {
@@ -104,6 +105,28 @@ export function registerPilotiqRoutes(
       }
     }
   }
+
+  // `settings` is a reserved panel route (`${base}/settings/...`, the
+  // System Settings shell). A Resource / Global / Page using it as a top
+  // slug would be shadowed by the settings route, so reject it at boot
+  // with a clear message rather than 404 silently. (Cluster slugs are
+  // checked above.)
+  const assertNotReservedSettings = (
+    kind:  'Resource' | 'Global' | 'Page',
+    items: ReadonlyArray<{ name: string; getSlug(): string }>,
+  ): void => {
+    for (const item of items) {
+      if (item.getSlug() === 'settings') {
+        throw new Error(
+          `[Pilotiq] ${kind} ${item.name} uses reserved slug "settings", which collides ` +
+          `with the System Settings route. Rename it (e.g. "site-settings").`,
+        )
+      }
+    }
+  }
+  assertNotReservedSettings('Resource', cfg.resources)
+  assertNotReservedSettings('Global',   cfg.globals)
+  assertNotReservedSettings('Page',     cfg.pages)
 
   // Plan #11 — fail fast at boot when any relation manager's
   // `relationship` collides with a reserved URL token. A silent 404 at
@@ -292,6 +315,13 @@ export function registerPilotiqRoutes(
     // Pulled out 2026-05-12 (Phase 3 of the routes.ts split).
     if (cfg.themeEditor) {
       registerThemeRoutes(router, pilotiq, base)
+    }
+
+    // ── System Settings ───────────────────────────────────
+    // Mounted when the panel exposes any settings pane (themeEditor
+    // registers one) OR a profile page (synthesized into a Settings pane).
+    if ((cfg.settingsPanes?.length ?? 0) > 0 || cfg.profilePage) {
+      registerSettingsRoutes(router, pilotiq, base)
     }
   })
 

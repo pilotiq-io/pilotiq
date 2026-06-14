@@ -25,7 +25,7 @@ import {
   uploadCtx,
   userCtx,
 } from './helpers.js'
-import { applyRoleHooks, panelInfo, resolvePageHooks, type PanelInfoRoute } from './navigation.js'
+import { applyRoleHooks, panelInfo, resolvePageHooks, resolveSettingsPanePage, type PanelInfoRoute } from './navigation.js'
 
 // ─── Misc page builders ─────────────────────────────────────
 //
@@ -129,6 +129,66 @@ export async function globalViewData(
     layout:   cfg.layout,
     schemaData,
     notifications: consumeFlashedNotifications(req),
+  }
+}
+
+/**
+ * System Settings shell data. The shell reads its pane list from the
+ * `panel.settings` envelope (built by `panelInfo` → `buildSettingsMeta`),
+ * so this builder just ships the standard chrome envelope + the active
+ * pane id. `activePaneId` falls back to the default render pane so the
+ * shell highlights something even on the bare `${base}/settings` URL.
+ */
+export async function settingsData(
+  pilotiq:  Pilotiq,
+  paneId?:  string,
+  req?:     unknown,
+): Promise<Record<string, unknown> | null> {
+  pilotiq = livePanel(pilotiq)
+  const cfg = pilotiq.getConfig()
+  const panel = await panelInfo(pilotiq, req)
+  const settings = (panel as { settings?: { defaultPaneId?: string; panes: { id: string; label: string }[] } }).settings
+  if (!settings) return null
+  const activePaneId = paneId || settings.defaultPaneId
+  const paneLabel = settings.panes.find(p => p.id === activePaneId)?.label ?? 'Settings'
+
+  // Page-backed panes (e.g. the synthesized Profile pane) render the
+  // backing Page's schema INSIDE the shell. Resolve it here via the same
+  // builder a standalone custom page uses, so form fill / actions / state
+  // URLs are all wired the same — the form posts to the Page's own route.
+  let schemaData: unknown
+  const backingPage = activePaneId ? resolveSettingsPanePage(cfg, activePaneId) : undefined
+  if (backingPage) {
+    const pageEnvelope = await customPageData(pilotiq, backingPage.getSlug(), req)
+    let sd = pageEnvelope ? pageEnvelope['schemaData'] : undefined
+    // Drop the backing page's own breadcrumb — the settings breadcrumb
+    // below owns the chain ("Home / Settings / <pane>"); the page's crumb
+    // would otherwise both render in-body and override the header.
+    if (Array.isArray(sd)) sd = sd.filter((e) => !(e && (e as { type?: string }).type === 'breadcrumbs'))
+    schemaData = sd
+  }
+
+  // Breadcrumb for every settings pane (header chrome). Shipped as a
+  // dedicated `breadcrumb` field — render panes have no `schemaData` to
+  // carry it, and we want the same "Home / Settings / <pane>" chain
+  // regardless of pane kind. The generated +Layout reads this.
+  const breadcrumb = {
+    type:  'breadcrumbs',
+    items: [
+      { label: cfg.branding?.title ?? cfg.name ?? 'Home', url: cfg.path },
+      { label: 'Settings', url: `${cfg.path}/settings` },
+      { label: paneLabel },
+    ],
+  }
+
+  return {
+    panel,
+    title:    paneLabel,
+    basePath: cfg.path,
+    layout:   cfg.layout,
+    breadcrumb,
+    ...(activePaneId ? { activePaneId } : {}),
+    ...(schemaData !== undefined ? { schemaData } : {}),
   }
 }
 
