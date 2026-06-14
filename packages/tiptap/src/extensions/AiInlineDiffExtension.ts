@@ -36,7 +36,8 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import type { EditorState, Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import type { Node as ProseMirrorNode, Slice } from '@tiptap/pm/model'
+import type { Node as ProseMirrorNode, Slice, Schema } from '@tiptap/pm/model'
+import { DOMSerializer, Fragment } from '@tiptap/pm/model'
 import { ChangeSet } from 'prosemirror-changeset'
 
 declare module '@tiptap/core' {
@@ -150,6 +151,21 @@ export const AiInlineDiffExtension = Extension.create<AiInlineDiffExtensionOptio
         color: rgb(153, 27, 27);
         padding: 0 0.125em;
       }
+      /* Structure-preserving deleted block (heading / list / faq / …):
+         keep the removed node's own formatting, tinted red + struck so it
+         still reads as "deleted". Block display so an <h2>/<ul>/faq lays
+         out as itself rather than collapsing inline. */
+      .${prefix}-deleted-block {
+        display: block;
+        background-color: rgba(254, 226, 226, 0.55);
+        color: rgb(153, 27, 27);
+        text-decoration: line-through;
+        text-decoration-color: rgba(220, 38, 38, 0.7);
+        border-radius: 2px;
+        padding: 0 0.25em;
+        opacity: 0.9;
+      }
+      .${prefix}-deleted-block > * { margin-top: 0; margin-bottom: 0; }
       .${prefix}-inserted-line {
         display: block;
         background-color: rgba(187, 247, 208, 0.45);
@@ -184,6 +200,7 @@ export const AiInlineDiffExtension = Extension.create<AiInlineDiffExtensionOptio
         left: 0.25em;
         opacity: 0.7;
       }
+      .${prefix}-deleted-line > * { margin-top: 0; margin-bottom: 0; }
     `
     document.head.appendChild(style)
   },
@@ -312,36 +329,77 @@ function buildDiffDecorations(
       )
     }
 
-    // Deleted text — pull from the baseline using the `fromA..toA` range.
-    // Render via a widget at the change's insert-point (or end of insert)
-    // so the deleted text appears immediately before / after the new run.
-    // Empty deletions (pure inserts) skip the widget.
+    // Deleted content — pull from the baseline using the `fromA..toA`
+    // range. Render via a widget at the change's insert-point so the
+    // deleted content appears immediately before the new run. Empty
+    // deletions (pure inserts) skip the widget.
     if (change.toA > change.fromA) {
-      const deletedText = ds.baseline.textBetween(change.fromA, change.toA, '\n', ' ')
-      if (deletedText.length > 0) {
-        decos.push(
-          Decoration.widget(fromB, () => buildDeletedWidget(deletedText, prefix, ds.id), {
-            side: -1,
-            ignoreSelection: true,
-            key: `pilotiq-ai-diff:deleted:${change.fromA}:${change.toA}`,
-          }),
-        )
-      }
+      decos.push(
+        Decoration.widget(fromB, () => buildDeletedWidget(ds.baseline, change.fromA, change.toA, prefix, ds.id), {
+          side: -1,
+          ignoreSelection: true,
+          key: `pilotiq-ai-diff:deleted:${change.fromA}:${change.toA}`,
+        }),
+      )
     }
   }
 
   return DecorationSet.create(state.doc, decos)
 }
 
-function buildDeletedWidget(text: string, prefix: string, id: string): HTMLElement {
+/**
+ * Render the deleted side of a change preserving its ORIGINAL block
+ * formatting (heading / list / faq / alert / blockquote …) — bug #91.
+ *
+ * Strategy: collect the BASELINE top-level blocks the deleted range
+ * `fromA..toA` overlaps, each CUT to the overlapping span, and serialize
+ * those real nodes via the schema's `DOMSerializer`. A removed heading
+ * stays an `<h2>`, a removed list keeps its `<ul><li>`, a faq keeps its
+ * wrappers — because we serialize the node itself, not flattened text.
+ *
+ * The one exception is a single plain top-level paragraph: there the inline
+ * word-diff look (red strike-through text) reads better, and wrapping a
+ * one-word change in its `<p>` would stack it as a block and break the
+ * inline diff — so paragraphs stay text.
+ */
+function buildDeletedWidget(
+  baseline: ProseMirrorNode,
+  fromA:    number,
+  toA:      number,
+  prefix:   string,
+  id:       string,
+): HTMLElement {
   const root = document.createElement('span')
   root.className = `${prefix}-deleted`
   root.setAttribute('data-pilotiq-ai-diff-id', id)
   root.contentEditable = 'false'
-  const inner = document.createElement('span')
-  inner.className   = `${prefix}-deleted-text`
-  inner.textContent = text
-  root.appendChild(inner)
+
+  // Walk the baseline's top-level blocks; for each one the deleted range
+  // touches, keep the whole node when fully covered, else cut it to the
+  // overlapping slice (preserving the node's own wrapper either way).
+  const pieces: ProseMirrorNode[] = []
+  baseline.forEach((child, offset) => {
+    if (Math.min(toA, offset + child.nodeSize) <= Math.max(fromA, offset)) return
+    if (child.isAtom) { pieces.push(child); return }
+    const localFrom = Math.max(0, fromA - (offset + 1))
+    const localTo   = Math.min(child.content.size, toA - (offset + 1))
+    if (localFrom <= 0 && localTo >= child.content.size) { pieces.push(child); return }
+    if (localTo <= localFrom) return
+    pieces.push(child.cut(localFrom, localTo))
+  })
+
+  if (pieces.length === 1 && pieces[0]!.type.name === 'paragraph') {
+    const inner = document.createElement('span')
+    inner.className   = `${prefix}-deleted-text`
+    inner.textContent = baseline.textBetween(fromA, toA, '\n', ' ')
+    root.appendChild(inner)
+    return root
+  }
+
+  const block = document.createElement('span')
+  block.className = `${prefix}-deleted-block`
+  block.appendChild(DOMSerializer.fromSchema(baseline.type.schema).serializeFragment(Fragment.fromArray(pieces)))
+  root.appendChild(block)
   return root
 }
 
@@ -367,35 +425,39 @@ function buildLineDiffDecorations(
 ): DecorationSet {
   const decos: Decoration[] = []
 
-  const baseTexts = topLevelBlockTexts(ds.baseline)
+  const baseBlocks = topLevelBlocks(ds.baseline)
   const current: Array<{ text: string; pos: number; nodeSize: number }> = []
   state.doc.forEach((node, pos) => {
     current.push({ text: node.textContent, pos, nodeSize: node.nodeSize })
   })
+  const schema = ds.baseline.type.schema
 
-  // Walk tokens with a pointer into the CURRENT doc's blocks. Removed
-  // baseline lines accumulate and flush as ONE widget anchored before
-  // the next current block (or at doc end), so consecutive deletions
-  // render as a contiguous red row group.
-  let j = 0
-  let pendingRemoved: string[] = []
+  // Walk tokens with a pointer into the CURRENT doc's blocks (`j`) and the
+  // BASELINE blocks (`bi`). Removed baseline BLOCKS (the real nodes, not
+  // their flattened text — bug #91) accumulate and flush as ONE widget
+  // anchored before the next current block (or at doc end), so consecutive
+  // deletions render as a contiguous red row group with their formatting.
+  let j  = 0
+  let bi = 0
+  let pendingRemoved: ProseMirrorNode[] = []
   const flushRemoved = (anchor: number): void => {
     if (pendingRemoved.length === 0) return
-    const lines = pendingRemoved
+    const nodes = pendingRemoved
     pendingRemoved = []
     decos.push(
-      Decoration.widget(anchor, () => buildDeletedLinesWidget(lines.join('\n'), prefix, ds.id), {
+      Decoration.widget(anchor, () => buildDeletedLinesWidget(nodes, schema, prefix, ds.id), {
         side: -1,
         ignoreSelection: true,
-        key: `pilotiq-ai-diff:deleted-lines:${anchor}:${lines.length}`,
+        key: `pilotiq-ai-diff:deleted-lines:${anchor}:${nodes.length}`,
       }),
     )
   }
 
-  for (const tok of lcsBlockDiffTokens(baseTexts, current.map(c => c.text))) {
+  for (const tok of lcsBlockDiffTokens(baseBlocks.map(b => b.text), current.map(c => c.text))) {
     if (tok.kind === 'kept') {
       flushRemoved(current[j]!.pos)
       j++
+      bi++
       continue
     }
     if (tok.kind === 'added') {
@@ -409,17 +471,18 @@ function buildLineDiffDecorations(
       j++
       continue
     }
-    // removed — baseline-only line; accumulate for the next flush.
-    pendingRemoved.push(tok.text)
+    // removed — baseline-only block; accumulate the real node for the flush.
+    pendingRemoved.push(baseBlocks[bi]!.node)
+    bi++
   }
   flushRemoved(state.doc.content.size)
 
   return DecorationSet.create(state.doc, decos)
 }
 
-function topLevelBlockTexts(doc: ProseMirrorNode): string[] {
-  const out: string[] = []
-  doc.forEach((node) => { out.push(node.textContent) })
+function topLevelBlocks(doc: ProseMirrorNode): Array<{ text: string; node: ProseMirrorNode }> {
+  const out: Array<{ text: string; node: ProseMirrorNode }> = []
+  doc.forEach((node) => { out.push({ text: node.textContent, node }) })
   return out
 }
 
@@ -453,15 +516,23 @@ function lcsBlockDiffTokens(a: string[], b: string[]): BlockDiffToken[] {
   return out
 }
 
-function buildDeletedLinesWidget(text: string, prefix: string, id: string): HTMLElement {
+function buildDeletedLinesWidget(
+  nodes:  readonly ProseMirrorNode[],
+  schema: Schema,
+  prefix: string,
+  id:     string,
+): HTMLElement {
   const root = document.createElement('div')
   root.className = `${prefix}-deleted-lines`
   root.setAttribute('data-pilotiq-ai-diff-id', id)
   root.contentEditable = 'false'
-  for (const line of text.split('\n')) {
+  const serializer = DOMSerializer.fromSchema(schema)
+  for (const node of nodes) {
     const row = document.createElement('div')
-    row.className   = `${prefix}-deleted-line`
-    row.textContent = line || ' '
+    row.className = `${prefix}-deleted-line`
+    // Serialize the real node so a removed heading / list / faq keeps its
+    // structure (bug #91), instead of collapsing to one plain text row.
+    row.appendChild(serializer.serializeFragment(Fragment.from(node)))
     root.appendChild(row)
   }
   return root
