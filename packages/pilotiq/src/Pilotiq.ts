@@ -331,6 +331,13 @@ export interface PilotiqConfig {
    */
   settingsPanes?:  SettingsPaneContribution[]
   /**
+   * Where the "Settings" entry surfaces. `'sidebar'` (default) renders a
+   * gear nav item in the sidebar; `'user-menu'` drops the sidebar item
+   * and adds "Settings" to the top-right user dropdown instead (next to
+   * the profile entry). The shell + routes are identical either way.
+   */
+  settingsPlacement?: 'sidebar' | 'user-menu'
+  /**
    * Layout-level provider components registered via
    * `Pilotiq.layoutProvider(C)` / `Pilotiq.layoutProviders([…])`. Plugins
    * register React providers (e.g. an AI chat queue context, a tenant
@@ -1023,6 +1030,22 @@ export class Pilotiq {
    *  settings shell. */
   getSettingsPanes(): readonly SettingsPaneContribution[] {
     return this.config.settingsPanes ?? []
+  }
+
+  /**
+   * Choose where the "Settings" entry appears: `'sidebar'` (default — a
+   * gear nav item) or `'user-menu'` (the top-right user dropdown, next to
+   * the profile entry; the sidebar item is dropped). The settings shell
+   * and routes are identical either way.
+   *
+   * @example
+   * ```ts
+   * Pilotiq.make('Admin').settingsPlacement('user-menu')
+   * ```
+   */
+  settingsPlacement(placement: 'sidebar' | 'user-menu'): this {
+    this.config.settingsPlacement = placement
+    return this
   }
 
   /**

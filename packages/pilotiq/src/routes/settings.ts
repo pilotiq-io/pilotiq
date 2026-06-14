@@ -1,7 +1,13 @@
 import type { Router } from '@rudderjs/router'
 import { view } from '@rudderjs/view'
 import type { Pilotiq } from '../Pilotiq.js'
-import { buildSettingsMeta, settingsData } from '../pageData.js'
+import type { SchemaContext } from '../schema/resolveSchema.js'
+import { buildSettingsMeta, settingsData, resolveSettingsPanePage, callPageSchema, tagFormActions } from '../pageData.js'
+import { dispatchFormSubmit, findForms, selectForm } from '../elements/dispatchForm.js'
+import {
+  wantsJson, readFormBody, splitMeta, normalizeRedirect,
+  forbidden, policyAccess, sendRedirectResponse,
+} from './helpers.js'
 
 /**
  * Resolve framework + panel-builder versions once (server-side). Both are
@@ -87,5 +93,49 @@ export function registerSettingsRoutes(
     const data = await settingsData(pilotiq, paneId, req)
     if (!data) return res.status(404).send('Not found')
     return view('pilotiq.settings', data)
+  })
+
+  // Form submit for a page-backed pane (e.g. Profile). The pane's form is
+  // tagged to this URL by `resolveSettingsPaneSchema`, so the backing Page
+  // needs no standalone route. Mirrors the custom-page POST dispatch.
+  router.post(`${base}/settings/:paneId`, async (req, res) => {
+    const paneId = req.params['paneId']!
+    const json = wantsJson(req)
+    const PageClass = resolveSettingsPanePage(cfg, paneId)
+    if (!PageClass) { res.status(404); return res.send('Not found') }
+
+    const user = await pilotiq.resolveUser(req)
+    if (!await policyAccess(PageClass, user)) return forbidden(req, res, json)
+
+    const body = await readFormBody(req)
+    const { values, formId } = splitMeta(body)
+    const paneUrl = `${base}/settings/${paneId}`
+    const ctx: SchemaContext = user !== null ? { user: user as NonNullable<SchemaContext['user']> } : {}
+    const elements = await callPageSchema(PageClass, ctx)
+    tagFormActions(elements, paneUrl)
+    const form = selectForm(findForms(elements), formId)
+    if (!form) {
+      if (json) { res.status(404); return res.json({ ok: false, error: 'No form found on pane' }) }
+      res.status(404); return res.send('No form found on pane')
+    }
+
+    let record: unknown = undefined
+    if (form.getLoadRecord()) {
+      try { record = await form.getLoadRecord()!('', { values, ...(user != null ? { user } : {}) }) } catch { /* ignore */ }
+    }
+
+    const result = await dispatchFormSubmit(form, values, {
+      values,
+      basePath: base,
+      ...(record !== undefined ? { record } : {}),
+      ...(user != null ? { user } : {}),
+    })
+
+    if (!result.ok) {
+      res.status(422)
+      return res.json({ ok: false, errors: result.errors })
+    }
+    const redirect = normalizeRedirect(result.redirect, base) ?? paneUrl
+    return sendRedirectResponse(req, res, json, redirect, result.notifications)
   })
 }

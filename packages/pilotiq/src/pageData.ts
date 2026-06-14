@@ -60,6 +60,7 @@ export {
   buildSettingsMeta,
   panelInfo,
   resolvePageHooks,
+  resolveSettingsPanePage,
 } from './pageData/navigation.js'
 
 import {

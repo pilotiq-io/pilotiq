@@ -1,4 +1,5 @@
 import type { Pilotiq } from '../Pilotiq.js'
+import type { Page } from '../Page.js'
 import { livePanel } from '../PilotiqRegistry.js'
 import { globalBasePath, pageBasePath } from '../clusterPaths.js'
 import { Element } from '../schema/Element.js'
@@ -152,20 +153,14 @@ export async function settingsData(
   const activePaneId = paneId || settings.defaultPaneId
   const paneLabel = settings.panes.find(p => p.id === activePaneId)?.label ?? 'Settings'
 
-  // Page-backed panes (e.g. the synthesized Profile pane) render the
-  // backing Page's schema INSIDE the shell. Resolve it here via the same
-  // builder a standalone custom page uses, so form fill / actions / state
-  // URLs are all wired the same — the form posts to the Page's own route.
+  // Page-backed panes (e.g. Profile) render the backing Page's schema
+  // INSIDE the shell. The form is tagged to the pane's own settings URL
+  // (`${base}/settings/${paneId}`) and dispatched by the matching POST
+  // handler — so the Page needs no standalone route of its own.
   let schemaData: unknown
   const backingPage = activePaneId ? resolveSettingsPanePage(cfg, activePaneId) : undefined
   if (backingPage) {
-    const pageEnvelope = await customPageData(pilotiq, backingPage.getSlug(), req)
-    let sd = pageEnvelope ? pageEnvelope['schemaData'] : undefined
-    // Drop the backing page's own breadcrumb — the settings breadcrumb
-    // below owns the chain ("Home / Settings / <pane>"); the page's crumb
-    // would otherwise both render in-body and override the header.
-    if (Array.isArray(sd)) sd = sd.filter((e) => !(e && (e as { type?: string }).type === 'breadcrumbs'))
-    schemaData = sd
+    schemaData = await resolveSettingsPaneSchema(pilotiq, backingPage, `${cfg.path}/settings/${activePaneId}`, req)
   }
 
   // Breadcrumb for every settings pane (header chrome). Shipped as a
@@ -190,6 +185,41 @@ export async function settingsData(
     ...(activePaneId ? { activePaneId } : {}),
     ...(schemaData !== undefined ? { schemaData } : {}),
   }
+}
+
+/**
+ * Resolve a page-backed settings pane's schema for in-shell rendering.
+ * Mirrors `customPageData`'s schema resolution (callPageSchema → tag form
+ * actions → loadRecord fill → resolveSchema) but tags the form action to
+ * `formActionUrl` (the pane's settings URL, `${base}/settings/${paneId}`)
+ * so the Page needs no standalone route. Returns the resolved metas.
+ */
+export async function resolveSettingsPaneSchema(
+  pilotiq:       Pilotiq,
+  PageClass:     typeof Page,
+  formActionUrl: string,
+  req?:          unknown,
+): Promise<unknown[]> {
+  const cfg = pilotiq.getConfig()
+  const user = await pilotiq.resolveUser(req)
+  const ctx: SchemaContext = uploadCtx(userCtx({}, user), cfg)
+  const elements = await callPageSchema(PageClass, ctx)
+  tagFormActions(elements, formActionUrl)
+  tagActionDispatch(elements, formActionUrl)
+
+  // loadRecord fill (e.g. the profile form loading the panel user's row).
+  const form = findForms(elements)[0]
+  let record: unknown = undefined
+  if (form?.getLoadRecord()) {
+    try { record = await form.getLoadRecord()!('', { values: {}, ...(user != null ? { user } : {}) }) } catch { /* ignore */ }
+    if (record != null) {
+      const values = await applyFillPipeline(form, record)
+      form.withValues(values)
+    }
+  }
+
+  const customCtx = record !== undefined ? { ...ctx, record } : ctx
+  return resolveSchema(elements, customCtx)
 }
 
 export async function customPageData(

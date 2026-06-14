@@ -1688,12 +1688,13 @@ describe('buildSettingsMeta (System Settings)', () => {
     class ProfilePage extends Page { static override slug = 'profile'; static override label = 'My profile' }
     const panel = Pilotiq.make('T').path('/admin').profile(ProfilePage)
     const meta = await buildSettingsMeta(panel.getConfig(), null)
-    const profile = meta!.panes.find(p => p.id === '__profile')!
+    // Pane id is the profile page's slug → /settings/profile (not __profile).
+    const profile = meta!.panes.find(p => p.id === 'profile')!
     assert.equal(profile.label, 'My profile')
     assert.equal(profile.href,  undefined)   // page-backed (renders in-shell), not a link
     assert.equal(profile.group, 'General')
     // page-backed pane is non-href → eligible as the default pane
-    assert.equal(meta!.defaultPaneId, '__profile')
+    assert.equal(meta!.defaultPaneId, 'profile')
   })
 
   it('drops the Profile pane when the profile page canAccess fails', async () => {

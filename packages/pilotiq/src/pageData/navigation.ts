@@ -520,7 +520,7 @@ export async function buildSettingsMeta(
     try { ok = await P.canAccess(user) } catch { ok = false }
     if (ok) {
       const profilePane: SettingsPaneMeta = {
-        id:    '__profile',
+        id:    P.getSlug(),   // e.g. 'profile' → /settings/profile (not '__profile')
         label: P.getLabel(),
         group: 'General',
       }
@@ -541,15 +541,15 @@ export async function buildSettingsMeta(
 /**
  * Map a settings pane id to its backing `Page` (for page-backed panes
  * that render in-shell). Returns `undefined` for render / href panes.
- * `__profile` resolves to `cfg.profilePage`; registered panes resolve via
- * their `page` field. Used by `settingsData` to resolve the in-shell
- * schema.
+ * The synthesized profile pane uses `cfg.profilePage`'s slug as its id;
+ * registered panes resolve via their `page` field. Used by `settingsData`
+ * to resolve the in-shell schema.
  */
 export function resolveSettingsPanePage(
   cfg:    Readonly<PilotiqConfig>,
   paneId: string,
 ): typeof Page | undefined {
-  if (paneId === '__profile') return cfg.profilePage
+  if (cfg.profilePage && cfg.profilePage.getSlug() === paneId) return cfg.profilePage
   return cfg.settingsPanes?.find(p => p.id === paneId)?.page
 }
 
@@ -683,7 +683,18 @@ export async function buildUserMenu(pilotiq: Pilotiq, user: unknown): Promise<Us
   // its own `canAccess(user)` so per-user gating works without the
   // user repeating the predicate at the menu level.
   const profileItem = await buildProfileMenuItem(cfg, user)
-  const finalItems  = profileItem ? [profileItem, ...visibleItems] : visibleItems
+
+  // Settings entry — only when `settingsPlacement: 'user-menu'` (the
+  // sidebar gear is dropped in that mode). Gated on the same per-user pane
+  // resolution as the sidebar entry. Sits right after the profile entry.
+  let settingsItem: UserMenuItemMeta | null = null
+  if ((cfg.settingsPlacement ?? 'sidebar') === 'user-menu') {
+    const settings = await buildSettingsMeta(cfg, user)
+    if (settings) settingsItem = { name: '__settings', label: 'Settings', url: `${cfg.path}/settings`, icon: 'settings' }
+  }
+
+  const lead = [profileItem, settingsItem].filter((x): x is UserMenuItemMeta => x !== null)
+  const finalItems = [...lead, ...visibleItems]
 
   const meta: UserMenuMeta = {
     user:  extractUserIdentity(user),
@@ -901,17 +912,20 @@ export async function buildNavigation(pilotiq: Pilotiq, user: unknown): Promise<
   // (Theme is now a pane inside Settings). Appended last so it sorts to
   // the end of the ungrouped items. Gated on the same per-user pane
   // resolution the shell + route use, so it disappears when every pane is
-  // inaccessible.
-  const settings = await buildSettingsMeta(cfg, user)
-  if (settings) {
-    raw.push({
-      name:  '__settings',
-      label: 'Settings',
-      url:   `${base}/settings`,
-      icon:  'settings',
-      // Last raw entry pushed — no further `idx` reads, so no increment.
-      _idx:  idx,
-    })
+  // inaccessible. Skipped when `settingsPlacement: 'user-menu'` — the
+  // entry lives in the user dropdown instead (see `buildUserMenu`).
+  if ((cfg.settingsPlacement ?? 'sidebar') === 'sidebar') {
+    const settings = await buildSettingsMeta(cfg, user)
+    if (settings) {
+      raw.push({
+        name:  '__settings',
+        label: 'Settings',
+        url:   `${base}/settings`,
+        icon:  'settings',
+        // Last raw entry pushed — no further `idx` reads, so no increment.
+        _idx:  idx,
+      })
+    }
   }
 
   await Promise.all(pushBadge.map(async ({ item, handler, owner }) => {
