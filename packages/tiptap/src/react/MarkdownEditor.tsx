@@ -18,12 +18,12 @@ import {
   type MarkdownEditorProps,
 } from '@pilotiq/pilotiq/react'
 import { useCollabSeed, type CollabRoom as FrameworkCollabRoom } from '@rudderjs/sync/react'
-import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
-import { AiInlineDiffExtension, aiInlineDiffPluginKey } from '../extensions/AiInlineDiffExtension.js'
+import { SuggestionChipExtension } from '../extensions/SuggestionChipExtension.js'
+import { InlineDiffExtension, inlineDiffPluginKey } from '../extensions/InlineDiffExtension.js'
 import { Alert, AlertTitle, AlertBody, ContentBlockKeymap } from '../extensions/contentBlocks.js'
-import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
-import { useAiInlineDiff, useIsAiInlineDiffActive, readAiDiffViewMarker } from './useAiInlineDiff.js'
-import { AiSuggestionBanner } from './AiSuggestionBanner.js'
+import { useSuggestionBridge } from './useSuggestionBridge.js'
+import { useInlineDiff, useIsInlineDiffActive, readDiffViewMarker } from './useInlineDiff.js'
+import { SuggestionBanner } from './SuggestionBanner.js'
 import { getMarkdownString, parseMarkdownToHtml } from '../markdownStorage.js'
 
 // Inline lucide.dev SVGs — same posture as `toolbarButtons.tsx` so this
@@ -241,13 +241,13 @@ export function MarkdownEditor({
         Image.configure({ inline: false, allowBase64: false }),
         Placeholder.configure({ placeholder: placeholder ?? 'Write in markdown…' }),
         // AI suggestions — chip widget for surgical (range-anchored) edits.
-        AiSuggestionExtension,
+        SuggestionChipExtension,
         // AI inline diff — Tiptap-Pro-style visualization for whole-field
         // suggestions (prosemirror-changeset under the hood). Decorations
         // show green-background inserts inline + red-strikethrough widgets
-        // for deleted text. Host's `<AiSuggestionBanner>` drives Accept /
+        // for deleted text. Host's `<SuggestionBanner>` drives Accept /
         // Reject via the extension's commands.
-        AiInlineDiffExtension,
+        InlineDiffExtension,
         // Alert content block — round-trips to `:::alert{type=…} Title` via the
         // node's `markdown` storage spec; renders the same shadcn NodeView.
         Alert,
@@ -275,13 +275,13 @@ export function MarkdownEditor({
   }, [editor, disabled, tab])
 
   // Cross-package suggestion bridge — sync the host's
-  // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
+  // `<PendingSuggestionsContext>` queue with the editor's `InlineSuggestion`
   // extension. No-op when no provider is mounted (default no-op context).
   //
   // Whole-field handling: NO chip widget here. The chip's `textContent`
   // renderer surfaces raw markdown (`## Heading\n- item`) as literal text
   // inside the green pill — visually unparseable for multi-paragraph
-  // rewrites. Instead, `<AiSuggestionBanner>` mounts below the editor
+  // rewrites. Instead, `<SuggestionBanner>` mounts below the editor
   // (see render below). Producer-supplied range suggestions still ride
   // the inline chip path — those have a precise anchor worth showing
   // in context.
@@ -290,7 +290,7 @@ export function MarkdownEditor({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(editor.commands as any).setContent(value)
   }
-  useAiSuggestionBridge(editor ?? null, name, {
+  useSuggestionBridge(editor ?? null, name, {
     onApplyWholeField: applyWholeField,
   })
 
@@ -303,7 +303,7 @@ export function MarkdownEditor({
   //      that HTML into a Slice against THIS editor's schema — same path
   //      the editor's own clipboard-paste uses, so the slice is guaranteed
   //      schema-valid.
-  useAiInlineDiff(editor ?? null, name, {
+  useInlineDiff(editor ?? null, name, {
     parseSuggestion: (ed, value) => {
       try {
         const html = parseMarkdownToHtml(ed, value)
@@ -313,9 +313,9 @@ export function MarkdownEditor({
         return ProseMirrorDOMParser.fromSchema(ed.schema).parseSlice(container)
       } catch { return null }
     },
-    resolveDisplayMode: () => readAiDiffViewMarker(name),
+    resolveDisplayMode: () => readDiffViewMarker(name),
   })
-  const isDiffActive = useIsAiInlineDiffActive(editor ?? null)
+  const isDiffActive = useIsInlineDiffActive(editor ?? null)
 
   // First-load seed for collab. Collaboration starts the editor empty
   // regardless of `content`; once the room's first sync resolves,
@@ -593,13 +593,13 @@ export function MarkdownEditor({
         />
       )}
 
-      <AiSuggestionBanner
+      <SuggestionBanner
         fieldName={name}
         onApplyWholeField={applyWholeField}
         {...(isDiffActive && editor
           ? {
-              onAcceptViaEditor: () => editor.commands.acceptAiInlineDiff(),
-              onRejectViaEditor: () => editor.commands.rejectAiInlineDiff(),
+              onAcceptViaEditor: () => editor.commands.acceptInlineDiff(),
+              onRejectViaEditor: () => editor.commands.rejectInlineDiff(),
             }
           : {})}
       />

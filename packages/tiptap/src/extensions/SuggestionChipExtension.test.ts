@@ -7,10 +7,10 @@ import {
   remapSuggestions,
   sortForApproveAll,
   clampPos,
-  type AiSuggestion,
-} from './AiSuggestionExtension.js'
+  type InlineSuggestion,
+} from './SuggestionChipExtension.js'
 
-const make = (id: string, from: number, to: number, replacement = '…'): AiSuggestion => ({
+const make = (id: string, from: number, to: number, replacement = '…'): InlineSuggestion => ({
   id, from, to, replacement,
 })
 

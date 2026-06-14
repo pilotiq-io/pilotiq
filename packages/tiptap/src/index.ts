@@ -34,24 +34,24 @@ export {
 export { tiptap } from './plugin.js'
 export { TiptapEditor } from './react/TiptapEditor.js'
 export {
-  AiSuggestionExtension,
-  aiSuggestionPluginKey,
+  SuggestionChipExtension,
+  suggestionChipPluginKey,
   upsertSuggestion,
   upsertSuggestions,
   removeSuggestion,
   remapSuggestions,
   sortForApproveAll,
   clampPos,
-  type AiSuggestion,
-  type AiSuggestionExtensionOptions,
-} from './extensions/AiSuggestionExtension.js'
-export { useAiSuggestionBridge } from './react/useAiSuggestionBridge.js'
+  type InlineSuggestion,
+  type SuggestionChipExtensionOptions,
+} from './extensions/SuggestionChipExtension.js'
+export { useSuggestionBridge } from './react/useSuggestionBridge.js'
 export {
-  AiInlineDiffExtension,
-  aiInlineDiffPluginKey,
-  getAiInlineDiffState,
-  type AiInlineDiffExtensionOptions,
-} from './extensions/AiInlineDiffExtension.js'
+  InlineDiffExtension,
+  inlineDiffPluginKey,
+  getInlineDiffState,
+  type InlineDiffExtensionOptions,
+} from './extensions/InlineDiffExtension.js'
 export {
   planReplaceBlock,
   planInsertBlockBefore,
