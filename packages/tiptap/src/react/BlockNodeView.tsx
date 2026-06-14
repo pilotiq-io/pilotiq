@@ -1,35 +1,55 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react'
+import { FormFields, parseFormDataToNested } from '@pilotiq/pilotiq/react'
 import type { BlockMeta } from '../Block.js'
+import { coerceBlockValues } from './blockValues.js'
 
 /**
- * Generic React NodeView for the `pilotiqBlock` ProseMirror node. Reads
- * the block type from `node.attrs.blockType`, looks up its `BlockMeta`
- * in `BlockNodeExtension.options.blocks`, and renders a compact inline
- * summary card with an "Edit" button.
+ * React NodeView for the `pilotiqBlock` ProseMirror node. Reads the block
+ * type from `node.attrs.blockType`, looks up its `BlockMeta` in
+ * `BlockNodeExtension.options.blocks`, and renders a compact summary card.
  *
- * Editing happens in a side panel hosted by `TiptapEditor`, NOT inline.
- * The NodeView fires `BlockNodeExtension.options.onEdit(getPos())` when
- * the Edit button is clicked; the host opens its panel anchored to the
- * editor wrapper. NodeViews live in a separate React tree from the host
- * editor, so the bridge has to go through extension options — context
- * doesn't cross trees.
+ * Editing is **inline** (accordion): clicking the card (or the Edit chevron)
+ * expands a panel below the summary that hosts the block's `Block.schema([…])`
+ * as a real pilotiq form via `<FormFields>`. Edits write straight back onto
+ * the node with `updateAttributes({ blockData })` on every change — the
+ * NodeView already owns the node, so there's no host bridge / side panel /
+ * position-remapping to thread through.
  *
- * If no `onEdit` is wired (e.g. a consumer that uses `BlockNodeExtension`
- * standalone without `TiptapEditor`'s panel), the Edit button is hidden.
+ * The form is rendered in a `contentEditable={false}` region and every input
+ * event is stopped from bubbling into ProseMirror, so the editor never treats
+ * the form inputs as document content or hijacks their focus/selection.
+ *
+ * Reads: each field's `defaultValue` is overridden from the block's stored
+ * `blockData`, snapshotted once per expand into `initialValuesRef`. Inputs are
+ * uncontrolled (outside a `FormStateProvider`, pilotiq's renderers fall back to
+ * `defaultValue`), so write-back transactions re-rendering the NodeView never
+ * reset the user's in-progress typing.
+ *
+ * Writes: container-level `onInput` / `onChange` delegation. Every change
+ * snapshots the whole form via `new FormData(formEl)` → `parseFormDataToNested`
+ * (rebuilds nested arrays/objects from dotted-path inputs like `items.0.title`)
+ * → `coerceBlockValues` (per-fieldType JSON parse / boolean / number coerce).
  */
 export function BlockNodeView(props: NodeViewProps) {
-  const { editor, node, getPos, deleteNode } = props
+  const { editor, node, deleteNode, updateAttributes } = props
   const blockType = String(node.attrs['blockType'] ?? '')
   const blockData = (node.attrs['blockData'] as Record<string, unknown> | undefined) ?? {}
+  const editable  = editor.isEditable
 
   // Tiptap mounts NodeViews in a separate React tree, so we can't read the
   // block registry through context. Pull it off the extension's options
   // instead — set by RichTextField via BlockNodeExtension.configure({ blocks }).
   const blockExt = editor.extensionManager.extensions.find((e) => e.name === 'pilotiqBlock')
   const blocks   = (blockExt?.options['blocks'] as BlockMeta[] | undefined) ?? []
-  const onEdit   = blockExt?.options['onEdit'] as ((pos: number) => void) | undefined
   const meta     = blocks.find((b) => b.name === blockType)
+
+  const [expanded, setExpanded] = useState(false)
+  // Seeds the form's `defaultValue`s. Re-snapshotted from the live node each
+  // time the panel opens; not updated mid-edit (uncontrolled inputs hold their
+  // own state while open).
+  const initialValuesRef = useRef<Record<string, unknown>>(blockData)
+  const formRef          = useRef<HTMLFormElement | null>(null)
 
   // Self-heal: a block with no `blockType` is malformed — almost always
   // means a stale node from a prior buggy insert. Delete it on mount so
@@ -55,11 +75,24 @@ export function BlockNodeView(props: NodeViewProps) {
     .filter(Boolean)
     .join(' · ') || meta.label
 
-  const handleEdit = (): void => {
-    if (!onEdit) return
-    const pos = getPos()
-    if (typeof pos !== 'number') return
-    onEdit(pos)
+  const toggleExpanded = (): void => {
+    if (!editable) return
+    setExpanded((prev) => {
+      const next = !prev
+      if (next) {
+        initialValuesRef.current =
+          (node.attrs['blockData'] as Record<string, unknown> | null) ?? {}
+      }
+      return next
+    })
+  }
+
+  const handleChange = (): void => {
+    const formEl = formRef.current
+    if (!formEl) return
+    const raw     = parseFormDataToNested(new FormData(formEl))
+    const coerced = coerceBlockValues(raw, meta.schema)
+    updateAttributes({ blockData: coerced })
   }
 
   return (
@@ -67,33 +100,71 @@ export function BlockNodeView(props: NodeViewProps) {
       <div className="flex items-start justify-between gap-2 px-3 py-2">
         <button
           type="button"
-          onClick={handleEdit}
-          disabled={!onEdit}
-          className="flex items-center gap-2 text-left text-sm disabled:cursor-default"
+          onClick={toggleExpanded}
+          disabled={!editable}
+          className="flex min-w-0 items-center gap-2 text-left text-sm disabled:cursor-default"
         >
           {meta.icon && <span aria-hidden="true">{meta.icon}</span>}
           <span className="font-medium">{meta.label}</span>
-          <span className="text-xs text-muted-foreground line-clamp-1">{summary}</span>
+          <span className="line-clamp-1 text-xs text-muted-foreground">{summary}</span>
         </button>
-        <div className="flex items-center gap-2">
-          {onEdit && (
+        {editable && (
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
-              onClick={handleEdit}
-              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={toggleExpanded}
+              aria-expanded={expanded}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             >
-              Edit
+              {expanded ? 'Done' : 'Edit'}
+              <svg
+                viewBox="0 0 24 24"
+                className={'size-3.5 transition-transform ' + (expanded ? 'rotate-180' : '')}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => deleteNode()}
-            className="text-xs text-destructive hover:underline"
-          >
-            Remove
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => deleteNode()}
+              className="text-xs text-destructive hover:underline"
+            >
+              Remove
+            </button>
+          </div>
+        )}
       </div>
+
+      {expanded && editable && (
+        // contentEditable=false + event guards keep ProseMirror from treating
+        // the form inputs as document content or stealing their focus/caret.
+        <div
+          contentEditable={false}
+          className="border-t px-3 py-3"
+          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          onKeyUp={(e) => e.stopPropagation()}
+          onPaste={(e) => e.stopPropagation()}
+          onDrop={(e) => e.stopPropagation()}
+        >
+          <form
+            ref={formRef}
+            onInput={handleChange}
+            onChange={handleChange}
+            onSubmit={(e) => e.preventDefault()}
+            className="flex flex-col gap-3"
+          >
+            <FormFields elements={meta.schema} values={initialValuesRef.current} />
+          </form>
+        </div>
+      )}
     </NodeViewWrapper>
   )
 }
