@@ -21,15 +21,6 @@ export interface BlockNodeOptions {
    * registry data via React context.
    */
   blocks: BlockMeta[]
-  /**
-   * Bridge from the NodeView's separate React tree back to the editor's
-   * own tree, where the side panel lives. Set by `TiptapEditor` so the
-   * "Edit" button on each block can request the panel open against this
-   * specific node. `undefined` means no host is listening — the NodeView
-   * falls back to a no-op (does not render an Edit affordance, or does
-   * so disabled, depending on the consumer's chrome).
-   */
-  onEdit?: (pos: number) => void
 }
 
 /**
@@ -57,9 +48,6 @@ export const BlockNodeExtension = Node.create<BlockNodeOptions>({
   draggable: true,
 
   addOptions() {
-    // `onEdit` intentionally omitted — `exactOptionalPropertyTypes` makes
-    // an explicit `undefined` non-assignable to the optional field, and
-    // the host wires it via `BlockNodeExtension.configure({ onEdit })`.
     return { blocks: [] }
   },
 
@@ -110,25 +98,6 @@ export const BlockNodeExtension = Node.create<BlockNodeOptions>({
           type: this.name,
           attrs: { blockType, blockData },
         }),
-    }
-  },
-
-  // `Mod-e` opens the side panel for the currently NodeSelected block.
-  // Returns false when no block is selected so the browser's default
-  // (Safari "Use Selection for Find", etc.) still applies in plain text.
-  addKeyboardShortcuts() {
-    return {
-      'Mod-e': () => {
-        const onEdit = this.options.onEdit
-        if (!onEdit) return false
-        const sel = this.editor.state.selection as unknown as {
-          node?: { type: { name: string } }
-          from:  number
-        }
-        if (sel.node?.type.name !== this.name) return false
-        onEdit(sel.from)
-        return true
-      },
     }
   },
 })

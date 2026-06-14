@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readBlockFieldValue, coerceBlockValues, clampPanelWidth } from './BlockSidePanel.js'
+import { readBlockFieldValue, coerceBlockValues } from './blockValues.js'
 import { BlockNodeExtension } from '../extensions/BlockNodeExtension.js'
 
 describe('readBlockFieldValue', () => {
@@ -298,115 +298,18 @@ describe('coerceBlockValues — Builder rows', () => {
 })
 
 describe('BlockNodeExtension options', () => {
-  it('defaults onEdit to undefined when not configured', () => {
+  it('defaults to an empty block registry when not configured', () => {
     const ext = BlockNodeExtension
     // `addOptions` returns the defaults; not exercising the full Tiptap
     // configure pipeline here because that requires a live editor.
     const defaults = ext.config.addOptions?.call({ name: 'pilotiqBlock', parent: undefined })
     assert.deepEqual(defaults, { blocks: [] })
-    assert.equal((defaults as { onEdit?: unknown } | undefined)?.onEdit, undefined)
   })
 
-  it('configure({ onEdit }) round-trips through Tiptap options', () => {
-    const seen: number[] = []
-    const onEdit = (p: number): void => { seen.push(p) }
-    const configured = BlockNodeExtension.configure({ blocks: [], onEdit })
-    // Tiptap stores configured options on `.options` after configure().
-    const opts = configured.options as { blocks: unknown[]; onEdit?: (p: number) => void }
-    assert.equal(typeof opts.onEdit, 'function')
-    opts.onEdit?.(5)
-    opts.onEdit?.(11)
-    assert.deepEqual(seen, [5, 11])
-  })
-
-  it('configure without onEdit leaves it undefined', () => {
-    const configured = BlockNodeExtension.configure({ blocks: [] })
-    const opts = configured.options as { blocks: unknown[]; onEdit?: (p: number) => void }
-    assert.equal(opts.onEdit, undefined)
-  })
-
-  it('addKeyboardShortcuts exposes Mod-e', () => {
-    // The shortcut handler closes over `this.editor` and `this.options` —
-    // we don't need the live editor to verify the binding key is wired.
-    const ctx = {
-      editor:  { state: { selection: {} } },
-      options: { blocks: [] },
-      name:    'pilotiqBlock',
-    } as unknown as ThisParameterType<NonNullable<typeof BlockNodeExtension.config.addKeyboardShortcuts>>
-    const shortcuts = BlockNodeExtension.config.addKeyboardShortcuts?.call(ctx)
-    assert.ok(shortcuts && typeof shortcuts === 'object')
-    assert.equal(typeof (shortcuts as { 'Mod-e'?: unknown })['Mod-e'], 'function')
-  })
-
-  it('Mod-e returns false when onEdit is unset (no host listening)', () => {
-    const ctx = {
-      editor:  { state: { selection: { node: { type: { name: 'pilotiqBlock' } }, from: 7 } } },
-      options: { blocks: [] },
-      name:    'pilotiqBlock',
-    } as unknown as ThisParameterType<NonNullable<typeof BlockNodeExtension.config.addKeyboardShortcuts>>
-    const shortcuts = BlockNodeExtension.config.addKeyboardShortcuts?.call(ctx) as Record<string, () => boolean>
-    assert.equal(shortcuts['Mod-e']?.(), false)
-  })
-
-  it('Mod-e returns false when the selection is not a block NodeSelection', () => {
-    const calls: number[] = []
-    const ctx = {
-      editor:  { state: { selection: { from: 3, to: 3 } } },
-      options: { blocks: [], onEdit: (p: number) => calls.push(p) },
-      name:    'pilotiqBlock',
-    } as unknown as ThisParameterType<NonNullable<typeof BlockNodeExtension.config.addKeyboardShortcuts>>
-    const shortcuts = BlockNodeExtension.config.addKeyboardShortcuts?.call(ctx) as Record<string, () => boolean>
-    assert.equal(shortcuts['Mod-e']?.(), false)
-    assert.deepEqual(calls, [])
-  })
-
-  it('Mod-e calls onEdit(pos) and returns true when a block is NodeSelected', () => {
-    const calls: number[] = []
-    const ctx = {
-      editor:  { state: { selection: { node: { type: { name: 'pilotiqBlock' } }, from: 12 } } },
-      options: { blocks: [], onEdit: (p: number) => calls.push(p) },
-      name:    'pilotiqBlock',
-    } as unknown as ThisParameterType<NonNullable<typeof BlockNodeExtension.config.addKeyboardShortcuts>>
-    const shortcuts = BlockNodeExtension.config.addKeyboardShortcuts?.call(ctx) as Record<string, () => boolean>
-    assert.equal(shortcuts['Mod-e']?.(), true)
-    assert.deepEqual(calls, [12])
-  })
-})
-
-describe('clampPanelWidth', () => {
-  it('falls back to the default for non-finite values', () => {
-    assert.equal(clampPanelWidth(NaN),       320)
-    assert.equal(clampPanelWidth(Infinity),  320)
-    assert.equal(clampPanelWidth(-Infinity), 320)
-    assert.equal(clampPanelWidth(undefined), 320)
-    assert.equal(clampPanelWidth(null),      320)
-    assert.equal(clampPanelWidth(''),        320)
-    assert.equal(clampPanelWidth('garbage'), 320)
-  })
-
-  it('clamps below the minimum up to 240', () => {
-    assert.equal(clampPanelWidth(0),    240)
-    assert.equal(clampPanelWidth(-50),  240)
-    assert.equal(clampPanelWidth(239),  240)
-  })
-
-  it('clamps above the maximum down to 600', () => {
-    assert.equal(clampPanelWidth(601),    600)
-    assert.equal(clampPanelWidth(2000),   600)
-    assert.equal(clampPanelWidth(99_999), 600)
-  })
-
-  it('passes finite values inside the range through unchanged', () => {
-    assert.equal(clampPanelWidth(240), 240)
-    assert.equal(clampPanelWidth(320), 320)
-    assert.equal(clampPanelWidth(450), 450)
-    assert.equal(clampPanelWidth(600), 600)
-  })
-
-  it('parses numeric strings (localStorage round-trip)', () => {
-    assert.equal(clampPanelWidth('320'), 320)
-    assert.equal(clampPanelWidth('450'), 450)
-    assert.equal(clampPanelWidth('900'), 600)
-    assert.equal(clampPanelWidth('100'), 240)
+  it('configure({ blocks }) round-trips through Tiptap options', () => {
+    const blocks = [{ name: 'callout', label: 'Callout', schema: [] }]
+    const configured = BlockNodeExtension.configure({ blocks: blocks as never })
+    const opts = configured.options as { blocks: unknown[] }
+    assert.deepEqual(opts.blocks, blocks)
   })
 })
