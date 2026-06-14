@@ -516,7 +516,7 @@ export async function buildSettingsMeta(
   // canAccess. The Page's standalone route still works.
   const P = cfg.profilePage
   if (P) {
-    let ok = true
+    let ok: boolean
     try { ok = await P.canAccess(user) } catch { ok = false }
     if (ok) {
       const profilePane: SettingsPaneMeta = {
