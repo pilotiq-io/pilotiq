@@ -1,4 +1,4 @@
-import type { EditorState } from '@tiptap/pm/state'
+import { NodeSelection, type EditorState } from '@tiptap/pm/state'
 
 import { isSelectionInAlert } from '../extensions/contentBlocks.js'
 
@@ -28,13 +28,21 @@ function caretInToolbarMark(state: EditorState): boolean {
  * decision (no DOM / coords) so it's unit-testable against the real schema:
  *
  *  - never inside a callout/alert block — it owns its own chrome (#155);
+ *  - never on a whole-node selection of a non-text block — a custom block
+ *    card (`pilotiqBlock`), image, hr, etc. has no inline text to format, so
+ *    clicking/selecting it must not surface the mark toolbar (#155 for the
+ *    schema-form custom blocks, which the alert-only guard above missed);
  *  - a caret (empty selection) shows ONLY when it sits inside a formatting
  *    mark (link / bold / …) so the mark can be edited without selecting (#156);
  *  - a non-empty range shows whenever it actually spans inline content (the
  *    `childCount === 0` guard skips degenerate full-block selections).
  */
 export function shouldShowFloatingToolbar(state: EditorState): boolean {
-  if (isSelectionInAlert(state.selection)) return false
+  const sel = state.selection
+  if (isSelectionInAlert(sel)) return false
+  if (sel instanceof NodeSelection && sel.node.isBlock && !sel.node.isTextblock) {
+    return false
+  }
   if (state.selection.empty) return caretInToolbarMark(state)
   const { from, to } = state.selection
   return state.doc.slice(from, to).content.childCount > 0
