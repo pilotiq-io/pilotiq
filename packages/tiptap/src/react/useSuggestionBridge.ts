@@ -7,16 +7,16 @@ import {
   type PendingSuggestion,
   type PendingSuggestionApplier,
 } from '@pilotiq/pilotiq/react'
-import { aiSuggestionPluginKey } from '../extensions/AiSuggestionExtension.js'
+import { suggestionChipPluginKey } from '../extensions/SuggestionChipExtension.js'
 
 /**
  * Two-way sync between the cross-package `<PendingSuggestionsContext>`
- * queue and this editor's `AiSuggestionExtension` state.
+ * queue and this editor's `SuggestionChipExtension` state.
  *
  *   - **Context → editor**: every entry whose `meta.editorRange = { from, to }`
  *     is present and whose `suggestedValue` is a string gets pushed into the
- *     editor as an inline-diff hunk via `addAiSuggestion`. Entries leaving the
- *     queue are removed from the editor via `rejectAiSuggestion` (no doc edit).
+ *     editor as an inline-diff hunk via `addSuggestion`. Entries leaving the
+ *     queue are removed from the editor via `rejectSuggestion` (no doc edit).
  *
  *   - **Editor → context**: when a chip's Approve / Reject button removes a
  *     hunk from the editor's plugin state, the matching id is dismissed from
@@ -28,7 +28,7 @@ import { aiSuggestionPluginKey } from '../extensions/AiSuggestionExtension.js'
  * the editor (`pushed`). The Context→editor pass never re-pushes an id that's
  * already there, and the Editor→context pass only dismisses ids that this
  * hook had previously pushed (so an id added directly by host code via
- * `editor.commands.addAiSuggestion(...)` doesn't get reflected back through
+ * `editor.commands.addSuggestion(...)` doesn't get reflected back through
  * a context that never knew about it).
  *
  * **Whole-field fallback** (chat-driven suggestions). Producers like
@@ -44,7 +44,7 @@ import { aiSuggestionPluginKey } from '../extensions/AiSuggestionExtension.js'
  * responsible for the Approve UI — FieldShell hides its legacy overlay
  * whenever a Tiptap renderer is mounted (richtext / markdown / collab text).
  */
-export interface UseAiSuggestionBridgeOptions {
+export interface UseSuggestionBridgeOptions {
   /**
    * Apply a whole-field suggestion that lacks `meta.editorRange`. Each
    * Tiptap renderer passes its own implementation (different content
@@ -69,14 +69,14 @@ export interface UseAiSuggestionBridgeOptions {
   ) => { from: number; to: number } | undefined
 }
 
-export function useAiSuggestionBridge(
+export function useSuggestionBridge(
   editor: Editor | null,
   fieldName: string,
-  options: UseAiSuggestionBridgeOptions = {},
+  options: UseSuggestionBridgeOptions = {},
 ): void {
   const { list, dismiss } = usePendingSuggestionsForField(fieldName)
   // Scope the applier under the surrounding form's id — same reasoning
-  // as `useAiInlineDiff`: two editors with the same field name across
+  // as `useInlineDiff`: two editors with the same field name across
   // different forms (main edit form vs. a Replicate modal, say) would
   // otherwise race on `registerPendingSuggestionApplier(undefined, …)`
   // and the last-mounted editor would steal every approval.
@@ -132,7 +132,7 @@ export function useAiSuggestionBridge(
         isSynthesized = true
       }
       const replacement = typeof s.suggestedValue === 'string' ? s.suggestedValue : ''
-      editor.commands.addAiSuggestion({
+      editor.commands.addSuggestion({
         id:          s.id,
         from:        range.from,
         to:          range.to,
@@ -146,8 +146,8 @@ export function useAiSuggestionBridge(
     for (const id of Array.from(pushedRef.current)) {
       if (contextIds.has(id)) continue
       // Context dropped the suggestion — remove from editor without
-      // mutating the doc (rejectAiSuggestion drops state only).
-      editor.commands.rejectAiSuggestion(id)
+      // mutating the doc (rejectSuggestion drops state only).
+      editor.commands.rejectSuggestion(id)
       pushedRef.current.delete(id)
       synthesizedRef.current.delete(id)
     }
@@ -157,7 +157,7 @@ export function useAiSuggestionBridge(
   useEffect(() => {
     if (!editor) return
     const handler = () => {
-      const ps = aiSuggestionPluginKey.getState(editor.state)
+      const ps = suggestionChipPluginKey.getState(editor.state)
       if (!ps) return
       const editorIds = new Set(ps.suggestions.map((s: { id: string }) => s.id))
       for (const id of Array.from(pushedRef.current)) {
@@ -185,20 +185,20 @@ export function useAiSuggestionBridge(
       const hasPushed      = pushedRef.current.has(suggestion.id)
 
       // Synthesized whole-field range — the chip rendered for visualization,
-      // but routing Approve through the editor's `approveAiSuggestion` would
+      // but routing Approve through the editor's `approveSuggestion` would
       // do a plain-text replace and clobber HTML / markdown formatting.
       // Delegate to the renderer-supplied applier (content-shape-aware)
       // and clear the chip state without a doc edit.
       if (hasSynthesized && apply && typeof suggestion.suggestedValue === 'string') {
         apply(suggestion.suggestedValue)
-        editor.commands.rejectAiSuggestion(suggestion.id)
+        editor.commands.rejectSuggestion(suggestion.id)
         return
       }
       // Producer-supplied editor range — surgical edit. Forward Approve to
       // the editor command; the transaction listener above mirrors the
       // dismiss back into context.
       if (hasPushed) {
-        editor.chain().focus().approveAiSuggestion(suggestion.id).run()
+        editor.chain().focus().approveSuggestion(suggestion.id).run()
         return
       }
       // Whole-field path WITHOUT visualization — producer skipped the range

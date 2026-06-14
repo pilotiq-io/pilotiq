@@ -1,32 +1,32 @@
 /**
  * Bridge between the host's `<PendingSuggestionsContext>` queue and the
- * editor's `AiInlineDiffExtension`. When a whole-field suggestion arrives
+ * editor's `InlineDiffExtension`. When a whole-field suggestion arrives
  * for the field, the hook:
  *
  *   1. Parses the suggested value into a ProseMirror `Slice` via the
  *      renderer-supplied parser. Each Tiptap surface owns its own
  *      content shape — markdown source for `MarkdownEditor`, HTML / JSON
  *      for `TiptapEditor`, plain text for `CollabTextRenderer`.
- *   2. Calls `editor.commands.startAiInlineDiff(id, slice)` — the
+ *   2. Calls `editor.commands.startInlineDiff(id, slice)` — the
  *      extension snapshots the current doc as the baseline, replaces
  *      the doc content with the proposed slice, and starts a
  *      `prosemirror-changeset` tracking the diff.
  *   3. Registers an applier on the cross-tree pending-suggestion
- *      registry so the host's `<AiSuggestionBanner>` Accept button (and
+ *      registry so the host's `<SuggestionBanner>` Accept button (and
  *      any other surface calling `pendingSuggestions.approve(id)`) runs
- *      `acceptAiInlineDiff()` instead of the legacy `onApplyWholeField`
+ *      `acceptInlineDiff()` instead of the legacy `onApplyWholeField`
  *      callback. The current doc IS the accepted state — no extra
  *      content swap needed.
  *
  * Reject handling: not registered on the applier (the registry only
  * tracks Approve). Renderers wire Reject through the banner's
- * `onRejectWithEditor` prop, which calls `rejectAiInlineDiff()` to revert
+ * `onRejectWithEditor` prop, which calls `rejectInlineDiff()` to revert
  * the doc to the baseline before dismissing the suggestion.
  *
  * Defensive: only one inline diff active at a time per editor. If a new
  * synthesized suggestion arrives while one is still pending review, the
  * hook drops it (the producer should have waited). This matches
- * `AiSuggestionExtension`'s chip path which also allows only one
+ * `SuggestionChipExtension`'s chip path which also allows only one
  * suggestion at a time per id.
  */
 
@@ -41,7 +41,7 @@ import {
   type PendingSuggestion,
   type PendingSuggestionApplier,
 } from '@pilotiq/pilotiq/react'
-import { aiInlineDiffPluginKey } from '../extensions/AiInlineDiffExtension.js'
+import { inlineDiffPluginKey } from '../extensions/InlineDiffExtension.js'
 import {
   planReplaceBlock,
   planInsertBlockBefore,
@@ -52,7 +52,7 @@ import {
   type TransactionModifier,
 } from '../surgicalOps.js'
 
-export interface UseAiInlineDiffOptions {
+export interface UseInlineDiffOptions {
   /**
    * Parse the suggested string value into a ProseMirror Slice that's
    * compatible with this editor's schema. Returns `null` to skip (e.g.
@@ -70,7 +70,7 @@ export interface UseAiInlineDiffOptions {
    * Resolve the diff rendering mode at diff-start time. Return `'lines'`
    * for the GitHub-style stacked rows, anything else / omitted keeps the
    * default `'inline'` word-flow. Called lazily per diff so DOM-marker
-   * readers (`readAiDiffViewMarker`) see the mounted field wrapper.
+   * readers (`readDiffViewMarker`) see the mounted field wrapper.
    */
   resolveDisplayMode?: (editor: Editor) => 'inline' | 'lines'
 }
@@ -83,7 +83,7 @@ export interface UseAiInlineDiffOptions {
  * Defaults to `'inline'` when no marker is present — including in
  * open-core installs where the augmentation never runs.
  */
-export function readAiDiffViewMarker(fieldName: string): 'inline' | 'lines' {
+export function readDiffViewMarker(fieldName: string): 'inline' | 'lines' {
   if (typeof document === 'undefined') return 'inline'
   const els = document.getElementsByName(fieldName)
   const el  = els[0]
@@ -96,20 +96,20 @@ export function readAiDiffViewMarker(fieldName: string): 'inline' | 'lines' {
  * Returns whether a diff is currently active in the editor. Hosts use
  * this to gate the banner's UI between the legacy `onApplyWholeField`
  * mode and the diff-aware mode (Reject routes through
- * `rejectAiInlineDiff` to revert the doc).
+ * `rejectInlineDiff` to revert the doc).
  */
-export function useIsAiInlineDiffActive(editor: Editor | null): boolean {
+export function useIsInlineDiffActive(editor: Editor | null): boolean {
   const active = useEditorState({
     editor,
-    selector: ({ editor: ed }) => !!ed && aiInlineDiffPluginKey.getState(ed.state) !== null,
+    selector: ({ editor: ed }) => !!ed && inlineDiffPluginKey.getState(ed.state) !== null,
   })
   return active ?? false
 }
 
-export function useAiInlineDiff(
+export function useInlineDiff(
   editor: Editor | null,
   fieldName: string,
-  options: UseAiInlineDiffOptions,
+  options: UseInlineDiffOptions,
 ): void {
   const { list } = usePendingSuggestionsForField(fieldName)
   // Scope the applier registration by the surrounding form's id so
@@ -152,13 +152,13 @@ export function useAiInlineDiff(
   // surgical-block suggestion. `meta.surgical` (if present) routes to a
   // precise PM transaction; otherwise we treat the suggested value as a
   // whole-field replacement. `meta.editorRange` (chip path) is filtered
-  // out — handled by AiSuggestionExtension elsewhere.
+  // out — handled by SuggestionChipExtension elsewhere.
   useEffect(() => {
     if (!editor) return
     const diffable = list.filter(s => !hasEditorRange(s))
     for (const s of diffable) {
       if (startedRef.current.has(s.id)) continue
-      const diffActive = aiInlineDiffPluginKey.getState(editor.state) !== null
+      const diffActive = inlineDiffPluginKey.getState(editor.state) !== null
       const surgical   = readSurgicalMeta(s)
 
       // Cross-tool-call surgical stacking. When a diff is already active
@@ -196,7 +196,7 @@ export function useAiInlineDiff(
       if (surgical) {
         const modifier = planSurgicalModifier(editor, surgical)
         if (!modifier) continue
-        editor.commands.applySurgicalAiInlineDiff(s.id, modifier, displayMode)
+        editor.commands.applySurgicalInlineDiff(s.id, modifier, displayMode)
         startedRef.current.add(s.id)
         continue
       }
@@ -204,7 +204,7 @@ export function useAiInlineDiff(
       if (typeof s.suggestedValue !== 'string') continue
       const slice = parseRef.current(editor, s.suggestedValue)
       if (!slice) continue
-      editor.commands.startAiInlineDiff(s.id, slice, displayMode)
+      editor.commands.startInlineDiff(s.id, slice, displayMode)
       startedRef.current.add(s.id)
     }
     // Cleanup: when a suggestion leaves the context AND we previously
@@ -233,7 +233,7 @@ export function useAiInlineDiff(
     if (!editor) return
     const applier: PendingSuggestionApplier = (suggestion) => {
       if (startedRef.current.has(suggestion.id)) {
-        editor.commands.acceptAiInlineDiff()
+        editor.commands.acceptInlineDiff()
         return
       }
       const surgical = readSurgicalMeta(suggestion)

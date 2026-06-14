@@ -4,7 +4,7 @@ import { Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 
-import { AiInlineDiffExtension, contentBlockNodes } from './index.js'
+import { InlineDiffExtension, contentBlockNodes } from './index.js'
 
 /**
  * Bug #91 — the DELETED side of an AI inline diff must keep its original
@@ -22,7 +22,7 @@ import { AiInlineDiffExtension, contentBlockNodes } from './index.js'
 function mount(content: string): Editor {
   const el = document.createElement('div')
   document.body.appendChild(el)
-  return new Editor({ element: el, extensions: [StarterKit, ...contentBlockNodes, AiInlineDiffExtension], content })
+  return new Editor({ element: el, extensions: [StarterKit, ...contentBlockNodes, InlineDiffExtension], content })
 }
 
 /** HTML → ProseMirror Slice, exactly as `TiptapEditor`'s `parseSuggestion` does. */
@@ -34,7 +34,7 @@ function sliceFromHtml(editor: Editor, html: string) {
 
 /** Start an inline diff replacing the whole doc body with `newHtml`. */
 function startDiff(editor: Editor, newHtml: string, mode: 'inline' | 'lines' = 'inline'): void {
-  editor.commands.startAiInlineDiff('t', sliceFromHtml(editor, newHtml), mode)
+  editor.commands.startInlineDiff('t', sliceFromHtml(editor, newHtml), mode)
 }
 
 const deletedRoot = (editor: Editor): HTMLElement => editor.view.dom as HTMLElement
@@ -44,7 +44,7 @@ describe('AI inline diff — deleted side preserves block formatting (#91)', () 
     const editor = mount('<h2>Old heading</h2>')
     startDiff(editor, '<h2>New heading</h2>')
 
-    const block = deletedRoot(editor).querySelector('.pilotiq-ai-diff-deleted-block')
+    const block = deletedRoot(editor).querySelector('.pilotiq-diff-deleted-block')
     assert.ok(block, 'a structure-preserving deleted-block widget should render')
     const h2 = block!.querySelector('h2')
     assert.ok(h2, 'the deleted heading must render as an <h2>, not plain text')
@@ -60,11 +60,11 @@ describe('AI inline diff — deleted side preserves block formatting (#91)', () 
 
     const root = deletedRoot(editor)
     assert.ok(
-      root.querySelectorAll('.pilotiq-ai-diff-deleted-block ul').length >= 1,
+      root.querySelectorAll('.pilotiq-diff-deleted-block ul').length >= 1,
       'the deleted list must render as a <ul>, not flattened text',
     )
     assert.ok(
-      root.querySelectorAll('.pilotiq-ai-diff-deleted-block li').length >= 2,
+      root.querySelectorAll('.pilotiq-diff-deleted-block li').length >= 2,
       'both <li> items preserved (possibly across struck fragments)',
     )
 
@@ -81,7 +81,7 @@ describe('AI inline diff — deleted side preserves block formatting (#91)', () 
     const editor = mount(faqHtml)
     startDiff(editor, '<p>plain</p>')
 
-    const faq = deletedRoot(editor).querySelector('.pilotiq-ai-diff-deleted-block [data-type="faq"]')
+    const faq = deletedRoot(editor).querySelector('.pilotiq-diff-deleted-block [data-type="faq"]')
     assert.ok(faq, 'the deleted faq must keep its faq structure, not collapse to text')
 
     editor.destroy()
@@ -93,11 +93,11 @@ describe('AI inline diff — deleted side preserves block formatting (#91)', () 
 
     const root = deletedRoot(editor)
     assert.ok(
-      root.querySelector('.pilotiq-ai-diff-deleted-text'),
+      root.querySelector('.pilotiq-diff-deleted-text'),
       'a plain-paragraph deletion should stay inline struck-through text',
     )
     assert.equal(
-      root.querySelector('.pilotiq-ai-diff-deleted-block p'),
+      root.querySelector('.pilotiq-diff-deleted-block p'),
       null,
       'a one-word paragraph edit must NOT be promoted to a stacked deleted block',
     )
@@ -109,7 +109,7 @@ describe('AI inline diff — deleted side preserves block formatting (#91)', () 
     const editor = mount('<h2>Heading</h2><p>keep me</p>')
     startDiff(editor, '<p>keep me</p>', 'lines')
 
-    const h2 = deletedRoot(editor).querySelector('.pilotiq-ai-diff-deleted-line h2')
+    const h2 = deletedRoot(editor).querySelector('.pilotiq-diff-deleted-line h2')
     assert.ok(h2, 'lines mode must render the removed heading row as an <h2>')
     assert.match(h2!.textContent ?? '', /Heading/)
 

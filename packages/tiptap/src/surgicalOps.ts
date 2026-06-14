@@ -3,8 +3,8 @@
  *
  * Each planner takes the editor + a logical block index + a payload and
  * returns a `TransactionModifier` — a function the caller (typically
- * `useAiInlineDiff`) feeds into
- * `editor.commands.applySurgicalAiInlineDiff(id, modifier)`. The diff
+ * `useInlineDiff`) feeds into
+ * `editor.commands.applySurgicalInlineDiff(id, modifier)`. The diff
  * extension wraps the modifier in a snapshot-then-apply step so the
  * inline-diff overlay renders against the precise changed range.
  *
@@ -44,7 +44,7 @@ function blockStartPos(doc: ProseMirrorNode, blockIndex: number): number | null 
  * `TiptapEditor` path).
  *
  * Mirrors the same auto-detect strategy `MarkdownEditor.tsx` uses for
- * its `parseSuggestion` whole-field callback (see `useAiInlineDiff`),
+ * its `parseSuggestion` whole-field callback (see `useInlineDiff`),
  * so surgical ops on markdown fields stay consistent with the
  * existing whole-field replacement path.
  *

@@ -10,7 +10,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
  * editor as-is when the suggestion is approved (the original range's marks
  * are preserved on the inserted text node by ProseMirror).
  */
-export interface AiSuggestion {
+export interface InlineSuggestion {
   /** Stable id; consumer-provided. Re-adding with the same id replaces the prior entry. */
   id:           string
   /** Inclusive document position the original range starts at. */
@@ -26,16 +26,16 @@ export interface AiSuggestion {
   }
 }
 
-export interface AiSuggestionExtensionOptions {
+export interface SuggestionChipExtensionOptions {
   /**
    * Class prefix for both decoration spans and chip widgets. The package
    * stays CSS-free — consumers ship the matching styles. Default
-   * `'pilotiq-ai-suggestion'` produces classes:
-   *   - `pilotiq-ai-suggestion-original`     (strikethrough on the original range)
-   *   - `pilotiq-ai-suggestion-chip`         (root of the inline widget)
-   *   - `pilotiq-ai-suggestion-replacement`  (the suggested-text preview span)
-   *   - `pilotiq-ai-suggestion-accept`       (Approve button)
-   *   - `pilotiq-ai-suggestion-reject`       (Reject button)
+   * `'pilotiq-suggestion'` produces classes:
+   *   - `pilotiq-suggestion-original`     (strikethrough on the original range)
+   *   - `pilotiq-suggestion-chip`         (root of the inline widget)
+   *   - `pilotiq-suggestion-replacement`  (the suggested-text preview span)
+   *   - `pilotiq-suggestion-accept`       (Approve button)
+   *   - `pilotiq-suggestion-reject`       (Reject button)
    */
   classPrefix: string
   /**
@@ -43,49 +43,49 @@ export interface AiSuggestionExtensionOptions {
    * `reject*`, `clear*`, or after a doc edit collapses a range. Lets the host
    * mirror state into a React context (e.g. `PendingSuggestionsApi`).
    */
-  onChange?: (suggestions: AiSuggestion[]) => void
+  onChange?: (suggestions: InlineSuggestion[]) => void
 }
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
-    aiSuggestion: {
+    suggestionChip: {
       /** Add or replace a suggestion (matched by id). */
-      addAiSuggestion:         (suggestion: AiSuggestion) => ReturnType
+      addSuggestion:         (suggestion: InlineSuggestion) => ReturnType
       /** Add or replace many suggestions in one transaction. */
-      addAiSuggestions:        (suggestions: AiSuggestion[]) => ReturnType
+      addSuggestions:        (suggestions: InlineSuggestion[]) => ReturnType
       /** Apply the replacement to the doc and drop the suggestion. */
-      approveAiSuggestion:     (id: string) => ReturnType
+      approveSuggestion:     (id: string) => ReturnType
       /** Drop the suggestion without touching the doc. */
-      rejectAiSuggestion:      (id: string) => ReturnType
+      rejectSuggestion:      (id: string) => ReturnType
       /** Apply every replacement in highest-`from`-first order. */
-      approveAllAiSuggestions: () => ReturnType
+      approveAllSuggestions: () => ReturnType
       /** Drop every suggestion. */
-      rejectAllAiSuggestions:  () => ReturnType
-      /** Alias for `rejectAllAiSuggestions`. */
-      clearAiSuggestions:      () => ReturnType
+      rejectAllSuggestions:  () => ReturnType
+      /** Alias for `rejectAllSuggestions`. */
+      clearSuggestions:      () => ReturnType
     }
   }
 }
 
 interface PluginState {
-  suggestions: readonly AiSuggestion[]
+  suggestions: readonly InlineSuggestion[]
 }
 
 interface SetMeta {
   type: 'set'
-  next: readonly AiSuggestion[]
+  next: readonly InlineSuggestion[]
 }
 
-export const aiSuggestionPluginKey = new PluginKey<PluginState>('pilotiqAiSuggestion')
+export const suggestionChipPluginKey = new PluginKey<PluginState>('pilotiqSuggestionChip')
 
 /**
  * Append or replace by id. Pure — exported for tests and so the same dedupe
  * shape can drive consumer-side mirror state.
  */
 export function upsertSuggestion(
-  current: readonly AiSuggestion[],
-  next:    AiSuggestion,
-): AiSuggestion[] {
+  current: readonly InlineSuggestion[],
+  next:    InlineSuggestion,
+): InlineSuggestion[] {
   const idx = current.findIndex(s => s.id === next.id)
   if (idx === -1) return [...current, next]
   const copy = current.slice()
@@ -95,19 +95,19 @@ export function upsertSuggestion(
 
 /** Append or replace many — semantically equivalent to a fold over `upsertSuggestion`. */
 export function upsertSuggestions(
-  current: readonly AiSuggestion[],
-  nexts:   readonly AiSuggestion[],
-): AiSuggestion[] {
-  let acc: AiSuggestion[] = current.slice()
+  current: readonly InlineSuggestion[],
+  nexts:   readonly InlineSuggestion[],
+): InlineSuggestion[] {
+  let acc: InlineSuggestion[] = current.slice()
   for (const n of nexts) acc = upsertSuggestion(acc, n)
   return acc
 }
 
 /** Remove by id. */
 export function removeSuggestion(
-  current: readonly AiSuggestion[],
+  current: readonly InlineSuggestion[],
   id:      string,
-): AiSuggestion[] {
+): InlineSuggestion[] {
   return current.filter(s => s.id !== id)
 }
 
@@ -116,10 +116,10 @@ export function removeSuggestion(
  * each other (`to < from` after remap). Pure — exported for tests.
  */
 export function remapSuggestions(
-  suggestions: readonly AiSuggestion[],
+  suggestions: readonly InlineSuggestion[],
   map: (pos: number, side: -1 | 1) => number,
-): AiSuggestion[] {
-  const out: AiSuggestion[] = []
+): InlineSuggestion[] {
+  const out: InlineSuggestion[] = []
   for (const s of suggestions) {
     const from = map(s.from, -1)
     const to   = map(s.to,   1)
@@ -135,8 +135,8 @@ export function remapSuggestions(
  * Pure — exported for tests.
  */
 export function sortForApproveAll(
-  suggestions: readonly AiSuggestion[],
-): AiSuggestion[] {
+  suggestions: readonly InlineSuggestion[],
+): InlineSuggestion[] {
   return suggestions.slice().sort((a, b) => b.from - a.from)
 }
 
@@ -147,7 +147,7 @@ export function sortForApproveAll(
  *
  * Usage:
  * ```ts
- * editor.commands.addAiSuggestion({
+ * editor.commands.addSuggestion({
  *   id:          'seo-1',
  *   from:        12,
  *   to:          18,
@@ -155,31 +155,31 @@ export function sortForApproveAll(
  *   source:      { agentLabel: 'SEO' },
  * })
  * // …user clicks ✓ on the chip, or:
- * editor.commands.approveAiSuggestion('seo-1')
+ * editor.commands.approveSuggestion('seo-1')
  * ```
  *
  * Mounted by default inside `TiptapEditor`; consumer code reaches it through
  * the editor's command surface.
  */
-export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptions>({
-  name: 'pilotiqAiSuggestion',
+export const SuggestionChipExtension = Extension.create<SuggestionChipExtensionOptions>({
+  name: 'pilotiqSuggestionChip',
 
   addOptions() {
     return {
-      classPrefix: 'pilotiq-ai-suggestion',
+      classPrefix: 'pilotiq-suggestion',
     }
   },
 
   onCreate() {
     // Inject minimal default styles for the chip + strikethrough on first
     // mount so consumers see the visualization without wiring CSS. Idempotent
-    // via the `data-pilotiq-ai-suggestion-styles` sentinel; consumers who
+    // via the `data-pilotiq-suggestion-styles` sentinel; consumers who
     // want full control just add their own `<style>` with the same class
     // names (last wins — the cascade picks user overrides over our defaults
     // since the user stylesheet appears AFTER our injected one in `<head>`
     // when imported via Vite/Webpack, OR via higher specificity).
     if (typeof document === 'undefined') return
-    const SENTINEL = 'data-pilotiq-ai-suggestion-styles'
+    const SENTINEL = 'data-pilotiq-suggestion-styles'
     if (document.head.querySelector(`style[${SENTINEL}]`)) return
     const prefix = this.options.classPrefix
     const style  = document.createElement('style')
@@ -226,10 +226,10 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
       /* Banner — bottom-of-editor strip for whole-field suggestions on rich
          surfaces (markdown / richtext). Sibling to the chip styles above;
          lives here so both ship via the same extension-mount sentinel.
-         Class names live under \`pilotiq-ai-banner-*\` (not \`-suggestion-\`)
+         Class names live under \`pilotiq-suggestion-banner-*\` (not \`-suggestion-\`)
          since the banner is a host-mounted React component, not a PM
          decoration. */
-      .pilotiq-ai-banner {
+      .pilotiq-suggestion-banner {
         display: flex;
         align-items: center;
         gap: 0.5rem;
@@ -242,15 +242,15 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
         font-size: 0.875rem;
         line-height: 1.4;
       }
-      .pilotiq-ai-banner-icon { flex: 0 0 auto; }
-      .pilotiq-ai-banner-label { flex: 1 1 auto; }
-      .pilotiq-ai-banner-actions {
+      .pilotiq-suggestion-banner-icon { flex: 0 0 auto; }
+      .pilotiq-suggestion-banner-label { flex: 1 1 auto; }
+      .pilotiq-suggestion-banner-actions {
         display: inline-flex;
         gap: 0.375rem;
         flex: 0 0 auto;
       }
-      .pilotiq-ai-banner-reject,
-      .pilotiq-ai-banner-accept {
+      .pilotiq-suggestion-banner-reject,
+      .pilotiq-suggestion-banner-accept {
         appearance: none;
         cursor: pointer;
         font-size: 0.8125rem;
@@ -260,52 +260,52 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
         border-radius: 0.25rem;
         border: 1px solid transparent;
       }
-      .pilotiq-ai-banner-reject {
+      .pilotiq-suggestion-banner-reject {
         background-color: transparent;
         color: rgb(120, 53, 15);
         border-color: rgba(180, 83, 9, 0.4);
       }
-      .pilotiq-ai-banner-reject:hover {
+      .pilotiq-suggestion-banner-reject:hover {
         background-color: rgba(254, 215, 170, 0.4);
       }
-      .pilotiq-ai-banner-accept {
+      .pilotiq-suggestion-banner-accept {
         background-color: rgb(22, 101, 52);
         color: white;
       }
-      .pilotiq-ai-banner-accept:hover { background-color: rgb(21, 128, 61); }
+      .pilotiq-suggestion-banner-accept:hover { background-color: rgb(21, 128, 61); }
     `
     document.head.appendChild(style)
   },
 
   addCommands() {
     return {
-      addAiSuggestion: (suggestion) => ({ tr, state, dispatch }) => {
-        const current = aiSuggestionPluginKey.getState(state)?.suggestions ?? []
+      addSuggestion: (suggestion) => ({ tr, state, dispatch }) => {
+        const current = suggestionChipPluginKey.getState(state)?.suggestions ?? []
         const next    = upsertSuggestion(current, suggestion)
         if (dispatch) {
-          tr.setMeta(aiSuggestionPluginKey, { type: 'set', next } satisfies SetMeta)
+          tr.setMeta(suggestionChipPluginKey, { type: 'set', next } satisfies SetMeta)
           dispatch(tr)
         }
         return true
       },
 
-      addAiSuggestions: (suggestions) => ({ tr, state, dispatch }) => {
-        const current = aiSuggestionPluginKey.getState(state)?.suggestions ?? []
+      addSuggestions: (suggestions) => ({ tr, state, dispatch }) => {
+        const current = suggestionChipPluginKey.getState(state)?.suggestions ?? []
         const next    = upsertSuggestions(current, suggestions)
         if (dispatch) {
-          tr.setMeta(aiSuggestionPluginKey, { type: 'set', next } satisfies SetMeta)
+          tr.setMeta(suggestionChipPluginKey, { type: 'set', next } satisfies SetMeta)
           dispatch(tr)
         }
         return true
       },
 
-      approveAiSuggestion: (id) => ({ tr, state, dispatch }) => {
-        const current = aiSuggestionPluginKey.getState(state)?.suggestions ?? []
+      approveSuggestion: (id) => ({ tr, state, dispatch }) => {
+        const current = suggestionChipPluginKey.getState(state)?.suggestions ?? []
         const target  = current.find(s => s.id === id)
         if (!target) return false
         if (dispatch) {
           applyApprove(tr, state, target)
-          tr.setMeta(aiSuggestionPluginKey, {
+          tr.setMeta(suggestionChipPluginKey, {
             type: 'set',
             next: removeSuggestion(current, id),
           } satisfies SetMeta)
@@ -314,12 +314,12 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
         return true
       },
 
-      rejectAiSuggestion: (id) => ({ tr, state, dispatch }) => {
-        const current = aiSuggestionPluginKey.getState(state)?.suggestions ?? []
+      rejectSuggestion: (id) => ({ tr, state, dispatch }) => {
+        const current = suggestionChipPluginKey.getState(state)?.suggestions ?? []
         const target  = current.find(s => s.id === id)
         if (!target) return false
         if (dispatch) {
-          tr.setMeta(aiSuggestionPluginKey, {
+          tr.setMeta(suggestionChipPluginKey, {
             type: 'set',
             next: removeSuggestion(current, id),
           } satisfies SetMeta)
@@ -328,12 +328,12 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
         return true
       },
 
-      approveAllAiSuggestions: () => ({ tr, state, dispatch }) => {
-        const current = aiSuggestionPluginKey.getState(state)?.suggestions ?? []
+      approveAllSuggestions: () => ({ tr, state, dispatch }) => {
+        const current = suggestionChipPluginKey.getState(state)?.suggestions ?? []
         if (current.length === 0) return false
         if (dispatch) {
           for (const s of sortForApproveAll(current)) applyApprove(tr, state, s)
-          tr.setMeta(aiSuggestionPluginKey, {
+          tr.setMeta(suggestionChipPluginKey, {
             type: 'set',
             next: [],
           } satisfies SetMeta)
@@ -342,11 +342,11 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
         return true
       },
 
-      rejectAllAiSuggestions: () => ({ tr, state, dispatch }) => {
-        const current = aiSuggestionPluginKey.getState(state)?.suggestions ?? []
+      rejectAllSuggestions: () => ({ tr, state, dispatch }) => {
+        const current = suggestionChipPluginKey.getState(state)?.suggestions ?? []
         if (current.length === 0) return false
         if (dispatch) {
-          tr.setMeta(aiSuggestionPluginKey, {
+          tr.setMeta(suggestionChipPluginKey, {
             type: 'set',
             next: [],
           } satisfies SetMeta)
@@ -355,11 +355,11 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
         return true
       },
 
-      clearAiSuggestions: () => ({ tr, state, dispatch }) => {
-        const current = aiSuggestionPluginKey.getState(state)?.suggestions ?? []
+      clearSuggestions: () => ({ tr, state, dispatch }) => {
+        const current = suggestionChipPluginKey.getState(state)?.suggestions ?? []
         if (current.length === 0) return false
         if (dispatch) {
-          tr.setMeta(aiSuggestionPluginKey, {
+          tr.setMeta(suggestionChipPluginKey, {
             type: 'set',
             next: [],
           } satisfies SetMeta)
@@ -374,11 +374,11 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
     const ext = this
     return [
       new Plugin<PluginState>({
-        key: aiSuggestionPluginKey,
+        key: suggestionChipPluginKey,
         state: {
           init: (): PluginState => ({ suggestions: [] }),
           apply(tr, prev): PluginState {
-            const meta = tr.getMeta(aiSuggestionPluginKey) as SetMeta | undefined
+            const meta = tr.getMeta(suggestionChipPluginKey) as SetMeta | undefined
             const base = meta?.type === 'set' ? meta.next : prev.suggestions
             if (!tr.docChanged) return { suggestions: base }
             return {
@@ -389,16 +389,16 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
         },
         props: {
           decorations(state) {
-            const ps = aiSuggestionPluginKey.getState(state)
+            const ps = suggestionChipPluginKey.getState(state)
             if (!ps || ps.suggestions.length === 0) return DecorationSet.empty
             return buildDecorations(state, ps.suggestions, ext.options.classPrefix, ext.editor)
           },
         },
         view(view) {
-          let last = aiSuggestionPluginKey.getState(view.state)?.suggestions
+          let last = suggestionChipPluginKey.getState(view.state)?.suggestions
           return {
             update(updated) {
-              const next = aiSuggestionPluginKey.getState(updated.state)?.suggestions
+              const next = suggestionChipPluginKey.getState(updated.state)?.suggestions
               if (next === last) return
               last = next
               const cb = ext.options.onChange
@@ -412,7 +412,7 @@ export const AiSuggestionExtension = Extension.create<AiSuggestionExtensionOptio
   },
 })
 
-function applyApprove(tr: Transaction, state: EditorState, target: AiSuggestion): void {
+function applyApprove(tr: Transaction, state: EditorState, target: InlineSuggestion): void {
   const docSize = state.doc.content.size
   const from = clampPos(target.from, docSize)
   const to   = clampPos(target.to,   docSize)
@@ -426,7 +426,7 @@ function applyApprove(tr: Transaction, state: EditorState, target: AiSuggestion)
 
 function buildDecorations(
   state:       EditorState,
-  suggestions: readonly AiSuggestion[],
+  suggestions: readonly InlineSuggestion[],
   prefix:      string,
   editor:      Editor,
 ): DecorationSet {
@@ -442,7 +442,7 @@ function buildDecorations(
       decos.push(
         Decoration.inline(from, to, {
           class: `${prefix}-original`,
-          'data-pilotiq-ai-suggestion-id': s.id,
+          'data-pilotiq-suggestion-id': s.id,
         }),
       )
     }
@@ -451,7 +451,7 @@ function buildDecorations(
       Decoration.widget(to, () => buildChip(s, prefix, editor), {
         side: 1,
         ignoreSelection: true,
-        key: `pilotiq-ai-suggestion:${s.id}`,
+        key: `pilotiq-suggestion:${s.id}`,
       }),
     )
   }
@@ -467,10 +467,10 @@ export function clampPos(pos: number, max: number): number {
   return Math.trunc(pos)
 }
 
-function buildChip(s: AiSuggestion, prefix: string, editor: Editor): HTMLElement {
+function buildChip(s: InlineSuggestion, prefix: string, editor: Editor): HTMLElement {
   const root = document.createElement('span')
   root.className = `${prefix}-chip`
-  root.setAttribute('data-pilotiq-ai-suggestion-id', s.id)
+  root.setAttribute('data-pilotiq-suggestion-id', s.id)
   root.contentEditable = 'false'
 
   if (s.replacement.length > 0) {
@@ -481,17 +481,17 @@ function buildChip(s: AiSuggestion, prefix: string, editor: Editor): HTMLElement
   }
 
   if (s.source?.agentLabel) {
-    root.setAttribute('data-pilotiq-ai-suggestion-source', s.source.agentLabel)
+    root.setAttribute('data-pilotiq-suggestion-source', s.source.agentLabel)
   }
   if (s.source?.agentSlug) {
-    root.setAttribute('data-pilotiq-ai-suggestion-source-slug', s.source.agentSlug)
+    root.setAttribute('data-pilotiq-suggestion-source-slug', s.source.agentSlug)
   }
 
   root.appendChild(buildButton(prefix, 'accept', '✓', 'Accept suggestion', () => {
-    editor.chain().focus().approveAiSuggestion(s.id).run()
+    editor.chain().focus().approveSuggestion(s.id).run()
   }))
   root.appendChild(buildButton(prefix, 'reject', '✕', 'Reject suggestion', () => {
-    editor.chain().focus().rejectAiSuggestion(s.id).run()
+    editor.chain().focus().rejectSuggestion(s.id).run()
   }))
 
   return root

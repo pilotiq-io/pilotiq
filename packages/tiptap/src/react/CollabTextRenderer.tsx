@@ -9,11 +9,11 @@ import {
 } from '@pilotiq/pilotiq/react'
 import { useCollabSeed, type CollabRoom as FrameworkCollabRoom } from '@rudderjs/sync/react'
 import { createPlainTextEditor, plainTextOf, plainTextToDoc } from '../PlainTextEditor.js'
-import { AiSuggestionExtension } from '../extensions/AiSuggestionExtension.js'
-import { AiInlineDiffExtension } from '../extensions/AiInlineDiffExtension.js'
-import { useAiSuggestionBridge } from './useAiSuggestionBridge.js'
-import { useAiInlineDiff, useIsAiInlineDiffActive, readAiDiffViewMarker } from './useAiInlineDiff.js'
-import { AiSuggestionBanner } from './AiSuggestionBanner.js'
+import { SuggestionChipExtension } from '../extensions/SuggestionChipExtension.js'
+import { InlineDiffExtension } from '../extensions/InlineDiffExtension.js'
+import { useSuggestionBridge } from './useSuggestionBridge.js'
+import { useInlineDiff, useIsInlineDiffActive, readDiffViewMarker } from './useInlineDiff.js'
+import { SuggestionBanner } from './SuggestionBanner.js'
 
 /**
  * Tiptap-backed plain-text editor for pilotiq's `TextField` / `TextareaField`
@@ -121,11 +121,11 @@ export function CollabTextRenderer({
         // AI suggestions — chip extension (producer-supplied range
         // suggestions) + inline-diff extension (whole-field suggestions:
         // red strikethrough on removed runs, green on inserted, with the
-        // `<AiSuggestionBanner>` Accept / Reject below). Both idle until
+        // `<SuggestionBanner>` Accept / Reject below). Both idle until
         // a suggestion arrives via the bridges below. Matches the
         // `TiptapEditor` wiring so the review surface reads identically
         // across RichTextField / MarkdownField / TextField+TextareaField.
-        extensions: [...collabExtensions, AiSuggestionExtension, AiInlineDiffExtension],
+        extensions: [...collabExtensions, SuggestionChipExtension, InlineDiffExtension],
         onUpdate: (text) => onChange(text),
         ...(onSubmit ? { onSubmit: () => { onSubmit(); return false } } : {}),
         ...(className || editorAttributes
@@ -151,11 +151,11 @@ export function CollabTextRenderer({
   }, [editor, disabled])
 
   // Cross-package suggestion bridge — sync the host's
-  // `<PendingSuggestionsContext>` queue with the editor's `AiSuggestion`
+  // `<PendingSuggestionsContext>` queue with the editor's `InlineSuggestion`
   // extension. No-op when no provider is mounted (default no-op context).
   //
   // Whole-field suggestions do NOT synthesize a chip range anymore —
-  // they render through `useAiInlineDiff` below (same red/green inline
+  // they render through `useInlineDiff` below (same red/green inline
   // diff + banner as `TiptapEditor`), replacing the old green-pill chip
   // that read differently from the rich-text surface. The bridge stays
   // mounted for producer-supplied `meta.editorRange` suggestions (precise
@@ -165,22 +165,22 @@ export function CollabTextRenderer({
     if (!editor || editor.isDestroyed) return
     editor.commands.setContent(plainTextToDoc(value, !!multiline))
   }
-  useAiSuggestionBridge(editor ?? null, name, {
+  useSuggestionBridge(editor ?? null, name, {
     onApplyWholeField: applyWholeField,
   })
 
   // Inline diff for whole-field suggestions — plain-text shape: each
   // line wraps in a `paragraph` node, mirroring `plainTextToDoc`.
-  useAiInlineDiff(editor ?? null, name, {
+  useInlineDiff(editor ?? null, name, {
     parseSuggestion: (ed, value) => {
       try {
         const node = ed.schema.nodeFromJSON(plainTextToDoc(value, !!multiline))
         return new Slice(node.content, 0, 0)
       } catch { return null }
     },
-    resolveDisplayMode: () => readAiDiffViewMarker(name),
+    resolveDisplayMode: () => readDiffViewMarker(name),
   })
-  const isDiffActive = useIsAiInlineDiffActive(editor ?? null)
+  const isDiffActive = useIsInlineDiffActive(editor ?? null)
 
   // First-load seed when collab is active. Collaboration starts the editor
   // empty regardless of `defaultValue`; once the room's first sync
@@ -244,13 +244,13 @@ export function CollabTextRenderer({
   return (
     <>
       <EditorContent editor={editor} />
-      <AiSuggestionBanner
+      <SuggestionBanner
         fieldName={name}
         onApplyWholeField={applyWholeField}
         {...(isDiffActive && editor
           ? {
-              onAcceptViaEditor: () => editor.commands.acceptAiInlineDiff(),
-              onRejectViaEditor: () => editor.commands.rejectAiInlineDiff(),
+              onAcceptViaEditor: () => editor.commands.acceptInlineDiff(),
+              onRejectViaEditor: () => editor.commands.rejectInlineDiff(),
             }
           : {})}
       />

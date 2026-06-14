@@ -31,7 +31,7 @@ import {
  * same field stack — Accept all / Reject all collapse the queue in one
  * pass.
  */
-export interface AiSuggestionBannerProps {
+export interface SuggestionBannerProps {
   /** Field name, matches the suggestion's `fieldName`. */
   fieldName: string
   /**
@@ -41,8 +41,8 @@ export interface AiSuggestionBannerProps {
    * MarkdownEditor, HTML / JSON for TiptapEditor).
    *
    * Skipped when `onAcceptViaEditor` is supplied — that path means the
-   * editor already holds the proposed state via `AiInlineDiffExtension`,
-   * and Accept routes through `acceptAiInlineDiff()` instead. The host
+   * editor already holds the proposed state via `InlineDiffExtension`,
+   * and Accept routes through `acceptInlineDiff()` instead. The host
    * still calls `pendingSuggestions.approve(id)` afterwards to dismiss
    * the queue entry.
    */
@@ -71,7 +71,7 @@ export interface AiSuggestionBannerProps {
  * Hook variant — returns banner state without rendering, for renderers
  * that want to compose their own chrome. Renderer-agnostic.
  */
-export function useAiSuggestionBanner(fieldName: string): {
+export function useSuggestionBanner(fieldName: string): {
   pending:    readonly PendingSuggestion[]
   approveAll: (apply: (value: string) => void) => void
   rejectAll:  () => void
@@ -105,14 +105,14 @@ function hasEditorRange(s: PendingSuggestion): boolean {
   return !!(range && typeof range.from === 'number' && typeof range.to === 'number')
 }
 
-export function AiSuggestionBanner({
+export function SuggestionBanner({
   fieldName,
   onApplyWholeField,
   onAcceptViaEditor,
   onRejectViaEditor,
   className,
-}: AiSuggestionBannerProps): React.ReactElement | null {
-  const { pending, approveAll, rejectAll } = useAiSuggestionBanner(fieldName)
+}: SuggestionBannerProps): React.ReactElement | null {
+  const { pending, approveAll, rejectAll } = useSuggestionBanner(fieldName)
   const { dismiss } = usePendingSuggestions()
 
   if (pending.length === 0) return null
@@ -153,28 +153,28 @@ export function AiSuggestionBanner({
     <div
       role="region"
       aria-label="AI suggested changes"
-      data-pilotiq-ai-banner=""
-      className={className ?? 'pilotiq-ai-banner'}
+      data-pilotiq-suggestion-banner=""
+      className={className ?? 'pilotiq-suggestion-banner'}
     >
-      <span className="pilotiq-ai-banner-icon" aria-hidden="true">💡</span>
-      <span className="pilotiq-ai-banner-label">
+      <span className="pilotiq-suggestion-banner-icon" aria-hidden="true">💡</span>
+      <span className="pilotiq-suggestion-banner-label">
         {single
           ? sourceLabel
             ? `Changes suggested by ${sourceLabel}`
             : 'Changes suggested'
           : `${pending.length} changes suggested`}
       </span>
-      <div className="pilotiq-ai-banner-actions">
+      <div className="pilotiq-suggestion-banner-actions">
         <button
           type="button"
-          className="pilotiq-ai-banner-reject"
+          className="pilotiq-suggestion-banner-reject"
           onClick={handleReject}
         >
           {single ? 'Reject' : 'Reject all'}
         </button>
         <button
           type="button"
-          className="pilotiq-ai-banner-accept"
+          className="pilotiq-suggestion-banner-accept"
           onClick={handleAccept}
         >
           {single ? 'Accept' : 'Accept all'}
