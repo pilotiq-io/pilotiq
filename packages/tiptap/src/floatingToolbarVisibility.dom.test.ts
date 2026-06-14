@@ -84,14 +84,36 @@ describe('#156 shouldShowFloatingToolbar (real @pilotiq/tiptap schema)', () => {
     editor.destroy()
   })
 
-  it('does NOT show on a caret inside a formatting mark within a callout (#155 holds)', () => {
+  it('DOES show inside the Alert block editable body — its title/body are real text', () => {
+    // The Alert block has an editable title + body; the mark toolbar should
+    // work there like anywhere else. (An earlier fix over-suppressed the whole
+    // Alert, including its editable text — reversed here.)
     const editor = mount(
       '<div data-type="alert" data-alert-type="info">' +
         '<div data-type="alertTitle">Heads up</div>' +
         '<div data-type="alertBody"><p>read <strong>this bold</strong> note</p></div>' +
         '</div>',
     )
-    assert.ok(caretInMark(editor, 'bold'), 'placed caret in bold inside the callout')
+    assert.ok(caretInMark(editor, 'bold'), 'placed caret in bold inside the alert body')
+    assert.equal(shouldShowFloatingToolbar(editor.state), true)
+    editor.destroy()
+  })
+
+  it('does NOT show when the WHOLE Alert block is node-selected (drag-handle pick)', () => {
+    const editor = mount(
+      '<div data-type="alert" data-alert-type="info">' +
+        '<div data-type="alertTitle">Heads up</div>' +
+        '<div data-type="alertBody"><p>some note</p></div>' +
+        '</div>',
+    )
+    let alertPos = -1
+    editor.state.doc.descendants((node, p) => {
+      if (alertPos === -1 && node.type.name === 'alert') alertPos = p
+      return alertPos === -1
+    })
+    assert.ok(alertPos >= 0, 'found the alert node')
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, alertPos)))
+    assert.ok(editor.state.selection instanceof NodeSelection, 'selection is a NodeSelection')
     assert.equal(shouldShowFloatingToolbar(editor.state), false)
     editor.destroy()
   })
