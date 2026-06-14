@@ -1,6 +1,6 @@
 {
   "name": "pilotiq-playground",
-  "version": "0.0.87",
+  "version": "0.0.88",
   "private": true,
   "type": "module",
   "scripts": {

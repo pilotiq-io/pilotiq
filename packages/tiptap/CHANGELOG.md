@@ -1,5 +1,24 @@
 # @pilotiq/tiptap
 
+## 3.20.0
+
+### Minor Changes
+
+- 47c8187: Custom blocks now edit inline (accordion) instead of in a right-docked side panel.
+
+  Clicking **Edit** on an inserted custom block (`Block.make().schema([...])`) expands the block in place and renders its schema as a `FormFields` form; edits write straight back onto the node via `updateAttributes({ blockData })` on every change — no popup, no save button.
+
+  This replaces the `BlockSidePanel` and removes the machinery that existed only to host the form outside the NodeView: the `onEdit` bridge + `Mod-e` shortcut on `BlockNodeExtension`, and the host-side `selectedBlock` state / position-remapping in `TiptapEditor`. The form lives in a `contentEditable=false` region with event guards so ProseMirror never treats the inputs as document content. Pure `coerceBlockValues` / `readBlockFieldValue` helpers moved to `react/blockValues.ts`.
+
+### Patch Changes
+
+- 1a1026d: Inline format toolbar visibility fixed for block nodes (#155).
+
+  Two adjustments to `shouldShowFloatingToolbar`:
+
+  - **Hidden on a whole-node block selection.** Clicking a schema-form custom block card (`pilotiqBlock`), an image, an hr, or picking a whole Alert via the drag handle produces a `NodeSelection` with no inline text to format — the bold/italic/link toolbar no longer appears for any of these. Previously only the built-in `alert` block was special-cased, so custom block cards still surfaced the toolbar.
+  - **Shown inside the Alert block's editable text.** The Alert block has an editable title and body; the mark toolbar now works there like anywhere else. An earlier fix over-suppressed the entire Alert (including its editable text) — that suppression is reversed; only the whole-node pick is hidden now.
+
 ## 3.19.2
 
 ### Patch Changes
