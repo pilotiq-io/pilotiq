@@ -19,7 +19,7 @@ import {
 } from '@pilotiq/pilotiq/react'
 import { useCollabSeed, type CollabRoom as FrameworkCollabRoom } from '@rudderjs/sync/react'
 import { SuggestionChipExtension } from '../extensions/SuggestionChipExtension.js'
-import { InlineDiffExtension, inlineDiffPluginKey } from '../extensions/InlineDiffExtension.js'
+import { InlineDiffExtension } from '../extensions/InlineDiffExtension.js'
 import { Alert, AlertTitle, AlertBody, ContentBlockKeymap } from '../extensions/contentBlocks.js'
 import { useSuggestionBridge } from './useSuggestionBridge.js'
 import { useInlineDiff, useIsInlineDiffActive, readDiffViewMarker } from './useInlineDiff.js'
