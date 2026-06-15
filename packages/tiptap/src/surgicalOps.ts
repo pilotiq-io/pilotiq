@@ -173,6 +173,45 @@ export function planWrapBlocks(
   return (tr) => { tr.replaceWith(start, end, wrapped) }
 }
 
+/**
+ * Reorder the doc's top-level blocks into `order` — a full permutation of the
+ * current block indices `[0 .. childCount-1]`. Content-preserving, no HTML
+ * round-trip: it gathers the EXISTING nodes and re-lays them in the new order,
+ * so every block keeps its exact marks, attrs, and nested content (the same
+ * reason `planWrapBlocks` works on real nodes instead of re-serialized HTML).
+ *
+ * Used by the Content Flow agent to re-sequence an article's sections
+ * (inverted-pyramid) without rewriting a single word. The caller (pilotiq-pro's
+ * `computeReorderOps`) decides the section order and emits the full block
+ * permutation; this op just applies it.
+ *
+ * Returns `null` when `order` isn't a permutation of exactly the current block
+ * indices (wrong length, out-of-range, or a duplicate / missing index) — so a
+ * malformed request can never drop or duplicate a block — and for an identity
+ * order (nothing to move), so the caller surfaces a clean "already in order"
+ * instead of staging an empty diff. Emit it as a SOLO surgical op: it rewrites
+ * the whole top-level sequence, so it must not be batched with index-based ops.
+ */
+export function planReorderBlocks(
+  editor: Editor,
+  order:  number[],
+): TransactionModifier | null {
+  const doc = editor.state.doc
+  const n = doc.childCount
+  if (!Array.isArray(order) || order.length !== n) return null
+  const seen = new Set<number>()
+  let moved = false
+  for (let k = 0; k < order.length; k++) {
+    const i = order[k]!
+    if (!Number.isInteger(i) || i < 0 || i >= n || seen.has(i)) return null
+    seen.add(i)
+    if (i !== k) moved = true
+  }
+  if (!moved) return null // identity — nothing to reorder
+  const nodes: ProseMirrorNode[] = order.map((i) => doc.child(i))
+  return (tr) => { tr.replaceWith(0, doc.content.size, nodes) }
+}
+
 export interface BlockMarkRange {
   /** 0-based text offset from the start of the block's content. */
   from: number

@@ -48,6 +48,7 @@ import {
   planDeleteBlock,
   planUpdateBlockMark,
   planWrapBlocks,
+  planReorderBlocks,
   planReplaceText,
   type BlockMarkRange,
   type TransactionModifier,
@@ -281,6 +282,10 @@ type SurgicalOp =
   // without rebuilding and flattening the block. Sorts last in a batch (see
   // `opBlockIndex`); applied after the index-based ops, against the live tr doc.
   | { op: 'replace_text';        search: string; replace: string }
+  // Full permutation of the top-level block indices — re-sequences sections
+  // content-preserving. Index-free like `replace_text` (carries `order`, not a
+  // `blockIndex`); emitted SOLO since it rewrites the whole top-level order.
+  | { op: 'reorder_blocks';      order: number[] }
 
 /**
  * Either a single op (when the AI emitted only one surgical change) or
@@ -299,6 +304,14 @@ function parseSurgicalOp(obj: Record<string, unknown>): SurgicalOp | null {
     if (typeof search !== 'string' || search.length === 0) return null
     if (typeof replace !== 'string') return null
     return { op, search, replace }
+  }
+  // `reorder_blocks` carries `order` (a number[]), no `blockIndex` — parse it
+  // before the index guard too. Shape-validate here; `planReorderBlocks`
+  // re-checks it's a true permutation against the live doc.
+  if (op === 'reorder_blocks') {
+    const order = obj['order']
+    if (!Array.isArray(order) || !order.every((i) => typeof i === 'number')) return null
+    return { op, order: order as number[] }
   }
   const blockIndex = obj['blockIndex']
   if (typeof blockIndex !== 'number') return null
@@ -374,6 +387,7 @@ function planOp(editor: Editor, op: SurgicalOp): TransactionModifier | null {
     case 'update_block_mark':   return planUpdateBlockMark(editor, op.blockIndex, op.mark, op.range, op.apply, op.attrs)
     case 'wrap_blocks':         return planWrapBlocks(editor, op.blockIndex, op.toIndex, op.wrapperType, op.attrs)
     case 'replace_text':        return planReplaceText(editor, op.search, op.replace)
+    case 'reorder_blocks':      return planReorderBlocks(editor, op.order)
   }
 }
 
