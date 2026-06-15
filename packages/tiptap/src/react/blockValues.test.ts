@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readBlockFieldValue, coerceBlockValues } from './blockValues.js'
+import { readBlockFieldValue, coerceBlockValues, parseBlockData, serializeBlockData } from './blockValues.js'
 import { BlockNodeExtension } from '../extensions/BlockNodeExtension.js'
 
 describe('readBlockFieldValue', () => {
@@ -294,6 +294,37 @@ describe('coerceBlockValues — Builder rows', () => {
     assert.deepEqual(result['content'], [
       { type: 'unknown', data: { foo: 'bar' } },
     ])
+  })
+})
+
+describe('parseBlockData / serializeBlockData (collab-safe blockData, #96)', () => {
+  it('serializes an object to a JSON string', () => {
+    assert.equal(serializeBlockData({ title: 'Hi', n: 2 }), '{"title":"Hi","n":2}')
+  })
+
+  it('serializes null / undefined to an empty-object string', () => {
+    assert.equal(serializeBlockData(null), '{}')
+    assert.equal(serializeBlockData(undefined), '{}')
+  })
+
+  it('parses a JSON string back to the object (round-trip)', () => {
+    const data = { title: 'Hi', items: [{ q: 'a' }], on: true }
+    assert.deepEqual(parseBlockData(serializeBlockData(data)), data)
+  })
+
+  it('tolerates the legacy object form (old docs persisted before the string migration)', () => {
+    const legacy = { title: 'Legacy', n: 1 }
+    assert.deepEqual(parseBlockData(legacy), legacy)
+  })
+
+  it('falls back to {} for empty / malformed / non-object input', () => {
+    assert.deepEqual(parseBlockData('{}'), {})
+    assert.deepEqual(parseBlockData(''), {})
+    assert.deepEqual(parseBlockData(null), {})
+    assert.deepEqual(parseBlockData(undefined), {})
+    assert.deepEqual(parseBlockData('{ not json'), {})
+    assert.deepEqual(parseBlockData('[1,2]'), {}) // array is not a block-data object
+    assert.deepEqual(parseBlockData('"a string"'), {})
   })
 })
 

@@ -2,6 +2,7 @@ import { Node, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import type { BlockMeta } from '../Block.js'
 import { BlockNodeView } from '../react/BlockNodeView.js'
+import { serializeBlockData } from '../react/blockValues.js'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -62,18 +63,22 @@ export const BlockNodeExtension = Node.create<BlockNodeOptions>({
         },
       },
       blockData: {
-        // Default `null` rather than `{}` — ProseMirror compares attrs by
-        // reference for some equality checks, and a fresh `{}` per node
-        // create call breaks them subtly.
-        default: null,
-        parseHTML: (el) => {
-          const raw = el.getAttribute('data-block-data')
-          if (!raw) return null
-          try { return JSON.parse(raw) } catch { return null }
-        },
+        // Stored as a JSON STRING, not an object. The node is a contentless
+        // leaf whose whole state is this attr; under realtime collab it syncs
+        // through y-prosemirror, whose PM↔Yjs attribute sync is string-oriented
+        // — an object-valued attr doesn't round-trip and the node drops on edit
+        // (issue #96). A primitive string syncs cleanly. The NodeView + render
+        // parse it back to an object at their boundaries (`parseBlockData`),
+        // which still tolerates the legacy object form for old docs.
+        default: '{}',
+        // `data-block-data` already holds the JSON string — pass it through
+        // verbatim (no parse/re-stringify, which would double-encode).
+        parseHTML: (el) => el.getAttribute('data-block-data') || '{}',
         renderHTML: (attrs) => {
-          if (!attrs['blockData']) return {}
-          return { 'data-block-data': JSON.stringify(attrs['blockData']) }
+          const raw = attrs['blockData']
+          if (!raw || raw === '{}') return {}
+          // String is the canonical form; tolerate a legacy object attr.
+          return { 'data-block-data': typeof raw === 'string' ? raw : JSON.stringify(raw) }
         },
       },
     }
@@ -96,7 +101,8 @@ export const BlockNodeExtension = Node.create<BlockNodeOptions>({
       insertBlock: (blockType, blockData = {}) => ({ commands }) =>
         commands.insertContent({
           type: this.name,
-          attrs: { blockType, blockData },
+          // Store as a JSON string so the attr syncs under collab (issue #96).
+          attrs: { blockType, blockData: serializeBlockData(blockData) },
         }),
     }
   },

@@ -138,6 +138,37 @@ function parseJsonObject(value: unknown): Record<string, unknown> {
 }
 
 /**
+ * Parse a `pilotiqBlock` node's `blockData` attr into a plain object.
+ *
+ * `blockData` is stored on the node as a JSON **string** (not an object): the
+ * node is a contentless leaf whose whole state lives in that attr, and under
+ * realtime collab the attr syncs through y-prosemirror, whose PM↔Yjs attribute
+ * sync is string-oriented — an object-valued attr doesn't round-trip and drops
+ * the node (issue #96). Reads still tolerate the legacy object form so docs
+ * saved before the string migration keep loading; the next write migrates them.
+ */
+export function parseBlockData(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>
+  }
+  if (typeof raw === 'string' && raw !== '') {
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>
+      }
+    } catch { /* fall through to empty */ }
+  }
+  return {}
+}
+
+/** Serialize a block-data object to the JSON string stored on the node attr.
+ *  The inverse of {@link parseBlockData} — see it for why the attr is a string. */
+export function serializeBlockData(data: Record<string, unknown> | null | undefined): string {
+  return JSON.stringify(data ?? {})
+}
+
+/**
  * Read the resolved field value for a given input event target. Maps a
  * single-input change onto its coerced wire shape — string passthrough
  * for the common case; explicit coercion for booleans and numerics so
