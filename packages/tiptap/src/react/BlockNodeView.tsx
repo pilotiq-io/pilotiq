@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react'
 import { FormFields, parseFormDataToNested } from '@pilotiq/pilotiq/react'
 import type { BlockMeta } from '../Block.js'
-import { coerceBlockValues } from './blockValues.js'
+import { coerceBlockValues, parseBlockData, serializeBlockData } from './blockValues.js'
 
 /**
  * React NodeView for the `pilotiqBlock` ProseMirror node. Reads the block
@@ -34,7 +34,9 @@ import { coerceBlockValues } from './blockValues.js'
 export function BlockNodeView(props: NodeViewProps) {
   const { editor, node, deleteNode, updateAttributes } = props
   const blockType = String(node.attrs['blockType'] ?? '')
-  const blockData = (node.attrs['blockData'] as Record<string, unknown> | undefined) ?? {}
+  // `blockData` is a JSON string on the node (collab-safe — see blockValues.ts);
+  // parse it to an object for rendering. Tolerates the legacy object form.
+  const blockData = parseBlockData(node.attrs['blockData'])
   const editable  = editor.isEditable
 
   // Tiptap mounts NodeViews in a separate React tree, so we can't read the
@@ -80,8 +82,7 @@ export function BlockNodeView(props: NodeViewProps) {
     setExpanded((prev) => {
       const next = !prev
       if (next) {
-        initialValuesRef.current =
-          (node.attrs['blockData'] as Record<string, unknown> | null) ?? {}
+        initialValuesRef.current = parseBlockData(node.attrs['blockData'])
       }
       return next
     })
@@ -92,7 +93,8 @@ export function BlockNodeView(props: NodeViewProps) {
     if (!formEl) return
     const raw     = parseFormDataToNested(new FormData(formEl))
     const coerced = coerceBlockValues(raw, meta.schema)
-    updateAttributes({ blockData: coerced })
+    // Write back as a JSON string so the attr round-trips under collab (#96).
+    updateAttributes({ blockData: serializeBlockData(coerced) })
   }
 
   return (

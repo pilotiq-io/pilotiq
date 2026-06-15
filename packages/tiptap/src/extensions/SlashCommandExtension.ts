@@ -4,6 +4,7 @@ import { PluginKey } from '@tiptap/pm/state'
 
 const SLASH_PLUGIN_KEY = new PluginKey('pilotiqSlashSuggestion')
 import type { BlockMeta } from '../Block.js'
+import { serializeBlockData } from '../react/blockValues.js'
 
 export interface SlashItem {
   /** Stable id used to dedupe + as React key. */
@@ -337,7 +338,8 @@ export function buildSlashItems(
           type: 'pilotiqBlock',
           attrs: {
             blockType: b.name,
-            blockData: defaultsFromSchema(b),
+            // JSON string, not an object — collab-safe attr (issue #96).
+            blockData: serializeBlockData(defaultsFromSchema(b)),
           },
         })
         .run()
