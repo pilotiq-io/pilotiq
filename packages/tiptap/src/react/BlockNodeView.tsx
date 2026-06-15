@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react'
-import { FormFields, parseFormDataToNested } from '@pilotiq/pilotiq/react'
+import { FormFields, parseFormDataToNested, CollabRoomContext } from '@pilotiq/pilotiq/react'
 import type { BlockMeta } from '../Block.js'
 import { coerceBlockValues, parseBlockData, serializeBlockData } from './blockValues.js'
 
@@ -156,15 +156,30 @@ export function BlockNodeView(props: NodeViewProps) {
           onPaste={(e) => e.stopPropagation()}
           onDrop={(e) => e.stopPropagation()}
         >
-          <form
-            ref={formRef}
-            onInput={handleChange}
-            onChange={handleChange}
-            onSubmit={(e) => e.preventDefault()}
-            className="flex flex-col gap-3"
-          >
-            <FormFields elements={meta.schema} values={initialValuesRef.current} />
-          </form>
+          {/*
+           * Force these inputs to render as PLAIN (local) fields, never
+           * collab-bound. The accordion edits this node's `blockData` attr,
+           * not the surrounding record's collab document — but a text field
+           * rendered inside a `<RecordCollabRoom>` otherwise mounts its own
+           * `Y.XmlFragment` (via TextLikeInput → CollabTextRenderer). Under
+           * collab that nested collab mount fires the host editor's
+           * `_forceRerender`, which rebuilds the doc from Yjs and DROPS this
+           * custom block (issue #96 — the block vanished the moment you
+           * clicked Edit). Shadowing the room context with `null` makes
+           * `useCollabRoom()` return null for the form, so every field falls
+           * through to its plain controlled/uncontrolled input.
+           */}
+          <CollabRoomContext.Provider value={null}>
+            <form
+              ref={formRef}
+              onInput={handleChange}
+              onChange={handleChange}
+              onSubmit={(e) => e.preventDefault()}
+              className="flex flex-col gap-3"
+            >
+              <FormFields elements={meta.schema} values={initialValuesRef.current} />
+            </form>
+          </CollabRoomContext.Provider>
         </div>
       )}
     </NodeViewWrapper>
