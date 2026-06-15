@@ -39,6 +39,16 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode, Slice, Schema } from '@tiptap/pm/model'
 import { DOMSerializer, Fragment } from '@tiptap/pm/model'
 import { ChangeSet } from 'prosemirror-changeset'
+import { wordLevelDiff } from './wordDiff.js'
+import type { CharRange } from './wordDiff.js'
+
+/**
+ * Below this token-overlap ratio a removed/added line pair is treated as an
+ * unrelated replacement (not an edit), so the intra-line highlight is skipped
+ * and the rows render as plain red/green — avoids lighting up the whole line
+ * when two genuinely different blocks happen to be paired. See #186.
+ */
+const WORD_DIFF_MIN_SIMILARITY = 0.4
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -134,10 +144,15 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
     const prefix = this.options.classPrefix
     const style  = document.createElement('style')
     style.setAttribute(SENTINEL, '')
+    // Palette (issue #186): pilotiq-themed emerald (added) / rose (removed)
+    // rather than GitHub's exact greens/reds — soft full-row tints with a
+    // deeper "changed" tint layered on the actually-edited substrings.
+    //   added  row    rgba(5, 150, 105, .13)   changed  rgba(5, 150, 105, .30)
+    //   removed row    rgba(225, 29, 72, .11)   changed  rgba(225, 29, 72, .26)
     style.textContent = `
       .${prefix}-inserted {
-        background-color: rgba(187, 247, 208, 0.55);
-        color: rgb(20, 83, 45);
+        background-color: rgba(5, 150, 105, 0.15);
+        color: rgb(6, 78, 59);
         text-decoration: none;
       }
       .${prefix}-deleted {
@@ -146,9 +161,9 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
       }
       .${prefix}-deleted-text {
         text-decoration: line-through;
-        text-decoration-color: rgba(220, 38, 38, 0.7);
-        background-color: rgba(254, 226, 226, 0.55);
-        color: rgb(153, 27, 27);
+        text-decoration-color: rgba(225, 29, 72, 0.7);
+        background-color: rgba(225, 29, 72, 0.13);
+        color: rgb(159, 18, 57);
         padding: 0 0.125em;
       }
       /* Structure-preserving deleted block (heading / list / faq / …):
@@ -157,10 +172,10 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
          out as itself rather than collapsing inline. */
       .${prefix}-deleted-block {
         display: block;
-        background-color: rgba(254, 226, 226, 0.55);
-        color: rgb(153, 27, 27);
+        background-color: rgba(225, 29, 72, 0.11);
+        color: rgb(159, 18, 57);
         text-decoration: line-through;
-        text-decoration-color: rgba(220, 38, 38, 0.7);
+        text-decoration-color: rgba(225, 29, 72, 0.7);
         border-radius: 2px;
         padding: 0 0.25em;
         opacity: 0.9;
@@ -168,7 +183,7 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
       .${prefix}-deleted-block > * { margin-top: 0; margin-bottom: 0; }
       .${prefix}-inserted-line {
         display: block;
-        background-color: rgba(187, 247, 208, 0.45);
+        background-color: rgba(5, 150, 105, 0.13);
         border-radius: 2px;
         padding-left: 1.25em;
         position: relative;
@@ -181,14 +196,24 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
         content: '+';
         position: absolute;
         left: 0.25em;
-        color: rgb(20, 83, 45);
-        opacity: 0.7;
+        color: rgb(4, 120, 87);
+        opacity: 0.75;
+      }
+      /* Intra-line highlight (#186): deeper tint on the changed characters of
+         a replaced line — GitHub-style. NOT bold; weight stays normal. */
+      .${prefix}-inserted-line-changed {
+        background-color: rgba(5, 150, 105, 0.30);
+        border-radius: 2px;
+      }
+      .${prefix}-deleted-line-changed {
+        background-color: rgba(225, 29, 72, 0.26);
+        border-radius: 2px;
       }
       .${prefix}-deleted-lines { display: block; flex: 0 0 100%; width: 100%; }
       .${prefix}-lines-active { display: block !important; }
       .${prefix}-deleted-line {
-        background-color: rgba(254, 226, 226, 0.55);
-        color: rgb(153, 27, 27);
+        background-color: rgba(225, 29, 72, 0.11);
+        color: rgb(159, 18, 57);
         border-radius: 2px;
         padding-left: 1.25em;
         position: relative;
@@ -198,7 +223,7 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
         content: '−';
         position: absolute;
         left: 0.25em;
-        opacity: 0.7;
+        opacity: 0.75;
       }
       .${prefix}-deleted-line > * { margin-top: 0; margin-bottom: 0; }
     `
@@ -426,58 +451,206 @@ function buildLineDiffDecorations(
   const decos: Decoration[] = []
 
   const baseBlocks = topLevelBlocks(ds.baseline)
-  const current: Array<{ text: string; pos: number; nodeSize: number }> = []
+  const current: Array<{ text: string; pos: number; nodeSize: number; node: ProseMirrorNode }> = []
   state.doc.forEach((node, pos) => {
-    current.push({ text: node.textContent, pos, nodeSize: node.nodeSize })
+    current.push({ text: node.textContent, pos, nodeSize: node.nodeSize, node })
   })
   const schema = ds.baseline.type.schema
 
-  // Walk tokens with a pointer into the CURRENT doc's blocks (`j`) and the
-  // BASELINE blocks (`bi`). Removed baseline BLOCKS (the real nodes, not
-  // their flattened text — bug #91) accumulate and flush as ONE widget
-  // anchored before the next current block (or at doc end), so consecutive
-  // deletions render as a contiguous red row group with their formatting.
+  // `lcsBlockDiffTokens` emits removed-before-added within a replacement
+  // region, so a run of `removed` tokens immediately followed by a run of
+  // `added` tokens IS a "replace hunk". We walk the token list grouping each
+  // such hunk, then word-diff the hunk's CONCATENATED removed text against its
+  // CONCATENATED added text and distribute the changed ranges back onto each
+  // row (issue #186). Concatenating (rather than pairing rows 1:1) keeps the
+  // two sides symmetric and handles block merges / splits — e.g. 2 paragraphs
+  // joined into 1: the text is identical bar the break, so neither side lights
+  // up, instead of the whole merged tail showing as a bogus green insert.
+  // `j` points into the CURRENT doc's blocks, `bi` into the BASELINE blocks.
+  const tokens = lcsBlockDiffTokens(baseBlocks.map(b => b.text), current.map(c => c.text))
   let j  = 0
   let bi = 0
-  let pendingRemoved: ProseMirrorNode[] = []
-  const flushRemoved = (anchor: number): void => {
-    if (pendingRemoved.length === 0) return
-    const nodes = pendingRemoved
-    pendingRemoved = []
-    decos.push(
-      Decoration.widget(anchor, () => buildDeletedLinesWidget(nodes, schema, prefix, ds.id), {
-        side: -1,
-        ignoreSelection: true,
-        key: `pilotiq-diff:deleted-lines:${anchor}:${nodes.length}`,
-      }),
-    )
-  }
+  let t  = 0
+  while (t < tokens.length) {
+    if (tokens[t]!.kind === 'kept') { j++; bi++; t++; continue }
 
-  for (const tok of lcsBlockDiffTokens(baseBlocks.map(b => b.text), current.map(c => c.text))) {
-    if (tok.kind === 'kept') {
-      flushRemoved(current[j]!.pos)
-      j++
-      bi++
-      continue
+    // Gather the removed run, then the added run, of this hunk.
+    const removedNodes: ProseMirrorNode[] = []
+    while (t < tokens.length && tokens[t]!.kind === 'removed') { removedNodes.push(baseBlocks[bi]!.node); bi++; t++ }
+    const addedIdx: number[] = []
+    while (t < tokens.length && tokens[t]!.kind === 'added')   { addedIdx.push(j); j++; t++ }
+
+    // Removed (real baseline nodes — bug #91) flush as ONE red widget anchored
+    // before the first added block, or the next kept block / doc end when the
+    // hunk is a pure deletion.
+    const anchor = addedIdx.length > 0 ? current[addedIdx[0]!]!.pos
+                 : j < current.length  ? current[j]!.pos
+                 :                        state.doc.content.size
+
+    // Intra-line highlight: word-diff the concatenated removed vs added text,
+    // then clamp the changed ranges back onto each row (block-local coords).
+    // Highlighting only applies to plain textblocks (so DOM text aligns with
+    // node text — content blocks with non-editable label chrome are skipped).
+    const removedRanges: Array<CharRange[] | undefined> = new Array(removedNodes.length).fill(undefined)
+    if (removedNodes.length > 0 && addedIdx.length > 0) {
+      const rc = concatBlockText(removedNodes.map(n => n.textContent))
+      const ac = concatBlockText(addedIdx.map(idx => current[idx]!.text))
+      const wd = wordLevelDiff(rc.text, ac.text)
+      if (wd.similarity >= WORD_DIFF_MIN_SIMILARITY) {
+        // Removed side: block-local ranges handed to the deleted widget.
+        removedNodes.forEach((rNode, i) => {
+          if (!rNode.isTextblock) return
+          const [bs, be] = rc.spans[i]!
+          const local = clampRangesToSpan(wd.aRanges, bs, be)
+          if (local.length > 0) removedRanges[i] = local
+        })
+        // Added side is the live doc — highlight via inline decorations.
+        addedIdx.forEach((idx, i) => {
+          const aEntry = current[idx]!
+          if (!aEntry.node.isTextblock) return
+          const [bs, be] = ac.spans[i]!
+          const local = clampRangesToSpan(wd.bRanges, bs, be)
+          if (local.length === 0) return
+          for (const seg of textblockTextSegments(aEntry.node, aEntry.pos)) {
+            for (const [rs, re] of local) {
+              const s = Math.max(rs, seg.start)
+              const e = Math.min(re, seg.end)
+              if (e <= s) continue
+              decos.push(
+                Decoration.inline(seg.pos + (s - seg.start), seg.pos + (e - seg.start), {
+                  class: `${prefix}-inserted-line-changed`,
+                  'data-pilotiq-diff-id': ds.id,
+                }),
+              )
+            }
+          }
+        })
+      }
     }
-    if (tok.kind === 'added') {
-      flushRemoved(current[j]!.pos)
+
+    if (removedNodes.length > 0) {
       decos.push(
-        Decoration.node(current[j]!.pos, current[j]!.pos + current[j]!.nodeSize, {
+        Decoration.widget(anchor, () => buildDeletedLinesWidget(removedNodes, schema, prefix, ds.id, removedRanges), {
+          side: -1,
+          ignoreSelection: true,
+          key: `pilotiq-diff:deleted-lines:${anchor}:${removedNodes.length}`,
+        }),
+      )
+    }
+    for (const idx of addedIdx) {
+      decos.push(
+        Decoration.node(current[idx]!.pos, current[idx]!.pos + current[idx]!.nodeSize, {
           class: `${prefix}-inserted-line`,
           'data-pilotiq-diff-id': ds.id,
         }),
       )
-      j++
-      continue
     }
-    // removed — baseline-only block; accumulate the real node for the flush.
-    pendingRemoved.push(baseBlocks[bi]!.node)
-    bi++
   }
-  flushRemoved(state.doc.content.size)
 
   return DecorationSet.create(state.doc, decos)
+}
+
+/**
+ * Concatenate block texts with a single-space separator, recording each
+ * block's `[start, end)` span (excluding separators) in the joined string.
+ * Word-diffing the joined removed vs added text and clamping ranges back onto
+ * these spans keeps the two sides symmetric across block merges / splits. #186
+ */
+function concatBlockText(texts: string[]): { text: string; spans: CharRange[] } {
+  let text = ''
+  const spans: CharRange[] = []
+  texts.forEach((t, i) => {
+    if (i > 0) text += ' '
+    const start = text.length
+    text += t
+    spans.push([start, text.length])
+  })
+  return { text, spans }
+}
+
+/** Intersect changed ranges with a block's span and re-base to block-local
+ *  char offsets (so they line up with the row's own `textContent`). */
+function clampRangesToSpan(ranges: readonly CharRange[], spanStart: number, spanEnd: number): CharRange[] {
+  const out: CharRange[] = []
+  for (const [rs, re] of ranges) {
+    const s = Math.max(rs, spanStart)
+    const e = Math.min(re, spanEnd)
+    if (e > s) out.push([s - spanStart, e - spanStart])
+  }
+  return out
+}
+
+/**
+ * Map a textblock's `textContent` char offsets back to document positions by
+ * walking its text-node descendants. One segment per text node — usually a
+ * single segment, but marks (bold/links) split a block into several. Used to
+ * turn word-diff char ranges into inline decorations on the live doc.
+ */
+function textblockTextSegments(
+  node:         ProseMirrorNode,
+  nodeStartPos: number,
+): Array<{ start: number; end: number; pos: number }> {
+  const segs: Array<{ start: number; end: number; pos: number }> = []
+  let acc = 0
+  node.descendants((child, posInContent) => {
+    if (child.isText) {
+      const len = child.text!.length
+      segs.push({ start: acc, end: acc + len, pos: nodeStartPos + 1 + posInContent })
+      acc += len
+    }
+    return true
+  })
+  return segs
+}
+
+/**
+ * Wrap the given char ranges of an already-rendered row in highlight spans.
+ * Walks the row's text nodes (the row's text equals the source block's
+ * `textContent` for a plain textblock), splitting each that overlaps a range
+ * into plain-text / `<span class=…>` pieces. Used for the DELETED side, which
+ * is static serialized DOM (the inserted side uses live inline decorations).
+ */
+function highlightRangesInElement(rowEl: HTMLElement, ranges: readonly CharRange[], className: string): void {
+  if (ranges.length === 0) return
+  // Manual DFS rather than createTreeWalker/NodeFilter — those aren't globals
+  // in every DOM the editor runs under (e.g. the test harness).
+  const textNodes: Array<{ node: Text; start: number; end: number }> = []
+  let acc = 0
+  const collect = (n: Node): void => {
+    for (let child = n.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 3 /* TEXT_NODE */) {
+        const text = child as Text
+        textNodes.push({ node: text, start: acc, end: acc + text.data.length })
+        acc += text.data.length
+      } else {
+        collect(child)
+      }
+    }
+  }
+  collect(rowEl)
+  for (const info of textNodes) {
+    const locals: CharRange[] = []
+    for (const [rs, re] of ranges) {
+      const s = Math.max(rs, info.start)
+      const e = Math.min(re, info.end)
+      if (e > s) locals.push([s - info.start, e - info.start])
+    }
+    if (locals.length === 0) continue
+    locals.sort((p, q) => p[0] - q[0])
+    const data = info.node.data
+    const frag = info.node.ownerDocument.createDocumentFragment()
+    let cursor = 0
+    for (const [ls, le] of locals) {
+      if (ls > cursor) frag.appendChild(info.node.ownerDocument.createTextNode(data.slice(cursor, ls)))
+      const span = info.node.ownerDocument.createElement('span')
+      span.className   = className
+      span.textContent = data.slice(ls, le)
+      frag.appendChild(span)
+      cursor = le
+    }
+    if (cursor < data.length) frag.appendChild(info.node.ownerDocument.createTextNode(data.slice(cursor)))
+    info.node.parentNode?.replaceChild(frag, info.node)
+  }
 }
 
 function topLevelBlocks(doc: ProseMirrorNode): Array<{ text: string; node: ProseMirrorNode }> {
@@ -521,19 +694,24 @@ function buildDeletedLinesWidget(
   schema: Schema,
   prefix: string,
   id:     string,
+  /** Per-node changed char ranges (aligned with `nodes`); `undefined` = no
+   *  intra-line highlight for that row (pure delete / dissimilar pair). #186 */
+  changedRanges?: ReadonlyArray<CharRange[] | undefined>,
 ): HTMLElement {
   const root = document.createElement('div')
   root.className = `${prefix}-deleted-lines`
   root.setAttribute('data-pilotiq-diff-id', id)
   root.contentEditable = 'false'
   const serializer = DOMSerializer.fromSchema(schema)
-  for (const node of nodes) {
+  nodes.forEach((node, idx) => {
     const row = document.createElement('div')
     row.className = `${prefix}-deleted-line`
     // Serialize the real node so a removed heading / list / faq keeps its
     // structure (bug #91), instead of collapsing to one plain text row.
     row.appendChild(serializer.serializeFragment(Fragment.from(node)))
+    const ranges = changedRanges?.[idx]
+    if (ranges) highlightRangesInElement(row, ranges, `${prefix}-deleted-line-changed`)
     root.appendChild(row)
-  }
+  })
   return root
 }
