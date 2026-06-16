@@ -17,13 +17,7 @@ allowBuilds:
 confirmModulesPurge: false
 
 minimumReleaseAgeExclude:
-  - '@rudderjs/cache@1.5.2'
-  - '@rudderjs/contracts@1.18.0'
-  - '@rudderjs/middleware@1.2.3'
-  - '@rudderjs/server-hono@1.9.0'
-  - '@rudderjs/sync@1.9.0'
-  - '@rudderjs/view@1.4.0'
-  - '@rudderjs/vite@2.11.2'
+  - '@rudderjs/*'
 
 overrides:
   react: 19.2.6

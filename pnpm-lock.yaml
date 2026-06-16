@@ -435,8 +435,8 @@ importers:
         specifier: ^1.9.1
         version: 1.9.1
       '@rudderjs/server-hono':
-        specifier: ^1.9.0
-        version: 1.9.0(srvx@0.11.16)(vike@0.4.259(hono@4.12.25)(react-streaming@0.4.17(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(srvx@0.11.16)(vite@8.0.16(@types/node@20.19.41)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)))
+        specifier: ^1.10.0
+        version: 1.10.0(srvx@0.11.16)(vike@0.4.259(hono@4.12.25)(react-streaming@0.4.17(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(srvx@0.11.16)(vite@8.0.16(@types/node@20.19.41)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)))
       '@rudderjs/session':
         specifier: ^2.4.2
         version: 2.4.2(@rudderjs/vite@2.11.2(@rudderjs/core@1.13.0)(@vitejs/plugin-react@6.0.2(vite@8.0.16(@types/node@20.19.41)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)))(vike@0.4.259(hono@4.12.25)(react-streaming@0.4.17(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(srvx@0.11.16)(vite@8.0.16(@types/node@20.19.41)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)))(vite@8.0.16(@types/node@20.19.41)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)))
@@ -1692,6 +1692,10 @@ packages:
     resolution: {integrity: sha512-oP1DUnluah8KaVe9nRKo/bzv0UeA8EDc3z1AqrqEWmxn7TL4XS+/3w4H5Ie40FOa0/ugebl1txCDgwqSYljdvw==}
     engines: {node: '>=22.12.0'}
 
+  '@rudderjs/contracts@1.19.0':
+    resolution: {integrity: sha512-I9djlPm7os3n4Bxv8BUY7tbrWmj1bN+GDVWzDznZUc/FFIZN4LcfspNKrwddlkh+gdvVJToChRYEKMWZ5IvDgQ==}
+    engines: {node: '>=22.12.0'}
+
   '@rudderjs/core@1.12.2':
     resolution: {integrity: sha512-9nEGOIjjxzOf9+bjybtKiwlMsKFa4m0Eyx5FnIPaAzeWPhGtpRfC0iKU1pP+XS8Gn28/VuaA8v44mp73YO+lbQ==}
     engines: {node: '>=22.12.0'}
@@ -1761,8 +1765,8 @@ packages:
     resolution: {integrity: sha512-kb0OA/izFeUC1egKytgg/Le9uhZhns//fJ/nU3kreAuiudBdehExSDq1ODmpEhJD1Cz/XDSPxJht4BBamc9OMQ==}
     engines: {node: '>=22.12.0'}
 
-  '@rudderjs/server-hono@1.9.0':
-    resolution: {integrity: sha512-v+kpxlpTeUj4GY3eKyWLLANjWozA/qbNzMjeI6w7nqw+ZnBeTX3sPKGuKcRgOAxNNjGp8bR5aU/DRrThFrgnhg==}
+  '@rudderjs/server-hono@1.10.0':
+    resolution: {integrity: sha512-5ARRbRnDvVNetBvYOAa31Ak6P9WG0vNN1qr+2a7ks4QX02jShOPmR0VGRna0awmCnvVfepLcExBn4HOJdk3K9A==}
     engines: {node: '>=22.12.0'}
 
   '@rudderjs/session@2.4.2':
@@ -3034,8 +3038,8 @@ packages:
   get-port-please@3.2.0:
     resolution: {integrity: sha512-I9QVvBw5U/hw3RmWpYKRumUeaDgxTPd401x364rLmWBJcOQ753eov1eTgzDqRG9bqFIfDc7gfzcQEWrUri3o1A==}
 
-  giget@3.2.0:
-    resolution: {integrity: sha512-GvHTWcykIR/fP8cj8dMpuMMkvaeJfPvYnhq0oW+chSeIr+ldX21ifU2Ms6KBoyKZQZmVaUAAhQ2EZ68KJF8a7A==}
+  giget@3.3.0:
+    resolution: {integrity: sha512-gzi2D96p+AMfDcmJHGDj3KJ9NRiwvlFAU5yfa3ROwWZmFUjX4P43x3BcyRaOMMLto1vUo7C+86+MFhYTl6Ryiw==}
     hasBin: true
 
   github-from-package@0.0.0:
@@ -5279,6 +5283,8 @@ snapshots:
 
   '@rudderjs/contracts@1.18.0': {}
 
+  '@rudderjs/contracts@1.19.0': {}
+
   '@rudderjs/core@1.12.2':
     dependencies:
       '@rudderjs/console': 1.4.0
@@ -5343,10 +5349,10 @@ snapshots:
       '@rudderjs/contracts': 1.17.1
       reflect-metadata: 0.2.2
 
-  '@rudderjs/server-hono@1.9.0(srvx@0.11.16)(vike@0.4.259(hono@4.12.25)(react-streaming@0.4.17(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(srvx@0.11.16)(vite@8.0.16(@types/node@20.19.41)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)))':
+  '@rudderjs/server-hono@1.10.0(srvx@0.11.16)(vike@0.4.259(hono@4.12.25)(react-streaming@0.4.17(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(srvx@0.11.16)(vite@8.0.16(@types/node@20.19.41)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)))':
     dependencies:
       '@hono/node-server': 1.19.14(hono@4.12.25)
-      '@rudderjs/contracts': 1.18.0
+      '@rudderjs/contracts': 1.19.0
       '@vikejs/hono': 0.2.0(hono@4.12.25)(srvx@0.11.16)(vike@0.4.259(hono@4.12.25)(react-streaming@0.4.17(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(srvx@0.11.16)(vite@8.0.16(@types/node@20.19.41)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)))
       hono: 4.12.25
     transitivePeerDependencies:
@@ -6225,7 +6231,7 @@ snapshots:
       defu: 6.1.7
       dotenv: 17.4.2
       exsolve: 1.0.8
-      giget: 3.2.0
+      giget: 3.3.0
       jiti: 2.7.0
       ohash: 2.0.11
       pathe: 2.0.3
@@ -6708,7 +6714,7 @@ snapshots:
   get-port-please@3.2.0:
     optional: true
 
-  giget@3.2.0:
+  giget@3.3.0:
     optional: true
 
   github-from-package@0.0.0: {}

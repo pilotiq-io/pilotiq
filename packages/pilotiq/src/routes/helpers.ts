@@ -233,6 +233,17 @@ function readHeader(req: AppRequest, name: string): string | undefined {
   )
 }
 
+/** server-hono ≥1.10 request accessors for the SPA-nav original URL. Both are
+ * read-only getters backed by the adapter's per-request AsyncLocalStorage
+ * (`spaNavUrlStore`) — NOT client headers — so they're unforgeable. Untyped
+ * on `AppRequest` (the published `@rudderjs/server-hono` .d.ts doesn't augment
+ * the contracts request), so we probe structurally. Both stay `undefined`
+ * under server-hono <1.10. */
+interface SpaNavAccessors {
+  spaNavUrl?:            string
+  isPageContextRequest?: boolean
+}
+
 /**
  * Is this request Vike's client-router pageContext fetch? On SPA nav the
  * client requests `/<path>/index.pageContext.json`. Historically
@@ -247,26 +258,32 @@ function readHeader(req: AppRequest, name: string): string | undefined {
  * short-circuit would fall through to a 302 / text response that crashes Vike's
  * client router with a Content-Type assertion.
  *
- * The only non-forgeable in-band signal left is browser fetch-metadata: Vike's
- * pageContext request is a same-origin `fetch()` (`Sec-Fetch-Mode: cors |
- * same-origin | no-cors`), NOT a top-level navigation (`navigate`). We treat
- * any non-navigation same-origin fetch that isn't an explicit JSON-API caller
- * (`Accept: application/json`, handled by the `wantsJson` branch) as a Vike
- * pageContext request so the short-circuit still returns a JSON envelope.
- * Browsers set `Sec-Fetch-*` themselves and JS cannot override them, so this
- * can't be spoofed the way the old URL header could.
+ * **server-hono ≥1.10** re-exposes the signal precisely: `req.isPageContextRequest`
+ * (and the sibling `req.spaNavUrl`) read the adapter's per-request ALS, so they
+ * can't be spoofed the way the old header could. We prefer the accessor when
+ * present (rudder upstream #1205) and keep the older signals only as fallbacks:
  *
- * TODO(pilotiq): switch back to a precise check once server-hono exposes a
- * supported non-forgeable accessor for the SPA-nav original URL — tracked in
- * the rudder upstream issue.
+ *   1. `req.isPageContextRequest` / `req.spaNavUrl` — server-hono ≥1.10 accessor.
+ *   2. Legacy URL suffix / `x-rudder-original-url` header — server-hono <1.9.
+ *   3. Browser fetch-metadata — server-hono 1.9 (no accessor, no legacy header):
+ *      Vike's pageContext request is a same-origin `fetch()` (`Sec-Fetch-Mode:
+ *      cors | same-origin | no-cors`), NOT a top-level navigation (`navigate`).
+ *      Any non-navigation same-origin fetch that isn't an explicit JSON-API
+ *      caller (`Accept: application/json`, handled by `wantsJson`) is treated as
+ *      a pageContext request. Browsers set `Sec-Fetch-*` themselves and JS
+ *      cannot override them, so this can't be spoofed either — but it's absent
+ *      on very old browsers, which fall through to the navigation / 302 branch.
  */
 export function isPageContextRequest(req: AppRequest): boolean {
-  const r = req as { url?: string }
+  const r = req as { url?: string } & SpaNavAccessors
+  // server-hono ≥1.10: precise, non-forgeable ALS-backed accessor.
+  if (r.isPageContextRequest === true) return true
+  if (typeof r.spaNavUrl === 'string') return true
   // Legacy signals (server-hono <1.9): suffix in URL or original-url header.
   const orig = readHeader(req, 'x-rudder-original-url')
   if (typeof orig === 'string' && orig.includes('.pageContext.json')) return true
   if (typeof r.url === 'string' && r.url.includes('.pageContext.json')) return true
-  // server-hono ≥1.9 fallback: browser fetch-metadata. A same-origin
+  // server-hono 1.9 fallback: browser fetch-metadata. A same-origin
   // programmatic fetch (Vike's pageContext request) that isn't an explicit
   // JSON-API call is the SPA-nav case.
   const mode = readHeader(req, 'sec-fetch-mode')
@@ -304,11 +321,15 @@ export function vikeRedirect(res: AppResponse, url: string): unknown {
  * — strip that suffix so the bounce lands on the real page URL. Skips
  * the param when `redirectTo` already carries a query string or the
  * original path can't be derived.
+ *
+ * Source preference mirrors `isPageContextRequest`: the server-hono ≥1.10
+ * `req.spaNavUrl` accessor (non-forgeable, carries the original SPA-nav URL)
+ * wins, then the legacy `x-rudder-original-url` header, then `req.url`.
  */
 export function guardRedirectTarget(req: AppRequest, redirectTo: string): string {
   if (redirectTo.includes('?')) return redirectTo
-  const r = req as { headers?: Record<string, string>; url?: string }
-  let original = r.headers?.['x-rudder-original-url'] ?? r.url ?? ''
+  const r = req as { headers?: Record<string, string>; url?: string } & SpaNavAccessors
+  let original = r.spaNavUrl ?? r.headers?.['x-rudder-original-url'] ?? r.url ?? ''
   if (original.startsWith('http')) {
     try {
       const u = new URL(original)

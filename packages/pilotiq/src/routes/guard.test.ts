@@ -283,6 +283,34 @@ describe('Pilotiq.guard() — router.group() middleware', () => {
     })
   })
 
+  it('guard(fn, { redirectTo }) — server-hono ≥1.10 accessor (req.spaNavUrl / req.isPageContextRequest) is preferred for the Vike envelope', async () => {
+    // server-hono ≥1.10 re-exposes the SPA-nav signal precisely via the
+    // non-forgeable ALS-backed `req.isPageContextRequest` / `req.spaNavUrl`
+    // accessors (rudder #1205). `isPageContextRequest()` prefers them, and
+    // `guardRedirectTarget()` derives the bounce-back path from `spaNavUrl`
+    // (with the `/index.pageContext.json` suffix stripped) — no fetch-metadata
+    // sniffing needed. Note the Sec-Fetch-Mode header is deliberately ABSENT
+    // here, proving the accessor alone drives the branch.
+    const router = new Router()
+    const panel = Pilotiq.make('admin')
+      .path('/admin')
+      .resources([Article])
+      .guard(() => false, { redirectTo: '/login' })
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/articles')
+    assert.ok(route, 'articles list route missing')
+    const { res } = await runMiddleware(route, fakeReq({
+      url: '/admin/articles',
+      isPageContextRequest: true,
+      spaNavUrl: '/admin/articles/index.pageContext.json',
+    }))
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(res.sentBody, {
+      _abortCall:   'redirect("/login?redirect=%2Fadmin%2Farticles")',
+      _urlRedirect: { url: '/login?redirect=%2Fadmin%2Farticles', statusCode: 302 },
+    })
+  })
+
   it('guard(fn, { redirectTo }) — top-level navigation (Sec-Fetch-Mode: navigate) still 302s, not the Vike envelope', async () => {
     const router = new Router()
     const panel = Pilotiq.make('admin')

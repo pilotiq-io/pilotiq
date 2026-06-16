@@ -41,7 +41,7 @@
     "@rudderjs/middleware": "^1.2.3",
     "@rudderjs/orm": "^1.21.2",
     "@rudderjs/router": "^1.9.1",
-    "@rudderjs/server-hono": "^1.9.0",
+    "@rudderjs/server-hono": "^1.10.0",
     "@rudderjs/session": "^2.4.2",
     "@rudderjs/sync": "^1.9.0",
     "@rudderjs/view": "^1.4.0",
