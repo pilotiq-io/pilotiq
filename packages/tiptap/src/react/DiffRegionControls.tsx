@@ -70,7 +70,16 @@ export function DiffRegionControls({ editor, classPrefix = 'pilotiq-diff' }: Dif
     // Document order (by position) so the controls read top-to-bottom regardless
     // of the order the ops were applied in.
     for (const region of [...ds.regions].sort((a, b) => a.from - b.from)) {
-      const el = root.querySelector(`[data-pilotiq-diff-region="${cssEscape(region.id)}"]`)
+      const sel = `[data-pilotiq-diff-region="${cssEscape(region.id)}"]`
+      // Prefer the region's changed-word span on the GREEN (added) row — that's
+      // the content the user is accepting, so the ✓/✕ should sit beside it. A
+      // region also tags structural anchors (its red deleted widget, its whole
+      // green row), and several share one structural anchor when they fall in
+      // the same hunk — so a bare `querySelector` would grab the first in DOM
+      // order (the red row) and float the control far from the actual change.
+      // Fall back to any anchor for a pure block insert/delete (no word span). #92
+      const el = root.querySelector(`.${classPrefix}-inserted-line-changed${sel}`)
+              ?? root.querySelector(sel)
       if (!el) continue
       // First client rect = the START of the (possibly wrapping) change — align
       // the gutter control to the visual line the change begins on.

@@ -806,10 +806,13 @@ function buildLineDiffDecorations(
           Decoration.widget(at, () => buildDeletedLinesWidget([removedNodes[k]!], schema, prefix, ownerId, rRange ? [rRange] : undefined), {
             side: -1,
             ignoreSelection: true,
-            // Key includes the removed TEXT so the widget rebuilds when the
-            // pending-only baseline changes (e.g. a sibling word was accepted),
-            // instead of ProseMirror reusing the stale red row.
-            key: `pilotiq-diff:deleted-lines:${at}:1:${k}:${removedNodes[k]!.textContent}`,
+            // Key includes the removed TEXT *and* the changed ranges so the
+            // widget rebuilds both when the pending-only baseline changes (e.g.
+            // a sibling word was accepted) AND when a later region adds another
+            // changed span to this same row (text unchanged, ranges grow) —
+            // without the ranges, PM reuses the stale widget and the second
+            // change never gets its red highlight. #92.
+            key: `pilotiq-diff:deleted-lines:${at}:1:${k}:${removedNodes[k]!.textContent}:${rangesKey([rRange])}`,
           }),
         )
         decos.push(
@@ -829,9 +832,10 @@ function buildLineDiffDecorations(
           Decoration.widget(anchor, () => buildDeletedLinesWidget(removedNodes, schema, prefix, ownerId, removedRanges), {
             side: -1,
             ignoreSelection: true,
-            // Content in the key so the red row rebuilds when the pending-only
-            // baseline changes (sibling change resolved), not reused stale.
-            key: `pilotiq-diff:deleted-lines:${anchor}:${removedNodes.map(n => n.textContent).join('|')}`,
+            // Content AND changed ranges in the key so the red row rebuilds
+            // when the pending-only baseline changes (sibling change resolved)
+            // or when a later region grows the changed spans — not reused stale.
+            key: `pilotiq-diff:deleted-lines:${anchor}:${removedNodes.map(n => n.textContent).join('|')}:${rangesKey(removedRanges)}`,
           }),
         )
       }
@@ -866,6 +870,17 @@ function concatBlockText(texts: string[]): { text: string; spans: CharRange[] } 
     spans.push([start, text.length])
   })
   return { text, spans }
+}
+
+/**
+ * Stable string fragment for a per-row changed-range set, folded into the
+ * deleted-widget decoration key. Two passes that produce the same removed text
+ * but DIFFERENT highlight ranges (a later region added a changed span to the
+ * row) must get different keys, or ProseMirror reuses the stale widget and the
+ * new span never highlights. #92.
+ */
+function rangesKey(ranges: ReadonlyArray<CharRange[] | undefined>): string {
+  return ranges.map(r => (r ? r.map(([s, e]) => `${s}-${e}`).join(',') : '')).join('|')
 }
 
 /** Intersect changed ranges with a block's span and re-base to block-local
