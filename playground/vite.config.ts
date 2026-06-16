@@ -60,6 +60,10 @@ export default defineConfig({
       '@tiptap/pm/state',
       '@tiptap/pm/view',
       '@tiptap/pm/model',
+      // @tiptap/pm/transform is reached lazily on the first edit (it backs every
+      // ProseMirror Step). Pre-bundle it so its discovery doesn't trigger a
+      // mid-session re-optimize that rewrites .vite/deps and 404s in-flight chunks.
+      '@tiptap/pm/transform',
       'prosemirror-changeset',
       '@tiptap/react',
       '@tiptap/starter-kit',
