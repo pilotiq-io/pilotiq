@@ -14,6 +14,7 @@ import { InlineDiffExtension } from '../extensions/InlineDiffExtension.js'
 import { useSuggestionBridge } from './useSuggestionBridge.js'
 import { useInlineDiff, useIsInlineDiffActive, readDiffViewMarker } from './useInlineDiff.js'
 import { SuggestionBanner } from './SuggestionBanner.js'
+import { DiffRegionControls } from './DiffRegionControls.js'
 
 /**
  * Tiptap-backed plain-text editor for pilotiq's `TextField` / `TextareaField`
@@ -243,7 +244,10 @@ export function CollabTextRenderer({
   // the single-line text surface keeps its normal footprint.
   return (
     <>
-      <EditorContent editor={editor} />
+      <div className="relative">
+        <EditorContent editor={editor} />
+        <DiffRegionControls editor={editor} />
+      </div>
       <SuggestionBanner
         fieldName={name}
         onApplyWholeField={applyWholeField}

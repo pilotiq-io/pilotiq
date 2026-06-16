@@ -33,6 +33,7 @@ export {
 } from './PlainTextEditor.js'
 export { tiptap } from './plugin.js'
 export { TiptapEditor } from './react/TiptapEditor.js'
+export { DiffRegionControls, type DiffRegionControlsProps } from './react/DiffRegionControls.js'
 export {
   SuggestionChipExtension,
   suggestionChipPluginKey,

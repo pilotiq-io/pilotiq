@@ -4,7 +4,7 @@ import { Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 
-import { InlineDiffExtension, contentBlockNodes } from './index.js'
+import { InlineDiffExtension, contentBlockNodes, planReplaceText, getInlineDiffState } from './index.js'
 
 /**
  * Issue #186 — `lines` mode must highlight the CHANGED CHARACTERS of a
@@ -30,6 +30,11 @@ function startLinesDiff(editor: Editor, newHtml: string): void {
 }
 
 const root = (editor: Editor): HTMLElement => editor.view.dom as HTMLElement
+
+/** Distinct region ids anchored in the DOM — one per change the overlay floats a ✓/✕ on. */
+const distinctRegions = (dom: HTMLElement): number => new Set(
+  Array.from(dom.querySelectorAll('[data-pilotiq-diff-region]')).map(el => el.getAttribute('data-pilotiq-diff-region')),
+).size
 
 describe('AI inline diff — lines-mode intra-line highlight (#186)', () => {
   it('highlights only the changed word on both the removed and added rows', () => {
@@ -86,6 +91,48 @@ describe('AI inline diff — lines-mode intra-line highlight (#186)', () => {
     const ins = Array.from(dom.querySelectorAll('.pilotiq-diff-inserted-line-changed')).map(e => e.textContent)
     assert.deepEqual(del, ['setnence'], 'removed side highlights the old typo')
     assert.deepEqual(ins, ['sentence'], 'added side highlights the fix — symmetric')
+
+    editor.destroy()
+  })
+
+  it('accepting one of two same-line word changes settles only that word (#92)', () => {
+    const editor = mount('<p>teh quick fox jumpd</p>')
+    // Two word-level edits in the SAME paragraph.
+    editor.commands.applySurgicalInlineDiff('r1', planReplaceText(editor, 'teh', 'the')!, 'lines')
+    editor.commands.applySurgicalInlineDiff('r2', planReplaceText(editor, 'jumpd', 'jumped')!, 'lines')
+    const dom = root(editor)
+
+    assert.equal(distinctRegions(dom), 2, 'one anchored region per word change')
+    assert.equal(getInlineDiffState(editor.state)?.regions.length, 2)
+
+    // Accept the first word — its change bakes into the baseline; the line
+    // still shows the second word as pending. The red (old) row now reflects
+    // the PENDING-ONLY baseline: 'teh' settled to 'the', 'jumpd' still pending.
+    editor.commands.acceptInlineDiffRegion('r1')
+    const redRow = dom.querySelector('.pilotiq-diff-deleted-line')?.textContent ?? ''
+    assert.match(redRow, /the quick fox jumpd/, 'baseline baked the accepted word, kept the pending one')
+    assert.ok(!redRow.includes('teh'), 'accepted typo is gone from the baseline (settled)')
+    assert.equal(distinctRegions(dom), 1, 'one anchored region left')
+
+    // Accept the last — the whole line settles, diff clears.
+    editor.commands.acceptInlineDiffRegion('r2')
+    assert.equal(dom.querySelectorAll('.pilotiq-diff-deleted-line').length, 0, 'line settled — no diff rows')
+    assert.equal(getInlineDiffState(editor.state), null, 'session cleared')
+
+    editor.destroy()
+  })
+
+  it('two in-place block edits interleave red/green per change (not grouped)', () => {
+    const editor = mount('<p>the quick brown fox</p><p>lorem ipsum dolor</p>')
+    startLinesDiff(editor, '<p>the slow brown fox</p><p>lorem ipsum sit</p>')
+    const dom = root(editor)
+
+    // Each changed block should render its old (red) row immediately before its
+    // new (green) row — red, green, red, green — rather than all reds then all
+    // greens (#92 follow-up).
+    const sequence = Array.from(dom.querySelectorAll('.pilotiq-diff-deleted-line, .pilotiq-diff-inserted-line'))
+      .map(el => el.classList.contains('pilotiq-diff-deleted-line') ? 'red' : 'green')
+    assert.deepEqual(sequence, ['red', 'green', 'red', 'green'])
 
     editor.destroy()
   })

@@ -38,6 +38,7 @@ import type { EditorState, Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode, Slice, Schema } from '@tiptap/pm/model'
 import { DOMSerializer, Fragment } from '@tiptap/pm/model'
+import { Transform } from '@tiptap/pm/transform'
 import { ChangeSet } from 'prosemirror-changeset'
 import { wordLevelDiff } from './wordDiff.js'
 import type { CharRange } from './wordDiff.js'
@@ -77,10 +78,23 @@ declare module '@tiptap/core' {
        * dispatch) when `applyFn` produced no doc change.
        */
       applySurgicalInlineDiff: (id: string, applyFn: (tr: Transaction) => void, displayMode?: DiffDisplayMode) => ReturnType
-      /** Clear diff state. Current doc IS the accepted state. */
+      /** Accept ALL pending regions. Clears diff state — current doc IS the accepted state. */
       acceptInlineDiff: () => ReturnType
-      /** Revert doc to the captured baseline and clear diff state. */
+      /** Reject ALL pending regions: revert doc to the captured baseline and clear state. */
       rejectInlineDiff: () => ReturnType
+      /**
+       * Accept ONE region by id — drop its descriptor (the doc already holds
+       * the proposed content). Other regions stay pending with valid
+       * positions. Clears the whole diff when it was the last region.
+       */
+      acceptInlineDiffRegion: (id: string) => ReturnType
+      /**
+       * Reject ONE region by id — replace just that region's current range
+       * with the baseline content it captured at apply time, then drop its
+       * descriptor. Other regions remap through the revert and stay pending.
+       * Clears the whole diff when it was the last region.
+       */
+      rejectInlineDiffRegion: (id: string) => ReturnType
     }
   }
 }
@@ -96,12 +110,38 @@ declare module '@tiptap/core' {
  */
 export type DiffDisplayMode = 'inline' | 'lines'
 
+/**
+ * One independently-resolvable change inside an active diff session. A
+ * surgical op (or a whole-field replacement) lands as exactly one region;
+ * several ops from one AI run coexist as several regions, each with its own
+ * Accept / Reject. The session keeps ONE shared `baseline` + `changeset`
+ * (driving the minimal-range rendering, untouched from the single-diff era);
+ * regions sit on top as ownership + revert descriptors.
+ */
+export interface DiffRegion {
+  /** Host-side `PendingSuggestion.id` — correlates the region with the queue. */
+  id:    string
+  /** Optional human label for the per-region control (e.g. plan-item title). */
+  label?: string
+  /** Current-doc start of the region's changed span. Remapped every tx. */
+  from:  number
+  /** Current-doc end of the region's changed span. Remapped every tx. */
+  to:    number
+  /**
+   * The content this region's range replaced, captured (with open depths)
+   * from the doc right before the op applied. Reject re-inserts it at the
+   * region's current range. Empty slice for a pure insertion.
+   */
+  baselineSlice: Slice
+}
+
 interface DiffState {
-  id:        string
-  /** Original doc captured at `startInlineDiff` time — used for revert. */
+  /** Original doc captured when the FIRST region started — whole-diff revert + lines-mode render. */
   baseline:  ProseMirrorNode
-  /** ChangeSet accumulating diffs since baseline. */
+  /** ChangeSet accumulating diffs since baseline — drives minimal-range decorations. */
   changeset: ChangeSet
+  /** Independently-resolvable regions, in apply order. Empty ⇒ state clears. */
+  regions:   DiffRegion[]
   /** Rendering mode for the decorations — see `DiffDisplayMode`. */
   displayMode: DiffDisplayMode
 }
@@ -114,9 +154,30 @@ export function getInlineDiffState(state: EditorState): DiffState | null {
   return inlineDiffPluginKey.getState(state) ?? null
 }
 
-interface StartMeta { type: 'start';  id: string; baseline: ProseMirrorNode; displayMode?: DiffDisplayMode }
-interface ClearMeta { type: 'clear' }
-type DiffMeta = StartMeta | ClearMeta
+/**
+ * Remap every region's `[from, to]` through a transaction mapping; drop a
+ * region whose range collapsed past itself (`to < from`). Mirrors the chip
+ * extension's `remapSuggestions`. Pure — exported for tests.
+ */
+export function remapDiffRegions(
+  regions: readonly DiffRegion[],
+  map: (pos: number, side: -1 | 1) => number,
+): DiffRegion[] {
+  const out: DiffRegion[] = []
+  for (const r of regions) {
+    const from = map(r.from, -1)
+    const to   = map(r.to,   1)
+    if (to < from) continue
+    out.push({ ...r, from, to })
+  }
+  return out
+}
+
+interface StartMeta  { type: 'start';  id: string; baseline: ProseMirrorNode; region: DiffRegion; displayMode?: DiffDisplayMode }
+interface RegionMeta { type: 'region'; baseline: ProseMirrorNode; region: DiffRegion; displayMode?: DiffDisplayMode }
+interface DropMeta   { type: 'drop';   id: string }
+interface ClearMeta  { type: 'clear' }
+type DiffMeta = StartMeta | RegionMeta | DropMeta | ClearMeta
 
 export interface InlineDiffExtensionOptions {
   /**
@@ -127,6 +188,21 @@ export interface InlineDiffExtensionOptions {
    *   - `pilotiq-diff-deleted-text`  (the strikethrough span inside)
    */
   classPrefix?: string
+}
+
+/**
+ * DOM event a per-region ✓/✕ control bubbles when clicked (#92). The control
+ * already resolves the region in the editor itself (so it works standalone);
+ * this event lets a host bridge ALSO sync its `PendingSuggestion` queue + plan
+ * state. `detail` carries the region id and the decision. Dispatched on the
+ * control element with `bubbles: true`, so a listener on the editor DOM root
+ * (see `useInlineDiff`) catches it.
+ */
+export const INLINE_DIFF_REGION_RESOLVE_EVENT = 'pilotiqInlineDiffRegionResolve'
+
+export interface InlineDiffRegionResolveDetail {
+  id:       string
+  decision: 'accept' | 'reject'
 }
 
 export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>({
@@ -187,6 +263,11 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
         border-radius: 2px;
         padding-left: 1.25em;
         position: relative;
+        /* No margin so a change's green (new) row sits FLUSH against its red
+           (old) row above — they read as one tight before/after pair. The gap
+           that separates one change from the next comes from the deleted row's
+           top margin below. */
+        margin: 0 !important;
         /* Some text surfaces style the editor root as a flex row (input
            mimic); full-basis keeps each diff row on its own line there. */
         flex: 0 0 100%;
@@ -209,8 +290,13 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
         background-color: rgba(225, 29, 72, 0.26);
         border-radius: 2px;
       }
-      .${prefix}-deleted-lines { display: block; flex: 0 0 100%; width: 100%; }
+      /* Top margin separates THIS change from the one above; no bottom margin
+         so the red (old) row sits flush against its green (new) row below. */
+      .${prefix}-deleted-lines { display: block; flex: 0 0 100%; width: 100%; margin: 0.5em 0 0 0; }
       .${prefix}-lines-active { display: block !important; }
+      /* Reserve a right-edge gutter for the floating ✓/✕ controls while a diff
+         is under review, so they never sit on top of the text. */
+      .${prefix}-active { padding-right: 2.75em; }
       .${prefix}-deleted-line {
         background-color: rgba(225, 29, 72, 0.11);
         color: rgb(159, 18, 57);
@@ -226,6 +312,35 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
         opacity: 0.75;
       }
       .${prefix}-deleted-line > * { margin-top: 0; margin-bottom: 0; }
+      /* Per-region Approve / Reject controls (#92). The floating overlay
+         (<DiffRegionControls>) measures each change's anchor and absolutely
+         positions a ✓/✕ beside it. The layer covers the editor but is
+         click-through except on the buttons themselves. */
+      .${prefix}-controls-layer {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: visible;
+        z-index: 5;
+      }
+      .${prefix}-control {
+        display: inline-flex;
+        gap: 0.125em;
+        user-select: none;
+        pointer-events: auto;
+        white-space: nowrap;
+      }
+      .${prefix}-control button {
+        cursor: pointer;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 3px;
+        background: #fff;
+        line-height: 1;
+        font-size: 0.75em;
+        padding: 0.1em 0.3em;
+      }
+      .${prefix}-control-accept { color: rgb(4, 120, 87); }
+      .${prefix}-control-reject { color: rgb(159, 18, 57); }
     `
     document.head.appendChild(style)
   },
@@ -239,16 +354,27 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
         // schema enforces validity — if the slice doesn't fit, ProseMirror
         // throws (callers should pre-validate via `editor.schema`).
         tr.replaceRange(0, docEnd, newDocSlice)
-        const meta: StartMeta = { type: 'start', id, baseline, ...(displayMode ? { displayMode } : {}) }
+        if (!tr.docChanged) return false
+        const region = buildRegion(baseline, tr, id)
+        if (!region) return false
+        const meta: StartMeta = { type: 'start', id, baseline, region, ...(displayMode ? { displayMode } : {}) }
         tr.setMeta(inlineDiffPluginKey, meta)
         if (dispatch) dispatch(tr)
         return true
       },
       applySurgicalInlineDiff: (id, applyFn, displayMode) => ({ tr, state, dispatch }) => {
-        const baseline = state.doc
+        const preDoc = state.doc
         applyFn(tr)
         if (!tr.docChanged) return false
-        const meta: StartMeta = { type: 'start', id, baseline, ...(displayMode ? { displayMode } : {}) }
+        const region = buildRegion(preDoc, tr, id)
+        if (!region) return false
+        // First op opens a session ('start'); subsequent ops append a
+        // region to the live one ('region'), so the AI's batch of edits
+        // coexist as independently-resolvable regions.
+        const active = inlineDiffPluginKey.getState(state)
+        const meta: StartMeta | RegionMeta = active
+          ? { type: 'region', baseline: preDoc, region, ...(displayMode ? { displayMode } : {}) }
+          : { type: 'start', id, baseline: preDoc, region, ...(displayMode ? { displayMode } : {}) }
         tr.setMeta(inlineDiffPluginKey, meta)
         if (dispatch) dispatch(tr)
         return true
@@ -261,14 +387,39 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
       },
       rejectInlineDiff: () => ({ tr, state, dispatch }) => {
         const ds = inlineDiffPluginKey.getState(state)
-        if (!ds) return false
-        const docEnd = state.doc.content.size
-        // Replace whole body with the baseline's content via a slice that
-        // spans the baseline's open boundaries (always 0 for a top-level
-        // doc replace).
-        tr.replaceWith(0, docEnd, ds.baseline.content)
+        if (!ds || ds.regions.length === 0) return false
+        // Revert every STILL-PENDING region, highest-position first so an
+        // earlier replace can't shift a later region's range. Regions the
+        // user already accepted are gone from `ds.regions`, so reject-all
+        // composes correctly after a partial accept (it does NOT blanket-
+        // revert the whole doc to the original baseline).
+        const ordered = [...ds.regions].sort((a, b) => b.from - a.from)
+        for (const r of ordered) {
+          tr.replace(tr.mapping.map(r.from, -1), tr.mapping.map(r.to, 1), r.baselineSlice)
+        }
         const meta: ClearMeta = { type: 'clear' }
         tr.setMeta(inlineDiffPluginKey, meta)
+        if (dispatch) dispatch(tr)
+        return true
+      },
+      acceptInlineDiffRegion: (id) => ({ tr, state, dispatch }) => {
+        const ds = inlineDiffPluginKey.getState(state)
+        if (!ds || !ds.regions.some(r => r.id === id)) return false
+        // The proposed content is already in the doc — just retire the
+        // region. The plugin clears the whole session when it was the last.
+        tr.setMeta(inlineDiffPluginKey, { type: 'drop', id } satisfies DropMeta)
+        if (dispatch) dispatch(tr)
+        return true
+      },
+      rejectInlineDiffRegion: (id) => ({ tr, state, dispatch }) => {
+        const ds     = inlineDiffPluginKey.getState(state)
+        const region = ds?.regions.find(r => r.id === id)
+        if (!ds || !region) return false
+        // Restore just this region's range to the baseline content it
+        // captured at apply time. The `drop` meta folds the revert into the
+        // changeset and remaps the surviving regions through it.
+        tr.replace(region.from, region.to, region.baselineSlice)
+        tr.setMeta(inlineDiffPluginKey, { type: 'drop', id } satisfies DropMeta)
         if (dispatch) dispatch(tr)
         return true
       },
@@ -284,22 +435,47 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
           init() { return null },
           apply(tr, value) {
             const meta = tr.getMeta(inlineDiffPluginKey) as DiffMeta | undefined
+            const remap = (regions: readonly DiffRegion[]): DiffRegion[] =>
+              remapDiffRegions(regions, (pos, side) => tr.mapping.map(pos, side))
+
             if (meta?.type === 'start') {
-              // Baseline captured BEFORE the replaceRange step in this
-              // same transaction. The changeset's `addSteps` consumes
-              // the transaction's step list to compute the diff between
-              // the baseline doc and the post-transaction doc.
+              // Baseline captured BEFORE the op's step(s) in this same
+              // transaction. The changeset's `addSteps` consumes the
+              // transaction's step list to compute the diff between the
+              // baseline doc and the post-transaction doc. `meta.region`
+              // is already in post-transaction coords.
               const cs = ChangeSet.create(meta.baseline).addSteps(tr.doc, tr.mapping.maps, null)
-              return { id: meta.id, baseline: meta.baseline, changeset: cs, displayMode: meta.displayMode ?? 'inline' }
+              return { baseline: meta.baseline, changeset: cs, regions: [meta.region], displayMode: meta.displayMode ?? 'inline' }
+            }
+            if (meta?.type === 'region') {
+              // A further op while a session is live: fold its steps into the
+              // running changeset, remap the existing regions through this
+              // tx, and append the freshly-computed region.
+              if (!value) {
+                const cs = ChangeSet.create(meta.baseline).addSteps(tr.doc, tr.mapping.maps, null)
+                return { baseline: meta.baseline, changeset: cs, regions: [meta.region], displayMode: meta.displayMode ?? 'inline' }
+              }
+              const cs = value.changeset.addSteps(tr.doc, tr.mapping.maps, null)
+              return { ...value, changeset: cs, regions: [...remap(value.regions), meta.region] }
+            }
+            if (meta?.type === 'drop') {
+              if (!value) return null
+              const cs      = tr.docChanged ? value.changeset.addSteps(tr.doc, tr.mapping.maps, null) : value.changeset
+              const kept    = (tr.docChanged ? remap(value.regions) : value.regions).filter(r => r.id !== meta.id)
+              if (kept.length === 0) return null
+              return { ...value, changeset: cs, regions: kept }
             }
             if (meta?.type === 'clear') return null
             if (!value) return value
             // No explicit meta — a regular transaction landed while the
-            // diff was active. Fold its steps into the changeset so any
-            // further edits (e.g. y-prosemirror remote ops) are reflected.
+            // diff was active. Fold its steps into the changeset and remap
+            // regions so further edits (e.g. y-prosemirror remote ops) stay
+            // reflected.
             if (tr.docChanged) {
               const cs = value.changeset.addSteps(tr.doc, tr.mapping.maps, null)
-              return { ...value, changeset: cs }
+              const regions = remap(value.regions)
+              if (regions.length === 0) return null
+              return { ...value, changeset: cs, regions }
             }
             return value
           },
@@ -317,9 +493,11 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
           // accept / reject.
           attributes(state) {
             const ds = inlineDiffPluginKey.getState(state)
-            return ds?.displayMode === 'lines'
-              ? { class: `${ext.options.classPrefix ?? 'pilotiq-diff'}-lines-active` }
-              : {}
+            if (!ds) return {}
+            // `-active` opens a right-edge gutter for the floating ✓/✕ controls;
+            // `-lines-active` additionally forces block layout in lines mode.
+            const p = ext.options.classPrefix ?? 'pilotiq-diff'
+            return { class: ds.displayMode === 'lines' ? `${p}-active ${p}-lines-active` : `${p}-active` }
           },
         },
       }),
@@ -327,10 +505,49 @@ export const InlineDiffExtension = Extension.create<InlineDiffExtensionOptions>(
   },
 })
 
+/**
+ * Compute the {@link DiffRegion} a just-applied op produced. `preDoc` is the
+ * doc immediately before the op's step(s) ran in `tr`; the op-local changeset
+ * gives the minimal changed span (`fromB..toB` in the post-op doc) and the
+ * baseline range (`fromA..toA`) whose content the region restores on reject.
+ * Returns null when the op produced no measurable change.
+ */
+function buildRegion(
+  preDoc: ProseMirrorNode,
+  tr:     Transaction,
+  id:     string,
+  label?: string,
+): DiffRegion | null {
+  const opc = ChangeSet.create(preDoc).addSteps(tr.doc, tr.mapping.maps, null)
+  if (opc.changes.length === 0) return null
+  let fromA = Infinity, toA = -Infinity, fromB = Infinity, toB = -Infinity
+  for (const c of opc.changes) {
+    if (c.fromA < fromA) fromA = c.fromA
+    if (c.toA   > toA)   toA   = c.toA
+    if (c.fromB < fromB) fromB = c.fromB
+    if (c.toB   > toB)   toB   = c.toB
+  }
+  return { id, ...(label ? { label } : {}), from: fromB, to: toB, baselineSlice: preDoc.slice(fromA, toA) }
+}
+
+/**
+ * Id of the pending region that owns a changed span `[fromB, toB)`, or null
+ * when no region overlaps it — which means the change belongs to a region the
+ * user already accepted (doc unchanged, region dropped) and must NOT render.
+ * Overlap, not containment: minimal changeset ranges and the op-local region
+ * range measure the same edit but can differ by a boundary position.
+ */
+function ownerRegionId(fromB: number, toB: number, regions: readonly DiffRegion[]): string | null {
+  for (const r of regions) {
+    if (r.from <= toB && fromB <= r.to) return r.id
+  }
+  return null
+}
+
 function buildDiffDecorations(
-  state:     EditorState,
-  ds:        DiffState,
-  prefix:    string,
+  state:  EditorState,
+  ds:     DiffState,
+  prefix: string,
 ): DecorationSet {
   if (ds.displayMode === 'lines') return buildLineDiffDecorations(state, ds, prefix)
 
@@ -345,11 +562,18 @@ function buildDiffDecorations(
     const fromB = Math.max(0, Math.min(change.fromB, docSize))
     const toB   = Math.max(fromB, Math.min(change.toB,   docSize))
 
+    // Skip changes whose region was already accepted (no pending owner).
+    const ownerId = ownerRegionId(fromB, toB, ds.regions)
+    if (!ownerId) continue
+
     if (toB > fromB) {
       decos.push(
         Decoration.inline(fromB, toB, {
           class: `${prefix}-inserted`,
-          'data-pilotiq-diff-id': ds.id,
+          'data-pilotiq-diff-id': ownerId,
+          // Anchor for the floating ✓/✕ overlay (#92). Reuses this existing
+          // deco so it doesn't add span boundaries that would split the diff.
+          'data-pilotiq-diff-region': ownerId,
         }),
       )
     }
@@ -360,7 +584,7 @@ function buildDiffDecorations(
     // deletions (pure inserts) skip the widget.
     if (change.toA > change.fromA) {
       decos.push(
-        Decoration.widget(fromB, () => buildDeletedWidget(ds.baseline, change.fromA, change.toA, prefix, ds.id), {
+        Decoration.widget(fromB, () => buildDeletedWidget(ds.baseline, change.fromA, change.toA, prefix, ownerId), {
           side: -1,
           ignoreSelection: true,
           key: `pilotiq-diff:deleted:${change.fromA}:${change.toA}`,
@@ -397,6 +621,8 @@ function buildDeletedWidget(
   const root = document.createElement('span')
   root.className = `${prefix}-deleted`
   root.setAttribute('data-pilotiq-diff-id', id)
+  // Anchor for the ✓/✕ overlay — covers a pure-deletion region (no inserted span).
+  root.setAttribute('data-pilotiq-diff-region', id)
   root.contentEditable = 'false'
 
   // Walk the baseline's top-level blocks; for each one the deleted range
@@ -443,6 +669,24 @@ function buildDeletedWidget(
  * on every decoration pass, so remote collab edits during review stay
  * correct for free.
  */
+/**
+ * The "pending-only baseline" for lines mode: the current doc with every
+ * STILL-PENDING region reverted to the content it replaced. Accepted regions
+ * are NOT reverted (their change is baked in), so diffing this against the live
+ * doc surfaces ONLY the unresolved changes — which is what lets each word
+ * settle the moment it's accepted or rejected, even when several share a line.
+ */
+function pendingOnlyBaseline(doc: ProseMirrorNode, regions: readonly DiffRegion[]): ProseMirrorNode {
+  if (regions.length === 0) return doc
+  const tr = new Transform(doc)
+  // Highest-position first so an earlier revert can't shift a later range.
+  for (const r of [...regions].sort((a, b) => b.from - a.from)) {
+    try { tr.replace(tr.mapping.map(r.from, -1), tr.mapping.map(r.to, 1), r.baselineSlice) }
+    catch { /* a range that no longer fits the schema here — skip it */ }
+  }
+  return tr.doc
+}
+
 function buildLineDiffDecorations(
   state:  EditorState,
   ds:     DiffState,
@@ -450,12 +694,16 @@ function buildLineDiffDecorations(
 ): DecorationSet {
   const decos: Decoration[] = []
 
-  const baseBlocks = topLevelBlocks(ds.baseline)
+  // Diff against the PENDING-ONLY baseline (current doc minus the unresolved
+  // regions), not the original — so an accepted/rejected word settles right
+  // away while other changes on the same line stay pending. #92.
+  const oldDoc = pendingOnlyBaseline(state.doc, ds.regions)
+  const baseBlocks = topLevelBlocks(oldDoc)
   const current: Array<{ text: string; pos: number; nodeSize: number; node: ProseMirrorNode }> = []
   state.doc.forEach((node, pos) => {
     current.push({ text: node.textContent, pos, nodeSize: node.nodeSize, node })
   })
-  const schema = ds.baseline.type.schema
+  const schema = oldDoc.type.schema
 
   // `lcsBlockDiffTokens` emits removed-before-added within a replacement
   // region, so a run of `removed` tokens immediately followed by a run of
@@ -487,6 +735,16 @@ function buildLineDiffDecorations(
                  : j < current.length  ? current[j]!.pos
                  :                        state.doc.content.size
 
+    // Attribute this hunk to its pending region; skip it when the owning
+    // region was already accepted (the doc still differs from baseline, but
+    // that change is committed and must stop rendering as a diff). `j`/`bi`/`t`
+    // already advanced past the hunk above, so `continue` is safe.
+    const lastAdded = addedIdx.length > 0 ? addedIdx[addedIdx.length - 1]! : -1
+    const hunkFromB = addedIdx.length > 0 ? current[addedIdx[0]!]!.pos : anchor
+    const hunkToB   = lastAdded >= 0 ? current[lastAdded]!.pos + current[lastAdded]!.nodeSize : anchor
+    const ownerId   = ownerRegionId(hunkFromB, hunkToB, ds.regions)
+    if (!ownerId) continue
+
     // Intra-line highlight: word-diff the concatenated removed vs added text,
     // then clamp the changed ranges back onto each row (block-local coords).
     // Highlighting only applies to plain textblocks (so DOM text aligns with
@@ -516,10 +774,17 @@ function buildLineDiffDecorations(
               const s = Math.max(rs, seg.start)
               const e = Math.min(re, seg.end)
               if (e <= s) continue
+              const segFrom = seg.pos + (s - seg.start)
+              const segTo   = seg.pos + (e - seg.start)
+              // Per-WORD region attribution: anchor this highlight to the
+              // specific region it falls in (not the hunk's first), so the
+              // overlay floats one ✓/✕ beside each changed word. #92.
+              const wordRegion = ownerRegionId(segFrom, segTo, ds.regions) ?? ownerId
               decos.push(
-                Decoration.inline(seg.pos + (s - seg.start), seg.pos + (e - seg.start), {
+                Decoration.inline(segFrom, segTo, {
                   class: `${prefix}-inserted-line-changed`,
-                  'data-pilotiq-diff-id': ds.id,
+                  'data-pilotiq-diff-id': ownerId,
+                  'data-pilotiq-diff-region': wordRegion,
                 }),
               )
             }
@@ -528,22 +793,57 @@ function buildLineDiffDecorations(
       }
     }
 
-    if (removedNodes.length > 0) {
-      decos.push(
-        Decoration.widget(anchor, () => buildDeletedLinesWidget(removedNodes, schema, prefix, ds.id, removedRanges), {
-          side: -1,
-          ignoreSelection: true,
-          key: `pilotiq-diff:deleted-lines:${anchor}:${removedNodes.length}`,
-        }),
-      )
-    }
-    for (const idx of addedIdx) {
-      decos.push(
-        Decoration.node(current[idx]!.pos, current[idx]!.pos + current[idx]!.nodeSize, {
-          class: `${prefix}-inserted-line`,
-          'data-pilotiq-diff-id': ds.id,
-        }),
-      )
+    if (removedNodes.length > 0 && removedNodes.length === addedIdx.length) {
+      // 1:1 in-place edits (the common case — each block edited where it sits):
+      // pair every removed block's red row immediately before its replacement's
+      // green row, so the review reads change-by-change (red, green, red, green)
+      // instead of all-removed-then-all-added.
+      for (let k = 0; k < addedIdx.length; k++) {
+        const idx    = addedIdx[k]!
+        const at     = current[idx]!.pos
+        const rRange = removedRanges[k]
+        decos.push(
+          Decoration.widget(at, () => buildDeletedLinesWidget([removedNodes[k]!], schema, prefix, ownerId, rRange ? [rRange] : undefined), {
+            side: -1,
+            ignoreSelection: true,
+            // Key includes the removed TEXT so the widget rebuilds when the
+            // pending-only baseline changes (e.g. a sibling word was accepted),
+            // instead of ProseMirror reusing the stale red row.
+            key: `pilotiq-diff:deleted-lines:${at}:1:${k}:${removedNodes[k]!.textContent}`,
+          }),
+        )
+        decos.push(
+          Decoration.node(at, at + current[idx]!.nodeSize, {
+            class: `${prefix}-inserted-line`,
+            'data-pilotiq-diff-id': ownerId,
+            'data-pilotiq-diff-region': ownerId,
+          }),
+        )
+      }
+    } else {
+      // Merge / split / pure add / pure delete — keep the grouped form: one red
+      // widget (all removed rows) before the first added block, then the greens.
+      // Concatenated word-diff (#186) keeps the two sides symmetric here.
+      if (removedNodes.length > 0) {
+        decos.push(
+          Decoration.widget(anchor, () => buildDeletedLinesWidget(removedNodes, schema, prefix, ownerId, removedRanges), {
+            side: -1,
+            ignoreSelection: true,
+            // Content in the key so the red row rebuilds when the pending-only
+            // baseline changes (sibling change resolved), not reused stale.
+            key: `pilotiq-diff:deleted-lines:${anchor}:${removedNodes.map(n => n.textContent).join('|')}`,
+          }),
+        )
+      }
+      for (const idx of addedIdx) {
+        decos.push(
+          Decoration.node(current[idx]!.pos, current[idx]!.pos + current[idx]!.nodeSize, {
+            class: `${prefix}-inserted-line`,
+            'data-pilotiq-diff-id': ownerId,
+            'data-pilotiq-diff-region': ownerId,
+          }),
+        )
+      }
     }
   }
 
@@ -701,6 +1001,8 @@ function buildDeletedLinesWidget(
   const root = document.createElement('div')
   root.className = `${prefix}-deleted-lines`
   root.setAttribute('data-pilotiq-diff-id', id)
+  // Anchor for the ✓/✕ overlay — covers a pure-deletion line (no green row).
+  root.setAttribute('data-pilotiq-diff-region', id)
   root.contentEditable = 'false'
   const serializer = DOMSerializer.fromSchema(schema)
   nodes.forEach((node, idx) => {
