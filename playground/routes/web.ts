@@ -10,6 +10,7 @@
 // `@rudderjs/auth` instead — this is a hand-rolled stand-in so the
 // playground demos `Pilotiq.guard()` without pulling the auth package in.
 import { Route } from '@rudderjs/router'
+import { safeRedirectTarget } from '@rudderjs/server-hono'
 import { User } from '../app/Models/User.js'
 import { verifyPassword } from '../app/Support/password.js'
 
@@ -37,14 +38,6 @@ async function readFormBody(req: unknown): Promise<Record<string, unknown>> {
   }
 }
 
-/** Only bounce to same-site paths — an absolute URL or `//host` in
- *  `?redirect=` must not turn the login form into an open redirect. */
-function safeRedirect(target: unknown, fallback: string): string {
-  return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')
-    ? target
-    : fallback
-}
-
 Route.post('/login', async (req, res) => {
   const body = await readFormBody(req)
   const email = String(body.email ?? '').trim().toLowerCase()
@@ -67,7 +60,11 @@ Route.post('/login', async (req, res) => {
   // stash the user id the panel's guard + user resolver read back.
   await session.regenerate?.()
   session.put('userId', (user as { id: string }).id)
-  return res.redirect(safeRedirect(body.redirect, '/admin'), 303)
+  // Open-redirect guard: `safeRedirectTarget` rejects absolute, protocol-
+  // relative, backslash-smuggled, and whitespace/control-char targets,
+  // falling back to /admin. (The framework also exposes `res.intended`, but
+  // it's not yet in server-hono's .d.ts — this typed helper is equivalent.)
+  return res.redirect(safeRedirectTarget(body.redirect, '/admin'), 303)
 })
 
 Route.post('/logout', async (req, res) => {
