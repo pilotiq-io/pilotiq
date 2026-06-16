@@ -25,6 +25,7 @@ import { useCollabSeed, type CollabRoom as FrameworkCollabRoom } from '@rudderjs
 import { useSuggestionBridge } from './useSuggestionBridge.js'
 import { useInlineDiff, useIsInlineDiffActive, readDiffViewMarker } from './useInlineDiff.js'
 import { SuggestionBanner } from './SuggestionBanner.js'
+import { DiffRegionControls } from './DiffRegionControls.js'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import type { BlockMeta } from '../Block.js'
 import type { ToolbarGroups, RichTextStorage, ColorSwatch } from '../RichTextField.js'
@@ -550,7 +551,10 @@ function ClientEditor(props: ClientEditorProps) {
           {...(attachmentVis !== undefined ? { visibility: attachmentVis } : {})}
         />
       )}
-      <EditorContent editor={editor} />
+      <div className="relative">
+        <EditorContent editor={editor} />
+        <DiffRegionControls editor={editor} />
+      </div>
       <SuggestionBanner
         fieldName={name}
         onApplyWholeField={applyWholeField}

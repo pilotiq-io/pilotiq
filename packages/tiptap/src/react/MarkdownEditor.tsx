@@ -24,6 +24,7 @@ import { Alert, AlertTitle, AlertBody, ContentBlockKeymap } from '../extensions/
 import { useSuggestionBridge } from './useSuggestionBridge.js'
 import { useInlineDiff, useIsInlineDiffActive, readDiffViewMarker } from './useInlineDiff.js'
 import { SuggestionBanner } from './SuggestionBanner.js'
+import { DiffRegionControls } from './DiffRegionControls.js'
 import { getMarkdownString, parseMarkdownToHtml } from '../markdownStorage.js'
 
 // Inline lucide.dev SVGs — same posture as `toolbarButtons.tsx` so this
@@ -566,10 +567,11 @@ export function MarkdownEditor({
 
       {tab === 'editor' && (
         <div
-          className="prose prose-sm dark:prose-invert max-w-none px-3 py-2 [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[6rem]"
+          className="relative prose prose-sm dark:prose-invert max-w-none px-3 py-2 [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[6rem]"
           style={wrapperStyle}
         >
           <EditorContent editor={editor} />
+          <DiffRegionControls editor={editor} />
         </div>
       )}
 

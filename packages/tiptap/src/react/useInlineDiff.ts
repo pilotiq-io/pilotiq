@@ -36,12 +36,17 @@ import type { Slice } from '@tiptap/pm/model'
 import { useEditorState } from '@tiptap/react'
 import {
   registerPendingSuggestionApplier,
+  usePendingSuggestions,
   usePendingSuggestionsForField,
   useFormId,
   type PendingSuggestion,
   type PendingSuggestionApplier,
 } from '@pilotiq/pilotiq/react'
-import { inlineDiffPluginKey } from '../extensions/InlineDiffExtension.js'
+import {
+  inlineDiffPluginKey,
+  INLINE_DIFF_REGION_RESOLVE_EVENT,
+  type InlineDiffRegionResolveDetail,
+} from '../extensions/InlineDiffExtension.js'
 import {
   planReplaceBlock,
   planInsertBlockBefore,
@@ -114,6 +119,12 @@ export function useInlineDiff(
   options: UseInlineDiffOptions,
 ): void {
   const { list } = usePendingSuggestionsForField(fieldName)
+  // Full queue API (approve / dismiss) for the per-region control round-trip —
+  // see the `onRegionResolve` wiring effect below. Stashed in a ref so the
+  // wiring effect can stay keyed on `editor` alone.
+  const api    = usePendingSuggestions()
+  const apiRef = useRef(api)
+  useEffect(() => { apiRef.current = api })
   // Scope the applier registration by the surrounding form's id so
   // multi-form pages route suggestions to the editor instance inside the
   // matching form — without this, two editors on different forms but
@@ -163,38 +174,16 @@ export function useInlineDiff(
       const diffActive = inlineDiffPluginKey.getState(editor.state) !== null
       const surgical   = readSurgicalMeta(s)
 
-      // Cross-tool-call surgical stacking. When a diff is already active
-      // and a fresh surgical suggestion arrives (typically the model
-      // emitted a second `update_form_state` tool call instead of
-      // batching ops in one), fold the new modifier into the active
-      // diff. We dispatch a plain transaction with no extension meta;
-      // the plugin's existing "no explicit meta + tr.docChanged" branch
-      // adds the steps to the running changeset, so decorations update
-      // to cover both ops' ranges and the banner shows the combined
-      // count. Accept commits the union, Reject reverts to the same
-      // baseline captured when the FIRST suggestion started the diff —
-      // semantically "reject all pending suggested changes", which
-      // matches the banner copy.
-      //
-      // Whole-field suggestions still bail when a diff is active —
-      // dropping a fresh slice on top of an active review is too
-      // disruptive (it'd swap the entire doc mid-review).
-      if (diffActive) {
-        if (!surgical) continue
-        const modifier = planSurgicalModifier(editor, surgical)
-        if (!modifier) continue
-        editor.commands.command(({ tr, dispatch }) => {
-          modifier(tr)
-          if (!tr.docChanged) return false
-          if (dispatch) dispatch(tr)
-          return true
-        })
-        startedRef.current.add(s.id)
-        continue
-      }
-
       const displayMode = modeRef.current?.(editor) ?? 'inline'
 
+      // Each surgical suggestion becomes its OWN diff region (#92). The
+      // `applySurgicalInlineDiff` command opens a session for the first op and
+      // appends an independently-resolvable region for every subsequent op —
+      // whether it batched in one `update_form_state` call or arrived in a
+      // later tool call (decision: cross-call ops coexist as separate
+      // regions). Each modifier is planned against the LIVE doc at apply time,
+      // so positions stay valid as regions accumulate. Accept / Reject is
+      // per-region; the banner keeps a global Accept-all / Reject-all.
       if (surgical) {
         const modifier = planSurgicalModifier(editor, surgical)
         if (!modifier) continue
@@ -202,6 +191,10 @@ export function useInlineDiff(
         startedRef.current.add(s.id)
         continue
       }
+
+      // Whole-field suggestions still bail when a diff is active — dropping a
+      // fresh slice on top of an in-progress review would swap the whole doc.
+      if (diffActive) continue
 
       if (typeof s.suggestedValue !== 'string') continue
       const slice = parseRef.current(editor, s.suggestedValue)
@@ -235,7 +228,9 @@ export function useInlineDiff(
     if (!editor) return
     const applier: PendingSuggestionApplier = (suggestion) => {
       if (startedRef.current.has(suggestion.id)) {
-        editor.commands.acceptInlineDiff()
+        // Accept just this suggestion's region (#92) — the others stay
+        // pending. The host's `approve(id)` routes here per id.
+        editor.commands.acceptInlineDiffRegion(suggestion.id)
         return
       }
       const surgical = readSurgicalMeta(suggestion)
@@ -251,6 +246,30 @@ export function useInlineDiff(
     }
     return registerPendingSuggestionApplier(formId, fieldName, applier)
   }, [editor, fieldName, formId])
+
+  // Host round-trip for the editor's per-region ✓/✕ controls (#92). The
+  // control already resolved the region in the editor; it also bubbles a DOM
+  // event so we can sync the host queue + plan state:
+  //   - accept → `approve(id)`: drops the queue entry + marks the plan item
+  //     accepted. Its applier re-runs `acceptInlineDiffRegion` (a harmless
+  //     no-op — the region is already gone).
+  //   - reject → `dismiss(id)`: drops the queue entry + marks it rejected. The
+  //     control already reverted the region, so no editor action is needed.
+  // Listening on the editor DOM (where the control event bubbles to) keeps
+  // this decoupled from extension internals.
+  useEffect(() => {
+    if (!editor) return
+    const dom = editor.view?.dom
+    if (!dom) return
+    const handler = (e: Event): void => {
+      const detail = (e as CustomEvent<InlineDiffRegionResolveDetail>).detail
+      if (!detail?.id) return
+      if (detail.decision === 'accept') apiRef.current.approve(detail.id)
+      else                              apiRef.current.dismiss(detail.id)
+    }
+    dom.addEventListener(INLINE_DIFF_REGION_RESOLVE_EVENT, handler)
+    return () => dom.removeEventListener(INLINE_DIFF_REGION_RESOLVE_EVENT, handler)
+  }, [editor])
 }
 
 function hasEditorRange(s: PendingSuggestion): boolean {
