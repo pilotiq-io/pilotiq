@@ -137,6 +137,25 @@ describe('AI inline diff — lines-mode intra-line highlight (#186)', () => {
     editor.destroy()
   })
 
+  it('a second word change on the same block highlights on the RED side too (#92)', () => {
+    // Two replace ops landing in the SAME paragraph, applied sequentially.
+    // Regression: the deleted-widget key was keyed on the removed TEXT only, so
+    // after the first op rendered (ranges = [word1]) the second op grew the
+    // ranges to [word1, word2] but PM reused the stale widget — the second
+    // word never got its red highlight. The key now folds in the ranges.
+    const editor = mount('<p>An emergency fond covers caar repairs.</p>')
+    editor.commands.applySurgicalInlineDiff('A', planReplaceText(editor, 'fond', 'fund')!, 'lines')
+    editor.commands.applySurgicalInlineDiff('B', planReplaceText(editor, 'caar', 'car')!, 'lines')
+    const dom = root(editor)
+
+    const del = Array.from(dom.querySelectorAll('.pilotiq-diff-deleted-line-changed')).map(e => e.textContent)
+    const ins = Array.from(dom.querySelectorAll('.pilotiq-diff-inserted-line-changed')).map(e => e.textContent)
+    assert.deepEqual(del, ['fond', 'caar'], 'BOTH old words highlight on the removed row')
+    assert.deepEqual(ins, ['fund', 'car'], 'BOTH new words highlight on the added row')
+
+    editor.destroy()
+  })
+
   it('a pure addition (no paired removal) carries no changed highlight', () => {
     const editor = mount('<p>keep me</p>')
     startLinesDiff(editor, '<p>keep me</p><p>brand new line</p>')
