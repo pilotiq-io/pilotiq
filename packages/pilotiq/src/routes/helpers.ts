@@ -217,28 +217,61 @@ export async function findInQueryWithTrashed(
   return Array.isArray(result.data) ? result.data[0] : undefined
 }
 
-/**
- * Is this request Vike's client-router pageContext fetch? On SPA nav the
- * client requests `/<path>/index.pageContext.json`; `@rudderjs/server-hono`
- * rewrites it onto the matching controller route and stashes the original
- * URL on `x-rudder-original-url` (the ViewResponse path hands it back to
- * renderPage so Vike emits JSON). When a policy gate short-circuits the
- * handler instead, the response must still be a Vike-parseable JSON
- * envelope — a plain `text/plain` 403 crashes the client router with a
- * Content-Type assertion ("Something went wrong" + console noise).
- */
-export function isPageContextRequest(req: AppRequest): boolean {
-  // AppRequest exposes headers as a plain Record (adapter-lowercased);
-  // tolerate a header() accessor too for duck-typed test doubles.
+/** Case-tolerant single-header read — AppRequest exposes headers as a plain
+ * Record (adapter-lowercased), but test doubles may use a `header()` accessor
+ * or original-case keys. */
+function readHeader(req: AppRequest, name: string): string | undefined {
   const r = req as {
     headers?: Record<string, string>
     header?: (name: string) => string | undefined
-    url?: string
   }
-  const orig = r.headers?.['x-rudder-original-url']
-    ?? (typeof r.header === 'function' ? r.header('x-rudder-original-url') : undefined)
+  const lower = name.toLowerCase()
+  return (
+    r.headers?.[lower]
+    ?? r.headers?.[name]
+    ?? (typeof r.header === 'function' ? r.header(lower) ?? r.header(name) : undefined)
+  )
+}
+
+/**
+ * Is this request Vike's client-router pageContext fetch? On SPA nav the
+ * client requests `/<path>/index.pageContext.json`. Historically
+ * `@rudderjs/server-hono` (<1.9) rewrote it onto the matching controller route
+ * and stashed the original URL on the `x-rudder-original-url` header, which we
+ * detected here. **server-hono ≥1.9 dropped that header** (it was client-
+ * forgeable — a direct request could inject an arbitrary URL into Vike's
+ * renderPage routing) and now carries the original URL on a private per-request
+ * AsyncLocalStorage instead. By the time the request reaches this middleware
+ * the `/index.pageContext.json` suffix is already stripped from `req.url` AND
+ * there's no header — so both legacy signals are gone and a guard / policy
+ * short-circuit would fall through to a 302 / text response that crashes Vike's
+ * client router with a Content-Type assertion.
+ *
+ * The only non-forgeable in-band signal left is browser fetch-metadata: Vike's
+ * pageContext request is a same-origin `fetch()` (`Sec-Fetch-Mode: cors |
+ * same-origin | no-cors`), NOT a top-level navigation (`navigate`). We treat
+ * any non-navigation same-origin fetch that isn't an explicit JSON-API caller
+ * (`Accept: application/json`, handled by the `wantsJson` branch) as a Vike
+ * pageContext request so the short-circuit still returns a JSON envelope.
+ * Browsers set `Sec-Fetch-*` themselves and JS cannot override them, so this
+ * can't be spoofed the way the old URL header could.
+ *
+ * TODO(pilotiq): switch back to a precise check once server-hono exposes a
+ * supported non-forgeable accessor for the SPA-nav original URL — tracked in
+ * the rudder upstream issue.
+ */
+export function isPageContextRequest(req: AppRequest): boolean {
+  const r = req as { url?: string }
+  // Legacy signals (server-hono <1.9): suffix in URL or original-url header.
+  const orig = readHeader(req, 'x-rudder-original-url')
   if (typeof orig === 'string' && orig.includes('.pageContext.json')) return true
-  return typeof r.url === 'string' && r.url.includes('.pageContext.json')
+  if (typeof r.url === 'string' && r.url.includes('.pageContext.json')) return true
+  // server-hono ≥1.9 fallback: browser fetch-metadata. A same-origin
+  // programmatic fetch (Vike's pageContext request) that isn't an explicit
+  // JSON-API call is the SPA-nav case.
+  const mode = readHeader(req, 'sec-fetch-mode')
+  if (mode && mode !== 'navigate' && !wantsJson(req)) return true
+  return false
 }
 
 /**

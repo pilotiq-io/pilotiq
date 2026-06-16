@@ -259,6 +259,47 @@ describe('Pilotiq.guard() — router.group() middleware', () => {
     })
   })
 
+  it('guard(fn, { redirectTo }) — server-hono ≥1.9 SPA fetch (no original-url header, stripped url) gets the Vike envelope via fetch-metadata', async () => {
+    // server-hono ≥1.9 drops the forgeable x-rudder-original-url header and
+    // strips the /index.pageContext.json suffix before the app sees the
+    // request — so neither legacy signal is present. The non-navigation
+    // Sec-Fetch-Mode is the surviving discriminator for Vike's pageContext fetch.
+    const router = new Router()
+    const panel = Pilotiq.make('admin')
+      .path('/admin')
+      .resources([Article])
+      .guard(() => false, { redirectTo: '/login' })
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/articles')
+    assert.ok(route, 'articles list route missing')
+    const { res } = await runMiddleware(route, fakeReq({
+      url: '/admin/articles',
+      headers: { 'sec-fetch-mode': 'cors' },
+    }))
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(res.sentBody, {
+      _abortCall:   'redirect("/login?redirect=%2Fadmin%2Farticles")',
+      _urlRedirect: { url: '/login?redirect=%2Fadmin%2Farticles', statusCode: 302 },
+    })
+  })
+
+  it('guard(fn, { redirectTo }) — top-level navigation (Sec-Fetch-Mode: navigate) still 302s, not the Vike envelope', async () => {
+    const router = new Router()
+    const panel = Pilotiq.make('admin')
+      .path('/admin')
+      .resources([Article])
+      .guard(() => false, { redirectTo: '/login' })
+    registerPilotiqRoutes(router, panel)
+    const route = router.list().find(r => r.path === '/admin/articles')
+    assert.ok(route, 'articles list route missing')
+    const { res } = await runMiddleware(route, fakeReq({
+      url: '/admin/articles',
+      headers: { 'sec-fetch-mode': 'navigate' },
+    }))
+    assert.equal(res.statusCode, 302)
+    assert.equal(res.redirectedTo, '/login?redirect=%2Fadmin%2Farticles')
+  })
+
   it('guard(fn, { redirectTo }) — JSON fetches still 401 but carry the target', async () => {
     const router = new Router()
     const panel = Pilotiq.make('admin')
