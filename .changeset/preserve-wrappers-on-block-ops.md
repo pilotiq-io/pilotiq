@@ -1,0 +1,5 @@
+---
+"@pilotiq/tiptap": patch
+---
+
+fix(tiptap): preserve wrapper blocks when applying surgical block ops (`replace_block` / `insert_block_before`). `parseContentToSlice` used `parseSlice`, which "opens" the slice's edges and strips a top-level wrapper node whose own body is itself valid at the top level — a `keyTakeaways` / `summary` / `intro` block (body = a list or paragraphs) silently collapsed to its bare inner content, and a `prosCons` block (strict `prosColumn consColumn` content) collapsed to bare lists, an invalid node that threw `contentMatchAt on a node with invalid content` and detached the editor. Surgical block ops always carry complete top-level blocks, so we now full-`parse` the content as a document and wrap it in a closed slice (`openStart`/`openEnd` = 0), preserving every wrapper exactly as authored. Inline/partial content still round-trips (the doc schema wraps it in a paragraph). Unblocks real labeled `keyTakeaways` / `prosCons` blocks in the content-pipeline agents.
