@@ -20,6 +20,12 @@ minimumReleaseAgeExclude:
   - '@rudderjs/*'
 
 overrides:
+  # Pin a single @rudderjs/core copy across the tree. @rudderjs/log and
+  # @rudderjs/localization declare `^1.7.0`, which pnpm resolved to a second
+  # 1.12.2 copy instead of deduping onto the 1.13.0 the rest of the tree uses.
+  # Two copies = nominally-incompatible Application/Container types, which 500s
+  # the playground typecheck on bootstrap/providers.ts.
+  '@rudderjs/core': 1.13.0
   react: 19.2.6
   react-dom: 19.2.6
   '@tiptap/core': 3.26.0
