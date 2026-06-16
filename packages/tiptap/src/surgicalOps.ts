@@ -21,7 +21,7 @@
 import type { Editor } from '@tiptap/core'
 import type { Transaction } from '@tiptap/pm/state'
 import type { Mark, MarkType, NodeType, Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { DOMParser as PMDOMParser } from '@tiptap/pm/model'
+import { DOMParser as PMDOMParser, Slice } from '@tiptap/pm/model'
 import { parseMarkdownToHtml } from './markdownStorage.js'
 
 export type TransactionModifier = (tr: Transaction) => void
@@ -52,7 +52,7 @@ function blockStartPos(doc: ProseMirrorNode, blockIndex: number): number | null 
  * here, but keeps the planner safe) or when the markdown parser
  * throws / returns a non-string (malformed content).
  */
-function parseContentToSlice(editor: Editor, content: string): ReturnType<typeof PMDOMParser.prototype.parseSlice> | null {
+function parseContentToSlice(editor: Editor, content: string): Slice | null {
   if (typeof document === 'undefined') return null
   let html = content
   try {
@@ -61,7 +61,19 @@ function parseContentToSlice(editor: Editor, content: string): ReturnType<typeof
   } catch { return null }
   const container = document.createElement('div')
   container.innerHTML = html
-  return PMDOMParser.fromSchema(editor.schema).parseSlice(container)
+  // FULL parse + CLOSED slice — NOT `parseSlice`. `parseSlice` "opens" the
+  // slice's edges, which strips a top-level WRAPPER node whose own body is
+  // itself valid at the top level: a `keyTakeaways` / `summary` / `intro` block
+  // (body = a list or paragraphs) silently collapses to its bare inner content,
+  // and a `prosCons` block (strict `prosColumn consColumn` content) collapses to
+  // bare lists — an invalid node that throws `contentMatchAt on a node with
+  // invalid content` and detaches the editor. Surgical block ops ALWAYS carry
+  // complete top-level blocks, so we parse the whole fragment as a document and
+  // wrap it in a closed slice (openStart/openEnd = 0), preserving every wrapper
+  // exactly as authored. (Inline/partial content still round-trips: the doc
+  // schema wraps it in a paragraph, the correct shape for a block op.)
+  const docNode = PMDOMParser.fromSchema(editor.schema).parse(container)
+  return new Slice(docNode.content, 0, 0)
 }
 
 /**
