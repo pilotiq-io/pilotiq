@@ -1,5 +1,19 @@
 # @pilotiq/pilotiq
 
+## 0.44.0
+
+### Minor Changes
+
+- 528efac: Add a `media` coerce branch to the form pipeline (#208)
+
+  `coerceFormValues` now handles `fieldType: 'media'` (used by `@pilotiq/media`'s new `MediaField`): the JSON-encoded media reference posted via the field's hidden input is parsed back into a real object (single) or array (multiple) so a `'json'`-cast column persists it; empty / unparseable values coerce to `null`. Mirrors the existing `richtext` / `keyValue` branches — no impact on panels that don't use the media field.
+
+### Patch Changes
+
+- ef03cdb: Title (and other single-line collab/AI) fields grow to fit wrapped content
+
+  The Tiptap-backed single-line text field (used when a field has AI agents or a collab room attached) was chromed for a strict one line: a fixed `h-8` height, `items-center`, and `whitespace-nowrap overflow-x-clip`. When a long title wrapped to a second line the box looked cramped and the padding/line-height no longer matched the content. The variant now grows gracefully — `min-h-8` keeps the compact resting height for short titles, while `whitespace-pre-wrap break-words` + balanced `py-1.5` / `leading-snug` let the border hug multi-line content. Both axes stay `overflow: visible`, so the collaboration caret's presence label still renders above the line.
+
 ## 0.43.0
 
 ### Minor Changes
