@@ -20,6 +20,10 @@ export type { MediaPluginConfig } from './plugin.js'
 // separately via `registerMediaField()` (`@pilotiq/media/widgets`).
 export { MediaField, MediaPicker } from './MediaField.js'
 
+// The embeddable library-browser schema element — drop into any page/resource
+// schema. Built on `View`; renders the registered `MediaLibrary` component.
+export { Media } from './MediaElement.js'
+
 // Library registry — client-safe (globalThis-backed, no Node imports), so the
 // browser UI + picker field can resolve the active library at render time.
 export {
