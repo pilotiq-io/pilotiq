@@ -554,6 +554,12 @@ function buildDiffDecorations(
   const decos: Decoration[] = []
   const docSize = state.doc.content.size
 
+  // Known limitation (#219): a formatting-ONLY change (same text, a mark added
+  // or removed) produces no entry here. `prosemirror-changeset` is driven by
+  // step position maps; AddMark/RemoveMark steps have identity maps, so the
+  // changeset sees no change and nothing renders. Surfacing mark deltas would
+  // need a separate mark-aware diff pass — tracked as a follow-up. Text edits
+  // that merely CARRY marks render fine (the marks are preserved on both sides).
   for (const change of ds.changeset.changes) {
     // `fromB..toB` is the range in the CURRENT doc that holds the
     // inserted content. `fromA..toA` is the range in the BASELINE doc
@@ -642,7 +648,16 @@ function buildDeletedWidget(
   if (pieces.length === 1 && pieces[0]!.type.name === 'paragraph') {
     const inner = document.createElement('span')
     inner.className   = `${prefix}-deleted-text`
-    inner.textContent = baseline.textBetween(fromA, toA, '\n', ' ')
+    // Serialize the paragraph's INLINE content (not the wrapping <p>) so the
+    // deleted text keeps its marks — <strong>/<em>/<a>/<code> survive and match
+    // the inserted side, which is a live inline decoration over the real marked
+    // range. Flattening to `textContent` here dropped all formatting (#219).
+    // Serializing the fragment rather than the node keeps the inline (non-
+    // stacked) look the paragraph branch exists for. `pieces[0]` is already cut
+    // to the `fromA..toA` span, so its content is exactly the deleted run.
+    inner.appendChild(
+      DOMSerializer.fromSchema(baseline.type.schema).serializeFragment(pieces[0]!.content),
+    )
     root.appendChild(inner)
     return root
   }
