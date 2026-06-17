@@ -13,6 +13,7 @@
   "files": [
     "dist",
     "!dist/**/*.map",
+    "migrations",
     "CHANGELOG.md"
   ],
   "main": "./dist/index.js",
@@ -36,7 +37,9 @@
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\"; EXIT=$?; rm -rf dist-test; exit $EXIT"
   },
   "peerDependencies": {
-    "@pilotiq/pilotiq": ">=0.42.0 <1.0.0"
+    "@pilotiq/pilotiq": ">=0.42.0 <1.0.0",
+    "@rudderjs/database": "^1.5.0",
+    "@rudderjs/orm": "^1.21.0"
   },
   "dependencies": {
     "@rudderjs/image": "^1.2.1",
@@ -44,6 +47,8 @@
   },
   "devDependencies": {
     "@pilotiq/pilotiq": "workspace:^",
+    "@rudderjs/database": "^1.5.4",
+    "@rudderjs/orm": "^1.21.2",
     "@types/node": "^20",
     "typescript": "^5"
   },
