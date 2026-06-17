@@ -1,0 +1,51 @@
+{
+  "name": "@pilotiq/media",
+  "version": "0.1.0",
+  "description": "Open-source media / file library for @pilotiq/pilotiq — browse, upload, and pick files, folders, images, video, and PDFs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pilotiq-io/pilotiq",
+    "directory": "packages/media"
+  },
+  "homepage": "https://pilotiq.io",
+  "type": "module",
+  "files": [
+    "dist",
+    "!dist/**/*.map",
+    "CHANGELOG.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./server": {
+      "import": "./dist/server.js",
+      "types": "./dist/server.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "clean": "rm -rf dist",
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\"; EXIT=$?; rm -rf dist-test; exit $EXIT"
+  },
+  "peerDependencies": {
+    "@pilotiq/pilotiq": ">=0.42.0 <1.0.0"
+  },
+  "dependencies": {
+    "@rudderjs/image": "^1.2.1",
+    "@rudderjs/storage": "^1.2.1"
+  },
+  "devDependencies": {
+    "@pilotiq/pilotiq": "workspace:^",
+    "@types/node": "^20",
+    "typescript": "^5"
+  },
+  "author": "Suleiman Shahbari"
+}
