@@ -109,6 +109,32 @@ also exported from `@pilotiq/media/server` for programmatic use.
 > })
 > ```
 
+## FileUpload adapter
+
+`mediaUpload()` lets a core `FileUpload` field write into the library instead of
+a bare disk. Registered via `Pilotiq.uploads({ adapter })`, it runs every upload
+through the same persist + image-conversion pipeline as `_media/upload` and
+creates a `Media` row — so files uploaded from a plain field show up in the
+library browser with thumbnails and round-trip with previews.
+
+```ts
+// bootstrap/providers.ts (server-only — composes the Node-only store pipeline)
+import { mediaUpload } from '@pilotiq/media/server'
+
+panel.uploads({ adapter: mediaUpload() })                    // default library
+panel.uploads({ adapter: mediaUpload({ library: 'photos' }) }) // a named library
+```
+
+The field stores the returned public `url`; the result's `meta` carries the
+`Media` row's `id`, `mime`, `size`, and image `width`/`height` for previews.
+
+Uploads are stored as `shared` library records. The library owns its on-disk
+layout (a unique `<slug>-<uuid>` directory per upload), so the adapter does
+**not** honor the field's `directory()` or `preserveFilenames()` hints — that's
+what guarantees two uploads of the same name never collide. User-scoped
+(`private`) uploads need a request-bound user the `UploadAdapter` contract
+doesn't carry; drive those through the `_media/upload` route instead.
+
 ## Library browser UI
 
 The `media()` plugin also mounts a **library browser** at `${base}/media` (a nav

@@ -3,8 +3,7 @@ import { defaultProviders } from '@rudderjs/core'
 import { StorageProvider } from '@rudderjs/storage'
 import { ModelRegistry } from '@rudderjs/orm'
 import { pilotiq } from '@pilotiq/pilotiq'
-import { localUpload } from '@pilotiq/pilotiq/uploads'
-import { Media } from '@pilotiq/media/server'
+import { Media, mediaUpload } from '@pilotiq/media/server'
 import { pilotiqAdmin } from '../app/Pilotiq/AdminPanel.js'
 import { pilotiqGuest } from '../app/Pilotiq/GuestPanel.js'
 import { AppServiceProvider } from '../app/Providers/AppServiceProvider.js'
@@ -16,11 +15,13 @@ import { User } from '../app/Models/User.js'
 ModelRegistry.register(Media)
 
 // Server-only adapter wiring — kept out of the panel modules because the
-// Vite plugin's auto-generated `_components.ts` manifest re-imports
-// them on the client to resolve component icons, and `localUpload`
-// pulls in `node:fs/promises` which Vite externalizes in the browser
-// bundle.
-const uploads = { adapter: localUpload({ root: 'public/uploads', urlPrefix: '/uploads' }) }
+// Vite plugin's auto-generated `_components.ts` manifest re-imports them on
+// the client to resolve component icons, and the media store pulls in
+// Node-only Storage / image / model code that Vite externalizes in the
+// browser bundle. `mediaUpload()` routes every core `FileUpload` through the
+// media library (#216), so field uploads land in the `/admin/media` browser
+// with thumbnails — same pipeline as the `_media/upload` route.
+const uploads = { adapter: mediaUpload() }
 pilotiqAdmin.uploads(uploads)
 pilotiqGuest.uploads(uploads)
 

@@ -37,3 +37,10 @@ export {
 } from './store.js'
 export type { MediaListResult } from './store.js'
 export type { MediaAuth, ListQuery } from './pipeline.js'
+
+// #216: an UploadAdapter that targets the media library, so a core `FileUpload`
+// field writes through the same persist + conversion pipeline as `_media/upload`
+// (creating a `Media` row that shows up in the library browser). Server-only —
+// it composes the Node-only `store.ts` pipeline.
+export { mediaUpload } from './uploads.js'
+export type { MediaUploadConfig } from './uploads.js'
