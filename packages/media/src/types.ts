@@ -35,6 +35,13 @@ export interface MediaRecord {
   userId:      string | null
   createdAt:   Date | string
   updatedAt:   Date | string
+  /**
+   * Public URL for the stored file, resolved through the record's disk
+   * (`Storage.disk(disk).url(key)`). Computed server-side at read time —
+   * absent on folders. Optional so the wire type stays usable by callers
+   * (browser UI / picker field) that build URLs themselves.
+   */
+  url?:        string
 }
 
 /** A generated conversion, persisted in the `conversions` column. */
