@@ -2,7 +2,7 @@ import { Pilotiq, Section, Heading, Text } from '@pilotiq/pilotiq'
 import { tiptap }     from '@pilotiq/tiptap'
 import { codeEditor } from '@pilotiq/codemirror'
 import { recharts }   from '@pilotiq/recharts'
-import { media }      from '@pilotiq/media'
+import { media, Media } from '@pilotiq/media'
 import { html } from '@codemirror/lang-html'
 import { PostResource }     from './Posts/PostResource.js'
 import { PageResource }     from './SitePages/PageResource.js'
@@ -51,5 +51,12 @@ export const pilotiqGuest = Pilotiq.make('Pilotiq Guest')
       .schema([
         Text.make('This panel has no guard and no user resolver — everyone browses as a guest. Compare with /admin, which redirects signed-out visitors to /login.'),
         Text.make('User-aware policies still apply: guests can browse and edit demo content, but actions gated on a role (like deleting posts) stay hidden.').color('muted'),
+      ]),
+    // @pilotiq/media — the library browser embedded directly in a page
+    // schema (the `Media` element), distinct from the global /guest/media
+    // route. Same browser, mounted inline.
+    Section.make('Media library (embedded)')
+      .schema([
+        Media.make('embedded-library').height(420),
       ]),
   ])

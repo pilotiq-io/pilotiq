@@ -37,8 +37,19 @@ registerBuiltinMediaPreviews()
 interface Crumb { id: string; name: string }
 interface ActiveUpload { id: string; name: string; progress: number; error?: string }
 
+/** Config the `Media` schema element / library page passes through the `View`
+ *  widget's resolved `data` payload (parallel to the direct props the picker
+ *  dialog passes). */
+interface MediaViewData {
+  apiBase?:   string
+  library?:   string
+  directory?: string
+  height?:    number
+}
+
 export interface MediaLibraryProps {
-  /** Present when mounted as a `View` widget on the library page. Unused. */
+  /** Resolved `View` server data when mounted as a widget (library page or the
+   *  `Media` schema element). Carries apiBase / library / directory / height. */
   data?:      unknown
   /** `'manage'` (page) or `'select'` (picker dialog). Default `'manage'`. */
   mode?:      'manage' | 'select'
@@ -49,18 +60,31 @@ export interface MediaLibraryProps {
   /** Override the derived `_media` API base (the field passes the panel base;
    *  the page-relative `deriveApiBase` would be wrong inside a form). */
   apiBase?:   string
+  /** Scope uploads to a named library (from the `Media` element). */
+  library?:   string
+  /** Root the browser at a folder id (from the `Media` element). */
+  directory?: string
 }
 
 export function MediaLibrary({
+  data,
   mode = 'manage',
   multiple = false,
   onSelect,
-  apiBase: apiBaseProp,
+  apiBase:   apiBaseProp,
+  library:   libraryProp,
+  directory: directoryProp,
 }: MediaLibraryProps = {}): React.JSX.Element {
-  const apiBase = useMemo(() => apiBaseProp ?? deriveApiBase('media'), [apiBaseProp])
+  // Direct props (picker dialog) win; otherwise read the View `data` payload.
+  const cfg = (data && typeof data === 'object') ? data as MediaViewData : {}
+  const apiBaseResolved = apiBaseProp   ?? cfg.apiBase
+  const library         = libraryProp   ?? cfg.library
+  const initialFolder   = directoryProp ?? cfg.directory ?? null
+  const minHeight       = cfg.height
+  const apiBase = useMemo(() => apiBaseResolved ?? deriveApiBase('media'), [apiBaseResolved])
   const selecting = mode === 'select'
 
-  const [folderId, setFolderId] = useState<string | null>(null)
+  const [folderId, setFolderId] = useState<string | null>(initialFolder)
   const [trail, setTrail] = useState<Crumb[]>([])
   const [items, setItems] = useState<MediaRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -117,6 +141,7 @@ export function MediaLibrary({
       try {
         await uploadMedia(apiBase, file, {
           parentId: folderId,
+          ...(library ? { library } : {}),
           onProgress: p => setUploads(list => list.map(x => x.id === u.id ? { ...x, progress: p } : x)),
         })
       } catch (err) {
@@ -126,7 +151,7 @@ export function MediaLibrary({
     // Clear finished uploads after a beat, then refresh.
     setTimeout(() => setUploads(list => list.filter(x => x.error)), 1200)
     await load(folderId, search)
-  }, [apiBase, folderId, search, load])
+  }, [apiBase, folderId, search, load, library])
 
   const onPick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -175,6 +200,7 @@ export function MediaLibrary({
   return (
     <div
       className={`flex min-h-[28rem] flex-col rounded-lg border ${dragging ? 'ring-2 ring-primary' : ''}`}
+      style={minHeight !== undefined ? { minHeight } : undefined}
       onDragOver={e => { e.preventDefault(); setDragging(true) }}
       onDragLeave={e => { e.preventDefault(); if (e.currentTarget === e.target) setDragging(false) }}
       onDrop={onDrop}
