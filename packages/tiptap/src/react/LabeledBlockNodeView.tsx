@@ -12,10 +12,14 @@ import { type BlockSetting } from './BlockSettingsMenu.js'
  * `variant` ride the node's `addOptions()` (see `labeledBlock()` in
  * `extensions/contentBlocks.ts`).
  *
- * Three shapes, one component:
+ * Four shapes, one component:
  *  - **labelled** (default) — non-editable label above the body.
- *  - **variant** (summary) — label resolved from the active `variant` attr,
- *    plus a "Type" toggle in the gear menu (e.g. Summary ↔ In summary).
+ *  - **variant** (summary) — `variant` attr drives a "Type" toggle in the gear
+ *    menu (e.g. section ↔ article); with `labelless` the per-variant label is
+ *    gone but the attr + toggle stay.
+ *  - **labelless** (keyTakeaways / summary) — keeps the `.pilotiq-block-content`
+ *    wrapper + gear + width / variant controls, but emits NO label: the section
+ *    heading lives ABOVE the block as a localized, editable `<h2>`.
  *  - **plain** (intro) — no label, no max-width wrapper: ordinary prose with a
  *    faint hover-revealed affordance so authors can still see it's a landmark.
  *    The read-side renderer emits no label for plain blocks.
@@ -29,6 +33,7 @@ export function LabeledBlockNodeView({ node, updateAttributes, editor, extension
     label: string
     cssClass: string
     plain: boolean
+    labelless: boolean
     variant: { default: string; labels: Record<string, string> } | null
   }
 
@@ -85,9 +90,11 @@ export function LabeledBlockNodeView({ node, updateAttributes, editor, extension
       extraSettings={extraSettings}
     >
       <div className="pilotiq-block-content">
-        <div className="pilotiq-block-label" contentEditable={false}>
-          {label}
-        </div>
+        {!opts.labelless && (
+          <div className="pilotiq-block-label" contentEditable={false}>
+            {label}
+          </div>
+        )}
         <NodeViewContent className="pilotiq-block-body" />
       </div>
     </BlockGearShell>

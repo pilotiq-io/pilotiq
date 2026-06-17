@@ -28,15 +28,17 @@ test('a bare RichTextField has no default schema blocks', async () => {
 
 // ─── inline content-block node rendering ──────────────────────────────
 
-test('keyTakeaways node renders a labelled list', () => {
+test('keyTakeaways node is labelless — content-only (the heading sits above as an <h2>)', () => {
   const html = renderRichTextToHtml(doc({ type: 'keyTakeaways', content: [list('First')] }))
-  assert.match(html, /^<div class="pilotiq-key-takeaways"><div class="pilotiq-block-content"><div class="pilotiq-block-label">Key takeaways<\/div>/)
+  assert.match(html, /^<div class="pilotiq-key-takeaways"><div class="pilotiq-block-content"><div class="pilotiq-block-body">/)
+  assert.doesNotMatch(html, /pilotiq-block-label/)
   assert.match(html, /<li><p>First<\/p><\/li>/)
 })
 
-test('summary node renders a labelled body', () => {
+test('summary node is labelless — content-only body (the heading sits above as an <h2>)', () => {
   const html = renderRichTextToHtml(doc({ type: 'summary', content: [para('The gist.')] }))
-  assert.match(html, /pilotiq-summary"><div class="pilotiq-block-content"><div class="pilotiq-block-label">Summary</)
+  assert.match(html, /pilotiq-summary"><div class="pilotiq-block-content"><div class="pilotiq-block-body">/)
+  assert.doesNotMatch(html, /pilotiq-block-label/)
   assert.match(html, /The gist\./)
 })
 

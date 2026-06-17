@@ -70,6 +70,15 @@ interface LabeledBlockSpec {
    * of a persistent label.
    */
   plain?: boolean
+  /**
+   * Render WITHOUT the `.pilotiq-block-label` line, but KEEP the
+   * `.pilotiq-block-content` wrapper, gear menu, and width / variant controls
+   * (unlike `plain`, which also drops the wrapper). Used by `keyTakeaways` /
+   * `summary`: their section heading lives ABOVE the block as a localized,
+   * editable `<h2>` (emitted by the AI block builders), so a baked-in,
+   * fixed-language label inside the block would just duplicate it.
+   */
+  labelless?: boolean
   /** Make this block multi-variant (different label per `variant` attr value). */
   variant?: LabeledVariantSpec
 }
@@ -89,7 +98,7 @@ function labeledBlock(spec: LabeledBlockSpec) {
     content:  'block+',
     defining: true,
     addOptions() {
-      return { label: spec.label, cssClass: spec.cssClass, plain: spec.plain ?? false, variant: spec.variant ?? null }
+      return { label: spec.label, cssClass: spec.cssClass, plain: spec.plain ?? false, labelless: spec.labelless ?? false, variant: spec.variant ?? null }
     },
     addAttributes() {
       const attrs: Record<string, unknown> = { width: widthAttribute() }
@@ -116,6 +125,17 @@ function labeledBlock(spec: LabeledBlockSpec) {
           ['div', { class: 'pilotiq-block-body' }, 0],
         ]
       }
+      // Labelless (keyTakeaways / summary): keep the content wrapper + width /
+      // variant chrome, but emit no label — the heading lives ABOVE the block.
+      if (spec.labelless) {
+        return [
+          'div',
+          mergeAttributes(HTMLAttributes, { 'data-type': spec.name, class: spec.cssClass }),
+          ['div', { class: 'pilotiq-block-content' },
+            ['div', { class: 'pilotiq-block-body' }, 0],
+          ],
+        ]
+      }
       const label = spec.variant
         ? (spec.variant.labels[node.attrs['variant'] as string] ?? spec.label)
         : spec.label
@@ -134,15 +154,20 @@ function labeledBlock(spec: LabeledBlockSpec) {
   })
 }
 
-export const KeyTakeaways = labeledBlock({ name: 'keyTakeaways', label: 'Key takeaways', cssClass: 'pilotiq-key-takeaways' })
+// `labelless`: no baked-in label — the AI block builders place a localized,
+// editable `<h2>` ("Key takeaways" / "Points clés" / …) directly above it.
+export const KeyTakeaways = labeledBlock({ name: 'keyTakeaways', label: 'Key takeaways', cssClass: 'pilotiq-key-takeaways', labelless: true })
 // `summary` has two purposes, switched by the `variant` attr: `section` (a
 // paragraph/section summary used inside the body) and `article` (the
-// end-of-article summary landmark that sits before the FAQ). One block, two
-// labels — the Normalizer + future block agents read `variant` for placement.
+// end-of-article summary landmark that sits before the FAQ). `labelless` for the
+// same reason as keyTakeaways — the conclusion's `<h2>` sits above the block, in
+// the article's language. The `variant` attr still rides for placement + styling
+// (the Normalizer + block agents read `article`); only the in-block label is gone.
 export const Summary = labeledBlock({
   name: 'summary',
   label: 'Summary',
   cssClass: 'pilotiq-summary',
+  labelless: true,
   variant: { default: 'section', labels: { section: 'Summary', article: 'In summary' } },
 })
 // `intro` is the article's opening landmark — a labelled region ("Introduction"

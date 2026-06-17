@@ -187,7 +187,7 @@ function renderNode(node: unknown, opts: RenderRichTextOptions): string {
     case 'detailsContent': return renderChildren(n, opts)
     case 'grid':           return renderGrid(n, opts)
     case 'gridColumn':     return wrap('div', n, opts)
-    case 'keyTakeaways':   return labeledBlockHtml('pilotiq-key-takeaways', 'Key takeaways', n, opts, true)
+    case 'keyTakeaways':   return labeledBlockHtml('pilotiq-key-takeaways', '', n, opts, true)
     case 'summary':        return renderSummary(n, opts)
     case 'intro':          return labeledBlockHtml('pilotiq-intro', 'Introduction', n, opts, true)
     case 'faq':            return renderFaqNode(n, opts)
@@ -407,8 +407,12 @@ function clampGridColumnsForRender(raw: unknown): 2 | 3 {
 // keyTakeaways / summary / faq / alert / prosCons (+ pros/cons columns).
 
 function labeledBlockHtml(cssClass: string, label: string, n: TiptapNode, opts: RenderRichTextOptions, wrap = false, extraAttr = ''): string {
+  // An empty label = a labelless block (keyTakeaways / summary): its heading is a
+  // localized `<h2>` ABOVE the block, so no in-block label is emitted. Mirrors the
+  // editor's `labelless` renderHTML in extensions/contentBlocks.ts.
+  const labelHtml = label ? `<div class="pilotiq-block-label">${escapeHtml(label)}</div>` : ''
   const inner =
-    `<div class="pilotiq-block-label">${escapeHtml(label)}</div>` +
+    labelHtml +
     `<div class="pilotiq-block-body">${renderChildren(n, opts)}</div>`
   // Top-level labelled blocks (summary / keyTakeaways) carry the gear menu, so
   // they get the two-layer anchor: a full-width outer + an inner
@@ -424,10 +428,12 @@ function labeledBlockHtml(cssClass: string, label: string, n: TiptapNode, opts: 
 // labelled-block shape. The Normalizer + block agents use `article` as the
 // end-of-article landmark (sits before the FAQ).
 function renderSummary(n: TiptapNode, opts: RenderRichTextOptions): string {
+  // Labelless: no in-block "Summary" / "In summary" label — the conclusion's
+  // `<h2>` sits above. `data-variant="article"` still rides for placement +
+  // the read-side accent styling.
   const isArticle = n.attrs?.['variant'] === 'article'
-  const label     = isArticle ? 'In summary' : 'Summary'
   const extraAttr = isArticle ? ' data-variant="article"' : ''
-  return labeledBlockHtml('pilotiq-summary', label, n, opts, true, extraAttr)
+  return labeledBlockHtml('pilotiq-summary', '', n, opts, true, extraAttr)
 }
 
 // Pros & cons — two labelled columns. Same two-layer anchor as the labelled

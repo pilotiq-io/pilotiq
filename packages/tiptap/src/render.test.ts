@@ -698,18 +698,26 @@ describe('renderRichTextToHtml — intro / summary landmarks', () => {
     assert.match(html, /<div class="pilotiq-block-body"><p>Opening line\.<\/p><\/div>/)
   })
 
-  it('summary defaults to the section label', () => {
+  it('summary is labelless — no in-block label (the heading sits above as an <h2>)', () => {
     const doc: TiptapNode = { type: 'doc', content: [{ type: 'summary', content: [para('A recap.')] }] }
     const html = renderRichTextToHtml(doc)
-    assert.match(html, /<div class="pilotiq-summary"><div class="pilotiq-block-content"><div class="pilotiq-block-label">Summary<\/div>/)
+    assert.match(html, /<div class="pilotiq-summary"><div class="pilotiq-block-content"><div class="pilotiq-block-body"><p>A recap\.<\/p><\/div>/)
+    assert.ok(!html.includes('pilotiq-block-label'))
     assert.ok(!html.includes('data-variant'))
   })
 
-  it('summary variant="article" renders the landmark label + data-variant', () => {
+  it('summary variant="article" is labelless but keeps data-variant for placement/styling', () => {
     const doc: TiptapNode = { type: 'doc', content: [{ type: 'summary', attrs: { variant: 'article' }, content: [para('Wrap up.')] }] }
     const html = renderRichTextToHtml(doc)
-    assert.match(html, /<div class="pilotiq-summary" data-variant="article">/)
-    assert.match(html, /<div class="pilotiq-block-label">In summary<\/div>/)
+    assert.match(html, /<div class="pilotiq-summary" data-variant="article"><div class="pilotiq-block-content"><div class="pilotiq-block-body">/)
+    assert.ok(!html.includes('pilotiq-block-label'))
+  })
+
+  it('keyTakeaways is labelless — content-only block, heading lives above', () => {
+    const doc: TiptapNode = { type: 'doc', content: [{ type: 'keyTakeaways', content: [para('Point one.')] }] }
+    const html = renderRichTextToHtml(doc)
+    assert.match(html, /<div class="pilotiq-key-takeaways"><div class="pilotiq-block-content"><div class="pilotiq-block-body"><p>Point one\.<\/p><\/div>/)
+    assert.ok(!html.includes('pilotiq-block-label'))
   })
 })
 
