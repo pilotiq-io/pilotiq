@@ -3,6 +3,7 @@
 @source "../../packages/tiptap/src";
 @source "../../packages/recharts/src";
 @source "../../packages/codemirror/src";
+@source "../../packages/media/src";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 

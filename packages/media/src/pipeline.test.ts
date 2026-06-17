@@ -151,6 +151,23 @@ test('toRecord coerces a raw column bag + defaults loose values', () => {
   assert.equal(rec.url, undefined) // url is attached by the store, not the pure mapper
 })
 
+test('toRecord parses string-encoded json columns (post-create cast)', () => {
+  // Right after Model.create the `json`-cast columns can still be serialized
+  // strings; toRecord must parse them, not drop them to []/{}.
+  const attrs: MediaAttrs = {
+    id: 'x', name: 'p.png', type: 'file', mime: 'image/png', size: 1,
+    disk: 'public', directory: 'media/x', filename: 'p.png', width: 16, height: 16,
+    focalX: null, focalY: null,
+    conversions: JSON.stringify([{ name: 'thumb', filename: 'media/x/thumb.webp', width: 50, height: 50, size: 9, format: 'webp' }]),
+    alt: null, meta: JSON.stringify({ tag: 'hero' }),
+    parentId: null, scope: 'shared', userId: null, createdAt: '', updatedAt: '',
+  }
+  const rec = toRecord(attrs)
+  assert.equal(rec.conversions.length, 1)
+  assert.equal(rec.conversions[0]!.filename, 'media/x/thumb.webp')
+  assert.deepEqual(rec.meta, { tag: 'hero' })
+})
+
 test('toRecord folder defaults + junk coercion', () => {
   const attrs: MediaAttrs = {
     id: 42, name: 123, type: 'folder', mime: 0, size: 'nan',

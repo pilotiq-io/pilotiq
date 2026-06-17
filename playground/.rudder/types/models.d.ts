@@ -24,6 +24,28 @@ declare module '@rudderjs/orm' {
       createdAt: string | null
       updatedAt: string | null
     }
+    media: {
+      id: string
+      name: string
+      type: string
+      mime: string | null
+      size: number | null
+      disk: string
+      directory: string
+      filename: string | null
+      width: number | null
+      height: number | null
+      focalX: number | null
+      focalY: number | null
+      conversions: unknown | null
+      alt: string | null
+      meta: unknown | null
+      parentId: string | null
+      scope: string
+      userId: string | null
+      createdAt: string | null
+      updatedAt: string | null
+    }
     notification: {
       id: string
       notifiable_id: string

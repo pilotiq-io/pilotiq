@@ -52,6 +52,10 @@ export interface ConversionInfo {
   height:   number
   size:     number
   format:   string
+  /** Public URL for this conversion, resolved through the record's disk.
+   *  Computed server-side at read time (not persisted) so the browser can
+   *  use e.g. a `thumb` conversion for grid tiles. */
+  url?:     string
 }
 
 /**

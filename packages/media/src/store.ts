@@ -72,12 +72,15 @@ function attrsOf(m: Media): MediaAttrs {
   }
 }
 
-/** Attach the public `url` to a file record (resolved through its disk).
- *  Folders + url-less records pass through untouched. */
+/** Attach the public `url` to a file record + each of its conversions
+ *  (resolved through its disk). Folders + url-less records pass through
+ *  untouched. */
 function withUrl(rec: MediaRecord): MediaRecord {
   if (rec.type !== 'file' || !rec.filename) return rec
   try {
-    rec.url = Storage.disk(rec.disk).url(buildStorageKey(rec.directory, rec.filename))
+    const d = Storage.disk(rec.disk)
+    rec.url = d.url(buildStorageKey(rec.directory, rec.filename))
+    for (const conv of rec.conversions) conv.url = d.url(conv.filename)
   } catch {
     /* remote disk without a public URL — leave `url` unset */
   }

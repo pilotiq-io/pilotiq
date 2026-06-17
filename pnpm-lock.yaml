@@ -134,6 +134,12 @@ importers:
       '@types/node':
         specifier: ^20
         version: 20.19.41
+      '@types/react':
+        specifier: ^19
+        version: 19.2.16
+      react:
+        specifier: 19.2.6
+        version: 19.2.6
       typescript:
         specifier: ^5
         version: 5.9.3
@@ -421,6 +427,9 @@ importers:
       '@pilotiq/codemirror':
         specifier: workspace:*
         version: link:../packages/codemirror
+      '@pilotiq/media':
+        specifier: workspace:*
+        version: link:../packages/media
       '@pilotiq/pilotiq':
         specifier: workspace:*
         version: link:../packages/pilotiq
@@ -466,6 +475,9 @@ importers:
       '@rudderjs/session':
         specifier: ^2.4.2
         version: 2.4.2(@rudderjs/vite@2.11.2(@rudderjs/core@1.13.0)(@vitejs/plugin-react@6.0.2(vite@8.0.16(@types/node@20.19.41)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)))(vike@0.4.259(hono@4.12.25)(react-streaming@0.4.17(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(srvx@0.11.16)(vite@8.0.16(@types/node@20.19.41)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)))(vite@8.0.16(@types/node@20.19.41)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)))
+      '@rudderjs/storage':
+        specifier: ^1.2.1
+        version: 1.2.1(@rudderjs/router@1.9.1)
       '@rudderjs/sync':
         specifier: ^1.9.0
         version: 1.9.0(prisma@7.8.0(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(better-sqlite3@12.10.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(typescript@5.9.3))(react@19.2.6)(typescript@5.9.3)

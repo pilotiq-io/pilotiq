@@ -2,6 +2,7 @@ import type { PilotiqPlugin } from '@pilotiq/pilotiq'
 import type { MediaConfig } from './types.js'
 import { registerLibrary, type MediaLibrary } from './registry.js'
 import { registerMediaRoutes } from './routes.js'
+import { MediaLibraryPage } from './MediaLibraryPage.js'
 
 /**
  * Configuration for the media plugin.
@@ -50,13 +51,25 @@ export interface MediaPluginConfig extends MediaConfig {
 export function media(config: MediaPluginConfig = {}): PilotiqPlugin {
   return {
     name: '@pilotiq/media',
-    register() {
+    register(panel) {
       // The top-level `MediaConfig` fields form the `default` library; any
       // `libraries` map adds named ones alongside it. A bare `media()` still
       // registers a `default` from the resolveLibrary fallbacks.
       registerLibrary('default', resolveLibrary(config))
       for (const [name, cfg] of Object.entries(config.libraries ?? {})) {
         registerLibrary(name, resolveLibrary(cfg))
+      }
+
+      // #215: mount the library browser as a panel page (auto-routes +
+      // auto-nav). `pages()` REPLACES the array, so we append to the current
+      // set — and dedupe so a re-applied plugin doesn't double-register.
+      // (Apply `media()` AFTER any `.pages([...])` call, since that call
+      // would otherwise replace the appended page.) The host registers the
+      // `MediaLibrary` widget component (client) via `registerWidgetComponents`
+      // — see `@pilotiq/media/widgets`.
+      const pages = panel.getConfig().pages
+      if (!pages.includes(MediaLibraryPage)) {
+        panel.pages([...pages, MediaLibraryPage])
       }
     },
     // #214: mount the `_media` CRUD + upload routes under the panel base.
