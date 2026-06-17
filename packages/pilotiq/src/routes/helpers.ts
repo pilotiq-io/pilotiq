@@ -741,6 +741,20 @@ export async function handleWidgetData(
  *   - `maxSize`: optional byte cap
  *   - `fieldName`: optional tag forwarded to the adapter for routing
  */
+/**
+ * Match one `accept` pattern against a file, mirroring the HTML `accept`
+ * attribute: an exact MIME (`image/png`), a MIME wildcard (`image/*`),
+ * the catch-alls (`*` / `*​/*`), or a file extension (`.png`).
+ */
+export function acceptMatches(pattern: string, file: File): boolean {
+  const p = pattern.toLowerCase()
+  if (p === '*' || p === '*/*') return true
+  if (p.startsWith('.')) return file.name.toLowerCase().endsWith(p)
+  const type = file.type.toLowerCase()
+  if (p.endsWith('/*')) return type.startsWith(p.slice(0, -1)) // 'image/' prefix
+  return type === p
+}
+
 export async function handleUploadRequest(
   req:     AppRequest,
   res:     AppResponse,
@@ -789,7 +803,7 @@ export async function handleUploadRequest(
   const acceptStr = typeof body['accept'] === 'string' ? body['accept'] : ''
   if (acceptStr) {
     const accept = acceptStr.split(',').map(s => s.trim()).filter(Boolean)
-    if (accept.length > 0 && !accept.includes(file.type)) {
+    if (accept.length > 0 && !accept.some(p => acceptMatches(p, file))) {
       res.status(422)
       return res.json({ ok: false, error: `File type "${file.type}" not allowed` })
     }

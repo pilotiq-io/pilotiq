@@ -29,6 +29,7 @@ bootstrap/cache/
 # Storage uploads
 storage/app/
 public/storage
+public/uploads/
 
 # Playwright
 test-results/

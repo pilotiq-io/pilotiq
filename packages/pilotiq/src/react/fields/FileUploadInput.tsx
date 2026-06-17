@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useRef, useState } from 'react'
 import {
   UploadIcon, XIcon, FileIcon, Loader2Icon,
   GripVerticalIcon, DownloadIcon,
+  FileImageIcon, FileVideoIcon, FileAudioIcon, FileTextIcon, FileArchiveIcon,
 } from 'lucide-react'
 import ReactCrop, {
   type Crop, type PixelCrop,
@@ -92,38 +93,73 @@ export function FileUploadInput({
     return []
   }
 
-  const [localUrls, setLocalUrls] = useState<string[]>(toUrls(defaultValue))
-  const urls  = fs.controlled ? toUrls(fs.value) : localUrls
-  const [busy, setBusy] = useState(false)
+  // Items are the source of truth: each is either an in-flight upload, a
+  // stored (done) file, or a failed one. The committed form value is the
+  // ordered list of done URLs — so reordering works across pending + done.
+  const [items, setItems] = useState<UploadItem[]>(() => urlsToItems(toUrls(defaultValue)))
+  const xhrRef = useRef<Map<string, XMLHttpRequest>>(new Map())
 
-  const setUrls = (next: string[]): void => {
-    const stored = multiple ? next : (next[0] ?? null)
-    if (fs.controlled) {
-      fs.setValue(stored)
-      fs.triggerLive(stored)
-    } else {
-      setLocalUrls(next)
-      fs.triggerLive(stored)
-    }
-  }
+  const committedUrls = items.flatMap((i) => (i.status === 'done' && i.url ? [i.url] : []))
+  const committedKey  = committedUrls.join('\n')
+  const anyUploading  = items.some((i) => i.status === 'uploading')
 
-  // Cross-tree applier — FileUpload state lives in `urls` (React); the
-  // hidden mirror input is write-only. FieldShell skips its generic
-  // registration for fieldType === 'fileUpload'.
+  // Track the value we last synced so the push/pull effects below don't fight
+  // (our own writes vs external mutations: suggestion applier / live resolve).
+  const syncedKeyRef = useRef(committedKey)
+  const itemsRef = useRef(items)
+  itemsRef.current = items
+
   const fsRef = useRef(fs)
   useEffect(() => { fsRef.current = fs }, [fs])
+
+  // Push committed URLs → form state when they change locally.
+  useEffect(() => {
+    if (committedKey === syncedKeyRef.current) return
+    syncedKeyRef.current = committedKey
+    const stored = multiple ? committedUrls : (committedUrls[0] ?? null)
+    const cur = fsRef.current
+    if (cur.controlled) cur.setValue(stored)
+    cur.triggerLive(stored)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [committedKey, multiple])
+
+  // Pull external form-state changes (controlled mode) → items.
+  const externalKey = fs.controlled ? toUrls(fs.value).join('\n') : committedKey
+  useEffect(() => {
+    if (!fs.controlled) return
+    if (externalKey === syncedKeyRef.current) return
+    syncedKeyRef.current = externalKey
+    setItems((prev) => {
+      prev.forEach((i) => { if (i.previewUrl) URL.revokeObjectURL(i.previewUrl) })
+      return urlsToItems(externalKey ? externalKey.split('\n') : [])
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalKey])
+
+  // Abort in-flight uploads + revoke object URLs on unmount.
+  useEffect(() => {
+    const xhrs = xhrRef.current
+    return () => {
+      xhrs.forEach((x) => x.abort()); xhrs.clear()
+      itemsRef.current.forEach((i) => { if (i.previewUrl) URL.revokeObjectURL(i.previewUrl) })
+    }
+  }, [])
+
+  // Cross-tree applier — FileUpload state lives in `items` (React); the
+  // hidden mirror input is write-only. FieldShell skips its generic
+  // registration for fieldType === 'fileUpload'.
   const formId = useContext(FormIdContext) || undefined
   useEffect(() => {
     if (name.includes('.')) return
     const applier: PendingSuggestionApplier = (suggestion) => {
       const next = toUrls(suggestion.suggestedValue)
-      const stored = multiple ? next : (next[0] ?? null)
-      const cur = fsRef.current
-      if (cur.controlled) { cur.setValue(stored); cur.triggerLive(stored) }
-      else { setLocalUrls(next); cur.triggerLive(stored) }
+      setItems((prev) => {
+        prev.forEach((i) => { if (i.previewUrl) URL.revokeObjectURL(i.previewUrl) })
+        return urlsToItems(next)
+      })
     }
     return registerPendingSuggestionApplier(formId, name, applier)
-  }, [name, formId, multiple])
+  }, [name, formId])
 
   // ── Image editor helpers ──────────────────────────────────────────────────
 
@@ -203,51 +239,123 @@ export function FileUploadInput({
     })
   }
 
+  const buildUploadBody = (file: File): FormData => {
+    const fd = new FormData()
+    fd.append('file', file)
+    if (directory) fd.append('directory', directory)
+    if (accept)    fd.append('accept', accept.join(','))
+    if (maxSize !== undefined) fd.append('maxSize', String(maxSize))
+    if (automaticallyResize) {
+      fd.append('resize_width',  String(automaticallyResize.width))
+      fd.append('resize_height', String(automaticallyResize.height))
+    }
+    fd.append('fieldName', name)
+    if (preserveFilenames) fd.append('preserveFilenames', 'true')
+    return fd
+  }
+
+  // Fire one upload via XHR (for real upload-progress events) and stream its
+  // state into `items`. Not awaited by the caller — uploads run in parallel.
+  const startUpload = (file: File): void => {
+    if (!uploadUrl) return
+    const id = uploadId()
+    const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
+    setItems((prev) => [...prev, {
+      id, status: 'uploading', name: file.name, mime: file.type, progress: 0,
+      ...(previewUrl ? { previewUrl } : {}),
+    }])
+
+    const fail = (msg: string): void => {
+      xhrRef.current.delete(id)
+      setItems((prev) => prev.map((it) => it.id === id ? { ...it, status: 'error', error: msg } : it))
+      notify({ type: 'error', title: 'Upload failed', body: msg })
+    }
+
+    const xhr = new XMLHttpRequest()
+    xhrRef.current.set(id, xhr)
+    xhr.upload.onprogress = (e): void => {
+      if (!e.lengthComputable) return
+      const pct = Math.round((e.loaded / e.total) * 100)
+      setItems((prev) => prev.map((it) => it.id === id ? { ...it, progress: pct } : it))
+    }
+    xhr.onload = (): void => {
+      xhrRef.current.delete(id)
+      let json: { ok?: boolean; url?: string; error?: string } = {}
+      try { json = JSON.parse(xhr.responseText) as typeof json } catch { /* non-JSON */ }
+      if (xhr.status >= 200 && xhr.status < 300 && json.ok && json.url) {
+        const url = json.url
+        setItems((prev) => prev.map((it) => {
+          if (it.id !== id) return it
+          if (it.previewUrl) URL.revokeObjectURL(it.previewUrl)
+          return {
+            id: it.id, status: 'done', name: it.name, url, progress: 100,
+            ...(it.mime ? { mime: it.mime } : {}),
+          }
+        }))
+      } else {
+        fail(json.error ?? `HTTP ${xhr.status}`)
+      }
+    }
+    xhr.onerror = (): void => fail('Network error')
+    xhr.open('POST', uploadUrl)
+    xhr.setRequestHeader('Accept', 'application/json')
+    xhr.send(buildUploadBody(file))
+  }
+
   const onPick = async (files: FileList | null): Promise<void> => {
     if (!files || files.length === 0) return
     if (!uploadUrl) {
       notify({ type: 'error', title: 'Upload URL missing', body: 'Pilotiq panel has no upload route configured.' })
       return
     }
-    setBusy(true)
-    // appendFiles keeps existing URLs; default replaces them
-    const next = appendFiles ? [...urls] : []
-    try {
-      for (const file of Array.from(files)) {
-        let preparedFile: File
-        try {
-          preparedFile = await prepareFile(file)
-        } catch {
-          continue // user cancelled the editor for this file
-        }
-        const fd = new FormData()
-        fd.append('file', preparedFile)
-        if (directory) fd.append('directory', directory)
-        if (accept)    fd.append('accept', accept.join(','))
-        if (maxSize !== undefined) fd.append('maxSize', String(maxSize))
-        if (automaticallyResize) {
-          fd.append('resize_width',  String(automaticallyResize.width))
-          fd.append('resize_height', String(automaticallyResize.height))
-        }
-        fd.append('fieldName', name)
-        if (preserveFilenames) fd.append('preserveFilenames', 'true')
-        const res  = await fetch(uploadUrl, { method: 'POST', body: fd, headers: { Accept: 'application/json' } })
-        const json = await res.json().catch(() => ({})) as { ok?: boolean; url?: string; error?: string }
-        if (!res.ok || !json.ok || !json.url) {
-          notify({ type: 'error', title: 'Upload failed', body: json.error ?? `HTTP ${res.status}` })
-          continue
-        }
-        next.push(json.url)
-        if (!multiple && !appendFiles) break
-      }
-      setUrls(next)
-    } finally {
-      setBusy(false)
-      if (inputRef.current) inputRef.current.value = ''
+    const single = !multiple && !appendFiles
+    if (single) {
+      // Replace any existing / in-flight items.
+      xhrRef.current.forEach((x) => x.abort()); xhrRef.current.clear()
+      setItems((prev) => { prev.forEach((i) => { if (i.previewUrl) URL.revokeObjectURL(i.previewUrl) }); return [] })
     }
+    // The crop editor must run one modal at a time, so prepare sequentially;
+    // each upload itself fires in parallel (startUpload is not awaited).
+    for (const file of Array.from(files)) {
+      let prepared: File
+      try { prepared = await prepareFile(file) } catch { continue } // editor cancelled
+      startUpload(prepared)
+      if (single) break
+    }
+    if (inputRef.current) inputRef.current.value = ''
   }
 
-  const removeAt = (i: number): void => setUrls(urls.filter((_, idx) => idx !== i))
+  const removeAt = (i: number): void => {
+    setItems((prev) => {
+      const it = prev[i]
+      if (it) {
+        const xhr = xhrRef.current.get(it.id)
+        if (xhr) { xhr.abort(); xhrRef.current.delete(it.id) }
+        if (it.previewUrl) URL.revokeObjectURL(it.previewUrl)
+      }
+      return prev.filter((_, idx) => idx !== i)
+    })
+  }
+
+  // ── File drop-zone (add files by dragging onto the field) ──────────────────
+  const [fileDragOver, setFileDragOver] = useState(false)
+  const isFileDrag = (e: React.DragEvent): boolean =>
+    Array.from(e.dataTransfer.types).includes('Files')
+  const onZoneDragOver = (e: React.DragEvent): void => {
+    if (disabled || !isFileDrag(e)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setFileDragOver(true)
+  }
+  const onZoneDragLeave = (e: React.DragEvent): void => {
+    if (e.currentTarget === e.target) setFileDragOver(false)
+  }
+  const onZoneDrop = (e: React.DragEvent): void => {
+    if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return // internal reorder
+    e.preventDefault()
+    setFileDragOver(false)
+    void onPick(e.dataTransfer.files)
+  }
 
   // ── Drag handlers ─────────────────────────────────────────────────────────
 
@@ -279,25 +387,41 @@ export function FileUploadInput({
     setDropAt(before ? i : i + 1)
   }
 
-  const onDrop = (e: React.DragEvent): void => {
+  const onItemReorderDrop = (e: React.DragEvent): void => {
     e.preventDefault()
     if (dragFromIdx == null || dropAt == null) { onDragEnd(); return }
-    const next = reorderRows(urls, dragFromIdx, dropAt)
-    if (next !== urls) setUrls(next)
+    const next = reorderRows(items, dragFromIdx, dropAt)
+    if (next !== items) setItems(next)
     onDragEnd()
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  const hiddenValue = multiple ? JSON.stringify(urls) : (urls[0] ?? '')
+  const hiddenValue = multiple ? JSON.stringify(committedUrls) : (committedUrls[0] ?? '')
   const isGrid      = panelLayout === 'grid' || panelLayout === 'integrated'
 
   // ── Shared sub-renders ────────────────────────────────────────────────────
 
-  const thumbOrIcon = (url: string): React.ReactElement =>
-    preview && isImage(url)
-      ? <img src={url} alt="" className="size-full object-cover" />
-      : <FileIcon className="size-8 text-muted-foreground" />
+  // The image source for an item: stored URL when done (if it's an image and
+  // previews are on), or the local object-URL preview while uploading/failed.
+  const itemImageSrc = (item: UploadItem): string | undefined =>
+    item.status === 'done'
+      ? (preview && item.url && isImage(item.url) ? item.url : undefined)
+      : item.previewUrl
+
+  const gridThumb = (item: UploadItem): React.ReactElement => {
+    const src = itemImageSrc(item)
+    if (src) return <img src={src} alt="" className="size-full object-cover" />
+    const Icon = fileIconFor(item.mime, item.name)
+    return <Icon className="size-8 text-muted-foreground" />
+  }
+
+  const listThumb = (item: UploadItem): React.ReactElement => {
+    const src = itemImageSrc(item)
+    if (src) return <img src={src} alt="" className="size-8 rounded object-cover shrink-0" />
+    const Icon = fileIconFor(item.mime, item.name)
+    return <Icon className="size-4 shrink-0 text-muted-foreground" />
+  }
 
   const downloadBtn = (url: string): React.ReactElement => (
     <a
@@ -314,7 +438,12 @@ export function FileUploadInput({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col gap-2">
+    <div
+      className={['flex flex-col gap-2 rounded-md', fileDragOver ? 'ring-2 ring-primary ring-offset-2' : ''].join(' ')}
+      onDragOver={onZoneDragOver}
+      onDragLeave={onZoneDragLeave}
+      onDrop={onZoneDrop}
+    >
       <input type="hidden" name={name} value={hiddenValue} readOnly />
 
       {/* Upload trigger — hidden in integrated mode (button lives inside the grid) */}
@@ -325,9 +454,9 @@ export function FileUploadInput({
             variant="outline"
             size="sm"
             onClick={() => inputRef.current?.click()}
-            disabled={disabled || busy}
+            disabled={disabled}
           >
-            {busy
+            {anyUploading
               ? <Loader2Icon className="size-4 animate-spin" />
               : <UploadIcon  className="size-4" />
             }
@@ -351,10 +480,10 @@ export function FileUploadInput({
       />
 
       {/* ── Grid / integrated layout ────────────────────────────────────── */}
-      {isGrid && (
+      {isGrid && (items.length > 0 || panelLayout === 'integrated') && (
         <div className="flex flex-wrap gap-2">
-          {urls.map((url, i) => (
-            <React.Fragment key={i}>
+          {items.map((item, i) => (
+            <React.Fragment key={item.id}>
               {/* Drop indicator before tile */}
               {reorderable && dropAt === i && dragFromIdx !== null && dragFromIdx !== i && dragFromIdx + 1 !== i && (
                 <div aria-hidden className="w-0.5 self-stretch rounded bg-primary" />
@@ -369,52 +498,66 @@ export function FileUploadInput({
                 onDragStart={reorderable ? (e) => onDragStart(e, i) : undefined}
                 onDragOver={reorderable  ? (e) => onTileDragOver(e, i) : undefined}
                 onDragEnd={reorderable   ? onDragEnd : undefined}
-                onDrop={reorderable      ? onDrop : undefined}
+                onDrop={reorderable      ? onItemReorderDrop : undefined}
               >
                 {/* Thumbnail tile */}
-                <div className="relative size-20 rounded-md border border-input bg-muted overflow-hidden flex items-center justify-center">
-                  {openable
+                <div className={[
+                  'relative size-20 rounded-md border bg-muted overflow-hidden flex items-center justify-center',
+                  item.status === 'error' ? 'border-destructive' : 'border-input',
+                ].join(' ')}>
+                  {openable && item.url
                     ? (
-                      <a href={url} target="_blank" rel="noopener noreferrer" className="size-full block">
-                        {thumbOrIcon(url)}
+                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="size-full block">
+                        {gridThumb(item)}
                       </a>
                     )
-                    : thumbOrIcon(url)
+                    : gridThumb(item)
                   }
-                  {/* Hover overlay — actions */}
-                  <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto">
-                    {downloadable && (
-                      <a
-                        href={url}
-                        download={fileNameFrom(url)}
-                        className="rounded p-0.5 text-white hover:text-primary-foreground"
-                        aria-label="Download file"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <DownloadIcon className="size-3.5" />
-                      </a>
-                    )}
-                    {!disabled && (
-                      <button
-                        type="button"
-                        className="rounded p-0.5 text-white hover:text-red-300"
-                        onClick={() => removeAt(i)}
-                        aria-label="Remove file"
-                      >
-                        <XIcon className="size-3.5" />
-                      </button>
-                    )}
-                  </div>
+                  {/* Per-file upload progress */}
+                  {item.status === 'uploading' && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
+                      <CircularProgress value={item.progress ?? 0} />
+                    </div>
+                  )}
+                  {/* Hover overlay — actions (not while uploading) */}
+                  {item.status !== 'uploading' && (
+                    <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto">
+                      {downloadable && item.url && (
+                        <a
+                          href={item.url}
+                          download={fileNameFrom(item.url)}
+                          className="rounded p-0.5 text-white hover:text-primary-foreground"
+                          aria-label="Download file"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <DownloadIcon className="size-3.5" />
+                        </a>
+                      )}
+                      {!disabled && (
+                        <button
+                          type="button"
+                          className="rounded p-0.5 text-white hover:text-red-300"
+                          onClick={() => removeAt(i)}
+                          aria-label="Remove file"
+                        >
+                          <XIcon className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <span className="w-20 truncate text-center text-xs text-muted-foreground">
-                  {fileNameFrom(url)}
+                <span className={[
+                  'w-20 truncate text-center text-xs',
+                  item.status === 'error' ? 'text-destructive' : 'text-muted-foreground',
+                ].join(' ')}>
+                  {item.status === 'error' ? (item.error ?? 'Failed') : (item.url ? fileNameFrom(item.url) : item.name)}
                 </span>
               </div>
             </React.Fragment>
           ))}
 
           {/* Drop indicator after last tile */}
-          {reorderable && dropAt === urls.length && dragFromIdx !== null && dragFromIdx !== urls.length - 1 && (
+          {reorderable && dropAt === items.length && dragFromIdx !== null && dragFromIdx !== items.length - 1 && (
             <div aria-hidden className="w-0.5 self-stretch rounded bg-primary" />
           )}
 
@@ -424,9 +567,8 @@ export function FileUploadInput({
               type="button"
               className="flex size-20 flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-input text-muted-foreground hover:border-primary hover:text-foreground transition-colors"
               onClick={() => inputRef.current?.click()}
-              disabled={busy}
             >
-              {busy
+              {anyUploading
                 ? <Loader2Icon className="size-6 animate-spin" />
                 : <UploadIcon  className="size-6" />
               }
@@ -437,17 +579,18 @@ export function FileUploadInput({
       )}
 
       {/* ── List layout ─────────────────────────────────────────────────── */}
-      {!isGrid && urls.length > 0 && (
+      {!isGrid && items.length > 0 && (
         <ul className="flex flex-col">
-          {urls.map((url, i) => (
-            <React.Fragment key={i}>
+          {items.map((item, i) => (
+            <React.Fragment key={item.id}>
               {/* Drop indicator before row */}
               {reorderable && dropAt === i && dragFromIdx !== null && dragFromIdx !== i && dragFromIdx + 1 !== i && (
                 <li aria-hidden className="h-0.5 rounded bg-primary mx-1" />
               )}
               <li
                 className={[
-                  'flex items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5 text-sm',
+                  'flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-sm',
+                  item.status === 'error' ? 'border-destructive' : 'border-input',
                   i > 0 ? 'mt-1.5' : '',
                   dragFromIdx === i ? 'opacity-40' : '',
                 ].join(' ')}
@@ -455,7 +598,7 @@ export function FileUploadInput({
                 onDragStart={reorderable ? (e) => onDragStart(e, i) : undefined}
                 onDragOver={reorderable  ? (e) => onItemDragOver(e, i) : undefined}
                 onDragEnd={reorderable   ? onDragEnd : undefined}
-                onDrop={reorderable      ? onDrop : undefined}
+                onDrop={reorderable      ? onItemReorderDrop : undefined}
               >
                 {reorderable && (
                   <GripVerticalIcon
@@ -463,25 +606,37 @@ export function FileUploadInput({
                     aria-hidden
                   />
                 )}
-                {preview && isImage(url)
-                  ? openable
+                {item.status === 'uploading'
+                  ? <span className="shrink-0 text-primary"><CircularProgress value={item.progress ?? 0} /></span>
+                  : openable && item.url
                     ? (
-                      <a href={url} target="_blank" rel="noopener noreferrer">
-                        <img src={url} alt="" className="size-8 rounded object-cover shrink-0" />
+                      <a href={item.url} target="_blank" rel="noopener noreferrer">
+                        {listThumb(item)}
                       </a>
                     )
-                    : <img src={url} alt="" className="size-8 rounded object-cover shrink-0" />
-                  : <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+                    : listThumb(item)
                 }
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 truncate hover:underline"
-                >
-                  {fileNameFrom(url)}
-                </a>
-                {downloadable && downloadBtn(url)}
+                {item.url
+                  ? (
+                    <a
+                      href={item.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 truncate hover:underline"
+                    >
+                      {fileNameFrom(item.url)}
+                    </a>
+                  )
+                  : (
+                    <span className={[
+                      'flex-1 truncate',
+                      item.status === 'error' ? 'text-destructive' : 'text-muted-foreground',
+                    ].join(' ')}>
+                      {item.status === 'error' ? (item.error ?? 'Upload failed') : item.name}
+                    </span>
+                  )
+                }
+                {downloadable && item.url && downloadBtn(item.url)}
                 <button
                   type="button"
                   className="shrink-0 text-muted-foreground hover:text-destructive"
@@ -495,10 +650,27 @@ export function FileUploadInput({
             </React.Fragment>
           ))}
           {/* Drop indicator after last row */}
-          {reorderable && dropAt === urls.length && dragFromIdx !== null && dragFromIdx !== urls.length - 1 && (
+          {reorderable && dropAt === items.length && dragFromIdx !== null && dragFromIdx !== items.length - 1 && (
             <li aria-hidden className="mt-1.5 h-0.5 rounded bg-primary mx-1" />
           )}
         </ul>
+      )}
+
+      {/* Empty-state dropzone (non-integrated; integrated has its own Add tile) */}
+      {items.length === 0 && !disabled && panelLayout !== 'integrated' && (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className={[
+            'flex w-full flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed px-4 py-6 text-sm transition-colors',
+            fileDragOver
+              ? 'border-primary bg-primary/5 text-foreground'
+              : 'border-input text-muted-foreground hover:border-primary',
+          ].join(' ')}
+        >
+          <UploadIcon className="size-5" />
+          <span>Drag &amp; drop {multiple ? 'files' : 'a file'} here, or click to browse</span>
+        </button>
       )}
 
       {/* Max-size hint for integrated mode (no separate button row) */}
@@ -639,4 +811,64 @@ function fileNameFrom(url: string): string {
   } catch {
     return url.split('/').filter(Boolean).pop() ?? url
   }
+}
+
+/** One entry in the field: an in-flight upload, a stored file, or a failure. */
+interface UploadItem {
+  id:          string
+  status:      'uploading' | 'done' | 'error'
+  name:        string
+  url?:        string   // present once done
+  previewUrl?: string   // local object-URL while uploading (images)
+  mime?:       string
+  progress?:   number   // 0..100 while uploading
+  error?:      string
+}
+
+function uploadId(): string {
+  return `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+}
+
+/** Seed done-items from already-stored URLs (initial / external value). */
+function urlsToItems(urls: string[]): UploadItem[] {
+  return urls.map((url, i) => ({
+    id:     `seed-${i}-${url}`,
+    status: 'done',
+    name:   fileNameFrom(url),
+    url,
+  }))
+}
+
+/** Pick a type-appropriate icon for a non-previewable file. */
+function fileIconFor(
+  mime: string | undefined,
+  name: string,
+): React.ComponentType<{ className?: string }> {
+  const m   = (mime ?? '').toLowerCase()
+  const ext = name.toLowerCase().split('.').pop() ?? ''
+  if (m.startsWith('image/'))                                              return FileImageIcon
+  if (m.startsWith('video/') || ['mp4', 'mov', 'webm', 'mkv', 'avi'].includes(ext)) return FileVideoIcon
+  if (m.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'flac', 'm4a'].includes(ext)) return FileAudioIcon
+  if (m === 'application/pdf' || ext === 'pdf')                            return FileTextIcon
+  if (m.startsWith('text/') || ['txt', 'md', 'csv', 'json', 'xml', 'yml', 'yaml', 'html'].includes(ext)) return FileTextIcon
+  if (['zip', 'tar', 'gz', 'rar', '7z'].includes(ext))                    return FileArchiveIcon
+  return FileIcon
+}
+
+/** Small SVG progress ring (0..100), inheriting `currentColor`. */
+function CircularProgress({ value }: { value: number }): React.ReactElement {
+  const r = 9
+  const c = 2 * Math.PI * r
+  const pct = Math.max(0, Math.min(100, value))
+  const offset = c * (1 - pct / 100)
+  return (
+    <svg viewBox="0 0 24 24" className="size-7 -rotate-90" role="progressbar" aria-valuenow={pct}>
+      <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeOpacity={0.3} strokeWidth="2.5" />
+      <circle
+        cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+        strokeDasharray={c} strokeDashoffset={offset}
+        style={{ transition: 'stroke-dashoffset 150ms linear' }}
+      />
+    </svg>
+  )
 }
