@@ -10,6 +10,7 @@ import {
   type Form, type Table, type Element,
 } from '@pilotiq/pilotiq'
 import { RichTextField, Block } from '@pilotiq/tiptap'
+import { MediaField } from '@pilotiq/media'
 import { Post } from '../../Models/Post.js'
 import { User } from '../../Models/User.js'
 import { Category } from '../../Models/Category.js'
@@ -74,6 +75,13 @@ export class PostResource extends Resource {
                 .accept(['image/*'])
                 .maxSize(5_000_000)
                 .directory('gallery'),
+              // @pilotiq/media library field — upload new files OR pick
+              // existing ones from the library browser. Stores stable
+              // MediaRef(s) (id + url + conversions), not raw URLs.
+              MediaField.make('coverMedia')
+                .label('Cover media (library)')
+                .multiple()
+                .accept(['image/*']),
               RichTextField.make('content')
                 .label('Content')
                 .placeholder('Start writing…')

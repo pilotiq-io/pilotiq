@@ -86,6 +86,7 @@ declare module '@rudderjs/orm' {
       metaImage: string | null
       excerpt: string | null
       gallery: unknown | null
+      coverMedia: unknown | null
     }
     post_author: {
       postId: string

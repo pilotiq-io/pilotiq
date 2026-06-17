@@ -2,7 +2,7 @@ import '@/index.css'
 import type { ReactNode } from 'react'
 import { registerEntryComponents } from '@pilotiq/pilotiq/entries'
 import { registerWidgetComponents } from '@pilotiq/pilotiq/widgets'
-import { MediaLibrary, registerBuiltinMediaPreviews } from '@pilotiq/media/widgets'
+import { MediaLibrary, registerBuiltinMediaPreviews, registerMediaField } from '@pilotiq/media/widgets'
 import { ReadingStats }  from '../app/Pilotiq/Posts/ReadingStats.js'
 
 // Adapter renderers (Tiptap / Recharts) register through the panel
@@ -16,6 +16,9 @@ registerEntryComponents({ ReadingStats })
 // component + the built-in type previews (image/video/audio/pdf/text).
 registerWidgetComponents({ MediaLibrary })
 registerBuiltinMediaPreviews()
+// The `MediaField` form-field renderer (`fieldType: 'media'`) — upload +
+// library-select. Without this, MediaField fields render as nothing.
+registerMediaField()
 
 export default function Layout({ children }: { children: ReactNode }) {
   return <>{children}</>

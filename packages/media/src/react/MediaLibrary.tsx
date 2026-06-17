@@ -9,6 +9,13 @@
  *
  * Richer interactions (list view, rename/move context menu, multi-select,
  * directory drops) are tracked as a follow-up.
+ *
+ * Two modes:
+ *  - `'manage'` (default) — the standalone library page: click a file to
+ *    preview it, per-tile delete, etc.
+ *  - `'select'` — embedded in the `MediaField` picker dialog: clicking a file
+ *    selects it (single → fires `onSelect` immediately; multiple → toggles,
+ *    confirmed via the footer button). Per-tile delete is hidden.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MediaRecord } from '../types.js'
@@ -30,8 +37,28 @@ registerBuiltinMediaPreviews()
 interface Crumb { id: string; name: string }
 interface ActiveUpload { id: string; name: string; progress: number; error?: string }
 
-export function MediaLibrary(_props: { data?: unknown }): React.JSX.Element {
-  const apiBase = useMemo(() => deriveApiBase('media'), [])
+export interface MediaLibraryProps {
+  /** Present when mounted as a `View` widget on the library page. Unused. */
+  data?:      unknown
+  /** `'manage'` (page) or `'select'` (picker dialog). Default `'manage'`. */
+  mode?:      'manage' | 'select'
+  /** In select mode, allow picking more than one file. */
+  multiple?:  boolean
+  /** Fired with the chosen records in select mode. */
+  onSelect?:  (records: MediaRecord[]) => void
+  /** Override the derived `_media` API base (the field passes the panel base;
+   *  the page-relative `deriveApiBase` would be wrong inside a form). */
+  apiBase?:   string
+}
+
+export function MediaLibrary({
+  mode = 'manage',
+  multiple = false,
+  onSelect,
+  apiBase: apiBaseProp,
+}: MediaLibraryProps = {}): React.JSX.Element {
+  const apiBase = useMemo(() => apiBaseProp ?? deriveApiBase('media'), [apiBaseProp])
+  const selecting = mode === 'select'
 
   const [folderId, setFolderId] = useState<string | null>(null)
   const [trail, setTrail] = useState<Crumb[]>([])
@@ -43,6 +70,9 @@ export function MediaLibrary(_props: { data?: unknown }): React.JSX.Element {
   const [preview, setPreview] = useState<MediaRecord | null>(null)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
+  // Select-mode multi-select buffer, keyed by id (preserves clicked records
+  // so the footer "Add" can return them even after navigating folders away).
+  const [selected, setSelected] = useState<Record<string, MediaRecord>>({})
   const fileInput = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async (parentId: string | null, q: string) => {
@@ -123,9 +153,24 @@ export function MediaLibrary(_props: { data?: unknown }): React.JSX.Element {
   }, [apiBase, folderId, search, load, preview])
 
   const onActivate = useCallback((rec: MediaRecord) => {
-    if (rec.type === 'folder') openFolder(rec)
-    else setPreview(rec)
-  }, [openFolder])
+    if (rec.type === 'folder') { openFolder(rec); return }
+    if (selecting) {
+      if (!multiple) { onSelect?.([rec]); return }
+      setSelected(prev => {
+        const next = { ...prev }
+        if (next[rec.id]) delete next[rec.id]
+        else next[rec.id] = rec
+        return next
+      })
+      return
+    }
+    setPreview(rec)
+  }, [openFolder, selecting, multiple, onSelect])
+
+  const selectedList = useMemo(() => Object.values(selected), [selected])
+  const confirmSelection = useCallback(() => {
+    if (selectedList.length > 0) onSelect?.(selectedList)
+  }, [selectedList, onSelect])
 
   return (
     <div
@@ -191,13 +236,37 @@ export function MediaLibrary(_props: { data?: unknown }): React.JSX.Element {
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-3">
             {items.map(item => (
-              <Tile key={item.id} item={item} onActivate={onActivate} onDelete={onDelete} />
+              <Tile
+                key={item.id}
+                item={item}
+                onActivate={onActivate}
+                onDelete={onDelete}
+                selectable={selecting}
+                selected={!!selected[item.id]}
+              />
             ))}
           </div>
         )}
       </div>
 
-      {preview && <PreviewModal record={preview} onClose={() => setPreview(null)} onDelete={onDelete} />}
+      {/* Select-mode footer — confirm multi-select. */}
+      {selecting && multiple && (
+        <footer className="flex items-center justify-between gap-3 border-t bg-muted/30 px-4 py-3 text-sm">
+          <span className="text-muted-foreground">
+            {selectedList.length === 0 ? 'No files selected' : `${selectedList.length} selected`}
+          </span>
+          <button
+            onClick={confirmSelection}
+            disabled={selectedList.length === 0}
+            className="h-8 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+          >
+            Add {selectedList.length > 0 ? selectedList.length : ''} to field
+          </button>
+        </footer>
+      )}
+
+      {/* Preview modal — manage mode only (select mode clicks pick, not preview). */}
+      {!selecting && preview && <PreviewModal record={preview} onClose={() => setPreview(null)} onDelete={onDelete} />}
       {newFolderOpen && (
         <NewFolderDialog
           onClose={() => setNewFolderOpen(false)}
@@ -223,18 +292,25 @@ function thumbFor(rec: MediaRecord): string | null {
   return thumb?.url ?? rec.url ?? null
 }
 
-function Tile({ item, onActivate, onDelete }: {
+function Tile({ item, onActivate, onDelete, selectable = false, selected = false }: {
   item: MediaRecord
   onActivate: (r: MediaRecord) => void
   onDelete: (r: MediaRecord) => void
+  selectable?: boolean
+  selected?: boolean
 }) {
   const thumb = thumbFor(item)
+  const isFile = item.type === 'file'
   return (
     <div className="group relative">
       <button
         onDoubleClick={() => onActivate(item)}
         onClick={() => onActivate(item)}
-        className="flex w-full flex-col items-center gap-2 rounded-lg border p-3 text-center transition-colors hover:border-primary/50 hover:bg-muted/50"
+        aria-pressed={selectable && isFile ? selected : undefined}
+        className={[
+          'flex w-full flex-col items-center gap-2 rounded-lg border p-3 text-center transition-colors hover:border-primary/50 hover:bg-muted/50',
+          selected ? 'border-primary ring-2 ring-primary' : '',
+        ].join(' ')}
         title={item.name}
       >
         <div className="flex h-20 w-full items-center justify-center overflow-hidden rounded-md bg-muted">
@@ -244,14 +320,26 @@ function Tile({ item, onActivate, onDelete }: {
         </div>
         <span className="w-full truncate text-xs">{item.name}</span>
       </button>
-      <button
-        onClick={e => { e.stopPropagation(); onDelete(item) }}
-        className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-md bg-background/90 text-muted-foreground shadow-sm hover:text-destructive group-hover:flex"
-        title="Delete"
-        aria-label={`Delete ${item.name}`}
-      >
-        ×
-      </button>
+      {/* Selected check badge (select mode). */}
+      {selected && (
+        <span
+          aria-hidden
+          className="absolute left-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground shadow-sm"
+        >
+          ✓
+        </span>
+      )}
+      {/* Delete — hidden in select mode (the picker shouldn't manage files). */}
+      {!selectable && (
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(item) }}
+          className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-md bg-background/90 text-muted-foreground shadow-sm hover:text-destructive group-hover:flex"
+          title="Delete"
+          aria-label={`Delete ${item.name}`}
+        >
+          ×
+        </button>
+      )}
     </div>
   )
 }

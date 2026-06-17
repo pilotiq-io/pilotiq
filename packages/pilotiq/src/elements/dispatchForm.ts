@@ -472,6 +472,20 @@ export function coerceFormValues(
         }
         break
       }
+      case 'media': {
+        // `@pilotiq/media`'s MediaField posts a stable media reference as a
+        // JSON-encoded string via a hidden input — an object (single) or an
+        // array (multiple). Parse to a real value so the `'json'`-cast column
+        // persists it; empty / unparseable → null. Already-structured values
+        // (e.g. from a `live()` resolve) pass through.
+        if (raw === undefined || raw === null || raw === '') {
+          out[name] = null
+        } else if (typeof raw === 'string') {
+          try { out[name] = JSON.parse(raw) }
+          catch { out[name] = null }
+        }
+        break
+      }
       default:
         // text/textarea/email/select/slug — leave as string.
         break
