@@ -66,6 +66,14 @@ export class PostResource extends Resource {
                 .accept(['image/*'])
                 .maxSize(2_000_000)
                 .directory('covers'),
+              FileUpload.make('gallery')
+                .label('Gallery')
+                .multiple()
+                .reorderable()
+                .panelLayout('grid')
+                .accept(['image/*'])
+                .maxSize(5_000_000)
+                .directory('gallery'),
               RichTextField.make('content')
                 .label('Content')
                 .placeholder('Start writing…')

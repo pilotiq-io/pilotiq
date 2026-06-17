@@ -63,6 +63,7 @@ declare module '@rudderjs/orm' {
       updatedAt: string | null
       metaImage: string | null
       excerpt: string | null
+      gallery: unknown | null
     }
     post_author: {
       postId: string

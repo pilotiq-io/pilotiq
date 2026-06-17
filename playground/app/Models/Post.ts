@@ -18,6 +18,7 @@ export class Post extends Model.for<'post'>() {
   static override casts = {
     publishedAt: 'datetime' as const,
     content:     'json' as const,
+    gallery:     'json' as const,
   }
 
   static override relations = {
