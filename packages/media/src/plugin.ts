@@ -1,6 +1,7 @@
 import type { PilotiqPlugin } from '@pilotiq/pilotiq'
 import type { MediaConfig } from './types.js'
 import { registerLibrary, type MediaLibrary } from './registry.js'
+import { registerMediaRoutes } from './routes.js'
 
 /**
  * Configuration for the media plugin.
@@ -43,8 +44,8 @@ export interface MediaPluginConfig extends MediaConfig {
  * ```
  *
  * #213: the plugin resolves its config into the library registry on
- * `register()`. The `_media` routes + upload pipeline land in #214 (via
- * `registerRoutes`), and the browser UI in #215.
+ * `register()`. #214: `registerRoutes(router, pilotiq)` mounts the `_media`
+ * CRUD + upload pipeline. The browser UI lands in #215.
  */
 export function media(config: MediaPluginConfig = {}): PilotiqPlugin {
   return {
@@ -58,8 +59,13 @@ export function media(config: MediaPluginConfig = {}): PilotiqPlugin {
         registerLibrary(name, resolveLibrary(cfg))
       }
     },
-    // #214: registerRoutes(router, pilotiq) mounts the `_media` CRUD +
-    // upload pipeline. Added in the server slice.
+    // #214: mount the `_media` CRUD + upload routes under the panel base.
+    // Runs server-side only; `registerMediaRoutes` defers its Node-only
+    // store (Storage / image / model) to a lazy import inside each handler,
+    // so this stays client-safe to load alongside the panel module.
+    registerRoutes(router, pilotiq) {
+      registerMediaRoutes(router, pilotiq)
+    },
   }
 }
 

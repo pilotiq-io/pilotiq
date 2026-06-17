@@ -5,9 +5,10 @@ Open-source media / file library for [`@pilotiq/pilotiq`](https://pilotiq.io). B
 Built on rudder framework primitives: storage via [`@rudderjs/storage`](https://www.npmjs.com/package/@rudderjs/storage) (local / S3 / R2), image conversions via [`@rudderjs/image`](https://www.npmjs.com/package/@rudderjs/image).
 
 > **Status: in development.** Persistence (`Media` model + migration + library
-> registry) landed in #213. Still to come: `_media` routes + upload pipeline (#214),
-> browser UI (#215), upload adapter for the core `FileUpload` field (#216),
-> embedded schema element (#217), and the upload + library-select form field (#208).
+> registry) landed in #213; the `_media` CRUD routes + storage/image upload
+> pipeline in #214. Still to come: browser UI (#215), upload adapter for the
+> core `FileUpload` field (#216), embedded schema element (#217), and the
+> upload + library-select form field (#208).
 
 ## Install
 
@@ -70,6 +71,29 @@ If you reference the `Media` model in app code, register it in a provider
 (`ModelRegistry.register(Media)`) so `rudder schema:types` folds its casts into
 the generated registry — the package ships a matching `SchemaRegistry['media']`
 augmentation, so the two merge identically.
+
+## HTTP API
+
+The `media()` plugin mounts CRUD + upload routes under the panel base (the
+underscore-prefixed sibling-route convention). They're authenticated with the
+panel's `Pilotiq.guard()` and honor a `scope` of `shared` (default) or
+`private` (filtered to the current user):
+
+| Method & path | Body | Purpose |
+|---|---|---|
+| `GET  {base}/_media` | — | List a folder. Query: `parentId`, `scope`, `search`, `sort` (`name`\|`createdAt`\|`updatedAt`\|`size`), `dir`, `page`, `perPage`. Returns `{ ok, data, total, page, perPage, lastPage }`. |
+| `GET  {base}/_media/:id` | — | Fetch one record. |
+| `POST {base}/_media/folder` | JSON `{ name, parentId?, scope? }` | Create a folder. |
+| `POST {base}/_media/upload` | multipart `file`, `library?`, `parentId?`, `scope?`, `alt?` | Upload a file. Images get dimensions probed + the library's `conversions` generated to disk. |
+| `POST {base}/_media/:id/rename` | JSON `{ name }` | Rename a file/folder. |
+| `POST {base}/_media/:id/move` | JSON `{ parentId }` (`null` = root) | Reparent (rejects cycles + non-folder targets). |
+| `POST {base}/_media/:id/delete` | — | Delete; folders recurse, removing every descendant row + stored file + conversion. |
+
+Uploads respect the library's `acceptedMimes` + `maxUploadSize` server-side
+(re-checked even though the client enforces them too). Each upload lands in its
+own directory under the library so a file and its conversions can't collide
+with another upload's. The server functions (`uploadFile`, `listMedia`, …) are
+also exported from `@pilotiq/media/server` for programmatic use.
 
 ## License
 
