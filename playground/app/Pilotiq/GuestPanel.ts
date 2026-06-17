@@ -2,6 +2,7 @@ import { Pilotiq, Section, Heading, Text } from '@pilotiq/pilotiq'
 import { tiptap }     from '@pilotiq/tiptap'
 import { codeEditor } from '@pilotiq/codemirror'
 import { recharts }   from '@pilotiq/recharts'
+import { media }      from '@pilotiq/media'
 import { html } from '@codemirror/lang-html'
 import { PostResource }     from './Posts/PostResource.js'
 import { PageResource }     from './SitePages/PageResource.js'
@@ -36,6 +37,10 @@ export const pilotiqGuest = Pilotiq.make('Pilotiq Guest')
     tiptap(),
     codeEditor({ languages: { html } }),
     recharts(),
+    // Mirror /admin's media library so the MediaField (on PostResource)
+    // works here too — and the unguarded /guest panel doubles as a test
+    // surface for the `_media` routes (no login needed).
+    media({ conversions: [{ name: 'thumb', width: 320, height: 320, crop: true, format: 'webp' }] }),
   ])
   .resources([PostResource, PageResource, CategoryResource, CommentResource])
   // Dashboard at /guest — the builder-level schema renders when no

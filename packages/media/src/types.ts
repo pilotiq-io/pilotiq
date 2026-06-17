@@ -44,6 +44,42 @@ export interface MediaRecord {
   url?:        string
 }
 
+/**
+ * A stable, self-contained reference to a library file — the value persisted
+ * by the `MediaField` form field. Carries enough to round-trip the file on
+ * edit (preview thumbnail, alt text, responsive conversions) WITHOUT a re-fetch
+ * by id, while staying a curated subset of `MediaRecord` (no server-only disk
+ * path internals leak into the content column). Single-select fields store one
+ * `MediaRef`; multi-select fields store `MediaRef[]`.
+ */
+export interface MediaRef {
+  id:           string
+  /** Public URL for the original file. */
+  url:          string | null
+  name:         string
+  mime:         string | null
+  width?:       number | null
+  height?:      number | null
+  alt?:         string | null
+  conversions?: ConversionInfo[]
+}
+
+/** Project a full `MediaRecord` down to the curated `MediaRef` stored by the
+ *  `MediaField`. Drops folders' server-only path fields; keeps preview-relevant
+ *  data so the field renders without re-querying. */
+export function toMediaRef(rec: MediaRecord): MediaRef {
+  return {
+    id:          rec.id,
+    url:         rec.url ?? null,
+    name:        rec.name,
+    mime:        rec.mime,
+    width:       rec.width,
+    height:      rec.height,
+    alt:         rec.alt,
+    conversions: rec.conversions,
+  }
+}
+
 /** A generated conversion, persisted in the `conversions` column. */
 export interface ConversionInfo {
   name:     string

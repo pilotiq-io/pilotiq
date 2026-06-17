@@ -4,15 +4,21 @@
 
 export type {
   MediaRecord,
+  MediaRef,
   ConversionInfo,
   MediaConversion,
   MediaConfig,
   FileCategory,
 } from './types.js'
-export { categorize } from './types.js'
+export { categorize, toMediaRef } from './types.js'
 
 export { media } from './plugin.js'
 export type { MediaPluginConfig } from './plugin.js'
+
+// The media-library form field — `fieldType: 'media'`. Client-safe (only
+// imports the `Field` base from `@pilotiq/pilotiq`). Its renderer registers
+// separately via `registerMediaField()` (`@pilotiq/media/widgets`).
+export { MediaField, MediaPicker } from './MediaField.js'
 
 // Library registry — client-safe (globalThis-backed, no Node imports), so the
 // browser UI + picker field can resolve the active library at render time.

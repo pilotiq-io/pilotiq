@@ -8,6 +8,7 @@ import { TextField } from '../fields/TextField.js'
 import { NumberField } from '../fields/NumberField.js'
 import { ToggleField } from '../fields/ToggleField.js'
 import { TagsInputField } from '../fields/TagsInputField.js'
+import { Field, type FieldMeta } from '../fields/Field.js'
 import { RepeaterField } from '../fields/RepeaterField.js'
 import { BuilderField } from '../fields/BuilderField.js'
 import { Block } from '../schema/Block.js'
@@ -386,6 +387,42 @@ describe('coerceFormValues — tagsInput', () => {
     const elements = [TagsInputField.make('tags')]
     const out = coerceFormValues(elements, { tags: [1, 2, 'three'] })
     assert.deepEqual(out['tags'], ['1', '2', 'three'])
+  })
+})
+
+// Stand-in for `@pilotiq/media`'s MediaField — exercises core's `'media'`
+// coerce branch without a cross-package import.
+class MediaTestField extends Field {
+  constructor(name: string) { super(name, 'media') }
+  override toMeta(): FieldMeta { return this.buildMeta() }
+}
+
+describe('coerceFormValues — media', () => {
+  it('parses a JSON-encoded single ref string into an object', () => {
+    const out = coerceFormValues([new MediaTestField('cover')], { cover: '{"id":"01","url":"/m/a.jpg","name":"a.jpg"}' })
+    assert.deepEqual(out['cover'], { id: '01', url: '/m/a.jpg', name: 'a.jpg' })
+  })
+
+  it('parses a JSON-encoded multi-ref array string', () => {
+    const out = coerceFormValues([new MediaTestField('gallery')], { gallery: '[{"id":"01"},{"id":"02"}]' })
+    assert.deepEqual(out['gallery'], [{ id: '01' }, { id: '02' }])
+  })
+
+  it('coerces empty / null / undefined to null', () => {
+    const f = [new MediaTestField('cover')]
+    assert.equal(coerceFormValues(f, { cover: '' }).cover,   null)
+    assert.equal(coerceFormValues(f, { cover: null }).cover, null)
+    assert.equal(coerceFormValues(f, {}).cover,              null)
+  })
+
+  it('coerces unparseable JSON to null', () => {
+    const out = coerceFormValues([new MediaTestField('cover')], { cover: 'not-json' })
+    assert.equal(out['cover'], null)
+  })
+
+  it('passes an already-structured value through', () => {
+    const out = coerceFormValues([new MediaTestField('cover')], { cover: { id: '01' } })
+    assert.deepEqual(out['cover'], { id: '01' })
   })
 })
 

@@ -19,6 +19,7 @@ export class Post extends Model.for<'post'>() {
     publishedAt: 'datetime' as const,
     content:     'json' as const,
     gallery:     'json' as const,
+    coverMedia:  'json' as const,   // MediaField value (MediaRef[] — @pilotiq/media)
   }
 
   static override relations = {
