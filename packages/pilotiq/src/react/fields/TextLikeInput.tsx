@@ -209,25 +209,23 @@ function CollabTextField({
 
   // Match the visual chrome of `<Input>` / `<Textarea>` so the editor reads
   // as a drop-in replacement. The adapter forwards this class to its
-  // contenteditable wrapper; `whitespace-nowrap` on the single-line variant
-  // keeps the editor from wrapping into a second line if a stray paragraph
-  // split somehow makes it through.
+  // contenteditable wrapper.
   //
-  // `overflow-x-clip` (not `auto`) on the single-line variant matters for
-  // `CollaborationCaret` presence labels: per the CSS overflow spec, setting
-  // either axis to a non-visible / non-clip value (`auto` / `scroll` /
-  // `hidden`) forces the other axis to compute as `auto` too — so
-  // `overflow-x-auto` would clip the caret's user-name label, which renders
-  // `-1.4em` above the line. `clip` is the one non-visible value that does
-  // NOT force the other axis, so `overflow-y` stays `visible` and the label
-  // escapes the chrome upward as designed. Trade-off: long text gets clipped
-  // on the right rather than horizontally scrollable (native `<input>`
-  // semantics) — acceptable for plain-text fields, where typing past the
-  // visible width is rare and the caret presence label is the higher-value
-  // affordance.
+  // The single-line variant GROWS to fit wrapped content rather than clipping
+  // it: a Title legitimately gets long, and hiding part of it behind a clip /
+  // horizontal scroll reads worse than letting it wrap. `min-h-8` keeps the
+  // compact resting height for short titles; dropping `items-center` +
+  // `whitespace-nowrap` (replaced with `whitespace-pre-wrap break-words` and
+  // balanced `py-1.5` / `leading-snug`) lets the box hug multi-line content
+  // with even vertical spacing.
+  //
+  // Both axes stay `overflow: visible`, so `CollaborationCaret`'s presence
+  // label (rendered `-1.4em` above the line) still escapes the chrome upward
+  // as designed — no `overflow-x-clip` is needed now that long text wraps
+  // instead of overflowing horizontally.
   const className = multiline
     ? 'flex min-h-[60px] w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm whitespace-pre-wrap break-words'
-    : 'flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm whitespace-nowrap overflow-x-clip'
+    : 'flex min-h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base leading-snug transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm whitespace-pre-wrap break-words'
 
   return (
     <>
