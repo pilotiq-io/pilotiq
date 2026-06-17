@@ -1,7 +1,15 @@
-import { test } from 'node:test'
+import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { media } from './plugin.js'
 import { categorize } from './types.js'
+import {
+  getLibrary,
+  getDefaultLibrary,
+  getLibraryNames,
+  resetLibraries,
+} from './registry.js'
+
+beforeEach(() => resetLibraries())
 
 test('media() returns a PilotiqPlugin with the package name', () => {
   const plugin = media()
@@ -9,10 +17,50 @@ test('media() returns a PilotiqPlugin with the package name', () => {
   assert.equal(typeof plugin.register, 'function')
 })
 
-test('media().register() is an inert no-op in the scaffold', () => {
-  const plugin = media({ disk: 'public', directory: 'media' })
-  // register receives the panel; the scaffold must not throw on a bare stub.
+test('media().register() registers a default library from sensible fallbacks', () => {
+  const plugin = media()
   assert.doesNotThrow(() => plugin.register({} as never))
+  assert.deepEqual(getDefaultLibrary(), { disk: 'public', directory: 'media' })
+  assert.deepEqual(getLibraryNames(), ['default'])
+})
+
+test('top-level MediaConfig fields form the default library', () => {
+  media({
+    disk: 'r2',
+    directory: 'assets',
+    acceptedMimes: ['image/*'],
+    maxUploadSize: 5_000_000,
+  }).register({} as never)
+
+  assert.deepEqual(getDefaultLibrary(), {
+    disk: 'r2',
+    directory: 'assets',
+    accept: ['image/*'],
+    maxUploadSize: 5_000_000,
+  })
+})
+
+test('named libraries register alongside the default', () => {
+  media({
+    libraries: {
+      photos: { disk: 'public', directory: 'photos', acceptedMimes: ['image/*'] },
+      docs:   { disk: 'public', directory: 'docs' },
+    },
+  }).register({} as never)
+
+  assert.deepEqual(getLibraryNames().sort(), ['default', 'docs', 'photos'])
+  assert.equal(getLibrary('photos')?.directory, 'photos')
+  assert.deepEqual(getLibrary('photos')?.accept, ['image/*'])
+  // A named lib without disk/directory still falls back to the defaults.
+  assert.deepEqual(getLibrary('docs'), { disk: 'public', directory: 'docs' })
+})
+
+test('getLibrary returns undefined for an unregistered name', () => {
+  assert.equal(getLibrary('nope'), undefined)
+})
+
+test('getDefaultLibrary falls back before any registration', () => {
+  assert.deepEqual(getDefaultLibrary(), { disk: 'public', directory: 'media' })
 })
 
 test('categorize() maps MIME types to preview categories', () => {

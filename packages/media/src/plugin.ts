@@ -1,5 +1,6 @@
 import type { PilotiqPlugin } from '@pilotiq/pilotiq'
 import type { MediaConfig } from './types.js'
+import { registerLibrary, type MediaLibrary } from './registry.js'
 
 /**
  * Configuration for the media plugin.
@@ -41,18 +42,34 @@ export interface MediaPluginConfig extends MediaConfig {
  * Pilotiq.make('Admin').plugins([media()])
  * ```
  *
- * Scaffold (#212): the plugin is wired but inert. The library registry +
- * persistence land in #213, the `_media` routes + upload pipeline in #214,
- * and the browser UI in #215.
+ * #213: the plugin resolves its config into the library registry on
+ * `register()`. The `_media` routes + upload pipeline land in #214 (via
+ * `registerRoutes`), and the browser UI in #215.
  */
 export function media(config: MediaPluginConfig = {}): PilotiqPlugin {
   return {
     name: '@pilotiq/media',
     register() {
-      // #213: register configured libraries into the library registry.
-      void config
+      // The top-level `MediaConfig` fields form the `default` library; any
+      // `libraries` map adds named ones alongside it. A bare `media()` still
+      // registers a `default` from the resolveLibrary fallbacks.
+      registerLibrary('default', resolveLibrary(config))
+      for (const [name, cfg] of Object.entries(config.libraries ?? {})) {
+        registerLibrary(name, resolveLibrary(cfg))
+      }
     },
     // #214: registerRoutes(router, pilotiq) mounts the `_media` CRUD +
     // upload pipeline. Added in the server slice.
+  }
+}
+
+/** Fill a `MediaConfig`'s optional fields into a resolved `MediaLibrary`. */
+function resolveLibrary(cfg: MediaConfig): MediaLibrary {
+  return {
+    disk:      cfg.disk ?? 'public',
+    directory: cfg.directory ?? 'media',
+    ...(cfg.acceptedMimes !== undefined ? { accept: cfg.acceptedMimes } : {}),
+    ...(cfg.maxUploadSize !== undefined ? { maxUploadSize: cfg.maxUploadSize } : {}),
+    ...(cfg.conversions !== undefined ? { conversions: cfg.conversions } : {}),
   }
 }
