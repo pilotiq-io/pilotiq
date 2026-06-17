@@ -1,11 +1,19 @@
 import type { Application, ServiceProvider } from '@rudderjs/core'
 import { defaultProviders } from '@rudderjs/core'
+import { StorageProvider } from '@rudderjs/storage'
+import { ModelRegistry } from '@rudderjs/orm'
 import { pilotiq } from '@pilotiq/pilotiq'
 import { localUpload } from '@pilotiq/pilotiq/uploads'
+import { Media } from '@pilotiq/media/server'
 import { pilotiqAdmin } from '../app/Pilotiq/AdminPanel.js'
 import { pilotiqGuest } from '../app/Pilotiq/GuestPanel.js'
 import { AppServiceProvider } from '../app/Providers/AppServiceProvider.js'
 import { User } from '../app/Models/User.js'
+
+// @pilotiq/media's model lives outside `app/Models/**`, so register it
+// explicitly (server-only) for `rudder schema:types` + eager observers. The
+// `public` storage disk (config/storage.ts) backs its upload pipeline.
+ModelRegistry.register(Media)
 
 // Server-only adapter wiring — kept out of the panel modules because the
 // Vite plugin's auto-generated `_components.ts` manifest re-imports
@@ -31,6 +39,10 @@ pilotiqAdmin.user(async (req) => {
 
 export default [
   ...(await defaultProviders()),
+
+  // Storage disks (`config/storage.ts`) — boots the `public` disk that
+  // @pilotiq/media writes uploads + conversions to.
+  StorageProvider,
 
   pilotiq([pilotiqAdmin, pilotiqGuest]),
 

@@ -26,6 +26,10 @@
     "./server": {
       "import": "./dist/server.js",
       "types": "./dist/server.d.ts"
+    },
+    "./widgets": {
+      "import": "./dist/widgets.js",
+      "types": "./dist/widgets.d.ts"
     }
   },
   "scripts": {
@@ -39,7 +43,13 @@
   "peerDependencies": {
     "@pilotiq/pilotiq": ">=0.42.0 <1.0.0",
     "@rudderjs/database": "^1.5.0",
-    "@rudderjs/orm": "^1.21.0"
+    "@rudderjs/orm": "^1.21.0",
+    "react": "^18 || ^19"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@rudderjs/image": "^1.2.1",
@@ -50,6 +60,8 @@
     "@rudderjs/database": "^1.5.4",
     "@rudderjs/orm": "^1.21.2",
     "@types/node": "^20",
+    "@types/react": "^19",
+    "react": "^19",
     "typescript": "^5"
   },
   "author": "Suleiman Shahbari"

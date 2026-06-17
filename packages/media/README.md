@@ -6,9 +6,10 @@ Built on rudder framework primitives: storage via [`@rudderjs/storage`](https://
 
 > **Status: in development.** Persistence (`Media` model + migration + library
 > registry) landed in #213; the `_media` CRUD routes + storage/image upload
-> pipeline in #214. Still to come: browser UI (#215), upload adapter for the
-> core `FileUpload` field (#216), embedded schema element (#217), and the
-> upload + library-select form field (#208).
+> pipeline in #214; the library browser UI + extensible preview registry in
+> #215. Still to come: upload adapter for the core `FileUpload` field (#216),
+> embedded schema element (#217), and the upload + library-select form field
+> (#208).
 
 ## Install
 
@@ -94,6 +95,54 @@ Uploads respect the library's `acceptedMimes` + `maxUploadSize` server-side
 own directory under the library so a file and its conversions can't collide
 with another upload's. The server functions (`uploadFile`, `listMedia`, …) are
 also exported from `@pilotiq/media/server` for programmatic use.
+
+> **Serving stored files.** Media records carry public `url`s resolved through
+> the disk's `baseUrl` (`Storage.disk(disk).url(key)`). Your app must make those
+> URLs reachable — a CDN / S3 public bucket, or a small route streaming from the
+> disk. For a local disk that means serving its `baseUrl` prefix, e.g.
+> ```ts
+> Route.get('/media/*', async (req) => {
+>   const key = decodeURIComponent(req.path.replace(/^\/+/, ''))
+>   const buf = await Storage.disk('public').get(key)
+>   return buf ? new Response(buf, { headers: { 'Content-Type': mimeFor(key) } })
+>              : new Response('Not Found', { status: 404 })
+> })
+> ```
+
+## Library browser UI
+
+The `media()` plugin also mounts a **library browser** at `${base}/media` (a nav
+entry + page), so a panel with `media()` gets a working file manager: folder
+browsing + breadcrumbs, upload with per-file progress, a new-folder dialog,
+delete, and a type-aware preview modal.
+
+Register the browser's React widget + the built-in previews from your **client**
+entry (e.g. `pages/+Layout.tsx`):
+
+```ts
+import { registerWidgetComponents } from '@pilotiq/pilotiq/widgets'
+import { MediaLibrary, registerBuiltinMediaPreviews } from '@pilotiq/media/widgets'
+
+registerWidgetComponents({ MediaLibrary })
+registerBuiltinMediaPreviews()
+```
+
+Apply `media()` **after** any `.pages([...])` call (it appends its page, and
+`.pages()` replaces the set).
+
+### Extensible preview registry
+
+Previews are keyed by `FileCategory` (`categorize(mime)`), not a hard-coded
+switch — add or override a type by registering a renderer:
+
+```ts
+import { registerMediaPreview } from '@pilotiq/media'
+
+registerMediaPreview('pdf', MyFancyPdfViewer) // ({ url, mime, name, record }) => JSX
+```
+
+Built-ins ship for image / video / audio / pdf / text, with an icon fallback for
+everything else.
 
 ## License
 

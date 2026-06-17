@@ -11,8 +11,37 @@
 // playground demos `Pilotiq.guard()` without pulling the auth package in.
 import { Route } from '@rudderjs/router'
 import { safeRedirectTarget } from '@rudderjs/server-hono'
+import { Storage } from '@rudderjs/storage'
 import { User } from '../app/Models/User.js'
 import { verifyPassword } from '../app/Support/password.js'
+
+// Serve the `public` storage disk that @pilotiq/media writes to. The media
+// records carry URLs like `/media/<dir>/<file>` (config/storage.ts: the
+// `public` disk has `baseUrl: ''`), and nothing serves the `public/` dir
+// automatically in this dev setup — so stream files back from the disk here.
+// Real apps front their storage with a CDN / S3 public bucket, or a route
+// like this. Mirrors the framework playground's `/api/files/*` pattern.
+const MEDIA_MIME: Record<string, string> = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', avif: 'image/avif', svg: 'image/svg+xml',
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+  mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
+  pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown',
+  json: 'application/json', csv: 'text/csv', xml: 'application/xml',
+}
+
+Route.get('/media/*', async (req) => {
+  // Disk key === the request path minus the leading slash (e.g.
+  // `media/<dir>/<file>`). Reject traversal; the LocalAdapter guards too.
+  const key = decodeURIComponent((req as { path: string }).path.replace(/^\/+/, ''))
+  if (key.includes('..')) return new Response('Not Found', { status: 404 })
+  const buffer = await Storage.disk('public').get(key)
+  if (!buffer) return new Response('Not Found', { status: 404 })
+  const ext = key.split('.').pop()?.toLowerCase() ?? ''
+  return new Response(buffer as unknown as BodyInit, {
+    headers: { 'Content-Type': MEDIA_MIME[ext] ?? 'application/octet-stream' },
+  })
+})
 
 interface SessionLike {
   get<T>(key: string): T | undefined

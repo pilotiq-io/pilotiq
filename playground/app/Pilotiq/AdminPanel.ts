@@ -7,12 +7,13 @@ import { themeEditor, databaseThemeStorage } from '@pilotiq/pilotiq/plugins'
 import { registerIcons } from '@pilotiq/pilotiq/icons'
 import {
   BookOpen, ChartBar, Check, CheckCircle2, Circle, FileText, Folder,
-  LayoutDashboard, MessageSquare, Newspaper, Palette, Send, Settings,
+  Image, LayoutDashboard, MessageSquare, Newspaper, Palette, Send, Settings,
   TrendingUp, UserCircle, Users,
 } from 'lucide-react'
 import { tiptap }     from '@pilotiq/tiptap'
 import { codeEditor, CodeEditorField } from '@pilotiq/codemirror'
 import { recharts }   from '@pilotiq/recharts'
+import { media }      from '@pilotiq/media'
 import { GeneralSettingsPane } from '@pilotiq/pilotiq/react'
 import { html } from '@codemirror/lang-html'
 import { app } from '@rudderjs/core/client'
@@ -38,6 +39,7 @@ registerIcons({
   'circle':           Circle,         // BooleanColumn "false" default
   'file-text':        FileText,
   'folder':           Folder,
+  'image':            Image,           // @pilotiq/media library nav link
   'layout-dashboard': LayoutDashboard,
   'message-square':   MessageSquare,
   'newspaper':        Newspaper,
@@ -152,6 +154,11 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   .globals([SiteSettings])
   .pages([MyDashboard])
   .dashboard(MyDashboard)
+  // @pilotiq/media — applied AFTER `.pages()` because `media()` appends its
+  // library page to the page set and `.pages()` would otherwise replace it.
+  // Adds the `/admin/media` browser route + "Media" nav entry. The
+  // `MediaLibrary` widget component is registered client-side in +Layout.tsx.
+  .plugins([media({ conversions: [{ name: 'thumb', width: 320, height: 320, crop: true, format: 'webp' }] })])
   // System Settings. General is the index pane (sort 0); Profile is a
   // page-backed pane that renders ProfilePage's form in-shell at
   // /admin/settings/profile (no standalone /admin/profile route, no

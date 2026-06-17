@@ -203,6 +203,13 @@ export function parseListQuery(query: Record<string, unknown> | undefined): List
   return { parentId, scope, search: str(q['search']).slice(0, 200), sort, dir, page, perPage }
 }
 
+/** Parse a `json`-cast column that may arrive either revived (array/object) or
+ *  as the serialized JSON string the native cast emits right after `create`. */
+function parseJsonColumn(v: unknown): unknown {
+  if (typeof v !== 'string') return v
+  try { return JSON.parse(v) } catch { return undefined }
+}
+
 /** Coerce a raw model-instance column bag into the wire {@link MediaRecord}.
  *  Pure — `url` (which needs the disk) is attached by the store afterwards. */
 export function toRecord(a: MediaAttrs): MediaRecord {
@@ -210,6 +217,13 @@ export function toRecord(a: MediaAttrs): MediaRecord {
     typeof v === 'number' && Number.isFinite(v) ? v : null
   const strOrNull = (v: unknown): string | null =>
     typeof v === 'string' && v.length > 0 ? v : null
+
+  // `conversions` / `meta` are `json`-cast: on the instance returned straight
+  // from `Model.create` they can still be the serialized string (the cast
+  // revives on read, but the create-return path may not have re-read yet), so
+  // parse defensively before shape-checking.
+  const conversions = parseJsonColumn(a.conversions)
+  const meta = parseJsonColumn(a.meta)
 
   return {
     id:          String(a.id ?? ''),
@@ -224,10 +238,10 @@ export function toRecord(a: MediaAttrs): MediaRecord {
     height:      numOrNull(a.height),
     focalX:      numOrNull(a.focalX),
     focalY:      numOrNull(a.focalY),
-    conversions: Array.isArray(a.conversions) ? (a.conversions as ConversionInfo[]) : [],
+    conversions: Array.isArray(conversions) ? (conversions as ConversionInfo[]) : [],
     alt:         strOrNull(a.alt),
-    meta:        a.meta && typeof a.meta === 'object' && !Array.isArray(a.meta)
-                   ? (a.meta as Record<string, unknown>)
+    meta:        meta && typeof meta === 'object' && !Array.isArray(meta)
+                   ? (meta as Record<string, unknown>)
                    : {},
     parentId:    strOrNull(a.parentId),
     scope:       a.scope === 'private' ? 'private' : 'shared',

@@ -11,6 +11,16 @@ import {
 
 beforeEach(() => resetLibraries())
 
+// Minimal fake panel — `register()` now also appends the library page via
+// `panel.pages([...panel.getConfig().pages, MediaLibraryPage])`.
+function fakePanel() {
+  let pages: unknown[] = []
+  return {
+    panel: { getConfig: () => ({ pages }), pages: (p: unknown[]) => { pages = p } } as never,
+    getPages: () => pages,
+  }
+}
+
 test('media() returns a PilotiqPlugin with the package name', () => {
   const plugin = media()
   assert.equal(plugin.name, '@pilotiq/media')
@@ -19,9 +29,19 @@ test('media() returns a PilotiqPlugin with the package name', () => {
 
 test('media().register() registers a default library from sensible fallbacks', () => {
   const plugin = media()
-  assert.doesNotThrow(() => plugin.register({} as never))
+  const { panel } = fakePanel()
+  assert.doesNotThrow(() => plugin.register(panel))
   assert.deepEqual(getDefaultLibrary(), { disk: 'public', directory: 'media' })
   assert.deepEqual(getLibraryNames(), ['default'])
+})
+
+test('media().register() appends the library page to the panel', () => {
+  const plugin = media()
+  const { panel, getPages } = fakePanel()
+  plugin.register(panel)
+  const pages = getPages() as Array<{ getSlug?: () => string }>
+  assert.equal(pages.length, 1)
+  assert.equal(pages[0]?.getSlug?.(), 'media')
 })
 
 test('top-level MediaConfig fields form the default library', () => {
@@ -30,7 +50,7 @@ test('top-level MediaConfig fields form the default library', () => {
     directory: 'assets',
     acceptedMimes: ['image/*'],
     maxUploadSize: 5_000_000,
-  }).register({} as never)
+  }).register(fakePanel().panel)
 
   assert.deepEqual(getDefaultLibrary(), {
     disk: 'r2',
@@ -46,7 +66,7 @@ test('named libraries register alongside the default', () => {
       photos: { disk: 'public', directory: 'photos', acceptedMimes: ['image/*'] },
       docs:   { disk: 'public', directory: 'docs' },
     },
-  }).register({} as never)
+  }).register(fakePanel().panel)
 
   assert.deepEqual(getLibraryNames().sort(), ['default', 'docs', 'photos'])
   assert.equal(getLibrary('photos')?.directory, 'photos')
