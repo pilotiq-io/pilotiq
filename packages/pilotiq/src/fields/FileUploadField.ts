@@ -38,6 +38,7 @@ export class FileUploadField extends Field {
   private _automaticallyResize?: { width: number; height: number }
   private _preserveFilenames = false
   private _metaFields?: Field[]
+  private _metaColumn?: string
 
   private constructor(name: string) {
     super(name, 'fileUpload')
@@ -139,8 +140,25 @@ export class FileUploadField extends Field {
    */
   metaFields(fields: Field[]): this { this._metaFields = fields; return this }
 
+  /**
+   * Write the meta portion to a separate database column instead of embedding
+   * it in the URL column. Requires `metaFields()` to be set.
+   *
+   * With `.metaColumn('avatar_meta')`:
+   *  - The primary column (`avatar`) stores only the bare URL string (or
+   *    `string[]` for multi). Declare it as a plain string column on the model.
+   *  - The companion column (`avatar_meta`) stores only the meta object (or
+   *    `[meta, …]` for multi). Declare it with `static casts = { avatar_meta: 'json' }`.
+   *
+   * The split/merge is transparent to the browser — the wire shape remains
+   * `{ url, …meta }` in both directions.
+   */
+  metaColumn(column: string): this { this._metaColumn = column; return this }
+
   getMetaFields(): Field[] | undefined { return this._metaFields }
   hasMetaFields(): boolean { return (this._metaFields?.length ?? 0) > 0 }
+  getMetaColumn(): string | undefined { return this._metaColumn }
+  hasMetaColumn(): boolean { return this._metaColumn !== undefined }
 
   getAccept(): string[] | undefined { return this._accept }
   getMaxSize(): number | undefined { return this._maxSize }
@@ -179,6 +197,7 @@ export class FileUploadField extends Field {
       ...(this._automaticallyResize ? { automaticallyResize: this._automaticallyResize } : {}),
       ...(this._preserveFilenames ? { preserveFilenames: true } : {}),
       ...(this._metaFields?.length ? { metaFields: this._metaFields.map(f => f.toMeta(ctx)) } : {}),
+      ...(this._metaColumn ? { metaColumn: this._metaColumn } : {}),
       // `uploadUrl` is stamped via RenderContext by the page-data
       // builders. Without it the renderer falls back to a clear error
       // ("no upload URL configured"); the route handler (and therefore
@@ -189,3 +208,7 @@ export class FileUploadField extends Field {
 }
 
 export const FileUpload = FileUploadField
+
+export function isFileUploadField(el: { getType(): string }): boolean {
+  return el.getType() === 'field' && (el as Record<string, unknown>)['fieldType'] === 'fileUpload'
+}

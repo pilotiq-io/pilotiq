@@ -63,14 +63,27 @@ export class PostResource extends Resource {
           Tabs.make().variant('underline').tabs([
             Tab.make('Content').schema([
               FileUpload.make('image')
-                .label('Image')
+                .label('Image (inline meta)')
                 .accept(['image/*'])
                 .maxSize(2_000_000)
                 .directory('covers')
-                // Single-file + editable alt text (stored inline as { url, alt }).
+                // Inline storage: the whole { url, alt } object lives in one json column.
                 .metaFields([
                   TextField.make('alt').label('Alt text').placeholder('Describe the image…'),
                 ]),
+              FileUpload.make('thumbnail')
+                .label('Thumbnail (split meta column)')
+                .accept(['image/*'])
+                .maxSize(2_000_000)
+                .directory('covers')
+                // Split storage: URL lives in `thumbnail` (plain string),
+                // meta lives in `thumbnail_meta` (json column).
+                // Model: casts = { thumbnail_meta: 'json' }
+                .metaFields([
+                  TextField.make('alt').label('Alt text').placeholder('Describe the image…'),
+                  TextField.make('credit').label('Photo credit'),
+                ])
+                .metaColumn('thumbnail_meta'),
               FileUpload.make('gallery')
                 .label('Gallery')
                 .multiple()

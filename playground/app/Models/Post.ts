@@ -16,11 +16,12 @@ export class Post extends Model.for<'post'>() {
   // object, and the native driver can only bind primitives — the casts
   // serialize on write (ISO string / JSON string) and revive on read.
   static override casts = {
-    publishedAt: 'datetime' as const,
-    content:     'json' as const,
-    image:       'json' as const,   // FileUpload.metaFields() value — { url, alt }
-    gallery:     'json' as const,
-    coverMedia:  'json' as const,   // MediaField value (MediaRef[] — @pilotiq/media)
+    publishedAt:   'datetime' as const,
+    content:       'json' as const,
+    image:         'json' as const,   // FileUpload.metaFields() — inline { url, alt }
+    gallery:       'json' as const,
+    coverMedia:    'json' as const,   // MediaField value (MediaRef[] — @pilotiq/media)
+    thumbnail_meta:'json' as const,   // FileUpload.metaColumn() — companion meta column
   }
 
   static override relations = {

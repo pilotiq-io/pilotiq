@@ -12,6 +12,7 @@ import { Column } from '../Column.js'
 import { SelectField, isSelectField } from '../fields/SelectField.js'
 import { isRepeaterField, RepeaterField } from '../fields/RepeaterField.js'
 import { isBuilderField, BuilderField } from '../fields/BuilderField.js'
+import { isFileUploadField, FileUploadField } from '../fields/FileUploadField.js'
 import { isServerDataElement, type ServerDataElement } from '../schema/ServerDataElement.js'
 import { findActions, findRowExtraActions } from '../elements/dispatchAction.js'
 import { findForms, loadRelationRows } from '../elements/dispatchForm.js'
@@ -403,7 +404,7 @@ export async function applyFillPipeline<R>(
   const after = form.getMutateFormDataAfterFill()
   if (after) values = await after(values, { values, record })
 
-  return normalizeArrayFieldStrings(form, values)
+  return normalizeFileUploadMetaColumns(form, normalizeArrayFieldStrings(form, values))
 }
 
 /**
@@ -458,6 +459,94 @@ function collectArrayFieldNames(elements: ReadonlyArray<Element>): string[] {
   }
   walk(elements)
   return out
+}
+
+/**
+ * For every `FileUpload.metaFields().metaColumn(col)` field in the form,
+ * recombine the two columns that were split on write back into the rich
+ * `{ url, …meta }` shape the renderer expects:
+ *
+ *   values[field.name] = "https://…"        → { url: "https://…", alt: "Cat" }
+ *   values[metaCol]    = { alt: "Cat" }     ↗
+ *
+ * The metaCol key stays in values (as a phantom); it references no form
+ * field so it is silently ignored by the renderer.
+ */
+function normalizeFileUploadMetaColumns<R>(
+  form:   Form<R>,
+  values: Record<string, unknown>,
+): Record<string, unknown> {
+  const fields = collectFileUploadMetaColumnFields((form.getChildren() ?? []) as Element[])
+  if (fields.length === 0) return values
+  let out: Record<string, unknown> | null = null
+  for (const field of fields) {
+    const col = field.getMetaColumn()!
+    const url = values[field.name]
+    if (url === null || url === undefined) continue
+    if (!out) out = { ...values }
+    if (Array.isArray(url)) {
+      const metaArr = parseMetaArray(values[col])
+      out[field.name] = url.map((u, i) => ({
+        url: typeof u === 'string' ? u : String(u),
+        ...(metaArr[i] ?? {}),
+      }))
+    } else if (typeof url === 'string') {
+      out[field.name] = { url, ...(parseMetaObject(values[col]) ?? {}) }
+    }
+  }
+  return out ?? values
+}
+
+function collectFileUploadMetaColumnFields(elements: ReadonlyArray<Element>): FileUploadField[] {
+  const out: FileUploadField[] = []
+  const walk = (els: ReadonlyArray<Element>): void => {
+    for (const el of els) {
+      if (isFileUploadField(el) && (el as FileUploadField).hasMetaColumn()) {
+        out.push(el as FileUploadField)
+        continue
+      }
+      const children = el.getChildren()
+      if (children && children.length > 0) walk(children)
+    }
+  }
+  walk(elements)
+  return out
+}
+
+function parseMetaObject(raw: unknown): Record<string, unknown> | null {
+  if (!raw) return null
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw)
+      if (p && typeof p === 'object' && !Array.isArray(p)) return p as Record<string, unknown>
+    } catch { /* fall through */ }
+  }
+  return null
+}
+
+function parseMetaArray(raw: unknown): Array<Record<string, unknown> | null> {
+  if (!raw) return []
+  if (Array.isArray(raw)) {
+    return raw.map(item =>
+      item && typeof item === 'object' && !Array.isArray(item)
+        ? item as Record<string, unknown>
+        : null,
+    )
+  }
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw)
+      if (Array.isArray(p)) {
+        return p.map(item =>
+          item && typeof item === 'object' && !Array.isArray(item)
+            ? item as Record<string, unknown>
+            : null,
+        )
+      }
+    } catch { /* fall through */ }
+  }
+  return []
 }
 
 /**

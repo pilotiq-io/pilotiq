@@ -38,6 +38,7 @@ import { Wizard, Step } from './schema/Wizard.js'
 import { Repeater } from './fields/RepeaterField.js'
 import { Builder } from './fields/BuilderField.js'
 import { Block } from './schema/Block.js'
+import { FileUpload } from './fields/FileUploadField.js'
 
 describe('applyFillPipeline', () => {
   it('defaults to a shallow record copy when nothing is configured', async () => {
@@ -152,6 +153,65 @@ describe('applyFillPipeline', () => {
     const record = { title: '[1,2,3]' }
     const values = await applyFillPipeline(form, record)
     assert.equal(values['title'], '[1,2,3]')
+  })
+
+  describe('FileUpload.metaColumn() merge', () => {
+    it('merges url + meta into rich object (single)', async () => {
+      const form = Form.make().schema([
+        FileUpload.make('avatar')
+          .metaFields([TextField.make('alt')])
+          .metaColumn('avatar_meta'),
+      ])
+      const values = await applyFillPipeline(form, {
+        avatar: '/u/photo.png',
+        avatar_meta: { alt: 'My photo' },
+      })
+      assert.deepEqual(values['avatar'], { url: '/u/photo.png', alt: 'My photo' })
+    })
+
+    it('merges url array + meta array (multiple)', async () => {
+      const form = Form.make().schema([
+        FileUpload.make('gallery')
+          .multiple()
+          .metaFields([TextField.make('alt')])
+          .metaColumn('gallery_meta'),
+      ])
+      const values = await applyFillPipeline(form, {
+        gallery: ['/u/a.png', '/u/b.png'],
+        gallery_meta: [{ alt: 'A' }, { alt: 'B' }],
+      })
+      assert.deepEqual(values['gallery'], [
+        { url: '/u/a.png', alt: 'A' },
+        { url: '/u/b.png', alt: 'B' },
+      ])
+    })
+
+    it('skips merge when url is null', async () => {
+      const form = Form.make().schema([
+        FileUpload.make('avatar').metaFields([TextField.make('alt')]).metaColumn('avatar_meta'),
+      ])
+      const values = await applyFillPipeline(form, { avatar: null, avatar_meta: { alt: 'x' } })
+      assert.equal(values['avatar'], null)
+    })
+
+    it('merges gracefully when meta column is absent', async () => {
+      const form = Form.make().schema([
+        FileUpload.make('avatar').metaFields([TextField.make('alt')]).metaColumn('avatar_meta'),
+      ])
+      const values = await applyFillPipeline(form, { avatar: '/u/photo.png' })
+      assert.deepEqual(values['avatar'], { url: '/u/photo.png' })
+    })
+
+    it('parses JSON-string meta column', async () => {
+      const form = Form.make().schema([
+        FileUpload.make('avatar').metaFields([TextField.make('alt')]).metaColumn('avatar_meta'),
+      ])
+      const values = await applyFillPipeline(form, {
+        avatar: '/u/photo.png',
+        avatar_meta: JSON.stringify({ alt: 'Parsed' }),
+      })
+      assert.deepEqual(values['avatar'], { url: '/u/photo.png', alt: 'Parsed' })
+    })
   })
 })
 
