@@ -113,9 +113,14 @@ export function MediaLibrary({
   useEffect(() => { setView(readView()) }, [])
   // Per-item right-click context menu (manage mode only).
   const [menu, setMenu] = useState<{ rec: MediaRecord; x: number; y: number } | null>(null)
-  // Rename / move dialogs (the item being acted on, or null).
+  // Rename dialog (the item being renamed, or null).
   const [renaming, setRenaming] = useState<MediaRecord | null>(null)
-  const [moving, setMoving] = useState<MediaRecord | null>(null)
+  // Move dialog targets — one (context menu) or many (bulk). null = closed.
+  const [moveTargets, setMoveTargets] = useState<MediaRecord[] | null>(null)
+  // Manage-mode multi-select buffer (distinct from `selected`, which is the
+  // picker dialog's). `lastMarkedRef` anchors shift-click range selection.
+  const [marked, setMarked] = useState<Record<string, MediaRecord>>({})
+  const lastMarkedRef = useRef<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const chooseView = useCallback((v: 'grid' | 'list') => {
@@ -201,7 +206,37 @@ export function MediaLibrary({
     }
   }, [apiBase, folderId, search, load, preview])
 
-  const onActivate = useCallback((rec: MediaRecord) => {
+  // ── Manage-mode multi-select ───────────────────────────────────────────────
+  const toggleMark = useCallback((rec: MediaRecord) => {
+    setMarked(prev => {
+      const next = { ...prev }
+      if (next[rec.id]) delete next[rec.id]; else next[rec.id] = rec
+      return next
+    })
+    lastMarkedRef.current = rec.id
+  }, [])
+
+  const rangeMark = useCallback((rec: MediaRecord) => {
+    const ids = items.map(i => i.id)
+    const from = ids.indexOf(lastMarkedRef.current ?? rec.id)
+    const to = ids.indexOf(rec.id)
+    if (from < 0 || to < 0) { toggleMark(rec); return }
+    const [lo, hi] = from < to ? [from, to] : [to, from]
+    setMarked(prev => {
+      const next = { ...prev }
+      for (let i = lo; i <= hi; i++) { const it = items[i]; if (it) next[it.id] = it }
+      return next
+    })
+  }, [items, toggleMark])
+
+  const onActivate = useCallback((rec: MediaRecord, e?: React.MouseEvent) => {
+    // Manage mode: modifier-clicks drive multi-select instead of activating.
+    if (!selecting) {
+      if (e && (e.metaKey || e.ctrlKey)) { toggleMark(rec); return }
+      if (e && e.shiftKey) { rangeMark(rec); return }
+      // A plain click clears any marks, then activates.
+      setMarked(m => (Object.keys(m).length ? {} : m))
+    }
     if (rec.type === 'folder') { openFolder(rec); return }
     if (selecting) {
       if (!multiple) { onSelect?.([rec]); return }
@@ -214,12 +249,28 @@ export function MediaLibrary({
       return
     }
     setPreview(rec)
-  }, [openFolder, selecting, multiple, onSelect])
+  }, [openFolder, selecting, multiple, onSelect, toggleMark, rangeMark])
 
   const selectedList = useMemo(() => Object.values(selected), [selected])
   const confirmSelection = useCallback(() => {
     if (selectedList.length > 0) onSelect?.(selectedList)
   }, [selectedList, onSelect])
+
+  const markedList = useMemo(() => Object.values(marked), [marked])
+  const clearMarks = useCallback(() => setMarked({}), [])
+
+  const bulkDelete = useCallback(async () => {
+    const list = Object.values(marked)
+    if (list.length === 0) return
+    if (!window.confirm(`Delete ${list.length} item${list.length > 1 ? 's' : ''}? This cannot be undone.`)) return
+    try {
+      await Promise.all(list.map(r => deleteMedia(apiBase, r.id)))
+      setMarked({})
+      await load(folderId, search)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk delete failed')
+    }
+  }, [marked, apiBase, folderId, search, load])
 
   // Right-click → context menu (manage mode only; the picker doesn't manage).
   const onContextMenu = useCallback((e: React.MouseEvent, rec: MediaRecord) => {
@@ -240,15 +291,16 @@ export function MediaLibrary({
     }
   }, [apiBase, folderId, search, load])
 
-  const onMove = useCallback(async (rec: MediaRecord, destId: string | null) => {
-    if (destId === rec.parentId) { setMoving(null); return }
+  const onMove = useCallback(async (recs: MediaRecord[], destId: string | null) => {
+    const toMove = recs.filter(r => r.parentId !== destId && r.id !== destId)
+    setMoveTargets(null)
+    if (toMove.length === 0) return
     try {
-      await moveMedia(apiBase, rec.id, destId)
-      setMoving(null)
+      await Promise.all(toMove.map(r => moveMedia(apiBase, r.id, destId)))
+      setMarked({})
       await load(folderId, search)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Move failed')
-      setMoving(null)
     }
   }, [apiBase, folderId, search, load])
 
@@ -328,6 +380,16 @@ export function MediaLibrary({
         </div>
       )}
 
+      {/* Bulk-action toolbar (manage mode, when items are marked). */}
+      {!selecting && markedList.length > 0 && (
+        <div className="flex items-center gap-3 border-b bg-muted/40 px-4 py-2 text-sm">
+          <span className="font-medium">{markedList.length} selected</span>
+          <button onClick={() => setMoveTargets(markedList)} className="h-7 rounded-md border bg-background px-2.5 hover:bg-muted">Move</button>
+          <button onClick={() => { void bulkDelete() }} className="h-7 rounded-md border bg-background px-2.5 text-destructive hover:bg-destructive/10">Delete</button>
+          <button onClick={clearMarks} className="ml-auto text-muted-foreground hover:text-foreground">Clear</button>
+        </div>
+      )}
+
       {/* Body */}
       <div className="flex-1 p-4">
         {error && <p className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p>}
@@ -342,6 +404,8 @@ export function MediaLibrary({
             onContextMenu={onContextMenu}
             selectable={selecting}
             selected={selected}
+            marked={marked}
+            {...(selecting ? {} : { onToggleMark: toggleMark })}
           />
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-3">
@@ -354,6 +418,8 @@ export function MediaLibrary({
                 onContextMenu={onContextMenu}
                 selectable={selecting}
                 selected={!!selected[item.id]}
+                marked={!!marked[item.id]}
+                {...(selecting ? {} : { onToggleMark: toggleMark })}
               />
             ))}
           </div>
@@ -401,7 +467,7 @@ export function MediaLibrary({
           y={menu.y}
           onClose={() => setMenu(null)}
           onRename={() => { setRenaming(menu.rec); setMenu(null) }}
-          onMove={() => { setMoving(menu.rec); setMenu(null) }}
+          onMove={() => { setMoveTargets([menu.rec]); setMenu(null) }}
           onDelete={() => { const r = menu.rec; setMenu(null); void onDelete(r) }}
         />
       )}
@@ -412,12 +478,12 @@ export function MediaLibrary({
           onSubmit={name => { void onRename(renaming, name) }}
         />
       )}
-      {moving && (
+      {moveTargets && moveTargets.length > 0 && (
         <MoveDialog
           apiBase={apiBase}
-          item={moving}
-          onClose={() => setMoving(null)}
-          onMove={destId => { void onMove(moving, destId) }}
+          items={moveTargets}
+          onClose={() => setMoveTargets(null)}
+          onMove={destId => { void onMove(moveTargets, destId) }}
         />
       )}
     </div>
@@ -431,25 +497,27 @@ function thumbFor(rec: MediaRecord): string | null {
   return thumb?.url ?? rec.url ?? null
 }
 
-function Tile({ item, onActivate, onDelete, onContextMenu, selectable = false, selected = false }: {
+function Tile({ item, onActivate, onDelete, onContextMenu, selectable = false, selected = false, marked = false, onToggleMark }: {
   item: MediaRecord
-  onActivate: (r: MediaRecord) => void
+  onActivate: (r: MediaRecord, e?: React.MouseEvent) => void
   onDelete: (r: MediaRecord) => void
   onContextMenu?: (e: React.MouseEvent, r: MediaRecord) => void
   selectable?: boolean
   selected?: boolean
+  marked?: boolean
+  onToggleMark?: (r: MediaRecord) => void
 }) {
   const thumb = thumbFor(item)
   const isFile = item.type === 'file'
   return (
     <div className="group relative" onContextMenu={onContextMenu ? e => onContextMenu(e, item) : undefined}>
       <button
-        onDoubleClick={() => onActivate(item)}
-        onClick={() => onActivate(item)}
+        onDoubleClick={e => onActivate(item, e)}
+        onClick={e => onActivate(item, e)}
         aria-pressed={selectable && isFile ? selected : undefined}
         className={[
           'flex w-full flex-col items-center gap-2 rounded-lg border p-3 text-center transition-colors hover:border-primary/50 hover:bg-muted/50',
-          selected ? 'border-primary ring-2 ring-primary' : '',
+          (selected || marked) ? 'border-primary ring-2 ring-primary' : '',
         ].join(' ')}
         title={item.name}
       >
@@ -460,7 +528,7 @@ function Tile({ item, onActivate, onDelete, onContextMenu, selectable = false, s
         </div>
         <span className="w-full truncate text-xs">{item.name}</span>
       </button>
-      {/* Selected check badge (select mode). */}
+      {/* Selected check badge (picker select mode). */}
       {selected && (
         <span
           aria-hidden
@@ -468,6 +536,17 @@ function Tile({ item, onActivate, onDelete, onContextMenu, selectable = false, s
         >
           ✓
         </span>
+      )}
+      {/* Multi-select checkbox (manage mode) — visible on hover or when marked. */}
+      {onToggleMark && (
+        <input
+          type="checkbox"
+          checked={marked}
+          onClick={e => e.stopPropagation()}
+          onChange={() => onToggleMark(item)}
+          aria-label={`Select ${item.name}`}
+          className={`absolute left-1.5 top-1.5 h-4 w-4 cursor-pointer accent-primary ${marked ? '' : 'opacity-0 group-hover:opacity-100'}`}
+        />
       )}
       {/* Delete — hidden in select mode (the picker shouldn't manage files). */}
       {!selectable && (
@@ -485,17 +564,21 @@ function Tile({ item, onActivate, onDelete, onContextMenu, selectable = false, s
 }
 
 // ── List view ────────────────────────────────────────────
-function MediaListView({ items, onActivate, onContextMenu, selectable, selected }: {
+function MediaListView({ items, onActivate, onContextMenu, selectable, selected, marked, onToggleMark }: {
   items: MediaRecord[]
-  onActivate: (r: MediaRecord) => void
+  onActivate: (r: MediaRecord, e?: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent, r: MediaRecord) => void
   selectable: boolean
   selected: Record<string, MediaRecord>
+  marked: Record<string, MediaRecord>
+  onToggleMark?: (r: MediaRecord) => void
 }) {
+  const showCheck = !!onToggleMark
   return (
     <table className="w-full text-sm">
       <thead>
         <tr className="border-b text-left text-xs text-muted-foreground">
+          {showCheck && <th className="w-8 px-2 py-1.5" />}
           <th className="px-2 py-1.5 font-medium">Name</th>
           <th className="px-2 py-1.5 font-medium">Type</th>
           <th className="px-2 py-1.5 font-medium">Size</th>
@@ -506,13 +589,26 @@ function MediaListView({ items, onActivate, onContextMenu, selectable, selected 
         {items.map(item => {
           const thumb = thumbFor(item)
           const isSel = !!selected[item.id]
+          const isMarked = !!marked[item.id]
           return (
             <tr
               key={item.id}
-              onClick={() => onActivate(item)}
+              onClick={e => onActivate(item, e)}
               onContextMenu={e => onContextMenu(e, item)}
-              className={`cursor-pointer border-b last:border-0 hover:bg-muted/50 ${isSel ? 'bg-primary/5' : ''}`}
+              className={`cursor-pointer border-b last:border-0 hover:bg-muted/50 ${(isSel || isMarked) ? 'bg-primary/5' : ''}`}
             >
+              {showCheck && (
+                <td className="px-2 py-1.5">
+                  <input
+                    type="checkbox"
+                    checked={isMarked}
+                    onClick={e => e.stopPropagation()}
+                    onChange={() => onToggleMark!(item)}
+                    aria-label={`Select ${item.name}`}
+                    className="h-4 w-4 cursor-pointer accent-primary"
+                  />
+                </td>
+              )}
               <td className="px-2 py-1.5">
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
@@ -634,9 +730,9 @@ function RenameDialog({ item, onClose, onSubmit }: { item: MediaRecord; onClose:
 }
 
 // ── Move dialog (folder picker) ──────────────────────────
-function MoveDialog({ apiBase, item, onClose, onMove }: {
+function MoveDialog({ apiBase, items, onClose, onMove }: {
   apiBase: string
-  item: MediaRecord
+  items: MediaRecord[]
   onClose: () => void
   onMove: (destId: string | null) => void
 }) {
@@ -644,21 +740,25 @@ function MoveDialog({ apiBase, item, onClose, onMove }: {
   const [pickerTrail, setPickerTrail] = useState<Crumb[]>([])
   const [folders, setFolders] = useState<MediaRecord[]>([])
   const [loading, setLoading] = useState(true)
+  // Can't move an item into itself; the server also rejects descendant cycles.
+  const movingIds = useMemo(() => new Set(items.map(i => i.id)), [items])
+  const sourceParent = items.length === 1 ? items[0]!.parentId : undefined
+  const title = items.length === 1 ? `Move “${items[0]!.name}”` : `Move ${items.length} items`
 
   useEffect(() => {
     let active = true
     setLoading(true)
     listMedia(apiBase, { parentId: pickerFolder, perPage: 100 })
-      .then(res => { if (active) setFolders(res.data.filter(r => r.type === 'folder' && r.id !== item.id)) })
+      .then(res => { if (active) setFolders(res.data.filter(r => r.type === 'folder' && !movingIds.has(r.id))) })
       .catch(() => { if (active) setFolders([]) })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [apiBase, pickerFolder, item.id])
+  }, [apiBase, pickerFolder, movingIds])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="flex w-full max-w-md flex-col gap-3 rounded-lg border bg-background p-5 shadow-lg">
-        <h2 className="text-sm font-semibold">Move “{item.name}”</h2>
+        <h2 className="text-sm font-semibold">{title}</h2>
         {/* Destination breadcrumb */}
         <nav className="flex flex-wrap items-center gap-1 text-sm">
           <CrumbButton active={pickerTrail.length === 0} onClick={() => { setPickerTrail([]); setPickerFolder(null) }}>Media</CrumbButton>
@@ -693,7 +793,7 @@ function MoveDialog({ apiBase, item, onClose, onMove }: {
             <button onClick={onClose} className="h-8 rounded-md border px-3 text-sm hover:bg-muted">Cancel</button>
             <button
               onClick={() => onMove(pickerFolder)}
-              disabled={pickerFolder === item.parentId}
+              disabled={pickerFolder === sourceParent || movingIds.has(pickerFolder ?? '')}
               className="h-8 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
             >
               Move here
