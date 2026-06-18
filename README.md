@@ -3,7 +3,7 @@
 > The open-source admin panel for [Rudder](https://github.com/rudderjs/rudder) framework. Define a few classes, get a CRUD app.
 
 <p>
-  <a href="https://github.com/pilotiq-io/pilotiq/actions/workflows/ci.yml"><img src="https://github.com/pilotiq-io/pilotiq/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/pilotiqjs/pilotiq/actions/workflows/ci.yml"><img src="https://github.com/pilotiqjs/pilotiq/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://www.npmjs.com/package/@pilotiq/pilotiq"><img src="https://img.shields.io/npm/v/@pilotiq/pilotiq" alt="npm version" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-blue" alt="TypeScript" /></a>

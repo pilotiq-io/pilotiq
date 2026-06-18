@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pilotiq-io/pilotiq",
+    "url": "https://github.com/pilotiqjs/pilotiq",
     "directory": "packages/pilotiq"
   },
   "type": "module",

@@ -6,7 +6,7 @@
   "description": "Pilotiq — open-source admin and CMS for RudderJS, with a built-in agent",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pilotiq-io/pilotiq"
+    "url": "https://github.com/pilotiqjs/pilotiq"
   },
   "homepage": "https://pilotiq.io",
   "license": "MIT",
