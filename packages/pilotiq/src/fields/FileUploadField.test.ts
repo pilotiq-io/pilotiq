@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { FileUploadField, FileUpload } from './FileUploadField.js'
+import { TextField } from './TextField.js'
 import { coerceFormValues } from '../elements/dispatchForm.js'
 
 describe('FileUploadField', () => {
@@ -157,6 +158,80 @@ describe('FileUploadField', () => {
     it('missing key → null', () => {
       const out = coerceFormValues([FileUploadField.make('cover')], {})
       assert.equal(out['cover'], null)
+    })
+  })
+
+  describe('metaFields', () => {
+    const withMeta = (): FileUploadField =>
+      FileUploadField.make('cover').metaFields([
+        TextField.make('alt').label('Alt text'),
+        TextField.make('caption'),
+      ])
+
+    it('absent from meta by default; hasMetaFields()=false', () => {
+      const f = FileUploadField.make('x')
+      assert.equal('metaFields' in f.toMeta(), false)
+      assert.equal(f.hasMetaFields(), false)
+    })
+
+    it('metaFields() serializes each field meta + flips hasMetaFields()', () => {
+      const f = withMeta()
+      assert.equal(f.hasMetaFields(), true)
+      const metas = f.toMeta()['metaFields'] as Array<Record<string, unknown>>
+      assert.equal(metas.length, 2)
+      assert.equal(metas[0]!['name'], 'alt')
+      assert.equal(metas[0]!['label'], 'Alt text')
+      assert.equal(metas[0]!['fieldType'], 'text')
+      assert.equal(metas[1]!['name'], 'caption')
+    })
+
+    it('coerce (single): JSON object → rich ref preserving meta', () => {
+      const out = coerceFormValues([withMeta()], {
+        cover: JSON.stringify({ url: '/u/a.png', alt: 'A cat', caption: 'Meow' }),
+      })
+      assert.deepEqual(out['cover'], { url: '/u/a.png', alt: 'A cat', caption: 'Meow' })
+    })
+
+    it('coerce (single): legacy bare URL string → { url }', () => {
+      const out = coerceFormValues([withMeta()], { cover: '/u/legacy.png' })
+      assert.deepEqual(out['cover'], { url: '/u/legacy.png' })
+    })
+
+    it('coerce (single): empty → null', () => {
+      assert.equal(coerceFormValues([withMeta()], { cover: '' })['cover'], null)
+      assert.equal(coerceFormValues([withMeta()], {})['cover'], null)
+    })
+
+    it('coerce (single): object without a usable url → null', () => {
+      const out = coerceFormValues([withMeta()], { cover: JSON.stringify({ alt: 'no url' }) })
+      assert.equal(out['cover'], null)
+    })
+
+    it('coerce (multiple): JSON array of objects → array of rich refs', () => {
+      const f = FileUploadField.make('gallery').multiple().metaFields([TextField.make('alt')])
+      const out = coerceFormValues([f], {
+        gallery: JSON.stringify([
+          { url: '/u/a.png', alt: 'one' },
+          { url: '/u/b.png', alt: 'two' },
+        ]),
+      })
+      assert.deepEqual(out['gallery'], [
+        { url: '/u/a.png', alt: 'one' },
+        { url: '/u/b.png', alt: 'two' },
+      ])
+    })
+
+    it('coerce (multiple): empty → []', () => {
+      const f = FileUploadField.make('gallery').multiple().metaFields([TextField.make('alt')])
+      assert.deepEqual(coerceFormValues([f], { gallery: '' })['gallery'], [])
+    })
+
+    it('coerce (multiple): drops entries without a url', () => {
+      const f = FileUploadField.make('gallery').multiple().metaFields([TextField.make('alt')])
+      const out = coerceFormValues([f], {
+        gallery: JSON.stringify([{ url: '/u/a.png', alt: 'one' }, { alt: 'orphan' }, '']),
+      })
+      assert.deepEqual(out['gallery'], [{ url: '/u/a.png', alt: 'one' }])
     })
   })
 })

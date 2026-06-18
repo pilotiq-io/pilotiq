@@ -366,3 +366,54 @@ pnpm add @rudderjs/image
 
 If the package is not installed, the route silently falls back to
 uploading the original file unchanged — no error is thrown.
+
+### Per-file metadata (`metaFields`)
+
+By default a `FileUpload` stores only the resolved URL (`string`, or
+`string[]` for `multiple()`). To attach editable per-file metadata — alt
+text, a caption, a title — declare `metaFields([...])` with core field
+instances:
+
+```ts
+FileUpload.make('image')
+  .accept(['image/*'])
+  .metaFields([
+    TextField.make('alt').label('Alt text'),
+  ])
+
+FileUpload.make('gallery')
+  .multiple()
+  .metaFields([
+    TextField.make('alt').label('Alt text'),
+    TextField.make('caption').label('Caption'),
+  ])
+```
+
+Opting in widens the **stored value** from a bare URL into a rich object
+that travels in the *same* column:
+
+| Mode | Without `metaFields()` | With `metaFields()` |
+|---|---|---|
+| single | `"…/image.png"` | `{ url: "…/image.png", alt: "…" }` |
+| `multiple()` | `["…/a.png", "…/b.png"]` | `[{ url: "…/a.png", alt: "…" }, …]` |
+
+The field config (label, placeholder, options, helper text) on each meta
+field travels to the renderer, which mounts the inputs in a row beneath
+every uploaded file. Common field types render richly (text, textarea,
+number, select, toggle, color); anything else falls back to a text input.
+
+**Storage.** Because the value is now an object/array, the model column
+must carry a `'json'` cast (see the native-engine note in the root
+`CLAUDE.md`):
+
+```ts
+static casts = { image: 'json' as const, gallery: 'json' as const }
+```
+
+**Back-compat.** Legacy plain-string values in an existing column still
+read back — they coerce to `{ url }` on load, and the alt/caption inputs
+start empty. No migration is required to adopt `metaFields()` on a column
+that already holds bare URLs (switch the column to a `'json'` cast first).
+
+Without `metaFields()` the field is byte-identical to before — the rich
+path costs nothing when unused.

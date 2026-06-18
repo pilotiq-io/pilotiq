@@ -37,6 +37,7 @@ export class FileUploadField extends Field {
   private _automaticallyCropImagesToAspectRatio = false
   private _automaticallyResize?: { width: number; height: number }
   private _preserveFilenames = false
+  private _metaFields?: Field[]
 
   private constructor(name: string) {
     super(name, 'fileUpload')
@@ -125,6 +126,22 @@ export class FileUploadField extends Field {
    */
   preserveFilenames(value: boolean = true): this { this._preserveFilenames = value; return this }
 
+  /**
+   * Collect editable per-file metadata (alt text, caption, …) alongside each
+   * upload. Pass core field instances; their config (label / placeholder /
+   * options / helperText) travels to the renderer.
+   *
+   * Opting in widens the stored value from a bare URL string to a rich object
+   * — `{ url, <metaField>… }` for single-file, `[{ url, … }]` for `multiple()`
+   * — persisted in the SAME column (declare a `'json'` cast on the model).
+   * Without `metaFields()` the field is byte-identical to before. Legacy
+   * plain-string values still read back (coerced to `{ url }`).
+   */
+  metaFields(fields: Field[]): this { this._metaFields = fields; return this }
+
+  getMetaFields(): Field[] | undefined { return this._metaFields }
+  hasMetaFields(): boolean { return (this._metaFields?.length ?? 0) > 0 }
+
   getAccept(): string[] | undefined { return this._accept }
   getMaxSize(): number | undefined { return this._maxSize }
   isMultiple(): boolean { return this._multiple }
@@ -161,6 +178,7 @@ export class FileUploadField extends Field {
       ...(this._automaticallyCropImagesToAspectRatio ? { automaticallyCropImagesToAspectRatio: true } : {}),
       ...(this._automaticallyResize ? { automaticallyResize: this._automaticallyResize } : {}),
       ...(this._preserveFilenames ? { preserveFilenames: true } : {}),
+      ...(this._metaFields?.length ? { metaFields: this._metaFields.map(f => f.toMeta(ctx)) } : {}),
       // `uploadUrl` is stamped via RenderContext by the page-data
       // builders. Without it the renderer falls back to a clear error
       // ("no upload URL configured"); the route handler (and therefore

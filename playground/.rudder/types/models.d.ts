@@ -76,7 +76,7 @@ declare module '@rudderjs/orm' {
       slug: string
       status: string
       publishedAt: Date | null
-      image: string | null
+      image: unknown | null
       content: unknown | null
       metaTitle: string | null
       metaDescription: string | null
