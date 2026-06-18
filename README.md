@@ -1,6 +1,6 @@
 # Pilotiq
 
-> The open-source admin panel for [RudderJS](https://github.com/rudderjs/rudder). Define a few classes, get a CRUD app.
+> The open-source admin panel for [Rudder](https://github.com/rudderjs/rudder) framework. Define a few classes, get a CRUD app.
 
 <p>
   <a href="https://github.com/pilotiq-io/pilotiq/actions/workflows/ci.yml"><img src="https://github.com/pilotiq-io/pilotiq/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
