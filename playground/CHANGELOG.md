@@ -1,5 +1,12 @@
 # pilotiq-playground
 
+## 0.0.103
+
+### Patch Changes
+
+- Updated dependencies [71ac6cc]
+  - @pilotiq/media@0.4.0
+
 ## 0.0.102
 
 ### Patch Changes
