@@ -158,7 +158,15 @@ export const pilotiqAdmin = Pilotiq.make('Pilotiq Admin')
   // library page to the page set and `.pages()` would otherwise replace it.
   // Adds the `/admin/media` browser route + "Media" nav entry. The
   // `MediaLibrary` widget component is registered client-side in +Layout.tsx.
-  .plugins([media({ conversions: [{ name: 'thumb', width: 320, height: 320, crop: true, format: 'webp' }] })])
+  .plugins([media({
+    conversions: [{ name: 'thumb', width: 320, height: 320, crop: true, format: 'webp' }],
+    // Custom metadata fields editable in the library browser's detail panel
+    // (alt text is always editable; these land in the record's `meta` json).
+    metaFields: [
+      TextField.make('credit').label('Credit'),
+      TextField.make('license').label('License'),
+    ],
+  })])
   // System Settings. General is the index pane (sort 0); Profile is a
   // page-backed pane that renders ProfilePage's form in-shell at
   // /admin/settings/profile (no standalone /admin/profile route, no

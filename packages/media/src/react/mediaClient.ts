@@ -104,6 +104,15 @@ export async function deleteMedia(apiBase: string, id: string): Promise<void> {
   await json(apiBase, `/${encodeURIComponent(id)}/delete`, {})
 }
 
+/** Update a record's alt text and/or custom meta object. */
+export async function updateMediaMetadata(
+  apiBase: string,
+  id:      string,
+  input:   { alt?: string | null; meta?: Record<string, unknown> },
+): Promise<MediaRecord> {
+  return (await json(apiBase, `/${encodeURIComponent(id)}/metadata`, input))['media'] as MediaRecord
+}
+
 /**
  * Upload one file via `XMLHttpRequest` so we can report progress (0..1). The
  * server runs the conversion pipeline and returns the created `MediaRecord`.

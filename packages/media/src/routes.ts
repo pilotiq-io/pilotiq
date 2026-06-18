@@ -190,6 +190,30 @@ export function registerMediaRoutes(router: Router, pilotiq: Pilotiq): void {
     })
   })
 
+  // POST ${base}/_media/:id/metadata — update alt text and/or custom meta.
+  router.post(`${base}/_media/:id/metadata`, async (req, res) => {
+    if (!await passesGuard(req)) return unauthorized(res)
+    const id = paramId(req)
+    const body = jsonBody(req)
+    const input: { alt?: string | null; meta?: Record<string, unknown> } = {}
+    if ('alt' in body)  input.alt = stringOrNull(body['alt'])
+    if ('meta' in body) {
+      const meta = body['meta']
+      if (meta !== null && typeof meta === 'object' && !Array.isArray(meta)) {
+        input.meta = meta as Record<string, unknown>
+      } else {
+        return unprocessable(res, '`meta` must be an object')
+      }
+    }
+    if (Object.keys(input).length === 0) return unprocessable(res, 'Nothing to update')
+    const auth = await resolveAuth(req, 'shared')
+    return run(res, async () => {
+      const store = await loadStore()
+      const media = await store.updateMetadata(id, input, auth)
+      return media ? res.json({ ok: true, media }) : notFound(res)
+    })
+  })
+
   // POST ${base}/_media/:id/delete — delete (recursive for folders).
   router.post(`${base}/_media/:id/delete`, async (req, res) => {
     if (!await passesGuard(req)) return unauthorized(res)

@@ -60,6 +60,22 @@ test('top-level MediaConfig fields form the default library', () => {
   })
 })
 
+test('metaFields are serialized to FieldMeta on the registered library', () => {
+  // A core-field-shaped stub (only toMeta() is contractually required).
+  const field = (name: string, label: string) => ({
+    toMeta: () => ({ name, label, fieldType: 'text' }),
+  })
+  media({
+    metaFields: [field('credit', 'Credit'), field('license', 'License')],
+  }).register(fakePanel().panel)
+
+  const lib = getDefaultLibrary()
+  assert.deepEqual(lib.metaFields, [
+    { name: 'credit', label: 'Credit', fieldType: 'text' },
+    { name: 'license', label: 'License', fieldType: 'text' },
+  ])
+})
+
 test('named libraries register alongside the default', () => {
   media({
     libraries: {

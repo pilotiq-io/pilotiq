@@ -87,6 +87,7 @@ panel's `Pilotiq.guard()` and honor a `scope` of `shared` (default) or
 | `POST {base}/_media/folder` | JSON `{ name, parentId?, scope? }` | Create a folder. |
 | `POST {base}/_media/upload` | multipart `file`, `library?`, `parentId?`, `scope?`, `alt?` | Upload a file. Images get dimensions probed + the library's `conversions` generated to disk. |
 | `POST {base}/_media/:id/rename` | JSON `{ name }` | Rename a file/folder. |
+| `POST {base}/_media/:id/metadata` | JSON `{ alt?, meta? }` | Update alt text and/or the custom `meta` object (only the keys sent are written). |
 | `POST {base}/_media/:id/move` | JSON `{ parentId }` (`null` = root) | Reparent (rejects cycles + non-folder targets). |
 | `POST {base}/_media/:id/delete` | — | Delete; folders recurse, removing every descendant row + stored file + conversion. |
 
@@ -155,6 +156,33 @@ registerBuiltinMediaPreviews()
 
 Apply `media()` **after** any `.pages([...])` call (it appends its page, and
 `.pages()` replaces the set).
+
+### Editable metadata
+
+The browser's detail panel edits each file's **alt text** (a first-class
+column) plus any **custom metadata fields** the library declares. Pass core
+`@pilotiq/pilotiq` field instances — consistent with core
+`FileUpload.metaFields([...])`:
+
+```ts
+import { TextField } from '@pilotiq/pilotiq'
+
+media({
+  metaFields: [
+    TextField.make('credit').label('Credit'),
+    TextField.make('license').label('License'),
+  ],
+})
+```
+
+Custom values persist in the record's `meta` JSON column and round-trip onto
+the `MediaRef` stored by `MediaField` (so a picked file keeps its metadata in
+the form value). Common field types render richly in the panel (text,
+textarea, number, select, toggle, color); anything else falls back to a text
+input.
+
+> The library registry is keyed by library name **across panels** — two panels
+> sharing the default library should declare the same `metaFields`.
 
 ### Extensible preview registry
 
