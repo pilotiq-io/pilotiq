@@ -62,6 +62,9 @@ export interface MediaRef {
   height?:      number | null
   alt?:         string | null
   conversions?: ConversionInfo[]
+  /** Custom metadata declared via the library's `metaFields`. Round-trips onto
+   *  the stored field value so custom metadata survives an edit. */
+  meta?:        Record<string, unknown>
 }
 
 /** Project a full `MediaRecord` down to the curated `MediaRef` stored by the
@@ -77,6 +80,7 @@ export function toMediaRef(rec: MediaRecord): MediaRef {
     height:      rec.height,
     alt:         rec.alt,
     conversions: rec.conversions,
+    ...(rec.meta && Object.keys(rec.meta).length ? { meta: rec.meta } : {}),
   }
 }
 
@@ -119,6 +123,24 @@ export interface MediaConfig {
   conversions?:   MediaConversion[]
   /** Accepted MIME patterns (mirrors the HTML `accept` attribute). */
   acceptedMimes?: string[]
+  /**
+   * Custom per-file metadata fields editable in the browser, stored in the
+   * record's `meta` json column. Pass core `@pilotiq/pilotiq` field instances
+   * (`TextField.make('credit')`, …) — consistent with core
+   * `FileUpload.metaFields([...])`. `alt` is always editable separately (its
+   * own column) and need not be listed here.
+   */
+  metaFields?:    MediaMetaField[]
+}
+
+/**
+ * A custom metadata field for a library. The runtime accepts core field
+ * instances; this structural type (a `toMeta()`-able field) keeps `types.ts`
+ * free of a hard `@pilotiq/pilotiq` value import. Serialized to `FieldMeta` at
+ * plugin-registration time for the client.
+ */
+export interface MediaMetaField {
+  toMeta(): Record<string, unknown>
 }
 
 /** MIME-type categories used to pick a preview renderer. */

@@ -30,6 +30,7 @@ import {
   uploadMedia,
   renameMedia,
   moveMedia,
+  updateMediaMetadata,
 } from './mediaClient.js'
 
 // Safety net — ensures the built-in previews exist even if the host's
@@ -98,10 +99,12 @@ async function fetchUrlAsFile(url: string): Promise<File> {
  *  widget's resolved `data` payload (parallel to the direct props the picker
  *  dialog passes). */
 interface MediaViewData {
-  apiBase?:   string
-  library?:   string
-  directory?: string
-  height?:    number
+  apiBase?:    string
+  library?:    string
+  directory?:  string
+  height?:     number
+  /** Serialized custom metadata field metas for the edit panel. */
+  metaFields?: Array<Record<string, unknown>>
 }
 
 /** Drag-to-folder move handlers, threaded into tiles / rows (manage mode). */
@@ -579,7 +582,19 @@ export function MediaLibrary({
       )}
 
       {/* Preview modal — manage mode only (select mode clicks pick, not preview). */}
-      {!selecting && preview && <PreviewModal record={preview} onClose={() => setPreview(null)} onDelete={onDelete} />}
+      {!selecting && preview && (
+        <PreviewModal
+          record={preview}
+          apiBase={apiBase}
+          {...(cfg.metaFields ? { metaFields: cfg.metaFields } : {})}
+          onClose={() => setPreview(null)}
+          onDelete={onDelete}
+          onSaved={(updated) => {
+            setItems(prev => prev.map(it => (it.id === updated.id ? updated : it)))
+            setPreview(updated)
+          }}
+        />
+      )}
       {newFolderOpen && (
         <NewFolderDialog
           onClose={() => setNewFolderOpen(false)}
@@ -965,16 +980,47 @@ function MoveDialog({ apiBase, items, onClose, onMove }: {
 }
 
 // ── Preview modal ────────────────────────────────────────
-function PreviewModal({ record, onClose, onDelete }: {
-  record: MediaRecord
-  onClose: () => void
-  onDelete: (r: MediaRecord) => void
+function PreviewModal({ record, apiBase, metaFields, onClose, onDelete, onSaved }: {
+  record:      MediaRecord
+  apiBase:     string
+  metaFields?: Array<Record<string, unknown>>
+  onClose:     () => void
+  onDelete:    (r: MediaRecord) => void
+  onSaved:     (updated: MediaRecord) => void
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  // Metadata edit panel — files only (folders carry no media metadata).
+  const editable = record.type === 'file'
+  const [alt, setAlt]   = useState(record.alt ?? '')
+  const [meta, setMeta] = useState<Record<string, unknown>>(record.meta ?? {})
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [savedTick, setSavedTick] = useState(false)
+  // Re-sync when the previewed record changes (e.g. after a save).
+  useEffect(() => { setAlt(record.alt ?? ''); setMeta(record.meta ?? {}) }, [record.id, record.alt, record.meta])
+
+  const dirty =
+    (record.alt ?? '') !== alt ||
+    JSON.stringify(record.meta ?? {}) !== JSON.stringify(meta)
+
+  const save = async () => {
+    setSaving(true); setSaveError(null)
+    try {
+      const updated = await updateMediaMetadata(apiBase, record.id, { alt: alt === '' ? null : alt, meta })
+      onSaved(updated)
+      setSavedTick(true)
+      window.setTimeout(() => setSavedTick(false), 1500)
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const Preview = resolveMediaPreview(record.mime)
   return (
@@ -987,11 +1033,111 @@ function PreviewModal({ record, onClose, onDelete }: {
           <button onClick={onClose} className="rounded-md bg-white/10 px-3 py-1 hover:bg-white/20">Close</button>
         </div>
       </div>
-      <div className="flex flex-1 items-center justify-center overflow-auto" onClick={e => e.stopPropagation()}>
-        {Preview
-          ? <Preview url={record.url ?? ''} mime={record.mime} name={record.name} record={record} />
-          : <p className="text-white/70">No preview available.</p>}
+      <div className="flex flex-1 gap-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex flex-1 items-center justify-center overflow-auto">
+          {Preview
+            ? <Preview url={record.url ?? ''} mime={record.mime} name={record.name} record={record} />
+            : <p className="text-white/70">No preview available.</p>}
+        </div>
+        {editable && (
+          <aside className="w-72 shrink-0 overflow-auto rounded-md bg-background p-4 text-foreground">
+            <h3 className="mb-3 text-sm font-semibold">Details</h3>
+            <label className="mb-3 flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">Alt text</span>
+              <textarea
+                className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                rows={2} value={alt} placeholder="Describe the file for accessibility…"
+                onChange={e => setAlt(e.target.value)}
+              />
+            </label>
+            {metaFields && metaFields.length > 0 && (
+              <MetaEditor
+                fields={metaFields}
+                values={meta}
+                onChange={(k, v) => setMeta(prev => ({ ...prev, [k]: v }))}
+              />
+            )}
+            {saveError && <p className="mt-2 text-xs text-destructive">{saveError}</p>}
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                onClick={save}
+                disabled={saving || !dirty}
+                className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              {savedTick && <span className="text-xs text-muted-foreground">Saved ✓</span>}
+            </div>
+          </aside>
+        )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Render serialized metadata field metas (from the library's `metaFields`) as
+ * controlled inputs, writing into the record's `meta` object. Mirrors core
+ * `FileUpload`'s editor — common field types render richly, text fallback
+ * otherwise.
+ */
+function MetaEditor({ fields, values, onChange }: {
+  fields:   Array<Record<string, unknown>>
+  values:   Record<string, unknown>
+  onChange: (key: string, value: unknown) => void
+}): React.JSX.Element {
+  const cls = 'w-full rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring'
+  return (
+    <div className="flex flex-col gap-3">
+      {fields.map(f => {
+        const name = typeof f['name'] === 'string' ? (f['name'] as string) : ''
+        if (!name) return null
+        const label = typeof f['label'] === 'string' ? (f['label'] as string) : name
+        const type  = typeof f['fieldType'] === 'string' ? (f['fieldType'] as string) : 'text'
+        const ph    = typeof f['placeholder'] === 'string' ? (f['placeholder'] as string) : undefined
+        const cur   = values[name]
+        const asStr = typeof cur === 'string' ? cur : (cur == null ? '' : String(cur))
+
+        if (type === 'toggle' || type === 'checkbox') {
+          return (
+            <label key={name} className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <input type="checkbox" checked={Boolean(cur)} onChange={e => onChange(name, e.target.checked)} />
+              {label}
+            </label>
+          )
+        }
+        let control: React.JSX.Element
+        switch (type) {
+          case 'textarea':
+            control = <textarea className={cls} rows={2} value={asStr} placeholder={ph} onChange={e => onChange(name, e.target.value)} />
+            break
+          case 'number':
+          case 'slider':
+            control = <input type="number" className={cls} value={asStr} placeholder={ph} onChange={e => onChange(name, e.target.value === '' ? null : Number(e.target.value))} />
+            break
+          case 'color':
+            control = <input type="color" className="h-7 w-12 rounded border border-input bg-background" value={typeof cur === 'string' && cur ? cur : '#000000'} onChange={e => onChange(name, e.target.value)} />
+            break
+          case 'select': {
+            const options = Array.isArray(f['options']) ? (f['options'] as Array<{ value?: unknown; label?: unknown }>) : []
+            control = (
+              <select className={cls} value={asStr} onChange={e => onChange(name, e.target.value)}>
+                <option value="">—</option>
+                {options.map((o, i) => <option key={i} value={String(o.value)}>{String(o.label ?? o.value)}</option>)}
+              </select>
+            )
+            break
+          }
+          default:
+            control = <input type="text" className={cls} value={asStr} placeholder={ph} onChange={e => onChange(name, e.target.value)} />
+        }
+        return (
+          <label key={name} className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground">{label}</span>
+            {control}
+          </label>
+        )
+      })}
     </div>
   )
 }

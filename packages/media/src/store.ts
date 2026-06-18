@@ -247,6 +247,27 @@ export async function renameMedia(
 }
 
 /**
+ * Update editable metadata — `alt` text and/or the custom `meta` object.
+ * Only the keys present in `input` are written. Returns `null` when the record
+ * is missing / inaccessible. The `meta` json cast serializes the object on
+ * write; reads revive it through `toRecord`.
+ */
+export async function updateMetadata(
+  id:    string,
+  input: { alt?: string | null; meta?: Record<string, unknown> },
+  auth:  MediaAuth,
+): Promise<MediaRecord | null> {
+  const m = await loadAccessible(id, auth)
+  if (!m) return null
+  const patch: { alt?: string | null; meta?: Record<string, unknown> } = {}
+  if ('alt' in input)  patch.alt  = input.alt ?? null
+  if ('meta' in input) patch.meta = input.meta ?? {}
+  if (Object.keys(patch).length > 0) await Media.update(id, patch)
+  const fresh = await Media.find(id)
+  return fresh ? record(fresh) : null
+}
+
+/**
  * Reparent a record under `parentId` (null = root). Throws
  * {@link MediaRequestError} for invalid moves (into itself, into a descendant,
  * or under a non-folder); returns `null` when the record / target is missing

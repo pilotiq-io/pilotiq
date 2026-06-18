@@ -90,5 +90,6 @@ function resolveLibrary(cfg: MediaConfig): MediaLibrary {
     ...(cfg.acceptedMimes !== undefined ? { accept: cfg.acceptedMimes } : {}),
     ...(cfg.maxUploadSize !== undefined ? { maxUploadSize: cfg.maxUploadSize } : {}),
     ...(cfg.conversions !== undefined ? { conversions: cfg.conversions } : {}),
+    ...(cfg.metaFields?.length ? { metaFields: cfg.metaFields.map(f => f.toMeta()) } : {}),
   }
 }

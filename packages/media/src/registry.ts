@@ -22,6 +22,9 @@ export interface MediaLibrary {
   maxUploadSize?: number
   /** Default conversions generated for every image upload. */
   conversions?:   MediaConversion[]
+  /** Serialized custom metadata field metas (from `MediaConfig.metaFields`),
+   *  shipped to the browser edit panel. Client-safe plain objects. */
+  metaFields?:    Array<Record<string, unknown>>
 }
 
 const KEY = '__pilotiq_media_libraries__'

@@ -15,6 +15,7 @@ import {
   deleteMedia,
   moveMedia,
   listMedia,
+  updateMetadata,
   MediaRequestError,
 } from './store.js'
 import type { MediaLibrary } from './registry.js'
@@ -221,6 +222,29 @@ test('moveMedia reparents on a valid target', async () => {
   const b = await createFolder({ name: 'B', parentId: null }, SHARED)
   const moved = await moveMedia(b.id, a.id, SHARED)
   assert.equal(moved?.parentId, a.id)
+})
+
+test('updateMetadata writes alt + custom meta and revives them on read', async () => {
+  const f = await uploadFile({ file: pngFile('m.png'), parentId: null, alt: null }, lib(), SHARED)
+  assert.equal(f.alt, null)
+  assert.deepEqual(f.meta, {})
+
+  const updated = await updateMetadata(f.id, { alt: 'A red square', meta: { credit: 'Jane', year: 2026 } }, SHARED)
+  assert.equal(updated?.alt, 'A red square')
+  assert.deepEqual(updated?.meta, { credit: 'Jane', year: 2026 })
+})
+
+test('updateMetadata patches only the keys provided', async () => {
+  const f = await uploadFile({ file: pngFile('p.png'), parentId: null, alt: 'keep me' }, lib(), SHARED)
+  const updated = await updateMetadata(f.id, { meta: { tag: 'x' } }, SHARED)
+  assert.equal(updated?.alt, 'keep me')         // alt untouched
+  assert.deepEqual(updated?.meta, { tag: 'x' })
+})
+
+test('updateMetadata returns null for a missing / inaccessible id', async () => {
+  assert.equal(await updateMetadata('nope', { alt: 'x' }, SHARED), null)
+  const priv = await uploadFile({ file: pngFile('o.png'), parentId: null, alt: null }, lib(), { scope: 'private', userId: '1' })
+  assert.equal(await updateMetadata(priv.id, { alt: 'x' }, { scope: 'private', userId: '2' }), null)
 })
 
 test('listMedia returns a private space filtered to its owner', async () => {

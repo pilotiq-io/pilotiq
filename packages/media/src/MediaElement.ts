@@ -1,4 +1,5 @@
 import { View, type RenderContext } from '@pilotiq/pilotiq'
+import { getLibrary, getDefaultLibrary } from './registry.js'
 
 /**
  * `Media` — the embedded library browser as a schema element. The second of
@@ -59,12 +60,16 @@ export class Media extends View {
     // page-slug-relative and only correct on the dedicated `/media` page).
     const uploadUrl = typeof ctx?.uploadUrl === 'string' ? ctx.uploadUrl : undefined
     const apiBase = uploadUrl ? uploadUrl.replace(/\/_uploads$/, '/_media') : undefined
+    // Custom metadata fields for the edit panel, from the resolved library.
+    const lib = (this._library ? getLibrary(this._library) : getDefaultLibrary()) ?? undefined
+    const metaFields = lib?.metaFields
     return {
       ready: true,
       ...(apiBase ? { apiBase } : {}),
       ...(this._library ? { library: this._library } : {}),
       ...(this._directory ? { directory: this._directory } : {}),
       ...(this._height !== undefined ? { height: this._height } : {}),
+      ...(metaFields?.length ? { metaFields } : {}),
     }
   }
 }

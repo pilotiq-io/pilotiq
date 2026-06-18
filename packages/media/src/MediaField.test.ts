@@ -64,4 +64,19 @@ test('toMediaRef projects a MediaRecord down to a stable reference', () => {
   // Server-only path internals must not leak into the stored reference.
   assert.equal('disk' in ref, false)
   assert.equal('filename' in ref, false)
+  // Empty meta is omitted (sparse).
+  assert.equal('meta' in ref, false)
+})
+
+test('toMediaRef carries custom meta so it round-trips onto the field value', () => {
+  const rec: MediaRecord = {
+    id: '02', name: 'x.jpg', type: 'file', mime: 'image/jpeg', size: 1,
+    disk: 'public', directory: 'media', filename: 'x.jpg',
+    width: null, height: null, focalX: null, focalY: null,
+    conversions: [], alt: 'alt', meta: { credit: 'Jane', year: 2026 },
+    parentId: null, scope: 'shared', userId: null,
+    createdAt: '2026-06-18', updatedAt: '2026-06-18', url: '/m/x.jpg',
+  }
+  const ref = toMediaRef(rec)
+  assert.deepEqual(ref.meta, { credit: 'Jane', year: 2026 })
 })

@@ -1,4 +1,4 @@
-import { Pilotiq, Section, Heading, Text } from '@pilotiq/pilotiq'
+import { Pilotiq, Section, Heading, Text, TextField } from '@pilotiq/pilotiq'
 import { tiptap }     from '@pilotiq/tiptap'
 import { codeEditor } from '@pilotiq/codemirror'
 import { recharts }   from '@pilotiq/recharts'
@@ -40,7 +40,16 @@ export const pilotiqGuest = Pilotiq.make('Pilotiq Guest')
     // Mirror /admin's media library so the MediaField (on PostResource)
     // works here too — and the unguarded /guest panel doubles as a test
     // surface for the `_media` routes (no login needed).
-    media({ conversions: [{ name: 'thumb', width: 320, height: 320, crop: true, format: 'webp' }] }),
+    // metaFields mirror AdminPanel — the media library registry is keyed by
+    // library name across panels (one shared `default`), so both must declare
+    // the same custom fields to stay consistent.
+    media({
+      conversions: [{ name: 'thumb', width: 320, height: 320, crop: true, format: 'webp' }],
+      metaFields: [
+        TextField.make('credit').label('Credit'),
+        TextField.make('license').label('License'),
+      ],
+    }),
   ])
   .resources([PostResource, PageResource, CategoryResource, CommentResource])
   // Dashboard at /guest — the builder-level schema renders when no

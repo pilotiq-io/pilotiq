@@ -226,6 +226,33 @@ test('POST _media/:id/rename — 422 missing name, 200 success, 404 missing reco
   assert.equal(missing._status, 404)
 })
 
+test('POST _media/:id/metadata — updates alt + meta, validates, 404s missing', async () => {
+  const { router, routes } = makeRouter()
+  registerMediaRoutes(router, makePilotiq())
+  const folder = await call(routes, 'POST /admin/_media/folder', { body: { name: 'F' } })
+  const id = (folder._json as { media: { id: string } }).media.id
+
+  const ok = await call(routes, 'POST /admin/_media/:id/metadata', {
+    params: { id }, body: { alt: 'Some alt', meta: { credit: 'Jane' } },
+  })
+  assert.equal(ok._status, 200)
+  const m = (ok._json as { media: { alt: string; meta: Record<string, unknown> } }).media
+  assert.equal(m.alt, 'Some alt')
+  assert.deepEqual(m.meta, { credit: 'Jane' })
+
+  // Non-object meta → 422.
+  const badMeta = await call(routes, 'POST /admin/_media/:id/metadata', { params: { id }, body: { meta: 'nope' } })
+  assert.equal(badMeta._status, 422)
+
+  // Nothing to update → 422.
+  const empty = await call(routes, 'POST /admin/_media/:id/metadata', { params: { id }, body: {} })
+  assert.equal(empty._status, 422)
+
+  // Missing record → 404.
+  const gone = await call(routes, 'POST /admin/_media/:id/metadata', { params: { id: 'gone' }, body: { alt: 'x' } })
+  assert.equal(gone._status, 404)
+})
+
 test('POST _media/:id/move — cycle → 422, valid reparent → 200', async () => {
   const { router, routes } = makeRouter()
   registerMediaRoutes(router, makePilotiq())
