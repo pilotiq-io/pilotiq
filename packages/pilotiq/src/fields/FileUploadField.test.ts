@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import { FileUploadField, FileUpload } from './FileUploadField.js'
 import { TextField } from './TextField.js'
-import { coerceFormValues } from '../elements/dispatchForm.js'
+import { applyDehydrateTransforms, coerceFormValues } from '../elements/dispatchForm.js'
 
 describe('FileUploadField', () => {
   it('emits fieldType "fileUpload"', () => {
@@ -232,6 +232,57 @@ describe('FileUploadField', () => {
         gallery: JSON.stringify([{ url: '/u/a.png', alt: 'one' }, { alt: 'orphan' }, '']),
       })
       assert.deepEqual(out['gallery'], [{ url: '/u/a.png', alt: 'one' }])
+    })
+  })
+
+  describe('metaColumn', () => {
+    const field = () =>
+      FileUploadField.make('avatar')
+        .metaFields([TextField.make('alt'), TextField.make('caption')])
+        .metaColumn('avatar_meta')
+
+    it('getMetaColumn() / hasMetaColumn()', () => {
+      assert.equal(field().getMetaColumn(), 'avatar_meta')
+      assert.equal(field().hasMetaColumn(), true)
+      assert.equal(FileUploadField.make('x').hasMetaColumn(), false)
+    })
+
+    it('toMeta() emits metaColumn when set', () => {
+      assert.equal(field().toMeta()['metaColumn'], 'avatar_meta')
+      assert.equal('metaColumn' in FileUploadField.make('x').toMeta(), false)
+    })
+
+    it('split (single): rich value → url in primary + meta in companion', async () => {
+      const f = field()
+      const coerced = coerceFormValues([f], {
+        avatar: JSON.stringify({ url: '/u/avatar.png', alt: 'Me', caption: 'Portrait' }),
+      })
+      const out = await applyDehydrateTransforms([f], coerced)
+      assert.equal(out['avatar'], '/u/avatar.png')
+      assert.deepEqual(out['avatar_meta'], { alt: 'Me', caption: 'Portrait' })
+    })
+
+    it('split (single): null → null in both columns', async () => {
+      const f = field()
+      const out = await applyDehydrateTransforms([f], { avatar: null })
+      assert.equal(out['avatar'], null)
+      assert.equal(out['avatar_meta'], null)
+    })
+
+    it('split (multiple): rich array → url array + meta array', async () => {
+      const f = FileUploadField.make('gallery')
+        .multiple()
+        .metaFields([TextField.make('alt')])
+        .metaColumn('gallery_meta')
+      const coerced = coerceFormValues([f], {
+        gallery: JSON.stringify([
+          { url: '/u/a.png', alt: 'A' },
+          { url: '/u/b.png', alt: 'B' },
+        ]),
+      })
+      const out = await applyDehydrateTransforms([f], coerced)
+      assert.deepEqual(out['gallery'], ['/u/a.png', '/u/b.png'])
+      assert.deepEqual(out['gallery_meta'], [{ alt: 'A' }, { alt: 'B' }])
     })
   })
 })

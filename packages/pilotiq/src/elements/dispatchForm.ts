@@ -1,5 +1,6 @@
 import { Element } from '../schema/Element.js'
 import { Field, type AfterStateUpdatedContext } from '../fields/Field.js'
+import { FileUploadField, isFileUploadField } from '../fields/FileUploadField.js'
 import { RepeaterField, isRepeaterField } from '../fields/RepeaterField.js'
 import type { RepeaterRelationshipConfig, RepeaterRowContext } from '../fields/RepeaterField.js'
 import { BuilderField, isBuilderField } from '../fields/BuilderField.js'
@@ -571,6 +572,7 @@ async function dehydrateWalk(
       // checks (not `instanceof`) survive Vite SSR module duplication.
       if (isRepeaterField(el)) { await dehydrateRepeaterRows(el as RepeaterField, values, record); continue }
       if (isBuilderField(el))  { await dehydrateBuilderRows(el as BuilderField, values, record);  continue }
+      if (isFileUploadField(el) && (el as FileUploadField).hasMetaColumn()) splitFileUploadMetaColumn(el as FileUploadField, values)
       await applyFieldDehydrate(el as Field, values, record)
     }
     const children = el.getChildren()
@@ -586,6 +588,49 @@ async function applyFieldDehydrate(
   const fn = field.getDehydrateStateUsing()
   if (!fn || field.isDehydrated() === false || !(field.name in values)) return
   values[field.name] = await fn(values[field.name], { record, values })
+}
+
+/**
+ * Split a `FileUpload.metaColumn()` rich value into its two columns:
+ *   - `values[field.name]`  → bare URL string (single) or string[] (multi)
+ *   - `values[metaColumn]`  → meta object (single) or meta object[] (multi)
+ *
+ * Runs BEFORE `applyFieldDehydrate` so any user-defined `dehydrateStateUsing`
+ * sees the already-split URL string, not the rich `{ url, …meta }` envelope.
+ * Mutates `values` in place.
+ */
+function splitFileUploadMetaColumn(
+  field:  FileUploadField,
+  values: Record<string, unknown>,
+): void {
+  const metaCol = field.getMetaColumn()!
+  const raw = values[field.name]
+
+  if (raw === null || raw === undefined) {
+    values[metaCol] = null
+    return
+  }
+
+  if (Array.isArray(raw)) {
+    const urls: string[]                   = []
+    const metas: Record<string, unknown>[] = []
+    for (const item of raw) {
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const { url, ...meta } = item as { url: unknown } & Record<string, unknown>
+        urls.push(typeof url === 'string' ? url : String(url ?? ''))
+        metas.push(meta)
+      }
+    }
+    values[field.name] = urls
+    values[metaCol]    = metas
+    return
+  }
+
+  if (typeof raw === 'object') {
+    const { url, ...meta } = raw as { url: unknown } & Record<string, unknown>
+    values[field.name] = typeof url === 'string' ? url : (url != null ? String(url) : null)
+    values[metaCol]    = meta
+  }
 }
 
 async function dehydrateRepeaterRows(
