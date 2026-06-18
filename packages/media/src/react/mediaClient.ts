@@ -25,10 +25,20 @@ export interface ListResult {
   lastPage: number
 }
 
-/** Derive the `_media` API base from the current page URL. The library page
- *  lives at `${panelBase}/${slug}`; the routes live at `${panelBase}/_media`,
- *  so we strip the trailing page slug. (Cluster-prefixed mounts are a
- *  follow-up; v1 mounts the page at the panel root.) */
+/**
+ * Best-effort fallback to derive the `_media` API base from the current page
+ * URL by stripping the trailing page slug (`${panelBase}/${slug}` →
+ * `${panelBase}/_media`).
+ *
+ * This is only a fallback. The `Media` element and `MediaField` both pass an
+ * explicit `apiBase`, resolved server-side from the render context's
+ * `uploadUrl` (`${panelBase}/_uploads` → `${panelBase}/_media`) — which is
+ * correct in EVERY mount location, including **cluster-prefixed** pages
+ * (`${panelBase}/${cluster}/media`), where the `_media` routes still live at the
+ * panel root and this URL-stripping heuristic can't know the cluster segment.
+ * So embedded / cluster mounts never rely on this function; it covers only a
+ * bare standalone library page mounted directly at the panel root.
+ */
 export function deriveApiBase(slug = 'media'): string {
   if (typeof window === 'undefined') return ''
   const path = window.location.pathname.replace(/\/+$/, '')
