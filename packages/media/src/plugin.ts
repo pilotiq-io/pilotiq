@@ -55,9 +55,10 @@ export function media(config: MediaPluginConfig = {}): PilotiqPlugin {
       // The top-level `MediaConfig` fields form the `default` library; any
       // `libraries` map adds named ones alongside it. A bare `media()` still
       // registers a `default` from the resolveLibrary fallbacks.
-      registerLibrary('default', resolveLibrary(config))
+      const panelPath = panel.getConfig().path
+      registerLibrary(panelPath, 'default', resolveLibrary(config))
       for (const [name, cfg] of Object.entries(config.libraries ?? {})) {
-        registerLibrary(name, resolveLibrary(cfg))
+        registerLibrary(panelPath, name, resolveLibrary(cfg))
       }
 
       // #215: mount the library browser as a panel page (auto-routes +

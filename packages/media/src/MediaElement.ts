@@ -59,9 +59,12 @@ export class Media extends View {
     // it — works in any page location (the client-side `deriveApiBase` is
     // page-slug-relative and only correct on the dedicated `/media` page).
     const uploadUrl = typeof ctx?.uploadUrl === 'string' ? ctx.uploadUrl : undefined
-    const apiBase = uploadUrl ? uploadUrl.replace(/\/_uploads$/, '/_media') : undefined
-    // Custom metadata fields for the edit panel, from the resolved library.
-    const lib = (this._library ? getLibrary(this._library) : getDefaultLibrary()) ?? undefined
+    const panelBase = uploadUrl ? uploadUrl.replace(/\/_uploads$/, '') : undefined
+    const apiBase = panelBase ? `${panelBase}/_media` : undefined
+    // Custom metadata fields for the edit panel, from the panel-scoped library.
+    const lib = panelBase
+      ? (this._library ? getLibrary(panelBase, this._library) : getDefaultLibrary(panelBase)) ?? undefined
+      : (this._library ? getLibrary(this._library) : getDefaultLibrary()) ?? undefined
     const metaFields = lib?.metaFields
     return {
       ready: true,
