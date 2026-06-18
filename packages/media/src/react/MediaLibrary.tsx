@@ -28,6 +28,8 @@ import {
   createFolder,
   deleteMedia,
   uploadMedia,
+  renameMedia,
+  moveMedia,
 } from './mediaClient.js'
 
 // Safety net — ensures the built-in previews exist even if the host's
@@ -36,6 +38,13 @@ registerBuiltinMediaPreviews()
 
 interface Crumb { id: string; name: string }
 interface ActiveUpload { id: string; name: string; progress: number; error?: string }
+
+const VIEW_KEY = 'pilotiq.media.view'
+/** Seed the grid/list preference from localStorage (SSR-safe). */
+function readView(): 'grid' | 'list' {
+  if (typeof window === 'undefined') return 'grid'
+  try { return window.localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid' } catch { return 'grid' }
+}
 
 /** Config the `Media` schema element / library page passes through the `View`
  *  widget's resolved `data` payload (parallel to the direct props the picker
@@ -97,7 +106,22 @@ export function MediaLibrary({
   // Select-mode multi-select buffer, keyed by id (preserves clicked records
   // so the footer "Add" can return them even after navigating folders away).
   const [selected, setSelected] = useState<Record<string, MediaRecord>>({})
+  // Grid ⇄ list view, persisted across sessions. Initialized to 'grid' to match
+  // SSR (localStorage is client-only), then the stored preference is applied in
+  // a mount effect — avoids a hydration mismatch on the toggle.
+  const [view, setView] = useState<'grid' | 'list'>('grid')
+  useEffect(() => { setView(readView()) }, [])
+  // Per-item right-click context menu (manage mode only).
+  const [menu, setMenu] = useState<{ rec: MediaRecord; x: number; y: number } | null>(null)
+  // Rename / move dialogs (the item being acted on, or null).
+  const [renaming, setRenaming] = useState<MediaRecord | null>(null)
+  const [moving, setMoving] = useState<MediaRecord | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+
+  const chooseView = useCallback((v: 'grid' | 'list') => {
+    setView(v)
+    try { window.localStorage.setItem(VIEW_KEY, v) } catch { /* private mode */ }
+  }, [])
 
   const load = useCallback(async (parentId: string | null, q: string) => {
     setLoading(true)
@@ -197,6 +221,37 @@ export function MediaLibrary({
     if (selectedList.length > 0) onSelect?.(selectedList)
   }, [selectedList, onSelect])
 
+  // Right-click → context menu (manage mode only; the picker doesn't manage).
+  const onContextMenu = useCallback((e: React.MouseEvent, rec: MediaRecord) => {
+    if (selecting) return
+    e.preventDefault()
+    setMenu({ rec, x: e.clientX, y: e.clientY })
+  }, [selecting])
+
+  const onRename = useCallback(async (rec: MediaRecord, name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed || trimmed === rec.name) { setRenaming(null); return }
+    try {
+      await renameMedia(apiBase, rec.id, trimmed)
+      setRenaming(null)
+      await load(folderId, search)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Rename failed')
+    }
+  }, [apiBase, folderId, search, load])
+
+  const onMove = useCallback(async (rec: MediaRecord, destId: string | null) => {
+    if (destId === rec.parentId) { setMoving(null); return }
+    try {
+      await moveMedia(apiBase, rec.id, destId)
+      setMoving(null)
+      await load(folderId, search)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Move failed')
+      setMoving(null)
+    }
+  }, [apiBase, folderId, search, load])
+
   return (
     <div
       className={`flex min-h-[28rem] flex-col rounded-lg border ${dragging ? 'ring-2 ring-primary' : ''}`}
@@ -223,6 +278,27 @@ export function MediaLibrary({
           placeholder="Search…"
           className="h-8 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
         />
+        {/* Grid / list view toggle */}
+        <div className="flex items-center rounded-md border p-0.5">
+          <button
+            onClick={() => chooseView('grid')}
+            className={`flex h-7 w-7 items-center justify-center rounded ${view === 'grid' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            title="Grid view"
+            aria-label="Grid view"
+            aria-pressed={view === 'grid'}
+          >
+            <GridIcon />
+          </button>
+          <button
+            onClick={() => chooseView('list')}
+            className={`flex h-7 w-7 items-center justify-center rounded ${view === 'list' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            title="List view"
+            aria-label="List view"
+            aria-pressed={view === 'list'}
+          >
+            <ListIcon />
+          </button>
+        </div>
         <button onClick={() => setNewFolderOpen(true)} className="h-8 rounded-md border px-3 text-sm hover:bg-muted">
           New folder
         </button>
@@ -259,6 +335,14 @@ export function MediaLibrary({
           <GridSkeleton />
         ) : items.length === 0 ? (
           <EmptyState dragging={dragging} onUpload={() => fileInput.current?.click()} />
+        ) : view === 'list' ? (
+          <MediaListView
+            items={items}
+            onActivate={onActivate}
+            onContextMenu={onContextMenu}
+            selectable={selecting}
+            selected={selected}
+          />
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-3">
             {items.map(item => (
@@ -267,6 +351,7 @@ export function MediaLibrary({
                 item={item}
                 onActivate={onActivate}
                 onDelete={onDelete}
+                onContextMenu={onContextMenu}
                 selectable={selecting}
                 selected={!!selected[item.id]}
               />
@@ -307,6 +392,34 @@ export function MediaLibrary({
           }}
         />
       )}
+
+      {/* Per-item context menu (rename / move / download / delete). */}
+      {menu && (
+        <ContextMenu
+          item={menu.rec}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onRename={() => { setRenaming(menu.rec); setMenu(null) }}
+          onMove={() => { setMoving(menu.rec); setMenu(null) }}
+          onDelete={() => { const r = menu.rec; setMenu(null); void onDelete(r) }}
+        />
+      )}
+      {renaming && (
+        <RenameDialog
+          item={renaming}
+          onClose={() => setRenaming(null)}
+          onSubmit={name => { void onRename(renaming, name) }}
+        />
+      )}
+      {moving && (
+        <MoveDialog
+          apiBase={apiBase}
+          item={moving}
+          onClose={() => setMoving(null)}
+          onMove={destId => { void onMove(moving, destId) }}
+        />
+      )}
     </div>
   )
 }
@@ -318,17 +431,18 @@ function thumbFor(rec: MediaRecord): string | null {
   return thumb?.url ?? rec.url ?? null
 }
 
-function Tile({ item, onActivate, onDelete, selectable = false, selected = false }: {
+function Tile({ item, onActivate, onDelete, onContextMenu, selectable = false, selected = false }: {
   item: MediaRecord
   onActivate: (r: MediaRecord) => void
   onDelete: (r: MediaRecord) => void
+  onContextMenu?: (e: React.MouseEvent, r: MediaRecord) => void
   selectable?: boolean
   selected?: boolean
 }) {
   const thumb = thumbFor(item)
   const isFile = item.type === 'file'
   return (
-    <div className="group relative">
+    <div className="group relative" onContextMenu={onContextMenu ? e => onContextMenu(e, item) : undefined}>
       <button
         onDoubleClick={() => onActivate(item)}
         onClick={() => onActivate(item)}
@@ -366,6 +480,227 @@ function Tile({ item, onActivate, onDelete, selectable = false, selected = false
           ×
         </button>
       )}
+    </div>
+  )
+}
+
+// ── List view ────────────────────────────────────────────
+function MediaListView({ items, onActivate, onContextMenu, selectable, selected }: {
+  items: MediaRecord[]
+  onActivate: (r: MediaRecord) => void
+  onContextMenu: (e: React.MouseEvent, r: MediaRecord) => void
+  selectable: boolean
+  selected: Record<string, MediaRecord>
+}) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b text-left text-xs text-muted-foreground">
+          <th className="px-2 py-1.5 font-medium">Name</th>
+          <th className="px-2 py-1.5 font-medium">Type</th>
+          <th className="px-2 py-1.5 font-medium">Size</th>
+          <th className="px-2 py-1.5 font-medium">Modified</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map(item => {
+          const thumb = thumbFor(item)
+          const isSel = !!selected[item.id]
+          return (
+            <tr
+              key={item.id}
+              onClick={() => onActivate(item)}
+              onContextMenu={e => onContextMenu(e, item)}
+              className={`cursor-pointer border-b last:border-0 hover:bg-muted/50 ${isSel ? 'bg-primary/5' : ''}`}
+            >
+              <td className="px-2 py-1.5">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
+                    {item.type === 'folder'
+                      ? <FolderGlyph small />
+                      : thumb
+                        ? <img src={thumb} alt="" className="h-full w-full object-cover" />
+                        : <FileGlyph category={categorize(item.mime)} small />}
+                  </span>
+                  <span className="truncate">{item.name}</span>
+                  {selectable && isSel && <span aria-hidden className="text-primary">✓</span>}
+                </span>
+              </td>
+              <td className="px-2 py-1.5 text-muted-foreground">{item.type === 'folder' ? 'Folder' : categorize(item.mime)}</td>
+              <td className="px-2 py-1.5 text-muted-foreground">{item.type === 'folder' ? '—' : formatSize(item.size)}</td>
+              <td className="px-2 py-1.5 text-muted-foreground">{formatDate(item.updatedAt)}</td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
+  )
+}
+
+// ── Context menu ─────────────────────────────────────────
+function ContextMenu({ item, x, y, onClose, onRename, onMove, onDelete }: {
+  item: MediaRecord
+  x: number
+  y: number
+  onClose: () => void
+  onRename: () => void
+  onMove: () => void
+  onDelete: () => void
+}) {
+  useEffect(() => {
+    const close = () => onClose()
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    // Defer so the opening contextmenu event doesn't immediately self-close.
+    const t = setTimeout(() => {
+      window.addEventListener('click', close)
+      window.addEventListener('contextmenu', close)
+      window.addEventListener('keydown', onKey)
+    }, 0)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('click', close)
+      window.removeEventListener('contextmenu', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  // Clamp within the viewport.
+  const left = Math.min(x, (typeof window !== 'undefined' ? window.innerWidth : 9999) - 180)
+  const top = Math.min(y, (typeof window !== 'undefined' ? window.innerHeight : 9999) - 160)
+  const isFile = item.type === 'file'
+  return (
+    <div
+      role="menu"
+      className="fixed z-[60] min-w-[10rem] overflow-hidden rounded-md border bg-popover py-1 text-sm shadow-md"
+      style={{ left, top }}
+      onClick={e => e.stopPropagation()}
+    >
+      <MenuItem onClick={onRename}>Rename</MenuItem>
+      <MenuItem onClick={onMove}>Move…</MenuItem>
+      {isFile && item.url && (
+        <a
+          href={item.url}
+          download={item.name}
+          onClick={onClose}
+          className="block px-3 py-1.5 hover:bg-muted"
+          role="menuitem"
+        >
+          Download
+        </a>
+      )}
+      <div className="my-1 border-t" />
+      <MenuItem destructive onClick={onDelete}>Delete</MenuItem>
+    </div>
+  )
+}
+
+function MenuItem({ children, onClick, destructive = false }: { children: React.ReactNode; onClick: () => void; destructive?: boolean }) {
+  return (
+    <button
+      role="menuitem"
+      onClick={onClick}
+      className={`block w-full px-3 py-1.5 text-left hover:bg-muted ${destructive ? 'text-destructive' : ''}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+// ── Rename dialog ────────────────────────────────────────
+function RenameDialog({ item, onClose, onSubmit }: { item: MediaRecord; onClose: () => void; onSubmit: (name: string) => void }) {
+  const [name, setName] = useState(item.name)
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={onClose}>
+      <form
+        onClick={e => e.stopPropagation()}
+        onSubmit={e => { e.preventDefault(); if (name.trim()) onSubmit(name) }}
+        className="w-full max-w-sm space-y-4 rounded-lg border bg-background p-5 shadow-lg"
+      >
+        <h2 className="text-sm font-semibold">Rename {item.type === 'folder' ? 'folder' : 'file'}</h2>
+        <input
+          autoFocus
+          value={name}
+          onChange={e => setName(e.target.value)}
+          onFocus={e => e.currentTarget.select()}
+          className="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+        />
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="h-8 rounded-md border px-3 text-sm hover:bg-muted">Cancel</button>
+          <button type="submit" disabled={!name.trim()} className="h-8 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">Rename</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+// ── Move dialog (folder picker) ──────────────────────────
+function MoveDialog({ apiBase, item, onClose, onMove }: {
+  apiBase: string
+  item: MediaRecord
+  onClose: () => void
+  onMove: (destId: string | null) => void
+}) {
+  const [pickerFolder, setPickerFolder] = useState<string | null>(null)
+  const [pickerTrail, setPickerTrail] = useState<Crumb[]>([])
+  const [folders, setFolders] = useState<MediaRecord[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    listMedia(apiBase, { parentId: pickerFolder, perPage: 100 })
+      .then(res => { if (active) setFolders(res.data.filter(r => r.type === 'folder' && r.id !== item.id)) })
+      .catch(() => { if (active) setFolders([]) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [apiBase, pickerFolder, item.id])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="flex w-full max-w-md flex-col gap-3 rounded-lg border bg-background p-5 shadow-lg">
+        <h2 className="text-sm font-semibold">Move “{item.name}”</h2>
+        {/* Destination breadcrumb */}
+        <nav className="flex flex-wrap items-center gap-1 text-sm">
+          <CrumbButton active={pickerTrail.length === 0} onClick={() => { setPickerTrail([]); setPickerFolder(null) }}>Media</CrumbButton>
+          {pickerTrail.map((c, i) => (
+            <span key={c.id} className="flex items-center gap-1">
+              <span className="text-muted-foreground">/</span>
+              <CrumbButton active={i === pickerTrail.length - 1} onClick={() => { setPickerTrail(t => t.slice(0, i + 1)); setPickerFolder(c.id) }}>{c.name}</CrumbButton>
+            </span>
+          ))}
+        </nav>
+        <div className="max-h-64 min-h-[8rem] overflow-auto rounded-md border">
+          {loading ? (
+            <p className="p-3 text-sm text-muted-foreground">Loading…</p>
+          ) : folders.length === 0 ? (
+            <p className="p-3 text-sm text-muted-foreground">No subfolders here.</p>
+          ) : folders.map(f => (
+            <button
+              key={f.id}
+              onClick={() => { setPickerTrail(t => [...t, { id: f.id, name: f.name }]); setPickerFolder(f.id) }}
+              className="flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm last:border-0 hover:bg-muted"
+            >
+              <FolderGlyph small />
+              <span className="truncate">{f.name}</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate text-xs text-muted-foreground">
+            Into: {pickerTrail.length === 0 ? 'Media (root)' : pickerTrail[pickerTrail.length - 1]!.name}
+          </span>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="h-8 rounded-md border px-3 text-sm hover:bg-muted">Cancel</button>
+            <button
+              onClick={() => onMove(pickerFolder)}
+              disabled={pickerFolder === item.parentId}
+              className="h-8 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              Move here
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -453,15 +788,22 @@ function EmptyState({ dragging, onUpload }: { dragging: boolean; onUpload: () =>
   )
 }
 
-function FolderGlyph() {
+function FolderGlyph({ small = false }: { small?: boolean }) {
   return (
-    <svg className="h-9 w-9 text-primary/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className={`${small ? 'h-4 w-4' : 'h-9 w-9'} text-primary/70`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.25 12.75V12a2.25 2.25 0 0 1 2.25-2.25h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" />
     </svg>
   )
 }
 
-function FileGlyph({ category }: { category: string }) {
+function FileGlyph({ category, small = false }: { category: string; small?: boolean }) {
+  if (small) {
+    return (
+      <svg className="h-4 w-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+      </svg>
+    )
+  }
   return (
     <div className="flex flex-col items-center gap-1 text-muted-foreground">
       <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -469,6 +811,37 @@ function FileGlyph({ category }: { category: string }) {
       </svg>
       <span className="text-[10px] uppercase">{category}</span>
     </div>
+  )
+}
+
+// ── Misc helpers ─────────────────────────────────────────
+function formatSize(bytes: number | null): string {
+  if (bytes == null) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(kb < 10 ? 1 : 0)} KB`
+  return `${(kb / 1024).toFixed(1)} MB`
+}
+
+function formatDate(value: Date | string): string {
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+function GridIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6Zm9.75 0A2.25 2.25 0 0 1 15.75 3.75H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6Zm-9.75 9.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25Zm9.75 0a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
+    </svg>
+  )
+}
+
+function ListIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3.75 6h.007v.008H3.75V6Zm0 6h.007v.008H3.75V12Zm0 6h.007v.008H3.75V18ZM8.25 6h12M8.25 12h12M8.25 18h12" />
+    </svg>
   )
 }
 
