@@ -46,6 +46,54 @@ function readView(): 'grid' | 'list' {
   try { return window.localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid' } catch { return 'grid' }
 }
 
+// Custom drag MIME for internal drag-to-folder moves (so they don't collide
+// with external OS file / URL drops, which carry `Files` / `text/uri-list`).
+const DND_MIME = 'application/x-pilotiq-media-id'
+
+/** Minimal FileSystemEntry shape (the `webkitGetAsEntry` tree) — typed locally
+ *  since lib.dom's `FileSystemEntry` types aren't always in scope. */
+interface FsEntry {
+  isFile: boolean
+  isDirectory: boolean
+  name: string
+  file?: (cb: (f: File) => void, err: (e: unknown) => void) => void
+  createReader?: () => { readEntries: (cb: (e: FsEntry[]) => void, err: (e: unknown) => void) => void }
+}
+
+/** Read every entry from a directory reader (`readEntries` is paginated). */
+async function readAllEntries(reader: { readEntries: (cb: (e: FsEntry[]) => void, err: (e: unknown) => void) => void }): Promise<FsEntry[]> {
+  const out: FsEntry[] = []
+  for (;;) {
+    const batch = await new Promise<FsEntry[]>((res, rej) => reader.readEntries(res, rej))
+    if (batch.length === 0) break
+    out.push(...batch)
+  }
+  return out
+}
+
+/** Recursively upload a dropped FileSystemEntry tree under `parentId`,
+ *  recreating folders. Per-file failures bubble up to abort the import. */
+async function importEntry(entry: FsEntry, parentId: string | null, apiBase: string, library: string | undefined): Promise<void> {
+  if (entry.isFile && entry.file) {
+    const file = await new Promise<File>((res, rej) => entry.file!(res, rej))
+    await uploadMedia(apiBase, file, { parentId, ...(library ? { library } : {}) })
+  } else if (entry.isDirectory && entry.createReader) {
+    const folder = await createFolder(apiBase, entry.name, parentId)
+    const children = await readAllEntries(entry.createReader())
+    for (const child of children) await importEntry(child, folder.id, apiBase, library)
+  }
+}
+
+/** Fetch a dragged URL and wrap it as a `File` for upload. */
+async function fetchUrlAsFile(url: string): Promise<File> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Fetch failed (${res.status})`)
+  const blob = await res.blob()
+  const path = url.split('?')[0] ?? url
+  const name = decodeURIComponent(path.split('/').filter(Boolean).pop() || 'download')
+  return new File([blob], name, { type: blob.type || 'application/octet-stream' })
+}
+
 /** Config the `Media` schema element / library page passes through the `View`
  *  widget's resolved `data` payload (parallel to the direct props the picker
  *  dialog passes). */
@@ -54,6 +102,15 @@ interface MediaViewData {
   library?:   string
   directory?: string
   height?:    number
+}
+
+/** Drag-to-folder move handlers, threaded into tiles / rows (manage mode). */
+interface DndHandlers {
+  onItemDragStart:   (e: React.DragEvent, rec: MediaRecord) => void
+  onFolderDragOver:  (e: React.DragEvent, rec: MediaRecord) => void
+  onFolderDragLeave: (e: React.DragEvent, rec: MediaRecord) => void
+  onDropOnFolder:    (e: React.DragEvent, rec: MediaRecord) => void
+  dropFolderId:      string | null
 }
 
 export interface MediaLibraryProps {
@@ -103,6 +160,8 @@ export function MediaLibrary({
   const [preview, setPreview] = useState<MediaRecord | null>(null)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
+  // Folder currently hovered as a drag-to-move drop target (highlight).
+  const [dropFolderId, setDropFolderId] = useState<string | null>(null)
   // Select-mode multi-select buffer, keyed by id (preserves clicked records
   // so the footer "Add" can return them even after navigating folders away).
   const [selected, setSelected] = useState<Record<string, MediaRecord>>({})
@@ -188,11 +247,86 @@ export function MediaLibrary({
     void runUploads(files)
   }, [runUploads])
 
-  const onDrop = useCallback((e: React.DragEvent) => {
+  // Drop onto the browser background: directory trees (webkitGetAsEntry),
+  // plain files, or a dragged URL (fetched → uploaded).
+  const onDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setDragging(false)
-    const files = Array.from(e.dataTransfer.files)
-    if (files.length) void runUploads(files)
-  }, [runUploads])
+    const dt = e.dataTransfer
+
+    // 1. Directory entries — recurse, recreating the folder structure.
+    const entries = dt.items
+      ? Array.from(dt.items).map(it => (it as DataTransferItem & { webkitGetAsEntry?: () => FsEntry | null }).webkitGetAsEntry?.() ?? null).filter(Boolean) as FsEntry[]
+      : []
+    if (entries.some(en => en.isDirectory)) {
+      const id = `dir-${Date.now()}`
+      setUploads(u => [...u, { id, name: 'Importing folder…', progress: 0 }])
+      try {
+        for (const en of entries) await importEntry(en, folderId, apiBase, library)
+        setUploads(list => list.filter(x => x.id !== id))
+      } catch (err) {
+        setUploads(list => list.map(x => x.id === id ? { ...x, error: err instanceof Error ? err.message : 'Import failed' } : x))
+        setTimeout(() => setUploads(list => list.filter(x => x.error)), 1500)
+      }
+      await load(folderId, search)
+      return
+    }
+
+    // 2. Plain files.
+    const files = Array.from(dt.files)
+    if (files.length) { void runUploads(files); return }
+
+    // 3. A dragged URL (e.g. an image from another tab).
+    const url = (dt.getData('text/uri-list') || dt.getData('text/plain')).trim()
+    if (/^https?:\/\//i.test(url)) {
+      const id = `url-${Date.now()}`
+      setUploads(u => [...u, { id, name: url.split('/').pop() || url, progress: 0 }])
+      try {
+        const file = await fetchUrlAsFile(url)
+        setUploads(list => list.filter(x => x.id !== id))
+        void runUploads([file])
+      } catch (err) {
+        setUploads(list => list.map(x => x.id === id ? { ...x, error: err instanceof Error ? err.message : 'URL import failed' } : x))
+        setTimeout(() => setUploads(list => list.filter(x => x.error)), 1500)
+      }
+    }
+  }, [apiBase, folderId, search, library, load, runUploads])
+
+  // Drag a tile/row onto a folder to reparent it. Internal drags carry our
+  // custom MIME so they don't collide with external file/URL drops.
+  const onItemDragStart = useCallback((e: React.DragEvent, rec: MediaRecord) => {
+    e.dataTransfer.setData(DND_MIME, rec.id)
+    e.dataTransfer.effectAllowed = 'move'
+  }, [])
+
+  const onDropOnFolder = useCallback(async (e: React.DragEvent, folder: MediaRecord) => {
+    const id = e.dataTransfer.getData(DND_MIME)
+    if (!id || id === folder.id || folder.type !== 'folder') return
+    e.preventDefault(); e.stopPropagation()
+    setDropFolderId(null)
+    try {
+      await moveMedia(apiBase, id, folder.id)
+      setMarked({})
+      await load(folderId, search)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Move failed')
+    }
+  }, [apiBase, folderId, search, load])
+
+  const onFolderDragOver = useCallback((e: React.DragEvent, folder: MediaRecord) => {
+    if (folder.type !== 'folder' || !e.dataTransfer.types.includes(DND_MIME)) return
+    e.preventDefault(); e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    setDropFolderId(folder.id)
+  }, [])
+
+  const onFolderDragLeave = useCallback((_e: React.DragEvent, folder: MediaRecord) => {
+    setDropFolderId(cur => (cur === folder.id ? null : cur))
+  }, [])
+
+  const dnd = useMemo<DndHandlers | null>(
+    () => (selecting ? null : { onItemDragStart, onFolderDragOver, onFolderDragLeave, onDropOnFolder, dropFolderId }),
+    [selecting, onItemDragStart, onFolderDragOver, onFolderDragLeave, onDropOnFolder, dropFolderId],
+  )
 
   const onDelete = useCallback(async (rec: MediaRecord) => {
     const label = rec.type === 'folder' ? `folder "${rec.name}" and everything in it` : `"${rec.name}"`
@@ -405,6 +539,7 @@ export function MediaLibrary({
             selectable={selecting}
             selected={selected}
             marked={marked}
+            dnd={dnd}
             {...(selecting ? {} : { onToggleMark: toggleMark })}
           />
         ) : (
@@ -419,6 +554,7 @@ export function MediaLibrary({
                 selectable={selecting}
                 selected={!!selected[item.id]}
                 marked={!!marked[item.id]}
+                dnd={dnd}
                 {...(selecting ? {} : { onToggleMark: toggleMark })}
               />
             ))}
@@ -497,7 +633,7 @@ function thumbFor(rec: MediaRecord): string | null {
   return thumb?.url ?? rec.url ?? null
 }
 
-function Tile({ item, onActivate, onDelete, onContextMenu, selectable = false, selected = false, marked = false, onToggleMark }: {
+function Tile({ item, onActivate, onDelete, onContextMenu, selectable = false, selected = false, marked = false, onToggleMark, dnd }: {
   item: MediaRecord
   onActivate: (r: MediaRecord, e?: React.MouseEvent) => void
   onDelete: (r: MediaRecord) => void
@@ -506,11 +642,24 @@ function Tile({ item, onActivate, onDelete, onContextMenu, selectable = false, s
   selected?: boolean
   marked?: boolean
   onToggleMark?: (r: MediaRecord) => void
+  dnd?: DndHandlers | null
 }) {
   const thumb = thumbFor(item)
   const isFile = item.type === 'file'
+  const isFolder = item.type === 'folder'
+  const dropActive = !!dnd && dnd.dropFolderId === item.id
   return (
-    <div className="group relative" onContextMenu={onContextMenu ? e => onContextMenu(e, item) : undefined}>
+    <div
+      className={`group relative rounded-lg ${dropActive ? 'ring-2 ring-primary ring-offset-1' : ''}`}
+      draggable={!!dnd}
+      onDragStart={dnd ? e => dnd.onItemDragStart(e, item) : undefined}
+      onContextMenu={onContextMenu ? e => onContextMenu(e, item) : undefined}
+      {...(isFolder && dnd ? {
+        onDragOver:  (e: React.DragEvent) => dnd.onFolderDragOver(e, item),
+        onDragLeave: (e: React.DragEvent) => dnd.onFolderDragLeave(e, item),
+        onDrop:      (e: React.DragEvent) => dnd.onDropOnFolder(e, item),
+      } : {})}
+    >
       <button
         onDoubleClick={e => onActivate(item, e)}
         onClick={e => onActivate(item, e)}
@@ -564,7 +713,7 @@ function Tile({ item, onActivate, onDelete, onContextMenu, selectable = false, s
 }
 
 // ── List view ────────────────────────────────────────────
-function MediaListView({ items, onActivate, onContextMenu, selectable, selected, marked, onToggleMark }: {
+function MediaListView({ items, onActivate, onContextMenu, selectable, selected, marked, onToggleMark, dnd }: {
   items: MediaRecord[]
   onActivate: (r: MediaRecord, e?: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent, r: MediaRecord) => void
@@ -572,6 +721,7 @@ function MediaListView({ items, onActivate, onContextMenu, selectable, selected,
   selected: Record<string, MediaRecord>
   marked: Record<string, MediaRecord>
   onToggleMark?: (r: MediaRecord) => void
+  dnd?: DndHandlers | null
 }) {
   const showCheck = !!onToggleMark
   return (
@@ -590,12 +740,21 @@ function MediaListView({ items, onActivate, onContextMenu, selectable, selected,
           const thumb = thumbFor(item)
           const isSel = !!selected[item.id]
           const isMarked = !!marked[item.id]
+          const isFolder = item.type === 'folder'
+          const dropActive = !!dnd && dnd.dropFolderId === item.id
           return (
             <tr
               key={item.id}
               onClick={e => onActivate(item, e)}
               onContextMenu={e => onContextMenu(e, item)}
-              className={`cursor-pointer border-b last:border-0 hover:bg-muted/50 ${(isSel || isMarked) ? 'bg-primary/5' : ''}`}
+              draggable={!!dnd}
+              onDragStart={dnd ? e => dnd.onItemDragStart(e, item) : undefined}
+              {...(isFolder && dnd ? {
+                onDragOver:  (e: React.DragEvent) => dnd.onFolderDragOver(e, item),
+                onDragLeave: (e: React.DragEvent) => dnd.onFolderDragLeave(e, item),
+                onDrop:      (e: React.DragEvent) => dnd.onDropOnFolder(e, item),
+              } : {})}
+              className={`cursor-pointer border-b last:border-0 hover:bg-muted/50 ${(isSel || isMarked) ? 'bg-primary/5' : ''} ${dropActive ? 'ring-2 ring-inset ring-primary' : ''}`}
             >
               {showCheck && (
                 <td className="px-2 py-1.5">
