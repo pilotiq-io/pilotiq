@@ -25,7 +25,7 @@ overrides:
   # 1.12.2 copy instead of deduping onto the 1.13.0 the rest of the tree uses.
   # Two copies = nominally-incompatible Application/Container types, which 500s
   # the playground typecheck on bootstrap/providers.ts.
-  '@rudderjs/core': 1.13.0
+  '@rudderjs/core': 1.13.2
   react: 19.2.6
   react-dom: 19.2.6
   '@tiptap/core': 3.26.0
