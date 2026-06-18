@@ -1,6 +1,6 @@
 {
   "name": "@pilotiq/media",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Open-source media / file library for @pilotiq/pilotiq — browse, upload, and pick files, folders, images, video, and PDFs",
   "license": "MIT",
   "repository": {
