@@ -399,6 +399,9 @@ function renderFieldInput(
           {...(Array.isArray(el['imageEditorAspectRatioOptions'])
             ? { imageEditorAspectRatioOptions: el['imageEditorAspectRatioOptions'] as Array<{ ratio: number; label: string }> }
             : {})}
+          {...(Array.isArray(el['metaFields'])
+            ? { metaFields: el['metaFields'] as Array<Record<string, unknown>> }
+            : {})}
         />
       )
     }

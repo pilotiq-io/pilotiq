@@ -407,6 +407,18 @@ export function coerceFormValues(
         break
       }
       case 'fileUpload': {
+        const fileMultiple = (field as { isMultiple?: () => boolean }).isMultiple?.() === true
+        // `metaFields()` mode — the value is a rich object (single) or an
+        // array of them (multi): `{ url, <meta>… }`. The client serializes
+        // it as JSON in the hidden input; a live-resolve may already ship a
+        // structured object/array. Legacy plain-string values coerce to
+        // `{ url }` so old columns read back. Structural probe, not
+        // `instanceof` (Vite SSR module-cache duplication).
+        if ((field as { hasMetaFields?: () => boolean }).hasMetaFields?.() === true) {
+          const refs = coerceFileUploadRefs(raw)
+          out[name] = fileMultiple ? refs : (refs[0] ?? null)
+          break
+        }
         // The browser already turned uploaded files into URLs via the
         // `_uploads` route; what arrives here is either a string, a
         // string[] (multi-mode), or a JSON-encoded array (when the
@@ -1532,6 +1544,36 @@ function isMultiSelectField(field: Field): boolean {
   if (field.fieldType !== 'select') return false
   const f = field as { isMultiple?: () => boolean }
   return typeof f.isMultiple === 'function' && f.isMultiple()
+}
+
+/**
+ * Normalize a `FileUpload.metaFields()` body into an array of rich refs
+ * (`{ url, …meta }`). Accepts the JSON the client serializes (object or
+ * array), an already-structured value from a live-resolve, and legacy bare
+ * URL strings (→ `{ url }`). Entries without a usable `url` are dropped.
+ */
+function coerceFileUploadRefs(raw: unknown): Array<Record<string, unknown>> {
+  if (raw === undefined || raw === null || raw === '') return []
+  let val: unknown = raw
+  if (typeof raw === 'string') {
+    const s = raw.trim()
+    if (s.startsWith('{') || s.startsWith('[')) {
+      try { val = JSON.parse(s) } catch { val = raw }
+    }
+  }
+  const list = Array.isArray(val) ? val : [val]
+  const refs: Array<Record<string, unknown>> = []
+  for (const entry of list) {
+    if (entry === undefined || entry === null || entry === '') continue
+    if (typeof entry === 'string') {
+      refs.push({ url: entry })
+    } else if (typeof entry === 'object') {
+      const obj = entry as Record<string, unknown>
+      const url = obj.url
+      if (typeof url === 'string' && url !== '') refs.push({ ...obj, url })
+    }
+  }
+  return refs
 }
 
 interface SelectRelationshipDeferral {

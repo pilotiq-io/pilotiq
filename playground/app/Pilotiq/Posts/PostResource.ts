@@ -66,15 +66,23 @@ export class PostResource extends Resource {
                 .label('Image')
                 .accept(['image/*'])
                 .maxSize(2_000_000)
-                .directory('covers'),
+                .directory('covers')
+                // Single-file + editable alt text (stored inline as { url, alt }).
+                .metaFields([
+                  TextField.make('alt').label('Alt text').placeholder('Describe the image…'),
+                ]),
               FileUpload.make('gallery')
                 .label('Gallery')
                 .multiple()
                 .reorderable()
-                .panelLayout('grid')
                 .accept(['image/*'])
                 .maxSize(5_000_000)
-                .directory('gallery'),
+                .directory('gallery')
+                // Multi-file + per-file alt + caption.
+                .metaFields([
+                  TextField.make('alt').label('Alt text'),
+                  TextField.make('caption').label('Caption'),
+                ]),
               // @pilotiq/media library field — upload new files OR pick
               // existing ones from the library browser. Stores stable
               // MediaRef(s) (id + url + conversions), not raw URLs.

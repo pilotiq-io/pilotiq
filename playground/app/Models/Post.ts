@@ -18,6 +18,7 @@ export class Post extends Model.for<'post'>() {
   static override casts = {
     publishedAt: 'datetime' as const,
     content:     'json' as const,
+    image:       'json' as const,   // FileUpload.metaFields() value — { url, alt }
     gallery:     'json' as const,
     coverMedia:  'json' as const,   // MediaField value (MediaRef[] — @pilotiq/media)
   }

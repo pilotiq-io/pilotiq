@@ -36,6 +36,7 @@ export function FileUploadInput({
   circleCropper      = false,
   automaticallyCropImagesToAspectRatio = false,
   preserveFilenames  = false,
+  metaFields,
 }: {
   name:               string
   defaultValue:       unknown
@@ -57,8 +58,10 @@ export function FileUploadInput({
   circleCropper?:     boolean
   automaticallyCropImagesToAspectRatio?: boolean
   preserveFilenames?: boolean
+  metaFields?:        Array<Record<string, unknown>>
 }): React.ReactElement {
   const fs        = useFieldState(name)
+  const hasMeta   = (metaFields?.length ?? 0) > 0
   const { notify } = useToast()
   const inputRef  = useRef<HTMLInputElement | null>(null)
 
@@ -93,15 +96,56 @@ export function FileUploadInput({
     return []
   }
 
+  // Normalize a stored value into rich refs. Handles the bare URL string(s) of
+  // the non-meta path AND the `{ url, …meta }` object / array (+ JSON string)
+  // of `metaFields()` mode + legacy plain strings (→ empty meta). Unifies
+  // seeding for both modes — meta is simply `{}` when the field has none.
+  const toRefs = (v: unknown): Array<{ url: string; meta: Record<string, unknown> }> => {
+    if (v === undefined || v === null || v === '') return []
+    let val: unknown = v
+    if (typeof v === 'string') {
+      const s = v.trim()
+      if (s.startsWith('{') || s.startsWith('[')) { try { val = JSON.parse(s) } catch { /* keep */ } }
+    }
+    const list = Array.isArray(val) ? val : [val]
+    const refs: Array<{ url: string; meta: Record<string, unknown> }> = []
+    for (const e of list) {
+      if (e === undefined || e === null || e === '') continue
+      if (typeof e === 'string') { refs.push({ url: e, meta: {} }); continue }
+      if (typeof e === 'object') {
+        const o = e as Record<string, unknown>
+        if (typeof o.url === 'string' && o.url !== '') {
+          const { url, ...meta } = o
+          refs.push({ url: url as string, meta })
+        }
+      }
+    }
+    return refs
+  }
+
   // Items are the source of truth: each is either an in-flight upload, a
   // stored (done) file, or a failed one. The committed form value is the
-  // ordered list of done URLs — so reordering works across pending + done.
-  const [items, setItems] = useState<UploadItem[]>(() => urlsToItems(toUrls(defaultValue)))
+  // ordered list of done refs — so reordering works across pending + done.
+  const [items, setItems] = useState<UploadItem[]>(() => refsToItems(toRefs(defaultValue)))
   const xhrRef = useRef<Map<string, XMLHttpRequest>>(new Map())
 
-  const committedUrls = items.flatMap((i) => (i.status === 'done' && i.url ? [i.url] : []))
-  const committedKey  = committedUrls.join('\n')
+  const committedRefs = items.flatMap((i) => (i.status === 'done' && i.url ? [{ url: i.url, meta: i.meta ?? {} }] : []))
+  const committedUrls = committedRefs.map((r) => r.url)
+  // The stored form value: bare url(s) without meta, `{ url, …meta }` with.
+  const storedRef = (r: { url: string; meta: Record<string, unknown> }): unknown =>
+    hasMeta ? { url: r.url, ...r.meta } : r.url
+  const buildStored = (): unknown =>
+    multiple ? committedRefs.map(storedRef) : (committedRefs[0] ? storedRef(committedRefs[0]) : null)
+  // Key drives the push/pull sync. In meta mode it must include the meta so
+  // editing alt/caption re-syncs; otherwise the url list alone is enough.
+  const committedKey  = hasMeta ? JSON.stringify(committedRefs) : committedUrls.join('\n')
   const anyUploading  = items.some((i) => i.status === 'uploading')
+
+  // Edit one meta key on a stored file.
+  const updateMeta = (id: string, key: string, value: unknown): void => {
+    setItems((prev) => prev.map((it) =>
+      it.id === id ? { ...it, meta: { ...(it.meta ?? {}), [key]: value } } : it))
+  }
 
   // Track the value we last synced so the push/pull effects below don't fight
   // (our own writes vs external mutations: suggestion applier / live resolve).
@@ -116,7 +160,7 @@ export function FileUploadInput({
   useEffect(() => {
     if (committedKey === syncedKeyRef.current) return
     syncedKeyRef.current = committedKey
-    const stored = multiple ? committedUrls : (committedUrls[0] ?? null)
+    const stored = buildStored()
     const cur = fsRef.current
     if (cur.controlled) cur.setValue(stored)
     cur.triggerLive(stored)
@@ -124,14 +168,16 @@ export function FileUploadInput({
   }, [committedKey, multiple])
 
   // Pull external form-state changes (controlled mode) → items.
-  const externalKey = fs.controlled ? toUrls(fs.value).join('\n') : committedKey
+  const externalKey = fs.controlled
+    ? (hasMeta ? JSON.stringify(toRefs(fs.value)) : toUrls(fs.value).join('\n'))
+    : committedKey
   useEffect(() => {
     if (!fs.controlled) return
     if (externalKey === syncedKeyRef.current) return
     syncedKeyRef.current = externalKey
     setItems((prev) => {
       prev.forEach((i) => { if (i.previewUrl) URL.revokeObjectURL(i.previewUrl) })
-      return urlsToItems(externalKey ? externalKey.split('\n') : [])
+      return refsToItems(toRefs(fs.value))
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalKey])
@@ -152,10 +198,9 @@ export function FileUploadInput({
   useEffect(() => {
     if (name.includes('.')) return
     const applier: PendingSuggestionApplier = (suggestion) => {
-      const next = toUrls(suggestion.suggestedValue)
       setItems((prev) => {
         prev.forEach((i) => { if (i.previewUrl) URL.revokeObjectURL(i.previewUrl) })
-        return urlsToItems(next)
+        return refsToItems(toRefs(suggestion.suggestedValue))
       })
     }
     return registerPendingSuggestionApplier(formId, name, applier)
@@ -397,8 +442,13 @@ export function FileUploadInput({
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  const hiddenValue = multiple ? JSON.stringify(committedUrls) : (committedUrls[0] ?? '')
-  const isGrid      = panelLayout === 'grid' || panelLayout === 'integrated'
+  const storedForHidden = buildStored()
+  const hiddenValue = hasMeta
+    ? (storedForHidden == null ? '' : JSON.stringify(storedForHidden))
+    : (multiple ? JSON.stringify(committedUrls) : (committedUrls[0] ?? ''))
+  // Meta mode always renders rows (the per-file editor needs the width); grid
+  // / integrated tiles are too cramped to host metadata inputs.
+  const isGrid      = !hasMeta && (panelLayout === 'grid' || panelLayout === 'integrated')
 
   // ── Shared sub-renders ────────────────────────────────────────────────────
 
@@ -647,6 +697,17 @@ export function FileUploadInput({
                   <XIcon className="size-4" />
                 </button>
               </li>
+              {/* Per-file metadata editor (metaFields mode, done items only) */}
+              {hasMeta && item.status === 'done' && metaFields && (
+                <li className="mt-1 rounded-md border border-input border-t-0 rounded-t-none bg-muted/30 px-3 py-2">
+                  <MetaFieldsEditor
+                    fields={metaFields}
+                    values={item.meta ?? {}}
+                    disabled={disabled}
+                    onChange={(k, v) => updateMeta(item.id, k, v)}
+                  />
+                </li>
+              )}
             </React.Fragment>
           ))}
           {/* Drop indicator after last row */}
@@ -757,6 +818,110 @@ export function FileUploadInput({
 }
 
 /**
+ * Per-file metadata inputs for `FileUpload.metaFields([...])`. Renders one
+ * control per serialized core-field meta, writing into the file's `meta`
+ * object. Implicit `<label>` association (no ids) keeps it collision-free
+ * across repeated files. Covers the common metadata field types; anything
+ * else falls back to a text input.
+ */
+function MetaFieldsEditor({ fields, values, disabled, onChange }: {
+  fields:   Array<Record<string, unknown>>
+  values:   Record<string, unknown>
+  disabled: boolean
+  onChange: (key: string, value: unknown) => void
+}): React.ReactElement {
+  const inputClass = 'w-full rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50'
+  return (
+    <div className="flex flex-col gap-2">
+      {fields.map((f) => {
+        const fname = typeof f['name'] === 'string' ? (f['name'] as string) : ''
+        if (!fname) return null
+        const label   = typeof f['label'] === 'string' ? (f['label'] as string) : fname
+        const type    = typeof f['fieldType'] === 'string' ? (f['fieldType'] as string) : 'text'
+        const ph      = typeof f['placeholder'] === 'string' ? (f['placeholder'] as string) : undefined
+        const help    = typeof f['helperText'] === 'string' ? (f['helperText'] as string) : undefined
+        const current = values[fname]
+        const asStr   = typeof current === 'string' ? current : (current == null ? '' : String(current))
+
+        if (type === 'toggle' || type === 'checkbox') {
+          return (
+            <label key={fname} className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <input
+                type="checkbox" checked={Boolean(current)} disabled={disabled}
+                onChange={(e) => onChange(fname, e.target.checked)}
+              />
+              {label}
+            </label>
+          )
+        }
+
+        let control: React.ReactElement
+        switch (type) {
+          case 'textarea':
+            control = (
+              <textarea
+                className={inputClass} rows={2} value={asStr} placeholder={ph} disabled={disabled}
+                onChange={(e) => onChange(fname, e.target.value)}
+              />
+            )
+            break
+          case 'number':
+          case 'slider':
+            control = (
+              <input
+                type="number" className={inputClass} value={asStr} placeholder={ph} disabled={disabled}
+                onChange={(e) => onChange(fname, e.target.value === '' ? null : Number(e.target.value))}
+              />
+            )
+            break
+          case 'color':
+            control = (
+              <input
+                type="color" className="h-7 w-12 rounded border border-input bg-background"
+                value={typeof current === 'string' && current ? current : '#000000'} disabled={disabled}
+                onChange={(e) => onChange(fname, e.target.value)}
+              />
+            )
+            break
+          case 'select': {
+            const options = Array.isArray(f['options'])
+              ? (f['options'] as Array<{ value?: unknown; label?: unknown }>)
+              : []
+            control = (
+              <select
+                className={inputClass} value={asStr} disabled={disabled}
+                onChange={(e) => onChange(fname, e.target.value)}
+              >
+                <option value="">—</option>
+                {options.map((o, i) => (
+                  <option key={i} value={String(o.value)}>{String(o.label ?? o.value)}</option>
+                ))}
+              </select>
+            )
+            break
+          }
+          default:
+            control = (
+              <input
+                type="text" className={inputClass} value={asStr} placeholder={ph} disabled={disabled}
+                onChange={(e) => onChange(fname, e.target.value)}
+              />
+            )
+        }
+
+        return (
+          <label key={fname} className="flex flex-col gap-0.5">
+            <span className="text-xs font-medium text-muted-foreground">{label}</span>
+            {control}
+            {help ? <span className="text-[11px] text-muted-foreground">{help}</span> : null}
+          </label>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
  * Draw a crop region from `img` onto a canvas and return the result as a Blob.
  * When `fromDisplay` is true, `pixelCrop` coordinates are in *display* pixels
  * (as returned by ReactCrop's onComplete); they are scaled to the image's
@@ -823,19 +988,21 @@ interface UploadItem {
   mime?:       string
   progress?:   number   // 0..100 while uploading
   error?:      string
+  meta?:       Record<string, unknown>   // per-file metadata (metaFields mode)
 }
 
 function uploadId(): string {
   return `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 }
 
-/** Seed done-items from already-stored URLs (initial / external value). */
-function urlsToItems(urls: string[]): UploadItem[] {
-  return urls.map((url, i) => ({
-    id:     `seed-${i}-${url}`,
+/** Seed done-items from already-stored refs (initial / external value). */
+function refsToItems(refs: Array<{ url: string; meta: Record<string, unknown> }>): UploadItem[] {
+  return refs.map((r, i) => ({
+    id:     `seed-${i}-${r.url}`,
     status: 'done',
-    name:   fileNameFrom(url),
-    url,
+    name:   fileNameFrom(r.url),
+    url:    r.url,
+    ...(Object.keys(r.meta).length ? { meta: r.meta } : {}),
   }))
 }
 
