@@ -122,7 +122,7 @@ export function registerMediaRoutes(router: Router, pilotiq: Pilotiq): void {
     const file = body['file']
     if (!(file instanceof File)) return unprocessable(res, 'No file provided')
 
-    const library = resolveLibrary(body['library'])
+    const library = resolveLibrary(body['library'], base)
     const validation = validateUpload(file, library)
     if (!validation.ok) return fail(res, validation.status, validation.error)
 
@@ -229,10 +229,10 @@ export function registerMediaRoutes(router: Router, pilotiq: Pilotiq): void {
 
 // ─── Pure request/response helpers (client-safe) ─────────
 
-/** Resolve a library by name, falling back to the default. */
-function resolveLibrary(raw: unknown): MediaLibrary {
+/** Resolve a library by name scoped to a panel base, falling back to the default. */
+function resolveLibrary(raw: unknown, panelBase: string): MediaLibrary {
   const name = typeof raw === 'string' && raw.length > 0 ? raw : 'default'
-  return getLibrary(name) ?? getDefaultLibrary()
+  return getLibrary(panelBase, name) ?? getDefaultLibrary(panelBase)
 }
 
 /** Read the auto-parsed JSON body as a record (empty object otherwise). */

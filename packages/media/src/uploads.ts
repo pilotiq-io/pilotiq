@@ -26,6 +26,13 @@ export interface MediaUploadConfig {
    * rather than silently writing to the default.
    */
   library?: string
+  /**
+   * Panel base path (e.g. `'/admin'`). When provided the library is resolved
+   * from the panel-scoped registry so two panels with different configs for the
+   * same library name don't interfere. Omit when the storage config is shared
+   * across panels.
+   */
+  panelPath?: string
 }
 
 /**
@@ -53,8 +60,10 @@ export function mediaUpload(config: MediaUploadConfig = {}): UploadAdapter {
   return {
     async put(req: UploadRequest): Promise<UploadResult> {
       const library = config.library
-        ? getLibrary(config.library) ?? throwUnregistered(config.library)
-        : getDefaultLibrary()
+        ? (config.panelPath
+            ? getLibrary(config.panelPath, config.library) ?? throwUnregistered(config.library)
+            : getLibrary(config.library) ?? throwUnregistered(config.library))
+        : getDefaultLibrary(config.panelPath)
 
       const media = await uploadFile(
         { file: req.file, parentId: null, alt: null },

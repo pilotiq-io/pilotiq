@@ -39,10 +39,8 @@ export const pilotiqGuest = Pilotiq.make('Pilotiq Guest')
     recharts(),
     // Mirror /admin's media library so the MediaField (on PostResource)
     // works here too — and the unguarded /guest panel doubles as a test
-    // surface for the `_media` routes (no login needed).
-    // metaFields mirror AdminPanel — the media library registry is keyed by
-    // library name across panels (one shared `default`), so both must declare
-    // the same custom fields to stay consistent.
+    // surface for the `_media` routes (no login needed). Each panel has
+    // its own independently scoped library config since #244.
     media({
       conversions: [{ name: 'thumb', width: 320, height: 320, crop: true, format: 'webp' }],
       metaFields: [
