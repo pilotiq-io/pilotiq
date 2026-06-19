@@ -54,7 +54,7 @@ import type { CharRange } from './wordDiff.js'
  * the whitespace token is common). Fully-unrelated replacements just highlight
  * the entire line, which is accurate ("everything changed"). See #249.
  */
-const WORD_DIFF_MIN_SIMILARITY = 0
+const WORD_DIFF_MIN_SIMILARITY = 0.4
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
