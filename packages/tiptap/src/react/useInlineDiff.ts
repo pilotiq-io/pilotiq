@@ -203,11 +203,18 @@ export function useInlineDiff(
       startedRef.current.add(s.id)
     }
     // Cleanup: when a suggestion leaves the context AND we previously
-    // started a diff for it, the editor should drop the diff state too.
-    // Approve dismisses via context → here we drop from startedRef.
+    // started a diff for it, revert the editor region so the inline diff
+    // doesn't linger as an orphan. This fires when the chat-sidebar pill's
+    // ✗ / "Reject all" dismisses an entry without going through the
+    // banner's onRejectViaEditor path.
+    // rejectInlineDiffRegion is a no-op when the region is already gone
+    // (e.g. the floating ✓/✕ handled it first), so there is no double-revert.
     const contextIds = new Set(list.map(s => s.id))
     for (const id of Array.from(startedRef.current)) {
-      if (!contextIds.has(id)) startedRef.current.delete(id)
+      if (!contextIds.has(id)) {
+        editor.commands.rejectInlineDiffRegion(id)
+        startedRef.current.delete(id)
+      }
     }
   }, [editor, list, childCount])
 
