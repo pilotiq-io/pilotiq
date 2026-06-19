@@ -48,8 +48,13 @@ import type { CharRange } from './wordDiff.js'
  * unrelated replacement (not an edit), so the intra-line highlight is skipped
  * and the rows render as plain red/green — avoids lighting up the whole line
  * when two genuinely different blocks happen to be paired. See #186.
+ *
+ * Set to 0 so every paired block gets character-range highlights — even when
+ * no full word tokens match (e.g. "Helllo word" → "Hello world" where only
+ * the whitespace token is common). Fully-unrelated replacements just highlight
+ * the entire line, which is accurate ("everything changed"). See #249.
  */
-const WORD_DIFF_MIN_SIMILARITY = 0.4
+const WORD_DIFF_MIN_SIMILARITY = 0
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
