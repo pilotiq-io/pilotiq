@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useEditor, useEditorState, EditorContent, type Editor } from '@tiptap/react'
+import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import type { AnyExtension, Content } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
