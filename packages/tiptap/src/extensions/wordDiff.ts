@@ -65,6 +65,44 @@ function isWhitespaceRange(src: string, [s, e]: CharRange): boolean {
 }
 
 /**
+ * Given the full text of a block before and after an edit, and a character
+ * offset inside the **after** text (where the prosemirror-changeset region
+ * lands), return the specific changed word-pair the region corresponds to.
+ *
+ * Used by the popover and banner to show "tst → test" instead of the whole
+ * paragraph when a `replace_text` op touches only one or two words in a sentence.
+ * Falls back to joined changed words when the offset is between changed ranges.
+ */
+export function extractChangedPair(
+  beforeText:    string,
+  afterText:     string,
+  offsetInAfter: number,
+): { before: string; after: string } {
+  if (beforeText === afterText) return { before: afterText, after: afterText }
+  const wd = wordLevelDiff(beforeText, afterText)
+  if (wd.bRanges.length === 0) return { before: beforeText, after: afterText }
+
+  // Find the bRange that contains the region's offset.
+  for (let i = 0; i < wd.bRanges.length; i++) {
+    const [bs, be] = wd.bRanges[i]!
+    if (offsetInAfter >= bs && offsetInAfter <= be) {
+      const after  = afterText.slice(bs, be).trim()
+      // Index-match the corresponding aRange when available (pure insertions
+      // have fewer aRanges than bRanges — `aRange` can be undefined).
+      const aRange = wd.aRanges[i]
+      const before = aRange ? beforeText.slice(aRange[0], aRange[1]).trim() : ''
+      return { before, after }
+    }
+  }
+
+  // Offset not inside any changed range (structural edit, or offset sits in
+  // an unchanged part between two edits). Return all changed words joined.
+  const before = wd.aRanges.map(([s, e]) => beforeText.slice(s, e)).join(' ')
+  const after  = wd.bRanges.map(([s, e]) => afterText.slice(s, e)).join(' ')
+  return { before: before.trim(), after: after.trim() }
+}
+
+/**
  * Token-level LCS of two strings. Returns the changed char ranges on each side
  * plus a similarity score. Equal strings → no ranges, similarity 1.
  */

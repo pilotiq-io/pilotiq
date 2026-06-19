@@ -1,89 +1,44 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   usePendingSuggestionsForField,
   usePendingSuggestions,
   type PendingSuggestion,
 } from '@pilotiq/pilotiq/react'
 
-/**
- * Bottom-of-editor banner UI for whole-field AI suggestions on Tiptap
- * surfaces whose content shape can't survive the inline chip widget's
- * plain-text replace (richtext, markdown). The chip path renders the
- * replacement via `Element.textContent = replacement` which surfaces raw
- * HTML / markdown as literal text — fine for plain `TextField`, ugly for
- * the others.
- *
- * Visible only when at least one pending suggestion targets this field
- * AND lacks `meta.editorRange` (i.e. a whole-field replacement from
- * `update_form_state`'s `set_value` op). Range-anchored suggestions stay
- * on the editor-side chip widget path — those have a precise location
- * the user wants to see in context.
- *
- * Phase 1 ships banner-only ("Changes suggested — Accept / Reject"); no
- * inline diff visualization yet. Phase 2 will replace the banner-only
- * UX with a `prosemirror-changeset`-driven inline diff on the editor's
- * doc itself, with the banner staying as the global Accept-all / Reject
- * control bar. See `[[project_pilotiq_text_field_tiptap_rules]]`.
- *
- * Approve runs the renderer-supplied `onApplyWholeField(value)` callback
- * AND dismisses the suggestion from the queue. Reject just dismisses
- * (no doc mutation). Multiple pending whole-field suggestions on the
- * same field stack — Accept all / Reject all collapse the queue in one
- * pass.
- */
-export interface SuggestionBannerProps {
-  /** Field name, matches the suggestion's `fieldName`. */
-  fieldName: string
-  /**
-   * Apply a whole-field suggestion to the underlying editor. Receives the
-   * raw `suggestedValue` string from the suggestion. The renderer wires
-   * its own content-shape-aware `setContent` here (markdown source for
-   * MarkdownEditor, HTML / JSON for TiptapEditor).
-   *
-   * Skipped when `onAcceptViaEditor` is supplied — that path means the
-   * editor already holds the proposed state via `InlineDiffExtension`,
-   * and Accept routes through `acceptInlineDiff()` instead. The host
-   * still calls `pendingSuggestions.approve(id)` afterwards to dismiss
-   * the queue entry.
-   */
-  onApplyWholeField: (suggestedValue: string) => void
-  /**
-   * Diff-aware Accept hook. When supplied, the banner calls this first
-   * (so the editor commits its diff state) and then dismisses via the
-   * context. `onApplyWholeField` is NOT called in this mode — the
-   * editor's current doc is already the accepted state.
-   *
-   * Sparse so the simple banner path (Phase 1, no diff) keeps its
-   * existing semantics.
-   */
-  onAcceptViaEditor?: () => void
-  /**
-   * Diff-aware Reject hook. When supplied, the banner calls this first
-   * (so the editor reverts to the baseline) and then dismisses via the
-   * context. Sparse — see `onAcceptViaEditor`.
-   */
-  onRejectViaEditor?: () => void
-  /** Optional class on the outer banner element. Defaults to a minimal styled chrome. */
-  className?: string
+/** Per-region before/after text preview, derived from diff state by the host renderer. */
+export interface DiffRegionPreview {
+  id:     string
+  before: string
+  after:  string
 }
 
-/**
- * Hook variant — returns banner state without rendering, for renderers
- * that want to compose their own chrome. Renderer-agnostic.
- */
+export interface SuggestionBannerProps {
+  fieldName: string
+  onApplyWholeField: (suggestedValue: string) => void
+  onAcceptViaEditor?: () => void
+  onRejectViaEditor?: () => void
+  /**
+   * Before/after text for each active diff region, derived from the
+   * editor's `InlineDiffExtension` state by the host renderer. When
+   * provided, the banner gains a collapsible accordion showing each change
+   * with per-region Approve/Decline controls.
+   */
+  diffRegionPreviews?: readonly DiffRegionPreview[]
+  /**
+   * Per-region resolve callback (Accept or Reject a single change). The
+   * host threads the editor's command + event dispatch through here so the
+   * banner's per-region ✓/✗ buttons don't need direct editor access.
+   */
+  onResolveRegion?: (id: string, decision: 'accept' | 'reject') => void
+}
+
 export function useSuggestionBanner(fieldName: string): {
   pending:    readonly PendingSuggestion[]
   approveAll: (apply: (value: string) => void) => void
   rejectAll:  () => void
 } {
   const { list, dismiss } = usePendingSuggestionsForField(fieldName)
-
-  // Only whole-field suggestions land in the banner. Range-anchored ones
-  // ride the editor chip widget.
-  const pending = useMemo(
-    () => list.filter(s => !hasEditorRange(s)),
-    [list],
-  )
+  const pending = useMemo(() => list.filter(s => !hasEditorRange(s)), [list])
 
   const approveAll = (apply: (value: string) => void): void => {
     for (const s of pending) {
@@ -91,18 +46,19 @@ export function useSuggestionBanner(fieldName: string): {
       dismiss(s.id)
     }
   }
-
-  const rejectAll = (): void => {
-    for (const s of pending) dismiss(s.id)
-  }
+  const rejectAll = (): void => { for (const s of pending) dismiss(s.id) }
 
   return { pending, approveAll, rejectAll }
 }
 
 function hasEditorRange(s: PendingSuggestion): boolean {
-  const meta = (s.meta ?? {}) as Record<string, unknown>
+  const meta  = (s.meta ?? {}) as Record<string, unknown>
   const range = meta['editorRange'] as { from?: unknown; to?: unknown } | undefined
   return !!(range && typeof range.from === 'number' && typeof range.to === 'number')
+}
+
+function truncate(text: string, max = 52): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`
 }
 
 export function SuggestionBanner({
@@ -110,22 +66,36 @@ export function SuggestionBanner({
   onApplyWholeField,
   onAcceptViaEditor,
   onRejectViaEditor,
-  className,
+  diffRegionPreviews = [],
+  onResolveRegion,
 }: SuggestionBannerProps): React.ReactElement | null {
   const { pending, approveAll, rejectAll } = useSuggestionBanner(fieldName)
   const { dismiss } = usePendingSuggestions()
+  const [expanded, setExpanded] = useState(false)
+
+  // Track how many have been resolved so we can show "X/N resolved".
+  // Incremented by per-region actions; also bumped in bulk on Accept-all/Reject-all.
+  const [resolvedCount, setResolvedCount] = useState(0)
+
+  // When new regions arrive (more than current total), reset the resolved counter
+  // so a second AI run shows a fresh "0/N" rather than stale counts.
+  const totalRef = useRef(diffRegionPreviews.length)
+  const currentTotal = resolvedCount + diffRegionPreviews.length
+  if (diffRegionPreviews.length > totalRef.current) {
+    // More regions than we've tracked — new batch arrived; reset.
+    totalRef.current = diffRegionPreviews.length
+    // (We deliberately mutate during render here — the only safe way to
+    // re-seed without a useEffect delay before the first paint shows "0/0".)
+  }
+  const displayTotal = Math.max(totalRef.current, currentTotal)
 
   if (pending.length === 0) return null
 
-  // First (and usually only) pending suggestion drives the agent-label
-  // display. Multiple-at-once is rare in practice — the banner shows the
-  // most recent producer to keep the chrome compact.
-  const head = pending[0]!
-  const sourceLabel = head.source?.agentLabel ?? null
+  const single     = pending.length === 1
+  const hasPreview = diffRegionPreviews.length > 0 || resolvedCount > 0
 
-  const handleAccept = (): void => {
-    // Diff-active path — editor's current doc IS the accepted state.
-    // Commit via the editor command, then drop the queue entries.
+  const handleAcceptAll = (): void => {
+    setResolvedCount(c => c + diffRegionPreviews.length)
     if (onAcceptViaEditor) {
       onAcceptViaEditor()
       for (const s of pending) dismiss(s.id)
@@ -134,9 +104,8 @@ export function SuggestionBanner({
     approveAll(onApplyWholeField)
   }
 
-  const handleReject = (): void => {
-    // Diff-active path — editor still holds the proposed state; revert
-    // to the captured baseline before dismissing.
+  const handleRejectAll = (): void => {
+    setResolvedCount(c => c + diffRegionPreviews.length)
     if (onRejectViaEditor) {
       onRejectViaEditor()
       for (const s of pending) dismiss(s.id)
@@ -145,41 +114,137 @@ export function SuggestionBanner({
     rejectAll()
   }
 
-  // Per-suggestion controls when there's more than one — keeps the UX
-  // discoverable. Single suggestion: Accept / Reject only.
-  const single = pending.length === 1
+  const handleResolveOne = (id: string, decision: 'accept' | 'reject'): void => {
+    setResolvedCount(c => c + 1)
+    onResolveRegion?.(id, decision)
+  }
 
   return (
     <div
       role="region"
       aria-label="AI suggested changes"
       data-pilotiq-suggestion-banner=""
-      className={className ?? 'pilotiq-suggestion-banner'}
+      className="mt-1.5 overflow-hidden rounded-md border border-border"
     >
-      <span className="pilotiq-suggestion-banner-icon" aria-hidden="true">💡</span>
-      <span className="pilotiq-suggestion-banner-label">
-        {single
-          ? sourceLabel
-            ? `Changes suggested by ${sourceLabel}`
-            : 'Changes suggested'
-          : `${pending.length} changes suggested`}
-      </span>
-      <div className="pilotiq-suggestion-banner-actions">
+      {/* Header row — left side is the accordion toggle */}
+      <div className="flex items-center">
+        {/* Toggle area — sparkle + label + resolved count + chevron */}
         <button
           type="button"
-          className="pilotiq-suggestion-banner-reject"
-          onClick={handleReject}
+          className="flex flex-1 items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40"
+          onClick={() => setExpanded(e => !e)}
+          aria-expanded={expanded}
         >
-          {single ? 'Reject' : 'Reject all'}
+          {/* Sparkle icon */}
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="size-3.5 shrink-0 text-muted-foreground/60"
+            aria-hidden="true"
+          >
+            <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+          </svg>
+
+          <span className="text-xs font-medium text-foreground/80">
+            {single ? 'Change suggested' : `${pending.length} changes suggested`}
+          </span>
+
+          {/* Resolved count — only shown when we know the total */}
+          {hasPreview && displayTotal > 0 && (
+            <span className="text-[11px] text-muted-foreground/60 tabular-nums">
+              {resolvedCount}/{displayTotal}
+            </span>
+          )}
+
+          {/* Chevron */}
+          {hasPreview && (
+            <span className="ml-auto text-[11px] text-muted-foreground/50">
+              {expanded ? '▴' : '▾'}
+            </span>
+          )}
         </button>
-        <button
-          type="button"
-          className="pilotiq-suggestion-banner-accept"
-          onClick={handleAccept}
+
+        {/* Action buttons — right side, outside the toggle area */}
+        <div
+          className="flex items-center gap-1.5 px-3"
+          onClick={e => e.stopPropagation()}
         >
-          {single ? 'Accept' : 'Accept all'}
-        </button>
+          <button
+            type="button"
+            className="rounded border border-rose-200 px-2.5 py-1 text-xs text-rose-700 transition-colors hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/30"
+            onClick={handleRejectAll}
+          >
+            {single ? 'Reject' : 'Reject all'}
+          </button>
+          <button
+            type="button"
+            className="rounded bg-foreground px-2.5 py-1 text-xs text-background transition-colors hover:bg-foreground/85"
+            onClick={handleAcceptAll}
+          >
+            {single ? 'Accept' : 'Accept all'}
+          </button>
+        </div>
       </div>
+
+      {/* Accordion body */}
+      {expanded && hasPreview && (
+        <div className="border-t border-border bg-muted/20 px-3 py-2 space-y-2">
+          {diffRegionPreviews.map((r, i) => (
+            <div key={r.id} className="flex items-start gap-2">
+              {/* Change number */}
+              <span className="mt-0.5 shrink-0 text-[11px] tabular-nums text-muted-foreground/50">
+                {i + 1}.
+              </span>
+
+              {/* Before → after inline */}
+              <p className="min-w-0 flex-1 truncate text-xs leading-relaxed">
+                {r.before && (
+                  <span className="text-rose-600 line-through opacity-75 dark:text-rose-400">
+                    {truncate(r.before)}
+                  </span>
+                )}
+                {r.before && r.after && (
+                  <span className="mx-1 text-muted-foreground/40">→</span>
+                )}
+                {r.after && (
+                  <span className="text-emerald-700 dark:text-emerald-400">
+                    {truncate(r.after)}
+                  </span>
+                )}
+              </p>
+
+              {/* Per-region ✗ / ✓ buttons */}
+              {onResolveRegion && (
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    title="Reject this change"
+                    className="rounded border border-rose-200 p-1 text-[11px] leading-none text-rose-600 transition-colors hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => handleResolveOne(r.id, 'reject')}
+                  >
+                    ✕
+                  </button>
+                  <button
+                    type="button"
+                    title="Accept this change"
+                    className="rounded border border-emerald-200 p-1 text-[11px] leading-none text-emerald-600 transition-colors hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => handleResolveOne(r.id, 'accept')}
+                  >
+                    ✓
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

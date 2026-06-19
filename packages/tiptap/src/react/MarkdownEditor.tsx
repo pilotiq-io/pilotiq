@@ -24,7 +24,7 @@ import { Alert, AlertTitle, AlertBody, ContentBlockKeymap } from '../extensions/
 import { useSuggestionBridge } from './useSuggestionBridge.js'
 import { useInlineDiff, useIsInlineDiffActive, readDiffViewMarker } from './useInlineDiff.js'
 import { SuggestionBanner } from './SuggestionBanner.js'
-import { DiffRegionControls } from './DiffRegionControls.js'
+import { SuggestionReviewPopover } from './SuggestionReviewPopover.js'
 import { getMarkdownString, parseMarkdownToHtml } from '../markdownStorage.js'
 
 // Inline lucide.dev SVGs — same posture as `toolbarButtons.tsx` so this
@@ -571,7 +571,7 @@ export function MarkdownEditor({
           style={wrapperStyle}
         >
           <EditorContent editor={editor} />
-          <DiffRegionControls editor={editor} />
+          <SuggestionReviewPopover editor={editor} />
         </div>
       )}
 

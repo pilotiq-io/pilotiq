@@ -23,9 +23,8 @@ import type {
 import { useCollabRoom, getCollabExtensions, useRowCoords, parseRowFieldPath } from '@pilotiq/pilotiq/react'
 import { useCollabSeed, type CollabRoom as FrameworkCollabRoom } from '@rudderjs/sync/react'
 import { useSuggestionBridge } from './useSuggestionBridge.js'
-import { useInlineDiff, useIsInlineDiffActive, readDiffViewMarker } from './useInlineDiff.js'
-import { SuggestionBanner } from './SuggestionBanner.js'
-import { DiffRegionControls } from './DiffRegionControls.js'
+import { useInlineDiff, readDiffViewMarker } from './useInlineDiff.js'
+import { SuggestionReviewPopover } from './SuggestionReviewPopover.js'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import type { BlockMeta } from '../Block.js'
 import type { ToolbarGroups, RichTextStorage, ColorSwatch } from '../RichTextField.js'
@@ -38,7 +37,9 @@ import { DragHandleExtension } from '../extensions/DragHandleExtension.js'
 import { MergeTagExtension } from '../extensions/MergeTagExtension.js'
 import { LeadMarkExtension, SmallMarkExtension } from '../extensions/TextSizeMarks.js'
 import { SuggestionChipExtension } from '../extensions/SuggestionChipExtension.js'
-import { InlineDiffExtension } from '../extensions/InlineDiffExtension.js'
+import {
+  InlineDiffExtension,
+} from '../extensions/InlineDiffExtension.js'
 import {
   MentionExtension,
   type MentionState,
@@ -487,8 +488,7 @@ function ClientEditor(props: ClientEditorProps) {
   //
   // Whole-field handling: NO chip widget here. The chip's `textContent`
   // renderer would surface raw HTML tags as literal text inside the
-  // green pill — unparseable on multi-paragraph rewrites. Instead,
-  // `<SuggestionBanner>` mounts below the editor (see render below).
+  // green pill — unparseable on multi-paragraph rewrites.
   // Producer-supplied range suggestions still ride the inline chip —
   // those have a precise anchor worth visualizing in context.
   const applyWholeField = (value: string): void => {
@@ -514,8 +514,6 @@ function ClientEditor(props: ClientEditorProps) {
     },
     resolveDisplayMode: () => readDiffViewMarker(name),
   })
-  const isDiffActive = useIsInlineDiffActive(editor ?? null)
-
   // Re-render the toolbar when the selection / marks change so active-state
   // booleans stay fresh.
   const tick = useEditorTick(editor)
@@ -553,18 +551,10 @@ function ClientEditor(props: ClientEditorProps) {
       )}
       <div className="relative">
         <EditorContent editor={editor} />
-        <DiffRegionControls editor={editor} />
+        <SuggestionReviewPopover editor={editor} />
       </div>
-      <SuggestionBanner
-        fieldName={name}
-        onApplyWholeField={applyWholeField}
-        {...(isDiffActive && editor
-          ? {
-              onAcceptViaEditor: () => editor.commands.acceptInlineDiff(),
-              onRejectViaEditor: () => editor.commands.rejectInlineDiff(),
-            }
-          : {})}
-      />
+      {/* SuggestionBanner removed — the SuggestionReviewPopover handles per-region
+          review inline. A future global banner will span all fields (#TODO). */}
       {editor && floatingEnabled && <FloatingToolbar editor={editor} />}
       {editor && <TableFloatingToolbar editor={editor} />}
       <SlashPopover state={slashState} keyHandlerRef={slashKeyRef} />
